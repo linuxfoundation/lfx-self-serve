@@ -504,25 +504,34 @@ export function validateRequestBody<T>(body: T | undefined, req: Request, next: 
   return true;
 }
 
+const MAX_DUPLICATE_IDENTIFIERS = 20;
+const MAX_DUPLICATE_IDENTIFIER_LENGTH = 320;
+
 /**
- * Whether a string is an absolute `https:` URL.
- *
- * For destinations this application hands to the browser to navigate to. An address that arrives
- * from upstream and is assigned to `location.href` is executable if its scheme says so — a
- * `javascript:` value runs in this origin, with this session — so the scheme has to be checked
- * before the value is passed on, not merely its presence.
- *
- * Parsed rather than matched against the text. The browser normalizes before it reads the scheme
- * — it trims leading whitespace and C0 control characters, and the scheme is case-insensitive —
- * so `" javascript:…"` and `"JaVaScRiPt:…"` both execute while failing a written-out comparison.
- * Handing the same parser the value is how this stays in step with what will act on it.
+ * Validates the optional `duplicateIdentifiers` body field on the project-permissions PUT/DELETE
+ * routes (GH-3276). Client-controlled and forwarded straight into array `.map()`/`.filter()` calls
+ * in `ProjectService.updateProjectPermissions`, so a malformed shape (a string instead of an array,
+ * a non-string element, an oversized array) must be rejected here with a 400 rather than reaching
+ * those calls and throwing a TypeError that surfaces as a 500.
  */
-export function isHttpsUrl(value: string): boolean {
-  try {
-    return new URL(value).protocol === 'https:';
-  } catch {
-    return false;
+export function getValidatedDuplicateIdentifiers(duplicateIdentifiers: unknown, operation: string): string[] | undefined {
+  if (duplicateIdentifiers === undefined) {
+    return undefined;
   }
+
+  if (
+    !Array.isArray(duplicateIdentifiers) ||
+    duplicateIdentifiers.length > MAX_DUPLICATE_IDENTIFIERS ||
+    duplicateIdentifiers.some((id) => typeof id !== 'string' || id.trim() === '' || id.length > MAX_DUPLICATE_IDENTIFIER_LENGTH)
+  ) {
+    throw ServiceValidationError.forField(
+      'duplicateIdentifiers',
+      `duplicateIdentifiers must be an array of at most ${MAX_DUPLICATE_IDENTIFIERS} non-blank strings, each at most ${MAX_DUPLICATE_IDENTIFIER_LENGTH} characters`,
+      { operation }
+    );
+  }
+
+  return duplicateIdentifiers;
 }
 
 /**

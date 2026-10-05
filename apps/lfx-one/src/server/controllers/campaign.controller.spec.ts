@@ -5,7 +5,7 @@ import { KEYWORD_ACTION_DEADLINE_MS } from '../services/campaign-keyword-actions
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MAX_BULK_KEYWORD_ACTIONS, MAX_SPONSORS } from '@lfx-one/shared/constants';
+import { MAX_BULK_KEYWORD_ACTIONS, MAX_HUBSPOT_BODY_HTML_LENGTH, MAX_SPONSORS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
@@ -1405,6 +1405,42 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(cfg[key]).not.toContain('\u202E');
       expect(cfg[key]).toContain('evil');
     }
+  });
+
+  it.each(['bodyHtml', 'bodyHtmlB'])('refuses an oversized %s before sanitising or dispatching', async (field) => {
+    // The sanitiser runs in `createConfigEnvelope`, ahead of every other check, and the only
+    // other bound on its input is the 15 MB body-parser limit. The cap keeps its cost bounded.
+    const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', [field]: `<p>${'x'.repeat(MAX_HUBSPOT_BODY_HTML_LENGTH)}</p>` } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(createConfigEnvelope).not.toHaveBeenCalled();
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(loadBriefById).not.toHaveBeenCalled();
+  });
+
+  it('accepts a body exactly at the size cap', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000001', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', bodyHtml: `<p>${'x'.repeat(MAX_HUBSPOT_BODY_HTML_LENGTH - 7)}</p>` } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
   });
 
   it('sanitizes a sponsor name from a DIRECT request, not just the scrape path', async () => {

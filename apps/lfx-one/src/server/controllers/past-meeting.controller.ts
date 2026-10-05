@@ -9,6 +9,7 @@ import {
   ITXUpdatePastMeetingParticipantRequest,
   PastMeeting,
   PastMeetingAttachment,
+  PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
   PastMeetingTranscript,
@@ -160,8 +161,19 @@ export class PastMeetingController {
         return;
       }
 
-      // Get the past meeting participants
       const participants = await this.meetingService.getPastMeetingParticipants(req, uid);
+
+      // Query-service lets anyone who can view the past meeting list its participants, so the
+      // rows go only to organizers and the people on them. Counts stay on GET /past-meetings/:uid.
+      if (!(await this.canViewParticipantsOrHide(req, uid, participants))) {
+        logger.success(req, 'get_past_meeting_participants', startTime, {
+          past_meeting_id: uid,
+          participant_count: 0,
+          roster_hidden: true,
+        });
+        res.json([]);
+        return;
+      }
 
       // Log the success
       logger.success(req, 'get_past_meeting_participants', startTime, {
@@ -1017,6 +1029,22 @@ export class PastMeetingController {
         participant_count: 0,
         attended_count: 0,
       };
+    }
+  }
+
+  /**
+   * Whether the caller may see the past meeting's participant rows. An unresolvable check hides
+   * them (fail closed) instead of failing the request.
+   */
+  private async canViewParticipantsOrHide(req: Request, uid: string, participants: PastMeetingParticipant[]): Promise<boolean> {
+    try {
+      return await this.meetingService.canViewPastMeetingParticipants(req, uid, participants);
+    } catch (error) {
+      logger.warning(req, 'get_past_meeting_participants', 'Participant visibility check failed, hiding the participants', {
+        past_meeting_id: uid,
+        err: error,
+      });
+      return false;
     }
   }
 

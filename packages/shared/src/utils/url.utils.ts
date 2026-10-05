@@ -65,6 +65,28 @@ export function isValidUrl(urlString: string): boolean {
 }
 
 /**
+ * Whether a value is an absolute `https:` URL.
+ *
+ * For destinations this application hands to the browser to navigate to. An address that arrives
+ * from upstream and is assigned to `location.href` is executable if its scheme says so — a
+ * `javascript:` value runs in this origin, with this session — so the scheme has to be checked
+ * before the value is passed on, not merely its presence.
+ *
+ * Parsed rather than matched against the text. The browser normalizes before it reads the scheme
+ * — it trims leading whitespace and C0 control characters, and the scheme is case-insensitive —
+ * so `" javascript:…"` and `"JaVaScRiPt:…"` both execute while failing a written-out comparison.
+ * Handing the same parser the value is how this stays in step with what will act on it.
+ */
+export function isHttpsUrl(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * True for an in-app relative path (e.g. `/project/{{project.uid}}/committees/new`), false for a
  * protocol-relative value (`//host/...`) — a browser resolves that as a same-scheme cross-origin
  * URL, not a safe in-app route, so it must not be treated as one.

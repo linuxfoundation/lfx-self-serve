@@ -23,7 +23,7 @@ import {
   COMMITTEE_LABEL,
   NO_VOTING_STATUS_LABEL,
 } from '@lfx-one/shared/constants';
-import { CommitteeMemberRole, CommitteeMemberVotingStatus, CommitteeMemberVisibility } from '@lfx-one/shared/enums';
+import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import {
   Committee,
   CommitteeEngagementResponse,
@@ -46,6 +46,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   canManageCommitteeMembers,
+  canViewCommitteeRoster,
   countVotingReps,
   formatCommitteeEngagementFreshness,
   formatCommitteeEngagementMeetings,
@@ -187,14 +188,10 @@ export class CommitteeMembersComponent implements OnInit {
     () => this.canManageMembers() && this.joinMode() === 'application' && (this.applicationsLoading() || this.pendingApplications().length > 0)
   );
   public readonly pendingApplications = computed(() => this.applications().filter((app) => (app.status ?? '').toLowerCase() === 'pending'));
-  // Fail-closed: only show the roster when visibility is explicitly set to basic_profile.
-  // Undefined/null/unknown values default to hidden so committees without a persisted
-  // setting don't inadvertently expose the member list.
-  public readonly showMemberRoster = computed(() => {
-    const committee = this.committee();
-    if (!committee) return false;
-    return committee.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canManageMembers();
-  });
+  // Fail-closed: show the roster only under the shared rule the BFF enforces — visibility
+  // explicitly set to basic_profile, or a writer/auditor caller. Undefined/null/unknown values
+  // default to hidden so committees without a persisted setting don't expose the member list.
+  public readonly showMemberRoster = computed(() => canViewCommitteeRoster(this.committee()));
   /** Roster and/or invite-only member actions (LFXV2-2690: invite path when roster is hidden). */
   public readonly showMembersSection = computed(() => this.showMemberRoster() || this.canSendMemberInvites());
   public readonly votingRepCount: Signal<number> = computed(() => countVotingReps(this.members()));

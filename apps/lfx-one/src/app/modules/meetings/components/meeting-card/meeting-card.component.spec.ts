@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { Component, input, signal } from '@angular/core';
+import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
+import { provideRouter, Router } from '@angular/router';
 import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
+import { MeetingInviteeAttendeesComponent } from '@app/modules/meetings/components/meeting-invitee-attendees/meeting-invitee-attendees.component';
+import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
@@ -355,5 +357,103 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     expect(getMeetingDetail).toHaveBeenCalledWith('meeting-1', { skipCache: true });
     expect(navigate).not.toHaveBeenCalled();
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Editing unavailable' }));
+  });
+});
+
+@Component({ selector: 'lfx-rsvp-button-group', template: '' })
+class RsvpButtonGroupStubComponent {
+  public readonly meeting = input<Meeting>();
+  public readonly occurrenceId = input<string | undefined>();
+}
+
+@Component({ selector: 'lfx-meeting-invitee-attendees', template: '' })
+class MeetingInviteeAttendeesStubComponent {
+  public readonly meeting = input<Meeting>();
+  public readonly occurrence = input<MeetingOccurrence | null>(null);
+}
+
+/**
+ * Covers which invitee panels the card renders, at the template boundary.
+ * @description The attendee preview is gated by `show_meeting_attendees` alone, so it must render even
+ * when the meeting collects no RSVPs. The outer condition once required RSVP collection too, which hid
+ * the preview; the attendee component's own spec cannot catch that because it mounts the child directly.
+ */
+describe('MeetingCardComponent — invitee panels', () => {
+  const INVITED = {
+    id: 'meeting-1',
+    project_uid: 'project-1',
+    title: 'Weekly sync',
+    start_time: '2030-01-01T10:00:00.000Z',
+    duration: 30,
+    timezone: 'UTC',
+    invited: true,
+    organizer: false,
+  } as unknown as Meeting;
+
+  async function render(meeting: Meeting): Promise<HTMLElement> {
+    // The card's animate-on-scroll directive needs IntersectionObserver, which jsdom lacks.
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        public observe = vi.fn();
+        public unobserve = vi.fn();
+        public disconnect = vi.fn();
+      }
+    );
+    TestBed.configureTestingModule({
+      deferBlockBehavior: DeferBlockBehavior.Manual,
+      providers: [
+        provideRouter([]),
+        { provide: UserService, useValue: { user: signal(null), authenticated: signal(true), viewerUsername: signal(null) } },
+        { provide: ProjectService, useValue: { project: signal(null) } },
+        { provide: MeetingComposerService, useValue: { open: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: '' })),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingCardComponent, {
+      remove: { imports: [RsvpButtonGroupComponent, MeetingInviteeAttendeesComponent] },
+      add: { imports: [RsvpButtonGroupStubComponent, MeetingInviteeAttendeesStubComponent] },
+    });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingCardComponent);
+    fixture.componentRef.setInput('meetingInput', meeting);
+    fixture.detectChanges();
+    for (const block of await fixture.getDeferBlocks()) {
+      await block.render(DeferBlockState.Complete);
+    }
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  it('shows attendees without RSVP buttons when the meeting collects no RSVPs', async () => {
+    const card = await render({ ...INVITED, is_invite_responses_enabled: false, show_meeting_attendees: true } as Meeting);
+
+    expect(card.querySelector('lfx-meeting-invitee-attendees')).not.toBeNull();
+    expect(card.querySelector('lfx-rsvp-button-group')).toBeNull();
+  });
+
+  it('shows RSVP buttons without attendees when Show Attendees is off', async () => {
+    const card = await render({ ...INVITED, is_invite_responses_enabled: true, show_meeting_attendees: false } as Meeting);
+
+    expect(card.querySelector('lfx-rsvp-button-group')).not.toBeNull();
+    expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
+  });
+
+  it('hides attendees on a Board meeting that still carries a legacy opt-in', async () => {
+    const card = await render({ ...INVITED, meeting_type: 'Board', is_invite_responses_enabled: true, show_meeting_attendees: true } as Meeting);
+
+    expect(card.querySelector('lfx-rsvp-button-group')).not.toBeNull();
+    expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
   });
 });

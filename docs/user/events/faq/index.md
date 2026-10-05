@@ -4,7 +4,7 @@ description: Frequently asked questions about LFX events.
 audience: [all]
 product_area: Events
 tags: [events, faq, attendance]
-last_updated: 2026-08-17
+last_updated: 2026-10-02
 intercom_collection: Events
 ---
 
@@ -39,6 +39,15 @@ Open the [**Visa Letters**](../visa-letters/) tab on the My Events page and sele
 ## How do I apply for travel funding?
 
 Open the [**Travel Funding**](../travel-funding/) tab on the My Events page and select **New Funding Application**. The Travel Fund helps community members attend events they otherwise could not; if your employer can cover the cost, please don't apply. See [Apply for Travel Funding](../travel-funding/).
+
+## Why don't I see my event when applying for a visa letter or travel funding?
+
+The **Choose an Event** step lists only upcoming events you have registered for with the email address you use to sign in to LFX. Two more rules apply:
+
+- **Visa letters** — your registration must be accepted, and the event must offer visa letters.
+- **Travel funding** — the event must offer travel funding. Any registration counts, even if it has not been accepted yet.
+
+If your event is still missing, check that you registered with the same email address, or contact the event organizer.
 
 ## How do I download my attendance certificate?
 

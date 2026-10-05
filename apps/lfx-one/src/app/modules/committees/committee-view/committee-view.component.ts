@@ -19,7 +19,6 @@ import {
   Committee,
   CommitteeInvite,
   CommitteeMember,
-  CommitteeMemberVisibility,
   CommitteePermissionLevel,
   CommitteeTab,
   CommitteeUser,
@@ -42,6 +41,7 @@ import {
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
 import {
   canManageCommitteeMembers,
+  canViewCommitteeRoster,
   committeeRequiresOrganization,
   committeeRouteIdMatches,
   findPendingInvitationForCommittee,
@@ -329,9 +329,9 @@ export class CommitteeViewComponent {
   public upcomingMeetings: Signal<Meeting[]> = this.initUpcomingMeetings();
 
   // -- Tab visibility signals --
-  public isMembersTabVisible: Signal<boolean> = computed(
-    () => this.committee()?.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canEdit() || this.canSendMemberInvites()
-  );
+  // Same rule the BFF roster endpoint enforces (basic_profile, writer or auditor), plus the
+  // invite-only path for members who can send invites while the roster stays hidden.
+  public isMembersTabVisible: Signal<boolean> = computed(() => canViewCommitteeRoster(this.committee()) || this.canEdit() || this.canSendMemberInvites());
   public isVotesTabVisible: Signal<boolean> = computed(() => !!this.committee()?.enable_voting);
 
   // -- Visitor gating --
@@ -347,7 +347,9 @@ export class CommitteeViewComponent {
         return count != null ? `Members (${count})` : 'Members';
       },
       icon: 'fa-users',
-      visible: () => this.isMemberOrAdmin() && this.isMembersTabVisible(),
+      // Auditors may read the roster without being on it (committee#auditor, GH-2407), so the
+      // visitor gate must not hide the tab from them.
+      visible: () => (this.isMemberOrAdmin() || this.committee()?.auditor === true) && this.isMembersTabVisible(),
     },
     { key: 'votes', label: 'Votes', icon: 'fa-check-to-slot', visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible() },
     { key: 'meetings', label: 'Meetings', icon: 'fa-calendar', visible: () => this.isMemberOrAdmin() },
@@ -1090,7 +1092,8 @@ export class CommitteeViewComponent {
     return toSignal(
       combineLatest([toObservable(this.committee), toObservable(this.membersRefresh)]).pipe(
         switchMap(([committee]) => {
-          if (!committee?.uid) {
+          // Skip the roster fetch when member_visibility hides it from this caller (server enforces too)
+          if (!committee?.uid || !canViewCommitteeRoster(committee)) {
             this.membersLoading.set(false);
             return of([]);
           }

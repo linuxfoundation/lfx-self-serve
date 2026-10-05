@@ -194,6 +194,60 @@ describe('MeetingJoinComponent', () => {
     expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
   });
 
+  // The BFF returns no roster to an invitee when the organizer hides attendees, so the page must not
+  // offer a guest list it cannot fill.
+  describe('guest list visibility for invitees', () => {
+    const renderInvitee = async (showMeetingAttendees: boolean, overrides: Partial<Meeting> = {}): Promise<HTMLElement> => {
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ organizer: false, invited: true, meeting_type: 'Technical', show_meeting_attendees: showMeetingAttendees, ...overrides }),
+          project: buildProject(),
+        })
+      );
+      getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(3)));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture.nativeElement as HTMLElement;
+    };
+
+    it('neither fetches nor offers the guest list when the meeting hides its attendees', async () => {
+      const page = await renderInvitee(false);
+
+      expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
+      expect(page.querySelector('[data-testid="view-members-button"]')).toBeNull();
+    });
+
+    it('still shows how many are invited, from the server count, when the meeting hides its attendees', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: false, registrant_count: 7 }),
+          project: buildProject(),
+        })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const page = fixture.nativeElement as HTMLElement;
+      expect(page.querySelector('[data-testid="total-invitees"]')?.textContent).toContain('7 invited');
+    });
+
+    it('fetches and offers the guest list when the meeting shares its attendees', async () => {
+      const page = await renderInvitee(true);
+
+      expect(getMyMeetingRegistrants).toHaveBeenCalled();
+      expect(page.querySelector('[data-testid="view-members-button"]')).not.toBeNull();
+    });
+
+    it('neither fetches nor offers the guest list on a Board meeting that still carries a legacy opt-in', async () => {
+      const page = await renderInvitee(true, { meeting_type: 'Board' });
+
+      expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
+      expect(page.querySelector('[data-testid="view-members-button"]')).toBeNull();
+    });
+  });
+
   it('establishes a fresh baseline instead of treating growth as absorption when a guest is added before the roster has ever loaded', async () => {
     const pendingFirstFetch = new Subject<MeetingRegistrant[]>();
     getMyMeetingRegistrants.mockReturnValueOnce(pendingFirstFetch.asObservable()).mockReturnValueOnce(of(buildRegistrants(10)));
@@ -658,6 +712,23 @@ describe('MeetingJoinComponent', () => {
       expect(getPastMeetingRecording).toHaveBeenCalledTimes(1);
       expect(getPastMeetingParticipants).toHaveBeenCalledTimes(1);
       expect(getPastMeetingTranscript).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows the server attendance counts when the participants are hidden from the viewer', async () => {
+      paramMap$.next(convertToParamMap({ id: '1-1700000000000' }));
+      getPublicPastMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ participant_count: 8, attended_count: 6, individual_registrants_count: 7 }), project: buildProject(), full_access: true })
+      );
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(getPastMeetingParticipants).toHaveBeenCalledTimes(1);
+      const summary = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="attendance-summary"]');
+      expect(summary?.textContent).toContain('6');
+      expect(summary?.textContent).toContain('2');
+      expect(summary?.textContent).toContain('75%');
     });
 
     it('persists the resolved meeting to TransferState on the server once the fetch settles', async () => {

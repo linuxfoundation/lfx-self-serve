@@ -53,6 +53,7 @@ import {
   getMeetingOrganizerDisplayName,
   isCalendarDeadlinePast,
   isMeetingDeclinedForAllOccurrences,
+  isMeetingHiddenAsDeclined,
   isMeetingInviteResponsesEnabled,
   isMeetingOccurrenceCancelled,
   isMeetingOrganizedByViewer,
@@ -1731,6 +1732,23 @@ describe('isMeetingDeclinedForAllOccurrences', () => {
     expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: rsvp({ response_type: 'maybe' }) }))).toBe(false);
     expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: null }))).toBe(false);
     expect(isMeetingDeclinedForAllOccurrences(null)).toBe(false);
+  });
+});
+
+describe('isMeetingHiddenAsDeclined', () => {
+  const declinedAll = { id: 'r1', response_type: 'declined', scope: 'all' } as MeetingRsvp;
+  const ada = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
+
+  it('hides a meeting declined for every date', () => {
+    expect(isMeetingHiddenAsDeclined(buildMeetingFixture({ my_rsvp: declinedAll }), 'ghopper')).toBe(true);
+  });
+
+  it('keeps a declined meeting the viewer organizes', () => {
+    expect(isMeetingHiddenAsDeclined(buildMeetingFixture({ my_rsvp: declinedAll, created_by: ada }), 'alovelace')).toBe(false);
+  });
+
+  it('keeps a meeting that is not declined for every date', () => {
+    expect(isMeetingHiddenAsDeclined(buildMeetingFixture({ my_rsvp: null }), 'ghopper')).toBe(false);
   });
 });
 
