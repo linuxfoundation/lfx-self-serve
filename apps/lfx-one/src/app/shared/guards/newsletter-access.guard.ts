@@ -5,6 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { inject, PLATFORM_ID } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router, UrlTree } from '@angular/router';
+import { GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
 import { catchError, map, Observable, of } from 'rxjs';
 
 import { PersonaService } from '../services/persona.service';
@@ -36,25 +37,31 @@ import { ProjectService } from '../services/project.service';
  * Redirects to the lens-appropriate overview on denial to preserve
  * the active project context without triggering a lens switch.
  *
- * SSR always returns `true` (GH-3274): the route gate runs only in the
- * browser, after hydration. Data access is unaffected — every fetch is
- * enforced server-side regardless (newsletter-service behind FGA, the gw
- * proxy behind `requireGwEmbedAccess`), so the server may paint a page
- * shell for a non-writer but never their data.
+ * SSR behaviour is split by mount (GH-3274). On the Gatewaze embed mounts
+ * (`GW_EMBED_ROUTE_PREFIXES`) the server returns `true` and the gate runs
+ * only in the browser: the embed's sign-in return is a full page load, and
+ * a transient writer-lookup failure during SSR became a real HTTP 302 that
+ * stranded the sign-in return on the overview page. Those mounts render no
+ * data during SSR (the embed mounts browser-only, behind
+ * `requireGwEmbedAccess` server-side), so nothing ships early. Every other
+ * newsletter route keeps full SSR enforcement, because analytics and
+ * recipient engagement DO fetch during SSR and the page policy (writer)
+ * is stricter than some upstream read permissions.
  */
 export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
-  // SSR defers to the browser, mirroring gatewazeEmbedEnabledGuard on the same route family.
-  // The route gate re-runs client-side after hydration; the data boundary never moved (every
-  // fetch is FGA-gated server-side with the user's own token), though the server may paint a
-  // page shell before the browser guard redirects a non-writer. What this
-  // removes is the server turning a transient writer-lookup failure into a real HTTP 302.
-  // That bit the Gatewaze embed's sign-in return (GH-3274): the return is a full page load,
-  // the legacy branch's non-strict lookup collapses any failure to null, and the resulting
-  // server redirect bounced a signed-in user to the overview page — carrying the sign-in
-  // return fragment onto a page that never consumes it, because browsers preserve fragments
-  // across HTTP redirects (unlike in-app Angular redirects).
+  // SSR defers to the browser on the Gatewaze embed mounts ONLY (see the JSDoc's SSR
+  // paragraph for the GH-3274 rationale; gatewazeEmbedEnabledGuard on the same mounts
+  // defers identically). Scoped to the gw mounts because they render no SSR data — the
+  // embed mounts browser-only — while the ordinary newsletter routes do fetch during SSR
+  // (analytics and recipient engagement subscribe in their constructors), so deferring
+  // there would let a token that passes upstream reads ship writer-page data in the SSR
+  // response before the browser guard denies the page.
   if (!isPlatformBrowser(inject(PLATFORM_ID))) {
-    return true;
+    const mountPath = route.routeConfig?.path ?? '';
+    if (GW_EMBED_ROUTE_PREFIXES.some((prefix) => `/${mountPath}` === prefix)) {
+      return true;
+    }
+    // Every other newsletter route falls through to full SSR enforcement below.
   }
 
   const personaService = inject(PersonaService);
@@ -72,9 +79,8 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
   const projectUid = route.paramMap.get('projectUid') ?? route.firstChild?.paramMap.get('projectUid') ?? null;
 
   // Fast path: ED persona. Synchronous (cookie-seeded) on routes without a
-  // :projectUid, so first-paint navigations don't need to await an HTTP
-  // round-trip (browser-only since GH-3274 — SSR returns above before any
-  // branch here runs). Edit/analytics deep links are the exception: they await the
+  // :projectUid, so SSR + first-paint navigations don't need to await an HTTP
+  // round-trip. Edit/analytics deep links are the exception: they await the
   // route-project resolution because the page's reconcileRouteProjectContext
   // reuses this shareReplay-cached lookup — returning before it resolves would
   // let chrome paint the stale cookie-restored context for the request's
@@ -131,9 +137,8 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
         // directly on it; the resolved slug is only needed for the denial redirect.
         if (resolved.writer !== true) {
           // `_notice: 'access'` mirrors writerGuard's denial convention — AppComponent turns it
-          // into the generic "Access Denied" toast. (This denial is browser-only since
-          // GH-3274 — SSR defers above — so the query param is now just the shared
-          // convention, not an SSR-survival trick.) Only the
+          // into the generic "Access Denied" toast (survives the SSR redirect, unlike a
+          // guard-side MessageService.add, which has no DOM on the server). Only the
           // route-project denial carries it; the legacy chain above stays notice-free.
           return router.createUrlTree([overviewPath], { queryParams: { project: resolved.slug, _notice: 'access' } });
         }
