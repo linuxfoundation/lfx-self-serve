@@ -112,12 +112,15 @@ export const MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_SINGULAR_TEMPLATE = "{count}
 /** Copy of the Current Mentees decision dialogs and toasts. */
 export const MENTORSHIP_ADMIN_ACCEPT_DIALOG_HEADER = 'Accept Application';
 export const MENTORSHIP_ADMIN_ACCEPT_ATTENDANCE_LABEL = 'Attendance type';
+export const MENTORSHIP_ADMIN_ACCEPT_ATTENDANCE_REQUIRED_MESSAGE = 'Choose an attendance type to accept the application.';
 export const MENTORSHIP_ADMIN_DECLINE_CONFIRM_MESSAGE = 'Decline this application? The mentee is told it was declined.';
 export const MENTORSHIP_ADMIN_WITHDRAW_CONFIRM_MESSAGE = "Withdraw this application on the mentee's behalf? This can't be undone.";
 export const MENTORSHIP_ADMIN_GRADUATE_CONFIRM_MESSAGE = 'Graduate this mentee?';
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_HEADER = 'Decline by Term';
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_MESSAGE = "Decline every pending application in the term you pick. Accepted mentees aren't affected.";
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_NO_TERMS_MESSAGE = 'There is no open term to decline applications in.';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_TERM_LABEL = 'Term';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_REQUIRED_MESSAGE = 'Choose a term to continue.';
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_CONFIRM_TEMPLATE = 'Decline all pending applications in {term}? This cannot be undone.';
 /** `{count}` is the number of applications the bulk decline reported. */
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_DONE_TEMPLATE = '{count} applications declined';

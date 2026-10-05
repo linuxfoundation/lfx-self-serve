@@ -60,8 +60,8 @@ Three write routes, each behind `blockDuringImpersonation` (a 403 with code `IMP
 | `POST …/decline-pending` | `POST /programs/{programID}/terms/{termID}/applications/bulk-decline`        | 200 `{ declinedCount }` |
 
 - The body of `PATCH …/status` is `{ status, attendanceType? }`. `status` must be `accepted`, `declined` or `graduated`, and an accept needs `attendanceType` (`full_time` or `part_time`); anything else is a 400 before any upstream call. Fields outside the contract are dropped, and `attendance_type` is sent upstream only with an accept. Upstream answers 200 with the application; the BFF discards it and answers 204.
-- Withdraw has no status guard upstream, so the BFF reads the application first and answers 409 (`This application changed. The list has been refreshed.`) unless it is `pending` or `accepted`. Nothing is written in that case.
-- Upstream answers 409 for a transition the application's status does not allow and 422 when an accept targets a term that is no longer open. Both pass through unchanged, and the Current Mentees tab shows a message for each (a 409 also reloads the page).
+- Withdraw has no status guard upstream, so the BFF reads the application first and answers 409 (`This application changed. The list has been refreshed.`) unless it is `pending`, `hold` or `accepted`. Nothing is written in that case.
+- Upstream answers 409 for a transition the application's status does not allow and 422 when an accept targets a term that is no longer open. Both pass through unchanged, and the Current Mentees tab shows a message for each (a 409 also reloads the page); a 422 on any other decision gets the generic failure message.
 - Graduate's task warning is computed in the browser from the row's counts, `max(tasksTotal - tasksSubmitted, 0)`. No task is read for it.
 - Every decision reloads the current page, which also clears the loaded tasks and collapses the rows, and has the program page read its tab counts again without its loading state, so the open tab keeps its filters and page.
 - Logs carry the application, program and term ids, the status and the declined count only, never names or emails.

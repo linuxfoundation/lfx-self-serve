@@ -5,7 +5,12 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
-import { MENTORSHIP_ADMIN_DECLINE_BY_TERM_MESSAGE, MENTORSHIP_ADMIN_DECLINE_BY_TERM_NO_TERMS_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  MENTORSHIP_ADMIN_DECLINE_BY_TERM_MESSAGE,
+  MENTORSHIP_ADMIN_DECLINE_BY_TERM_NO_TERMS_MESSAGE,
+  MENTORSHIP_ADMIN_DECLINE_BY_TERM_REQUIRED_MESSAGE,
+  MENTORSHIP_ADMIN_DECLINE_BY_TERM_TERM_LABEL,
+} from '@lfx-one/shared/constants';
 import { FilterOption, MentorshipAdminTermOption, MentorshipDeclineByTermDialogData } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
@@ -26,6 +31,8 @@ export class DeclineByTermDialogComponent {
   private readonly terms: MentorshipAdminTermOption[] = this.dialogConfig.data?.terms ?? [];
   protected readonly message = MENTORSHIP_ADMIN_DECLINE_BY_TERM_MESSAGE;
   protected readonly noTermsMessage = MENTORSHIP_ADMIN_DECLINE_BY_TERM_NO_TERMS_MESSAGE;
+  protected readonly termLabel = MENTORSHIP_ADMIN_DECLINE_BY_TERM_TERM_LABEL;
+  protected readonly requiredMessage = MENTORSHIP_ADMIN_DECLINE_BY_TERM_REQUIRED_MESSAGE;
   protected readonly termOptions: FilterOption<string>[] = this.terms.map((term) => ({ label: term.name, value: term.id }));
   protected readonly hasTerms = computed(() => this.termOptions.length > 0);
 

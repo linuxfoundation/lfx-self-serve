@@ -77,6 +77,8 @@ export class ProgramDetailComponent {
   protected readonly noteDrafts = signal<Record<string, string>>({});
 
   private readonly reloadCount = signal(0);
+  /** Bumped by every page read and silent refresh; only the latest one may write the page. */
+  private pageRequest = 0;
 
   protected readonly programId = toSignal(this.route.paramMap.pipe(map((params) => params.get('programId') ?? '')), { initialValue: '' });
   protected readonly terms = computed(() => this.page()?.terms ?? []);
@@ -101,16 +103,20 @@ export class ProgramDetailComponent {
 
   /**
    * Reads the header, counts and terms again without the loading state, so the open tab keeps its page, filters and
-   * toasts. A failed read keeps the numbers on screen; the next decision or Retry reads them again.
+   * toasts. A failed read keeps the numbers on screen; the next decision or Retry reads them again. An answer is
+   * dropped once a later refresh, a Retry or a route change to another program has started its own read.
    */
   protected refreshCounts(): void {
     const programId = this.programId();
     if (!programId) return;
+    const request = ++this.pageRequest;
     this.mentorshipAdminService
       .getProgram(programId)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (page) => this.page.set(page),
+        next: (page) => {
+          if (request === this.pageRequest && programId === this.programId()) this.page.set(page);
+        },
         error: () => undefined,
       });
   }
@@ -146,6 +152,7 @@ export class ProgramDetailComponent {
     toObservable(query)
       .pipe(
         tap(() => {
+          this.pageRequest++;
           this.isLoading.set(true);
           this.pageError.set(null);
         }),

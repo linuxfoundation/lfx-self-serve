@@ -43,10 +43,15 @@ describe('AcceptApplicationDialogComponent', () => {
   });
 
   it('stays open and closes with nothing until an attendance type is chosen', () => {
-    fixture.componentInstance['onAccept']();
+    const error = (): Element | null => element().querySelector('[data-testid="mentorship-admin-accept-attendance-error"]');
+    expect(error()).toBeNull();
+
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-admin-accept-confirm"] button')?.click();
+    fixture.detectChanges();
 
     expect(close).not.toHaveBeenCalled();
     expect(fixture.componentInstance['form'].controls.attendanceType.touched).toBe(true);
+    expect(error()?.textContent?.trim()).toBe('Choose an attendance type to accept the application.');
   });
 
   it('closes with the chosen attendance type', () => {

@@ -5,7 +5,12 @@ import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
-import { MENTORSHIP_ADMIN_ACCEPT_ATTENDANCE_LABEL, MENTORSHIP_ATTENDANCE_TYPE_LABELS, MENTORSHIP_ATTENDANCE_TYPES } from '@lfx-one/shared/constants';
+import {
+  MENTORSHIP_ADMIN_ACCEPT_ATTENDANCE_LABEL,
+  MENTORSHIP_ADMIN_ACCEPT_ATTENDANCE_REQUIRED_MESSAGE,
+  MENTORSHIP_ATTENDANCE_TYPE_LABELS,
+  MENTORSHIP_ATTENDANCE_TYPES,
+} from '@lfx-one/shared/constants';
 import { FilterOption, MentorshipAcceptDialogData, MentorshipAttendanceType } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
@@ -25,6 +30,7 @@ export class AcceptApplicationDialogComponent {
 
   protected readonly data: MentorshipAcceptDialogData = this.dialogConfig.data ?? { personName: '' };
   protected readonly attendanceLabel = MENTORSHIP_ADMIN_ACCEPT_ATTENDANCE_LABEL;
+  protected readonly requiredMessage = MENTORSHIP_ADMIN_ACCEPT_ATTENDANCE_REQUIRED_MESSAGE;
   protected readonly attendanceOptions: FilterOption<MentorshipAttendanceType>[] = MENTORSHIP_ATTENDANCE_TYPES.map((type) => ({
     label: MENTORSHIP_ATTENDANCE_TYPE_LABELS[type],
     value: type,

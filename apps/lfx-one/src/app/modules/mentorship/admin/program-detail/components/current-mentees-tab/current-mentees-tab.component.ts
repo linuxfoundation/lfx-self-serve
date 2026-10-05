@@ -169,11 +169,14 @@ export class CurrentMenteesTabComponent {
   private readonly reloadCount = signal(0);
   /** True while a decision write is in flight; Decline by Term is disabled and a second decision is refused meanwhile. */
   protected readonly decisionInFlight = signal(false);
+  /** Set when the tab is destroyed, so a decision that lands afterwards only shows its toast. */
+  private destroyed = false;
 
   protected readonly termOptions = this.initTermOptions();
   protected readonly rows = this.initRows();
 
   public constructor() {
+    this.destroyRef.onDestroy(() => (this.destroyed = true));
     this.initFilters();
     this.initPageReads();
   }
@@ -339,9 +342,10 @@ export class CurrentMenteesTabComponent {
     });
   }
 
-  /** Runs one decision write; on success reloads the page and has the parent refresh the counts. */
+  /** Runs one decision write; on success reloads the page and has the parent refresh the counts. Only an accept reads a 422 as a closed term. */
   private decide(write: Observable<void>, outcome: keyof typeof MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES): void {
-    this.runWrite(write, () => this.showSuccess(MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES[outcome]));
+    const termClosedMessage = outcome === 'accepted' ? MENTORSHIP_ADMIN_TERM_CLOSED_ACCEPT_MESSAGE : undefined;
+    this.runWrite(write, () => this.showSuccess(MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES[outcome]), termClosedMessage);
   }
 
   private declinePendingForTerm(termId: string): void {
@@ -354,36 +358,45 @@ export class CurrentMenteesTabComponent {
     );
   }
 
-  private runWrite<T>(write: Observable<T>, onDone: (result: T) => void): void {
+  /**
+   * Sends one write and is never cancelled by the tab going away (no `takeUntilDestroyed`): a tab switch or an Other
+   * Active Application link destroys the tab mid-request, and aborting it would leave the change unknown and untoasted.
+   * A write that lands after the tab is gone shows its toast only; the next tab render reads the page afresh.
+   */
+  private runWrite<T>(write: Observable<T>, onDone: (result: T) => void, termClosedMessage?: string): void {
     if (this.decisionInFlight()) {
       this.messageService.add({ severity: 'info', summary: 'Please wait', detail: MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE, life: 3000 });
       return;
     }
     this.decisionInFlight.set(true);
-    write.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe({
+    write.pipe(take(1)).subscribe({
       next: (result) => {
         this.decisionInFlight.set(false);
         onDone(result);
+        if (this.destroyed) return;
         this.reloadCount.update((count) => count + 1);
         this.countsChanged.emit();
       },
       error: (err: unknown) => {
         this.decisionInFlight.set(false);
-        this.onDecisionError(err);
+        this.onDecisionError(err, termClosedMessage);
       },
     });
   }
 
-  /** 409 means the application moved on, so the page reloads; 422 means the term closed; an impersonation 403 shows the server's text. */
-  private onDecisionError(err: unknown): void {
+  /**
+   * 409 means the application moved on, so the page reloads; a 422 on an accept means the term closed (any other
+   * 422 gets the generic copy); an impersonation 403 shows the server's text.
+   */
+  private onDecisionError(err: unknown, termClosedMessage?: string): void {
     const status = err instanceof HttpErrorResponse ? err.status : 0;
     if (status === 409) {
-      this.reloadCount.update((count) => count + 1);
+      if (!this.destroyed) this.reloadCount.update((count) => count + 1);
       this.showFailure(MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE);
       return;
     }
-    if (status === 422) {
-      this.showFailure(MENTORSHIP_ADMIN_TERM_CLOSED_ACCEPT_MESSAGE);
+    if (status === 422 && termClosedMessage) {
+      this.showFailure(termClosedMessage);
       return;
     }
     if (status === 403 && (err as HttpErrorResponse).error?.code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE) {

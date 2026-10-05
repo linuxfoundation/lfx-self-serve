@@ -11,7 +11,7 @@ import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
@@ -194,6 +194,26 @@ describe('ProgramDetailComponent', () => {
 
       expect(tabText('current-mentees')).toBe('Current Mentees 2');
       expect(fixture.componentInstance['pageError']()).toBeNull();
+    });
+
+    it('drops a refresh that answers after a newer one started', () => {
+      const older = new Subject<MentorshipAdminProgramPage>();
+      const newer = new Subject<MentorshipAdminProgramPage>();
+      getProgram.mockReturnValueOnce(older).mockReturnValueOnce(newer);
+      const stale = programPage();
+      stale.tabCounts = { ...stale.tabCounts, currentMentees: 5 };
+      const fresh = programPage();
+      fresh.tabCounts = { ...fresh.tabCounts, currentMentees: 1 };
+
+      fixture.componentInstance['refreshCounts']();
+      fixture.componentInstance['refreshCounts']();
+      newer.next(fresh);
+      newer.complete();
+      older.next(stale);
+      older.complete();
+      settle();
+
+      expect(tabText('current-mentees')).toBe('Current Mentees 1');
     });
   });
 

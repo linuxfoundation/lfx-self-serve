@@ -589,7 +589,7 @@ describe('MentorshipAdminService application decisions', () => {
     await expect(service.updateApplicationStatus(buildReq(), APPLICATION_ID, { status: 'graduated' })).rejects.toMatchObject({ statusCode: 422 });
   });
 
-  it.each(['pending', 'accepted'])('withdraws a %s application on the mentee behalf', async (status) => {
+  it.each(['pending', 'hold', 'accepted'])('withdraws a %s application on the mentee behalf', async (status) => {
     const spy = stubProgramReads({ [APPLICATION_PATH]: { id: APPLICATION_ID, status }, [`${APPLICATION_PATH}/withdraw-for-mentee`]: {} });
 
     await service.withdrawApplication(buildReq(), APPLICATION_ID);
@@ -600,7 +600,7 @@ describe('MentorshipAdminService application decisions', () => {
     ]);
   });
 
-  it.each(['declined', 'hold', 'withdrawn', 'graduated'])('answers 409 without writing when the application is %s', async (status) => {
+  it.each(['declined', 'withdrawn', 'graduated'])('answers 409 without writing when the application is %s', async (status) => {
     const spy = stubProgramReads({ [APPLICATION_PATH]: { id: APPLICATION_ID, status } });
 
     await expect(service.withdrawApplication(buildReq(), APPLICATION_ID)).rejects.toMatchObject({

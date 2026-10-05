@@ -49,11 +49,20 @@ describe('DeclineByTermDialogComponent', () => {
       expect(byTestId('mentorship-admin-decline-by-term-empty')).toBeNull();
     });
 
+    it('ties the term label to its select', () => {
+      expect(element().querySelector('label[for="decline-by-term-term"]')?.textContent).toContain('Term');
+      expect(element().querySelector('#decline-by-term-term')).not.toBeNull();
+    });
+
     it('stays open until a term is picked', () => {
-      fixture.componentInstance['onContinue']();
+      expect(byTestId('mentorship-admin-decline-by-term-error')).toBeNull();
+
+      byTestId('mentorship-admin-decline-by-term-continue')?.querySelector<HTMLButtonElement>('button')?.click();
+      fixture.detectChanges();
 
       expect(close).not.toHaveBeenCalled();
       expect(fixture.componentInstance['form'].controls.term.touched).toBe(true);
+      expect(byTestId('mentorship-admin-decline-by-term-error')?.textContent?.trim()).toBe('Choose a term to continue.');
     });
 
     it('closes with the picked term', () => {

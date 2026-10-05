@@ -695,6 +695,48 @@ describe('CurrentMenteesTabComponent', () => {
       expect(declineByTerm()?.disabled).toBe(false);
     });
 
+    it('shows the generic failure, not the term-closed copy, on a 422 for a decision other than accept', () => {
+      updateApplicationStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422 })));
+      const toast = toasts();
+      const confirm = confirmSpy();
+
+      confirmAction('app_1', 'decline', confirm);
+
+      expect(detailOf(toast)).toBe("The change couldn't be saved. Please try again.");
+    });
+
+    it('keeps a confirmed write alive when the tab is destroyed, toasting it without reloading', () => {
+      const pending = new Subject<void>();
+      // Torn down before the answer arrives means the request was cancelled.
+      let answered = false;
+      let cancelled = false;
+      updateApplicationStatus.mockReturnValue(
+        new Observable<void>((subscriber) => {
+          const subscription = pending.subscribe(subscriber);
+          return () => {
+            cancelled = !answered;
+            subscription.unsubscribe();
+          };
+        })
+      );
+      const toast = toasts();
+      const confirm = confirmSpy();
+      const emitted = vi.fn();
+      fixture.componentInstance.countsChanged.subscribe(emitted);
+
+      confirmAction('app_1', 'decline', confirm);
+      const reads = getProgramMentees.mock.calls.length;
+      fixture.destroy();
+      answered = true;
+      pending.next();
+      pending.complete();
+
+      expect(cancelled).toBe(false);
+      expect(detailOf(toast)).toBe('Application declined');
+      expect(emitted).not.toHaveBeenCalled();
+      expect(getProgramMentees.mock.calls.length).toBe(reads);
+    });
+
     it('offers only the open terms and does nothing when the term dialog is dismissed', () => {
       const confirm = confirmSpy();
 

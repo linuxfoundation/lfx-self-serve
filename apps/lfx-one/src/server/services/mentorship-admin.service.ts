@@ -41,6 +41,7 @@ import {
   MENTORSHIP_ADMIN_APPLICATIONS_MAX_LIMIT,
   MENTORSHIP_ADMIN_TASKS_MAX_LIMIT,
   MENTORSHIP_ADMIN_TERMS_MAX_LIMIT,
+  MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES,
   MENTORSHIP_APPLICATIONS_PATH,
   MENTORSHIP_ME_PROGRAMS_PATH,
   MENTORSHIP_PROGRAMS_PATH,
@@ -332,14 +333,14 @@ export class MentorshipAdminService {
 
   /**
    * Withdraws a mentee's application on their behalf. Upstream's withdraw-for-mentee has no status guard, so the
-   * application is read first and anything other than `pending` or `accepted` is a 409 with no write.
+   * application is read first and anything other than `pending`, `hold` or `accepted` is a 409 with no write.
    */
   public async withdrawApplication(req: Request, applicationId: string): Promise<void> {
     const path = `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}`;
     logger.debug(req, 'mentorship_admin_withdraw_application', 'Checking application status before withdrawing', { applicationId });
 
     const application = await proxyMentorshipRequest<MentorshipUpstreamApplication>(this.microserviceProxy, req, path);
-    if (application.status !== 'pending' && application.status !== 'accepted') {
+    if (!MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES.includes(application.status)) {
       logger.warning(req, 'mentorship_admin_withdraw_application', 'Application is not withdrawable, skipping the write', {
         applicationId,
         status: application.status,
