@@ -6,14 +6,16 @@ import { RouterLink } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { TagComponent } from '@components/tag/tag.component';
+import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE, JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
 import { MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity, resolveTypeDisplay } from '@lfx-one/shared/utils';
+import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity, resolveJoinModeSeverity, resolveTypeDisplay } from '@lfx-one/shared/utils';
+import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-my-groups-card-grid',
-  imports: [BadgeComponent, ButtonComponent, EmptyStateComponent, RouterLink, TooltipModule],
+  imports: [BadgeComponent, ButtonComponent, EmptyStateComponent, RouterLink, TagComponent, JoinModeLabelPipe, TooltipModule],
   templateUrl: './my-groups-card-grid.component.html',
 })
 export class MyGroupsCardGridComponent {
@@ -66,6 +68,7 @@ export class MyGroupsCardGridComponent {
           `updated ${lastActivityLabel}`,
         ];
         if (!committee.public) parts.push('private');
+        const effectiveJoinMode = committee.join_mode ?? 'invite_only';
         return {
           committee,
           roleBadgeSeverity: resolveGroupsCardRoleSeverity(committee.my_role),
@@ -76,6 +79,8 @@ export class MyGroupsCardGridComponent {
           viewQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
           ariaLabel: parts.join(', '),
           typeDisplay,
+          joinModeSeverity: resolveJoinModeSeverity(effectiveJoinMode),
+          joinModeTooltip: JOIN_MODE_TOOLTIPS[effectiveJoinMode],
         };
       })
     );

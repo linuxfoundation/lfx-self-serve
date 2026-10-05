@@ -57,7 +57,9 @@
             class="inline-flex max-w-full items-center gap-1 self-start text-xs font-medium px-2 py-0.5 rounded-full"
             [class]="item.committee.classDisplay.bgColor + ' ' + item.committee.classDisplay.color"
             [pTooltip]="item.typeDisplay"
-            tooltipPosition="top">
+            tooltipPosition="top"
+            tabindex="0"
+            [attr.aria-label]="item.typeDisplay">
             <i [class]="item.committee.classDisplay.icon + ' text-[10px] shrink-0'" aria-hidden="true"></i>
             <span class="truncate">{{ item.typeDisplay }}</span>
           </span>
@@ -69,6 +71,11 @@
 
         <div class="flex flex-wrap items-center gap-3 mt-auto pt-3 border-t border-gray-100">
           <lfx-badge [value]="item.committee.my_role || 'Member'" [severity]="item.roleBadgeSeverity"></lfx-badge>
+          <lfx-tag
+            [value]="item.committee.join_mode ?? 'invite_only' | joinModeLabel"
+            [severity]="item.joinModeSeverity"
+            [tooltip]="item.joinModeTooltip"
+            [attr.data-testid]="'join-mode-tag-' + item.committee.uid"></lfx-tag>
 
           <span class="inline-flex items-center gap-1 text-xs text-gray-500">
             <i class="fa-light fa-users" aria-hidden="true"></i>

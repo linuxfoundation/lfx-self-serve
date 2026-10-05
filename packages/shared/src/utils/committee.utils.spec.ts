@@ -28,6 +28,7 @@ import {
   resolveCommitteeMemberPermission,
   resolveGroupsCardRoleSeverity,
   resolveJoinModeSeverity,
+  resolveTypeDisplay,
 } from './committee.utils';
 
 /** Minimal committee builder — only the fields the resolver reads. */
@@ -593,5 +594,31 @@ describe('buildEngagementStatCards', () => {
     expect(cards[0]).toMatchObject({ label: 'Active Members', value: 12 });
     expect(cards[0].subLine).toMatch(/^Updated /);
     expect(cards[0].subLine).not.toContain('across');
+  });
+});
+
+describe('resolveTypeDisplay', () => {
+  it('returns "SIG | {category}" for a SIG with a category', () => {
+    const result = resolveTypeDisplay({
+      behavioralClass: 'special-interest-group',
+      category: 'Marketing Mailing List',
+      classDisplay: { label: 'Special Interest Group' },
+    });
+    expect(result).toBe('SIG | Marketing Mailing List');
+  });
+
+  it('falls back to the class label for a SIG without a category', () => {
+    const result = resolveTypeDisplay({ behavioralClass: 'special-interest-group', classDisplay: { label: 'Special Interest Group' } });
+    expect(result).toBe('Special Interest Group');
+  });
+
+  it('returns the class label for a non-SIG behavioral class', () => {
+    const result = resolveTypeDisplay({ behavioralClass: 'working-group', category: 'Anything', classDisplay: { label: 'Working Groups' } });
+    expect(result).toBe('Working Groups');
+  });
+
+  it('returns "Other" when classDisplay is absent', () => {
+    const result = resolveTypeDisplay({ behavioralClass: 'working-group', category: 'Anything' });
+    expect(result).toBe('Other');
   });
 });

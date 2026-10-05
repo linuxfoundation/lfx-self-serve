@@ -613,6 +613,10 @@ export interface MyGroupsCardVm {
    * only the behavioral-class label (e.g. "Working Groups", "Boards").
    */
   typeDisplay: string;
+  /** Pre-computed tag severity for the join-mode chip (normalized: absent join_mode → invite_only). */
+  joinModeSeverity: TagSeverity;
+  /** Pre-computed tooltip text for the join-mode chip (normalized: absent join_mode → invite_only). */
+  joinModeTooltip: string;
 }
 
 /**
