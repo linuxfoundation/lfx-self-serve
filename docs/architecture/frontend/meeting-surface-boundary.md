@@ -112,9 +112,16 @@ compute it:
   `meeting_and_occurrence_id ?? uid`, behind `GET /api/past-meetings/:uid`.
 
 The relation is the same; the object id is not. The N-03 guard MUST use the detail path, so the
-decision is made for the exact occurrence being opened; the card is only a hint. Per #2252 and #2234 it already covers organizers,
-project writers and project EDs — the Manage role. There is no second role model: this page does not
-read persona, lens or writer-guard state to decide.
+decision is made for the exact occurrence being opened; the card is only a hint.
+
+**"Manage role" here means the meeting's organizers, and nobody else.** #2252 was written assuming
+PR #2235 would broaden `meeting.organizer` to project writers and project EDs. #2235 was closed
+unmerged, and the closing comment on #2234 keeps attendance management organizer-only. Both paths
+above request `v1_past_meeting#organizer` with no writer or ED check. The comment in
+`MeetingCardComponent` that says otherwise is stale. If the Permissions owner later wants project
+Manage access to reach `/details`, that is a change to this record and to the BFF check, not
+something N-03 may assume. There is no second role model: this page does not read persona, lens or
+writer-guard state to decide.
 
 **Where the decision lives:**
 
@@ -130,12 +137,13 @@ read persona, lens or writer-guard state to decide.
 
 ### Who sees what on `/details`
 
-| Viewer                                   | Outcome                                                                                                                                           |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Anonymous                                | Unchanged: Express classifies the path as `auth: required` and redirects to `/login?returnTo=…`; after sign-in they are a signed-in viewer below. |
-| Signed in, `organizer` true (Manage)     | The admin page.                                                                                                                                   |
-| Signed in, `organizer` false (View role) | **Redirect to `/meetings/:id`**, the public page, which applies its own `full_access` tiering. Not a 404 and not an empty page.                   |
-| Meeting not found or lookup fails        | `/meetings/not-found`, matching the public page.                                                                                                  |
+| Viewer                                           | Outcome                                                                                                                                                |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Anonymous                                        | Unchanged: Express classifies the path as `auth: required` and redirects to `/login?returnTo=…`; after sign-in they are a signed-in viewer below.      |
+| Signed in, `organizer` true (Manage)             | The admin page.                                                                                                                                        |
+| Signed in, `organizer` false (View role)         | **Redirect to `/meetings/:id`**, the public page, which applies its own `full_access` tiering. Not a 404 and not an empty page.                        |
+| Meeting not found (400 / 403 / 404)              | `/meetings/not-found`, matching the public page.                                                                                                       |
+| Lookup fails for any other reason (network, 5xx) | A load-error state with retry, matching the public page's `meetingLoadFailed`. Never the admin page: the route stays closed until the lookup succeeds. |
 
 Today a View-role viewer who reaches `/details` sees the whole participants table (name, email,
 organization, job title, committee voting status, attendance, invitation) whenever the upstream read allows it, with none of the
@@ -158,15 +166,15 @@ that only the client enforces.
 
 ## Mapping to issues
 
-| Item                                                                                                                                   | Issue                                                                        |
-| -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Fold the roster (§ Public roster fields), attendance bar and filters into public; public → admin link; one source of truth for figures | E4-05 [#3259](https://github.com/linuxfoundation/lfx-self-serve/issues/3259) |
-| Recording and transcript on public                                                                                                     | E4-01 [#3255](https://github.com/linuxfoundation/lfx-self-serve/issues/3255) |
-| AI summary inline on public                                                                                                            | E4-03 [#3257](https://github.com/linuxfoundation/lfx-self-serve/issues/3257) |
-| Public artifact routes (BFF)                                                                                                           | E4-04 [#3258](https://github.com/linuxfoundation/lfx-self-serve/issues/3258) |
-| Identity tiers, public vs admin depth                                                                                                  | N-02 [#3264](https://github.com/linuxfoundation/lfx-self-serve/issues/3264)  |
-| Guard on `/details` and the outcomes above                                                                                             | N-03 [#3265](https://github.com/linuxfoundation/lfx-self-serve/issues/3265)  |
-| Attendance reconciliation, participant writes, future roster administration                                                            | Left on the admin surface. No issue moves them.                              |
+| Item                                                                                                                                                                                                 | Issue                                                                        |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Fold the roster (§ Public roster fields), attendance bar and filters into public; public → admin link; one source of truth for figures                                                               | E4-05 [#3259](https://github.com/linuxfoundation/lfx-self-serve/issues/3259) |
+| Recording and transcript on public                                                                                                                                                                   | E4-01 [#3255](https://github.com/linuxfoundation/lfx-self-serve/issues/3255) |
+| AI summary inline on public                                                                                                                                                                          | E4-03 [#3257](https://github.com/linuxfoundation/lfx-self-serve/issues/3257) |
+| Public artifact routes (BFF). Its `GET /public/api/meetings/past/:id/participants` MUST require a session and return only the § Public roster fields, enforced in the response, not hidden in the UI | E4-04 [#3258](https://github.com/linuxfoundation/lfx-self-serve/issues/3258) |
+| Identity tiers, public vs admin depth                                                                                                                                                                | N-02 [#3264](https://github.com/linuxfoundation/lfx-self-serve/issues/3264)  |
+| Guard on `/details` and the outcomes above                                                                                                                                                           | N-03 [#3265](https://github.com/linuxfoundation/lfx-self-serve/issues/3265)  |
+| Attendance reconciliation, participant writes, future roster administration                                                                                                                          | Left on the admin surface. No issue moves them.                              |
 
 ## Related
 
