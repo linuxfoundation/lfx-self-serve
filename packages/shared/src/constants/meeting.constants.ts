@@ -994,7 +994,9 @@ export const NOTES_ATTACHMENT_CATEGORY: AttachmentCategory = 'Notes';
  * Display label for each meeting status on the meeting details V2 page
  * @description Shared by the status pill (E1-05) and the sticky identity bar's subtitle (E1-02), so
  * the two never disagree about what a meeting is called. Resolve the status with
- * `resolveMeetingStatus`.
+ * `resolveMeetingStatus`. `live` is the join window (`canJoinMeeting`), which opens a few minutes
+ * before the scheduled start and closes after a buffer past the end, so "In progress" (the issue's
+ * copy) also covers those edges.
  */
 export const MEETING_STATUS_LABELS = {
   upcoming: 'Upcoming',

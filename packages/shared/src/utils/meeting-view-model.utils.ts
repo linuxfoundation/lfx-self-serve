@@ -27,7 +27,7 @@ import { canJoinMeeting, hasMeetingEnded } from './meeting.utils';
  * what lets the whole cross product of (time x viewer x privacy x access x RSVP tracking) be
  * asserted in a table rather than discovered in a template.
  *
- * Nothing consumes these yet; the V2 components land on top of them.
+ * The V2 page's sections consume these; they never re-derive the rules in a template.
  */
 
 /**

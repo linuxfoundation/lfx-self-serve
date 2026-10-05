@@ -63,14 +63,14 @@ export class MeetingHeaderComponent {
     '!gap-[6px] !border-[var(--md-border)] !bg-[var(--md-surface-card)] !px-[11px] !py-[4px] !text-[12.5px] !font-semibold !leading-[15px] !text-[var(--md-text-body)]';
 
   /** The prototype's pill colours per status, all V2 tokens; RSVP answers swap the dot for a glyph. */
-  protected readonly statusClasses: Record<MeetingStatusKind, { pill: string; dot: string; glyph?: string }> = {
+  protected readonly statusClasses: Record<MeetingStatusKind, { pill: string; dot?: string; glyph?: string }> = {
     upcoming: { pill: 'bg-[var(--md-accent-bg)] text-[var(--md-accent-ink)]', dot: 'bg-[var(--md-accent)]' },
     live: { pill: 'bg-[var(--md-status-live-bg)] text-[var(--md-status-live)]', dot: 'bg-[var(--md-status-live)]' },
     ended: { pill: 'bg-[var(--md-border)] text-[var(--md-text-body)]', dot: 'bg-[var(--md-glyph-faint)]' },
     'awaiting-rsvp': { pill: 'bg-[var(--md-status-warn-bg)] text-[var(--md-status-warn)]', dot: 'bg-[var(--md-status-warn)]' },
-    going: { pill: 'bg-[var(--md-status-good-bg)] text-[var(--md-status-good)]', dot: '', glyph: 'fa-solid fa-check' },
-    maybe: { pill: 'bg-[var(--md-status-warn-bg)] text-[var(--md-status-warn)]', dot: '', glyph: 'fa-solid fa-question' },
-    'cant-attend': { pill: 'bg-[var(--md-status-live-bg)] text-[var(--md-status-live)]', dot: '', glyph: 'fa-solid fa-xmark' },
+    going: { pill: 'bg-[var(--md-status-good-bg)] text-[var(--md-status-good)]', glyph: 'fa-solid fa-check' },
+    maybe: { pill: 'bg-[var(--md-status-warn-bg)] text-[var(--md-status-warn)]', glyph: 'fa-solid fa-question' },
+    'cant-attend': { pill: 'bg-[var(--md-status-live-bg)] text-[var(--md-status-live)]', glyph: 'fa-solid fa-xmark' },
   };
 
   protected readonly meeting: Signal<(Meeting & { project: PublicMeetingProject }) | undefined> = this.state.meeting;

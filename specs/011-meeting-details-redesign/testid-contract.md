@@ -56,7 +56,7 @@ own namespace; the two never share a value.
 | `meeting-header-badge-youtube`          | YouTube upload enabled                                                                                            |
 | `meeting-header-badge-ai-summary`       | AI summary enabled                                                                                                |
 | `meeting-header-copy-link`              | Copy meeting link                                                                                                 |
-| `meeting-status-pill`                   | Status pill (upcoming / live / ended)                                                                             |
+| `meeting-status-pill`                   | Status pill: time state, or the viewer's RSVP (see `data-status`)                                                 |
 | `meeting-privacy-chip`                  | The single privacy chip (see below)                                                                               |
 | `meeting-time-banner`                   | The date/time banner                                                                                              |
 | `meeting-action-slot`                   | The action slot inside the rail (see below)                                                                       |
@@ -116,6 +116,10 @@ meeting with RSVP tracking on: a registrant, **or an organizer who is also invit
 resolves that organizer as the `organizer` role, and the action slot still returns `rsvp` for them,
 as V1 lets an invited organizer set and see their own RSVP. Key the attribute on `invited`, not on
 the role. Everywhere else it is absent, for the same reason `data-attendance` is (see People).
+
+Until E2-04 (#2880) loads the viewer's own RSVP (the public payload does not carry it), the
+attribute is absent for that viewer too, and `data-status` shows the time state. Absent therefore
+never means `none`: a test asserts `data-my-rsvp` only once the RSVP has loaded.
 
 ### `meeting-privacy-chip[data-visibility]` and `[data-restricted]`
 

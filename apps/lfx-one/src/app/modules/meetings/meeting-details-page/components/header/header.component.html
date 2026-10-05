@@ -32,8 +32,9 @@
          the row on one line; it wraps here, so a narrow screen never scrolls sideways. -->
       <div class="flex flex-wrap items-center gap-[8px]" data-testid="meeting-header-badges">
         @if (status(); as status) {
-          <!-- A filled pill rather than an lfx-tag: the prototype gives it a tinted fill and a status dot or
-             RSVP glyph, which the outlined chip wrapper has no variant for. -->
+          <!-- A span rather than lfx-tag: lfx-tag's dot is always the text colour (bg-current), but the
+             prototype's dot differs from its text (Upcoming: accent dot, accent-ink text; Ended: faint dot,
+             body text). Prototype geometry in exact px (the app's 14px root would shrink rem utilities). -->
           <span
             class="inline-flex flex-none items-center gap-[7px] whitespace-nowrap rounded-full px-[12px] py-[5px] text-[12.5px] font-semibold leading-[15px]"
             [class]="statusClasses[status].pill"
