@@ -24,8 +24,10 @@ The program detail has four tabs: Current Mentees, Past Mentees, Mentors and Ter
 
 - `search` is trimmed, cut to 100 characters, and its `\`, `%` and `_` are escaped. `status` is the chosen status with `-` written as `_`. `limit` is at most 50 here and `offset` is passed through. No `limit` above the upstream maximum is ever sent.
 - Upstream searches the program and project names, filters by status, sorts by name then id, pages, and returns each row with its latest open term (else the latest closed one), its counts and `admin_status`. The BFF maps each row and returns upstream's `meta.total`.
-- A not-provisioned error gives an empty page. Any other error propagates, and the page shows its failed-load state with Retry.
-- Upstream lists only direct `program_admin` memberships. Admins who only inherit access from the project are not listed yet, but can still open a program by URL.
+- A not-provisioned error gives an empty page and a warn log with no user identifiers. Any other error propagates, and the page shows its failed-load state with Retry.
+- Upstream lists only direct `program_admin` memberships. Admins who only inherit access from the project are not listed yet.
+- The list now carries upstream program ids, while the program detail still resolves mock ids only, so opening a listed program shows the not-found state until the detail moves to the mentorship service (linuxfoundation/lfx-mentorship#233).
+- The Enroll form's "import from program" picker keeps only programs that have import details (`isMentorshipProgramImportable`). Those details are still keyed by mock ids, so the picker offers only "None" until import moves to the mentorship service.
 
 ### Status mapping
 

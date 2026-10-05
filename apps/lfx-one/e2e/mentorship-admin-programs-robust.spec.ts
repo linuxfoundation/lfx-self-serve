@@ -102,7 +102,7 @@ test.describe('Admin programs list — empty', () => {
     await openMentorPage(page, ADMIN_URL);
 
     await expect(page.getByTestId('mentorship-programs-empty-state')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
-    await expect(page.locator('[data-testid^="mentorship-program-card-"]')).toHaveCount(0);
+    await expect(page.getByTestId('mentorship-programs-cards')).toHaveCount(0);
     await expect(page.getByTestId('mentorship-admin-programs-load-error')).toHaveCount(0);
   });
 });

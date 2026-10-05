@@ -63,6 +63,7 @@ export class MentorshipAdminService {
       );
     } catch (error) {
       if (isMentorshipNotProvisionedError(error)) {
+        logger.warning(req, 'mentorship_admin_get_programs', 'Caller has no mentorship record; returning an empty program list', {});
         return { data: [], total: 0 };
       }
       throw error;

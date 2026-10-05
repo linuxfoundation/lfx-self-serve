@@ -107,7 +107,6 @@ export class AdminComponent {
       tap((filters) => {
         this.programsOffset.set(0);
         this.filterLoading.set(true);
-        this.programsLoadError.set(false);
         this.appliedSearch.set(filters.search);
         this.appliedStatus.set(filters.status);
       }),
@@ -120,7 +119,11 @@ export class AdminComponent {
             limit: MENTORSHIP_PROGRAM_PAGE_SIZE,
           })
           .pipe(
-            map((response) => ({ ...response, reset: true as const, failed: false })),
+            // Clear the error only once a read succeeds, so a retry in flight keeps the error block (not the empty state).
+            map((response) => {
+              this.programsLoadError.set(false);
+              return { ...response, reset: true as const, failed: false };
+            }),
             catchError(() => {
               this.programsLoadError.set(true);
               return of({ ...EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, reset: true as const, failed: true });

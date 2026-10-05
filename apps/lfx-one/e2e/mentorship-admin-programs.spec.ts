@@ -78,7 +78,7 @@ test.describe('Admin programs list — real programs', () => {
   test('lists one card per program the BFF returns', async ({ page }) => {
     await expect(page.getByTestId(`mentorship-program-card-${OPEN_ID}`)).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
 
-    await expect(page.locator('[data-testid^="mentorship-program-card-"]')).toHaveCount(4);
+    await expect(page.getByTestId('mentorship-programs-cards')).toHaveCount(4);
     await expect(page.getByTestId(`mentorship-program-card-${OPEN_ID}`)).toContainText('Test Program Open');
     await expect(page.getByTestId(`mentorship-program-card-${OPEN_ID}`)).toContainText('Test Project · Test Term Open');
   });
@@ -86,10 +86,11 @@ test.describe('Admin programs list — real programs', () => {
   test('shows each program status badge, and no dangling separator when the term is empty', async ({ page }) => {
     await expect(page.getByTestId(`mentorship-program-card-${PENDING_ID}`)).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
 
-    await expect(page.getByTestId(`mentorship-program-card-${OPEN_ID}`)).toContainText('Open');
-    await expect(page.getByTestId(`mentorship-program-card-${PENDING_ID}`)).toContainText('Pending Review');
-    await expect(page.getByTestId(`mentorship-program-card-${REJECTED_ID}`)).toContainText('Rejected');
-    await expect(page.getByTestId(`mentorship-program-card-${HIDDEN_ID}`)).toContainText('Hidden');
+    const badge = (id: string) => page.getByTestId(`mentorship-program-card-${id}`).getByTestId('mentorship-program-card-status');
+    await expect(badge(OPEN_ID)).toHaveText('Open');
+    await expect(badge(PENDING_ID)).toHaveText('Pending Review');
+    await expect(badge(REJECTED_ID)).toHaveText('Rejected');
+    await expect(badge(HIDDEN_ID)).toHaveText('Hidden');
     await expect(page.getByTestId(`mentorship-program-card-${PENDING_ID}`)).not.toContainText('·');
   });
 

@@ -73,23 +73,8 @@ export const MENTORSHIP_PROGRAM_APPLICATIONS_PAGE_SIZE = 50;
 /** Most programs whose rows the mentor My Programs read loads at once. */
 export const MENTORSHIP_MENTOR_PROGRAM_READ_CONCURRENCY = 5;
 
-/** Largest `limit` upstream accepts on a program's applications; it resets anything above to 10, so the admin reads never send more. */
-export const MENTORSHIP_ADMIN_APPLICATIONS_MAX_LIMIT = 50;
-
-/** Largest `limit` upstream accepts on an application's tasks. */
-export const MENTORSHIP_ADMIN_TASKS_MAX_LIMIT = 100;
-
-/** Largest `limit` upstream accepts on a program's terms list. */
-export const MENTORSHIP_ADMIN_TERMS_MAX_LIMIT = 100;
-
-/** Largest `limit` upstream accepts on `member-management` and `term-management`. */
-export const MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT = 50;
-
 /** Longest search text the admin reads send upstream; anything longer is cut. */
 export const MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH = 100;
-
-/** Most rows a program-list page may ask for. */
-export const MENTORSHIP_ADMIN_PROGRAMS_MAX_LIMIT = 50;
 
 /** Upstream `admin_status` of an administered program, as the BFF shows it. Upstream groups the program status with its terms. */
 export const MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM: Readonly<Record<string, MentorshipProgramStatus>> = {

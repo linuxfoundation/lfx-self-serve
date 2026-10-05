@@ -38,6 +38,8 @@ export class ProgramsListComponent {
   public readonly loadingMore = input<boolean>(false);
   /** True when the programs could not be read; shown in place of the cards with a Retry. */
   public readonly loadError = input<boolean>(false);
+  /** True while a first-page read (e.g. a Retry) is in flight; the Retry button shows a spinner. */
+  public readonly retrying = input<boolean>(false);
   public readonly searchChange = output<string>();
   public readonly statusChange = output<MentorshipProgramStatus | null>();
   public readonly programClick = output<string>();

@@ -39,12 +39,14 @@ describe('MentorshipAdminService', () => {
     expect(total).toBe(3);
   });
 
-  it('lets a program list failure reach the caller', () => {
+  it('logs a program list failure and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     let status: number | undefined;
     service.getPrograms().subscribe({ error: (err: { status: number }) => (status = err.status) });
 
     http.expectOne('/api/mentorship/admin/programs').flush('down', { status: 503, statusText: 'Service Unavailable' });
     expect(status).toBe(503);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] getPrograms failed', expect.anything());
   });
 
   it('loads a program detail from the admin endpoint, encoding the id', () => {

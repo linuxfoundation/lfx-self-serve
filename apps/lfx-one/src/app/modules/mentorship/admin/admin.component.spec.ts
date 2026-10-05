@@ -6,7 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { MentorshipProgramsResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AdminComponent } from './admin.component';
@@ -48,5 +48,21 @@ describe('AdminComponent — programs load', () => {
 
     expect(component.programsLoadError()).toBe(false);
     expect(getPrograms).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the error shown while a Retry is in flight', async () => {
+    const fixture = await create();
+    const component = fixture.componentInstance as unknown as { programsLoadError: () => boolean; retryPrograms: () => void };
+    const pending = new Subject<MentorshipProgramsResponse>();
+
+    getPrograms.mockReturnValue(pending);
+    component.retryPrograms();
+    fixture.detectChanges();
+
+    expect(component.programsLoadError()).toBe(true);
+
+    pending.next(page);
+    pending.complete();
+    expect(component.programsLoadError()).toBe(false);
   });
 });

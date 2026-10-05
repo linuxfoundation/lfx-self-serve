@@ -117,10 +117,11 @@ describe('MentorshipAdminService.getPrograms', () => {
     });
   });
 
-  it('returns an empty page for a caller with no mentorship record', async () => {
+  it('returns an empty page, with a warning, for a caller with no mentorship record', async () => {
     stubUpstream(new MicroserviceError('Unauthorized', 401, 'UNAUTHORIZED', { errorBody: { error: 'local user is not provisioned' } }));
 
     expect(await service.getPrograms(buildReq(), paging)).toEqual({ data: [], total: 0 });
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_admin_get_programs', expect.any(String), {});
   });
 
   it('passes any other upstream error on', async () => {

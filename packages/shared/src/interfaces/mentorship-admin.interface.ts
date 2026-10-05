@@ -15,10 +15,12 @@ export interface MentorshipProgramStats {
 }
 
 /**
- * Program status lifecycle:
- * - `open` — accepting applications / active
- * - `pending-review` — submitted, awaiting admin approval
- * - `completed` — cohort finished
+ * Program status as the admin list shows it (upstream `admin_status`, `_` written as `-`):
+ * - `open` — published, with an open term or no terms yet
+ * - `pending-review` — draft or submitted, awaiting approval
+ * - `completed` — published, with only closed terms
+ * - `rejected` — rejected
+ * - `hidden` — archived or hidden
  */
 export type MentorshipProgramStatus = (typeof MENTORSHIP_PROGRAM_STATUSES)[number];
 

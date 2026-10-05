@@ -4,12 +4,12 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { MentorshipProgramDetail, MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of } from 'rxjs';
+import { catchError, Observable, of, throwError } from 'rxjs';
 
 /**
  * Talks to the LFX One BFF's `/api/mentorship/admin/*` endpoints behind the admin pages.
  *
- * `getPrograms` lets a failure reach the caller, which shows a retryable error. `getProgram` still degrades to `null`.
+ * `getPrograms` logs a failure and passes it to the caller, which shows a retryable error. `getProgram` still degrades to `null`.
  */
 @Injectable({ providedIn: 'root' })
 export class MentorshipAdminService {
@@ -22,7 +22,12 @@ export class MentorshipAdminService {
     if (params?.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
     if (params?.limit !== undefined) httpParams = httpParams.set('limit', String(params.limit));
 
-    return this.http.get<MentorshipProgramsResponse>('/api/mentorship/admin/programs', { params: httpParams });
+    return this.http.get<MentorshipProgramsResponse>('/api/mentorship/admin/programs', { params: httpParams }).pipe(
+      catchError((error: HttpErrorResponse) => {
+        console.error('[MentorshipAdminService] getPrograms failed', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   /** Loads a program by id (default URL) or slug. */
