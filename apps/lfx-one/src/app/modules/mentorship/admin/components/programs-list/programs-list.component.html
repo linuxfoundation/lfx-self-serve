@@ -23,8 +23,20 @@
     </div>
   </div>
 
-  <!-- Card list / empty state -->
-  @if (programs().length > 0) {
+  <!-- Failed load / card list / empty state -->
+  @if (loadError()) {
+    <div class="flex flex-col items-center gap-3 py-10 text-center" role="alert" data-testid="mentorship-admin-programs-load-error">
+      <p class="text-sm text-gray-600">We couldn't load your programs. Please try again.</p>
+      <lfx-button
+        label="Retry"
+        severity="secondary"
+        size="small"
+        [loading]="retrying()"
+        [disabled]="retrying()"
+        (onClick)="onRetry()"
+        data-testid="mentorship-admin-programs-retry" />
+    </div>
+  } @else if (programs().length > 0) {
     @for (program of programs(); track program.id) {
       <lfx-card
         styleClass="flex flex-col gap-3 [&_.p-card-body]:p-0 [&_.p-card-content]:p-0 overflow-hidden hover:!border-gray-200"

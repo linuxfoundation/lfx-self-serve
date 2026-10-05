@@ -41,6 +41,7 @@ import {
   LINKEDIN_MIN_DAILY_BUDGET_USD,
   LINKEDIN_MIN_LIFETIME_BUDGET_USD,
   MAX_BULK_KEYWORD_ACTIONS,
+  MAX_HUBSPOT_BODY_HTML_LENGTH,
   META_GEO_CODE_PATTERN,
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_MAX_BUDGET,
@@ -361,6 +362,24 @@ export class CampaignController {
       const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
       const body = req.body as CampaignCreateRequest;
       const platforms = Array.isArray(body?.platforms) ? body.platforms : [];
+
+      // BEFORE `createConfigEnvelope`, which sanitises both HubSpot bodies unconditionally. This
+      // route has no body validator, so the only other bound on that input is express.json's
+      // 15 MB limit — refusing an oversized body here keeps the sanitiser's cost bounded
+      // independently of it.
+      for (const field of ['bodyHtml', 'bodyHtmlB'] as const) {
+        const value = body?.hubspotConfig?.[field];
+        if (typeof value === 'string' && value.length > MAX_HUBSPOT_BODY_HTML_LENGTH) {
+          next(
+            ServiceValidationError.forField(`hubspotConfig.${field}`, `the email body exceeds the maximum length of ${MAX_HUBSPOT_BODY_HTML_LENGTH}`, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
+          return;
+        }
+      }
+
       const configEnvelope = this.createConfigEnvelope(body);
 
       // Validated here, matching the `jobId` and `project` checks in `getJobStatus`, rather than

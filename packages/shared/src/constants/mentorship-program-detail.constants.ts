@@ -6,13 +6,11 @@ import type {
   MentorshipInvitableUser,
   MentorshipInvitableUsersResponse,
   MentorshipProgramApplicant,
-  MentorshipProgramMentee,
 } from '../interfaces/mentorship.interface';
 import type { MentorshipProgramLists, MentorshipProgramMentor, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
 
 export const EMPTY_MENTORSHIP_PROGRAM_LISTS: MentorshipProgramLists = {
-  mentees: [],
-  applicants: [],
+  applications: [],
   mentors: [],
   terms: [],
 };
@@ -31,7 +29,9 @@ export const MENTORSHIP_COMING_SOON_TOAST_LIFE = 4000;
 
 /** Shared filter/table copy — inlining these let the three people tabs drift apart. */
 export const MENTORSHIP_ALL_STATUSES_OPTION_LABEL = 'All statuses';
-export const MENTORSHIP_ALL_TERMS_OPTION_LABEL = 'All terms';
+/** Term filter "all" options: Current Mentees lists open terms, Past Mentees closed ones. */
+export const MENTORSHIP_ALL_OPEN_TERMS_OPTION_LABEL = 'All open terms';
+export const MENTORSHIP_ALL_CLOSED_TERMS_OPTION_LABEL = 'All closed terms';
 export const MENTORSHIP_ADD_NOTE_LABEL = 'Add note';
 export const MENTORSHIP_NOTE_DIALOG_HEADER = 'Reviewer note';
 
@@ -347,7 +347,7 @@ function buildGridflowMenteeTasks(): Record<string, MentorshipApplicantTask[]> {
   };
 }
 
-const gridflowMentees = (): MentorshipProgramMentee[] => {
+const gridflowMentees = (): MentorshipProgramApplicant[] => {
   const gridflowMenteeTasks = buildGridflowMenteeTasks();
   return [
     {
@@ -356,6 +356,9 @@ const gridflowMentees = (): MentorshipProgramMentee[] => {
       email: 'alex.rivera@example.com',
       status: 'accepted',
       termName: 'Fall 2026',
+      termId: 'trm_gridflow_fall26',
+      createdOn: '2026-06-02',
+      updatedOn: '2026-07-01',
       tasksSubmitted: 7,
       tasksTotal: 12,
       tasks: gridflowMenteeTasks['mnt_alex_rivera'],
@@ -367,6 +370,9 @@ const gridflowMentees = (): MentorshipProgramMentee[] => {
       email: 'priya.shah@example.com',
       status: 'accepted',
       termName: 'Fall 2026',
+      termId: 'trm_gridflow_fall26',
+      createdOn: '2026-06-05',
+      updatedOn: '2026-07-03',
       tasksSubmitted: 4,
       tasksTotal: 12,
       tasks: gridflowMenteeTasks['mnt_priya_shah'],
@@ -377,6 +383,9 @@ const gridflowMentees = (): MentorshipProgramMentee[] => {
       email: 'jordan.lee@example.com',
       status: 'graduated',
       termName: 'Fall 2026',
+      termId: 'trm_gridflow_fall26',
+      createdOn: '2026-05-28',
+      updatedOn: '2026-09-20',
       tasksSubmitted: 3,
       tasksTotal: 3,
       tasks: gridflowMenteeTasks['mnt_jordan_lee'],
@@ -386,9 +395,9 @@ const gridflowMentees = (): MentorshipProgramMentee[] => {
 };
 
 /**
- * Covers every Applicants-tab display status: `pending` with tasks outstanding reads as
- * Applied, `pending` with all tasks in reads as Tasks Completed, and the four resolved
- * statuses display as themselves.
+ * Covers every display status: `pending` with tasks outstanding reads as Applied,
+ * `pending` with all tasks in reads as Tasks Completed, and the rest display as
+ * themselves. Rows in the closed Summer and Spring terms land on Past Mentees.
  */
 const gridflowApplicants: MentorshipProgramApplicant[] = [
   {
@@ -397,6 +406,7 @@ const gridflowApplicants: MentorshipProgramApplicant[] = [
     email: 'ifeoma.adeyemi@example.com',
     status: 'pending',
     termName: 'Fall 2026',
+    termId: 'trm_gridflow_fall26',
     createdOn: '2026-06-28',
     updatedOn: '2026-07-02',
     tasksSubmitted: 2,
@@ -413,6 +423,7 @@ const gridflowApplicants: MentorshipProgramApplicant[] = [
     email: 'diego.souza@example.com',
     status: 'pending',
     termName: 'Fall 2026',
+    termId: 'trm_gridflow_fall26',
     createdOn: '2026-07-01',
     updatedOn: '2026-07-12',
     tasksSubmitted: 5,
@@ -426,6 +437,7 @@ const gridflowApplicants: MentorshipProgramApplicant[] = [
     email: 'nadia.rahman@example.com',
     status: 'declined',
     termName: 'Spring 2026',
+    termId: 'trm_gridflow_spring26',
     createdOn: '2025-11-12',
     updatedOn: '2026-01-22',
   },
@@ -435,6 +447,7 @@ const gridflowApplicants: MentorshipProgramApplicant[] = [
     email: 'ines.duarte@example.com',
     status: 'withdrawn',
     termName: 'Summer 2026',
+    termId: 'trm_gridflow_summer26',
     createdOn: '2026-02-18',
     updatedOn: '2026-04-03',
   },
@@ -444,6 +457,7 @@ const gridflowApplicants: MentorshipProgramApplicant[] = [
     email: 'hana.suzuki@example.com',
     status: 'accepted',
     termName: 'Fall 2026',
+    termId: 'trm_gridflow_fall26',
     createdOn: '2026-06-21',
     updatedOn: '2026-07-08',
   },
@@ -453,6 +467,7 @@ const gridflowApplicants: MentorshipProgramApplicant[] = [
     email: 'marco.bianchi@example.com',
     status: 'accepted',
     termName: 'Fall 2026',
+    termId: 'trm_gridflow_fall26',
     createdOn: '2026-06-24',
     updatedOn: '2026-07-10',
   },
@@ -462,6 +477,7 @@ const gridflowApplicants: MentorshipProgramApplicant[] = [
     email: 'grace.wanjiru@example.com',
     status: 'graduated',
     termName: 'Summer 2026',
+    termId: 'trm_gridflow_summer26',
     createdOn: '2026-02-10',
     updatedOn: '2026-08-24',
   },
@@ -471,6 +487,7 @@ const gridflowApplicants: MentorshipProgramApplicant[] = [
     email: 'ravi.menon@example.com',
     status: 'graduated',
     termName: 'Summer 2026',
+    termId: 'trm_gridflow_summer26',
     createdOn: '2026-02-14',
     updatedOn: '2026-08-24',
   },
@@ -480,6 +497,7 @@ const gridflowApplicants: MentorshipProgramApplicant[] = [
     email: 'aiko.tanaka@example.com',
     status: 'graduated',
     termName: 'Spring 2026',
+    termId: 'trm_gridflow_spring26',
     createdOn: '2025-11-08',
     updatedOn: '2026-05-25',
   },
@@ -585,21 +603,20 @@ const gridflowTerms: MentorshipProgramTermRow[] = [
 export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramLists> = {
   get 'gridflow-time-series-ingestion-pipeline'(): MentorshipProgramLists {
     return {
-      mentees: gridflowMentees(),
-      applicants: gridflowApplicants,
+      applications: [...gridflowMentees(), ...gridflowApplicants],
       mentors: gridflowMentors,
       terms: gridflowTerms,
     };
   },
   'apicurio-registry-prompt-template-playground': {
-    mentees: [],
-    applicants: [
+    applications: [
       {
         id: 'app_apicurio_1',
         name: 'Riley Thompson',
         email: 'riley.thompson@example.com',
         status: 'pending',
         termName: 'Winter 2026',
+        termId: 'trm_apicurio_winter26',
         createdOn: '2026-08-12',
         updatedOn: '2026-08-20',
         tasksSubmitted: 1,
@@ -650,6 +667,7 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         email: 'kai.nakamura@example.com',
         status: 'pending',
         termName: 'Winter 2026',
+        termId: 'trm_apicurio_winter26',
         createdOn: '2026-08-15',
         updatedOn: '2026-08-28',
         tasksSubmitted: 4,
@@ -733,13 +751,16 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
     ],
   },
   'janusgraph-adjacency-cache-instrumentation': {
-    mentees: [
+    applications: [
       {
         id: 'mnt_janus_1',
         name: 'Taylor Brooks',
         email: 'taylor.brooks@example.com',
         status: 'accepted',
         termName: 'Fall 2026',
+        termId: 'trm_janus_fall26',
+        createdOn: '2026-06-20',
+        updatedOn: '2026-09-10',
         tasksSubmitted: 9,
         tasksTotal: 9,
         tasks: [
@@ -835,14 +856,13 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
           },
         ],
       },
-    ],
-    applicants: [
       {
         id: 'app_janus_1',
         name: 'Ivy Moreau',
         email: 'ivy.moreau@example.com',
         status: 'pending',
         termName: 'Fall 2026',
+        termId: 'trm_janus_fall26',
         createdOn: '2026-08-03',
         updatedOn: '2026-08-19',
         tasksSubmitted: 3,
@@ -913,6 +933,7 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         email: 'diego.santos@example.com',
         status: 'declined',
         termName: 'Fall 2026',
+        termId: 'trm_janus_fall26',
         createdOn: '2026-07-25',
         updatedOn: '2026-08-05',
       },
@@ -957,14 +978,17 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
     ],
   },
   'thanos-fan-out-query-observability': {
-    // Completed program: these surface on the Past Mentees tab rather than Current Mentees.
-    mentees: [
+    // Completed program: every term is closed, so all of these land on Past Mentees.
+    applications: [
       {
         id: 'mnt_thanos_1',
         name: 'Dilan Ferreira',
         email: 'dilan.ferreira@example.com',
         status: 'graduated',
         termName: 'Summer 2026',
+        termId: 'trm_thanos_summer26',
+        createdOn: '2026-03-20',
+        updatedOn: '2026-08-05',
       },
       {
         id: 'mnt_thanos_2',
@@ -972,6 +996,9 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         email: 'yuki.tanaka@example.com',
         status: 'graduated',
         termName: 'Summer 2026',
+        termId: 'trm_thanos_summer26',
+        createdOn: '2026-03-22',
+        updatedOn: '2026-08-05',
       },
       {
         id: 'mnt_thanos_3',
@@ -979,6 +1006,9 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         email: 'omar.haddad@example.com',
         status: 'withdrawn',
         termName: 'Summer 2026',
+        termId: 'trm_thanos_summer26',
+        createdOn: '2026-03-25',
+        updatedOn: '2026-07-02',
       },
       {
         id: 'mnt_thanos_4',
@@ -986,9 +1016,11 @@ export const MOCK_MENTORSHIP_PROGRAM_LISTS: Record<string, MentorshipProgramList
         email: 'ines.duarte@example.com',
         status: 'declined',
         termName: 'Spring 2026',
+        termId: 'trm_thanos_spring26',
+        createdOn: '2026-01-12',
+        updatedOn: '2026-02-20',
       },
     ],
-    applicants: [],
     mentors: [
       {
         id: 'mtr_thanos_1',

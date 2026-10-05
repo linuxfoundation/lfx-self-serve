@@ -9,6 +9,8 @@ const PAST_MEETING_UID = 'a0000000-0000-0000-0000-000000000001';
 const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParameterMock } = vi.hoisted(() => ({
   meetingSvc: {
     getPastMeetingById: vi.fn(),
+    getPastMeetingParticipants: vi.fn(),
+    canViewPastMeetingParticipants: vi.fn(),
   },
   reconciliationSvc: {
     reconcilePastMeetingParticipants: vi.fn(),
@@ -134,6 +136,49 @@ describe('PastMeetingController.reconcilePastMeetingParticipants — organizer g
 
     expect(reconciliationSvc.reconcilePastMeetingParticipants).toHaveBeenCalledWith(expect.anything(), PAST_MEETING_UID, buildPastMeeting());
     expect(res.json).toHaveBeenCalledWith(result);
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('PastMeetingController.getPastMeetingParticipants — visibility gate (#2827)', () => {
+  let controller: PastMeetingController;
+  const participants = [{ uid: 'p1', email: 'ada@example.com', is_invited: true, is_attended: true }];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    validateUidParameterMock.mockReturnValue(true);
+    controller = new PastMeetingController();
+    meetingSvc.getPastMeetingParticipants.mockResolvedValue(participants);
+  });
+
+  it('returns the participants to a caller who may see them', async () => {
+    meetingSvc.canViewPastMeetingParticipants.mockResolvedValue(true);
+    const req = buildReq(true);
+    const res = buildRes();
+
+    await controller.getPastMeetingParticipants(req, res, vi.fn());
+
+    expect(meetingSvc.canViewPastMeetingParticipants).toHaveBeenCalledWith(req, PAST_MEETING_UID, participants);
+    expect(res.json).toHaveBeenCalledWith(participants);
+  });
+
+  it('returns an empty list to a caller who is not an organizer or on the list', async () => {
+    meetingSvc.canViewPastMeetingParticipants.mockResolvedValue(false);
+    const res = buildRes();
+
+    await controller.getPastMeetingParticipants(buildReq(true), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([]);
+  });
+
+  it('hides the participants rather than erroring when the check cannot be resolved', async () => {
+    meetingSvc.canViewPastMeetingParticipants.mockRejectedValue(new Error('access-check unavailable'));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getPastMeetingParticipants(buildReq(true), res, next);
+
+    expect(res.json).toHaveBeenCalledWith([]);
     expect(next).not.toHaveBeenCalled();
   });
 });

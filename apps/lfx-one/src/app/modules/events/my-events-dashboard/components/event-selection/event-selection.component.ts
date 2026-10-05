@@ -63,6 +63,9 @@ export class EventSelectionComponent {
   // Debounced search to avoid API calls on every keystroke
   private readonly debouncedSearch = toSignal(this.searchForm.get('searchQuery')!.valueChanges.pipe(debounceTime(500)), { initialValue: '' });
 
+  // Travel funding counts a registration of any status; visa letters need an accepted one.
+  private readonly anyRegistrationStatus = computed(() => (this.requestType() === 'travel-fund' ? true : undefined));
+
   // Combined server-side filter params — changing this resets pagination and triggers a reload
   private readonly activeFilters = computed(() => ({
     searchQuery: this.debouncedSearch() || undefined,
@@ -70,7 +73,7 @@ export class EventSelectionComponent {
     country: this.filtersValue().locationFilter !== 'any' ? (this.filtersValue().locationFilter ?? undefined) : undefined,
     isVisaRequestAccepted: this.requestType() === 'visa' ? true : undefined,
     isTravelFundRequestAccepted: this.requestType() === 'travel-fund' ? true : undefined,
-    excludePastTravelFundDeadline: this.requestType() === 'travel-fund' ? true : undefined,
+    anyRegistrationStatus: this.anyRegistrationStatus(),
   }));
 
   // Initial events loaded reactively from activeFilters
@@ -110,7 +113,7 @@ export class EventSelectionComponent {
         icon: 'fa-light fa-calendar-xmark text-3xl text-gray-300',
         title: 'No registered events',
         description: isVisa
-          ? 'You must be registered for an upcoming event to apply for a visa letter.'
+          ? 'You must have an accepted registration for an upcoming event to apply for a visa letter.'
           : 'You must be registered for an upcoming event to apply for travel funding.',
       };
     }
@@ -226,7 +229,7 @@ export class EventSelectionComponent {
             this.registeredEventsLoading.set(false);
             return of(null as number | null);
           }
-          return this.eventsService.getMyEvents({ isPast: false, registeredOnly: true, pageSize: 1 }).pipe(
+          return this.eventsService.getMyEvents({ isPast: false, registeredOnly: true, anyRegistrationStatus: this.anyRegistrationStatus(), pageSize: 1 }).pipe(
             map((res) => res.total ?? 0),
             catchError(() => of(null as number | null)),
             finalize(() => this.registeredEventsLoading.set(false))

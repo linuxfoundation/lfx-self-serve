@@ -690,7 +690,8 @@ export class ProjectService {
     operation: 'add' | 'update' | 'remove',
     usernameOrEmail: string,
     role?: 'view' | 'manage',
-    manualUserInfo?: { name: string; email: string; username?: string; avatar?: string }
+    manualUserInfo?: { name: string; email: string; username?: string; avatar?: string },
+    duplicateIdentifiers?: string[]
   ): Promise<ProjectSettings> {
     // Step 0: Authorize before touching anything — the gate `updateProjectStaff` runs, for the same
     // reason. Upstream gates the settings PUT at writer, but the directory lookup below runs first
@@ -764,9 +765,25 @@ export class ProjectService {
       });
     }
 
+    // A client-side collapsed dual-role row (#3218) can carry one or more "duplicate"
+    // identifiers for the other backend entries representing the same person — a role
+    // change or removal on the merged row must clear those too, or they survive and the
+    // user reappears with a stale role after a refresh (#3245/#3244). These are matched
+    // directly against the settings already fetched above, with NO resolveEmailToUsername
+    // call: unlike `backendIdentifier`, a duplicate identifier is never looked up against
+    // the NATS directory, which is what let a stale/already-cleared email fallback resolve
+    // to and delete an unrelated, just-written real-username entry (Cursor Bugbot #3244
+    // review, GH-3276). Matching mirrors `matchesUser`: an identifier containing '@' matches
+    // a no-username entry's email case-insensitively (the backend lowercases email too);
+    // anything else is treated as a username and matched case-sensitively, since LFID
+    // username case-uniqueness isn't guaranteed.
+    const duplicateIdentifierList = (duplicateIdentifiers ?? []).map((id) => id.trim()).filter(Boolean);
+    const matchesAnyDuplicate = (u: { username?: string; email?: string }): boolean =>
+      duplicateIdentifierList.some((id) => (id.includes('@') ? !u.username && u.email?.toLowerCase() === id.toLowerCase() : u.username === id));
+
     // Remove user from both arrays first (for all operations)
-    updatedSettings.writers = updatedSettings.writers.filter((u) => !matchesUser(u));
-    updatedSettings.auditors = updatedSettings.auditors.filter((u) => !matchesUser(u));
+    updatedSettings.writers = updatedSettings.writers.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
+    updatedSettings.auditors = updatedSettings.auditors.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
 
     // For 'add' or 'update', we need to add the user back with full UserInfo
     if (operation === 'add' || operation === 'update') {
