@@ -194,6 +194,8 @@ The only current caller is `WeeklyBriefService.shareBrief()`'s mailing-list send
 - `GET /api/profile/developer` is **suppressed** (403) while impersonating — `req.bearerToken` is the target's live token and must never be surfaced to the impersonator.
 - The Linux.com **forward target** still can't be read during impersonation (needs the impersonator's Flow-C management token); the claimed alias itself is shown from the target's `user_emails.read`.
 
+**Events — visa letter download:** `GET /api/events/visa-letter` is open during impersonation. `VisaLetterService` passes the target's `req.bearerToken` to both the API gateway `/me` profile lookup and the `/users/{sfid}/visaletterrequests` fetch, so the PDF is the target's letter, never the impersonator's. Each impersonated download logs an INFO `generate_visa_letter` line with `impersonator_sub` / `target_sub` / `event_id`.
+
 Profile **writes** cannot act on the target (there is no CTE equivalent for the Auth0 Management API — they use the impersonator's Flow C management token), so they are blocked:
 
 - Every mutating / Flow-C-initiating profile route is guarded by `blockDuringImpersonation` (`middleware/impersonation-readonly.middleware.ts`), returning **403 `IMPERSONATION_READ_ONLY`**.

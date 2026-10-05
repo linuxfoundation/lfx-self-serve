@@ -40,7 +40,7 @@ export class VisaLetterService {
   }
 
   /**
-   * Generate the caller's issued visa support letter for an event. Status, ownership and the manual
+   * Generate the effective user's issued visa support letter for an event. Status, ownership and the manual
    * flag come from the letter system of record, never from the client.
    */
   public async generateVisaLetter(req: Request, eventId: string): Promise<VisaLetterResult> {
@@ -68,6 +68,16 @@ export class VisaLetterService {
 
     const pdf = await this.buildPdf(letter, entity);
     const fileName = buildVisaLetterFileName(letter.event?.name, letter.attendee?.nameAsPerPassport, eventId);
+
+    // Per-request impersonation logs are DEBUG; keep an INFO trail for passport-bearing exports.
+    if (isImpersonating(req)) {
+      logger.info(req, OPERATION, 'Visa letter generated for impersonated user', {
+        event_id: eventId,
+        impersonator_sub: req.appSession?.['impersonator']?.sub,
+        target_sub: req.appSession?.['impersonationUser']?.sub,
+      });
+    }
+
     return { pdf, fileName };
   }
 

@@ -111,6 +111,7 @@ import type { Request } from 'express';
 import { VISA_LETTER_MANUAL_ERROR_CODE, VISA_LETTER_NOT_ISSUED_ERROR_CODE } from '@lfx-one/shared/constants';
 
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError } from '../errors';
+import { logger } from './logger.service';
 import { VisaLetterService } from './visa-letter.service';
 
 const EVENT_ID = 'a0A2M00000test1UAA';
@@ -211,6 +212,32 @@ describe('VisaLetterService', () => {
 
     expect(mocks.getApiGatewayProfile).toHaveBeenCalledWith(impersonatedReq, 'target-v2-token');
     expect(mocks.gatewayFetch).toHaveBeenCalledWith(impersonatedReq, expect.any(String), expect.objectContaining({ bearerToken: 'target-v2-token' }));
+  });
+
+  it('records an info audit line with opaque ids when generating while impersonating', async () => {
+    mocks.isImpersonating.mockReturnValue(true);
+    const impersonatedReq = {
+      ...req,
+      bearerToken: 'target-v2-token',
+      appSession: { impersonator: { sub: 'auth0|admin' }, impersonationUser: { sub: 'auth0|target' } },
+    } as unknown as Request;
+    mockLetters(letter());
+
+    await service.generateVisaLetter(impersonatedReq, EVENT_ID);
+
+    expect(logger.info).toHaveBeenCalledWith(impersonatedReq, 'generate_visa_letter', expect.any(String), {
+      event_id: EVENT_ID,
+      impersonator_sub: 'auth0|admin',
+      target_sub: 'auth0|target',
+    });
+  });
+
+  it('skips the impersonation audit line for a regular download', async () => {
+    mockLetters(letter());
+
+    await service.generateVisaLetter(req, EVENT_ID);
+
+    expect(logger.info).not.toHaveBeenCalled();
   });
 
   it('rejects when the profile has no Salesforce ID', async () => {
