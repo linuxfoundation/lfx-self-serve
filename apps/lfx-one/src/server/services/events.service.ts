@@ -338,6 +338,10 @@ export class EventsService {
     try {
       result = await this.snowflakeService.execute<MyEventRow>(sql, binds);
     } catch (error) {
+      // Registered-only counts must distinguish an unavailable query from a confirmed zero.
+      if (isPast === false && registeredOnly) {
+        throw error;
+      }
       logger.warning(req, 'get_my_events', 'Snowflake query failed, returning empty events', {
         error: error instanceof Error ? error.message : String(error),
         page_size: normalizedPageSize,

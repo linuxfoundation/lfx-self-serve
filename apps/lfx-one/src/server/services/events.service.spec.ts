@@ -131,6 +131,47 @@ describe('EventsService.getMyEvents status derivation', () => {
   });
 });
 
+describe('EventsService.getMyEvents query failures', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    snowflakeMocks.execute.mockResolvedValue({ rows: [], metadata: [] });
+    service = new EventsService();
+  });
+
+  it.each([1, 10])('propagates Upcoming registered-only query errors with pageSize=%s', async (pageSize) => {
+    const error = new Error('Snowflake unavailable');
+    snowflakeMocks.execute.mockRejectedValueOnce(error);
+
+    await expect(service.getMyEvents({} as never, USER_EMAIL, { isPast: false, registeredOnly: true, pageSize, offset: 0, sortOrder: 'ASC' })).rejects.toBe(
+      error
+    );
+  });
+
+  it('returns a genuine zero when the registered-count query succeeds without rows', async () => {
+    await expect(
+      service.getMyEvents({} as never, USER_EMAIL, { isPast: false, registeredOnly: true, pageSize: 1, offset: 0, sortOrder: 'ASC' })
+    ).resolves.toEqual({ data: [], total: 0, pageSize: 1, offset: 0 });
+  });
+
+  it.each([
+    { isPast: false, registeredOnly: undefined },
+    { isPast: false, registeredOnly: false },
+    { isPast: true, registeredOnly: true },
+    { isPast: undefined, registeredOnly: true },
+  ])('preserves the empty fallback for isPast=$isPast, registeredOnly=$registeredOnly', async (scope) => {
+    snowflakeMocks.execute.mockRejectedValueOnce(new Error('Snowflake unavailable'));
+
+    await expect(service.getMyEvents({} as never, USER_EMAIL, { ...scope, pageSize: 25, offset: 10, sortOrder: 'ASC' })).resolves.toEqual({
+      data: [],
+      total: 0,
+      pageSize: 25,
+      offset: 10,
+    });
+  });
+});
+
 describe('EventsService.getMyEvents past-event SQL', () => {
   let service: InstanceType<typeof EventsService>;
 

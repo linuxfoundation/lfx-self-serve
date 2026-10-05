@@ -131,6 +131,19 @@ describe('EventsController My Events affiliation scope', () => {
     expect(res.json).toHaveBeenCalledWith({ data: [], total: 0 });
   });
 
+  it('forwards registered-count service errors without sending a successful zero response', async () => {
+    const error = new Error('Snowflake unavailable');
+    getMyEvents.mockRejectedValueOnce(error);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMyEvents(buildReq({ isPast: 'false', registeredOnly: 'true', pageSize: '1' }), res, next);
+
+    expect(next).toHaveBeenCalledExactlyOnceWith(error);
+    expect(res.json).not.toHaveBeenCalled();
+    expect(logger.success).not.toHaveBeenCalled();
+  });
+
   it.each([undefined, 'false', 'TRUE', ['true'], true])('retains affiliation lookup for discovery when registeredOnly=%j', async (raw) => {
     const req = buildReq({ isPast: 'false', registeredOnly: raw });
     const next = vi.fn();
