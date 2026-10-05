@@ -1500,6 +1500,42 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(true);
     });
 
+    it('keeps the recovery copy when the plan save fills the brief id for the SAME send', async () => {
+      // A compose dispatched before the plan was saved carries no brief id; the save then fills
+      // `briefId` for the same send. Comparing ids read that as another email and hid the recovery.
+      await renderWithDiscovery('');
+      composeAudienceMaster.mockReturnValue(of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: false }));
+      click('campaigns-audience-compose');
+      fixture.componentRef.setInput('briefId', 'brief-1');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-other-brief"]'), 'the same send was called a different email').toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-not-attached"]')).not.toBeNull();
+    });
+
+    it('calls a brief-less compose another send once the parent resets', async () => {
+      await renderWithDiscovery('');
+      composeAudienceMaster.mockReturnValue(of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: false }));
+      click('campaigns-audience-compose');
+      fixture.componentRef.setInput('audienceScope', 1);
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-other-brief"]')).not.toBeNull();
+    });
+
+    it('still shows an existing audience that points elsewhere after an unrecorded compose here', async () => {
+      // Keyed on "a write happened", the box vanished once this panel composed anything -- so an
+      // audience restored afterwards, pointing at a DIFFERENT list, was never shown.
+      await renderWithDiscovery('brief-1');
+      composeAudienceMaster.mockReturnValue(of({ master: { listId: '777', name: 'Loose', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: false }));
+      click('campaigns-audience-compose');
+      fixture.componentRef.setInput('existingAudience', RECORDED_AUDIENCE);
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-existing"]')?.textContent).toContain('900');
+      expect(host().querySelector('[data-testid="campaigns-audience-existing-replace"]'), 'a replace that cannot run was offered').toBeNull();
+    });
+
     it("does not describe another brief's compose as this email's", async () => {
       await renderWithDiscovery('brief-1');
       composeAudienceMaster.mockReturnValue(

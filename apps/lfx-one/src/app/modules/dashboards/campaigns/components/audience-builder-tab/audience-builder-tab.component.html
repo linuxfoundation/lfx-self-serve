@@ -483,6 +483,10 @@
                   data-testid="campaigns-audience-existing-replace">
                   Compose a replacement
                 </button>
+              } @else if (composeAttempted()) {
+                <p class="text-xs text-gray-600" data-testid="campaigns-audience-existing-replace-unavailable">
+                  A master list was already composed here. To send to it instead, choose "Use for this email" on it under "Master lists already built".
+                </p>
               } @else {
                 <p class="text-xs text-gray-600" data-testid="campaigns-audience-existing-replace-unavailable">
                   A replacement cannot be attached until the plan is saved and approved on the Plan tab.
@@ -545,7 +549,7 @@
             <p class="text-xs text-gray-600">Built from {{ result.sourceListIds.length }} list(s). Run QA below before scheduling the send.</p>
             <!-- Says whether the email will actually use it. "Master list created" alone read as done
                  even when no plan was saved and nothing was attached. -->
-            @if (composeBriefId() !== briefId()) {
+            @if (composeForOtherSend()) {
               <!-- The compose was for ANOTHER brief: the parent moved on while it was in flight. Its
                    outcome describes that email, not this one. -->
               <p class="text-xs font-medium text-gray-600" data-testid="campaigns-audience-compose-other-brief">

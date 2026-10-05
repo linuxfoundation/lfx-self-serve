@@ -299,6 +299,19 @@ export class AudienceBuilderTabComponent {
   protected readonly attachError = signal<string | null>(null);
   /** The brief a compose was dispatched with, so its `recorded` result is not read as another brief's. */
   protected readonly composeBriefId = signal('');
+  /** The parent's `audienceScope` at the last compose's dispatch -- which SEND it belonged to. */
+  private readonly composeScope = signal(0);
+  /**
+   * Whether the last compose belonged to a different send than the one on screen.
+   *
+   * By the parent's reset generation, not by brief id alone: a compose dispatched before the plan
+   * was saved carries no brief id, and the save that follows fills `briefId` for the SAME send --
+   * so comparing ids read that as another email and hid the recovery this send still needs. A
+   * differing non-empty id is still another brief.
+   */
+  protected readonly composeForOtherSend = computed(
+    () => this.composeScope() !== this.audienceScope() || (this.composeBriefId() !== '' && this.composeBriefId() !== this.briefId())
+  );
   /**
    * Names for suppression lists added by "Copy selection" that are not rows of the standard
    * suppression grid. The suppression map stores key -> list id only, and the grid supplies names
@@ -517,10 +530,11 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly blockingAudience = computed<CampaignAudience | null>(() => {
     const existing = this.existingAudience();
-    // Not after THIS panel's own write. Its result block already states what the email sends to,
-    // and `composeAttempted` blocks a second compose regardless -- so offering "replace" there
-    // rendered a button that could not work, beside a banner it contradicted.
-    if (existing === null || this.composeAttempted() || this.attachResult() !== null) {
+    // Not when it IS this panel's own write: the result block already states what the email sends
+    // to, and offering "replace" there rendered a button that could not work beside a banner it
+    // contradicted. Matched by list rather than by "a write happened" -- an audience that points
+    // ELSEWHERE (one restored after this panel composed something unrecorded) must still be shown.
+    if (existing === null || (existing.platformMasterListId !== undefined && existing.platformMasterListId === this.attachedListId())) {
       return null;
     }
     return this.replaceRequestedFor() === existing.id ? null : existing;
@@ -533,7 +547,7 @@ export class AudienceBuilderTabComponent {
    * would go out with no brief, come back unrecorded, and leave the restored audience as the send
    * list -- the duplicate the replace prompt exists to prevent.
    */
-  protected readonly canReplaceExisting = computed(() => this.briefId() !== '');
+  protected readonly canReplaceExisting = computed(() => this.briefId() !== '' && !this.composeAttempted());
 
   /** The list currently recorded as this email's send list by THIS panel, if any. */
   protected readonly attachedListId = computed(() => {
@@ -1104,6 +1118,7 @@ export class AudienceBuilderTabComponent {
     const dispatchProject = this.projectSlug();
     const dispatchScope = this.audienceScope();
     this.composeBriefId.set(dispatchBriefId);
+    this.composeScope.set(dispatchScope);
     // Scoped to the dispatch, like `briefId` below: the parent files the orphan warning by these.
     const unattached = (master: AudienceComposedList): void => {
       this.rememberComposedMaster(master);

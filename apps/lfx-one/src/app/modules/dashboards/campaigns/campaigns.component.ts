@@ -1120,6 +1120,16 @@ export class CampaignsComponent {
    */
   protected readonly emailAudienceScope = signal(0);
   /**
+   * The warm-up persist that resolves this send's brief id is IN FLIGHT.
+   *
+   * Until it lands the brief's audience is unknown in the same way a pending read is: a re-proceed
+   * resolves the SAME brief, whose audience is read back only once the id arrives. Composing in
+   * that window raced the read -- a brief-less compose finished unattached while the read wrote
+   * the earlier master onto `emailAudience`, unblocking staging for a list the operator had just
+   * replaced. The Audience tab sees it as part of `audienceReadPending`.
+   */
+  protected readonly emailBriefResolving = signal(false);
+  /**
    * The brief id the last audience read was for, so the Audience tab's retry re-reads THAT brief.
    *
    * Not `emailBriefId`: a restore deliberately leaves that empty for an unapproved brief (see
@@ -2792,6 +2802,7 @@ export class CampaignsComponent {
       this.emailAudienceReadFailed.set(false);
       this.emailAudienceReadPending.set(false);
       this.emailAudienceReadUnavailable.set(false);
+      this.emailBriefResolving.set(false);
       this.emailAudienceReadBriefId = '';
       this.emailAudienceScope.update((n) => n + 1);
       this.emailAudienceGeneration++;
@@ -3613,7 +3624,16 @@ export class CampaignsComponent {
     if (brief === null || projectSlug === '' || this.emailBriefId() !== '') {
       return;
     }
-    void this.ensureEmailBriefId(brief, projectSlug).catch(() => undefined);
+    const scope = this.emailAudienceScope();
+    this.emailBriefResolving.set(true);
+    void this.ensureEmailBriefId(brief, projectSlug)
+      .catch(() => undefined)
+      .finally(() => {
+        // Only for the send that started it: a reset already cleared it, and a newer warm-up owns it.
+        if (scope === this.emailAudienceScope()) {
+          this.emailBriefResolving.set(false);
+        }
+      });
   }
 
   /**
@@ -5103,6 +5123,7 @@ export class CampaignsComponent {
     this.emailAudienceReadFailed.set(false);
     this.emailAudienceReadPending.set(false);
     this.emailAudienceReadUnavailable.set(false);
+    this.emailBriefResolving.set(false);
     this.emailAudienceReadBriefId = '';
     this.emailAudienceScope.update((n) => n + 1);
     this.emailCopy.set(null);

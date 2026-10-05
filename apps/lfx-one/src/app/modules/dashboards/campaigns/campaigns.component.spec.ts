@@ -1879,6 +1879,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailAudienceScope: Signal<number>;
     emailAudienceReadUnavailable: Signal<boolean>;
     emailAudienceReadPending: Signal<boolean>;
+    emailBriefResolving: Signal<boolean>;
     emailAudienceSkipped: WritableSignal<boolean>;
     emailAudienceReadFailed: WritableSignal<boolean>;
     onSkipAudienceStep(): void;
@@ -2297,6 +2298,23 @@ describe('CampaignsComponent — email delivery channel', () => {
     beforeEach(() => {
       persist = vi.fn().mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
       vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persist);
+    });
+
+    it('treats the audience as unknown while the warm-up persist is in flight', async () => {
+      // A re-proceed resolves the SAME brief, whose audience is read back only once the id lands.
+      // Composing in that window raced the read and could leave staging pointed at the old list.
+      const slow = new Subject<CampaignBriefPersistResult>();
+      persist.mockReturnValue(slow.asObservable());
+      vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [] }));
+      selectEmail();
+      internals().onEmailProceedFromPlanning(emailBrief);
+
+      expect(internals().emailBriefResolving(), 'compose was open while the brief id was still resolving').toBe(true);
+
+      slow.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null } as unknown as CampaignBriefPersistResult);
+      slow.complete();
+      await fixture.whenStable();
+      expect(internals().emailBriefResolving()).toBe(false);
     });
 
     it('reads the saved audience back when the warm-up resolves a brief id', async () => {

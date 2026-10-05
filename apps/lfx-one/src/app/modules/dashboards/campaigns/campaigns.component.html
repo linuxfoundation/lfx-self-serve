@@ -323,7 +323,7 @@
           [briefId]="emailBriefId()"
           [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''"
           [audienceReadFailed]="emailAudienceReadFailed()"
-          [audienceReadPending]="emailAudienceReadPending()"
+          [audienceReadPending]="emailAudienceReadPending() || emailBriefResolving()"
           [audienceReadUnavailable]="emailAudienceReadUnavailable()"
           [audienceScope]="emailAudienceScope()"
           [existingAudience]="emailAudience()"
