@@ -432,10 +432,21 @@ export class DocumentsDashboardComponent {
 
   private initFilteredDocuments(): Signal<MyDocumentItem[]> {
     return computed(() => {
-      const docs = this.documents();
       const query = this.searchQuery().toLowerCase().trim();
       const projectMode = this.useProjectSource();
       const projectDocSource = this.projectDocumentSourceFilter();
+
+      // When in project mode with an active search query, search across ALL nested
+      // documents rather than just the current folder view, so users can find a
+      // document without knowing which folder it lives in.
+      let docs: MyDocumentItem[];
+      if (projectMode && query) {
+        const raw = this.rawProjectDocuments();
+        const project = this.project();
+        docs = raw.filter((d) => d.type !== 'folder').map((d) => this.toMyDocumentItem(d, project, false));
+      } else {
+        docs = this.documents();
+      }
       const foundation = this.foundationFilter();
       const group = this.groupFilter();
       const meeting = this.meetingFilter();
