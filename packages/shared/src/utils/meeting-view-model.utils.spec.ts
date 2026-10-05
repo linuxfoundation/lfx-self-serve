@@ -426,6 +426,17 @@ describe('resolveVisibleSections', () => {
     }
   );
 
+  // A past registrant resolves as `outsider` (the past payload has no `invited`), and still gets the
+  // summary with the roster; an anonymous viewer gets neither.
+  it('gives the RSVP summary to a signed-in outsider with access on an ended meeting, but never to a visitor', () => {
+    const base = { fullAccess: true, inviteResponsesEnabled: true, recurring: false, timeState: 'ended' as const };
+    const outsider = resolveVisibleSections({ ...base, viewerRole: 'outsider' });
+    expect(outsider.people).toBe(true);
+    expect(outsider.rsvpSummary).toBe(true);
+    expect(outsider.rsvpRosterFilter).toBe(false);
+    expect(resolveVisibleSections({ ...base, viewerRole: 'visitor' }).rsvpSummary).toBe(false);
+  });
+
   it('shows the RSVP surfaces to an organizer while the meeting is live', () => {
     const sections = resolveVisibleSections({
       fullAccess: false,

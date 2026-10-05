@@ -143,9 +143,12 @@ export function resolveVisibleSections(input: MeetingSectionVisibilityInput): Me
   // `hasArtifactAccess` is the same rule {@link resolveEndedActionSlot} applies, shared rather
   // than restated: if the rail resolves to `tools`, the sections it points at must be visible.
   const contentVisible = !ended || hasArtifactAccess(input.viewerRole, input.fullAccess);
-  // The aggregate strip reads meeting-level counts, so it follows content access like the rest of
-  // the page; v1 shows it on a clock-ended meeting whenever the counts are present.
-  const rsvpSummaryVisible = input.inviteResponsesEnabled && onTheMeeting && contentVisible;
+  // Ended: the past roster's audience — any signed-in viewer with artifact access, whatever the
+  // role, because the past payload never sets `invited` and a past registrant arrives as `outsider`.
+  const pastRosterVisible = input.viewerRole !== 'visitor' && hasArtifactAccess(input.viewerRole, input.fullAccess);
+  // The aggregate strip reads meeting-level counts, not roster rows, so on an ended meeting it goes
+  // wherever the past roster goes; v1 shows it on a clock-ended meeting whenever the counts exist.
+  const rsvpSummaryVisible = input.inviteResponsesEnabled && (ended ? pastRosterVisible : onTheMeeting);
   // The roster filter and per-avatar badges read roster rows. A past roster is built from
   // `PastMeetingParticipant` records, which carry attendance and invitation but no RSVP answer, so
   // on an ended meeting there is nothing for them to show.
@@ -164,7 +167,7 @@ export function resolveVisibleSections(input: MeetingSectionVisibilityInput): Me
     // registrant resolves as `outsider`; keying on the role would hide the roster from exactly the
     // people it is for. This matches v1, which loads past participants for any authenticated viewer
     // with access, and still withholds it from anonymous viewers, who get no participant list.
-    people: ended ? input.viewerRole !== 'visitor' && hasArtifactAccess(input.viewerRole, input.fullAccess) : onTheMeeting,
+    people: ended ? pastRosterVisible : onTheMeeting,
     rsvpAvatarBadges: rsvpRosterVisible,
     rsvpRosterFilter: rsvpRosterVisible,
     rsvpSummary: rsvpSummaryVisible,

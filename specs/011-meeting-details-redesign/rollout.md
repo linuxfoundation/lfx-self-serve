@@ -71,12 +71,12 @@ before it. A regression against either baseline holds the stage.
 
 ## Rolling back
 
-| Situation                               | Action                                                                                                                                             |
-| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A V2 bug, any stage from 2 to 6         | Remove the affected audience from targeting. Fix in a normal PR to `main`: V2 is still behind targeting, so the fix reaches only targeted viewers. |
-| A V1 regression after stage 1           | See below.                                                                                                                                         |
-| Flag provider outage                    | Nothing to do: the gate fails closed to V1.                                                                                                        |
-| A problem after stage 7 (V1 is deleted) | No flag fallback exists any more. Fix forward, which is why stage 6's soak comes first.                                                            |
+| Situation                               | Action                                                                                                                                                                                                                                          |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A V2 bug, any stage from 2 to 6         | Remove the affected audience from targeting. Fix in a normal PR to `main`: V2 is still behind targeting, so the fix reaches only targeted viewers.                                                                                              |
+| A V1 regression after stage 1           | See below.                                                                                                                                                                                                                                      |
+| Flag provider outage                    | Before the first flag value: nothing to do, the gate fails closed to V1. After it: viewers keep the last value they had (V2 stays V2), so an outage cannot be used as a rollback; remove the audience from targeting once the provider is back. |
+| A problem after stage 7 (V1 is deleted) | No flag fallback exists any more. Fix forward, which is why stage 6's soak comes first.                                                                                                                                                         |
 
 ### A V1 regression after the release
 
