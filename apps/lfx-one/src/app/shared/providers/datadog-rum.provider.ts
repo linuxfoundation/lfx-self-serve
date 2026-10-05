@@ -7,6 +7,7 @@ import { datadogRum } from '@datadog/browser-rum';
 import { environment } from '@environments/environment';
 import { fromEvent, Observable, Subscription } from 'rxjs';
 
+import { CREDENTIAL_REDACTION_MARKER } from '@lfx-one/shared/constants';
 import { redactAuthFragment, redactInviteToken, redactMeetingPassword, redactMeetingPasswordInText } from '@lfx-one/shared/utils';
 
 import { getRuntimeConfig } from './runtime-config.provider';
@@ -26,9 +27,13 @@ export function redactRumUrl(url: string, origin: string): string {
  * Whether Session Replay may record while the address bar shows `url`. Replay records
  * `window.location.href` verbatim at the start of each recording and of each view, outside
  * `beforeSend`, so it must not run at all while the URL carries a credential.
+ *
+ * A credential whose value already equals the redaction marker comes back from `redactRumUrl`
+ * unchanged, so a URL containing the marker anywhere is refused too. That fails closed: at worst a
+ * clean page that happens to mention the word is not recorded.
  */
 export function shouldRecordReplay(url: string, origin: string): boolean {
-  return redactRumUrl(url, origin) === url;
+  return redactRumUrl(url, origin) === url && !url.toLowerCase().includes(CREDENTIAL_REDACTION_MARKER);
 }
 
 /**

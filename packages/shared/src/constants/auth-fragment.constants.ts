@@ -27,3 +27,10 @@ export const INVITE_TOKEN_QUERY_PARAM = 'token';
  * case-insensitively.
  */
 export const MEETING_PASSWORD_QUERY_PARAMS = ['password', 'passcode'] as const;
+
+/**
+ * Value a redacted credential is replaced with, so a reader can tell redaction happened. A
+ * credential that already equals it comes back unchanged, so a check that asks "did redaction
+ * change anything?" must also look for the marker itself.
+ */
+export const CREDENTIAL_REDACTION_MARKER = 'redacted';

@@ -19,6 +19,14 @@ describe('shouldRecordReplay', () => {
     expect(shouldRecordReplay(`${ORIGIN}/meetings/m-1?tab=a`, ORIGIN)).toBe(true);
     expect(shouldRecordReplay('/meetings/m-1', ORIGIN)).toBe(true);
   });
+
+  it('refuses a credential whose value already reads as the redaction marker', () => {
+    expect(shouldRecordReplay(`${ORIGIN}/meetings/m-1?password=redacted`, ORIGIN)).toBe(false);
+    expect(shouldRecordReplay('/meetings/m-1?passcode=REDACTED', ORIGIN)).toBe(false);
+    expect(shouldRecordReplay(`${ORIGIN}/invite?token=redacted`, ORIGIN)).toBe(false);
+    expect(shouldRecordReplay(`${ORIGIN}/login?returnTo=${encodeURIComponent('/meetings/m-1?password=redacted')}`, ORIGIN)).toBe(false);
+    expect(shouldRecordReplay(`${ORIGIN}/meetings/m-1?password=%72edacted`, ORIGIN)).toBe(false);
+  });
 });
 
 /**

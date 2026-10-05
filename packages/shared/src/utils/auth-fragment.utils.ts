@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AUTH_FRAGMENT_KEYS, INVITE_TOKEN_QUERY_PARAM, MEETING_PASSWORD_QUERY_PARAMS } from '../constants/auth-fragment.constants';
+import { AUTH_FRAGMENT_KEYS, CREDENTIAL_REDACTION_MARKER, INVITE_TOKEN_QUERY_PARAM, MEETING_PASSWORD_QUERY_PARAMS } from '../constants/auth-fragment.constants';
 import { isInviteLandingPath, isMentorshipMentorInvitePath } from './url.utils';
 
 const RETURN_TO_QUERY_PARAM = 'returnTo';
@@ -32,7 +32,7 @@ export function redactAuthFragment(url: string, base?: string): string {
       return url;
     }
     // A marker rather than an empty hash, so a reader can tell redaction happened.
-    parsed.hash = 'redacted';
+    parsed.hash = CREDENTIAL_REDACTION_MARKER;
     return parsed.toString();
   } catch {
     // Never throw: the caller is a Datadog `beforeSend`, where a thrown error loses the event and
@@ -59,7 +59,7 @@ export function redactInviteToken(url: string, base?: string): string {
     let redacted = false;
     const isInvitePath = isInviteLandingPath(parsed.pathname) || isMentorshipMentorInvitePath(parsed.pathname);
     if (isInvitePath && parsed.searchParams.has(INVITE_TOKEN_QUERY_PARAM)) {
-      parsed.searchParams.set(INVITE_TOKEN_QUERY_PARAM, 'redacted');
+      parsed.searchParams.set(INVITE_TOKEN_QUERY_PARAM, CREDENTIAL_REDACTION_MARKER);
       redacted = true;
     }
     const returnTo = parsed.searchParams.get(RETURN_TO_QUERY_PARAM);
@@ -135,7 +135,7 @@ export function redactMeetingPasswordInText(text: string): string {
     const position = STACK_FRAME_POSITION_PATTERN.exec(url)?.[0] ?? '';
     return token.slice(0, urlStart) + redactMeetingPassword(url.slice(0, url.length - position.length), TEXT_URL_BASE) + position;
   });
-  return withUrlsRedacted.replace(MEETING_PASSWORD_IN_TEXT_PATTERN, '$1redacted');
+  return withUrlsRedacted.replace(MEETING_PASSWORD_IN_TEXT_PATTERN, `$1${CREDENTIAL_REDACTION_MARKER}`);
 }
 
 /** A param value worth recursing into: a path or http(s) URL that has a query string of its own. */
@@ -159,7 +159,7 @@ export function redactMeetingPassword(url: string, base?: string): string {
     const updates: [string, string][] = [];
     for (const [key, value] of parsed.searchParams) {
       if (isMeetingPasswordParam(key)) {
-        updates.push([key, 'redacted']);
+        updates.push([key, CREDENTIAL_REDACTION_MARKER]);
       } else if (isNestedUrlWithQuery(value)) {
         // Recurse on every nested URL, not only one whose decoded value already shows `?password=`:
         // a doubly nested passcode is still percent-encoded at this level.
