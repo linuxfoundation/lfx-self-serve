@@ -52,15 +52,15 @@ export class EventsListComponent {
 
   // Unfiltered stats signals — fetched once with pageSize=1, used only for totals and next-event name
   private readonly statsUpcomingAll: Signal<MyEventsResponse> = this.initializeStatsUpcomingAll();
-  private readonly statsUpcomingRegistered: Signal<MyEventsResponse> = this.initializeStatsUpcomingRegistered();
+  private readonly statsUpcomingRegistered: Signal<MyEventsResponse | null> = this.initializeStatsUpcomingRegistered();
   private readonly statsPast: Signal<MyEventsResponse> = this.initializeStatsPast();
 
   // Me lens stat cards — derived from server-reported totals so counts stay accurate regardless of page size
   public readonly eventsStatsLoading = computed(() => this.statsUpcomingAllLoading() || this.statsUpcomingRegisteredLoading() || this.statsPastLoading());
-  public readonly registeredCount = computed(() => this.statsUpcomingRegistered().total);
+  public readonly registeredCount = computed(() => this.statsUpcomingRegistered()?.total ?? 0);
   public readonly attendedCount = computed(() => this.statsPast().total);
-  public readonly nextEventName = computed(() => this.statsUpcomingRegistered().data[0]?.name ?? '');
-  public readonly availableToJoinCount = computed(() => Math.max(0, this.statsUpcomingAll().total - this.statsUpcomingRegistered().total));
+  public readonly nextEventName = computed(() => this.statsUpcomingRegistered()?.data[0]?.name ?? '');
+  public readonly availableToJoinCount = computed(() => Math.max(0, this.statsUpcomingAll().total - this.registeredCount()));
   public readonly tabCounts = computed(() => ({
     upcoming: this.statsUpcomingAll().total,
     past: this.statsPast().total,
@@ -163,15 +163,11 @@ export class EventsListComponent {
     return this.initializeEvents(true, this.pastEventsPage, this.pastEventsLoading, this.pastSortField, this.pastSortOrder);
   }
 
-  /**
-   * Defaults to My Registrations when the user has any upcoming registration, otherwise All Events.
-   * linkedSignal re-derives that default once the registered count loads and on every tab switch,
-   * while still letting a pill click override it in between.
-   */
+  // Only a confirmed zero defaults to discovery; count failures retain registrations.
   private initUpcomingView(): WritableSignal<MyEventsUpcomingView> {
-    return linkedSignal<{ tab: EventTabId; registeredCount: number }, MyEventsUpcomingView>({
-      source: () => ({ tab: this.activeTab(), registeredCount: this.registeredCount() }),
-      computation: ({ registeredCount }) => (registeredCount > 0 ? 'registered' : 'all'),
+    return linkedSignal<{ tab: EventTabId; registeredCount: number | null }, MyEventsUpcomingView>({
+      source: () => ({ tab: this.activeTab(), registeredCount: this.statsUpcomingRegistered()?.total ?? null }),
+      computation: ({ registeredCount }) => (registeredCount === 0 ? 'all' : 'registered'),
     });
   }
 
@@ -185,10 +181,17 @@ export class EventsListComponent {
     );
   }
 
-  private initializeStatsUpcomingRegistered(): Signal<MyEventsResponse> {
+  private initializeStatsUpcomingRegistered(): Signal<MyEventsResponse | null> {
     return toSignal(
       this.eventsService.getMyEvents({ isPast: false, offset: 0, pageSize: 1, registeredOnly: true, sortField: 'EVENT_START_DATE', sortOrder: 'ASC' }).pipe(
-        catchError(() => of(EMPTY_MY_EVENTS_RESPONSE)),
+        catchError(() => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to load registration totals. Showing My Registrations.',
+          });
+          return of(null);
+        }),
         finalize(() => this.statsUpcomingRegisteredLoading.set(false))
       ),
       { initialValue: EMPTY_MY_EVENTS_RESPONSE }

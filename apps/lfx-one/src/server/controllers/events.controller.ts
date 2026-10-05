@@ -86,11 +86,9 @@ export class EventsController {
         isPast = false;
       }
 
-      // For upcoming events, fetch affiliated project slugs server-side from the persona service.
-      // Slugs are used because PROJECT_SLUG is the shared key between the persona service and datalake.
-      // This ensures client-supplied values cannot be used to access events from arbitrary projects.
+      // Only discovery needs affiliations; resolve slugs server-side rather than trusting client scope.
       let affiliatedProjectSlugs: string[] | undefined;
-      if (isPast === false) {
+      if (isPast === false && !registeredOnly) {
         affiliatedProjectSlugs = await this.personaDetectionService.getAffiliatedProjectSlugs(req);
       }
 

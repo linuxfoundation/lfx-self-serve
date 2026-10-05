@@ -99,6 +99,60 @@ describe('EventsController Foundation scope', () => {
   });
 });
 
+describe('EventsController My Events affiliation scope', () => {
+  const controller = new EventsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getMyEvents.mockResolvedValue({ data: [], total: 0 });
+    getAffiliatedProjectSlugs.mockReset().mockResolvedValue(['alpha']);
+  });
+
+  it('does not consult affiliations for registered-only Upcoming rows', async () => {
+    const req = buildReq({ isPast: 'false', registeredOnly: 'true', pageSize: '1' });
+    const res = buildRes();
+    const next = vi.fn();
+    getAffiliatedProjectSlugs.mockRejectedValueOnce(new Error('Affiliations unavailable'));
+
+    await controller.getMyEvents(req, res, next);
+
+    expect(getAffiliatedProjectSlugs).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(getMyEvents).toHaveBeenCalledWith(
+      req,
+      'user@example.com',
+      expect.objectContaining({
+        isPast: false,
+        registeredOnly: true,
+        affiliatedProjectSlugs: undefined,
+        pageSize: 1,
+      })
+    );
+    expect(res.json).toHaveBeenCalledWith({ data: [], total: 0 });
+  });
+
+  it.each([undefined, 'false', 'TRUE', ['true'], true])('retains affiliation lookup for discovery when registeredOnly=%j', async (raw) => {
+    const req = buildReq({ isPast: 'false', registeredOnly: raw });
+    const next = vi.fn();
+
+    await controller.getMyEvents(req, buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getAffiliatedProjectSlugs).toHaveBeenCalledExactlyOnceWith(req);
+    expect(getMyEvents.mock.calls[0][2]).toMatchObject({ isPast: false, registeredOnly: false, affiliatedProjectSlugs: ['alpha'] });
+  });
+
+  it.each(['true', undefined])('does not consult affiliations when isPast=%j', async (isPast) => {
+    const next = vi.fn();
+
+    await controller.getMyEvents(buildReq({ isPast, registeredOnly: 'true' }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getAffiliatedProjectSlugs).not.toHaveBeenCalled();
+    expect(getMyEvents.mock.calls[0][2]).toMatchObject({ isPast: isPast === 'true' ? true : undefined, affiliatedProjectSlugs: undefined });
+  });
+});
+
 describe('EventsController pagination', () => {
   const controller = new EventsController();
 
