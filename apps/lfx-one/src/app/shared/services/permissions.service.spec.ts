@@ -140,6 +140,70 @@ describe('PermissionsService', () => {
       ]);
     });
 
+    it("preserves the real username's original case in duplicateIdentifier so the backend's case-sensitive match succeeds (@dealako #3244 review)", () => {
+      const settings: ProjectSettings = {
+        uid: 'project-1',
+        announcement_date: '',
+        auditors: [{ name: 'Blair Chen', email: 'bchen@vendor-corp.example' }],
+        writers: [{ name: 'Blair Chen', email: 'bchen@vendor-corp.example', username: 'BlairChen' }],
+        created_at: '',
+        updated_at: '',
+      };
+
+      let result: ProjectPermissionUser[] = [];
+      service.getProjectPermissions('project-1').subscribe((users) => {
+        result = users;
+      });
+
+      http.expectOne('/api/projects/project-1/permissions').flush(settings);
+
+      expect(result).toEqual([
+        {
+          name: 'Blair Chen',
+          email: 'bchen@vendor-corp.example',
+          username: 'BlairChen',
+          avatar: undefined,
+          role: 'manage',
+          duplicateIdentifier: 'bchen@vendor-corp.example',
+        },
+      ]);
+    });
+
+    it('does not collapse two different users whose usernames differ only by case (Copilot #3244 review)', () => {
+      const settings: ProjectSettings = {
+        uid: 'project-1',
+        announcement_date: '',
+        auditors: [{ name: 'Sam Lowercase', email: 'sam1@vendor-corp.example', username: 'samriver' }],
+        writers: [{ name: 'Sam Uppercase', email: 'sam2@acme-motors.example', username: 'SamRiver' }],
+        created_at: '',
+        updated_at: '',
+      };
+
+      let result: ProjectPermissionUser[] = [];
+      service.getProjectPermissions('project-1').subscribe((users) => {
+        result = users;
+      });
+
+      http.expectOne('/api/projects/project-1/permissions').flush(settings);
+
+      expect(result).toEqual([
+        {
+          name: 'Sam Lowercase',
+          email: 'sam1@vendor-corp.example',
+          username: 'samriver',
+          avatar: undefined,
+          role: 'view',
+        },
+        {
+          name: 'Sam Uppercase',
+          email: 'sam2@acme-motors.example',
+          username: 'SamRiver',
+          avatar: undefined,
+          role: 'manage',
+        },
+      ]);
+    });
+
     it('keeps distinct users as separate rows', () => {
       const settings: ProjectSettings = {
         uid: 'project-1',

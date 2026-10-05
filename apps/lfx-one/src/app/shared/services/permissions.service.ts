@@ -164,10 +164,13 @@ export class PermissionsService {
 
     // A real username (distinct from the email fallback applied above) and the email are
     // treated as separate, co-equal identifiers for the same entry — both get unioned together.
+    // Email compares case-insensitively (the backend lowercases it too), but username does not:
+    // LFID username case-uniqueness isn't guaranteed (see vote-response.helper.ts), so folding
+    // case here could wrongly merge two different people's entries into one row (Copilot #3244).
     const identifiersOf = (user: ProjectPermissionUser): string[] => {
       const ids: string[] = [];
       if (user.email) ids.push(`email:${user.email.toLowerCase()}`);
-      if (user.username && user.username !== user.email) ids.push(`username:${user.username.toLowerCase()}`);
+      if (user.username && user.username !== user.email) ids.push(`username:${user.username}`);
       return ids;
     };
 
@@ -209,15 +212,22 @@ export class PermissionsService {
     if (group.length === 1) return group[0];
 
     const hasRealUsername = (user: ProjectPermissionUser): boolean => !!user.username && user.username !== user.email;
-    const ownIdentifier = (user: ProjectPermissionUser): string => (hasRealUsername(user) ? user.username! : user.email).toLowerCase();
+    // The raw identifier is what's actually sent to the backend as a `duplicateIdentifier`, so it
+    // must keep its original case — the backend's username match is case-sensitive, and lowercasing
+    // it here caused a correctly-cased username to silently fail to match on cleanup (@dealako
+    // #3244 review). `normalizedIdentifier` is only for deciding whether two entries are the same
+    // backend record: email compares case-insensitively (the backend lowercases it too), username
+    // does not.
+    const ownIdentifier = (user: ProjectPermissionUser): string => (hasRealUsername(user) ? user.username! : user.email);
+    const normalizedIdentifier = (user: ProjectPermissionUser): string => (hasRealUsername(user) ? user.username! : user.email.toLowerCase());
 
     const winner = group.reduce((best, user) => (best.role === 'view' && user.role === 'manage' ? user : best));
     const withRealUsername = group.find(hasRealUsername);
     const merged: ProjectPermissionUser = !hasRealUsername(winner) && withRealUsername ? { ...winner, username: withRealUsername.username } : { ...winner };
 
-    const mergedId = ownIdentifier(merged);
-    const duplicateIdentifier = group.map(ownIdentifier).find((id) => id !== mergedId);
+    const mergedId = normalizedIdentifier(merged);
+    const duplicate = group.find((user) => normalizedIdentifier(user) !== mergedId);
 
-    return duplicateIdentifier ? { ...merged, duplicateIdentifier } : merged;
+    return duplicate ? { ...merged, duplicateIdentifier: ownIdentifier(duplicate) } : merged;
   }
 }
