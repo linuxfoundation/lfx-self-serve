@@ -13,7 +13,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
 import {
   DocumentFormMode,
   FilterPillOption,
@@ -96,7 +96,7 @@ export class DocumentsDashboardComponent {
   protected readonly projectDocumentSourceOptions: { label: string; value: ProjectDocumentSource | null }[] = [
     { label: 'All Sources', value: null },
     { label: 'Project', value: 'project' },
-    { label: 'Committee', value: 'committee' },
+    { label: COMMITTEE_LABEL.singular, value: 'committee' },
     { label: 'Meeting', value: 'meeting' },
     { label: 'Mailing List', value: 'mailing_list' },
   ];
