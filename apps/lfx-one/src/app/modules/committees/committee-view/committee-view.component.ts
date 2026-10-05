@@ -19,7 +19,6 @@ import {
   Committee,
   CommitteeInvite,
   CommitteeMember,
-  CommitteeMemberVisibility,
   CommitteePermissionLevel,
   CommitteeTab,
   CommitteeUser,
@@ -42,6 +41,7 @@ import {
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
 import {
   canManageCommitteeMembers,
+  canViewCommitteeRoster,
   committeeRequiresOrganization,
   committeeRouteIdMatches,
   findPendingInvitationForCommittee,
@@ -328,7 +328,9 @@ export class CommitteeViewComponent {
     const c = this.committee();
     // Visitors only see public mailing lists — don't show the card wrapper when a visitor
     // would land on an empty card (private-only lists, no chat channel, no website).
-    const visibleListCount = this.isVisitor() ? this.associatedMailingLists().filter((ml) => ml.public).length : this.associatedMailingLists().length;
+    // Use isVisitorForPrivacy() (role-only) so a silent refresh does not temporarily
+    // expose private lists while committeeRefreshing() is true.
+    const visibleListCount = this.isVisitorForPrivacy() ? this.associatedMailingLists().filter((ml) => ml.public).length : this.associatedMailingLists().length;
     return visibleListCount > 0 || !!(c?.chat_channel || c?.website) || this.canEdit();
   });
 
@@ -348,12 +350,9 @@ export class CommitteeViewComponent {
   public upcomingMeetings: Signal<Meeting[]> = this.initUpcomingMeetings();
 
   // -- Tab visibility signals --
-  public isMembersTabVisible: Signal<boolean> = computed(
-    // Non-visitors (members, chairs, etc.) always see the Members tab.
-    // Visitors see it only when the group admin has opted into BASIC_PROFILE visibility,
-    // or when they have edit / invite-send access (edge case: ED in admin mode).
-    () => !this.isVisitor() || this.committee()?.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canEdit() || this.canSendMemberInvites()
-  );
+  // Same rule the BFF roster endpoint enforces (basic_profile, writer or auditor), plus the
+  // invite-only path for members who can send invites while the roster stays hidden.
+  public isMembersTabVisible: Signal<boolean> = computed(() => canViewCommitteeRoster(this.committee()) || this.canEdit() || this.canSendMemberInvites());
   public isVotesTabVisible: Signal<boolean> = computed(() => !!this.committee()?.enable_voting);
 
   // -- Visitor gating --
@@ -369,10 +368,10 @@ export class CommitteeViewComponent {
         return count != null ? `Members (${count})` : 'Members';
       },
       icon: 'fa-users',
-      // Visitors may see the Members tab when the group admin has opted into basic_profile
-      // visibility — isMembersTabVisible() encodes the full check:
-      //   !isVisitor() || BASIC_PROFILE || canEdit() || canSendMemberInvites()
-      // Delegating directly to isMembersTabVisible() is correct; no additional gate needed.
+      // isMembersTabVisible() already encodes the full access rule (canViewCommitteeRoster
+      // covers BASIC_PROFILE + writer + auditor; canEdit and canSendMemberInvites add invite_only
+      // and admin scenarios). Using it directly here ensures BASIC_PROFILE visitors see the tab
+      // even though isMemberOrAdmin() is false for them (GH-2988).
       visible: () => this.isMembersTabVisible(),
     },
     { key: 'votes', label: 'Votes', icon: 'fa-check-to-slot', visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible() },
@@ -884,7 +883,7 @@ export class CommitteeViewComponent {
     // header X button (onDialogHide path). In that case onClose never emits. Merge onDestroy
     // as a null fallback so joiningOrLeaving is always reset on every dismiss path.
     merge(ref.onClose, ref.onDestroy.pipe(map(() => null as JoinApplicationDialogResult | null)))
-      .pipe(take(1))
+      .pipe(takeUntilDestroyed(this.destroyRef), take(1))
       .subscribe((result: JoinApplicationDialogResult | null) => {
         if (!result) {
           this.joiningOrLeaving.set(false);
@@ -1182,7 +1181,8 @@ export class CommitteeViewComponent {
     return toSignal(
       combineLatest([toObservable(this.committee), toObservable(this.membersRefresh)]).pipe(
         switchMap(([committee]) => {
-          if (!committee?.uid) {
+          // Skip the roster fetch when member_visibility hides it from this caller (server enforces too)
+          if (!committee?.uid || !canViewCommitteeRoster(committee)) {
             this.membersLoading.set(false);
             return of([]);
           }
