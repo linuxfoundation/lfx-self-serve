@@ -1876,6 +1876,9 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailAudienceOrigin: WritableSignal<'composed' | 'restored' | null>;
     emailAudienceUnattached: Signal<AudienceComposedList | null>;
     activeFoundationSlug: Signal<string>;
+    emailAudienceScope: Signal<number>;
+    emailAudienceReadUnavailable: Signal<boolean>;
+    emailAudienceReadPending: Signal<boolean>;
     emailAudienceSkipped: WritableSignal<boolean>;
     emailAudienceReadFailed: WritableSignal<boolean>;
     onSkipAudienceStep(): void;
@@ -2294,6 +2297,18 @@ describe('CampaignsComponent — email delivery channel', () => {
     beforeEach(() => {
       persist = vi.fn().mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
       vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persist);
+    });
+
+    it('reads the saved audience back when the warm-up resolves a brief id', async () => {
+      // Re-proceeding from Plan reset `emailAudience` while the warm-up resolved the SAME brief from
+      // the ownership cache, and only a restore read the audience back -- so compose reopened over
+      // a brief that already had a master.
+      const list = vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [] }));
+      selectEmail();
+      internals().onEmailProceedFromPlanning(emailBrief);
+      await fixture.whenStable();
+
+      expect(list, 'an id landed with no audience known and nothing read it back').toHaveBeenCalledWith(expect.any(String), 'brief-77');
     });
 
     /**
@@ -3374,6 +3389,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       master: looseMaster,
       briefId: internals().emailBriefId(),
       projectSlug: internals().activeFoundationSlug(),
+      scope: internals().emailAudienceScope(),
     });
 
     function onImplementTab(): void {
@@ -3526,7 +3542,12 @@ describe('CampaignsComponent — email delivery channel', () => {
       // reply landed, the previous brief's list was offered as this email's recovery.
       onImplementTab();
       internals().emailBriefId.set('brief-b');
-      internals().onAudienceComposeUnattached({ master: looseMaster, briefId: 'brief-a', projectSlug: internals().activeFoundationSlug() });
+      internals().onAudienceComposeUnattached({
+        master: looseMaster,
+        briefId: 'brief-a',
+        projectSlug: internals().activeFoundationSlug(),
+        scope: internals().emailAudienceScope(),
+      });
       fixture.detectChanges();
 
       expect(internals().emailAudienceUnattached(), "brief A's loose list was shown on brief B").toBeNull();
@@ -3542,11 +3563,48 @@ describe('CampaignsComponent — email delivery channel', () => {
       // `emailBriefId`, and looking up the live id alone hid the warning for a list still unattached.
       onImplementTab();
       internals().emailBriefId.set('');
-      internals().onAudienceComposeUnattached({ master: looseMaster, briefId: '', projectSlug: internals().activeFoundationSlug() });
+      internals().onAudienceComposeUnattached({
+        master: looseMaster,
+        briefId: '',
+        projectSlug: internals().activeFoundationSlug(),
+        scope: internals().emailAudienceScope(),
+      });
       internals().emailBriefId.set('brief-saved');
       fixture.detectChanges();
 
       expect(internals().emailAudienceUnattached(), 'the warning vanished when the plan was saved').toEqual(looseMaster);
+    });
+
+    it('drops a brief-less reply that lands after a reset', () => {
+      // A brief-less compose has no brief to scope by, so a reply landing after a reset was filed
+      // under the shared brief-less key and shown on the NEXT brief, offering A's list for B.
+      onImplementTab();
+      const dispatched = internals().emailAudienceScope();
+      internals().onEmailProceedFromPlanning({ eventDetails: { name: 'Other', slug: 'other' } } as unknown as CampaignBriefOutput);
+      internals().onAudienceComposeUnattached({ master: looseMaster, briefId: '', projectSlug: internals().activeFoundationSlug(), scope: dispatched });
+
+      expect(internals().emailAudienceUnattached(), "the previous send's loose list was shown on the next brief").toBeNull();
+    });
+
+    it("drops a brief's loose-list warning once a read finds its audience", async () => {
+      // With an older campaign-service the attach may have happened despite `recorded: false`. Kept,
+      // the warning read "not attached" beside the card naming the same list.
+      onImplementTab();
+      internals().emailBriefId.set('brief-77');
+      internals().onAudienceComposeUnattached({
+        master: looseMaster,
+        briefId: 'brief-77',
+        projectSlug: internals().activeFoundationSlug(),
+        scope: internals().emailAudienceScope(),
+      });
+      vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(
+        of({ enabled: true, audiences: [{ id: 'aud-77', briefId: 'brief-77', platform: 'hubspot', status: 'built', version: 1 } as CampaignAudience] })
+      );
+      expect(internals().emailAudienceUnattached(), 'the precondition: the warning is showing').toEqual(looseMaster);
+
+      await internals().restoreEmailAudience(internals().activeFoundationSlug(), 'brief-77');
+
+      expect(internals().emailAudienceUnattached()).toBeNull();
     });
 
     it('clears the warning when the brief-derived state resets', () => {
@@ -3770,6 +3828,19 @@ describe('CampaignsComponent — email delivery channel', () => {
       await internals().restoreEmailAudience('tlf', 'brief-77');
 
       expect(internals().emailAudience()?.id).toBe('aud-stored');
+    });
+
+    it('records an unavailable lookup apart from a failure, and keeps writes blocked', async () => {
+      // `enabled: false` is a deploy-time flag: a retry gets the same answer, so it must not be
+      // reported as a failure the Audience tab offers to retry.
+      selectEmail();
+      vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(of({ enabled: false }) as never);
+
+      await internals().restoreEmailAudience('tlf', 'brief-77');
+
+      expect(internals().emailAudienceReadUnavailable()).toBe(true);
+      expect(internals().emailAudienceReadFailed()).toBe(false);
+      expect(internals().emailAudienceReadPending()).toBe(false);
     });
 
     it.each([
@@ -4574,6 +4645,7 @@ describe('CampaignsComponent — email delivery channel', () => {
         master: { listId: '900', name: 'Master', hubspotUrl: 'https://app.hubspot.com/l/1' },
         briefId: '',
         projectSlug: internals().activeFoundationSlug(),
+        scope: internals().emailAudienceScope(),
       });
       internals().emailAudienceSkipped.set(true);
 

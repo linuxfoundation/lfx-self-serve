@@ -324,6 +324,8 @@
           [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''"
           [audienceReadFailed]="emailAudienceReadFailed()"
           [audienceReadPending]="emailAudienceReadPending()"
+          [audienceReadUnavailable]="emailAudienceReadUnavailable()"
+          [audienceScope]="emailAudienceScope()"
           [existingAudience]="emailAudience()"
           (retryAudienceRead)="onRetryAudienceRead()"
           (audienceAttached)="onAudienceComposed($event)"
@@ -717,8 +719,8 @@
                     </div>
                     <p class="text-sm text-amber-800">
                       <span class="font-medium">{{ loose.name }}</span> exists in HubSpot and this campaign does not point at it. Attach it from the Audience
-                      tab: under "Recent sends &amp; master lists", choose "Use for this email" on this list. That records it as the send list and creates
-                      nothing new.
+                      tab: under "Reuse a previous audience" → "Master lists already built", choose "Use for this email" on this list. That records it as the
+                      send list and creates nothing new.
                     </p>
                     <lfx-button
                       label="Open the Audience tab"

@@ -2854,6 +2854,8 @@ export interface AudienceComposeUnattachedEvent {
   /** The brief the compose was sent for; empty for an exploratory compose with no saved plan. */
   briefId: string;
   projectSlug: string;
+  /** The parent's brief-state generation at dispatch; scopes a brief-less event. */
+  scope: number;
 }
 
 /**

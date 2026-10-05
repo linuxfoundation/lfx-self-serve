@@ -1464,6 +1464,55 @@ describe('AudienceBuilderTabComponent', () => {
       expect(compose()?.disabled, 'an explicit replacement must unlock compose').toBe(false);
     });
 
+    it("does not offer to replace the audience this panel's own compose just recorded", async () => {
+      // The recorded compose feeds `existingAudience` straight back. Offering "replace" there was a
+      // button that could not work (`composeAttempted` blocks compose) beside a banner it contradicted.
+      await renderWithDiscovery('brief-1');
+      composeAudienceMaster.mockReturnValue(
+        of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: true, audience: RECORDED_AUDIENCE })
+      );
+      click('campaigns-audience-compose');
+      fixture.componentRef.setInput('existingAudience', RECORDED_AUDIENCE);
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-existing"]')).toBeNull();
+    });
+
+    it('withholds the replace action while there is no brief to attach a replacement to', async () => {
+      // With `briefId` empty a "replacement" composes unrecorded and leaves the restored audience
+      // as the send list -- a second master, the duplicate the prompt exists to prevent.
+      await renderWithDiscovery('');
+      fixture.componentRef.setInput('existingAudience', RECORDED_AUDIENCE);
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-existing-replace"]')).toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-existing-replace-unavailable"]')).not.toBeNull();
+    });
+
+    it('blocks writes with no retry when the audience lookup is unavailable', async () => {
+      // `enabled: false` is deploy-time: a retry cannot succeed, so none is offered.
+      await renderWithDiscovery('brief-1');
+      fixture.componentRef.setInput('audienceReadUnavailable', true);
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-read-unavailable"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-read-retry"]')).toBeNull();
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(true);
+    });
+
+    it("does not describe another brief's compose as this email's", async () => {
+      await renderWithDiscovery('brief-1');
+      composeAudienceMaster.mockReturnValue(
+        of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: true, audience: RECORDED_AUDIENCE })
+      );
+      click('campaigns-audience-compose');
+      fixture.componentRef.setInput('briefId', 'brief-2');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-attached"]'), "brief 1's compose read as attached to brief 2").toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-other-brief"]')).not.toBeNull();
+    });
+
     it('blocks compose over a restored audience even when the brief id is empty', async () => {
       // An unapproved restore leaves `briefId` empty ON PURPOSE while the parent holds the brief's
       // audience. Matching the two let exactly that restore through with no prompt.

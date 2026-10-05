@@ -57,11 +57,14 @@ describe('AudienceLastSentComponent', () => {
       canAttach?: boolean;
       canUseExistingMaster?: boolean;
       attachedListId?: string | null;
+      attachedMasterId?: string | null;
       attachedExclusionIds?: readonly string[];
     } = {}
   ): void {
     fixture.componentRef.setInput('emails', inputs.emails ?? []);
     fixture.componentRef.setInput('attachedListId', inputs.attachedListId ?? null);
+    // Defaults to `attachedListId`: the recorded exclusions match the ticks unless a test says not.
+    fixture.componentRef.setInput('attachedMasterId', inputs.attachedMasterId === undefined ? (inputs.attachedListId ?? null) : inputs.attachedMasterId);
     fixture.componentRef.setInput('attachedExclusionIds', inputs.attachedExclusionIds ?? []);
     // Defaults to `canAttach`: most tests here predate the separate master-reuse gate and mean
     // "attaching is possible", not "the suppression lookup has not settled".
@@ -342,6 +345,26 @@ describe('AudienceLastSentComponent', () => {
       click('audience-last-sent-master-use-401');
 
       expect(seen.map((l) => l.listId)).toEqual(['401']);
+    });
+
+    it('keeps the Attached badge on the master the brief points at, and re-enables reuse, once the ticks change', () => {
+      // The badge says what the brief POINTS AT; the exclusion ticks do not change that. Keyed on the
+      // exclusion match, the real send list lost its badge the moment a suppression was toggled.
+      render({ masterLists: [master()], canAttach: true, attachedListId: '401', attachedMasterId: null });
+
+      const row = host().querySelector('[data-testid="audience-last-sent-master-401"]');
+      const use = host().querySelector<HTMLButtonElement>('[data-testid="audience-last-sent-master-use-401"]');
+      expect(row?.textContent, 'the attached master lost its badge').toContain('Attached');
+      expect(use?.disabled, 'the new exclusions could not be recorded').toBe(false);
+      expect(use?.textContent).toContain('Re-attach with the ticked exclusions');
+    });
+
+    it('disables reuse when the master and its exclusions both match the record', () => {
+      render({ masterLists: [master()], canAttach: true, attachedListId: '401' });
+
+      const use = host().querySelector<HTMLButtonElement>('[data-testid="audience-last-sent-master-use-401"]');
+      expect(use?.disabled).toBe(true);
+      expect(use?.textContent).toContain('Used for this email');
     });
 
     it('does not reuse an existing master while the suppression lookup is unsettled', () => {

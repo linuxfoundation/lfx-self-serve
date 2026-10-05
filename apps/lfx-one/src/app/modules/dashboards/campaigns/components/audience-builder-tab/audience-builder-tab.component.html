@@ -10,6 +10,14 @@
       <i class="fa-light fa-spinner-third fa-spin text-gray-500" aria-hidden="true"></i>
       <p class="text-xs text-gray-700">Checking whether this email already has a send audience. Attaching and composing are paused until it loads.</p>
     </div>
+  } @else if (audienceReadUnavailable()) {
+    <div class="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4" role="status" data-testid="campaigns-audience-read-unavailable">
+      <i class="fa-light fa-circle-info mt-0.5 text-gray-500" aria-hidden="true"></i>
+      <p class="text-xs text-gray-700">
+        Saved audiences cannot be looked up in this environment, so whether this email already has one is unknown. Attaching and composing are disabled here to
+        avoid a duplicate master list.
+      </p>
+    </div>
   } @else if (audienceReadFailed()) {
     <div class="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4" role="alert" data-testid="campaigns-audience-read-failed">
       <i class="fa-light fa-triangle-exclamation mt-0.5 text-amber-600" aria-hidden="true"></i>
@@ -467,13 +475,19 @@
               <p class="text-xs text-gray-600">
                 Composing creates another master list in HubSpot and makes it this email's audience. Only do this to replace the current one.
               </p>
-              <button
-                type="button"
-                (click)="replaceRequestedFor.set(existing.id)"
-                class="inline-flex w-fit items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                data-testid="campaigns-audience-existing-replace">
-                Compose a replacement
-              </button>
+              @if (canReplaceExisting()) {
+                <button
+                  type="button"
+                  (click)="replaceRequestedFor.set(existing.id)"
+                  class="inline-flex w-fit items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  data-testid="campaigns-audience-existing-replace">
+                  Compose a replacement
+                </button>
+              } @else {
+                <p class="text-xs text-gray-600" data-testid="campaigns-audience-existing-replace-unavailable">
+                  A replacement cannot be attached until the plan is saved and approved on the Plan tab.
+                </p>
+              }
             </div>
           }
           <button
@@ -531,7 +545,13 @@
             <p class="text-xs text-gray-600">Built from {{ result.sourceListIds.length }} list(s). Run QA below before scheduling the send.</p>
             <!-- Says whether the email will actually use it. "Master list created" alone read as done
                  even when no plan was saved and nothing was attached. -->
-            @if (result.recorded) {
+            @if (composeBriefId() !== briefId()) {
+              <!-- The compose was for ANOTHER brief: the parent moved on while it was in flight. Its
+                   outcome describes that email, not this one. -->
+              <p class="text-xs font-medium text-gray-600" data-testid="campaigns-audience-compose-other-brief">
+                This list was composed for a different email.
+              </p>
+            } @else if (result.recorded) {
               <p class="text-xs font-medium text-emerald-700" data-testid="campaigns-audience-compose-attached">Attached to this email as its send list.</p>
             } @else {
               <!-- `recorded: false` has two causes, and only one is fixed by saving the plan. With a
@@ -539,13 +559,13 @@
                    campaign-service omits the recording fields), so a re-save changes nothing. -->
               @if (composeBriefId() === '') {
                 <p class="text-xs font-medium text-amber-700" data-testid="campaigns-audience-compose-not-attached">
-                  Not attached to this email — no campaign plan was saved. Save the plan on the Plan tab, then use this list from "Recent sends &amp; master
-                  lists" above; that creates nothing new.
+                  Not attached to this email — no campaign plan was saved. Save the plan on the Plan tab, then choose "Use for this email" on this list under
+                  "Reuse a previous audience" → "Master lists already built" above; that creates nothing new.
                 </p>
               } @else {
                 <p class="text-xs font-medium text-amber-700" data-testid="campaigns-audience-compose-not-confirmed">
-                  Attachment to this email was not confirmed. Use this list from "Recent sends &amp; master lists" above to record it as the send list; that
-                  creates nothing new.
+                  Attachment to this email was not confirmed. Choose "Use for this email" on this list under "Reuse a previous audience" → "Master lists already
+                  built" above to record it as the send list; that creates nothing new.
                 </p>
               }
             }

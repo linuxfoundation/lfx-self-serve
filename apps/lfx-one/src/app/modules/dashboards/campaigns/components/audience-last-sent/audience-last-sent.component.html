@@ -57,7 +57,7 @@
               <button
                 type="button"
                 (click)="onUseMasterList(list)"
-                [disabled]="!canUseExistingMaster() || attachingId() !== null || list.attached"
+                [disabled]="!canUseExistingMaster() || attachingId() !== null || list.current"
                 class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                 [attr.data-testid]="'audience-last-sent-master-use-' + list.listId">
                 @if (attachingId() === list.listId) {
@@ -65,7 +65,13 @@
                   Attaching...
                 } @else {
                   <i class="fa-light fa-paper-plane" aria-hidden="true"></i>
-                  {{ list.attached ? 'Used for this email' : 'Use for this email' }}
+                  @if (list.current) {
+                    Used for this email
+                  } @else if (list.attached) {
+                    Re-attach with the ticked exclusions
+                  } @else {
+                    Use for this email
+                  }
                 }
               </button>
               <button

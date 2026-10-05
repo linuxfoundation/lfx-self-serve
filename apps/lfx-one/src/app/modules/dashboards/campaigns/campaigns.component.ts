@@ -1096,7 +1096,8 @@ export class CampaignsComponent {
    * An outage that hid an existing audience let the operator create a SECOND HubSpot master
    * list for the same brief -- irreversible, not idempotent, and real work to unpick.
    *
-   * Cleared only by a read that actually answered, never by a retry that failed the same way.
+   * Cleared by a read that actually answered, or by a compose that recorded an audience (which makes
+   * it known) -- never by a retry that failed the same way.
    */
   protected readonly emailAudienceReadFailed = signal<boolean>(false);
   /**
@@ -1107,6 +1108,17 @@ export class CampaignsComponent {
    * operator could compose or attach on top of an audience that was about to be revealed.
    */
   protected readonly emailAudienceReadPending = signal<boolean>(false);
+  /**
+   * The saved-audience lookup is OFF in this environment (`enabled: false`), as distinct from a
+   * read that failed. Both leave the audience unverified and both block writes, but only a failure
+   * is worth retrying -- the flag gives the same answer every time.
+   */
+  protected readonly emailAudienceReadUnavailable = signal<boolean>(false);
+  /**
+   * Bumped by every reset of the brief-derived state. The Audience tab stamps it onto an
+   * unattached-compose event, so a brief-less reply that lands after a reset can be recognised.
+   */
+  protected readonly emailAudienceScope = signal(0);
   /**
    * The brief id the last audience read was for, so the Audience tab's retry re-reads THAT brief.
    *
@@ -2631,6 +2643,11 @@ export class CampaignsComponent {
    * dropped when stale: the list is still real, and returning to its brief shows the warning again.
    */
   protected onAudienceComposeUnattached(event: AudienceComposeUnattachedEvent): void {
+    // A brief-less reply has only the generation to say which send it belongs to. Landing after a
+    // reset it would be filed under the shared brief-less key and shown on the next brief.
+    if (event.briefId === '' && event.scope !== this.emailAudienceScope()) {
+      return;
+    }
     const key = this.unattachedScopeKey(event.projectSlug, event.briefId);
     this.unattachedByScope.update((map) => new Map(map).set(key, event.master));
   }
@@ -2774,7 +2791,9 @@ export class CampaignsComponent {
       // created, but the operator loses the primary action with nothing explaining why.
       this.emailAudienceReadFailed.set(false);
       this.emailAudienceReadPending.set(false);
+      this.emailAudienceReadUnavailable.set(false);
       this.emailAudienceReadBriefId = '';
+      this.emailAudienceScope.update((n) => n + 1);
       this.emailAudienceGeneration++;
       this.emailStagingGeneration++;
       this.emailBriefPersistInFlight = null;
@@ -3606,11 +3625,9 @@ export class CampaignsComponent {
    * newest-row-wins upstream means that duplicate then becomes the one dispatched to. The stored
    * row is the authority; this asks for it rather than inferring anything from the brief.
    *
-   * SILENT on every failure, `enabled: false` included. Nothing here is actionable: the outcome of
-   * staying quiet is this screen with no audience, which is precisely the behaviour that existed
-   * before this read, and the Audience tab still reports its own errors at the moment one actually
-   * blocks something. A banner would announce a degradation on a page the operator has not yet
-   * asked to do anything with.
+   * No banner of its OWN. Every outcome is recorded instead -- pending, failed, or unavailable
+   * (`enabled: false`) -- and the Audience tab, which those states block, is where it is shown,
+   * with a retry only where one can succeed.
    */
   private async restoreEmailAudience(projectSlug: string, briefId: string): Promise<void> {
     // Both are preconditions of the route rather than defaults to paper over -- the BFF refuses an
@@ -3637,9 +3654,11 @@ export class CampaignsComponent {
         // `enabled: false` means the BFF SKIPPED the read, not that it found no audience. A restore
         // offer can still hand over a brief id while the briefs flag is dark, and the Audience tab
         // is independently available -- so this is an unverified absence, gated like a failure.
-        this.emailAudienceReadFailed.set(true);
+        // Its own state, not `ReadFailed`: the flag is deploy-time, so a retry cannot succeed.
+        this.emailAudienceReadUnavailable.set(true);
         return;
       }
+      this.emailAudienceReadUnavailable.set(false);
       if (result.error) {
         // RECORDED, not merely logged. A failed read leaves `emailAudience` null, which is
         // byte-identical to a brief that never had one -- and the Audience tab then offered
@@ -3664,6 +3683,14 @@ export class CampaignsComponent {
       }
 
       this.emailAudience.set(restored);
+      // The brief HAS an audience now, so a warning that its compose attached to nothing is stale --
+      // and with an older campaign-service that omits the recording fields, the attach may well
+      // have happened. Left in place it read "not attached" beside the card naming the same list.
+      this.unattachedByScope.update((map) => {
+        const next = new Map(map);
+        next.delete(this.unattachedScopeKey(projectSlug, briefId));
+        return next;
+      });
       // `restored`, not the origin it was CREATED with. The row does not record how it was made
       // and this read cannot know, so the card says where the value came from -- a reload -- and
       // claims nothing about the compose or build behind it.
@@ -4598,6 +4625,13 @@ export class CampaignsComponent {
       }
       this.emailBriefConflict = null;
       this.emailBriefId.set(briefId);
+      // Re-read the brief's audience whenever an id lands with none known. A reset (re-proceeding
+      // from Plan) clears `emailAudience` while this resolves the SAME brief through the ownership
+      // cache -- and only a restore used to read it back, so compose reopened over a brief that
+      // already had a master. The read also gates writes while it is in flight.
+      if (this.emailAudience() === null && !this.emailAudienceReadPending()) {
+        void this.restoreEmailAudience(projectSlug, briefId);
+      }
       // Record OWNERSHIP too, not just the id. `emailBriefId` is cleared by
       // `resetEmailBriefDerivedState`, so caching only there meant the next save after a Proceed
       // consulted an empty `knownBriefIds`, found no owned row, and CREATED a second brief for a
@@ -5068,7 +5102,9 @@ export class CampaignsComponent {
     // just left would otherwise lock compose for every later brief. See `restoreEmailAudience`.
     this.emailAudienceReadFailed.set(false);
     this.emailAudienceReadPending.set(false);
+    this.emailAudienceReadUnavailable.set(false);
     this.emailAudienceReadBriefId = '';
+    this.emailAudienceScope.update((n) => n + 1);
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');

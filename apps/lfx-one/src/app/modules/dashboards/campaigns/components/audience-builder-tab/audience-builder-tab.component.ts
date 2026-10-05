@@ -107,6 +107,12 @@ export class AudienceBuilderTabComponent {
    */
   public readonly audienceReadPending = input(false);
   /**
+   * The saved-audience lookup is switched OFF in this environment (the briefs flag is dark), so
+   * the brief's audience cannot be verified at all. Gated like a failure, but not retryable: a retry
+   * gets the same answer, so the copy must not offer one.
+   */
+  public readonly audienceReadUnavailable = input(false);
+  /**
    * The send audience the parent already holds for this brief -- restored on reload, or recorded
    * by an earlier compose or attach.
    *
@@ -116,6 +122,14 @@ export class AudienceBuilderTabComponent {
    * Compose now blocks on it until the operator explicitly asks to replace it.
    */
   public readonly existingAudience = input<CampaignAudience | null>(null);
+  /**
+   * The parent's brief-state generation, stamped onto an unattached-compose event at dispatch.
+   *
+   * A brief-less compose has no brief id to scope its warning by, so after a reset its late reply
+   * was filed under the shared brief-less key and shown on the NEXT brief. The parent drops a
+   * brief-less event whose scope no longer matches.
+   */
+  public readonly audienceScope = input(0);
 
   // === Outputs ===
   /**
@@ -483,7 +497,7 @@ export class AudienceBuilderTabComponent {
    * brief -- on top of one the operator cannot see. `canAttach` carries it, so every path built on
    * that inherits it rather than having to remember it.
    */
-  protected readonly audienceUnknown = computed(() => this.audienceReadFailed() || this.audienceReadPending());
+  protected readonly audienceUnknown = computed(() => this.audienceReadFailed() || this.audienceReadPending() || this.audienceReadUnavailable());
 
   /**
    * The id of the existing audience the operator has explicitly chosen to REPLACE, if any.
@@ -503,8 +517,23 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly blockingAudience = computed<CampaignAudience | null>(() => {
     const existing = this.existingAudience();
-    return existing === null || this.replaceRequestedFor() === existing.id ? null : existing;
+    // Not after THIS panel's own write. Its result block already states what the email sends to,
+    // and `composeAttempted` blocks a second compose regardless -- so offering "replace" there
+    // rendered a button that could not work, beside a banner it contradicted.
+    if (existing === null || this.composeAttempted() || this.attachResult() !== null) {
+      return null;
+    }
+    return this.replaceRequestedFor() === existing.id ? null : existing;
   });
+
+  /**
+   * Whether "Compose a replacement" can actually replace anything.
+   *
+   * Not while `briefId` is empty (an unapproved restore, before its re-approval lands): the compose
+   * would go out with no brief, come back unrecorded, and leave the restored audience as the send
+   * list -- the duplicate the replace prompt exists to prevent.
+   */
+  protected readonly canReplaceExisting = computed(() => this.briefId() !== '');
 
   /** The list currently recorded as this email's send list by THIS panel, if any. */
   protected readonly attachedListId = computed(() => {
@@ -1073,11 +1102,12 @@ export class AudienceBuilderTabComponent {
     this.composePartial.set(null);
     const dispatchBriefId = this.briefId();
     const dispatchProject = this.projectSlug();
+    const dispatchScope = this.audienceScope();
     this.composeBriefId.set(dispatchBriefId);
     // Scoped to the dispatch, like `briefId` below: the parent files the orphan warning by these.
     const unattached = (master: AudienceComposedList): void => {
       this.rememberComposedMaster(master);
-      this.audienceComposeUnattached.emit({ master, briefId: dispatchBriefId, projectSlug: dispatchProject });
+      this.audienceComposeUnattached.emit({ master, briefId: dispatchBriefId, projectSlug: dispatchProject, scope: dispatchScope });
     };
 
     this.campaignService

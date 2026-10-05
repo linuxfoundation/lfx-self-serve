@@ -123,11 +123,15 @@ export class AudienceLastSentComponent {
    */
   protected readonly masterRows = computed(() => {
     const selected = this.selectedIds();
-    const attached = this.attachedMasterId();
+    const attached = this.attachedListId();
+    const current = this.attachedMasterId();
     return this.masterLists().map((list) => ({
       ...list,
       selected: selected.has(list.listId),
+      // The badge says what the brief POINTS AT, which the exclusion ticks do not change.
       attached: attached === list.listId,
+      // Whether re-using it would record nothing new: same master AND the same exclusions.
+      current: current === list.listId,
       sizeText: this.sizeLabel(list.size),
     }));
   });

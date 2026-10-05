@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { extractPageLinks, resolvePageUrl, verifyPageLink } from './event-links.helper';
+import { extractPageLinks, resolveRegistrationUrl, verifyPageLink } from './event-links.helper';
 
 const BASE_URL = 'https://example.com/events/kubecon';
 
@@ -241,13 +241,22 @@ describe('extractPageLinks — malformed and hostile markup', () => {
   it.each([
     ['a slash', '</script/>'],
     ['a newline', '</script\n>'],
-    ['end of input', '</script'],
   ])('still closes a script on a real closer followed by %s', (_label, close) => {
     const html = `<script>var a = 1;${close}<a href="https://events.linuxfoundation.org/real">Real</a>`;
 
     const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
 
-    expect([...links.values()]).toEqual(close === '</script' ? [] : ['https://events.linuxfoundation.org/real']);
+    expect([...links.values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it('treats a closer cut off at the end of the input as closing the region', () => {
+    // The `opensAnElement` EOF branch: nothing follows `</script`, so the name ends there. The real
+    // link BEFORE the script must survive and the decoy inside it must not.
+    const html = `<a href="https://events.linuxfoundation.org/real">Real</a><script><a href="https://evil.example/fake">x</a></script`;
+
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+
+    expect([...links.values()]).toEqual(['https://events.linuxfoundation.org/real']);
   });
 
   it('stays linear on many prefix closers inside one script', () => {
@@ -412,34 +421,42 @@ describe('verifyPageLink', () => {
   });
 });
 
-describe('resolvePageUrl', () => {
-  it('resolves a root-relative href against the page that served it', () => {
+describe('resolveRegistrationUrl', () => {
+  const page = extractPageLinks('<a href="/register">Register</a><a href="register?ref=hero&amp;src=nav#form">Hero</a>', BASE_URL);
+
+  it('makes a relative href absolute when the page links to it', () => {
     // A page publishing `href="/register"` produced `/register`, which the brief coercer blanked
     // because it accepts only absolute URLs -- losing the registration destination entirely.
-    expect(resolvePageUrl('/register', BASE_URL)).toBe('https://example.com/register');
+    expect(resolveRegistrationUrl('/register', page, BASE_URL)).toBe('https://example.com/register');
   });
 
-  it('resolves a path-relative href against the page directory', () => {
-    expect(resolvePageUrl('register?ref=hero#form', BASE_URL)).toBe('https://example.com/events/register?ref=hero#form');
+  it('decodes an escaped ampersand in a relative href, as a verified link does', () => {
+    expect(resolveRegistrationUrl('register?ref=hero&amp;src=nav#form', page, BASE_URL)).toBe('https://example.com/events/register?ref=hero&src=nav#form');
   });
 
-  it('keeps an absolute http(s) URL, including off-site registration hosts', () => {
-    expect(resolvePageUrl('https://cvent.example/kubecon?code=A', BASE_URL)).toBe('https://cvent.example/kubecon?code=A');
+  it.each([
+    ['a placeholder', 'TBD'],
+    ['anchor text that names a host', 'www.cvent.com/reg/1'],
+    ['a relative path the page does not link to', '/invented-register'],
+  ])('refuses %s instead of resolving it into a same-site URL', (_label, candidate) => {
+    // Resolving every string against the page turned unverified model output into a valid-looking
+    // CTA. A relative value can only have come from an href, so it is checked against the anchors.
+    expect(resolveRegistrationUrl(candidate, page, BASE_URL)).toBe('');
   });
 
-  it('drops a non-http(s) scheme', () => {
-    expect(resolvePageUrl('javascript:alert(1)', BASE_URL)).toBe('');
-    expect(resolvePageUrl('mailto:events@example.com', BASE_URL)).toBe('');
+  it('keeps an absolute http(s) URL unverified, including off-site registration hosts', () => {
+    // Scripted CTAs carry no `<a href>`, so verifying an absolute URL would strip working links.
+    expect(resolveRegistrationUrl('https://cvent.example/kubecon?code=A&amp;b=2', new Map(), BASE_URL)).toBe('https://cvent.example/kubecon?code=A&b=2');
   });
 
-  it('drops userinfo, as a verified link does', () => {
-    expect(resolvePageUrl('https://evil.example@example.com/register', BASE_URL)).toBe('https://example.com/register');
+  it('drops a non-http(s) scheme and userinfo', () => {
+    expect(resolveRegistrationUrl('javascript:alert(1)', page, BASE_URL)).toBe('');
+    expect(resolveRegistrationUrl('https://evil.example@example.com/register', page, BASE_URL)).toBe('https://example.com/register');
   });
 
-  it('returns an empty string for blank, non-string, or unresolvable input', () => {
-    expect(resolvePageUrl('', BASE_URL)).toBe('');
-    expect(resolvePageUrl(null, BASE_URL)).toBe('');
-    expect(resolvePageUrl(42, BASE_URL)).toBe('');
-    expect(resolvePageUrl('/register', '')).toBe('');
+  it('returns an empty string for blank or non-string input', () => {
+    expect(resolveRegistrationUrl('', page, BASE_URL)).toBe('');
+    expect(resolveRegistrationUrl(null, page, BASE_URL)).toBe('');
+    expect(resolveRegistrationUrl(42, page, BASE_URL)).toBe('');
   });
 });

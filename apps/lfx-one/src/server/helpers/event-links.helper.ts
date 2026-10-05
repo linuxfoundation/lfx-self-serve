@@ -368,7 +368,7 @@ export function extractPageLinks(html: string, baseUrl: string): Map<string, str
  * `registrationUrl` is deliberately NOT routed through this. It predates the check, it is the
  * primary call-to-action's href, and event pages commonly drive registration from a scripted
  * button rather than an `<a href>` — so verifying it would strip working CTAs from existing
- * campaigns. That is a known gap, not an oversight. It IS resolved, by `resolvePageUrl` below.
+ * campaigns. That is a known gap, not an oversight. A relative one is checked, by `resolveRegistrationUrl` below.
  */
 export function verifyPageLink(candidate: unknown, pageLinks: Map<string, string>, baseUrl: string): string {
   if (typeof candidate !== 'string' || candidate.trim().length === 0) {
@@ -408,26 +408,34 @@ export function verifyPageLink(candidate: unknown, pageLinks: Map<string, string
 }
 
 /**
- * An unverified page URL made absolute against the page that served it, or `''` when it is not
- * an http(s) URL.
+ * The registration link to emit: an absolute http(s) URL as given, or a RELATIVE one only when the
+ * page's own anchors carry it; `''` otherwise.
  *
- * For `registrationUrl`, which skips `verifyPageLink` (see there) but still has to reach the
- * brief as an ABSOLUTE link. The extraction prompt asks for the href as the page wrote it, so a
- * page publishing `href="/register"` produced `/register` -- and `coerceCampaignEventDetails`
- * accepts only absolute URLs, so it blanked the registration destination entirely.
+ * For `registrationUrl`, which skips `verifyPageLink` when absolute (see there) but has to reach the
+ * brief as an absolute link: `coerceCampaignEventDetails` blanks anything relative, so a page
+ * publishing `href="/register"` lost its registration destination.
  *
- * Built through `pageHref`, so the emitted value carries the same guarantees a verified link
- * does: http(s) only, and no `userinfo`. An empty `baseUrl` leaves a relative candidate
- * unresolvable, which yields `''` rather than a guess.
+ * A relative candidate is VERIFIED rather than resolved blindly. Resolving every string against
+ * the page turned unverified model output -- `TBD`, or anchor text such as `www.cvent.com/reg` --
+ * into same-site URLs that passed coercion and shipped as the email's primary call to action. A
+ * relative value can only have come from an href, so it is checkable against the page's anchors.
+ *
+ * `&amp;` is decoded on both paths, as `hrefOf` does for verified links: the extraction prompt asks
+ * for the href as written, and a literal `&amp;` breaks the query string.
  */
-export function resolvePageUrl(candidate: unknown, baseUrl: string): string {
+export function resolveRegistrationUrl(candidate: unknown, pageLinks: Map<string, string>, baseUrl: string): string {
   if (typeof candidate !== 'string' || candidate.trim().length === 0) {
     return '';
   }
+  const value = candidate.trim().replace(AMP_ENTITY_RE, '&');
+  let absolute: URL | null = null;
   try {
-    const resolved = baseUrl === '' ? new URL(candidate.trim()) : new URL(candidate.trim(), baseUrl);
-    return resolved.protocol === 'http:' || resolved.protocol === 'https:' ? pageHref(resolved) : '';
+    absolute = new URL(value);
   } catch {
-    return '';
+    absolute = null;
   }
+  if (absolute !== null) {
+    return absolute.protocol === 'http:' || absolute.protocol === 'https:' ? pageHref(absolute) : '';
+  }
+  return verifyPageLink(value, pageLinks, baseUrl);
 }
