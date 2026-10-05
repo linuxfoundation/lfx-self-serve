@@ -114,8 +114,7 @@ export function resolvePrivacy(visibility: MeetingVisibility | null | undefined,
  *
  * The executable source of truth for every cell is the `MATRIX` table in
  * `meeting-view-model.utils.spec.ts`. The written state matrix, which adds what V1 renders for each
- * cell, lands with E0-01 as `specs/011-meeting-details-redesign/state-matrix.md` (PR #2935) and is
- * not on `main` at the time of writing.
+ * cell, is `specs/011-meeting-details-redesign/state-matrix.md`.
  */
 export function resolveActionSlot(input: ActionSlotInput): ActionSlotKind {
   if (input.timeState === 'ended') {

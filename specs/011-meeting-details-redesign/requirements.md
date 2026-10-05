@@ -5,7 +5,7 @@ Plan ID **E0-01** · issue [#1766](https://github.com/linuxfoundation/lfx-self-s
 Numbered functional requirements and success criteria for the meeting details redesign. Every
 Phase 1 and Phase 2 issue cites at least one `FR-###` (see [Traceability](#traceability)). The
 cell-by-cell behaviour each requirement refers to is in [`state-matrix.md`](state-matrix.md); the
-rollout invariants `R01`–`R07` are in `spec.md` (E0-01, PR #2914, pending on `main`).
+rollout invariants `R01`–`R07` are in [`spec.md`](spec.md).
 
 "Viewer", "privacy", "time", "RSVP tracking" and the slot kinds (`join`, `guest-join`, …) are the
 axis values and `ActionSlotKind` members defined in the state matrix.
@@ -14,9 +14,10 @@ axis values and `ActionSlotKind` members defined in the state matrix.
 
 ### Rollout and page lifecycle
 
-- **FR-001**: V2 MUST render only for a signed-in viewer for whom `MEETING_V2_ENABLED_FLAG`
-  evaluates true after hydration. Everyone else, and **during rollout** every anonymous visitor, MUST
-  get V1, and the V1 component MUST stay byte-identical (R01, R05). The visitor cells elsewhere in
+- **FR-001**: V2 MUST render only for a viewer for whom `MEETING_V2_ENABLED_FLAG` evaluates true;
+  everyone else MUST get V1, and the V1 component MUST stay byte-identical (R01). Until stage 5 of
+  `rollout.md`, every anonymous visitor MUST get V1 (R05). Until #2920 gives SSR the flag decision,
+  the decision MUST be made after hydration, so SSR always renders V1. The visitor cells elsewhere in
   this document describe V2 once anonymous traffic moves to it; until then they are verified by the
   resolver's table test, not in the browser.
 - **FR-002**: The flag MUST gate UI only. No BFF route, response shape or authorization decision may
@@ -186,7 +187,8 @@ axis values and `ActionSlotKind` members defined in the state matrix.
 
 ## Traceability
 
-Issue numbers are given where the issue exists; plan IDs without a number are not filed yet.
+Issue numbers are given where the issue exists; plan IDs without a number (Phase 2 and Phase 3)
+are not filed yet.
 
 | Plan ID                       | Issue | Requirements                    |
 | ----------------------------- | ----- | ------------------------------- |
@@ -210,23 +212,23 @@ Issue numbers are given where the issue exists; plan IDs without a number are no
 | E2-04 own RSVP                | #2880 | FR-023                          |
 | E2-05 RSVP card + scope       | #2881 | FR-024                          |
 | E2-06 guest join in the rail  | #2882 | FR-025, SC-003                  |
-| N-01 pre-2024 RSVP            | —     | FR-026, SC-005                  |
-| N-02 identity tiers           | —     | FR-033                          |
-| N-03 admin route guard        | —     | FR-054                          |
-| E3-01 agenda                  | —     | FR-030                          |
-| E3-02 materials               | —     | FR-031                          |
-| E3-03 public attachments      | —     | FR-031                          |
-| E3-04 people                  | —     | FR-032                          |
-| E3-05 attachment categories   | —     | FR-031                          |
-| E4-01 recording + transcript  | —     | FR-028, FR-040                  |
-| E4-02 recording duration      | —     | FR-048                          |
-| E4-03 inline AI summary       | —     | FR-040                          |
-| E4-04 public artifact routes  | —     | FR-028                          |
-| E4-05 align with admin page   | —     | FR-041                          |
+| N-01 pre-2024 RSVP            | #3263 | FR-026, SC-005                  |
+| N-02 identity tiers           | #3264 | FR-033                          |
+| N-03 admin route guard        | #3265 | FR-054                          |
+| E3-01 agenda                  | #3250 | FR-030                          |
+| E3-02 materials               | #3251 | FR-031                          |
+| E3-03 public attachments      | #3252 | FR-031                          |
+| E3-04 people                  | #3253 | FR-032                          |
+| E3-05 attachment categories   | #3254 | FR-031                          |
+| E4-01 recording + transcript  | #3255 | FR-028, FR-040                  |
+| E4-02 recording duration      | #3256 | FR-048                          |
+| E4-03 inline AI summary       | #3257 | FR-040                          |
+| E4-04 public artifact routes  | #3258 | FR-028                          |
+| E4-05 align with admin page   | #3259 | FR-041                          |
 | E5-01 page error state        | —     | shipped before the epic (#2046) |
-| E5-02 accessibility           | —     | FR-061                          |
-| E5-03 V2 specs                | —     | FR-062                          |
-| E5-04 E2E                     | —     | FR-063, SC-001, SC-002, SC-003  |
+| E5-02 accessibility           | #3260 | FR-061                          |
+| E5-03 V2 specs                | #3261 | FR-062                          |
+| E5-04 E2E                     | #3262 | FR-063, SC-001, SC-002, SC-003  |
 | E6-01 / E6-02 / E6-06         | —     | FR-047                          |
 | E6-03 / E6-04 / E6-05         | —     | FR-044                          |
 | V1 parity: occurrence actions | —     | FR-046                          |
@@ -240,3 +242,4 @@ Issue numbers are given where the issue exists; plan IDs without a number are no
 | O-01 – O-04 organizer dialogs | —     | FR-051                          |
 | M-01 / M-02 magic link        | —     | FR-052                          |
 | S-01 / S-02 spikes (Phase 3)  | —     | none: spikes produce decisions  |
+| V1 retirement (after rollout) | #3266 | FR-001, SC-006 (ends them)      |
