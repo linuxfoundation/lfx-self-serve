@@ -109,7 +109,10 @@ export const MENTORSHIP_REGISTER_ERROR_FALLBACK = 'We could not save your regist
 /** Field error both register forms show when a picked skill is not in `MENTORSHIP_SKILL_OPTIONS`. */
 export const MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL = 'Choose skills from the suggested list.';
 
-/** Most rows one `GET .../mentors` or `GET .../terms` page may return; the BFF rejects a larger `limit`. */
+/**
+ * Most rows one `GET .../mentors` or `GET .../terms` page may return. The BFF rejects a larger `limit` and caps
+ * its upstream read here too, since upstream resets a larger `limit` to 50.
+ */
 export const MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT = 50;
 
 /** Admin Mentors and Terms tab page size. Passed as `limit` on `GET .../mentors` and `GET .../terms`. */
@@ -130,8 +133,9 @@ export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
 ] as const satisfies readonly { value: string; label: string; countKey: keyof MentorshipAdminProgramTabCounts }[];
 
 /**
- * Mentor lifecycle statuses on the admin Mentors tab. Source of the
- * `MentorshipMentorStatus` union; declaration order is the lifecycle order.
+ * Mentor request statuses as the mentor sees them on the Become a Mentor form. Source of the
+ * `MentorshipMentorStatus` union; declaration order is the lifecycle order. The admin Mentors
+ * tab reads the wider `MENTORSHIP_ADMIN_MENTOR_STATUSES` instead.
  */
 export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn'] as const;
 

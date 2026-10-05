@@ -104,4 +104,22 @@ describe('TermsTabComponent', () => {
   it('allows a new term while fewer than the maximum are open', () => {
     expect(fixture.componentInstance['canAddTerm']()).toBe(true);
   });
+
+  it('blocks a new term and shows no max-terms message while the read is in flight', () => {
+    getProgramTerms.mockReturnValue(new Observable<MentorshipAdminTermsResponse>());
+    fixture.componentInstance['onRetry']();
+    settle();
+
+    expect(fixture.componentInstance['canAddTerm']()).toBe(false);
+    expect(fixture.componentInstance['atMaxOpenTerms']()).toBe(false);
+  });
+
+  it('blocks a new term and shows no max-terms message after a failed read', () => {
+    getProgramTerms.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    fixture.componentInstance['onRetry']();
+    settle();
+
+    expect(fixture.componentInstance['canAddTerm']()).toBe(false);
+    expect(fixture.componentInstance['atMaxOpenTerms']()).toBe(false);
+  });
 });

@@ -12,11 +12,11 @@
       severity="primary"
       size="small"
       [disabled]="!canAddTerm()"
-      [tooltip]="canAddTerm() ? undefined : maxTermsMessage"
+      [tooltip]="atMaxOpenTerms() ? maxTermsMessage : undefined"
       (onClick)="onCreateTerm()"
       data-testid="mentorship-terms-create" />
   </div>
-  @if (!canAddTerm()) {
+  @if (atMaxOpenTerms()) {
     <p class="text-sm text-gray-600">{{ maxTermsMessage }}</p>
   }
 
@@ -51,7 +51,12 @@
                 <div class="flex items-center gap-2">
                   <span class="text-sm font-medium text-blue-600" [attr.data-testid]="'mentorship-term-name-' + row.id">{{ row.name }}</span>
                   @if (row.shouldClose) {
-                    <i class="fa-light fa-triangle-exclamation text-amber-500" [attr.title]="shouldCloseWarning" [attr.aria-label]="shouldCloseWarning"></i>
+                    <i
+                      class="fa-light fa-triangle-exclamation text-amber-500"
+                      role="img"
+                      tabindex="0"
+                      [attr.title]="shouldCloseWarning"
+                      [attr.aria-label]="shouldCloseWarning"></i>
                   }
                 </div>
               </td>
@@ -66,7 +71,12 @@
                 <div class="flex items-center gap-2">
                   <span class="text-sm font-medium text-emerald-600">{{ row.accepted }}</span>
                   @if (row.cannotClose) {
-                    <i class="fa-light fa-circle-exclamation text-red-500" [attr.title]="cannotCloseMessage" [attr.aria-label]="cannotCloseMessage"></i>
+                    <i
+                      class="fa-light fa-circle-exclamation text-red-500"
+                      role="img"
+                      tabindex="0"
+                      [attr.title]="cannotCloseMessage"
+                      [attr.aria-label]="cannotCloseMessage"></i>
                   }
                 </div>
               </td>

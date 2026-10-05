@@ -153,13 +153,13 @@ export const MENTORSHIP_MENTOR_COMPLIANCE_ITEMS: readonly string[] = [
 ];
 
 /**
- * Request statuses as the mentor sees them. Spread from the admin labels so the two can
- * only differ where this file says so, and reuse
+ * Request statuses as the mentor sees them. Spread from `MENTORSHIP_MENTOR_STATUS_LABELS` so
+ * the two can only differ where this file says so, and reuse
  * `MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES` for the colors.
  */
 export const MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS: Record<MentorshipMentorStatus, string> = {
   ...MENTORSHIP_MENTOR_STATUS_LABELS,
-  // The admin tab reads "Invited" because the admin sent the invitation. The same status
+  // The base label reads "Invited" because an admin sent the invitation. The same status
   // also covers a request the mentor raised themselves, so from this side it stays neutral.
   pending: 'Pending',
 };

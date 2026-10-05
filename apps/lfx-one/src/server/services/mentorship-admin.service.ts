@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE, MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE, MENTORSHIP_PROGRAM_STATUSES } from '@lfx-one/shared/constants';
+import {
+  MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
+  MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
+  MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
+  MENTORSHIP_PROGRAM_STATUSES,
+} from '@lfx-one/shared/constants';
 import {
   MentorshipAdminMenteesQuery,
   MentorshipAdminMenteesResponse,
@@ -30,7 +35,6 @@ import { Request } from 'express';
 
 import {
   MENTORSHIP_ADMIN_APPLICATIONS_MAX_LIMIT,
-  MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
   MENTORSHIP_ADMIN_TASKS_MAX_LIMIT,
   MENTORSHIP_ADMIN_TERMS_MAX_LIMIT,
   MENTORSHIP_APPLICATIONS_PATH,

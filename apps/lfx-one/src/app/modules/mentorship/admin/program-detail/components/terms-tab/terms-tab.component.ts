@@ -67,7 +67,10 @@ export class TermsTabComponent {
   private readonly termRows = signal<MentorshipProgramTermRow[]>([]);
   private readonly reloadCount = signal(0);
 
-  protected readonly canAddTerm = computed(() => mentorshipOpenTermCount(this.termRows()) < MENTORSHIP_MAX_OPEN_TERMS);
+  /** The open-term count is only known once a read has landed, so neither flag holds while loading or after a failed read. */
+  private readonly termsLoaded = computed(() => !this.loading() && !this.loadFailed());
+  protected readonly atMaxOpenTerms = computed(() => this.termsLoaded() && mentorshipOpenTermCount(this.termRows()) >= MENTORSHIP_MAX_OPEN_TERMS);
+  protected readonly canAddTerm = computed(() => this.termsLoaded() && mentorshipOpenTermCount(this.termRows()) < MENTORSHIP_MAX_OPEN_TERMS);
 
   protected readonly rows = computed(() =>
     this.termRows().map((term) => {
