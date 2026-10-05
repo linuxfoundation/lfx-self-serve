@@ -788,6 +788,7 @@ export class OrgEasyclaDetailComponent {
 
   /** Reloads the address `settleReturn` already stripped, so a copied link cannot reopen the wait. */
   protected reloadPage(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
     globalThis.location.reload();
   }
 
