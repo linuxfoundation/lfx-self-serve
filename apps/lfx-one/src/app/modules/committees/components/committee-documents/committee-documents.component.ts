@@ -233,9 +233,23 @@ export class CommitteeDocumentsComponent {
 
   private initFilteredDocuments(): Signal<MyDocumentItem[]> {
     return computed(() => {
-      const docs = this.documents();
       const query = this.searchQuery().toLowerCase().trim();
       const source = this.sourceFilter();
+
+      // When a search query is active, flatten all documents (ignoring folder scope) so
+      // users can find documents without knowing which folder they live in.
+      let docs: MyDocumentItem[];
+      if (query) {
+        const committee = this.committee();
+        const committeeUid = committee?.uid;
+        const groupName = committee?.name ?? '';
+        docs = this.committeeDocuments().map((d) => ({
+          ...this.toDisplayItem(d, committeeUid, groupName, false),
+          isFolder: d.type === 'folder',
+        }));
+      } else {
+        docs = this.documents();
+      }
       return docs.filter((doc) => {
         if (query && !doc.name.toLowerCase().includes(query) && !(doc.groupOrMeetingName ?? '').toLowerCase().includes(query)) {
           return false;
