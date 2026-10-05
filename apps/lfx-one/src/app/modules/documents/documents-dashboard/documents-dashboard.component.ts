@@ -188,6 +188,9 @@ export class DocumentsDashboardComponent {
   protected onFolderOpen(doc: MyDocumentItem): void {
     const folderUid = doc.id.startsWith('project_folder:') ? doc.id.slice('project_folder:'.length) : null;
     if (folderUid) {
+      // Clear the search query so the folder view activates and the user lands inside
+      // the folder rather than remaining in the flattened search result set.
+      this.filterForm.controls.search.setValue('');
       this.currentFolderUid.set(folderUid);
     }
   }
@@ -443,7 +446,18 @@ export class DocumentsDashboardComponent {
       if (projectMode && query) {
         const raw = this.rawProjectDocuments();
         const project = this.project();
-        docs = raw.map((d) => ({ ...this.toMyDocumentItem(d, project, false), isFolder: d.type === 'folder' }));
+        const folderUids = new Set(raw.filter((d) => d.type === 'folder').map((f) => f.uid));
+        const childCountByFolder = new Map<string, number>();
+        for (const item of raw) {
+          if (item.type !== 'folder' && item.parent_uid && folderUids.has(item.parent_uid)) {
+            childCountByFolder.set(item.parent_uid, (childCountByFolder.get(item.parent_uid) ?? 0) + 1);
+          }
+        }
+        docs = raw.map((d) => ({
+          ...this.toMyDocumentItem(d, project, false),
+          isFolder: d.type === 'folder',
+          ...(d.type === 'folder' ? { childCount: childCountByFolder.get(d.uid) ?? 0 } : {}),
+        }));
       } else {
         docs = this.documents();
       }

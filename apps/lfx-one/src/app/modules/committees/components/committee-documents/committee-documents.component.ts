@@ -95,6 +95,9 @@ export class CommitteeDocumentsComponent {
   public onFolderOpen(doc: MyDocumentItem): void {
     const folderUid = doc.id.startsWith('committee_folder:') ? doc.id.slice('committee_folder:'.length) : null;
     if (folderUid) {
+      // Clear the search query so the folder view activates and the user lands inside
+      // the folder rather than remaining in the flattened search result set.
+      this.filterForm.controls.search.setValue('');
       this.currentFolderUid.set(folderUid);
     }
   }
@@ -243,9 +246,18 @@ export class CommitteeDocumentsComponent {
         const committee = this.committee();
         const committeeUid = committee?.uid;
         const groupName = committee?.name ?? '';
-        docs = this.committeeDocuments().map((d) => ({
+        const allDocs = this.committeeDocuments();
+        const folderUids = new Set(allDocs.filter((d) => d.type === 'folder').map((f) => f.uid));
+        const childCountByFolder = new Map<string, number>();
+        for (const item of allDocs) {
+          if (item.type !== 'folder' && item.parent_uid && folderUids.has(item.parent_uid)) {
+            childCountByFolder.set(item.parent_uid, (childCountByFolder.get(item.parent_uid) ?? 0) + 1);
+          }
+        }
+        docs = allDocs.map((d) => ({
           ...this.toDisplayItem(d, committeeUid, groupName, false),
           isFolder: d.type === 'folder',
+          ...(d.type === 'folder' ? { childCount: childCountByFolder.get(d.uid) ?? 0 } : {}),
         }));
       } else {
         docs = this.documents();
