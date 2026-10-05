@@ -15,7 +15,7 @@ import {
   UpdateUserRoleRequest,
   UploadProjectDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, isFileTypeAllowed, isUuid, maskIdentifierForLogs } from '@lfx-one/shared/utils';
+import { computeIsFoundation, isFileTypeAllowed, isSafeUploadFileName, isUuid, maskIdentifierForLogs } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -819,8 +819,9 @@ export class ProjectController {
       }
 
       // Reject path-traversal patterns in the filename so upstream can't be tricked into
-      // writing or referencing files outside the project scope.
-      if (/[/\\\0]/.test(trimmedFileName!) || trimmedFileName!.includes('..')) {
+      // writing or referencing files outside the project scope, and control characters / quotes
+      // that would break out of the multipart part's Content-Disposition filename parameter.
+      if (!isSafeUploadFileName(trimmedFileName!)) {
         next(
           ServiceValidationError.forField('file_name', 'File name contains invalid characters', {
             operation: 'upload_project_document',

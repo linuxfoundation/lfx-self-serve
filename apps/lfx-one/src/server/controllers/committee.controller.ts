@@ -16,7 +16,7 @@ import {
   RejectCommitteeJoinApplicationRequest,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { canViewCommitteeRoster, isFileTypeAllowed } from '@lfx-one/shared/utils';
+import { canViewCommitteeRoster, isFileTypeAllowed, isSafeUploadFileName } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
@@ -1151,8 +1151,10 @@ export class CommitteeController {
 
       // Reject path-traversal patterns in the filename so upstream can't be tricked into
       // writing or referencing files outside the committee scope. Frontend strips these
-      // already; the server enforces the same rule for direct callers.
-      if (/[/\\\0]/.test(trimmedFileName!) || trimmedFileName!.includes('..')) {
+      // already; the server enforces the same rule for direct callers. Control characters and
+      // quotes are rejected too — they would break out of the multipart part's Content-Disposition
+      // filename parameter.
+      if (!isSafeUploadFileName(trimmedFileName!)) {
         next(
           ServiceValidationError.forField('file_name', 'File name contains invalid characters', {
             operation: 'upload_committee_document',

@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { downloadFromUrl, formatFileSize, parseContentDispositionFilename } from './file.utils';
+import { downloadFromUrl, formatFileSize, isSafeUploadFileName, parseContentDispositionFilename } from './file.utils';
 
 describe('parseContentDispositionFilename', () => {
   it('reads the quoted ASCII fallback form', () => {
@@ -36,6 +36,38 @@ describe('parseContentDispositionFilename', () => {
 
   it('returns null when the header has no filename', () => {
     expect(parseContentDispositionFilename('attachment')).toBeNull();
+  });
+});
+
+describe('isSafeUploadFileName', () => {
+  it('accepts ordinary file names, including spaces, unicode and single quotes', () => {
+    expect(isSafeUploadFileName('report.pdf')).toBe(true);
+    expect(isSafeUploadFileName('Q3 board deck (final).pptx')).toBe(true);
+    expect(isSafeUploadFileName('événement-notes.md')).toBe(true);
+    expect(isSafeUploadFileName("member's guide.docx")).toBe(true);
+  });
+
+  it('rejects path separators and traversal sequences', () => {
+    expect(isSafeUploadFileName('a/b.pdf')).toBe(false);
+    expect(isSafeUploadFileName('a\\b.pdf')).toBe(false);
+    expect(isSafeUploadFileName('..pdf')).toBe(false);
+  });
+
+  it('rejects CR/LF so the name cannot add header lines to the multipart part', () => {
+    expect(isSafeUploadFileName('report.pdf\r\nContent-Type: text/html')).toBe(false);
+    expect(isSafeUploadFileName('report.pdf\nX: a')).toBe(false);
+    expect(isSafeUploadFileName('report.pdf\rX: a')).toBe(false);
+  });
+
+  it('rejects double quotes so the name cannot terminate the filename parameter', () => {
+    expect(isSafeUploadFileName('report".pdf')).toBe(false);
+  });
+
+  it('rejects every C0 control character and DEL', () => {
+    for (let code = 0x00; code <= 0x1f; code++) {
+      expect(isSafeUploadFileName(`a${String.fromCharCode(code)}b.pdf`)).toBe(false);
+    }
+    expect(isSafeUploadFileName('a\x7fb.pdf')).toBe(false);
   });
 });
 
