@@ -2,9 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-3">
-  <!-- data-dd-privacy="mask": the revealed key claims Zoom host privileges; keep it out of Session Replay.
-       data-dd-action-name: RUM names click actions from element text regardless of the mask. -->
-  <div class="inline-flex items-center gap-1" data-dd-privacy="mask" data-testid="meeting-host-key">
+  <div class="inline-flex items-center gap-1" data-testid="meeting-host-key">
     <!-- On reveal, aria-label is dropped so the tag's visible "Host Key: <value>" becomes the accessible name (AT users get the digits). aria-describedby keeps the help text in the a11y tree (pTooltip alone is visual-only). -->
     <button
       type="button"
@@ -15,7 +13,6 @@
       [attr.aria-describedby]="helpId"
       pTooltip="Enter this key in Zoom to claim host privileges."
       tooltipPosition="top"
-      data-dd-action-name="Host key toggle"
       data-testid="host-key-toggle">
       <lfx-tag
         [value]="revealed() ? 'Host Key: ' + hostKey() : 'Host Key'"
@@ -34,7 +31,6 @@
         ariaLabel="Copy host key"
         tooltip="Copy host key"
         (onClick)="copyHostKey()"
-        data-dd-action-name="Copy host key"
         data-testid="host-key-copy"></lfx-button>
     }
   </div>

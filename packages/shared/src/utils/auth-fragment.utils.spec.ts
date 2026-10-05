@@ -3,15 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { AUTH_FRAGMENT_KEYS, MEETING_PASSWORD_QUERY_PARAMS } from '../constants/auth-fragment.constants';
-import {
-  hasAuthFragment,
-  redactAuthFragment,
-  redactInviteToken,
-  redactLoggedUrl,
-  redactMeetingPassword,
-  redactMeetingPasswordInText,
-} from './auth-fragment.utils';
+import { AUTH_FRAGMENT_KEYS } from '../constants/auth-fragment.constants';
+import { hasAuthFragment, redactAuthFragment, redactInviteToken } from './auth-fragment.utils';
 
 /**
  * Guards Supabase access AND refresh tokens from reaching a third-party analytics sink. A refresh
@@ -89,132 +82,6 @@ describe('redactInviteToken', () => {
     expect(redactInviteToken(`${ORIGIN}/mentorship/mentor/invites?token=SUPER.SECRET`, ORIGIN)).toBe(`${ORIGIN}/mentorship/mentor/invites?token=redacted`);
     expect(redactInviteToken('/mentorship/mentor/invites/?token=SUPER.SECRET', ORIGIN)).toBe('/mentorship/mentor/invites/?token=redacted');
     expect(redactInviteToken(`${ORIGIN}/mentorship/mentor/programs?token=keep-me`, ORIGIN)).toBe(`${ORIGIN}/mentorship/mentor/programs?token=keep-me`);
-  });
-});
-
-/** Guards the private/restricted-meeting passcode, the server's access gate, from the analytics sink. */
-describe('redactMeetingPassword', () => {
-  const ORIGIN = 'https://lfx.example.com';
-
-  it.each(MEETING_PASSWORD_QUERY_PARAMS)('redacts the %s param on the meeting page, keeping every other param', (param) => {
-    expect(redactMeetingPassword(`${ORIGIN}/meetings/m-1?${param}=SUPER_SECRET&tab=details`, ORIGIN)).toBe(
-      `${ORIGIN}/meetings/m-1?${param}=redacted&tab=details`
-    );
-  });
-
-  it('redacts on any path, including the public API a resource event records', () => {
-    expect(redactMeetingPassword(`${ORIGIN}/public/api/meetings/m-1?password=SUPER_SECRET`, ORIGIN)).not.toContain('SUPER_SECRET');
-    expect(redactMeetingPassword(`${ORIGIN}/public/api/meetings/m-1/join-url?password=SUPER_SECRET`, ORIGIN)).not.toContain('SUPER_SECRET');
-    expect(redactMeetingPassword(`${ORIGIN}/project/acme/meetings?password=SUPER_SECRET`, ORIGIN)).not.toContain('SUPER_SECRET');
-  });
-
-  it('matches the param name case-insensitively', () => {
-    expect(redactMeetingPassword(`${ORIGIN}/meetings/m-1?Password=SUPER_SECRET`, ORIGIN)).not.toContain('SUPER_SECRET');
-    expect(redactMeetingPassword(`${ORIGIN}/meetings/m-1?PASSCODE=SUPER_SECRET`, ORIGIN)).not.toContain('SUPER_SECRET');
-  });
-
-  it('redacts a percent-encoded param name, at the top level and inside a nested returnTo', () => {
-    expect(redactMeetingPassword(`${ORIGIN}/meetings/m-1?%70assword=SUPER_SECRET`, ORIGIN)).not.toContain('SUPER_SECRET');
-    expect(redactMeetingPassword(`/login?returnTo=${encodeURIComponent('/meetings/m-1?%70asscode=SUPER_SECRET')}`, ORIGIN)).not.toContain('SUPER_SECRET');
-  });
-
-  it('redacts every occurrence of a repeated param', () => {
-    expect(redactMeetingPassword(`${ORIGIN}/meetings/m-1?password=AAA&password=BBB`, ORIGIN)).toBe(`${ORIGIN}/meetings/m-1?password=redacted`);
-  });
-
-  it('resolves a relative URL against the base and keeps it relative', () => {
-    expect(redactMeetingPassword('/meetings/m-1?password=SUPER_SECRET#join', ORIGIN)).toBe('/meetings/m-1?password=redacted#join');
-  });
-
-  it('redacts a meeting URL carried in returnTo, as the login redirect does', () => {
-    const login = `/login?returnTo=${encodeURIComponent(`${ORIGIN}/meetings/m-1?password=SUPER_SECRET`)}`;
-
-    expect(redactMeetingPassword(login, ORIGIN)).not.toContain('SUPER_SECRET');
-    expect(new URL(redactMeetingPassword(login, ORIGIN), ORIGIN).searchParams.get('returnTo')).toBe(`${ORIGIN}/meetings/m-1?password=redacted`);
-  });
-
-  it('redacts a login returnTo nested again in the auth-error redirect, where the passcode is double-encoded', () => {
-    const login = `/login?returnTo=${encodeURIComponent('/meetings/m-1?password=SUPER_SECRET')}`;
-    const authError = `${ORIGIN}/auth-error?reason=session&returnTo=${encodeURIComponent(login)}`;
-    const redacted = redactMeetingPassword(authError, ORIGIN);
-
-    expect(redacted).not.toContain('SUPER_SECRET');
-    const innerLogin = new URL(redacted).searchParams.get('returnTo') as string;
-    expect(new URL(innerLogin, ORIGIN).searchParams.get('returnTo')).toBe('/meetings/m-1?password=redacted');
-  });
-
-  it.each([
-    ['no query string', `${ORIGIN}/meetings/m-1`],
-    ['unrelated params', `${ORIGIN}/meetings?token=keep-me&tab=past`],
-    ['a param that merely contains the name', `${ORIGIN}/settings?password_reset=sent`],
-    ['a returnTo with no passcode', `/login?returnTo=${encodeURIComponent('/meetings/m-1')}`],
-    ['a nested returnTo with an unrelated query', `/login?returnTo=${encodeURIComponent('/meetings?tab=past')}`],
-    ['a param value that is not a URL', `${ORIGIN}/search?q=${encodeURIComponent('a?b=1')}`],
-  ])('leaves a URL with %s untouched', (_label, url) => {
-    expect(redactMeetingPassword(url, ORIGIN)).toBe(url);
-  });
-
-  it('drops the query string when the URL cannot be parsed but still carries a passcode param', () => {
-    expect(redactMeetingPassword('http://[not a url?password=SUPER_SECRET')).not.toContain('SUPER_SECRET');
-  });
-});
-
-describe('redactMeetingPasswordInText', () => {
-  it('redacts every passcode param quoted in free text, such as an HTTP error message', () => {
-    const message = 'Http failure response for https://lfx.example.com/meetings/m-1?tab=a&Password=AAA: 403. Retried /x?passcode=BBB#y';
-    const redacted = redactMeetingPasswordInText(message);
-
-    expect(redacted).not.toContain('AAA');
-    expect(redacted).not.toContain('BBB');
-    expect(redacted).toBe('Http failure response for https://lfx.example.com/meetings/m-1?tab=a&Password=redacted 403. Retried /x?passcode=redacted#y');
-  });
-
-  it('redacts a percent-encoded param name, which only URL parsing decodes', () => {
-    expect(redactMeetingPasswordInText('GET /meetings/m-1?%70assword=SUPER_SECRET failed')).toBe('GET /meetings/m-1?password=redacted failed');
-  });
-
-  it('redacts a passcode nested in a single- or double-encoded returnTo', () => {
-    const login = `/login?returnTo=${encodeURIComponent('/meetings/m-1?password=SUPER_SECRET')}`;
-    const authError = `https://lfx.example.com/auth-error?reason=session&returnTo=${encodeURIComponent(login)}`;
-
-    expect(redactMeetingPasswordInText(`Navigation to ${login} failed`)).not.toContain('SUPER_SECRET');
-    expect(redactMeetingPasswordInText(`Navigation to ${login} failed`)).toMatch(/^Navigation to \/login\?returnTo=\S+ failed$/);
-    expect(redactMeetingPasswordInText(`Navigation to "${authError}" failed`)).not.toContain('SUPER_SECRET');
-  });
-
-  it('redacts an encoded passcode in text that does not parse as a URL, keeping the params after it', () => {
-    expect(redactMeetingPasswordInText('bad value: meetings%3Fpassword%3DSUPER_SECRET%26tab%3Dpast')).toBe(
-      'bad value: meetings%3Fpassword%3Dredacted%26tab%3Dpast'
-    );
-    expect(redactMeetingPasswordInText('bad value: meetings%253Fpasscode%253DSUPER_SECRET%2526tab')).toBe(
-      'bad value: meetings%253Fpasscode%253Dredacted%2526tab'
-    );
-  });
-
-  it('leaves stack frames without a passcode untouched, coordinates included', () => {
-    const stack = 'Error: boom\n    at f (https://lfx.example.com/main-ABC.js?v=2:10:5)\n    at g (/chunk-XYZ.js:1:99)';
-    expect(redactMeetingPasswordInText(stack)).toBe(stack);
-  });
-
-  it('keeps the coordinates and closing parenthesis of a stack frame whose URL carries a passcode', () => {
-    expect(redactMeetingPasswordInText('Error: x\n    at f (https://lfx.example.com/meetings/m-1?password=SUPER_SECRET:10:5)\n    at g (/a.js:1:2)')).toBe(
-      'Error: x\n    at f (https://lfx.example.com/meetings/m-1?password=redacted:10:5)\n    at g (/a.js:1:2)'
-    );
-    expect(redactMeetingPasswordInText('f@https://lfx.example.com/x?passcode=SUPER_SECRET:3:7')).toBe('f@https://lfx.example.com/x?passcode=redacted:3:7');
-    expect(redactMeetingPasswordInText('at h (meetings%3Fpassword%3DSUPER_SECRET:4:2)')).toBe('at h (meetings%3Fpassword%3Dredacted:4:2)');
-  });
-
-  it('leaves text without a passcode param untouched', () => {
-    const text = 'Failed to reset password: password_reset=sent?ok';
-    expect(redactMeetingPasswordInText(text)).toBe(text);
-  });
-});
-
-describe('redactLoggedUrl', () => {
-  it('redacts both the invite token and a meeting passcode, keeping a relative URL relative', () => {
-    expect(redactLoggedUrl('/invite?token=SUPER_SECRET', 'http://localhost')).toBe('/invite?token=redacted');
-    expect(redactLoggedUrl('/meetings/m-1?password=SUPER_SECRET&tab=a', 'http://localhost')).toBe('/meetings/m-1?password=redacted&tab=a');
-    expect(redactLoggedUrl('/meetings/m-1?tab=a', 'http://localhost')).toBe('/meetings/m-1?tab=a');
   });
 });
 

@@ -242,14 +242,13 @@ export class MeetingService {
     return request$;
   }
 
-  /**
-   * The password gates private/restricted meetings server-side; it travels in a request header so
-   * it never appears in the request URL (which Datadog RUM records with trackResources).
-   */
   public getPublicMeeting(id: string, password: string | null): Observable<{ meeting: Meeting; project: PublicMeetingProject }> {
-    const headers = password ? new HttpHeaders({ [MEETING_PASSWORD_HEADER]: password }) : undefined;
+    let params = new HttpParams();
+    if (password) {
+      params = params.set('password', password);
+    }
 
-    return this.http.get<{ meeting: Meeting; project: PublicMeetingProject }>(`/public/api/meetings/${id}`, { headers }).pipe(
+    return this.http.get<{ meeting: Meeting; project: PublicMeetingProject }>(`/public/api/meetings/${id}`, { params }).pipe(
       catchError((error) => {
         console.error(`Failed to load public meeting ${id}:`, error);
         return throwError(() => error);
@@ -290,10 +289,13 @@ export class MeetingService {
     password: string | null,
     body?: { email?: string; name?: string; organization?: string }
   ): Observable<MeetingJoinURL> {
-    // Header, not query string — see getPublicMeeting.
-    const headers = password ? new HttpHeaders({ [MEETING_PASSWORD_HEADER]: password }) : undefined;
+    let params = new HttpParams();
 
-    return this.http.post<MeetingJoinURL>(`/public/api/meetings/${id}/join-url`, body, { headers }).pipe(
+    if (password) {
+      params = params.set('password', password);
+    }
+
+    return this.http.post<MeetingJoinURL>(`/public/api/meetings/${id}/join-url`, body, { params }).pipe(
       catchError((error) => {
         console.error(`Failed to load public meeting join url ${id}:`, error);
         return throwError(() => error);

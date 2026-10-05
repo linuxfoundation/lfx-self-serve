@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // A deep import: the utils barrel reaches Angular, which specs that load the logger do not compile.
-import { redactLoggedUrl } from '@lfx-one/shared/utils/auth-fragment.utils';
+import { redactInviteToken } from '@lfx-one/shared/utils/auth-fragment.utils';
 import { trace } from '@opentelemetry/api';
 import { IncomingMessage, ServerResponse } from 'node:http';
 
@@ -21,9 +21,8 @@ export function reqSerializer(req: IncomingMessage & { id?: string; originalUrl?
   return {
     id: req.id,
     method: req.method,
-    // Invite pages carry a signed credential in `?token=` and meeting join links a passcode in
-    // `?password=`; only the base matters for parsing a relative URL.
-    url: redactLoggedUrl(req.originalUrl || req.url || '', 'http://localhost'),
+    // The invite pages carry a signed credential in `?token=`; only the base matters for parsing a relative URL.
+    url: redactInviteToken(req.originalUrl || req.url || '', 'http://localhost'),
     remoteAddress: req.ip || req.socket?.remoteAddress,
     userAgent: req.headers['user-agent'],
   };
