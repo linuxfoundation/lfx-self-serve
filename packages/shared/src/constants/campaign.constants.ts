@@ -1000,6 +1000,15 @@ export const VALID_CAMPAIGN_TOGGLE_STATUSES: ReadonlySet<CampaignToggleStatus> =
 export const VALID_CAMPAIGN_BUDGET_TYPES: ReadonlySet<CampaignBudgetType> = new Set<CampaignBudgetType>(['daily', 'lifetime']);
 
 /**
+ * An etag the BFF can send as `If-Match`: visible ASCII only, which keeps `"3"` and `W/"3"` valid.
+ * Node's fetch rejects a header value holding CR/LF or a character above U+00FF before any network
+ * I/O, and that rejection is classified as a transport failure. On a budget write a transport
+ * failure is reported as UNCONFIRMED, so such an etag would tell the operator a request that never
+ * left the BFF "may already have been applied". It is refused as a 400 instead.
+ */
+export const CAMPAIGN_ETAG_HEADER_PATTERN = /^[\x21-\x7e]+$/;
+
+/**
  * What a budget change reports when no campaign-service answer came back, such as a timeout, a
  * lost connection or a gateway error page.
  *

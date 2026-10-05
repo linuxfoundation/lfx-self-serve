@@ -2872,6 +2872,29 @@ describe('CampaignController.updateCampaignBudget', () => {
     expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
   });
 
+  // fetch rejects such a header before any network I/O, and that rejection would otherwise be
+  // reported as an UNCONFIRMED write although nothing left the BFF.
+  it.each([
+    ['an embedded newline', '"1"\r\nX-Injected: 1'],
+    ['a character above U+00FF', '"1☃"'],
+    ['a non-ASCII latin-1 character', '"café"'],
+    ['an internal space', '"1" "2"'],
+  ])('refuses an etag with %s, which cannot be sent as If-Match', async (_label, etag) => {
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, etag }), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+  });
+
+  it.each([['"1"'], ['W/"1"'], ['abc-123']])('forwards the valid etag %s as given', async (etag) => {
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, etag }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(updateCampaignBudget).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ etag }));
+  });
+
   it('refuses a request with no project', async () => {
     await controller.updateCampaignBudget(budgetReq(UUID, validBody, {}), res, next);
 

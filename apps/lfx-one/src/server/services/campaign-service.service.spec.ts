@@ -3273,6 +3273,75 @@ describe('CampaignServiceClient.updateCampaignBudget', () => {
     expect(error.toResponse()['error']).toBe(CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED);
   });
 
+  // Each row is built in the exact shape `api-client.service.ts` `executeRequest` throws, so the
+  // classification is pinned against what really arrives rather than a hand-simplified error.
+  it.each([
+    [
+      'a BFF timeout',
+      new MicroserviceError('Request timeout after 30000ms', 408, 'TIMEOUT', {
+        originalError: Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }),
+        transportFailure: true,
+        operation: 'api_client_timeout',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+      }),
+      408,
+    ],
+    [
+      'a gateway 503 whose JSON body has a message and no campaign-service code',
+      new MicroserviceError('Service Unavailable', 503, 'SERVICE_UNAVAILABLE', {
+        operation: 'api_client_request',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+        errorBody: { message: 'Service Unavailable' },
+      }),
+      503,
+    ],
+    [
+      'a 502 carrying an envelope for a different status',
+      new MicroserviceError('the budget change could not be applied', 502, 'BAD_GATEWAY', {
+        operation: 'api_client_request',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+        errorBody: { code: '503', message: 'the budget change could not be applied' },
+      }),
+      502,
+    ],
+  ])('reports %s as unconfirmed, keeping its status', async (_label, thrown, status) => {
+    const error = await failureFor(thrown);
+
+    expect(error.statusCode).toBe(status);
+    expect(error.code).toBe(thrown.code);
+    expect(error.toResponse()['error']).toBe(CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED);
+  });
+
+  it.each([
+    [
+      'an answered 500 in the campaign-service envelope',
+      new MicroserviceError('internal error', 500, 'INTERNAL_ERROR', {
+        operation: 'api_client_request',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+        errorBody: { code: '500', message: 'internal error' },
+      }),
+    ],
+    [
+      'a 4xx whose error body could not be read',
+      new MicroserviceError('Conflict', 409, 'CONFLICT', {
+        operation: 'api_client_request',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+        originalError: new Error('terminated'),
+      }),
+    ],
+  ])('passes %s through unchanged, as a definite failure', async (_label, thrown) => {
+    const error = await failureFor(thrown);
+
+    expect(error).toBe(thrown);
+    expect(error.toResponse()['error']).not.toBe(CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED);
+    expect(error.toResponse()['transport']).toBeUndefined();
+  });
+
   it('leaves a gateway 4xx refusal alone, since it never dispatched', async () => {
     const error = await failureFor(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
 

@@ -2394,9 +2394,10 @@ export interface CampaignBudgetUpdateResult {
   platform: string;
   campaignId: string;
   /**
-   * The amount and pacing the ad platform CONFIRMED. A 200 is only returned after the platform
-   * accepted the write, so this echo states a fact rather than a request. The upstream `Campaign`
-   * row carries no budget field to read it back from.
+   * The amount requested, which the platform accepted; the platform may hold it rounded to its
+   * smallest settable unit (LinkedIn cents, Meta the account currency's minor unit). A 200 is only
+   * returned after the platform accepted the write, but campaign-service persists the requested
+   * amount, not a readback of what the platform holds, and this is an echo of the request.
    */
   budget: number;
   budgetType: CampaignBudgetType;

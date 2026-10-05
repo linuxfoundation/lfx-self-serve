@@ -35,6 +35,7 @@ import type {
 import {
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
   GOOGLE_ADS_GEO_TARGET_MAP,
@@ -2129,6 +2130,18 @@ export class CampaignController {
       );
       return;
     }
+    // The etag becomes the If-Match header. One fetch cannot send (an internal CR/LF, a character
+    // above U+00FF) is rejected before any network I/O, and would surface as an UNCONFIRMED budget
+    // write although nothing left the BFF. Refused here as the malformed input it is.
+    if (!CAMPAIGN_ETAG_HEADER_PATTERN.test(etag)) {
+      next(
+        ServiceValidationError.forField('etag', 'etag must be a valid HTTP header value', {
+          operation: 'campaign_budget_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
 
     const budgetType = body.budgetType as CampaignBudgetType;
     const startTime = logger.startOperation(req, 'campaign_budget_update', { campaignId, briefId, budgetType });
@@ -2143,7 +2156,9 @@ export class CampaignController {
         etag,
       });
       // `platform`, `etag` and `serviceStatus` come from the ROW. The fresh etag is what lets the
-      // caller make a second change without a 412.
+      // caller make a second change without a 412. `budget` and `budgetType` echo the request: the
+      // amount requested, which the platform accepted; the platform may hold it rounded to its
+      // smallest settable unit.
       const result: CampaignBudgetUpdateResult = {
         platform: campaign.platform,
         campaignId,
