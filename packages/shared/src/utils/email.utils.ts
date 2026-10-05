@@ -18,7 +18,7 @@ export function isValidEmail(value: string | null | undefined): boolean {
  * without adding recipients or header fields. Does not trim: the exact tested string is the one a
  * caller may interpolate. Use before building any `mailto:` href from upstream data.
  */
-export function isMailtoSafeEmail(value: string | null | undefined): value is string {
+export function isMailtoSafeEmail(value: string | null | undefined): boolean {
   return !!value && MAILTO_SAFE_EMAIL_REGEX.test(value);
 }
 
