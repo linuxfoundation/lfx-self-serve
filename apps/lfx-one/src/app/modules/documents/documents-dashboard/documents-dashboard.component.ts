@@ -381,7 +381,7 @@ export class DocumentsDashboardComponent {
     } else if (docSource === 'summary') {
       mySource = 'summary';
     } else {
-      mySource = isFile ? 'file' : 'link';
+      mySource = 'project';
     }
 
     // Show entity name (committee name, meeting title) when available, otherwise project name.

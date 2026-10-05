@@ -18,10 +18,11 @@ export const MEETING_GROUP_SOURCES: MyDocumentSource[] = ['file', 'recording', '
 export const MY_DOCUMENT_SOURCE_TAGS: Record<MyDocumentSource, { value: string; severity: TagSeverity; icon: string; iconClass: string }> = {
   link: { value: 'Link', severity: 'success', icon: 'fa-light fa-link', iconClass: 'text-gray-400' },
   file: { value: 'File', severity: 'info', icon: 'fa-light fa-file', iconClass: 'text-gray-400' },
-  committee: { value: 'Committee', severity: 'info', icon: 'fa-light fa-users', iconClass: 'text-gray-400' },
+  committee: { value: 'Group', severity: 'info', icon: 'fa-light fa-users', iconClass: 'text-gray-400' },
   meeting: { value: 'Meeting', severity: 'secondary', icon: 'fa-light fa-calendar', iconClass: 'text-gray-400' },
   recording: { value: 'Meeting', severity: 'secondary', icon: 'fa-light fa-video', iconClass: 'text-gray-400' },
   transcript: { value: 'Meeting', severity: 'secondary', icon: 'fa-light fa-file-lines', iconClass: 'text-gray-400' },
   summary: { value: 'Meeting', severity: 'secondary', icon: 'fa-light fa-list-check', iconClass: 'text-gray-400' },
   mailing_list: { value: 'Mailing List', severity: 'warn', icon: 'fa-light fa-envelope', iconClass: 'text-gray-400' },
+  project: { value: 'Project', severity: 'accent', icon: 'fa-light fa-folder', iconClass: 'text-gray-400' },
 };

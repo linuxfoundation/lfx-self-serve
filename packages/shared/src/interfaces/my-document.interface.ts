@@ -4,7 +4,7 @@
 import { AuditUserProfile, ProjectDocumentSource } from './project.interface';
 
 /** Source type for My Documents page */
-export type MyDocumentSource = 'link' | 'meeting' | 'file' | 'recording' | 'transcript' | 'summary' | 'mailing_list' | 'committee';
+export type MyDocumentSource = 'link' | 'meeting' | 'file' | 'recording' | 'transcript' | 'summary' | 'mailing_list' | 'committee' | 'project';
 
 // ─── Query Result Shapes ─────────────────────────────────────────────────────
 
