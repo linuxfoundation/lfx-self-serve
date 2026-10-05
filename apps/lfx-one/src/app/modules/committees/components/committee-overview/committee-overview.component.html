@@ -147,14 +147,14 @@
       }
 
       <!-- Next Meeting — shown to visitors when the group's calendar is public (same gate as the Meetings tab) -->
-      @if (!isVisitor() || canEdit() || committee().calendar?.public) {
+      @if (!isVisitorForPrivacy() || committee().calendar?.public) {
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between">
             <h2 class="text-sm font-medium text-gray-700 flex items-center gap-2">
               <i class="fa-light fa-calendar text-gray-400"></i>
               Next Meeting
             </h2>
-            @if (!isVisitor()) {
+            @if (!isVisitorForPrivacy()) {
               <lfx-button
                 label="View All"
                 [text]="true"
@@ -186,14 +186,14 @@
       }
 
       <!-- Past Meeting — shown to visitors when the group's calendar is public (same gate as the Meetings tab) -->
-      @if (!isVisitor() || canEdit() || committee().calendar?.public) {
+      @if (!isVisitorForPrivacy() || committee().calendar?.public) {
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between">
             <h2 class="text-sm font-medium text-gray-700 flex items-center gap-2">
               <i class="fa-light fa-clock-rotate-left text-gray-400"></i>
               Past Meeting
             </h2>
-            @if (!isVisitor()) {
+            @if (!isVisitorForPrivacy()) {
               <lfx-button
                 label="View All"
                 [text]="true"
@@ -224,7 +224,7 @@
         </div>
       }
 
-      @if (!isVisitor()) {
+      @if (!isVisitorForPrivacy()) {
         @if (weeklyBriefEnabled() && engagementAccessible()) {
           <lfx-weekly-brief-card
             [committee]="committee()"

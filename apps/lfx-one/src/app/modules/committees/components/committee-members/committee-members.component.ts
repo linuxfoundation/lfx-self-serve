@@ -669,8 +669,8 @@ export class CommitteeMembersComponent implements OnInit {
 
     timer(400, 400)
       .pipe(
-        take(6),
         exhaustMap(() => this.committeeService.getCommitteeMembers(committeeUid).pipe(catchError(() => of(null as CommitteeMember[] | null)))),
+        take(6),
         filter((members): members is CommitteeMember[] => Array.isArray(members) && members.length >= countBefore + expected),
         take(1),
         takeUntilDestroyed(this.destroyRef)
@@ -701,8 +701,8 @@ export class CommitteeMembersComponent implements OnInit {
 
     timer(400, 400)
       .pipe(
-        take(6),
         exhaustMap(() => this.committeeService.getCommitteeInvites(committeeUid).pipe(catchError(() => of(null as CommitteeInvite[] | null)))),
+        take(6),
         // Filter to pending-only to match this.invites() which only holds pending invites.
         // Without this filter, accepted/revoked invites in the API response inflate the count
         // and the condition would fire immediately on the first poll regardless of the new invite.
@@ -754,9 +754,9 @@ export class CommitteeMembersComponent implements OnInit {
 
     timer(400, 400)
       .pipe(
-        take(6),
         takeUntil(committeeChanged$),
         exhaustMap(() => this.committeeService.getCommitteeApplications(committeeUid).pipe(catchError(() => of(null as CommitteeJoinApplication[] | null)))),
+        take(6),
         filter((applications): applications is CommitteeJoinApplication[] => {
           if (applications === null) {
             return false;
