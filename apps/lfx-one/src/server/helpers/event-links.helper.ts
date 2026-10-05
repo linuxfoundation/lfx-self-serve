@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MAX_PAGE_LINKS } from '../constants/audience-builder.constants';
+
 /**
  * Opening `<a>` tags, bounded so the scan cannot backtrack.
  *
@@ -214,15 +216,6 @@ const ATTR_RE = /[\s/]([a-zA-Z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`
  * real agenda link with more than one query parameter was silently dropped.
  */
 const AMP_ENTITY_RE = /&(?:amp|#38|#[xX]26);/g;
-
-/**
- * Upper bound on distinct links collected from one page.
- *
- * `fetchSafeUrl` caps a download at 5 MiB, which is enough HTML for tens of thousands of anchors.
- * The verification below only ever looks up a handful of candidates, so an exhaustive set buys
- * nothing past the point where a real event page has been covered.
- */
-const MAX_PAGE_LINKS = 5000;
 
 /**
  * The `href` an opening tag actually declares, or `''` when it declares none.

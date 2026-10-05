@@ -30,6 +30,8 @@ import type {
   CampaignAudience,
 } from '@lfx-one/shared/interfaces';
 import { AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS } from '@lfx-one/shared/constants';
+
+import { AUDIENCE_CAPABILITIES_TIMEOUT_MS } from '../constants/audience-builder.constants';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -469,7 +471,13 @@ export class AudienceBuilderProxyService {
   public async getCapabilities(req: Request, projectSlug: string): Promise<AudienceBuilderCapabilities> {
     // Opted down from the shared ceiling: this answers one boolean about whether a connection row
     // exists, so it never legitimately runs long -- see `timeout()`.
-    const wire = await this.get<{ hubspot_configured: boolean; detail?: string }>(req, projectSlug, 'capabilities', undefined, CAPABILITIES_TIMEOUT_MS);
+    const wire = await this.get<{ hubspot_configured: boolean; detail?: string }>(
+      req,
+      projectSlug,
+      'capabilities',
+      undefined,
+      AUDIENCE_CAPABILITIES_TIMEOUT_MS
+    );
     // `detail` was declared here and then dropped, so every unusable connection rendered as
     // "no credentials configured" — the wrong remediation for an inactive or undecryptable one.
     const detail = typeof wire.detail === 'string' ? wire.detail.trim() : '';
@@ -741,14 +749,6 @@ export class AudienceBuilderProxyService {
 function timeout(timeoutMs: number = AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS): { timeoutMs: number } {
   return { timeoutMs };
 }
-
-/**
- * The ceiling for a call that reads CONFIGURATION rather than walking a portal.
- *
- * A hung upstream otherwise holds a socket and a request for two minutes on a call that cannot
- * legitimately take that long, and the page fires several reads at once.
- */
-const CAPABILITIES_TIMEOUT_MS = 30_000;
 
 /**
  * Does this wire object describe a list whose creation was CONFIRMED?
