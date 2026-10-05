@@ -29,7 +29,7 @@ import {
   getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
   hasMeetingEnded,
-  isMeetingDeclinedForAllOccurrences,
+  isMeetingHiddenAsDeclined,
   isMeetingInviteResponsesEnabled,
   isMeetingOrganizedByViewer,
   meetingToCalendarEvents,
@@ -229,7 +229,9 @@ export class MeetingsDashboardComponent {
     this.rawUserPastMeetings = this.initializeRawUserPastMeetings();
     // Single shared source for all Me-lens upcoming stats — avoids re-filtering rawUserMeetings on each stat signal
     this.sortedUpcomingUserMeetings = computed(() => this.filterAndSortUpcomingMeetings(this.rawUserMeetings()));
-    this.attendingUpcomingUserMeetings = computed(() => this.sortedUpcomingUserMeetings().filter((m) => !isMeetingDeclinedForAllOccurrences(m)));
+    this.attendingUpcomingUserMeetings = computed(() =>
+      this.sortedUpcomingUserMeetings().filter((m) => !isMeetingHiddenAsDeclined(m, this.userService.viewerUsername()))
+    );
     this.timeFilteredMeetings = computed(() => {
       if (this.timeFilter() === 'past') {
         return this.rawUserPastMeetings();
@@ -746,7 +748,7 @@ export class MeetingsDashboardComponent {
       // Declining keeps the viewer's access grant, so the series keeps coming back from the query
       // service and only an organizer can remove the registrant. Hide it here instead; the
       // "Show declined" chip brings it back.
-      filtered = filtered.filter((m) => !isMeetingDeclinedForAllOccurrences(m));
+      filtered = filtered.filter((m) => !isMeetingHiddenAsDeclined(m, viewerUsername));
     }
 
     if (project) {

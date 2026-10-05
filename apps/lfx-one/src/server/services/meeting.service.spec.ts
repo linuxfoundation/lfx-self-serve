@@ -7,6 +7,7 @@ import type {
   MeetingRegistrant,
   MeetingRsvp,
   MeetingUserInfo,
+  PastMeetingParticipant,
   QueryServiceResponse,
   UpdateMeetingRegistrantRequest,
 } from '@lfx-one/shared/interfaces';
@@ -80,6 +81,7 @@ vi.mock('../utils/auth-helper', () => ({
   getUsernameFromAuth: vi.fn(),
   stripAuthPrefix: (v: string) => v,
 }));
+vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn(async () => 'm2m-token') }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
@@ -88,7 +90,7 @@ import type { Request } from 'express';
 
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
-import { getUsernameFromAuth } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
 
 const req = {} as unknown as Request;
 const human = (id: string): MeetingUserInfo => ({ name: `User ${id}`, username: `user${id}`, email: `${id}@example.com` });
@@ -653,7 +655,29 @@ describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
     proxyRequest.mockReset();
     committeeSvc.getCommitteeById.mockReset();
     accessCheckSvc.checkSingleAccess.mockReset();
+    accessCheckSvc.checkSingleAccessStrict.mockReset();
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
     service = new MeetingService();
+  });
+
+  it('rejects a committee writer who does not organize the meeting, before reading the roster', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+    proxyRequest.mockResolvedValueOnce(meetingResponse('project-1'));
+
+    await expect(service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID)).rejects.toMatchObject({ statusCode: 403 });
+    expect(accessCheckSvc.checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'v1_meeting', id: MEETING_UID, access: 'organizer' });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates an unresolvable organizer check instead of reporting it as a denial', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    accessCheckSvc.checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+    proxyRequest.mockResolvedValueOnce(meetingResponse('project-1'));
+
+    await expect(service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID)).rejects.toThrow('access-check unreachable');
   });
 
   it('rejects when the caller lacks writer access and the committee is not invite_only', async () => {
@@ -791,6 +815,153 @@ describe('MeetingService.getAuthorizedCompleteRegistrants', () => {
     proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')], page_token: 'next' }).mockRejectedValueOnce(new Error('query service down'));
 
     await expect(service.getAuthorizedCompleteRegistrants(req, MEETING_UID)).rejects.toThrow();
+  });
+});
+
+describe('MeetingService.canViewMeetingRoster', () => {
+  let service: MeetingService;
+  const MEETING_UID = 'meeting-1';
+
+  beforeEach(() => {
+    accessCheckSvc.checkSingleAccessStrict.mockReset();
+    vi.mocked(getEffectiveEmail).mockReturnValue('ada@example.com');
+    vi.mocked(getUsernameFromAuth).mockResolvedValue(null);
+    service = new MeetingService();
+  });
+
+  const stubInvitee = (showMeetingAttendees: boolean, ownRows: Partial<MeetingRegistrant>[]) => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+    vi.spyOn(service, 'getMeetingById').mockResolvedValue({ uid: MEETING_UID, show_meeting_attendees: showMeetingAttendees } as unknown as Meeting);
+    return vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue(ownRows as MeetingRegistrant[]);
+  };
+
+  it('lets an organizer see the guests without looking the meeting up', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
+    const getMeetingById = vi.spyOn(service, 'getMeetingById');
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(true);
+    expect(getMeetingById).not.toHaveBeenCalled();
+  });
+
+  it('lets an invitee see the guests when the organizer shares them', async () => {
+    const byEmail = stubInvitee(true, [{ uid: 'reg-self' }]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(true);
+    expect(byEmail).toHaveBeenCalledWith(req, MEETING_UID, 'ada@example.com', undefined, 'm2m-token');
+  });
+
+  it('hides the guests from an invitee when the organizer does not share them', async () => {
+    const byEmail = stubInvitee(false, [{ uid: 'reg-self' }]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(false);
+    expect(byEmail).not.toHaveBeenCalled();
+  });
+
+  it('hides the guests of a legacy Board meeting still stored as shared', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+    vi.spyOn(service, 'getMeetingById').mockResolvedValue({ uid: MEETING_UID, meeting_type: 'Board', show_meeting_attendees: true } as unknown as Meeting);
+    const byEmail = vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'reg-self' } as MeetingRegistrant]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(false);
+    expect(byEmail).not.toHaveBeenCalled();
+  });
+
+  it('matches an invitee by username when they have no email, the rule the invited flag uses', async () => {
+    vi.mocked(getEffectiveEmail).mockReturnValue(undefined as unknown as string);
+    vi.mocked(getUsernameFromAuth).mockResolvedValue('ada');
+    const forUser = stubInvitee(true, [{ uid: 'reg-self' }]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(true);
+    expect(forUser).toHaveBeenCalledWith(req, MEETING_UID, undefined, 'ada', 'm2m-token');
+  });
+
+  // Sharing is with the guests, not with everyone who can view the meeting.
+  it('hides the guests from a viewer who is not invited, even when they are shared', async () => {
+    stubInvitee(true, []);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(false);
+  });
+
+  it('propagates an unresolvable organizer check instead of reporting it as a denial', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).rejects.toThrow('access-check unreachable');
+  });
+});
+
+describe('MeetingService.canViewPastMeetingParticipants', () => {
+  let service: MeetingService;
+  const PAST_UID = 'past-1';
+  const rows = [
+    { uid: 'p1', email: 'Ada@Example.com', is_invited: true, is_attended: false },
+    { uid: 'p2', email: '', username: 'grace', is_invited: false, is_attended: true },
+  ] as PastMeetingParticipant[];
+
+  beforeEach(() => {
+    accessCheckSvc.checkSingleAccessStrict.mockReset();
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+    vi.mocked(getEffectiveEmail).mockReturnValue(undefined as unknown as string);
+    vi.mocked(getUsernameFromAuth).mockResolvedValue(null);
+    service = new MeetingService();
+  });
+
+  it('lets an organizer see the participants', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
+
+    await expect(service.canViewPastMeetingParticipants(req, PAST_UID, [])).resolves.toBe(true);
+    expect(accessCheckSvc.checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'v1_past_meeting', id: PAST_UID, access: 'organizer' });
+  });
+
+  it('lets an invitee who did not attend see the participants, matched by email', async () => {
+    vi.mocked(getEffectiveEmail).mockReturnValue('ada@example.com');
+
+    await expect(service.canViewPastMeetingParticipants(req, PAST_UID, rows)).resolves.toBe(true);
+  });
+
+  it('lets an attendee who was not invited see the participants, matched by username', async () => {
+    vi.mocked(getUsernameFromAuth).mockResolvedValue('grace');
+
+    await expect(service.canViewPastMeetingParticipants(req, PAST_UID, rows)).resolves.toBe(true);
+  });
+
+  it('hides the participants from a viewer who is not on them', async () => {
+    vi.mocked(getEffectiveEmail).mockReturnValue('mallory@example.com');
+    vi.mocked(getUsernameFromAuth).mockResolvedValue('mallory');
+
+    await expect(service.canViewPastMeetingParticipants(req, PAST_UID, rows)).resolves.toBe(false);
+  });
+
+  // A blank email on a row must not match a caller who also has no email.
+  it('hides the participants from a caller with no identity', async () => {
+    await expect(service.canViewPastMeetingParticipants(req, PAST_UID, rows)).resolves.toBe(false);
+  });
+
+  it('propagates an unresolvable organizer check instead of reporting it as a denial', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+
+    await expect(service.canViewPastMeetingParticipants(req, PAST_UID, rows)).rejects.toThrow('access-check unreachable');
+  });
+});
+
+describe('MeetingService.getMeetingRegistrantCount', () => {
+  beforeEach(() => {
+    proxyRequest.mockReset();
+  });
+
+  it('counts the registrants under the given M2M token without reading rows', async () => {
+    proxyRequest.mockResolvedValue({ count: 12, has_more: false });
+
+    await expect(new MeetingService().getMeetingRegistrantCount(req, 'meeting-1', 'm2m-token')).resolves.toBe(12);
+    expect(proxyRequest).toHaveBeenCalledWith(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources/count',
+      'GET',
+      { type: 'v1_meeting_registrant', parent: 'meeting:meeting-1' },
+      undefined,
+      undefined,
+      { bearerToken: 'm2m-token' }
+    );
   });
 });
 
