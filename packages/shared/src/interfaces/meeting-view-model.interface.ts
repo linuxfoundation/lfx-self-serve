@@ -155,7 +155,7 @@ export interface MeetingSectionVisibility {
   rsvpAvatarBadges: boolean;
   /** The "responded / attending" filter on the roster. Upcoming or live only. */
   rsvpRosterFilter: boolean;
-  /** The aggregate RSVP strip. Upcoming or live only. */
+  /** The aggregate RSVP strip, from meeting-level counts. Also on an ended meeting with artifact access. */
   rsvpSummary: boolean;
   /** Recording, transcript and AI summary — post-meeting, gated on artifact access. */
   tools: boolean;

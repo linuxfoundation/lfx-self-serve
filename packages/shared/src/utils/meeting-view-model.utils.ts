@@ -143,10 +143,13 @@ export function resolveVisibleSections(input: MeetingSectionVisibilityInput): Me
   // `hasArtifactAccess` is the same rule {@link resolveEndedActionSlot} applies, shared rather
   // than restated: if the rail resolves to `tools`, the sections it points at must be visible.
   const contentVisible = !ended || hasArtifactAccess(input.viewerRole, input.fullAccess);
-  // RSVP surfaces belong to an upcoming or live roster only. A past roster is built from
-  // `PastMeetingParticipant` records, which carry attendance and invitation but no RSVP answer, and
-  // v1 shows no RSVP on a past meeting; so an ended meeting gets none, whatever the viewer's access.
-  const rsvpVisible = input.inviteResponsesEnabled && onTheMeeting && !ended;
+  // The aggregate strip reads meeting-level counts, so it follows content access like the rest of
+  // the page; v1 shows it on a clock-ended meeting whenever the counts are present.
+  const rsvpSummaryVisible = input.inviteResponsesEnabled && onTheMeeting && contentVisible;
+  // The roster filter and per-avatar badges read roster rows. A past roster is built from
+  // `PastMeetingParticipant` records, which carry attendance and invitation but no RSVP answer, so
+  // on an ended meeting there is nothing for them to show.
+  const rsvpRosterVisible = input.inviteResponsesEnabled && onTheMeeting && !ended;
 
   return {
     agenda: contentVisible,
@@ -162,9 +165,9 @@ export function resolveVisibleSections(input: MeetingSectionVisibilityInput): Me
     // people it is for. This matches v1, which loads past participants for any authenticated viewer
     // with access, and still withholds it from anonymous viewers, who get no participant list.
     people: ended ? input.viewerRole !== 'visitor' && hasArtifactAccess(input.viewerRole, input.fullAccess) : onTheMeeting,
-    rsvpAvatarBadges: rsvpVisible,
-    rsvpRosterFilter: rsvpVisible,
-    rsvpSummary: rsvpVisible,
+    rsvpAvatarBadges: rsvpRosterVisible,
+    rsvpRosterFilter: rsvpRosterVisible,
+    rsvpSummary: rsvpSummaryVisible,
     tools: ended && hasArtifactAccess(input.viewerRole, input.fullAccess),
   };
 }
