@@ -24,6 +24,7 @@ import { AuthorizationError, MicroserviceError, ResourceNotFoundError } from '..
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { drawPdfSignature, loadPdfFont, resolvePdfTemplateDir } from '../helpers/pdf-template.helper';
+import { isImpersonating } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { UserService } from './user.service';
 
@@ -70,9 +71,11 @@ export class VisaLetterService {
     return { pdf, fileName };
   }
 
-  /** The caller's own letter request for the event; the Salesforce ID is derived from their token. */
+  /** The effective user's letter request for the event; the Salesforce ID is derived from their token. */
   private async getLetterRequest(req: Request, eventId: string): Promise<VisaLetterRequest> {
-    const profile = await this.userService.getApiGatewayProfile(req);
+    // req.apiGatewayToken stays the impersonator's, so resolve as the target with their v2 token.
+    const targetToken = isImpersonating(req) ? req.bearerToken : undefined;
+    const profile = await this.userService.getApiGatewayProfile(req, targetToken);
 
     if (!profile.ID) {
       throw new MicroserviceError('Salesforce ID not found in API Gateway profile', 422, 'SALESFORCE_ID_NOT_FOUND', {
@@ -91,6 +94,7 @@ export class VisaLetterService {
       service: SERVICE,
       errorMessage: 'Failed to fetch visa letter requests',
       errorCode: 'VISA_LETTER_REQUESTS_FETCH_FAILED',
+      bearerToken: targetToken,
       // Letter requests carry passport and birth details; keep them out of logs and error metadata.
       redactResponseBody: true,
     });
