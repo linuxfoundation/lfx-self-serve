@@ -10,6 +10,7 @@ import {
   PastMeeting,
   PublicCalendarMeeting,
   PublicProjectMeetingsResponse,
+  RemoveUserFromProjectRequest,
   UpdateProjectStaffRequest,
   UpdateUserRoleRequest,
   UploadProjectDocumentRequest,
@@ -401,7 +402,7 @@ export class ProjectController {
         return;
       }
 
-      const result = await this.projectService.updateProjectPermissions(req, uid, 'update', username, roleData.role);
+      const result = await this.projectService.updateProjectPermissions(req, uid, 'update', username, roleData.role, undefined, roleData.duplicateIdentifiers);
 
       logger.success(req, 'update_user_role_project_permissions', startTime, {
         uid,
@@ -526,7 +527,8 @@ export class ProjectController {
         return;
       }
 
-      await this.projectService.updateProjectPermissions(req, uid, 'remove', username);
+      const removeData: RemoveUserFromProjectRequest = req.body ?? {};
+      await this.projectService.updateProjectPermissions(req, uid, 'remove', username, undefined, undefined, removeData.duplicateIdentifiers);
 
       logger.success(req, 'remove_user_project_permissions', startTime, {
         uid,

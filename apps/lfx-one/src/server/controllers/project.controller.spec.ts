@@ -27,6 +27,7 @@ const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, p
     getProjectBySlug: vi.fn(),
     getProjectSlugs: vi.fn(),
     updateProjectStaff: vi.fn(),
+    updateProjectPermissions: vi.fn(),
   },
 }));
 
@@ -34,6 +35,7 @@ vi.mock('@lfx-one/shared/utils', () => ({
   computeIsFoundation: computeIsFoundationMock,
   isFileTypeAllowed: vi.fn(),
   isUuid: isUuidMock,
+  maskIdentifierForLogs: (identifier: string) => identifier,
 }));
 vi.mock('@lfx-one/shared/constants', async () => {
   // Deep-import the real allowlist so the drift guard below asserts the production
@@ -757,6 +759,79 @@ function buildStaffReqRes(uid: string = PROJECT_UID, body: unknown = {}) {
   const next = vi.fn();
   return { req, res, next };
 }
+
+function buildPermissionsReqRes(uid: string, username: string, body: unknown = {}) {
+  const req = {
+    params: { uid, username },
+    body,
+    query: {},
+    headers: {},
+    bearerToken: 'user-token',
+    path: `/api/projects/${uid}/permissions/${username}`,
+  } as any;
+  const res = { json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() } as any;
+  const next = vi.fn();
+  return { req, res, next };
+}
+
+// GH-3276: `duplicateIdentifiers` on the PUT/DELETE body must reach the service call
+// unmodified so a collapsed dual-role row (#3218) is cleared in the same ETag-guarded
+// write as the primary identifier, instead of a second non-atomic client call (Copilot
+// #3244) that could also misresolve a stale duplicate through the NATS directory
+// (Cursor Bugbot #3244).
+describe('ProjectController permissions duplicateIdentifiers pass-through', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('updateUserPermissionRole passes duplicateIdentifiers from the body through to the service', async () => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'manage', duplicateIdentifiers: ['bchen@vendor-corp.example'] });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', 'manage', undefined, [
+      'bchen@vendor-corp.example',
+    ]);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('updateUserPermissionRole passes undefined when the body carries no duplicateIdentifiers', async () => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'manage' });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', 'manage', undefined, undefined);
+  });
+
+  it('removeUserFromProjectPermissions passes duplicateIdentifiers from the body through to the service', async () => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { duplicateIdentifiers: ['bchen@vendor-corp.example'] });
+
+    await controller.removeUserFromProjectPermissions(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'remove', 'blairchen', undefined, undefined, [
+      'bchen@vendor-corp.example',
+    ]);
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('removeUserFromProjectPermissions tolerates a missing body (no duplicateIdentifiers)', async () => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', undefined);
+
+    await controller.removeUserFromProjectPermissions(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'remove', 'blairchen', undefined, undefined, undefined);
+    expect(next).not.toHaveBeenCalled();
+  });
+});
 
 describe('ProjectController.updateProjectStaff', () => {
   let controller: ProjectController;
