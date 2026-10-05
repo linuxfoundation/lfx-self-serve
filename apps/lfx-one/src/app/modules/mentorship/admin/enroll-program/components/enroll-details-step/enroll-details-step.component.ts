@@ -32,6 +32,7 @@ import {
   MENTORSHIP_ENROLL_REPO_HELPER,
   MENTORSHIP_ENROLL_WEBSITE_HELPER,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
+  MENTORSHIP_PROGRAMS_MAX_LIMIT,
   MENTORSHIP_SKILL_OPTIONS,
   MOCK_MENTORSHIP_LF_PROJECTS,
   mentorshipCiiBadgeImageUrl,
@@ -210,7 +211,7 @@ export class EnrollDetailsStepComponent {
       });
 
     this.mentorshipAdminService
-      .getPrograms()
+      .getPrograms({ limit: MENTORSHIP_PROGRAMS_MAX_LIMIT })
       .pipe(takeUntilDestroyed())
       .subscribe({
         next: (response) => {

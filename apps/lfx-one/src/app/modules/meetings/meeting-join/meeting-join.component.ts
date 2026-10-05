@@ -71,7 +71,14 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { getUserTimezone, isHostKeyVisible, isMeetingInviteResponsesEnabled, isPastMeetingCompositeId, reconcileOptimisticPad } from '@lfx-one/shared/utils';
+import {
+  getUserTimezone,
+  isHostKeyVisible,
+  isMeetingAttendeeListShared,
+  isMeetingInviteResponsesEnabled,
+  isPastMeetingCompositeId,
+  reconcileOptimisticPad,
+} from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -331,7 +338,8 @@ export class MeetingJoinComponent implements OnInit {
   // instead of leaking a previous meeting's roster into the new one.
   private registrantsRosterKey = signal<string | null>(null);
   // Counts from actual data
-  protected totalInvitees = computed(() => this.registrants().length);
+  // An invitee who may not see the guests gets no roster, only the server's count.
+  protected totalInvitees = computed(() => (this.canViewGuests() ? this.registrants().length : (this.meeting()?.registrant_count ?? 0)));
   // The roster the child component holds is now the base count — this pad is purely optimistic,
   // covering the window between an add and the query-service refetch catching up.
   public additionalRegistrantsCount = computed(() => this.optimisticAdditional());
@@ -341,11 +349,18 @@ export class MeetingJoinComponent implements OnInit {
   // upcoming registrants signal is empty on past join pages), so the chip and the participants
   // drawer resolve organizers from the same people.
   protected organizerChipHosts = computed<MeetingHostCandidate[]>(() => (this.isPastMeeting() ? this.pastMeetingParticipants() : this.registrants()));
-  // Past meeting attendance stats (derived from participants)
-  protected participantCount = computed(() => this.pastMeetingParticipants().length);
-  protected attendedCount = computed(() => this.pastMeetingParticipants().filter((p) => p.is_attended).length);
+  // Past meeting attendance stats: derived from the participants when the viewer gets them, else
+  // the server's counts — the participants endpoint hides the rows from viewers not on them.
+  protected participantCount = computed(() => this.pastMeetingParticipants().length || (this.meeting()?.participant_count ?? 0));
+  protected attendedCount = computed(() => {
+    const participants = this.pastMeetingParticipants();
+    return participants.length ? participants.filter((p) => p.is_attended).length : (this.meeting()?.attended_count ?? 0);
+  });
   protected absentCount = computed(() => this.participantCount() - this.attendedCount());
-  protected invitedCount = computed(() => this.pastMeetingParticipants().filter((p) => p.is_invited).length);
+  protected invitedCount = computed(() => {
+    const participants = this.pastMeetingParticipants();
+    return participants.length ? participants.filter((p) => p.is_invited).length : (this.meeting()?.individual_registrants_count ?? 0);
+  });
   protected attendancePercentage = computed(() => {
     const total = this.participantCount();
     const attended = this.attendedCount();
@@ -355,6 +370,9 @@ export class MeetingJoinComponent implements OnInit {
   // Computed signals for invited/registration status
   public isInvited: Signal<boolean>;
   public effectivelyInvited: Signal<boolean>;
+  // Matches the BFF roster gate: an invitee sees the other guests only when the organizer shares them.
+  protected attendeeListShared = computed(() => isMeetingAttendeeListShared(this.meeting()));
+  protected canViewGuests = computed(() => !!this.meeting()?.organizer || (this.effectivelyInvited() && this.attendeeListShared()));
   public canRegisterForMeeting: Signal<boolean>;
   public canToggleRsvpView: Signal<boolean>;
   public showMyRsvp: WritableSignal<boolean> = signal<boolean>(false);
@@ -1702,9 +1720,10 @@ export class MeetingJoinComponent implements OnInit {
         toObservable(this.optimisticInvited),
       ]).pipe(
         switchMap(([meeting, occurrence, authenticated, , optimisticInvited]) => {
-          if (!meeting?.id || !authenticated || !(meeting.organizer || meeting.invited || optimisticInvited) || this.isPastMeeting()) {
-            // No fetch will happen on this branch (unauthenticated, not organizer/invited, or a
-            // past meeting) — clear the loading flag so the RSVP card doesn't hang on a skeleton.
+          const canViewGuests = meeting?.organizer || ((meeting?.invited || optimisticInvited) && isMeetingAttendeeListShared(meeting));
+          if (!meeting?.id || !authenticated || !canViewGuests || this.isPastMeeting()) {
+            // No fetch will happen on this branch (unauthenticated, not allowed to see the guests, or
+            // a past meeting) — clear the loading flag so the RSVP card doesn't hang on a skeleton.
             this.registrantsLoading.set(false);
             return of([] as MeetingRegistrant[]);
           }

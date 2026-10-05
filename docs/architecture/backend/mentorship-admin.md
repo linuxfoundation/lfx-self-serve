@@ -5,7 +5,7 @@
 
 The admin pages under `/mentorship/admin/*` read their data from the LFX One BFF's `/api/mentorship/admin/*` routes. The admin code has its own router, controller and services, separate from the mentor and mentee code, so each admin screen can move to the mentorship service without touching the other two (linuxfoundation/lfx-mentorship#229).
 
-The admin screens still read mock data (`MOCK_MENTORSHIP_PROGRAMS`, `MOCK_MENTORSHIP_PROGRAM_LISTS`). Later PRs in the story replace the mocks one screen at a time.
+The program list reads the mentorship service in one call (see [Program list sourcing](#program-list-sourcing)). The program detail still reads mock data (`MOCK_MENTORSHIP_PROGRAMS`, `MOCK_MENTORSHIP_PROGRAM_LISTS`). Later PRs in the story replace the mocks one screen at a time.
 
 ## Routes
 
@@ -14,9 +14,34 @@ The admin screens still read mock data (`MOCK_MENTORSHIP_PROGRAMS`, `MOCK_MENTOR
 | GET    | `/api/mentorship/admin/programs`            | `getPrograms`     | Admin program list, and the import picker on Enroll    |
 | GET    | `/api/mentorship/admin/programs/:programId` | `getProgram`      | Admin program detail (tabs, counts and the four lists) |
 
-`programId` is the program's id or its slug. The list accepts `search`, `status`, `offset` and `limit` (clamped to 1–50, default 50).
+`programId` is the program's id or its slug. The list accepts `search`, `status`, `offset` and `limit` (1–50, default 12). A malformed, blank, repeated or out-of-range `offset` or `limit` is a 400, and so is a repeated `search` or `status`.
 
 The program detail has four tabs: Current Mentees, Past Mentees, Mentors and Terms. `buildMentorshipProgramDetail` (shared utils) splits the program's applications by their term's status. Rows in an open term go to `currentMentees` and rows in a closed term go to `pastMentees`; the row's own status plays no part. A row whose term the program doesn't list stays current. `tabCounts` is built from the same lists, so a count always matches its tab.
+
+## Program list sourcing
+
+`getPrograms` reads upstream `GET /mentorship/v1/me/programs` (lfx-mentorship#243) once, through `proxyMentorshipRequest`, with the caller's bearer token, so upstream decides what the caller may see:
+
+- `search` is trimmed, cut to 100 characters, and its `\`, `%` and `_` are escaped. `status` is the chosen status with `-` written as `_`. `limit` is at most 50 here and `offset` is passed through. No `limit` above the upstream maximum is ever sent.
+- Upstream searches the program and project names, filters by status, sorts by name then id, pages, and returns each row with its latest open term (else the latest closed one), its counts and `admin_status`. The BFF maps each row and returns upstream's `meta.total`.
+- On a caller's first visit upstream answers not-provisioned, so `proxyMentorshipRequest` provisions them (`PUT /me`) and retries, as on the mentor and mentee pages. A not-provisioned error that still reaches the service (while impersonating, which never provisions, or when the retry is refused too) gives an empty page and a warn log with no user identifiers. Any other error propagates, and the page shows its failed-load state with Retry.
+- Upstream lists only direct `program_admin` memberships. Admins who only inherit access from the project are not listed yet.
+- The list now carries upstream program ids, while the program detail still resolves mock ids only, so opening a listed program shows the not-found state until the detail moves to the mentorship service (linuxfoundation/lfx-mentorship#233).
+- The Enroll form's "import from program" picker keeps only programs that have import details (`isMentorshipProgramImportable`). Those details are still keyed by mock ids, so the picker offers only "None" until import moves to the mentorship service.
+
+### Status mapping
+
+Upstream works out `admin_status` from the program status and its terms. The BFF renames it (`_` to `-`):
+
+| Upstream `admin_status` | Shown as       | Upstream program status                         |
+| ----------------------- | -------------- | ----------------------------------------------- |
+| `pending_review`        | Pending Review | `draft`, `submitted`                            |
+| `open`                  | Open           | `published` with an open term, or with no terms |
+| `completed`             | Completed      | `published` with only closed terms              |
+| `rejected`              | Rejected       | `rejected`                                      |
+| `hidden`                | Hidden         | `archived`, `hidden`                            |
+
+An unrecognised `admin_status` is shown as Pending Review and logged (program id and value only).
 
 ## Flow
 
@@ -47,7 +72,7 @@ The Enroll form's lookups (program name availability, LF projects, invitable use
 ## Behavior
 
 - Every route needs a signed-in user. The controller throws `AuthenticationError` (401) when `getUsernameFromAuth` finds none.
-- The routes check that a user is signed in, not that they are an admin. They serve mock data today. When a screen moves to the mentorship service, it must forward the caller's bearer token so upstream enforces admin access, or add a BFF-side admin guard, with a 403 test for a non-admin user.
+- The program list forwards the caller's bearer token and only lists programs the caller administers. The detail route checks only that a user is signed in and serves mock data today. When a screen moves to the mentorship service, it must forward the caller's bearer token so upstream enforces admin access, or add a BFF-side admin guard, with a 403 test for a non-admin user.
 - The read routes stay available while impersonating. Admin write routes added later take `blockDuringImpersonation` (see [Impersonation](./impersonation.md)).
-- The app service falls back to an empty list (or `null` for a detail) on any failure, so the admin pages never block on a fault. A 404 is not logged.
-- Logs carry ids, counts, flags and the list filters (including the `search` text). Names and emails never go in logs.
+- The app service lets a program-list failure reach the page, which shows an inline error with Retry. A detail failure falls back to `null`, and a 404 is not logged.
+- The admin code's own log metadata carries ids, counts, flags and the status filter, never the `search` text, names or emails. The request URL, query string included, is still logged by the shared request serializer and kept on upstream errors, as on every route.
