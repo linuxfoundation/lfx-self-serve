@@ -3009,8 +3009,9 @@ describe('OrgEasyclaDetailComponent', () => {
         await flush(fixture);
         expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).not.toBeNull();
 
-        // Serve a signed overview for the new group so the normal page can render immediately.
-        getClaGroups.mockReturnValue(of({ orgUid: NAMED.uid, claGroups: [claGroup({ id: ELSEWHERE_GROUP_ID })] }));
+        // Route change cancels the stalled retry; the new agreement is unlisted here, so the
+        // page falls through to its ordinary unlisted-group handling rather than any pending
+        // state owned by the return trip.
         paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
         await flush(fixture);
 
