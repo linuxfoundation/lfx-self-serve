@@ -54,7 +54,7 @@
             }
 
             <!-- Breadcrumb (only when drilled into a folder) -->
-            @if (!searchQuery() && currentFolder(); as folder) {
+            @if (!searchQuery().trim() && currentFolder(); as folder) {
               <nav class="flex items-center gap-2 pb-3 border-b border-gray-100 text-sm" data-testid="documents-dashboard-breadcrumb" aria-label="Breadcrumb">
                 <button
                   type="button"
