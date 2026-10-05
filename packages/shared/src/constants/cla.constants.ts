@@ -292,10 +292,11 @@ export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
  * page would see a group the organization has no signed row for and settle immediately on the
  * cannot-preview state, which is the right answer for a pasted address and the wrong one here.
  *
- * So it buys a wait, not a result: the page retries for the row on a short budget and, whether or
- * not one arrives, drops the parameter and settles the ordinary way. **It names nothing and grants
- * nothing** — a crafted link costs one retry budget and then resolves exactly as the bare group
- * address would.
+ * So it buys a wait, not a result: the page retries for the row on a bounded budget and settles
+ * the ordinary way once the row arrives, or stays on this visit with a still-confirming empty
+ * state when the wait is spent without one. **It names nothing and grants nothing** — a crafted
+ * link costs one retry budget and then settles; the still-confirming state is this visit only, so
+ * a reload of the stripped address resolves exactly as the bare group address would.
  */
 export const ORG_EASYCLA_RETURN_SIGNED_PARAM = 'signed';
 
