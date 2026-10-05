@@ -13,6 +13,8 @@ Key files:
 
 **Backend contracts:** See [Public Meetings](../backend/public-meetings.md) for the server-side M2M auth, controller, and route allowlist details.
 
+**Admin counterpart:** past meetings also have an authenticated admin page, `/meetings/:id/details`. Which capability belongs on which page is decided in [Meeting Surface Boundary](./meeting-surface-boundary.md).
+
 ---
 
 ## 🔐 Access Model
