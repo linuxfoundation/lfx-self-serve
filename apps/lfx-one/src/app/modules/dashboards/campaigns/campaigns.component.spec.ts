@@ -3625,6 +3625,23 @@ describe('CampaignsComponent — email delivery channel', () => {
       ).toBe('brief-other');
     });
 
+    it('does not re-lock a brief on a reset after its lost job was acknowledged', async () => {
+      // The poll's error path recorded the stage as unresolved but left the dispatch marker set,
+      // so a later reset treated it as a newly abandoned create and locked the brief again.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(throwError(() => new Error('network')) as never);
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      expect(internals().emailStagingHeld(), 'fixture precondition: held after the lost job').toBe(true);
+
+      (internals() as unknown as { onAcknowledgeStagingUnresolved(): void }).onAcknowledgeStagingUnresolved();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+
+      expect(internals().emailStagingHeld(), 'an acknowledged stage was re-locked by a reset').toBe(false);
+    });
+
     it('holds the stage when the create request fails after it was sent', async () => {
       // The request may have reached the BFF and started; failing closed beats a duplicate draft.
       onImplementTab();

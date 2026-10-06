@@ -3892,6 +3892,17 @@ export class CampaignsComponent {
     }
   }
 
+  /**
+   * Clears the dispatch marker when it is for this scope. For the poll's exits, which know the scope
+   * they polled but not the dispatch object: once the job is recorded as unresolved it is no longer
+   * "abandoned by a cancel", and a leftover marker re-locked the brief on the next reset.
+   */
+  private settleDispatchFor(projectSlug: string, briefId: string): void {
+    if (this.dispatchedStage?.projectSlug === projectSlug && this.dispatchedStage.briefId === briefId) {
+      this.dispatchedStage = null;
+    }
+  }
+
   /** Records a stage that ended without a terminal answer, for the project and brief it staged. */
   private markStageUnresolved(projectSlug: string, briefId: string): void {
     const key = this.stageScopeKey(projectSlug, briefId);
@@ -4149,6 +4160,7 @@ export class CampaignsComponent {
         error: () => {
           this.emailStaging.set('error');
           this.markStageUnresolved(projectSlug, briefId);
+          this.settleDispatchFor(projectSlug, briefId);
           this.emailStagingMessage.set('Lost track of the staging job. Check HubSpot before retrying.');
         },
         complete: () => {
@@ -4157,6 +4169,7 @@ export class CampaignsComponent {
           if (this.emailStaging() === 'staging') {
             this.emailStaging.set('error');
             this.markStageUnresolved(projectSlug, briefId);
+            this.settleDispatchFor(projectSlug, briefId);
             this.emailStagingMessage.set('Staging is taking longer than expected. Check HubSpot to see whether the draft was created.');
           }
         },
