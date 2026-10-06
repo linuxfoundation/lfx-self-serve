@@ -2,14 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { environment } from '@environments/environment';
 import { DEFAULT_EARLY_JOIN_TIME } from '@lfx-one/shared/constants';
 import { ActionSlotKind, MeetingViewerRole } from '@lfx-one/shared/interfaces';
 import { buildMeetingOrganizerMailto, formatMeetingMailtoDate, resolveMeetingOrganizer } from '@lfx-one/shared/utils';
+import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
+import { DialogService } from 'primeng/dynamicdialog';
+import { take } from 'rxjs';
 
+import { PublicRegistrationModalComponent } from '../../../components/public-registration-modal/public-registration-modal.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingJoinActionComponent } from '../join-action/join-action.component';
 
@@ -19,10 +24,10 @@ import { MeetingJoinActionComponent } from '../join-action/join-action.component
  * always carries it as `data-kind`. `none` is a decision ("nothing to offer this viewer") and
  * renders an empty slot, never a missing one (SC-004).
  *
- * `join` (FR-027) and `invitation-required` (E2-03, FR-022) are complete here. The other kinds carry
- * one line of copy until the issue that owns each one builds its full design, so no viewer meets an
- * empty rail meanwhile: `register` E2-02, `rsvp` E2-04 and E2-05, `guest-join` E2-06,
- * `rsvp-unavailable` N-01, and `tools` E4.
+ * `join` (FR-027), `register` (E2-02, FR-021) and `invitation-required` (E2-03, FR-022) are
+ * complete here. The other kinds carry one line of copy until the issue that owns each one builds
+ * its full design, so no viewer meets an empty rail meanwhile: `rsvp` E2-04 and E2-05, `guest-join`
+ * E2-06, `rsvp-unavailable` N-01, and `tools` E4.
  *
  * Inside the join window the slot is Join only, as in V1 (FR-029, decided 2026-10-06). Before the
  * window, a viewer who will be able to join then is told the early-join rule here, under the slot,
@@ -31,10 +36,21 @@ import { MeetingJoinActionComponent } from '../join-action/join-action.component
 @Component({
   selector: 'lfx-meeting-action-slot',
   imports: [ButtonComponent, MeetingJoinActionComponent, NgTemplateOutlet, OpenIntercomDirective],
+  providers: [DialogService],
   templateUrl: './action-slot.component.html',
 })
 export class MeetingActionSlotComponent {
   protected readonly state = inject(MeetingDetailsStateService);
+  private readonly userService = inject(UserService);
+  private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  /**
+   * The prototype's primary rail button on `lfx-button`, as Join's: a 42px pill on the accent.
+   * Arbitrary px values because the app's 14px root would shrink rem-based utilities.
+   */
+  protected readonly primaryButtonClass =
+    '!h-[42px] !w-full !justify-center !gap-[9px] !rounded-full !border-[var(--md-accent)] !bg-[var(--md-accent)] !text-[15px] !font-bold !text-[var(--md-surface-card)] focus-visible:!shadow-[var(--md-shadow-focus)]';
 
   /**
    * The prototype's secondary rail button on `lfx-button`: a 42px outlined pill, full width.
@@ -58,6 +74,36 @@ export class MeetingActionSlotComponent {
    * usable email, and the slot offers the support chat instead.
    */
   protected readonly organizerMailto: Signal<string | null> = this.initOrganizerMailto();
+
+  /**
+   * `register` for a signed-in outsider (E2-02, FR-021): the shared registration dialog V1 opens, with
+   * its validation unchanged. A successful registration moves the slot to the registrant's state at
+   * once (`markRegistered`), as V1's optimistic flip does.
+   */
+  protected register(): void {
+    const meeting = this.state.meeting();
+    if (!meeting) {
+      return;
+    }
+    // `open` returns null when this dialog is already open (PrimeNG blocks the duplicate), so a quick
+    // second click leaves the open dialog alone.
+    const dialogRef = this.dialogService.open(PublicRegistrationModalComponent, {
+      header: 'Register for Meeting',
+      width: '500px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { meetingId: meeting.id, meetingTitle: meeting.title, user: this.userService.user() },
+    });
+
+    // Torn down with the slot, and keyed to this meeting: a registration that completes after the
+    // page has moved on to another meeting must not mark that one as invited.
+    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: { registered: boolean } | undefined) => {
+      if (result?.registered) {
+        this.state.markRegistered(meeting.id);
+      }
+    });
+  }
 
   private initOrganizerMailto(): Signal<string | null> {
     return computed(() => {

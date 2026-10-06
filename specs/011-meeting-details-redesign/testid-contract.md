@@ -73,6 +73,7 @@ own namespace; the two never share a value.
 | `meeting-action-join-explainer`         | "Public meeting. Anyone with this link can join." under Join                                                          |
 | `meeting-action-join-hint`              | Before the window, the early-join rule for a viewer who will be able to join                                          |
 | `meeting-action-sign-in`                | The slot's sign-in control (`guest-join`, and `register` / `tools` for a visitor)                                     |
+| `meeting-action-register-button`        | `register`'s "Register for meeting" control, for a signed-in outsider                                                 |
 | `meeting-action-message`                | The slot's line of copy: a finished kind's explanation, or the one line for a kind whose full design is still to come |
 | `meeting-organizer`                     | "Organized by" in the rail card                                                                                       |
 | `meeting-organizer-name`                | The organizer's display name                                                                                          |

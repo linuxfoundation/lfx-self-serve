@@ -596,6 +596,63 @@ describe('MeetingDetailsStateService', () => {
       expect(state.claimAutoJoin('another-meeting')).toBe(true);
     });
 
+    // E2-02: V1's optimistic flip, then a lookup so the page catches up with the BFF.
+    it('moves a registering outsider to the registrant state at once, and looks the meeting up again', async () => {
+      const later = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+      getPublicMeeting.mockReturnValue(of({ meeting: live({ start_time: later, is_invite_responses_enabled: true }), project }));
+      const state = create();
+      await settle();
+      expect(state.actionSlot()).toBe('register');
+
+      state.markRegistered(MEETING_ID);
+      await settle();
+
+      expect(state.viewerRole()).toBe('registrant');
+      expect(state.actionSlot()).toBe('rsvp');
+      expect(getPublicMeeting).toHaveBeenCalledTimes(2);
+    });
+
+    it('ignores a registration for a meeting the page has since left', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: live(), project }));
+      const state = create();
+      await settle();
+
+      state.markRegistered('another-meeting');
+      await settle();
+
+      expect(state.viewerRole()).toBe('outsider');
+      expect(getPublicMeeting).toHaveBeenCalledTimes(1);
+    });
+
+    // The held meeting outlives the route change until the next lookup resolves.
+    it('ignores a registration that completes while the page is moving to another meeting', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: live(), project }));
+      const state = create();
+      await settle();
+
+      getPublicMeeting.mockReturnValue(new Subject());
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      await settle();
+      state.markRegistered(MEETING_ID);
+
+      getPublicMeeting.mockReturnValue(of({ meeting: live({ id: 'meeting-2' }), project }));
+      expect(state.viewerRole()).toBe('outsider');
+    });
+
+    it('forgets a registration from this page when the route moves to another meeting', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: live(), project }));
+      const state = create();
+      await settle();
+      state.markRegistered(MEETING_ID);
+      await settle();
+
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      getPublicMeeting.mockReturnValue(of({ meeting: live({ id: 'meeting-2' }), project }));
+      await settle();
+
+      expect(state.viewerRole()).toBe('outsider');
+    });
+
     it('has no slot before the meeting loads', () => {
       getPublicMeeting.mockReturnValue(new Subject());
       const state = create();

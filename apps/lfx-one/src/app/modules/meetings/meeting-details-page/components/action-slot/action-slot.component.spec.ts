@@ -6,9 +6,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { ActionSlotKind, Meeting, MeetingOccurrence, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole } from '@lfx-one/shared/interfaces';
 import { IntercomService } from '@services/intercom.service';
+import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
+import { Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { PublicRegistrationModalComponent } from '../../../components/public-registration-modal/public-registration-modal.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingJoinActionComponent } from '../join-action/join-action.component';
 import { MeetingActionSlotComponent } from './action-slot.component';
@@ -31,6 +35,9 @@ describe('MeetingActionSlotComponent', () => {
   let joinsInWindow: WritableSignal<boolean>;
   let meeting: WritableSignal<Meeting | undefined>;
   let pastAccessKnown: WritableSignal<boolean>;
+  let markRegistered: ReturnType<typeof vi.fn>;
+  let dialogClose: Subject<{ registered: boolean } | undefined>;
+  let openDialog: ReturnType<typeof vi.fn>;
   let add: ReturnType<typeof vi.fn>;
   let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
 
@@ -51,6 +58,9 @@ describe('MeetingActionSlotComponent', () => {
     joinsInWindow = signal(true);
     meeting = signal<Meeting | undefined>({ id: 'meeting-1', early_join_time_minutes: 15 } as Meeting);
     pastAccessKnown = signal(true);
+    markRegistered = vi.fn();
+    dialogClose = new Subject();
+    openDialog = vi.fn().mockReturnValue({ onClose: dialogClose.asObservable() });
     add = vi.fn();
     selectedOccurrence = signal<MeetingOccurrence | null>(null);
 
@@ -67,15 +77,18 @@ describe('MeetingActionSlotComponent', () => {
             joinsInWindow,
             meeting,
             pastAccessKnown,
+            markRegistered,
             selectedOccurrence,
             signInHref: signal(SIGN_IN_HREF),
           },
         },
+        { provide: UserService, useValue: { user: signal({ name: 'Ada Example', email: 'ada@acme-motors.example' }) } },
         { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
         { provide: MessageService, useValue: { add } },
       ],
     })
       .overrideComponent(MeetingActionSlotComponent, { remove: { imports: [MeetingJoinActionComponent] }, add: { imports: [JoinActionStubComponent] } })
+      .overrideComponent(MeetingActionSlotComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
       .compileComponents();
 
     fixture = TestBed.createComponent(MeetingActionSlotComponent);
@@ -181,6 +194,69 @@ describe('MeetingActionSlotComponent', () => {
 
       expect(text('meeting-action-message')).toBe('This meeting has ended.');
       expect(query('meeting-action-slot')?.textContent).not.toContain('private');
+    });
+  });
+
+  // E2-02 (FR-021).
+  describe('register', () => {
+    beforeEach(() => {
+      meeting.set({ id: 'meeting-1', title: 'Acme Weekly Sync' } as Meeting);
+      render('register', 'outsider');
+    });
+
+    it('says what registering gets the viewer', () => {
+      expect(text('meeting-action-message')).toBe("Register to add yourself to the guest list. You'll get the invitation and can RSVP.");
+    });
+
+    it('opens the shared registration dialog for this meeting', () => {
+      query('meeting-action-register-button')?.querySelector('button')?.click();
+
+      expect(openDialog).toHaveBeenCalledWith(
+        PublicRegistrationModalComponent,
+        expect.objectContaining({
+          header: 'Register for Meeting',
+          data: expect.objectContaining({
+            meetingId: 'meeting-1',
+            meetingTitle: 'Acme Weekly Sync',
+            user: expect.objectContaining({ email: 'ada@acme-motors.example' }),
+          }),
+        })
+      );
+    });
+
+    it('moves the page to the registrant state once registered', () => {
+      query('meeting-action-register-button')?.querySelector('button')?.click();
+      dialogClose.next({ registered: true });
+
+      expect(markRegistered).toHaveBeenCalledWith('meeting-1');
+    });
+
+    it('keeps the open dialog when PrimeNG refuses a duplicate', () => {
+      openDialog.mockReturnValue(null);
+
+      expect(() => query('meeting-action-register-button')?.querySelector('button')?.click()).not.toThrow();
+    });
+
+    it('ignores a registration that completes after the slot has gone', () => {
+      query('meeting-action-register-button')?.querySelector('button')?.click();
+      fixture.destroy();
+      dialogClose.next({ registered: true });
+
+      expect(markRegistered).not.toHaveBeenCalled();
+    });
+
+    it('leaves the page alone when the dialog closes without registering', () => {
+      query('meeting-action-register-button')?.querySelector('button')?.click();
+      dialogClose.next(undefined);
+
+      expect(markRegistered).not.toHaveBeenCalled();
+    });
+
+    it('prompts a visitor to sign in instead', () => {
+      render('register', 'visitor');
+
+      expect(query('meeting-action-register-button')).toBeNull();
+      expect(query('meeting-action-sign-in')).not.toBeNull();
     });
   });
 

@@ -76,6 +76,15 @@ export class MeetingDetailsStateService {
    * the upcoming endpoint still serves, has never been asked, so the slot must not call it private.
    */
   public readonly pastAccessKnown = computed(() => this.loadedViaPastMeetingId());
+  /**
+   * The meeting the viewer registered for from this page (E2-02): the slot moves to the registrant's
+   * state at once, as V1's optimistic flip does, rather than waiting on the indexer. Keyed by meeting
+   * id, so it applies to that meeting only and can never carry over to another one, however a
+   * navigation interleaves with the dialog. It is ORed with the payload's `invited`, so it never needs
+   * clearing when the lookup catches up. Unlike V1 (keyed on the series uid), a past occurrence of the
+   * same series has its own id, so it reads the server's `invited` instead.
+   */
+  private readonly optimisticInvitedId = signal<string | null>(null);
   /** Meetings this page has auto-joined, so a remounted Join control does not open them again. */
   private readonly autoJoinedMeetingIds = new Set<string>();
   /** The meeting password for lookups: `?password=`, or else the composer's navigation state. */
@@ -176,6 +185,21 @@ export class MeetingDetailsStateService {
     return true;
   }
 
+  /**
+   * Records a successful self-registration (E2-02, FR-021) for the meeting the page shows: the viewer
+   * is on the invite list from now on, and the lookup runs again so the page catches up with the BFF.
+   * Ignored when `meetingId` is no longer the page's meeting.
+   */
+  public markRegistered(meetingId: string): void {
+    // A registration for a meeting the page has since left, or is leaving (the held meeting outlives
+    // the route change until the next lookup resolves), says nothing about the current one.
+    if (!this.matchesRoute() || this.meeting()?.id !== meetingId) {
+      return;
+    }
+    this.optimisticInvitedId.set(meetingId);
+    this.refresh$.next();
+  }
+
   /** Re-runs the lookup for the current route, e.g. from the error state's retry. */
   public refresh(): void {
     this.retrying.set(true);
@@ -231,7 +255,7 @@ export class MeetingDetailsStateService {
       if (!meeting) {
         return null;
       }
-      return resolveViewerRole({ authenticated: this.userService.authenticated(), invited: meeting.invited === true, organizer: meeting.organizer === true });
+      return resolveViewerRole({ authenticated: this.userService.authenticated(), invited: this.isInvited(meeting), organizer: meeting.organizer === true });
     });
   }
 
@@ -277,7 +301,7 @@ export class MeetingDetailsStateService {
       return resolveMeetingStatus({
         timeState,
         hasStarted: this.now().getTime() >= start,
-        invited: meeting.invited === true,
+        invited: this.isInvited(meeting),
         inviteResponsesEnabled: isMeetingInviteResponsesEnabled(meeting),
         myRsvp: undefined,
       });
@@ -428,6 +452,11 @@ export class MeetingDetailsStateService {
       (last, occurrence) => (!last || new Date(occurrence.start_time) > new Date(last.start_time) ? occurrence : last),
       null
     );
+  }
+
+  /** On the invite list, per the payload or a registration made from this page. */
+  private isInvited(meeting: Meeting): boolean {
+    return meeting.invited === true || this.optimisticInvitedId() === meeting.id;
   }
 
   /** The action slot this viewer gets at the given time state, or `null` before the meeting loads. */
