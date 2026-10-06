@@ -1034,6 +1034,10 @@
                         The audience is unconfirmed — reconcile the lists it created before staging.
                       } @else if (emailAudience()?.status !== 'built') {
                         The audience failed — compose it again on the Audience tab before staging.
+                      } @else if (emailAudienceWriteInFlight()) {
+                        The audience is being replaced on the Audience tab — wait for it to finish before staging.
+                      } @else if (emailCopyState() === 'generating' || abTestCopyState() === 'generating') {
+                        Wait for the copy to finish generating before staging.
                       }
                     </span>
                   }

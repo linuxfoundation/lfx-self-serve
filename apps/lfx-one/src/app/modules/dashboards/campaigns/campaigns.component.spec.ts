@@ -3458,6 +3458,11 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       internals().emailAudienceWriteInFlight.set(true);
       expect(internals().canStageEmail(), 'Stage stayed open during an audience write').toBe(false);
+      fixture.detectChanges();
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent,
+        'Stage was disabled with no reason given'
+      ).toContain('being replaced');
 
       internals().emailAudienceWriteInFlight.set(false);
       expect(internals().canStageEmail()).toBe(true);

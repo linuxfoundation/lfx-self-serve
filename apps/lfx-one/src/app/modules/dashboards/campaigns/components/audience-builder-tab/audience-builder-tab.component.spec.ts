@@ -801,6 +801,42 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "event A's selection survived into event B").toBeNull();
     });
 
+    it("keeps hand-started work in a new project when that project's first brief arrives", async () => {
+      // A project switch must forget the previous project's last event: carried over, the new
+      // project's first brief read as a CHANGE of event and wiped the exploratory discovery.
+      await render({ initialEventUrl: 'https://events.example.org/p1-event', briefId: 'brief-p1' });
+      fixture.componentRef.setInput('projectSlug', 'other-project');
+      fixture.componentRef.setInput('initialEventUrl', '');
+      fixture.componentRef.setInput('briefId', '');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/p2-event');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/p2-event');
+      fixture.componentRef.setInput('briefId', 'brief-p2');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), 'hand-started work was wiped by the first brief').not.toBeNull();
+    });
+
+    it("strands a compose in flight when a different event's brief arrives, and blocks a recompose", async () => {
+      // The reply is discarded by the reset, so the create must be recorded as unconfirmed rather
+      // than lost -- composing again would duplicate the lists.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      composeAudienceMaster.mockReturnValue(new Subject());
+      click('campaigns-audience-compose');
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-stranded"]'), 'the abandoned create was not reported').not.toBeNull();
+    });
+
     it("drops a discovery still streaming when a different event's brief arrives", async () => {
       // `hasDiscovered` turns true only on the final frame, so a mid-stream switch let A's frames
       // finish under B's brief.
