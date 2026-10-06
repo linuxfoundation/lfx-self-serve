@@ -624,6 +624,21 @@ describe('MeetingDetailsStateService', () => {
       expect(getPublicMeeting).toHaveBeenCalledTimes(1);
     });
 
+    // The held meeting outlives the route change until the next lookup resolves.
+    it('ignores a registration that completes while the page is moving to another meeting', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: live(), project }));
+      const state = create();
+      await settle();
+
+      getPublicMeeting.mockReturnValue(new Subject());
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      await settle();
+      state.markRegistered(MEETING_ID);
+
+      getPublicMeeting.mockReturnValue(of({ meeting: live({ id: 'meeting-2' }), project }));
+      expect(state.viewerRole()).toBe('outsider');
+    });
+
     it('forgets a registration from this page when the route moves to another meeting', async () => {
       getPublicMeeting.mockReturnValue(of({ meeting: live(), project }));
       const state = create();

@@ -77,13 +77,14 @@ export class MeetingDetailsStateService {
    */
   public readonly pastAccessKnown = computed(() => this.loadedViaPastMeetingId());
   /**
-   * Set once the viewer registers from the page (E2-02), until the route moves to another meeting:
-   * the slot moves to the registrant's state at once, as V1's optimistic flip does, rather than
-   * waiting on the indexer. It is ORed with the payload's `invited`, so it never needs clearing when
-   * the lookup catches up. Unlike V1 (keyed on the series uid) it resets on any route id change, so
-   * opening a past occurrence of the same series drops it and reads the server's `invited` instead.
+   * The meeting the viewer registered for from this page (E2-02): the slot moves to the registrant's
+   * state at once, as V1's optimistic flip does, rather than waiting on the indexer. Keyed by meeting
+   * id, so it applies to that meeting only and can never carry over to another one, however a
+   * navigation interleaves with the dialog. It is ORed with the payload's `invited`, so it never needs
+   * clearing when the lookup catches up. Unlike V1 (keyed on the series uid), a past occurrence of the
+   * same series has its own id, so it reads the server's `invited` instead.
    */
-  private readonly optimisticInvited = signal(false);
+  private readonly optimisticInvitedId = signal<string | null>(null);
   /** Meetings this page has auto-joined, so a remounted Join control does not open them again. */
   private readonly autoJoinedMeetingIds = new Set<string>();
   /** The meeting password for lookups: `?password=`, or else the composer's navigation state. */
@@ -190,11 +191,12 @@ export class MeetingDetailsStateService {
    * Ignored when `meetingId` is no longer the page's meeting.
    */
   public markRegistered(meetingId: string): void {
-    // A registration for a meeting the page has since left says nothing about the current one.
-    if (this.meeting()?.id !== meetingId) {
+    // A registration for a meeting the page has since left, or is leaving (the held meeting outlives
+    // the route change until the next lookup resolves), says nothing about the current one.
+    if (!this.matchesRoute() || this.meeting()?.id !== meetingId) {
       return;
     }
-    this.optimisticInvited.set(true);
+    this.optimisticInvitedId.set(meetingId);
     this.refresh$.next();
   }
 
@@ -333,7 +335,6 @@ export class MeetingDetailsStateService {
         if (meetingId !== this.routeId()) {
           this.loadFailed.set(false);
           this.failureCount.set(0);
-          this.optimisticInvited.set(false);
         }
         this.routeId.set(meetingId);
       }),
@@ -455,7 +456,7 @@ export class MeetingDetailsStateService {
 
   /** On the invite list, per the payload or a registration made from this page. */
   private isInvited(meeting: Meeting): boolean {
-    return meeting.invited === true || this.optimisticInvited();
+    return meeting.invited === true || this.optimisticInvitedId() === meeting.id;
   }
 
   /** The action slot this viewer gets at the given time state, or `null` before the meeting loads. */
