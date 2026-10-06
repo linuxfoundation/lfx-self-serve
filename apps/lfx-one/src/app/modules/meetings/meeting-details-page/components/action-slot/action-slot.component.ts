@@ -75,23 +75,6 @@ export class MeetingActionSlotComponent {
    */
   protected readonly organizerMailto: Signal<string | null> = this.initOrganizerMailto();
 
-  private initOrganizerMailto(): Signal<string | null> {
-    return computed(() => {
-      const meeting = this.state.meeting();
-      if (!meeting || this.kind() !== 'invitation-required') {
-        return null;
-      }
-      // The selected occurrence's date, so a series' email names the occurrence the page is about, in
-      // the meeting's own timezone so the server render and the browser agree.
-      return buildMeetingOrganizerMailto({
-        email: resolveMeetingOrganizer(meeting)?.email,
-        meetingTitle: meeting.title,
-        meetingDate: formatMeetingMailtoDate(this.state.selectedOccurrence()?.start_time ?? meeting.start_time, meeting.timezone),
-        detailUrl: `${environment.urls.home}/meetings/${encodeURIComponent(meeting.id)}`,
-      });
-    });
-  }
-
   /**
    * `register` for a signed-in outsider (E2-02, FR-021): the shared registration dialog V1 opens, with
    * its validation unchanged. A successful registration moves the slot to the registrant's state at
@@ -119,6 +102,23 @@ export class MeetingActionSlotComponent {
       if (result?.registered) {
         this.state.markRegistered(meeting.id);
       }
+    });
+  }
+
+  private initOrganizerMailto(): Signal<string | null> {
+    return computed(() => {
+      const meeting = this.state.meeting();
+      if (!meeting || this.kind() !== 'invitation-required') {
+        return null;
+      }
+      // The selected occurrence's date, so a series' email names the occurrence the page is about, in
+      // the meeting's own timezone so the server render and the browser agree.
+      return buildMeetingOrganizerMailto({
+        email: resolveMeetingOrganizer(meeting)?.email,
+        meetingTitle: meeting.title,
+        meetingDate: formatMeetingMailtoDate(this.state.selectedOccurrence()?.start_time ?? meeting.start_time, meeting.timezone),
+        detailUrl: `${environment.urls.home}/meetings/${encodeURIComponent(meeting.id)}`,
+      });
     });
   }
 
