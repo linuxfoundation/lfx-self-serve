@@ -260,8 +260,8 @@ export class MentorshipMentorService {
    * Creates one task for each application, at most `MENTORSHIP_MENTOR_TASK_CREATE_CONCURRENCY` at once, since
    * upstream has no batch create. The caller's local user id, read once, is each task's owner and author. With one
    * application its failure propagates, so upstream's status reaches the browser; with several, each failure is
-   * logged and listed in `failed`, and the rest are still created. Upstream checks the caller mentors the program.
-   * The task's text is never logged.
+   * logged and listed in `failed`, and the rest are still created. Upstream checks the caller mentors or
+   * manages the program, so the admin route creates through here too. The task's text is never logged.
    */
   public async createMenteeTasks(req: Request, request: MentorshipMentorTaskCreateRequest): Promise<MentorshipMentorTaskCreateResponse> {
     const operation = 'create_mentorship_mentor_tasks';

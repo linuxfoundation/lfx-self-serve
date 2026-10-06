@@ -11,6 +11,7 @@ import {
   MentorshipAdminProgramPage,
   MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
+  MentorshipMentorTaskCreateResponse,
   MentorshipProgramsResponse,
 } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -207,6 +208,18 @@ describe('MentorshipAdminService', () => {
     ]);
     requests.forEach((req) => req.flush(null, { status: 204, statusText: 'No Content' }));
     expect(done).toBe(2);
+  });
+
+  it('posts a task create for one application and returns the created and failed ids', () => {
+    const request = { applicationIds: ['app_1'], name: 'Read the guide', description: 'Start with chapter one', dueDate: '2030-01-31' };
+    let result: MentorshipMentorTaskCreateResponse | undefined;
+    service.createTasks(request).subscribe((response) => (result = response));
+
+    const req = http.expectOne('/api/mentorship/admin/tasks');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(request);
+    req.flush({ created: ['app_1'], failed: [] } satisfies MentorshipMentorTaskCreateResponse);
+    expect(result).toEqual({ created: ['app_1'], failed: [] });
   });
 
   it('declines the pending applications of a term and returns the count', () => {

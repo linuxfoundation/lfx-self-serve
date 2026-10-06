@@ -14,6 +14,8 @@ import {
   MentorshipAdminTermsQuery,
   MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
+  MentorshipMentorTaskCreateRequest,
+  MentorshipMentorTaskCreateResponse,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
 } from '@lfx-one/shared/interfaces';
@@ -111,6 +113,11 @@ export class MentorshipAdminService {
     return this.http
       .post<void>(`/api/mentorship/admin/applications/${encodeURIComponent(applicationId)}/withdraw`, {})
       .pipe(take(1), this.logFailure('withdrawApplication'));
+  }
+
+  /** Gives accepted mentees a task. With one application a failure arrives as the error; with several, the ones not created are in `failed`. */
+  public createTasks(request: MentorshipMentorTaskCreateRequest): Observable<MentorshipMentorTaskCreateResponse> {
+    return this.http.post<MentorshipMentorTaskCreateResponse>('/api/mentorship/admin/tasks', request).pipe(take(1), this.logFailure('createTasks'));
   }
 
   /** Declines every pending application of one term. */

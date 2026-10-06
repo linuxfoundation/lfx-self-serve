@@ -10,17 +10,23 @@ import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Router-level coverage for the impersonation gate on the admin reviewer-note write. The middleware has its own unit
- * tests, but those call it directly and would keep passing if it were dropped from this route.
+ * Router-level coverage for the impersonation gate on the admin reviewer-note write and the task create. The
+ * middleware has its own unit tests, but those call it directly and would keep passing if it were dropped from these
+ * routes.
  */
 
 const noteHandler = vi.fn((_req: express.Request, res: express.Response) => {
   res.status(204).end();
 });
 
+const tasksHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.json({ created: [], failed: [] });
+});
+
 vi.mock('../controllers/mentorship-admin.controller', () => ({
   MentorshipAdminController: class {
     public updateApplicationNote = noteHandler;
+    public createTasks = tasksHandler;
   },
 }));
 let impersonatingStub = false;
@@ -48,6 +54,13 @@ const putNote = (): Promise<Response> =>
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ note: 'needs a second look' }),
+  });
+
+const postTasks = (): Promise<Response> =>
+  fetch(`${baseUrl}/api/mentorship/admin/tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ applicationIds: [APPLICATION_ID], name: 'Read the guide', description: 'Start with chapter one' }),
   });
 
 beforeAll(async () => {
@@ -86,5 +99,23 @@ describe('mentorship admin router — reviewer note impersonation gate', () => {
 
     expect(res.status).toBe(204);
     expect(noteHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mentorship admin router — task create impersonation gate', () => {
+  it('refuses the task create with 403 while impersonating and never reaches the controller', async () => {
+    const res = await postTasks();
+
+    expect(res.status).toBe(403);
+    expect(tasksHandler).not.toHaveBeenCalled();
+  });
+
+  it('admits the task create when not impersonating', async () => {
+    impersonatingStub = false;
+
+    const res = await postTasks();
+
+    expect(res.status).toBe(200);
+    expect(tasksHandler).toHaveBeenCalledTimes(1);
   });
 });
