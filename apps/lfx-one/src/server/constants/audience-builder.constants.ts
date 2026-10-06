@@ -45,11 +45,12 @@ export const RAW_TEXT_CONTAINERS: ReadonlySet<string> = new Set(['noscript', 'if
 export const TOKENIZER_RAW_TEXT_ELEMENTS: ReadonlySet<string> = new Set(['script', 'style', 'title', 'textarea', 'xmp']);
 
 /**
- * A raw-text or inert-container closer followed by `/` -- `</script/>`, `</iframe/>`.
+ * A tracked closer followed by `/` -- `</script/>`, `</iframe/>`, `</svg/>`. Derived from the sets
+ * above, so a tag added there is normalised here too.
  *
  * A browser ends raw text at the closer's name followed by whitespace, `/` or `>`; the tokenizer
  * accepts only the first and last, so `</script/>` left the rest of the document as script text.
  * Replaced with a space, which the spec treats identically there and which keeps every offset --
  * the tokenizer callbacks slice the input by index.
  */
-export const RAW_TEXT_CLOSER_SOLIDUS_RE = /<\/(script|style|title|textarea|xmp|noscript|iframe|noembed|noframes|template)\//gi;
+export const RAW_TEXT_CLOSER_SOLIDUS_RE = new RegExp(`<\\/(${[...TOKENIZER_RAW_TEXT_ELEMENTS, ...RAW_TEXT_CONTAINERS, 'template', 'svg'].join('|')})\\/`, 'gi');

@@ -250,7 +250,7 @@ describe('extractPageLinks — malformed and hostile markup', () => {
   });
 
   it('treats a closer cut off at the end of the input as closing the region', () => {
-    // The `opensAnElement` EOF branch: nothing follows `</script`, so the name ends there. The real
+    // A `</script` cut off at end of input: the closer's name ends at EOF. The real
     // link BEFORE the script must survive and the decoy inside it must not.
     const html = `<a href="https://events.linuxfoundation.org/real">Real</a><script><a href="https://evil.example/fake">x</a></script`;
 
@@ -396,7 +396,32 @@ describe('extractPageLinks — links a browser does not render (tokenized, not s
     ['a self-closed <title/>', `<title/><a href="https://evil.example/t">x</a></title>${REAL}`],
     ['a self-closed <iframe/>', `<iframe/><a href="https://evil.example/if">x</a></iframe>${REAL}`],
     ['a self-closed <template/>', `<template/><a href="https://evil.example/tpl">x</a></template>${REAL}`],
+    // Reproduced against the previous revision of this scanner (fail-OPEN), each now inert.
+    ['a template closer written inside an <iframe> in a template', `<template><iframe></template><a href="https://evil.example/a"></iframe></template>${REAL}`],
+    [
+      'a template closer inside a self-closed <textarea/> in a template',
+      `<template><textarea/></template><a href="https://evil.example/a"></textarea></template>${REAL}`,
+    ],
+    ['<plaintext> inside a template', `${REAL}<template><plaintext></template><a href="https://evil.example/a">`],
+    [
+      'a declarative shadow root (validity depends on the host)',
+      `<div><template shadowrootmode="open"><a href="https://evil.example/a"></template></div>${REAL}`,
+    ],
+    ['a shadow root nested in a template', `<template><template shadowrootmode="open"></template><a href="https://evil.example/a"></template>${REAL}`],
+    ['a closer with a space after </, which is a bogus comment', `<iframe></ iframe><a href="https://evil.example/a"></iframe>${REAL}`],
+    ['a template closer with a space after </', `<template></ template><a href="https://evil.example/a"></template>${REAL}`],
+    ['a self-closed <script/> after a self-closed <svg/>', `<svg/><script src="a.js"/><a href="https://evil.example/a"></script>${REAL}`],
+    ['a self-closed <script/> after </svg/>', `<svg></svg/><script src="a.js"/><a href="https://evil.example/a"></script>${REAL}`],
+    ['a self-closed <textarea/> after an SVG breakout', `<svg><p><textarea/><a href="https://evil.example/a"></textarea>${REAL}`],
   ])('ignores %s', (_label, html) => {
+    expect([...extractPageLinks(html, base).values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it('treats the rest of the page as inert after a double-escaped script', () => {
+    // In a browser `<!--<script>` inside script data can run past the first `</script>`; the
+    // tokenizer ends there. Unmodelled, so fail safe: nothing after it is kept.
+    const html = `${REAL}<script><!--<script></script><a href="https://evil.example/a">--></script>`;
+
     expect([...extractPageLinks(html, base).values()]).toEqual(['https://events.linuxfoundation.org/real']);
   });
 
@@ -448,10 +473,14 @@ describe('extractPageLinks — links a browser does not render (tokenized, not s
     ['a template closer written with a slash', `<template>x</template/>${REAL}`],
     ['a nested iframe, which raw text does not nest', `<iframe><iframe></iframe>${REAL}`],
     ['an unclosed <math>', `<math><mi>x</mi><p>${REAL}`],
-    ['a declarative shadow root, which IS rendered', `<div><template shadowrootmode="open">${REAL}</template></div>`],
-    ['a self-closed element inside <svg>, where the slash is real', `<svg><title/></svg>${REAL}`],
+    ['a self-closed SVG shape', `<svg><path d="M0 0"/></svg>${REAL}`],
   ])('keeps a real link after %s', (_label, html) => {
     expect([...extractPageLinks(html, base).values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it('honours a <base> after a self-closed <svg/>, which leaves no svg open', () => {
+    // Counted as an open <svg>, it never closed, and every later <base> was ignored.
+    expect(documentBaseUrl('<svg/><base href="/sub/"><a href="agenda">x</a>', 'https://events.example.org/e')).toBe('https://events.example.org/sub/');
   });
 
   it('does not take a <base> inside <svg> as the document base', () => {
