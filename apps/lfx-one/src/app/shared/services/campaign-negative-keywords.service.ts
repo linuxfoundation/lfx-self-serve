@@ -31,9 +31,17 @@ import { take } from 'rxjs';
  * the parent's pending flag, fed by an output the destroyed editor could no longer emit, stayed
  * `true` forever.
  *
- * The leak the rule guards against is bounded instead: SETTLED entries are dropped by
- * `clearSettled` when the tab switches project or brief and on its Refresh, and by `dismiss` from
- * the row. An entry still in flight is never removed; it settles here and is cleared later.
+ * The leak the rule guards against is bounded instead, by an owner that stays mounted: the
+ * campaigns page (`CampaignsComponent`, the tab shell) reports its (project, brief) through
+ * `setScope` and calls `releaseScope` when it is destroyed. A scope change drops every SETTLED entry
+ * outside the new scope, leaving the page drops every settled entry, and a request that settles
+ * outside the active scope (or with none active) is dropped as it settles — its toast still
+ * announces it. The Optimize tab's Refresh (`clearSettled`) and the row's `dismiss` drop more. An
+ * entry still in flight is never removed. Until `setScope` is first called nothing is scoped, so the
+ * service is usable on its own.
+ *
+ * Sign-out needs no reset here: `/logout` is a full-page navigation to a server redirect
+ * (`LogoutLinkDirective`), which tears down the whole application and this root instance with it.
  *
  * The response is NOT atomic and is POSITIONAL: `results[i]` answers the i-th keyword sent, so the
  * outcomes are zipped onto the exact list that was sent and kept in that order — never matched by
@@ -47,6 +55,11 @@ export class CampaignNegativeKeywordsService {
   private readonly messageService = inject(MessageService);
 
   private readonly state = signal<Record<string, CampaignNegativeKeywordsRequestState>>({});
+  /**
+   * The key prefix of the campaigns page's (project, brief): `undefined` until `setScope` is first
+   * called (nothing scoped), `null` once the page has released it.
+   */
+  private activeScope: string | null | undefined = undefined;
 
   /** The latest request per `campaignNegativeKeywordsKey`. */
   public readonly requests: Signal<Record<string, CampaignNegativeKeywordsRequestState>> = this.state.asReadonly();
@@ -64,7 +77,7 @@ export class CampaignNegativeKeywordsService {
     if (this.state()[key]?.pending) {
       return;
     }
-    this.set(key, { pending: true, outcomeRows: [], batchOutcome: null, batchKeywords: [] });
+    this.set(key, { pending: true, outcomeRows: [], batchOutcome: null, batchKeywords: [], sent: keywords, matchType });
 
     this.campaignService
       .addNegativeKeywords(
@@ -77,7 +90,7 @@ export class CampaignNegativeKeywordsService {
       .subscribe({
         next: (result) => {
           const rows = negativeKeywordOutcomeRows(keywords, matchType, result);
-          this.set(key, { pending: false, outcomeRows: rows, batchOutcome: null, batchKeywords: [] });
+          this.settle(key, { pending: false, outcomeRows: rows, batchOutcome: null, batchKeywords: [], sent: keywords, matchType });
           if (!rows.some((row) => row.outcome === 'FAILED' || row.outcome === 'UNCONFIRMED')) {
             onAllSettled?.();
           }
@@ -85,7 +98,7 @@ export class CampaignNegativeKeywordsService {
         },
         error: (err: unknown) => {
           const outcome = campaignNegativeKeywordsFailureOutcome(err);
-          this.set(key, { pending: false, outcomeRows: [], batchOutcome: outcome, batchKeywords: keywords });
+          this.settle(key, { pending: false, outcomeRows: [], batchOutcome: outcome, batchKeywords: keywords, sent: keywords, matchType });
           this.messageService.add({
             severity: outcome.state === 'unconfirmed' ? 'warn' : 'error',
             summary: outcome.state === 'unconfirmed' ? `Negative keywords not confirmed for ${campaignName}` : `Negative keywords not added to ${campaignName}`,
@@ -96,18 +109,29 @@ export class CampaignNegativeKeywordsService {
       });
   }
 
+  /**
+   * The campaigns page's current (project, brief). Drops every settled request outside it; a
+   * request still in flight is kept until it settles.
+   */
+  public setScope(projectSlug: string, briefId: string): void {
+    const scope = campaignNegativeKeywordsKey(projectSlug, briefId, '');
+    if (scope === this.activeScope) {
+      return;
+    }
+    this.activeScope = scope;
+    this.dropSettled((key) => !key.startsWith(scope));
+  }
+
+  /** The campaigns page is gone: drops every settled request. Ones in flight are dropped as they settle. */
+  public releaseScope(): void {
+    this.activeScope = null;
+    this.dropSettled(() => true);
+  }
+
   /** Drops every SETTLED request of one (project, brief). Requests still in flight are kept. */
   public clearSettled(projectSlug: string, briefId: string): void {
     const prefix = campaignNegativeKeywordsKey(projectSlug, briefId, '');
-    this.state.update((all) => {
-      const kept: Record<string, CampaignNegativeKeywordsRequestState> = {};
-      for (const [key, request] of Object.entries(all)) {
-        if (request.pending || !key.startsWith(prefix)) {
-          kept[key] = request;
-        }
-      }
-      return kept;
-    });
+    this.dropSettled((key) => key.startsWith(prefix));
   }
 
   /** Drops one campaign's settled request, once the operator has read it. A pending one is kept. */
@@ -125,6 +149,32 @@ export class CampaignNegativeKeywordsService {
 
   private set(key: string, request: CampaignNegativeKeywordsRequestState): void {
     this.state.update((all) => ({ ...all, [key]: request }));
+  }
+
+  /** Records a settled request, unless it settled outside the page's active scope. */
+  private settle(key: string, request: CampaignNegativeKeywordsRequestState): void {
+    const scope = this.activeScope;
+    if (scope === null || (scope !== undefined && !key.startsWith(scope))) {
+      this.state.update((all) => {
+        const next = { ...all };
+        delete next[key];
+        return next;
+      });
+      return;
+    }
+    this.set(key, request);
+  }
+
+  private dropSettled(matches: (key: string) => boolean): void {
+    this.state.update((all) => {
+      const kept: Record<string, CampaignNegativeKeywordsRequestState> = {};
+      for (const [key, request] of Object.entries(all)) {
+        if (request.pending || !matches(key)) {
+          kept[key] = request;
+        }
+      }
+      return kept;
+    });
   }
 
   /** One toast for the whole request; the per-keyword detail stays with the editor. */

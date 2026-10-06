@@ -2135,6 +2135,11 @@ export interface KeywordActionOutcome {
   success: boolean;
   message: string;
   state: 'done' | 'unconfirmed' | 'failed';
+  /**
+   * The action this outcome answers, recorded when the response lands — not looked up from what was
+   * last asked, which a re-read or a newer click can change while the request is out.
+   */
+  action?: KeywordActionType;
 }
 
 // ---------------------------------------------------------------------------
@@ -2421,6 +2426,10 @@ export interface CampaignNegativeKeywordsRequestState {
   batchOutcome: CampaignNegativeKeywordsBatchOutcome | null;
   /** The keywords the batch outcome is about, so an unconfirmed batch can name them. */
   batchKeywords: string[];
+  /** Every keyword sent, in order, so a remounted editor can restore the ones not confirmed added. */
+  sent: string[];
+  /** The match type the request was sent with, restored with them. */
+  matchType: CampaignNegativeKeywordMatchType;
 }
 
 /** One negative-keyword request, as the editor hands it to `CampaignNegativeKeywordsService`. */
@@ -2454,8 +2463,8 @@ export interface MicrosoftKeywordDisplayRow {
   inProgress: boolean;
   result: KeywordActionOutcome | null;
   /**
-   * True once a REMOVE asked from this table since its last read was confirmed: the keyword no
-   * longer exists, so no action is offered on it until the table is read again.
+   * True once a REMOVE of this keyword was confirmed on this page: it no longer exists, so no action
+   * is offered on it — even when a finished report read afterwards still lists it.
    */
   removed: boolean;
   /**

@@ -73,7 +73,7 @@ import {
   campaignToggleAction,
   normalizeCampaignStatus,
 } from '@lfx-one/shared/constants';
-import { campaignActionItemLever, keywordActionKey } from '@lfx-one/shared/utils';
+import { campaignActionItemLever, keywordActionKey, keywordIdentityKey } from '@lfx-one/shared/utils';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
 import { campaignBudgetFailureOutcome } from '@shared/utils/campaign-budget-error.utils';
@@ -83,7 +83,7 @@ import { CampaignNegativeKeywordsService } from '@services/campaign-negative-key
 import { campaignNegativeKeywordsKey } from '@shared/utils/campaign-negative-keywords.utils';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
-import { catchError, EMPTY, filter, map, of, pairwise, skip, switchMap, take, type Subscription } from 'rxjs';
+import { catchError, EMPTY, map, of, skip, switchMap, take, type Subscription } from 'rxjs';
 
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
@@ -645,6 +645,13 @@ export class OptimizationTabComponent implements OnInit {
 
   protected readonly actionInProgress = signal<Record<string, boolean>>({});
   protected readonly actionResults = signal<Record<string, KeywordActionOutcome>>({});
+  /**
+   * Keywords a confirmed REMOVE deleted on this page, by `keywordIdentityKey`. Recorded when the
+   * response lands, from the action that request carried, and never cleared by a re-read: Microsoft's
+   * keywords come from a finished saved report, which can still list a keyword after it is gone, and
+   * offering Pause/Remove on it again would act on nothing.
+   */
+  protected readonly removedKeywords = signal<ReadonlySet<string>>(new Set<string>());
   /**
    * Label and colour per outcome state, as lookup maps so the template does no work.
    *
@@ -1390,16 +1397,20 @@ export class OptimizationTabComponent implements OnInit {
         next: (res) => {
           this.actionInProgress.update((map) => ({ ...map, [key]: false }));
           const result = res.results[0];
-          const outcome = this.positionalOutcome(result);
+          const outcome: KeywordActionOutcome = { ...this.positionalOutcome(result), action };
           this.actionResults.update((map) => ({
             ...map,
             [key]: outcome,
           }));
+          if (action === 'remove' && outcome.state === 'done') {
+            const identity = keywordIdentityKey(platform, kw.campaignId, kw.adGroupId, kw.criterionId);
+            this.removedKeywords.update((removed) => new Set(removed).add(identity));
+          }
           this.announceKeywordOutcome(action, 1, outcome.state, outcome.message);
         },
         error: (err) => {
           this.actionInProgress.update((map) => ({ ...map, [key]: false }));
-          const outcome = this.toTransportOutcome(err);
+          const outcome: KeywordActionOutcome = { ...this.toTransportOutcome(err), action };
           this.actionResults.update((map) => ({
             ...map,
             [key]: outcome,
@@ -1876,13 +1887,9 @@ export class OptimizationTabComponent implements OnInit {
     // brief within one project. The etag bookkeeping is reset with it — those validators and the
     // baseline they are compared against belong to the abandoned list, and judging the next
     // context's first delivery against them would compare ids across two different briefs.
-    toObservable(computed(() => ({ projectSlug: this.projectSlug(), briefId: this.briefId() })))
-      .pipe(
-        pairwise(),
-        filter(([prev, next]) => prev.projectSlug !== next.projectSlug || prev.briefId !== next.briefId),
-        takeUntilDestroyed()
-      )
-      .subscribe(([abandoned]) => {
+    toObservable(computed(() => `${this.projectSlug()}\u0000${this.briefId()}`))
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => {
         // Anything still in flight belongs to the context being abandoned.
         this.contextGeneration++;
         // Cleared HERE rather than left to the late response arms, which now return early: a row
@@ -1905,9 +1912,8 @@ export class OptimizationTabComponent implements OnInit {
         this.bidPending.set({});
         this.bidOutcome.set({});
         this.confirmedBid.set({});
-        // Negative-keyword requests are keyed by (project, brief, campaign) in the root service:
-        // the abandoned scope's settled results go, and one still in flight finishes there.
-        this.negativeKeywordsService.clearSettled(abandoned.projectSlug, abandoned.briefId);
+        // Negative-keyword requests are keyed by (project, brief, campaign) in the root service, and
+        // the campaigns page (which stays mounted across tabs) scopes them; see `setScope`.
         this.negativesEditorOpen.set({});
         this.lastDeliveredEtags = {};
         this.hasDeliveredList = false;

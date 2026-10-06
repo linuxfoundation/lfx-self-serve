@@ -143,4 +143,59 @@ describe('CampaignNegativeKeywordsService', () => {
     service.dismiss('tlf', 'b-1', 'c-1');
     expect(service.requests()['tlf|b-1|c-1']).toBeUndefined();
   });
+
+  it('keeps what was sent and its match type, for an editor to restore', () => {
+    service.submit(submission({ matchType: 'Phrase' }));
+    answer(0, ['APPLIED', 'FAILED']);
+
+    expect(service.requests()['tlf|b-1|c-1'].sent).toEqual(['alpha', 'beta']);
+    expect(service.requests()['tlf|b-1|c-1'].matchType).toBe('Phrase');
+  });
+
+  describe('scoped by the campaigns page', () => {
+    it('drops settled requests outside a new scope, keeping ones in flight', () => {
+      service.setScope('tlf', 'b-1');
+      service.submit(submission({ campaignId: 'c-1' }));
+      service.submit(submission({ campaignId: 'c-2' }));
+      answer(0, ['APPLIED', 'APPLIED']);
+
+      service.setScope('tlf', 'b-2');
+
+      expect(service.requests()['tlf|b-1|c-1']).toBeUndefined();
+      expect(service.requests()['tlf|b-1|c-2'].pending).toBe(true);
+    });
+
+    it('drops a request that settles outside the active scope; its toast still announces it', () => {
+      service.setScope('tlf', 'b-1');
+      service.submit(submission());
+      service.setScope('tlf', 'b-2');
+      answer(0, ['APPLIED', 'UNCONFIRMED']);
+
+      expect(service.requests()['tlf|b-1|c-1']).toBeUndefined();
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+    });
+
+    it('keeps a request that settles inside the active scope', () => {
+      service.setScope('tlf', 'b-1');
+      service.submit(submission());
+      service.setScope('tlf', 'b-1');
+      answer(0, ['APPLIED', 'UNCONFIRMED']);
+
+      expect(service.requests()['tlf|b-1|c-1'].pending).toBe(false);
+    });
+
+    it('drops every settled request when the page is released, and ones in flight as they settle', () => {
+      service.setScope('tlf', 'b-1');
+      service.submit(submission({ campaignId: 'c-1' }));
+      service.submit(submission({ campaignId: 'c-2' }));
+      answer(0, ['APPLIED', 'APPLIED']);
+
+      service.releaseScope();
+      expect(service.requests()['tlf|b-1|c-1']).toBeUndefined();
+      expect(service.requests()['tlf|b-1|c-2'].pending).toBe(true);
+
+      answer(1, ['APPLIED', 'APPLIED']);
+      expect(service.requests()).toEqual({});
+    });
+  });
 });

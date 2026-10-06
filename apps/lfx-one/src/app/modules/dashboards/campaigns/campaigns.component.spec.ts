@@ -31,6 +31,7 @@ import type {
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
 import { provideRouter } from '@angular/router';
+import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
@@ -145,6 +146,28 @@ describe('CampaignsComponent brief persistence', () => {
     TestBed.inject(PersonaService).currentPersona.set('contributor');
     fixture.detectChanges();
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-no-access"]')).not.toBeNull();
+  });
+
+  // The Optimize tab is destroyed whenever another tab is open, so the page (which stays mounted)
+  // is what scopes the root negative-keyword results: it reports its (project, brief), and leaving
+  // the page releases them.
+  it('scopes negative-keyword results to the page, and releases them when the page is destroyed', () => {
+    const service = TestBed.inject(CampaignNegativeKeywordsService);
+    const setScope = vi.spyOn(service, 'setScope');
+    const releaseScope = vi.spyOn(service, 'releaseScope');
+    // A page mounted after the spies, so its first report is observed.
+    const page = TestBed.createComponent(CampaignsComponent);
+    page.detectChanges();
+    TestBed.tick();
+
+    expect(setScope).toHaveBeenCalled();
+    const [projectSlug, briefId] = setScope.mock.calls[setScope.mock.calls.length - 1];
+    const component = page.componentInstance as unknown as { activeFoundationSlug(): string; briefPersistence(): { briefId: string | null } };
+    expect(projectSlug).toBe(component.activeFoundationSlug());
+    expect(briefId).toBe(component.briefPersistence().briefId ?? '');
+
+    page.destroy();
+    expect(releaseScope).toHaveBeenCalledTimes(1);
   });
 
   it('switches to the Implementation tab before the save resolves', async () => {
@@ -6461,6 +6484,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     await TestBed.configureTestingModule({
       imports: [CampaignsComponent],
       providers: [
+        // The page scopes the root negative-keyword service, which injects the app-root MessageService.
+        { provide: MessageService, useValue: { add: vi.fn() } },
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
@@ -8048,6 +8073,8 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
     await TestBed.configureTestingModule({
       imports: [CampaignsComponent],
       providers: [
+        // The page scopes the root negative-keyword service, which injects the app-root MessageService.
+        { provide: MessageService, useValue: { add: vi.fn() } },
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),

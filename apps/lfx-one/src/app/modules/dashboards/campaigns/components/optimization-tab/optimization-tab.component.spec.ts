@@ -3429,18 +3429,6 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     expect(service.requests()['tlf|b-1|c-2'].pending).toBe(true);
   });
 
-  it("clears the abandoned brief's settled negative-keyword results when the brief changes", () => {
-    render([doc()]);
-    const response = new Subject<CampaignNegativeKeywordsResult>();
-    submitNegatives(response);
-    settleUnconfirmed(response);
-
-    fixture.componentRef.setInput('briefId', 'b-2');
-    fixture.detectChanges();
-
-    expect(TestBed.inject(CampaignNegativeKeywordsService).requests()['tlf|b-1|c-1']).toBeUndefined();
-  });
-
   it('disables negative keywords for a Microsoft campaign never created on the platform', () => {
     render([doc({ platform_campaign_id: '' })]);
 
@@ -3504,6 +3492,93 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     expect(executeKeywordActions).toHaveBeenLastCalledWith('tlf', {
       action: 'pause',
       keywords: [{ campaignId: '33', adGroupId: '11', criterionId: '22', action: 'pause' }],
+    });
+  });
+
+  // A confirmed REMOVE withdraws the keyword's controls for good. Microsoft's rows come from a
+  // finished saved report, which can still list the keyword after a re-read; and a re-read while the
+  // REMOVE is out must not lose which action the response answers. Both orders are pinned.
+  describe('a confirmed Microsoft REMOVE', () => {
+    const msRow = {
+      keyword: 'kubernetes',
+      matchType: 'Exact',
+      qualityScore: null,
+      status: 'ENABLED',
+      adGroup: 'AG',
+      adGroupId: '11',
+      criterionId: '22',
+      campaign: 'KubeCon EU',
+      campaignId: '33',
+      impressions: 1,
+      clicks: 1,
+      ctr: 1,
+      avgCpc: 1,
+      spend: 1,
+      conversions: 0,
+    };
+    const msReport = {
+      pulledAt: '2026-10-05T10:00:00Z',
+      window: 'last_30_days',
+      totalKeywords: 1,
+      truncated: false,
+      metricsAsOf: '2026-10-05T09:00:00Z',
+      metricsPending: false,
+      conversionsComplete: true,
+      dataIncomplete: false,
+      totals: { impressions: 1, clicks: 1, spend: 1, conversions: 0, avgCtr: 1 },
+      keywords: [msRow],
+    };
+    const removed = { success: true, total: 1, succeeded: 1, failed: 0, results: [{ success: true, action: 'remove', keyword: '22', message: 'Removed' }] };
+
+    function renderWithMicrosoftKeywords(): Subject<unknown> {
+      (TestBed.inject(CampaignService).getMicrosoftKeywords as ReturnType<typeof vi.fn>).mockReturnValue(of(msReport));
+      const response = new Subject<unknown>();
+      executeKeywordActions.mockReturnValue(response);
+      render([doc()]);
+      q('microsoft-keyword-remove-microsoft-ads:11-22')!.click();
+      fixture.detectChanges();
+      return response;
+    }
+
+    function refresh(): void {
+      q('optimization-refresh')!.click();
+      fixture.detectChanges();
+    }
+
+    it('withdraws the controls when the table was re-read while the REMOVE was out', () => {
+      const response = renderWithMicrosoftKeywords();
+      refresh();
+
+      response.next(removed);
+      response.complete();
+      fixture.detectChanges();
+
+      expect(q('microsoft-keyword-outcome-microsoft-ads:11-22')!.textContent).toContain('Done');
+      expect(q('microsoft-keyword-pause-microsoft-ads:11-22')).toBeNull();
+      expect(q('microsoft-keyword-remove-microsoft-ads:11-22')).toBeNull();
+    });
+
+    it('keeps them withdrawn after a re-read whose report still lists the keyword', () => {
+      const response = renderWithMicrosoftKeywords();
+      response.next(removed);
+      response.complete();
+      fixture.detectChanges();
+      expect(q('microsoft-keyword-remove-microsoft-ads:11-22')).toBeNull();
+
+      refresh();
+
+      expect(q('microsoft-keyword-row-microsoft-ads:11-22')).not.toBeNull();
+      expect(q('microsoft-keyword-pause-microsoft-ads:11-22')).toBeNull();
+      expect(q('microsoft-keyword-remove-microsoft-ads:11-22')).toBeNull();
+    });
+
+    it('keeps the controls after a confirmed PAUSE, and after an unconfirmed REMOVE', () => {
+      const response = renderWithMicrosoftKeywords();
+      response.next({ ...removed, results: [{ success: false, action: 'remove', keyword: '22', message: 'could not be confirmed' }] });
+      response.complete();
+      fixture.detectChanges();
+
+      expect(q('microsoft-keyword-remove-microsoft-ads:11-22')).not.toBeNull();
     });
   });
 
