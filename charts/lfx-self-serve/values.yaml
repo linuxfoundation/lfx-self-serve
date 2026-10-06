@@ -607,6 +607,14 @@ environment:
   # carrying a single-use nonce and adopts the returned session only if that nonce comes back.
   GW_LFID_START_URL:
     value:
+  # Where the Gatewaze deployment serves the embeddable admin, e.g.
+  # https://admin.example.org/embed (no trailing slash). @gatewaze/admin-embed is a loader that
+  # reads <url>/manifest.json and imports the current admin bundle from there, so admin changes
+  # reach the embed on the next page load with no LFX release. The server also fetches the
+  # bundle's stylesheet from here to scope it (GW_EMBED_STYLESHEET_ROUTE). Empty = embed refuses
+  # to mount with a configuration error, same as the Supabase pair.
+  GW_EMBED_URL:
+    value:
   # Serves PATCH /api/campaigns/:campaignId/status from campaign-service instead of the
   # per-platform SDK calls in campaign-proxy.service.ts (LFXV2-3226).
   #

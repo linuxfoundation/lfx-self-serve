@@ -54,19 +54,11 @@ All commands run from the repo root via Turborepo:
 | `yarn e2e:check-collection` (from `apps/lfx-one`) | Collection-only guard — fails if any spec fails to load or collects zero tests |
 | `yarn commitlint`                                 | Validate commit message against Angular conventions                            |
 
-> **`yarn start` and every `yarn build:*` run `build:gw-css` first.** That step transforms the
-> installed `@gatewaze/admin-embed/admin.css` into `apps/lfx-one/public/assets/gw/admin-embed.css`
-> (git-ignored, generated). It **exits non-zero** when the embed package cannot be resolved, so a
-> `yarn start` that fails immediately after a dependency change usually means that package is
-> missing — run `yarn install`. See
-> [Gatewaze Embed Host](docs/architecture/frontend/gw-embed.md) for what the transform does.
->
 > For manual commands, prefer `yarn` over `npx` — the repo pins Yarn 4.x through `packageManager`, so `npx` can resolve to the wrong binary. Repo-managed tooling (e.g. `.husky/pre-commit` invokes `npx lint-staged`) may still use `npx` where already configured.
 
 ### Reset / cleanup
 
 ```bash
-rm -rf apps/lfx-one/public/assets/gw   # generated embed stylesheet; rebuilt by build:gw-css
 yarn ng cache clean        # Angular CLI cache (uses the workspace-local ng)
 yarn turbo clean           # Turborepo build cache (turbo is a local devDep)
 rm -rf node_modules && yarn install   # nuclear

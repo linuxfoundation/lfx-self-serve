@@ -20,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectContextService } from '../../../shared/services/project-context.service';
 import { UserService } from '../../../shared/services/user.service';
-import { GwModuleOutletComponent } from './gw-module-outlet.component';
+import { GwModuleOutletComponent, resolveGwEmbedStylesheetName } from './gw-module-outlet.component';
 
 /**
  * These cover the host-side decisions the embed can't make for itself — session adoption, the
@@ -845,5 +845,14 @@ describe('GwModuleOutletComponent', () => {
 
       expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info' }));
     });
+  });
+});
+
+describe('resolveGwEmbedStylesheetName', () => {
+  // The loader hands over the manifest's absolute stylesheet URL; only the hashed file name is
+  // sent to GW_EMBED_STYLESHEET_ROUTE, so the server never sees a path it did not construct itself.
+  it('keeps only the hashed file name', () => {
+    expect(resolveGwEmbedStylesheetName('https://admin.example.test/embed/admin-embed-C7yXdkZR.css')).toBe('admin-embed-C7yXdkZR.css');
+    expect(resolveGwEmbedStylesheetName('https://admin.example.test/embed/admin-embed-C7yXdkZR.css?x=1#y')).toBe('admin-embed-C7yXdkZR.css');
   });
 });

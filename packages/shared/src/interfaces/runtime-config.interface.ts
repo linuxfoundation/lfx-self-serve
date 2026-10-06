@@ -69,4 +69,12 @@ export interface RuntimeConfig {
    * (re-)authenticate. ASSUMPTION: no confirmed value for the pilot yet; empty until provided.
    */
   gwLfidStartUrl: string;
+  /**
+   * Where the Gatewaze deployment serves the embeddable admin (`GW_EMBED_URL`), e.g.
+   * `https://admin.example.org/embed`. `@gatewaze/admin-embed` is a loader: it reads
+   * `<url>/manifest.json` and imports the current bundle from there, so admin changes reach the
+   * embed on the next page load without an LFX release. Empty until configured; the outlet fails
+   * closed on an empty value, like the Supabase pair above.
+   */
+  gwEmbedUrl: string;
 }

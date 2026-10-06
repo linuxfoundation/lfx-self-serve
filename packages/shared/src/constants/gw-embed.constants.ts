@@ -114,18 +114,15 @@ export const GW_EMBED_ENABLED_FEATURES = [
 export const GW_EMBED_ALLOWED_PROJECT_SLUGS = ['agentic-ai-foundation'] as const;
 
 /**
- * Where the embed's stylesheet is served from.
- *
- * The embed's Vite lib build runs with `cssCodeSplit: false`, so it emits its CSS as a single
- * `admin-embed.css` file *beside* the JS chunk rather than inlining it — its own build config notes
- * that "the host must load it alongside the JS chunk". The dynamic `import()` of the JS therefore
- * pulls in no styles at all, and the outlet injects a `<link>` to this path instead.
- *
- * Note the emitted file is `dist-embed/admin.css`, not `admin-embed.css` — `vite.embed.config.ts`
- * predicts the latter in a comment, but Vite names the lib stylesheet after the package rather than
- * the `fileName` given for the JS entry. Whatever ships it to `public/assets/gw/` renames it.
+ * Same-origin route that serves the embed's stylesheet scoped to the host chrome. The loader
+ * resolves the manifest's hashed stylesheet URL to `<route>/<file name>`; the server fetches that
+ * file from `GW_EMBED_URL`, runs the containment transform once and caches it by name (the name
+ * is content-hashed, so a cached copy never goes stale).
  */
-export const GW_EMBED_STYLESHEET_PATH = '/assets/gw/admin-embed.css';
+export const GW_EMBED_STYLESHEET_ROUTE = '/public/api/gw-embed-stylesheet';
+
+/** What a hashed embed stylesheet file name looks like; anything else is rejected by the route. */
+export const GW_EMBED_STYLESHEET_NAME_PATTERN = /^admin-embed-[A-Za-z0-9_-]{1,32}\.css$/;
 
 /**
  * What the embed resolves an empty `apiBaseUrl` to — the same-origin BFF proxy mount.

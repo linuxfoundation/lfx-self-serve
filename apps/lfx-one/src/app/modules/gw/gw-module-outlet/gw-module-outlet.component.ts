@@ -7,7 +7,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { filter } from 'rxjs';
 import {
-  GW_EMBED_DEFAULT_API_BASE_URL,
   GW_EMBED_ENABLED_FEATURES,
   GW_EMBED_ENABLED_MODULE_IDS,
   GW_EMBED_LANDING_PATH,
@@ -25,10 +24,10 @@ import {
   GW_EMBED_PROJECT_ROUTE_PREFIX,
   GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_STORAGE_KEY_PREFIX,
-  GW_EMBED_STYLESHEET_PATH,
+  GW_EMBED_STYLESHEET_ROUTE,
 } from '@lfx-one/shared/constants';
 import { buildGwEmbedStorageSuffix, hasAuthFragment, resolveGwEmbedRoutePrefix } from '@lfx-one/shared/utils';
-import { GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostContext, GwRuntimeConfig } from '@lfx-one/shared/interfaces';
+import { GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostContext } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 
@@ -36,14 +35,6 @@ import { ProjectContextService } from '../../../shared/services/project-context.
 import { UserService } from '../../../shared/services/user.service';
 
 import { getRuntimeConfig } from '../../../shared/providers/runtime-config.provider';
-
-/**
- * Writes the embed's runtime-config global. Kept as a narrow function so this global has exactly one write site; its shape is declared
- * ambiently in `src/types/gw-embed.d.ts`, so no cast is involved.
- */
-function setGwRuntimeConfig(config: GwRuntimeConfig): void {
-  globalThis.__GATEWAZE_CONFIG__ = config;
-}
 
 /**
  * Native (no-iframe) host for the embedded Gatewaze admin pilot.
@@ -56,8 +47,12 @@ function setGwRuntimeConfig(config: GwRuntimeConfig): void {
  * empty mount points and nothing else; in the browser, `afterNextRender` dynamically imports
  * `@gatewaze/admin-embed` and hands it a `GwHostContext` to mount itself into `#embedRoot`.
  *
- * `@gatewaze/admin-embed` is built in the separate `gatewaze` repo (`packages/admin`'s embed Vite
- * config) and published to npm; this app takes it as a pinned dependency. The dynamic import is
+ * `@gatewaze/admin-embed` is a small loader, published from the separate `gatewaze` repo. The
+ * admin bundle itself is served by the Gatewaze deployment at `GW_EMBED_URL` (a `manifest.json`
+ * naming the current content-hashed entry and stylesheet); the loader reads the manifest, checks
+ * the host contract, injects the stylesheet and imports the entry. Admin changes therefore reach
+ * this page on the next load with no LFX release; only a loader contract change needs the
+ * dependency bumped. The dynamic import of the loader is
  * still wrapped, because a runtime failure from the embed — a bad chunk, a render crash on mount —
  * is handled the same way: caught, logged, and surfaced via `mountError` for the inline fallback.
  */
@@ -223,14 +218,14 @@ export class GwModuleOutletComponent {
       // Fail at the boundary rather than inside the embed. Both values default to '' when their
       // env vars are unset, and an empty Supabase URL produces an opaque failure several layers
       // down — this is also the behaviour RuntimeConfig's own doc comment promises.
-      if (!runtimeConfig.gwSupabaseUrl || !runtimeConfig.gwSupabaseAnonKey) {
+      if (!runtimeConfig.gwSupabaseUrl || !runtimeConfig.gwSupabaseAnonKey || !runtimeConfig.gwEmbedUrl) {
         // This return precedes `adoptAuthFragment`, which is normally what strips the fragment. If
         // configuration went missing during the LFID round trip, the tokens would otherwise sit in
         // the address bar and in session history indefinitely — surviving every later navigation,
         // for a failure the user can do nothing about. Clearing costs nothing: adoption cannot
         // succeed on this path anyway.
         this.clearAuthFragment();
-        this.showErrorPanel('The embedded admin module is not configured (GW_SUPABASE_URL / GW_SUPABASE_ANON_KEY are unset).');
+        this.showErrorPanel('The embedded admin module is not configured (GW_SUPABASE_URL / GW_SUPABASE_ANON_KEY / GW_EMBED_URL are unset).');
         return;
       }
       // Resolved rather than fixed: the embed is mounted from both the Foundation Lens and the
@@ -253,8 +248,14 @@ export class GwModuleOutletComponent {
           features: [...GW_EMBED_ENABLED_FEATURES],
         },
         signIn: {
-          lfidStartUrl: runtimeConfig.gwLfidStartUrl,
+          startUrl: runtimeConfig.gwLfidStartUrl,
           returnUrl: this.buildEmbedReturnUrl(),
+        },
+        source: {
+          baseUrl: runtimeConfig.gwEmbedUrl,
+          // The bundle's stylesheet is unscoped; the server scopes and caches it by hashed name
+          // (gw-embed-stylesheet.controller.ts), so only the file name crosses over.
+          resolveStylesheetUrl: (url) => `${GW_EMBED_STYLESHEET_ROUTE}/${resolveGwEmbedStylesheetName(url)}`,
         },
         storageKeySuffix: buildGwEmbedStorageSuffix(this.userService.user()?.sub),
         portalContainer: this.embedPortals().nativeElement,
@@ -263,35 +264,11 @@ export class GwModuleOutletComponent {
         navigateHost: (path) => this.handleHostNavigation(path),
       };
 
-      // The embed's stylesheet is emitted as a separate file by its library build
-      // (`cssCodeSplit: false`), so importing the JS chunk pulls in no styles — the host has to
-      // load the CSS itself. Injected before the import so the styles are in flight alongside the
-      // (much larger) chunk rather than after it.
-      this.ensureStylesheet();
-
       // Consume the LFID auth fragment before the embed mounts (see adoptAuthFragment).
       await this.adoptAuthFragment(ctx.supabase.url, ctx.supabase.anonKey);
       if (this.destroyed) {
         return;
       }
-
-      // The global has to exist BEFORE the chunk evaluates, not just before `mount()` runs.
-      //
-      // The embed's build rewrites every `import.meta.env.VITE_X` to a bare
-      // `globalThis.__GATEWAZE_CONFIG__.X` — no optional chaining, because esbuild's `define`
-      // only accepts literals or identifier paths. So any module-level read during import
-      // evaluation throws `Cannot read properties of undefined` if the global is unset, and
-      // `mount()` setting it is already too late by then.
-      //
-      // Set it in the VITE_-prefixed shape the rewrite expects (NOT `GwHostContext`), with the
-      // same three values and the same `apiBaseUrl` defaulting `mount()` itself applies, so this
-      // pre-set and the one inside `mount()` are identical and re-setting is a no-op. The embed's
-      // other VITE_ references stay undefined here exactly as they do after `mount()`.
-      setGwRuntimeConfig({
-        VITE_SUPABASE_URL: ctx.supabase.url,
-        VITE_SUPABASE_ANON_KEY: ctx.supabase.anonKey,
-        VITE_API_URL: ctx.apiBaseUrl === '' ? GW_EMBED_DEFAULT_API_BASE_URL : ctx.apiBaseUrl,
-      });
 
       const mod = await import('@gatewaze/admin-embed');
 
@@ -301,9 +278,17 @@ export class GwModuleOutletComponent {
         return;
       }
 
+      // Returns at once; the loader fetches the manifest, stylesheet and bundle, then mounts.
+      // Failures on that path come back through `onFatal` (and `ready` resolves null), and an
+      // `unmount()` before `ready` cancels the mount, so teardown needs no extra bookkeeping.
       this.mountHandle = mod.mount(this.embedRoot().nativeElement, ctx);
       this.lastSyncedUrl = `${window.location.pathname}${window.location.search}`;
       this.watchHostNavigation();
+      void this.mountHandle.ready.then((manifest) => {
+        if (manifest) {
+          console.info(`[GwModuleOutlet] Gatewaze embed ${manifest.version} mounted (contract ${manifest.contract})`);
+        }
+      });
     } catch (error) {
       // No client-side error-reporting service exists yet; console.error is the established
       // fallback used throughout apps/lfx-one/src/app/shared (no-console isn't a lint rule here).
@@ -842,22 +827,12 @@ export class GwModuleOutletComponent {
     // arriving after a failed sign-in round trip stacked both of them on screen.
     this.showErrorPanel(err.message || 'The embedded admin module failed to load.');
   }
+}
 
-  /**
-   * Adds the embed's stylesheet to `<head>` once per document.
-   *
-   * It stays there after unmount: the sheet is only reachable through the embed's own scoping
-   * selectors, re-fetching it on every visit to an embed route would be wasteful, and removing it
-   * mid-teardown risks unstyled portal content during React's cleanup pass.
-   */
-  private ensureStylesheet(): void {
-    if (document.querySelector(`link[href="${GW_EMBED_STYLESHEET_PATH}"]`)) {
-      return;
-    }
-
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = GW_EMBED_STYLESHEET_PATH;
-    document.head.appendChild(link);
-  }
+/**
+ * The hashed file name from the manifest's stylesheet URL — the only part the server route takes.
+ * Exported for the spec; the loader guarantees the URL is absolute and on `GW_EMBED_URL`'s origin.
+ */
+export function resolveGwEmbedStylesheetName(url: string): string {
+  return new URL(url).pathname.split('/').pop() ?? '';
 }
