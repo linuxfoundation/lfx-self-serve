@@ -45,8 +45,20 @@ export class MeetingTimeBannerComponent {
   protected readonly zonedDay: Signal<Date | null> = this.initZonedDay();
   protected readonly timeRange: Signal<string> = this.initTimeRange();
   protected readonly timezoneName: Signal<string> = this.initTimezoneName();
-  /** The before-state line: the relative start, then the early-join rule (`early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME`). */
-  protected readonly beforeMessage: Signal<string> = this.initBeforeMessage();
+  /** Before the meeting, the relative start ("Starts in 3 days."); it ticks, so it is not announced. */
+  protected readonly relativeStart: Signal<string> = this.initRelativeStart();
+  /**
+   * The phase sentence, the only text in the banner's live region: it changes when the phase does
+   * (before → starting soon → in progress → ended, or on to the next occurrence), so each change is
+   * announced, while the ticking relative start beside it is not.
+   */
+  protected readonly phaseMessage: Signal<string> = this.initPhaseMessage();
+  /** Icon and text colour per phase, all V2 tokens. */
+  protected readonly phaseStyles: Record<MeetingTimeState, { icon: string; text: string }> = {
+    before: { icon: 'fa-light fa-clock mt-[2px] text-[var(--md-text-muted)]', text: 'text-[var(--md-text-body)]' },
+    live: { icon: 'fa-solid fa-circle mt-[4px] text-[8px] text-[var(--md-status-live)]', text: 'font-semibold text-[var(--md-status-live)]' },
+    ended: { icon: 'fa-light fa-clock-rotate-left mt-[2px] text-[var(--md-text-muted)]', text: 'text-[var(--md-text-body)]' },
+  };
 
   public constructor() {
     afterNextRender(() => this.userTimezone.set(getUserTimezone()));
@@ -92,18 +104,31 @@ export class MeetingTimeBannerComponent {
     });
   }
 
-  private initBeforeMessage(): Signal<string> {
+  private initRelativeStart(): Signal<string> {
     return computed(() => {
       const window = this.window();
-      const meeting = this.meeting();
       // Read so the relative start moves on with the clock.
       this.state.now();
-      if (!window || !meeting) {
-        return '';
+      return window && this.timeState() === 'before' ? `Starts ${formatFutureRelativeTime(window.start)}.` : '';
+    });
+  }
+
+  private initPhaseMessage(): Signal<string> {
+    return computed(() => {
+      const meeting = this.meeting();
+      switch (this.timeState()) {
+        case 'ended':
+          return 'This meeting has ended.';
+        case 'live':
+          return this.startingSoon() ? 'The meeting is starting soon. You can join now.' : 'The meeting is in progress.';
+        case 'before': {
+          // The issue's (and v1's) early-join copy.
+          const earlyJoinMinutes = meeting?.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME;
+          return `You may only join up to ${earlyJoinMinutes} minutes before the start time.`;
+        }
+        default:
+          return '';
       }
-      const earlyJoinMinutes = meeting.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME;
-      // The issue's (and v1's) early-join copy, after the relative start.
-      return `Starts ${formatFutureRelativeTime(window.start)}. You may only join up to ${earlyJoinMinutes} minutes before the start time.`;
     });
   }
 }

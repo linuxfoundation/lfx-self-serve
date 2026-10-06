@@ -55,6 +55,7 @@ describe('MeetingTimeBannerComponent', () => {
   });
 
   const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  const text = (testId: string): string => (query(testId)?.textContent ?? '').replace(/\s+/g, ' ').trim();
 
   function phase(state: MeetingTimeState, status: MeetingStatusKind): void {
     timeState.set(state);
@@ -85,7 +86,7 @@ describe('MeetingTimeBannerComponent', () => {
 
   it('shows the relative start and the meeting own early-join rule before the meeting', () => {
     expect(query('meeting-time-banner')?.getAttribute('data-state')).toBe('before');
-    expect(query('meeting-time-banner-message')?.textContent?.trim()).toBe('Starts in 3 days. You may only join up to 15 minutes before the start time.');
+    expect(text('meeting-time-banner-message')).toBe('Starts in 3 days. You may only join up to 15 minutes before the start time.');
   });
 
   it('falls back to the default early-join rule when the meeting sets none', () => {
@@ -103,8 +104,24 @@ describe('MeetingTimeBannerComponent', () => {
     phase(state, status);
 
     expect(query('meeting-time-banner')?.getAttribute('data-state')).toBe(state);
-    expect(query('meeting-time-banner-message')?.textContent?.trim()).toBe(message);
+    expect(text('meeting-time-banner-message')).toBe(message);
     expect(fixture.nativeElement.querySelectorAll('[data-testid="meeting-time-banner-message"]').length).toBe(1);
+  });
+
+  // Screen readers hear each phase change, but not the relative start ticking beside it.
+  it('announces the phase sentence from one live region that stays mounted across phases', () => {
+    const region = query('meeting-time-banner-phase');
+    expect(region?.getAttribute('role')).toBe('status');
+    expect(region?.getAttribute('aria-live')).toBe('polite');
+    expect(region?.getAttribute('aria-atomic')).toBe('true');
+    expect(region?.textContent).not.toContain('Starts in');
+    expect(region?.contains(query('meeting-time-banner-relative'))).toBe(false);
+
+    phase('live', 'live');
+
+    expect(query('meeting-time-banner-phase')).toBe(region);
+    expect(region?.textContent?.trim()).toBe('The meeting is in progress.');
+    expect(query('meeting-time-banner-relative')).toBeNull();
   });
 
   it('renders nothing before the meeting has loaded', () => {

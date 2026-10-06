@@ -31,26 +31,17 @@
       </div>
     }
 
-    <!-- One line for the phase; exactly one renders. -->
+    <!-- One line for the phase. Only the phase sentence is a live region, kept mounted so each phase
+         change is announced; the relative start beside it ticks every few minutes and is not. -->
     <p class="m-0 flex items-start gap-[8px] text-[12.5px] leading-[1.4]" data-testid="meeting-time-banner-message">
-      @switch (phase) {
-        @case ('ended') {
-          <i class="fa-light fa-clock-rotate-left mt-[2px] text-[var(--md-text-muted)]" aria-hidden="true"></i>
-          <span class="text-[var(--md-text-body)]">This meeting has ended.</span>
+      <i [class]="phaseStyles[phase].icon" aria-hidden="true"></i>
+      <span [class]="phaseStyles[phase].text">
+        @if (relativeStart(); as relative) {
+          <!-- The trailing space is part of the text node, so it survives whitespace stripping. -->
+          <span data-testid="meeting-time-banner-relative">{{ relative }}&#32;</span>
         }
-        @case ('live') {
-          <i class="fa-solid fa-circle mt-[4px] text-[8px] text-[var(--md-status-live)]" aria-hidden="true"></i>
-          @if (startingSoon()) {
-            <span class="font-semibold text-[var(--md-status-live)]">The meeting is starting soon. You can join now.</span>
-          } @else {
-            <span class="font-semibold text-[var(--md-status-live)]">The meeting is in progress.</span>
-          }
-        }
-        @default {
-          <i class="fa-light fa-clock mt-[2px] text-[var(--md-text-muted)]" aria-hidden="true"></i>
-          <span class="text-[var(--md-text-body)]">{{ beforeMessage() }}</span>
-        }
-      }
+        <span role="status" aria-live="polite" aria-atomic="true" data-testid="meeting-time-banner-phase">{{ phaseMessage() }}</span>
+      </span>
     </p>
   </section>
 }
