@@ -1833,4 +1833,12 @@ describe('buildMeetingOccurrenceOptions', () => {
   it('never brings back a cancelled occurrence', () => {
     expect(buildMeetingOccurrenceOptions(meeting, cancelled.occurrence_id, NOW).map((option) => option.value)).not.toContain(cancelled.occurrence_id);
   });
+
+  it('keeps a running occurrence that inherits the series duration', () => {
+    // Started 30 minutes before NOW, no duration of its own, series runs 60 minutes — still in progress.
+    const running = occurrence({ occurrence_id: '1893841200', start_time: '2030-01-05T11:30:00Z', duration: 0 });
+    const series = buildMeetingFixture({ id: 'meeting-2', timezone: 'UTC', duration: 60, occurrences: [running] });
+
+    expect(buildMeetingOccurrenceOptions(series, null, NOW).map((option) => option.value)).toEqual([running.occurrence_id]);
+  });
 });

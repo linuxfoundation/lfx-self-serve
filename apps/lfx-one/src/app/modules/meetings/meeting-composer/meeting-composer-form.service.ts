@@ -635,7 +635,7 @@ export class MeetingComposerFormService {
     return (
       payload.title !== undefined ||
       payload.description !== undefined ||
-      payload.duration !== occurrence.duration ||
+      payload.duration !== this.occurrenceBaselineDuration(occurrence) ||
       new Date(payload.start_time).getTime() !== new Date(occurrence.start_time).getTime()
     );
   }
@@ -1690,7 +1690,7 @@ export class MeetingComposerFormService {
       startDate: toZonedDateCarrier(start, timezone),
       startTime: formatTo12HourInTimezone(start, timezone),
     });
-    this.setDuration(occurrence.duration || meeting.duration || DEFAULT_DURATION);
+    this.setDuration(this.occurrenceBaselineDuration(occurrence, meeting));
 
     // Upstream drops an empty agenda on an occurrence update, so one that exists can be changed but not cleared.
     if (description.trim()) {
@@ -2027,6 +2027,16 @@ export class MeetingComposerFormService {
     }
 
     form.updateValueAndValidity();
+  }
+
+  /**
+   * The duration an occurrence edit opens on: its own, else the series' it inherits.
+   * @description One source for hydration and {@link occurrenceHasChanges}, so an occurrence with no
+   * duration of its own does not read as changed the moment it opens — which would enable Save and store
+   * a needless override. `meeting` is passed during hydration, before {@link meeting} is set.
+   */
+  private occurrenceBaselineDuration(occurrence: MeetingOccurrence, meeting: Meeting | null = this.meeting()): number {
+    return occurrence.duration || meeting?.duration || DEFAULT_DURATION;
   }
 
   /**

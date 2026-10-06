@@ -12,6 +12,7 @@ import type {
   Meeting,
   MeetingComposerSection,
   MeetingComposerSectionId,
+  MeetingOccurrence,
   MeetingRegistrant,
   MeetingRegistrantWithState,
 } from '@lfx-one/shared/interfaces';
@@ -2313,6 +2314,15 @@ describe('MeetingComposerFormService — single-occurrence edit', () => {
     service.form().patchValue({ startTime: '03:30 AM' });
 
     expect(service.form().hasError('nonexistentWallTime')).toBe(false);
+  });
+
+  it('opens an occurrence with no duration of its own on the series duration, without reading as changed', () => {
+    const inherits = { occurrence_id: FIRST.occurrence_id, start_time: FIRST.start_time } as MeetingOccurrence;
+    const service = openOccurrence(FIRST.occurrence_id, { ...SERIES, meeting_type: MeetingType.TECHNICAL, occurrences: [inherits, SECOND] });
+
+    expect(service.effectiveDuration()).toBe(60);
+    expect(service.occurrenceHasChanges()).toBe(false);
+    expect(service.isSavable()).toBe(false);
   });
 });
 

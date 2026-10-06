@@ -435,7 +435,8 @@ export function buildMeetingOccurrenceOptions(meeting: Meeting, includeId?: stri
 
   return active
     .filter((occurrence) => {
-      const end = new Date(occurrence.start_time).getTime() + (occurrence.duration ?? 0) * 60000;
+      // Indexed occurrences can omit `duration` when they inherit the series'; zero would end a running one at its start.
+      const end = new Date(occurrence.start_time).getTime() + (occurrence.duration || meeting.duration || 0) * 60000;
       return end > now.getTime() || (!!includeId && isSameOccurrenceId(occurrence.occurrence_id, includeId));
     })
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
