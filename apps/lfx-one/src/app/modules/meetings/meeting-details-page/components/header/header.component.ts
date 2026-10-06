@@ -9,7 +9,7 @@ import { environment } from '@environments/environment';
 import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingCommitteeLink, MeetingTypeConfig, ProjectContext, PublicMeetingProject } from '@lfx-one/shared/interfaces';
-import { getMeetingSeriesUid } from '@lfx-one/shared/utils';
+import { resolveOccurrenceRecurrence } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -50,12 +50,15 @@ export class MeetingHeaderComponent {
   protected readonly project = computed(() => this.meeting()?.project);
   protected readonly meetingType: Signal<MeetingTypeConfig | null> = this.initMeetingType();
   /**
-   * Recurring for a live series (`recurrence`) and for a past occurrence of one: the past payload can
-   * omit `recurrence`, but its series uid then differs from its own id, as v1 reads it.
+   * Recurring when the selected occurrence or the meeting carries a recurrence rule, as v1's badge
+   * reads it (`resolveOccurrenceRecurrence`). A past record keeps the original meeting uid in
+   * `meeting_id` with a composite `id` whether or not it repeats, so series membership cannot be read
+   * from the ids; a past occurrence whose payload omits `recurrence` needs the series timeline
+   * (Phase 2 occurrence work), as it does in v1.
    */
   protected readonly recurring = computed(() => {
     const meeting = this.meeting();
-    return !!meeting && (!!meeting.recurrence || getMeetingSeriesUid(meeting) !== meeting.id);
+    return !!meeting && !!resolveOccurrenceRecurrence(meeting, this.state.selectedOccurrence());
   });
   /** Committees with both a name and a uid, linked to their group page with the uid encoded. */
   protected readonly committees: Signal<MeetingCommitteeLink[]> = this.initCommittees();

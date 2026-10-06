@@ -50,7 +50,7 @@ describe('MeetingHeaderComponent', () => {
       imports: [MeetingHeaderComponent],
       providers: [
         { provide: PLATFORM_ID, useValue: platform },
-        { provide: MeetingDetailsStateService, useValue: { meeting } },
+        { provide: MeetingDetailsStateService, useValue: { meeting, selectedOccurrence: signal(null) } },
         { provide: ProjectContextService, useValue: { setFoundation } },
         { provide: ClipboardShareService, useValue: { copyLink } },
       ],
@@ -138,11 +138,12 @@ describe('MeetingHeaderComponent', () => {
     expect(open).not.toHaveBeenCalled();
   });
 
-  // The past payload can omit `recurrence`; series membership shows in a series uid unlike its own id.
-  it('shows Recurring for a past occurrence of a series without a recurrence', () => {
-    show({ recurrence: null, meeting_id: 'series-1' } as Partial<Meeting>);
+  // A past record of a one-off meeting also has `meeting_id` unlike its composite `id`, so the ids are
+  // no series signal; only a recurrence rule is, as in v1.
+  it('shows no Recurring for a finished one-off meeting', () => {
+    show({ recurrence: null, meeting_id: 'meeting-original', id: 'meeting-original-1700000000000' } as Partial<Meeting>);
 
-    expect(query('meeting-header-badge-recurring')).not.toBeNull();
+    expect(query('meeting-header-badge-recurring')).toBeNull();
   });
 
   it('shows Recurring only for a recurring meeting', () => {
