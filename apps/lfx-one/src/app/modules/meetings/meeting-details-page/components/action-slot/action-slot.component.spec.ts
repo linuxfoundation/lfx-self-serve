@@ -4,8 +4,10 @@
 import { Component, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
-import { ActionSlotKind, Meeting, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole } from '@lfx-one/shared/interfaces';
+import { ActionSlotKind, Meeting, MeetingOccurrence, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole } from '@lfx-one/shared/interfaces';
+import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
+import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,6 +38,8 @@ describe('MeetingActionSlotComponent', () => {
   let markRegistered: ReturnType<typeof vi.fn>;
   let dialogClose: Subject<{ registered: boolean } | undefined>;
   let openDialog: ReturnType<typeof vi.fn>;
+  let add: ReturnType<typeof vi.fn>;
+  let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
 
   const open: MeetingPrivacyState = { icon: '', label: 'Public', openToPublic: true, restricted: false, visibility: MeetingVisibility.PUBLIC };
   const restricted: MeetingPrivacyState = {
@@ -57,15 +61,30 @@ describe('MeetingActionSlotComponent', () => {
     markRegistered = vi.fn();
     dialogClose = new Subject();
     openDialog = vi.fn().mockReturnValue({ onClose: dialogClose.asObservable() });
+    add = vi.fn();
+    selectedOccurrence = signal<MeetingOccurrence | null>(null);
 
     await TestBed.configureTestingModule({
       imports: [MeetingActionSlotComponent],
       providers: [
         {
           provide: MeetingDetailsStateService,
-          useValue: { actionSlot, viewerRole, privacy, timeState, joinsInWindow, meeting, pastAccessKnown, markRegistered, signInHref: signal(SIGN_IN_HREF) },
+          useValue: {
+            actionSlot,
+            viewerRole,
+            privacy,
+            timeState,
+            joinsInWindow,
+            meeting,
+            pastAccessKnown,
+            markRegistered,
+            selectedOccurrence,
+            signInHref: signal(SIGN_IN_HREF),
+          },
         },
         { provide: UserService, useValue: { user: signal({ name: 'Ada Example', email: 'ada@acme-motors.example' }) } },
+        { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
+        { provide: MessageService, useValue: { add } },
       ],
     })
       .overrideComponent(MeetingActionSlotComponent, { remove: { imports: [MeetingJoinActionComponent] }, add: { imports: [JoinActionStubComponent] } })
@@ -241,10 +260,52 @@ describe('MeetingActionSlotComponent', () => {
     });
   });
 
-  it('marks the invitation-required state with its contract testid', () => {
-    render('invitation-required', 'outsider');
+  // E2-03 (FR-022).
+  describe('invitation required', () => {
+    beforeEach(() => {
+      meeting.set({
+        id: 'meeting-1',
+        title: 'Acme Weekly Sync',
+        start_time: '2026-10-09T17:00:00Z',
+        owner: { username: 'ada', email: 'ada@acme-motors.example', name: 'Ada Example' },
+      } as Meeting);
+      privacy.set(restricted);
+      render('invitation-required', 'outsider');
+    });
 
-    expect(query('meeting-invitation-required-state')?.textContent).toContain('Invitation required');
+    it('says an invitation is needed, with its contract testid', () => {
+      expect(query('meeting-invitation-required-state')?.textContent).toContain('Invitation required');
+      expect(text('meeting-action-message')).toBe('This meeting is limited to invited guests. Ask the organizer for an invitation to join.');
+    });
+
+    it('lets the viewer email the organizer about this meeting', () => {
+      const href = query('meeting-invitation-required-contact')?.querySelector('a')?.getAttribute('href') ?? '';
+
+      expect(href.startsWith('mailto:ada@acme-motors.example?')).toBe(true);
+      expect(decodeURIComponent(href)).toContain('Acme Weekly Sync');
+      expect(decodeURIComponent(href)).toContain('/meetings/meeting-1');
+      expect(decodeURIComponent(href)).toContain('Oct 9, 2026');
+      expect(query('meeting-invitation-required-support')).toBeNull();
+    });
+
+    it("names the selected occurrence's date, not the series start", () => {
+      selectedOccurrence.set({ occurrence_id: '2', start_time: '2026-10-16T17:00:00Z', duration: 60 } as MeetingOccurrence);
+      fixture.detectChanges();
+
+      const href = decodeURIComponent(query('meeting-invitation-required-contact')?.querySelector('a')?.getAttribute('href') ?? '');
+      expect(href).toContain('Oct 16, 2026');
+      expect(href).not.toContain('Oct 9, 2026');
+    });
+
+    it('offers the support chat when the organizer has no usable email', () => {
+      meeting.set({ id: 'meeting-1', title: 'Acme Weekly Sync', owner: { username: 'ada', name: 'Ada Example' } } as Meeting);
+      fixture.detectChanges();
+
+      expect(query('meeting-invitation-required-contact')).toBeNull();
+      query('meeting-invitation-required-support')?.click();
+      // No Intercom app id in the test runtime config, so the directive reports support as unavailable.
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Support Unavailable' }));
+    });
   });
 
   // The early-join rule, moved from the time banner (decided on #3297).
