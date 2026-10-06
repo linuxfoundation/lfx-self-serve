@@ -150,7 +150,7 @@ describe('MeetingJoinActionComponent', () => {
     });
 
     // V1's escape hatch (E2-06): join with another email through the guest form.
-    it('offers joining with a different email, through the guest form', () => {
+    it('offers joining with a different email, through the guest form that replaces the account error', () => {
       create({ response: throwError(() => ({ error: { error: 'Not registered', code: 'NOT_REGISTERED_FOR_MEETING' } })) });
       expect(query('meeting-guest-join-form')).toBeNull();
 
@@ -158,7 +158,33 @@ describe('MeetingJoinActionComponent', () => {
       fixture.detectChanges();
 
       expect(query('meeting-guest-join-form')).not.toBeNull();
-      expect(query('meeting-action-join-different-email')).toBeNull();
+      // V1 clears the account's error: no second Join, error or retry to fight the form.
+      expect(query('meeting-action-join-error')).toBeNull();
+      expect(query('meeting-action-join-retry')).toBeNull();
+      expect(button()).toBeNull();
+      expect(document.activeElement?.id).toBe('meeting-guest-join-name');
+    });
+
+    it('joins with the typed email on that path, and never auto-joins the account', async () => {
+      create({ response: throwError(() => ({ error: { error: 'Not registered', code: 'NOT_REGISTERED_FOR_MEETING' } })) });
+      query('meeting-action-join-different-email')?.click();
+      fixture.detectChanges();
+      getPublicMeetingJoinUrl.mockReturnValue(of({ link: ZOOM_LINK }));
+
+      const field = (id: string, value: string): void => {
+        const el = fixture.nativeElement.querySelector(`#${id}`) as HTMLInputElement;
+        el.value = value;
+        el.dispatchEvent(new Event('input'));
+      };
+      field('meeting-guest-join-name', 'Ada Example');
+      field('meeting-guest-join-email', 'ada.personal@acme-motors.example');
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      fixture.detectChanges();
+
+      expect(getPublicMeetingJoinUrl).toHaveBeenLastCalledWith('99152950841', 'secret', { email: 'ada.personal@acme-motors.example' });
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-guest-join-button"]')?.getAttribute('data-state')).toBe('ready');
+      expect(open).not.toHaveBeenCalled();
     });
 
     it('does not offer a different email for other errors', () => {

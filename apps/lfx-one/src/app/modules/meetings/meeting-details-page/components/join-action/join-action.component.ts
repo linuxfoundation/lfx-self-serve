@@ -51,10 +51,11 @@ export class MeetingJoinActionComponent {
   protected readonly buttonClass =
     '!h-[42px] !w-full !justify-center !gap-[9px] !rounded-full !border-[var(--md-accent)] !bg-[var(--md-accent)] !text-[15px] !font-bold !text-[var(--md-surface-card)] focus-visible:!shadow-[var(--md-shadow-focus)]';
 
-  protected readonly joinState: Signal<MeetingJoinUrlState> = this.initJoinState();
-  protected readonly notRegistered = computed(() => this.joinState().code === 'NOT_REGISTERED_FOR_MEETING');
   /** Whether the viewer chose to join with a different email, after a `NOT_REGISTERED_FOR_MEETING`. */
   protected readonly showGuestForm = signal(false);
+
+  protected readonly joinState: Signal<MeetingJoinUrlState> = this.initJoinState();
+  protected readonly notRegistered = computed(() => this.joinState().code === 'NOT_REGISTERED_FOR_MEETING');
 
   public constructor() {
     this.initAutoJoin();

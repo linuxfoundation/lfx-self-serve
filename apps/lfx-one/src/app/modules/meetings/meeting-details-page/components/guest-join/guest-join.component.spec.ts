@@ -119,6 +119,33 @@ describe('MeetingGuestJoinComponent', () => {
     expect(input('meeting-guest-join-email').value).toBe('');
   });
 
+  it('holds Join again when a field turns invalid after the link resolved', async () => {
+    create();
+    await fillIn();
+    expect(button()?.getAttribute('data-state')).toBe('ready');
+
+    type('meeting-guest-join-name', '');
+
+    expect(button()?.getAttribute('data-state')).toBe('idle');
+  });
+
+  it('marks the required fields for assistive tech, and explains an invalid email', () => {
+    create();
+    type('meeting-guest-join-email', 'not-an-email');
+
+    expect(input('meeting-guest-join-name').getAttribute('aria-required')).toBe('true');
+    expect(input('meeting-guest-join-email').getAttribute('aria-required')).toBe('true');
+    expect(query('meeting-guest-join-email-hint')?.textContent?.trim()).toBe('Enter a valid email address.');
+    expect(input('meeting-guest-join-email').getAttribute('aria-describedby')).toBe('meeting-guest-join-email-hint');
+  });
+
+  it('ties the mismatch answer to the email field', async () => {
+    create({ response: () => of<MeetingJoinUrlState>({ status: 'error', error: 'Not registered', code: 'NOT_REGISTERED_FOR_MEETING' }) });
+    await fillIn();
+
+    expect(input('meeting-guest-join-email').getAttribute('aria-describedby')).toBe('meeting-guest-join-error');
+  });
+
   it('labels every field', () => {
     create();
 

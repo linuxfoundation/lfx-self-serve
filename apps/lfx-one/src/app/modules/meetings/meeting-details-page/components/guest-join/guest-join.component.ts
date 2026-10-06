@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, Signal } from '@angular/core';
+import { afterNextRender, Component, computed, ElementRef, inject, input, PLATFORM_ID, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -38,6 +38,13 @@ export class MeetingGuestJoinComponent {
   private readonly joinUrlService = inject(MeetingJoinUrlService);
   private readonly userService = inject(UserService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly elementRef: ElementRef<HTMLElement> = inject(ElementRef);
+
+  /**
+   * Moves focus to the first field once rendered: set where the form opens in place of the control
+   * that revealed it (the different-email path), so keyboard and screen-reader users land in it.
+   */
+  public readonly focusOnOpen = input(false);
 
   /**
    * The rail's primary button on `lfx-button`, as Join's: a 42px pill on the accent.
@@ -58,6 +65,27 @@ export class MeetingGuestJoinComponent {
   /** The link with the typed name and organization as the Zoom display name, once it resolves. */
   protected readonly joinState: Signal<MeetingJoinUrlState> = this.initJoinState();
   protected readonly notRegistered = computed(() => this.joinState().code === 'NOT_REGISTERED_FOR_MEETING');
+  /** A typed email that is not a valid address yet: Join stays disabled, and the hint says why. */
+  protected readonly emailInvalid = computed(() => {
+    this.formValue();
+    const email = this.form.controls.email;
+    return !!email.value.trim() && email.invalid;
+  });
+  /** What describes the email field: the mismatch answer, else the invalid-address hint. */
+  protected readonly emailDescribedBy = computed(() => {
+    if (this.notRegistered()) {
+      return 'meeting-guest-join-error';
+    }
+    return this.emailInvalid() ? 'meeting-guest-join-email-hint' : null;
+  });
+
+  public constructor() {
+    afterNextRender(() => {
+      if (this.focusOnOpen()) {
+        this.elementRef.nativeElement.querySelector<HTMLInputElement>('#meeting-guest-join-name')?.focus();
+      }
+    });
+  }
 
   private initLinkState(): Signal<MeetingJoinUrlState> {
     const idle: MeetingJoinUrlState = { status: 'idle' };
@@ -91,7 +119,7 @@ export class MeetingGuestJoinComponent {
         return link;
       }
       // A field edited back to invalid since the fetch: hold Join until the form is valid again.
-      if (this.form.invalid) {
+      if (value && this.form.invalid) {
         return { status: 'idle' };
       }
       return { status: 'ready', url: buildJoinUrlWithParams(link.url, null, { name: value.name?.trim(), organization: value.organization?.trim() }) };

@@ -3,35 +3,44 @@
 
 <!-- One button, three states in data-state (testid-contract.md: identity in the testid, state in data-*).
      Prototype geometry in exact px (the app's 14px root would shrink rem utilities). -->
-@switch (joinState().status) {
-  @case ('ready') {
-    <lfx-button
-      label="Join now"
-      icon="fa-light fa-video"
-      [href]="joinState().url"
-      target="_blank"
-      rel="noopener noreferrer"
-      [styleClass]="buttonClass"
-      data-testid="meeting-action-join-button"
-      data-state="ready" />
-  }
-  @case ('error') {
-    <div class="flex flex-col gap-[10px]">
+@if (showGuestForm()) {
+  <!-- V1's escape hatch: the guest form replaces the account's error and retry, as V1's clears them,
+       and sits outside the switch, so nothing on the account's side can unmount what was typed. -->
+  <div class="flex flex-col gap-[10px]">
+    <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-join-different-email-intro">
+      Join with the email address your invitation was sent to.
+    </p>
+    <lfx-meeting-guest-join [focusOnOpen]="true" />
+  </div>
+} @else {
+  @switch (joinState().status) {
+    @case ('ready') {
       <lfx-button
         label="Join now"
         icon="fa-light fa-video"
-        [disabled]="true"
-        [styleClass]="buttonClass + ' !opacity-60'"
+        [href]="joinState().url"
+        target="_blank"
+        rel="noopener noreferrer"
+        [styleClass]="buttonClass"
         data-testid="meeting-action-join-button"
-        data-state="error" />
-      <div
-        class="flex flex-col gap-[6px] rounded-[var(--md-radius-md)] bg-[var(--md-status-live-bg)] px-[12px] py-[10px] text-[12.5px] leading-[1.4] text-[var(--md-status-live)]"
-        role="alert"
-        data-testid="meeting-action-join-error">
-        <span>{{ joinState().error }}</span>
-        @if (notRegistered()) {
-          <span>Your account's email is not on this meeting's invite list. Ask the organizer to invite it.</span>
-          @if (!showGuestForm()) {
+        data-state="ready" />
+    }
+    @case ('error') {
+      <div class="flex flex-col gap-[10px]">
+        <lfx-button
+          label="Join now"
+          icon="fa-light fa-video"
+          [disabled]="true"
+          [styleClass]="buttonClass + ' !opacity-60'"
+          data-testid="meeting-action-join-button"
+          data-state="error" />
+        <div
+          class="flex flex-col gap-[6px] rounded-[var(--md-radius-md)] bg-[var(--md-status-live-bg)] px-[12px] py-[10px] text-[12.5px] leading-[1.4] text-[var(--md-status-live)]"
+          role="alert"
+          data-testid="meeting-action-join-error">
+          <span>{{ joinState().error }}</span>
+          @if (notRegistered()) {
+            <span>Your account's email is not on this meeting's invite list. Ask the organizer to invite it.</span>
             <button
               type="button"
               class="w-fit rounded-[var(--md-radius-xs)] font-semibold underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
@@ -40,29 +49,26 @@
               Join with a different email
             </button>
           }
-        }
-        <button
-          type="button"
-          class="w-fit rounded-[var(--md-radius-xs)] font-semibold underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-          (click)="retry()"
-          data-testid="meeting-action-join-retry">
-          Try again
-        </button>
+          <button
+            type="button"
+            class="w-fit rounded-[var(--md-radius-xs)] font-semibold underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+            (click)="retry()"
+            data-testid="meeting-action-join-retry">
+            Try again
+          </button>
+        </div>
       </div>
-      @if (showGuestForm()) {
-        <lfx-meeting-guest-join />
-      }
-    </div>
-  }
-  @default {
-    <!-- Also the server render: the join URL is fetched in the browser only. -->
-    <lfx-button
-      label="Join now"
-      icon="fa-light fa-video"
-      [loading]="true"
-      [disabled]="true"
-      [styleClass]="buttonClass"
-      data-testid="meeting-action-join-button"
-      data-state="loading" />
+    }
+    @default {
+      <!-- Also the server render: the join URL is fetched in the browser only. -->
+      <lfx-button
+        label="Join now"
+        icon="fa-light fa-video"
+        [loading]="true"
+        [disabled]="true"
+        [styleClass]="buttonClass"
+        data-testid="meeting-action-join-button"
+        data-state="loading" />
+    }
   }
 }

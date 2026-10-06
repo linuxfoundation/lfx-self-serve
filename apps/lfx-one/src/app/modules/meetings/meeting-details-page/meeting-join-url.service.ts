@@ -29,13 +29,15 @@ export class MeetingJoinUrlService {
         }
         return { status: 'ready', url: res.link };
       }),
-      catchError((error) =>
-        of<MeetingJoinUrlState>({
+      catchError((error) => {
+        // `MeetingService` does not log join-link failures, so the one place both callers share does.
+        console.error('Failed to load meeting join URL', meetingId, error);
+        return of<MeetingJoinUrlState>({
           status: 'error',
           error: error?.error?.error || 'Failed to load meeting join URL. Please try again.',
           code: error?.error?.code ?? null,
-        })
-      ),
+        });
+      }),
       startWith<MeetingJoinUrlState>({ status: 'loading' })
     );
   }

@@ -98,7 +98,10 @@ export type ActionSlotKind = 'join' | 'rsvp' | 'register' | 'invitation-required
  */
 export interface MeetingJoinUrlState {
   status: 'idle' | 'loading' | 'ready' | 'error';
-  /** The Zoom link with the viewer's display-name params, once `ready`. */
+  /**
+   * The join link, once `ready`: bare from `MeetingJoinUrlService`, with the Zoom display-name params
+   * once a component adds them (`buildJoinUrlWithParams`).
+   */
   url?: string;
   /** The BFF's message, or a generic one, once `error`. */
   error?: string;
