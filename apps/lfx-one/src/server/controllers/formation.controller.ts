@@ -168,8 +168,8 @@ export const getFormationsQueue = async (req: Request, res: Response, next: Next
 };
 
 /**
- * `GET /api/user/formation-work` (GH-1956, Me lens) — scoped to the caller's own work, unlike
- * `getFormationsQueue`, which lists every formation the caller can read.
+ * `GET /api/user/formation-work` (GH-1956, Me lens) — self-scoped, so no `requireAuditor` gate
+ * unlike `getFormationsQueue`, which is LF-root auditor-gated and unusable for a partner's own view.
  */
 export const getMyFormationWork = async (req: Request, res: Response, next: NextFunction) => {
   const startTime = logger.startOperation(req, 'get_my_formation_work');

@@ -108,9 +108,10 @@ export class FormationService {
   }
 
   /**
-   * Twin of {@link getProjectFormation} for the foundation formations drill-down (LFXV2-3386):
-   * identical response from the same BFF controller and the same per-project access — upstream's
-   * masking checklist read answers a caller without access with a 404 (#2812).
+   * Auditor-gated twin of {@link getProjectFormation} for the foundation formations drill-down
+   * (LFXV2-3386): identical response from the same BFF controller, but `requireAuditor`-gated
+   * server-side so the queue's root-auditor contract holds during SSR too — the drill-down route's
+   * client guard alone can't stop a non-auditor's first server render (#2690 review).
    */
   public getQueueFormationChecklist(projectSlug: string): Observable<FormationChecklistResponse> {
     return this.http.get<FormationChecklistResponse>(`/api/formations/${encodeURIComponent(projectSlug)}/checklist`);

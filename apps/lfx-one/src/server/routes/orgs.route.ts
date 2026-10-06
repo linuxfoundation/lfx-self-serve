@@ -68,7 +68,8 @@ function buildOrgsRouter(): Router {
   router.get('/uid/:uid', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
   // Spec 050 — Org Lens address-segment resolver (slug or SFID → org the caller can read). Auth-only:
   // per-row FGA is applied upstream by query-service with the caller's context (contracts/
-  // bff-org-slug-transport.md §3, DR-002). Declared before `/:orgUid/lens` on purpose.
+  // bff-org-slug-transport.md §3, DR-002). Do NOT mount `require-auditor.middleware.ts` here — that is
+  // the root-scoped, staff-only Formations-queue guard. Declared before `/:orgUid/lens` on purpose.
   router.get('/resolve/:segment', (req, res, next) => orgIdentityController.resolveSegment(req, res, next));
   router.put('/uid/:uid', (req, res, next) => orgIdentityController.updateOrg(req, res, next));
   router.get('/uid/:uid/addresses', (req, res, next) => orgIdentityController.getOrgAddresses(req, res, next));

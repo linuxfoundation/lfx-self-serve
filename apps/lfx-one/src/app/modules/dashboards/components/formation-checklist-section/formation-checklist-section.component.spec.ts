@@ -258,9 +258,11 @@ describe('FormationChecklistSectionComponent', () => {
   // context slug. (The strip's announcement-date override this mode used to feed is gone — the date
   // moved to the formation-page sidebar card, GH-2702.)
   describe('explicit projectSlug input (LFXV2-3386)', () => {
-    it('fetches via the queue checklist read for the input slug, never the context slug or the project-page read', async () => {
+    it('fetches via the auditor-gated queue read for the input slug, never the context slug or the project-page read', async () => {
       await render(buildResponse('live', 'live'), { projectSlug: 'other-project' });
 
+      // Explicit-slug mode is the auditor drill-down — it must use the requireAuditor-gated
+      // endpoint (#2690 review) so the queue's root-auditor contract holds server-side.
       expect(getQueueFormationChecklist).toHaveBeenCalledWith('other-project');
       expect(getProjectFormation).not.toHaveBeenCalled();
     });
