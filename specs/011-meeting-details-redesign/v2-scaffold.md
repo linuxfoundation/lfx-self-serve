@@ -68,8 +68,9 @@ modules/meetings/
   error / page / skeleton branch; every Phase 1 section injects it rather than fetching. It also
   owns the view-scoped selected occurrence (`?occurrence=` first, else current or next, on the
   clock) and its time state, so no section picks an occurrence of its own. It holds
-  load state only. Presentation state (time state, viewer role, action slot, visible sections) is
-  derived by the Phase 1 sections through `@lfx-one/shared/utils/meeting-view-model.utils` (E0-02),
+  the page's shared state: load state, the selected occurrence and its time state. The remaining
+  presentation state (viewer role, action slot, visible sections) is derived by the Phase 1 sections
+  through `@lfx-one/shared/utils/meeting-view-model.utils` (E0-02),
   not by copying V1's inline `computed` signals. V1's orchestration lives inside its component and
   cannot be extracted without editing V1, so V2 composes the services and resolvers itself. It
   does not duplicate a fetch path.
