@@ -1,12 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type {
-  MentorshipEnrollForm,
-  MentorshipEnrollStep,
-  MentorshipPrerequisite,
-  MentorshipProgramTerm,
-} from '../interfaces/mentorship.interface';
+import type { MentorshipEnrollForm, MentorshipEnrollStep, MentorshipPrerequisite, MentorshipProgramTerm } from '../interfaces/mentorship.interface';
 import { toLocalDateOnlyString } from '../utils/date-time.utils';
 
 export const MENTORSHIP_ENROLL_STEPS_ORDER: MentorshipEnrollStep[] = ['details', 'setup', 'prerequisites'];
@@ -39,6 +34,12 @@ export const MENTORSHIP_CUSTOM_PREREQ_NAME_MAX = 20;
 export const MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX = 500;
 export const MENTORSHIP_CUSTOM_PREREQ_FILE_LABEL = 'Check if completion of this task requires that the mentee submits a file.';
 export const MENTORSHIP_LF_PROJECT_PAGE_SIZE = 12;
+/**
+ * How many more pages the enroll project picker reads on its own after a search's first page, while it still holds less than a
+ * page of projects. Each read can cost up to `MENTORSHIP_LF_PROJECT_MAX_READS` query-service reads, so this keeps a caller who
+ * can see only a few projects from walking the whole catalog when the picker opens; past it, typing a search narrows the list.
+ */
+export const MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS = 2;
 
 /** Year choices for the term dialog — last year through 10 years ahead. */
 export const MENTORSHIP_TERM_YEAR_OPTIONS: ReadonlyArray<{ label: string; value: string }> = Array.from({ length: 12 }, (_, index) => {

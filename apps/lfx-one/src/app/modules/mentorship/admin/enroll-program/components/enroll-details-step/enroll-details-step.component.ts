@@ -34,6 +34,7 @@ import {
   MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE,
   MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE,
   MENTORSHIP_ENROLL_PROJECTS_UNAVAILABLE,
+  MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
   MENTORSHIP_MENTOR_PICKER_LIST_PADDING,
   MENTORSHIP_MENTOR_PICKER_MAX_HEIGHT,
@@ -103,6 +104,8 @@ export class EnrollDetailsStepComponent {
   private readonly nameLookupRetry = signal(0);
   private readonly ciiLookupRetry = signal(0);
   private lfSearch = '';
+  /** Short-page cursors followed without a scroll since the current search's first page. */
+  private lfAutoFollows = 0;
 
   protected readonly draftTechForm = new FormGroup({
     technology: new FormControl('', { nonNullable: true }),
@@ -253,6 +256,7 @@ export class EnrollDetailsStepComponent {
     const firstPage$ = merge(search$, this.lfFirstPageRetry$.pipe(map(() => this.lfSearch))).pipe(
       tap((search) => {
         this.lfSearch = search;
+        this.lfAutoFollows = 0;
         this.lfProjectsLoading.set(true);
         this.lfProjectsFailed.set(false);
       }),
@@ -299,8 +303,12 @@ export class EnrollDetailsStepComponent {
         const nextPageToken = page.nextPageToken === page.requestedToken ? null : page.nextPageToken;
         this.lfNextPageToken.set(nextPageToken);
         this.lfProjectsLoading.set(false);
-        // A page that access filtering left short may not fill the scroller enough to fire onLazyLoad, so follow its cursor here.
-        if (nextPageToken && page.data.length < MENTORSHIP_LF_PROJECT_PAGE_SIZE) this.lfLoadMore$.next();
+        // Pages that access filtering left short may not fill the scroller enough to fire onLazyLoad, so follow the cursor here
+        // while less than a page is loaded, a bounded number of times so a sparse catalog is not walked to its end on open.
+        if (nextPageToken && this.lfProjects().length < MENTORSHIP_LF_PROJECT_PAGE_SIZE && this.lfAutoFollows < MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS) {
+          this.lfAutoFollows++;
+          this.lfLoadMore$.next();
+        }
       });
   }
 

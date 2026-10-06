@@ -8,6 +8,7 @@ import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi, afterEach, type MockInstance } from 'vitest';
 
 import { MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH, MENTORSHIP_LF_PROJECT_MAX_LIMIT, MENTORSHIP_LF_PROJECT_MAX_READS } from '../constants';
+import { MicroserviceError } from '../errors';
 
 // The service resolves its request-scoped logger through this module; stubbing it here
 // avoids booting the real pino instance for a synchronous, in-memory lookup path.
@@ -130,6 +131,28 @@ describe('MentorshipService enroll name availability', () => {
     proxyRequest.mockRejectedValue(failure);
 
     await expect(service.isProgramNameAvailable(buildReq(), 'Program')).rejects.toBe(failure);
+  });
+
+  it('cuts the query, and so the name, out of the logged path of a failed check', async () => {
+    proxyRequest.mockRejectedValue(
+      new MicroserviceError('Upstream unavailable', 503, 'NETWORK_ERROR', {
+        service: 'api_client_service',
+        path: 'https://upstream.example/mentorship/v1/programs/name-availability?name=Secret+Program+Name',
+        transportFailure: true,
+      })
+    );
+
+    const error = await service.isProgramNameAvailable(buildReq(), 'Secret Program Name').catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error).toMatchObject({
+      message: 'Upstream unavailable',
+      statusCode: 503,
+      code: 'NETWORK_ERROR',
+      transportFailure: true,
+      path: 'https://upstream.example/mentorship/v1/programs/name-availability',
+    });
+    expect(JSON.stringify((error as MicroserviceError).getLogContext())).not.toContain('Secret');
   });
 });
 

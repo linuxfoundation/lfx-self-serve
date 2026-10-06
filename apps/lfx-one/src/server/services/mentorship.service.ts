@@ -63,6 +63,24 @@ function buildCiiBadgeJsonUrl(projectId: string): string {
   return 'https://www.bestpractices.dev/projects/' + numericId + '/badge.json';
 }
 
+/**
+ * An upstream failure's `path` is the full request URL, query included, and the error handler logs it. This rebuilds the error
+ * with the query cut off, so a failed name check does not log the name it was asked about.
+ */
+function withoutQueryInErrorPath(error: unknown): unknown {
+  if (!(error instanceof MicroserviceError) || !error.path?.includes('?')) return error;
+  return new MicroserviceError(error.message, error.statusCode, error.code, {
+    operation: error.operation,
+    service: error.service,
+    path: error.path.slice(0, error.path.indexOf('?')),
+    errorBody: error.errorBody,
+    originalMessage: error.originalMessage,
+    originalError: error.originalError,
+    transportFailure: error.transportFailure,
+    clientMessage: error.clientMessage,
+  });
+}
+
 export class MentorshipService {
   private readonly microserviceProxy = new MicroserviceProxyService();
   private readonly emailVerificationService = new EmailVerificationService();
@@ -75,7 +93,9 @@ export class MentorshipService {
       `${MENTORSHIP_PROGRAMS_PATH}/name-availability`,
       'GET',
       { name: name.trim() }
-    );
+    ).catch((error: unknown) => {
+      throw withoutQueryInErrorPath(error);
+    });
     logger.debug(req, 'mentorship_name_available', 'Mentorship program name availability resolved', { available: result.available });
     return { available: result.available };
   }

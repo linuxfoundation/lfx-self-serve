@@ -8,6 +8,7 @@ import { By } from '@angular/platform-browser';
 import {
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
   MENTORSHIP_RICH_TEXT_RAW_MAX,
 } from '@lfx-one/shared/constants';
@@ -223,6 +224,25 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
 
     expect(getLfProjects).toHaveBeenCalledTimes(2);
     expect(optionIds()).toEqual(['uid-alpha', 'uid-beta']);
+  });
+
+  it('stops following short pages by itself once it has followed the cap', async () => {
+    let reads = 0;
+    await setUp([], undefined, () => {
+      reads++;
+      return of({ data: [lfProject(`short-${reads}`)], nextPageToken: `cursor-${reads}` });
+    });
+
+    expect(getLfProjects).toHaveBeenCalledTimes(1 + MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS);
+    expect(optionIds()).toHaveLength(1 + MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS);
+  });
+
+  it('leaves a short page to the scroller once a page worth of projects is loaded', async () => {
+    const rest = fullPage.slice(1);
+    await setUp([lfProject('alpha')], { data: rest, nextPageToken: 'page-3' });
+
+    expect(getLfProjects).toHaveBeenCalledTimes(2);
+    expect(optionIds()).toHaveLength(MENTORSHIP_LF_PROJECT_PAGE_SIZE);
   });
 
   it('treats a cursor that came back unchanged as the end, neither following it nor loading it on scroll', async () => {
