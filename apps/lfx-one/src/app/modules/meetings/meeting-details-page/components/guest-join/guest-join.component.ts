@@ -53,9 +53,13 @@ export class MeetingGuestJoinComponent {
   protected readonly buttonClass =
     '!h-[42px] !w-full !justify-center !gap-[9px] !rounded-full !border-[var(--md-accent)] !bg-[var(--md-accent)] !text-[15px] !font-bold !text-[var(--md-surface-card)] focus-visible:!shadow-[var(--md-shadow-focus)]';
 
-  /** V1's fields and rules; the name starts from a signed-in viewer's, as V1's does. */
+  /**
+   * V1's fields and rules, plus a name that is not only whitespace (the registration form's
+   * `pattern(/\S/)`): the URL builder trims it, so spaces would join with no display name. The name
+   * starts from a signed-in viewer's, as V1's does.
+   */
   protected readonly form = new FormGroup({
-    name: new FormControl<string>(this.userService.user()?.name ?? '', { nonNullable: true, validators: [Validators.required] }),
+    name: new FormControl<string>(this.userService.user()?.name ?? '', { nonNullable: true, validators: [Validators.required, Validators.pattern(/\S/)] }),
     email: new FormControl<string>('', { nonNullable: true, validators: [Validators.required, Validators.email] }),
     organization: new FormControl<string>('', { nonNullable: true }),
   });

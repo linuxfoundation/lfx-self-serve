@@ -119,6 +119,18 @@ describe('MeetingGuestJoinComponent', () => {
     expect(input('meeting-guest-join-email').value).toBe('');
   });
 
+  // The URL builder trims the name, so spaces alone would join with no display name.
+  it('rejects a name that is only whitespace', async () => {
+    create();
+    type('meeting-guest-join-name', '   ');
+    type('meeting-guest-join-email', 'grace@acme-motors.example');
+    await debounce();
+    fixture.detectChanges();
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(button()?.getAttribute('data-state')).toBe('idle');
+  });
+
   it('holds Join again when a field turns invalid after the link resolved', async () => {
     create();
     await fillIn();
