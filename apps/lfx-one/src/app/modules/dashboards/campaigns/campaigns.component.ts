@@ -2064,12 +2064,21 @@ export class CampaignsComponent {
     // The Optimize tab's negative-keyword results belong to this page's (project, brief): the same
     // address the tab is given. Reported from here, not from the tab, because the tab is destroyed
     // whenever another tab is open, and a switch made there would otherwise never clear anything.
-    toObservable(computed(() => `${this.activeFoundationSlug()}\u0000${this.briefPersistence().briefId ?? ''}`))
+    //
+    // A `null` brief id within the same project is NOT a scope change: a Proceed save sets it to
+    // `null` while the request is out (and a failed save leaves it `null`), and reading that as
+    // "no brief" would drop the brief's settled results mid-save. Only a project change, or a
+    // different real brief id, moves the scope.
+    let scopedProject: string | undefined;
+    toObservable(computed(() => ({ projectSlug: this.activeFoundationSlug(), briefId: this.briefPersistence().briefId })))
       .pipe(takeUntilDestroyed())
-      .subscribe((scope) => {
-        const [projectSlug, briefId] = scope.split('\u0000');
-        this.negativeKeywordsService.setScope(projectSlug, briefId);
-        this.removedKeywordsService.setScope(projectSlug, briefId);
+      .subscribe(({ projectSlug, briefId }) => {
+        if (briefId === null && projectSlug === scopedProject) {
+          return;
+        }
+        scopedProject = projectSlug;
+        this.negativeKeywordsService.setScope(projectSlug, briefId ?? '');
+        this.removedKeywordsService.setScope(projectSlug, briefId ?? '');
       });
     this.destroyRef.onDestroy(() => {
       this.negativeKeywordsService.releaseScope();

@@ -170,6 +170,31 @@ describe('CampaignsComponent brief persistence', () => {
     expect(releaseScope).toHaveBeenCalledTimes(1);
   });
 
+  // A Proceed save sets the brief id to `null` while it runs (and a failed save leaves it `null`).
+  // That is not a brief switch: reading it as one dropped the brief's settled results mid-save.
+  it('keeps the scope while a save clears the brief id, and moves it for a different brief', () => {
+    const service = TestBed.inject(CampaignNegativeKeywordsService);
+    const setScope = vi.spyOn(service, 'setScope');
+    const page = TestBed.createComponent(CampaignsComponent);
+    const persistence = (page.componentInstance as unknown as { briefPersistence: WritableSignal<CampaignBriefPersistenceState> }).briefPersistence;
+    page.detectChanges();
+    TestBed.tick();
+
+    persistence.set({ status: 'saved', briefId: 'b-1', message: null, approved: false });
+    TestBed.tick();
+    expect(setScope.mock.calls.at(-1)?.[1]).toBe('b-1');
+
+    setScope.mockClear();
+    persistence.set({ status: 'saving', briefId: null, message: null, approved: false });
+    TestBed.tick();
+    expect(setScope).not.toHaveBeenCalled();
+
+    persistence.set({ status: 'saved', briefId: 'b-2', message: null, approved: false });
+    TestBed.tick();
+    expect(setScope.mock.calls.at(-1)?.[1]).toBe('b-2');
+    page.destroy();
+  });
+
   it('switches to the Implementation tab before the save resolves', async () => {
     // Never completes: the point is that the handoff does not wait on the network. If this ever
     // starts gating on the response, a campaign-service outage strands the user on Planning.
