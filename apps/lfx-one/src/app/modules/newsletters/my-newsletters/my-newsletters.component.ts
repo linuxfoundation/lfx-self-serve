@@ -19,7 +19,7 @@ import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, scan, startWith, switchMap } from 'rxjs';
 
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
 
@@ -293,7 +293,8 @@ export class MyNewslettersComponent {
             }),
             startWith(pending)
           )
-        )
+        ),
+        scan((previous, next) => (next.loading ? { ...next, newsletters: previous.newsletters, complete: previous.complete } : next), pending)
       ),
       { initialValue: pending }
     );

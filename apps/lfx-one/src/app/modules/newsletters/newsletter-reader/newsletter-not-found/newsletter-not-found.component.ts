@@ -26,10 +26,8 @@ export class NewsletterNotFoundComponent {
       : "We couldn't find the newsletter you're looking for. It may have been removed or the link may be incorrect."
   );
 
-  // The feed is a Me-lens page: with a foundation/project lens active, a plain
-  // routerLink to /newsletters/my gets rewritten by lensRedirectGuard to the
-  // lens-prefixed mount, whose newsletterAccessGuard bounces non-writers to the
-  // overview. Switch to the always-allowed 'me' lens before navigating.
+  // Eager Me selection updates this tab and the persisted lens preference
+  // before navigating to the personal feed.
   protected goToMyNewsletters(): void {
     this.lensService.setLens('me');
     void this.router.navigate(['/newsletters/my']);

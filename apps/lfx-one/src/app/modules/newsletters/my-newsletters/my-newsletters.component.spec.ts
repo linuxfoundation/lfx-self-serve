@@ -13,7 +13,7 @@ import { ClipboardShareService } from '@services/clipboard-share.service';
 import { SelectComponent } from '@components/select/select.component';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MyNewslettersComponent } from './my-newsletters.component';
 
 function row(overrides: Partial<MyNewsletter> = {}): MyNewsletter {
@@ -36,6 +36,7 @@ describe('MyNewslettersComponent', () => {
   let fixture: ComponentFixture<MyNewslettersComponent>;
   let feed: Subject<MyNewslettersApiResponse>;
   let params: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
+  let scrollIntoView: typeof HTMLElement.prototype.scrollIntoView;
   const gateway = { getMyNewsletters: vi.fn(), getNewsletter: vi.fn() };
   const router = { navigate: vi.fn() };
   const messages = { add: vi.fn() };
@@ -53,8 +54,36 @@ describe('MyNewslettersComponent', () => {
     find(id)!.querySelector<HTMLButtonElement>('button')!.click();
     await settle();
   };
+  const openOptions = async (id: string) => {
+    find(id)!.querySelector<HTMLElement>('[role="combobox"]')!.click();
+    await settle();
+    return Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'));
+  };
+  const chooseOption = async (id: string, label: string) => {
+    const options = await openOptions(id);
+    options.find((option) => option.textContent?.trim() === label)!.click();
+    await settle();
+  };
+  afterEach(() => {
+    fixture.destroy();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    vi.unstubAllGlobals();
+  });
   beforeEach(async () => {
     vi.clearAllMocks();
+    scrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    // jsdom lacks browser APIs used by PrimeNG's real select overlays.
+    vi.stubGlobal('matchMedia', (media: string) => ({
+      matches: false,
+      media,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: () => false,
+    }));
     feed = new Subject();
     params = new BehaviorSubject(convertToParamMap({}));
     gateway.getMyNewsletters.mockReturnValue(feed);
@@ -74,11 +103,147 @@ describe('MyNewslettersComponent', () => {
     fixture = TestBed.createComponent(MyNewslettersComponent);
     await settle();
   });
-  it('shows loading without either empty message, then confirmed empty', async () => {
-    expect(find('my-newsletters-table')).not.toBeNull();
+  it('shows initial skeletons without refresh or empty messages, then confirmed empty', async () => {
+    expect(find('my-newsletters-table')!.querySelector('.lfx-skeleton-row')).not.toBeNull();
+    expect(find('my-newsletters-refresh-status')).toBeNull();
     expect(text()).not.toMatch(/No newsletters yet|No results found/);
     await respond({ newsletters: [], complete: true });
     expect(find('my-newsletters-empty-state')!.textContent).toContain('Join a group');
+  });
+  it.each([false, null, true])('keeps rendered rows, options and %s completeness throughout a pending retry', async (complete) => {
+    await respond(complete === null ? [row()] : { newsletters: [row()], complete });
+    const previousRows = fixture.componentInstance.myNewsletters();
+    feed = new Subject();
+    gateway.getMyNewsletters.mockReturnValue(feed);
+    if (complete === true) {
+      fixture.componentInstance.onRetry();
+      await settle();
+    } else {
+      await click('my-newsletters-retry');
+    }
+
+    expect(find('my-newsletters-row-issue')).not.toBeNull();
+    expect(find('my-newsletters-row-issue')!.textContent).toContain('Child news');
+    expect(fixture.componentInstance.complete()).toBe(complete);
+    expect(fixture.componentInstance.loading()).toBe(true);
+    expect(find('my-newsletters-refresh-status')?.getAttribute('role')).toBe('status');
+    expect(find('my-newsletters-refresh-status')?.textContent).toContain('Refreshing newsletters…');
+    expect(find('my-newsletters-table')!.querySelector('.lfx-skeleton-row')).toBeNull();
+    expect(text()).not.toMatch(/No newsletters yet|No results found/);
+
+    await new Promise((resolve) => setTimeout(resolve, 240));
+    await settle();
+    expect(find('my-newsletters-row-issue')?.textContent).toContain('Child news');
+    const foundations = await openOptions('my-newsletters-foundation-filter');
+    expect(foundations.map((option) => option.textContent?.trim())).toEqual(['All Foundations', 'Foundation']);
+    foundations[0]!.click();
+    await settle();
+    const projects = await openOptions('my-newsletters-project-filter');
+    expect(projects.map((option) => option.textContent?.trim())).toEqual(['All Projects', 'Child']);
+    projects[0]!.click();
+    await settle();
+    expect(fixture.componentInstance.myNewsletters()).toBe(previousRows);
+    expect(fixture.componentInstance.complete()).toBe(complete);
+    expect(find('my-newsletters-row-issue')).not.toBeNull();
+    await respond({ newsletters: [row()], complete: true });
+    expect(find('my-newsletters-refresh-status')).toBeNull();
+  });
+  it('replaces retained rows on success, including a confirmed empty response', async () => {
+    await respond({ newsletters: [row()], complete: false });
+    feed = new Subject();
+    gateway.getMyNewsletters.mockReturnValue(feed);
+    await click('my-newsletters-retry');
+    expect(find('my-newsletters-row-issue')).not.toBeNull();
+    await respond({
+      newsletters: [row({ id: 'replacement', subject: 'Replacement news', project_uid: 'new-child', project_name: 'New child' })],
+      complete: true,
+    });
+    expect(find('my-newsletters-row-issue')).toBeNull();
+    expect(find('my-newsletters-row-replacement')?.textContent).toContain('Replacement news');
+    expect(fixture.componentInstance.myNewsletters().map((newsletter) => newsletter.id)).toEqual(['replacement']);
+    expect(find('my-newsletters-refresh-status')).toBeNull();
+    const projects = await openOptions('my-newsletters-project-filter');
+    expect(projects.map((option) => option.textContent?.trim())).toEqual(['All Projects', 'New child']);
+    projects[0]!.click();
+    await settle();
+
+    feed = new Subject();
+    gateway.getMyNewsletters.mockReturnValue(feed);
+    fixture.componentInstance.onRetry();
+    await settle();
+    expect(find('my-newsletters-row-replacement')).not.toBeNull();
+    await respond({ newsletters: [], complete: true });
+    expect(find('my-newsletters-empty-state')?.textContent).toContain('No newsletters yet');
+    expect(find('my-newsletters-row-replacement')).toBeNull();
+    expect(find('my-newsletters-refresh-status')).toBeNull();
+    expect(find('my-newsletters-foundation-filter')).toBeNull();
+    expect(find('my-newsletters-project-filter')).toBeNull();
+    expect(fixture.componentInstance.myNewsletters()).toEqual([]);
+    expect(fixture.componentInstance.complete()).toBe(true);
+  });
+  it('preserves rendered search and filter selections during and after an asynchronous retry', async () => {
+    await respond({ newsletters: [row(), row({ id: 'sibling', project_uid: 'sibling', project_name: 'Sibling', subject: 'Sibling news' })], complete: false });
+    await chooseOption('my-newsletters-foundation-filter', 'Foundation');
+    await chooseOption('my-newsletters-project-filter', 'Child');
+    const input = find('my-newsletters-search-input')!.querySelector<HTMLInputElement>('input')!;
+    input.value = 'Child';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 220));
+    await settle();
+    expect(find('my-newsletters-row-issue')).not.toBeNull();
+    expect(find('my-newsletters-row-sibling')).toBeNull();
+
+    feed = new Subject();
+    gateway.getMyNewsletters.mockReturnValue(feed);
+    await click('my-newsletters-retry');
+    expect(find('my-newsletters-row-issue')).not.toBeNull();
+    expect(find('my-newsletters-search-input')!.querySelector<HTMLInputElement>('input')!.value).toBe('Child');
+    expect(find('my-newsletters-foundation-filter')?.querySelector('[role="combobox"]')?.textContent).toContain('Foundation');
+    expect(find('my-newsletters-project-filter')?.querySelector('[role="combobox"]')?.textContent).toContain('Child');
+    expect(fixture.componentInstance.searchForm.getRawValue()).toEqual({ search: 'Child', foundationFilter: 'foundation', projectFilter: 'child' });
+    await respond({ newsletters: [row({ id: 'updated', subject: 'Child updated' })], complete: true });
+    expect(find('my-newsletters-row-issue')).toBeNull();
+    expect(find('my-newsletters-row-updated')?.textContent).toContain('Child updated');
+    expect(find('my-newsletters-search-input')!.querySelector<HTMLInputElement>('input')!.value).toBe('Child');
+    expect(find('my-newsletters-foundation-filter')?.querySelector('[role="combobox"]')?.textContent).toContain('Foundation');
+    expect(find('my-newsletters-project-filter')?.querySelector('[role="combobox"]')?.textContent).toContain('Child');
+    expect(fixture.componentInstance.searchForm.getRawValue()).toEqual({ search: 'Child', foundationFilter: 'foundation', projectFilter: 'child' });
+  });
+  it('clears retained rows on failed refresh and keeps URL resolution gated while pending or failed', async () => {
+    await respond({ newsletters: [row()], complete: false });
+    feed = new Subject();
+    gateway.getMyNewsletters.mockReturnValue(feed);
+    await click('my-newsletters-retry');
+    params.next(convertToParamMap({ issue: 'absent', project: 'other' }));
+    await settle();
+    expect(find('my-newsletters-row-issue')).not.toBeNull();
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(gateway.getNewsletter).not.toHaveBeenCalled();
+    feed.error(new Error('Refresh unavailable'));
+    await settle();
+    expect(find('my-newsletters-error')?.textContent).toContain('Could not load newsletters');
+    expect(find('my-newsletters-row-issue')).toBeNull();
+    expect(find('my-newsletters-refresh-status')).toBeNull();
+    expect(find('my-newsletters-foundation-filter')).toBeNull();
+    expect(find('my-newsletters-project-filter')).toBeNull();
+    expect(fixture.componentInstance.myNewsletters()).toEqual([]);
+    expect(fixture.componentInstance.complete()).toBeNull();
+    expect(fixture.componentInstance.loading()).toBe(false);
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(text()).not.toContain('No newsletters yet');
+
+    feed = new Subject();
+    gateway.getMyNewsletters.mockReturnValue(feed);
+    await click('my-newsletters-error');
+    expect(find('my-newsletters-table')!.querySelector('.lfx-skeleton-row')).not.toBeNull();
+    expect(find('my-newsletters-row-issue')).toBeNull();
+    expect(find('my-newsletters-refresh-status')).toBeNull();
+    expect(router.navigate).not.toHaveBeenCalled();
+    feed.error(new Error('Retry unavailable'));
+    await settle();
+    expect(find('my-newsletters-error')).not.toBeNull();
+    expect(fixture.componentInstance.myNewsletters()).toEqual([]);
+    expect(router.navigate).not.toHaveBeenCalled();
   });
   it('gates URL resolution during errors and recovers through the DOM Retry', async () => {
     params.next(convertToParamMap({ issue: 'issue', project: 'child-slug', keep: 'yes' }));
@@ -105,8 +270,13 @@ describe('MyNewslettersComponent', () => {
       complete === false ? 'Some newsletters could not be loaded' : "We couldn't verify that this list is complete"
     );
     expect(text()).not.toMatch(/No newsletters yet|No results found/);
-    gateway.getMyNewsletters.mockReturnValue(of({ newsletters: [row()], complete: true }));
+    feed = new Subject();
+    gateway.getMyNewsletters.mockReturnValue(feed);
     await click('my-newsletters-retry');
+    expect(find('my-newsletters-table')!.querySelector('.lfx-skeleton-row')).not.toBeNull();
+    expect(find('my-newsletters-refresh-status')).toBeNull();
+    expect(text()).not.toMatch(/No newsletters yet|No results found/);
+    await respond({ newsletters: [row()], complete: true });
     expect(find('my-newsletters-row-issue')).not.toBeNull();
     expect(find('my-newsletters-completeness-notice')).toBeNull();
   });

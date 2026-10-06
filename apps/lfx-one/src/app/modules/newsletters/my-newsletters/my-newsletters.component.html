@@ -18,6 +18,9 @@
       </div>
     </div>
 
+    @if (loading() && myNewsletters().length > 0) {
+      <p class="mb-4 text-sm text-gray-500" role="status" data-testid="my-newsletters-refresh-status">Refreshing newsletters…</p>
+    }
     @if (completenessNotice(); as notice) {
       <div
         class="flex items-center justify-between gap-3 mb-4 p-4 rounded-lg bg-amber-50 text-sm text-gray-700"
@@ -104,7 +107,7 @@
           } @else if (loading() || filteredNewsletters().length > 0) {
             <lfx-table
               [value]="filteredNewsletterRows()"
-              [loading]="loading()"
+              [loading]="loading() && myNewsletters().length === 0"
               [paginator]="filteredNewsletters().length > 10"
               [rows]="10"
               [rowsPerPageOptions]="[10, 25, 50]"
