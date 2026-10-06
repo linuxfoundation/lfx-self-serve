@@ -329,7 +329,7 @@ export class AudienceBuilderTabComponent {
    * staging are held on THIS. Releasing the hold with `composing` let Stage unlock mid-compose and
    * clone a draft against the audience that compose was about to replace.
    */
-  private readonly composeOnWire = signal(false);
+  protected readonly composeOnWire = signal(false);
   /** The brief a compose was dispatched with, so its `recorded` result is not read as another brief's. */
   protected readonly composeBriefId = signal('');
   /** The parent's `audienceScope` at the last compose's dispatch -- which SEND it belonged to. */
@@ -916,8 +916,16 @@ export class AudienceBuilderTabComponent {
   }
 
   // === Protected Methods: discovery ===
-  /** The only way the stranded-compose warning clears: an explicit acknowledgement. */
+  /**
+   * The only way the stranded-compose warning clears: an explicit acknowledgement -- and only once
+   * the abandoned request has SETTLED. While it is still on the wire the lists may not exist yet,
+   * so "I have checked HubSpot" could be answered truthfully and then be wrong a moment later, and
+   * clearing the marker re-permitted a compose that duplicates them.
+   */
   protected onDismissStranded(): void {
+    if (this.composeOnWire()) {
+      return;
+    }
     this.composeStranded.set(false);
     this.strandedProject.set('');
   }

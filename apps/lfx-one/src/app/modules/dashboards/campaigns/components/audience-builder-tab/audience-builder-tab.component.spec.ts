@@ -836,6 +836,12 @@ describe('AudienceBuilderTabComponent', () => {
 
       expect(host().querySelector('[data-testid="campaigns-audience-compose-stranded"]'), 'the abandoned create was not reported').not.toBeNull();
 
+      // The acknowledgement waits for the abandoned request to settle: the lists may not exist yet.
+      const dismiss = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose-stranded-dismiss"]');
+      expect(dismiss?.disabled, 'the stranded marker could be cleared mid-request').toBe(true);
+      (fixture.componentInstance as unknown as { onDismissStranded(): void }).onDismissStranded();
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-stranded"]'), 'the handler cleared it anyway').not.toBeNull();
+
       // And composing again in that project is blocked until the operator reconciles it.
       typeEventUrl('https://events.example.org/event-b');
       click('campaigns-audience-discover');
@@ -1404,7 +1410,8 @@ describe('AudienceBuilderTabComponent', () => {
       // next run let it be dismissed implicitly — the operator could return to the original
       // project and compose duplicates having never read it. Only an explicit acknowledgement
       // clears it.
-      composeAudienceMaster.mockReturnValue(new Subject<never>());
+      const abandoned = new Subject<never>();
+      composeAudienceMaster.mockReturnValue(abandoned);
       await renderWithDiscovery();
       click('audience-card-grid-toggle-101');
       click('campaigns-audience-compose');
@@ -1424,6 +1431,9 @@ describe('AudienceBuilderTabComponent', () => {
         'a discovery implicitly dismissed a warning about a write it cannot reconcile'
       ).not.toBeNull();
 
+      // The acknowledgement is only accepted once the abandoned request has settled.
+      abandoned.error(new HttpErrorResponse({ status: 504 }));
+      fixture.detectChanges();
       click('campaigns-audience-compose-stranded-dismiss');
       fixture.detectChanges();
 

@@ -158,10 +158,16 @@
         this on the next run let it be dismissed implicitly — the operator could return to
         that project and compose duplicates having never read it.
       -->
+      @if (composeOnWire()) {
+        <p class="text-xs text-amber-800" data-testid="campaigns-audience-compose-stranded-waiting">
+          The request is still running. Wait for it to finish before checking the portal.
+        </p>
+      }
       <button
         type="button"
         (click)="onDismissStranded()"
-        class="w-fit rounded-md border border-amber-300 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+        [disabled]="composeOnWire()"
+        class="w-fit rounded-md border border-amber-300 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
         data-testid="campaigns-audience-compose-stranded-dismiss">
         I have checked HubSpot
       </button>
