@@ -264,6 +264,56 @@ describe('MyNewslettersComponent', () => {
     expect(gateway.getNewsletter).toHaveBeenCalledWith('child', 'issue');
     expect(overlay('newsletter-preview-drawer-body')!.textContent).toContain('Rendered body');
   });
+  it.each([
+    { complete: false, withRows: false },
+    { complete: null, withRows: false },
+    { complete: false, withRows: true },
+    { complete: null, withRows: true },
+  ])('preserves a missing issue link until DOM Retry recovers (complete=$complete, withRows=$withRows)', async ({ complete, withRows }) => {
+    params.next(convertToParamMap({ issue: 'issue', project: 'child-slug', keep: 'yes' }));
+    await settle();
+    expect(router.navigate).not.toHaveBeenCalled();
+    const newsletters = withRows ? [row({ id: 'other', subject: 'Other news' })] : [];
+    await respond(complete === null ? newsletters : { newsletters, complete });
+
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect([params.value.get('issue'), params.value.get('project'), params.value.get('keep')]).toEqual(['issue', 'child-slug', 'yes']);
+    expect(gateway.getNewsletter).not.toHaveBeenCalled();
+    expect(overlay('newsletter-preview-drawer-body')).toBeNull();
+    expect(find('my-newsletters-completeness-notice')?.textContent).toContain(
+      complete === false ? 'Some newsletters could not be loaded' : "We couldn't verify that this list is complete"
+    );
+    expect(find('my-newsletters-row-other') !== null).toBe(withRows);
+
+    feed = new Subject();
+    gateway.getMyNewsletters.mockReturnValue(feed);
+    await click('my-newsletters-retry');
+    expect(router.navigate).not.toHaveBeenCalled();
+    await respond({ newsletters: [row()], complete: true });
+    expect(gateway.getNewsletter).toHaveBeenCalledWith('child', 'issue');
+    expect(overlay('newsletter-preview-drawer-body')?.textContent).toContain('Rendered body');
+    expect(overlay('newsletter-preview-drawer-header')?.textContent).toContain('Child');
+    expect(router.navigate).toHaveBeenCalledTimes(1);
+    expect(router.navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { issue: 'issue', project: 'child-slug' }, queryParamsHandling: 'merge', preserveFragment: true })
+    );
+  });
+  it.each([false, null])('opens a matching issue from a %s feed without waiting for completeness', async (complete) => {
+    params.next(convertToParamMap({ issue: 'issue', project: 'child-slug', keep: 'yes' }));
+    await settle();
+    expect(gateway.getNewsletter).not.toHaveBeenCalled();
+    await respond(complete === null ? [row()] : { newsletters: [row()], complete });
+
+    expect(fixture.componentInstance.complete()).toBe(complete);
+    expect(gateway.getNewsletter).toHaveBeenCalledWith('child', 'issue');
+    expect(overlay('newsletter-preview-drawer-body')?.textContent).toContain('Rendered body');
+    expect(router.navigate).toHaveBeenCalledTimes(1);
+    expect(router.navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { issue: 'issue', project: 'child-slug' }, queryParamsHandling: 'merge', preserveFragment: true })
+    );
+  });
   it.each([false, null])('keeps zero-row %s responses unconfirmed and retryable', async (complete) => {
     await respond(complete === null ? [] : { newsletters: [], complete });
     expect(find('my-newsletters-completeness-notice')!.textContent).toContain(

@@ -127,7 +127,7 @@ export class MyNewslettersComponent {
     // open or mid-fetch is a no-op, so the sync never re-triggers a fetch.
     combineLatest([toObservable(this.queryIssueId), toObservable(this.queryProjectSlug), toObservable(this.state)])
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(([issueId, projectSlug, { newsletters, loading, error }]) => {
+      .subscribe(([issueId, projectSlug, { newsletters, loading, error, complete }]) => {
         if (!issueId || !projectSlug) {
           // Params cleared (drawer close or back navigation) — close the drawer.
           if (this.previewVisible()) {
@@ -143,7 +143,7 @@ export class MyNewslettersComponent {
         if (newsletter) {
           // Newsletter is in the feed — open the drawer via the normal path
           this.onOpenNewsletter(newsletter);
-        } else {
+        } else if (complete === true) {
           // Newsletter not in the feed (e.g. non-member pasted a URL).
           // Redirect to the canonical permalink page, which handles access uniformly.
           this.router.navigate(['/newsletters', projectSlug, issueId]);
