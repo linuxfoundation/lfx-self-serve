@@ -60,7 +60,10 @@ export class GwEmbedStylesheetController {
     try {
       const { css, etag } = await this.load(req, name);
       res.setHeader('ETag', etag);
-      res.setHeader('Cache-Control', `public, max-age=${GW_EMBED_STYLESHEET_MAX_AGE_S}, stale-while-revalidate=${GW_EMBED_STYLESHEET_STALE_WHILE_REVALIDATE_S}`);
+      res.setHeader(
+        'Cache-Control',
+        `public, max-age=${GW_EMBED_STYLESHEET_MAX_AGE_S}, stale-while-revalidate=${GW_EMBED_STYLESHEET_STALE_WHILE_REVALIDATE_S}`
+      );
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Vary', 'Accept-Encoding');
       if (req.headers['if-none-match'] === etag) {
@@ -101,7 +104,10 @@ export class GwEmbedStylesheetController {
       }
       pending = this.fetchAndContain(req, name)
         .catch((error: unknown) => {
-          const failed = error instanceof MicroserviceError ? error : new MicroserviceError('Could not prepare the embed stylesheet', 502, 'gw_embed_stylesheet_failed', { operation: OPERATION, service: SERVICE });
+          const failed =
+            error instanceof MicroserviceError
+              ? error
+              : new MicroserviceError('Could not prepare the embed stylesheet', 502, 'gw_embed_stylesheet_failed', { operation: OPERATION, service: SERVICE });
           // Misconfiguration is not remembered: fixing the env must take effect at once.
           if (failed.code !== 'GW_EMBED_URL_MISCONFIGURED' && failed.code !== 'GW_EMBED_THEME_UNAVAILABLE') {
             this.failures.set(name, { until: Date.now() + GW_EMBED_STYLESHEET_NEGATIVE_CACHE_MS, error: failed });
@@ -137,10 +143,15 @@ export class GwEmbedStylesheetController {
     if (!response.ok) {
       logger.warning(req, OPERATION, 'Upstream answered a non-success status for the embed stylesheet', { name, status: response.status });
       await response.body?.cancel().catch(() => undefined);
-      throw new MicroserviceError('The embed stylesheet is not available upstream', response.status === 404 ? 404 : 502, 'gw_embed_stylesheet_upstream_status', {
-        operation: OPERATION,
-        service: SERVICE,
-      });
+      throw new MicroserviceError(
+        'The embed stylesheet is not available upstream',
+        response.status === 404 ? 404 : 502,
+        'gw_embed_stylesheet_upstream_status',
+        {
+          operation: OPERATION,
+          service: SERVICE,
+        }
+      );
     }
 
     const contentType = (response.headers.get('content-type') ?? '').toLowerCase();

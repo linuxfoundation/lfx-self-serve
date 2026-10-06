@@ -6,17 +6,17 @@ The server half — the `/api/gw/*` proxy, its authorization and header policy �
 
 ## Files
 
-| File                                                    | Role                                                   |
-| ------------------------------------------------------- | ------------------------------------------------------ |
-| `src/app/modules/gw/gw-module-outlet/`                  | The outlet component, template and spec                |
-| `src/app/modules/gw/gw.routes.ts`                       | Route definitions for both mounts                      |
-| `src/app/shared/guards/gatewaze-embed-enabled.guard.ts` | `CanMatch` flag gate                                   |
-| `src/app/shared/guards/gw-embed-tenant.guard.ts`        | `CanActivate` tenant allowlist gate                    |
-| `packages/shared/src/constants/gw-embed.constants.ts`   | Mount prefixes, enabled modules/features, storage keys |
-| `packages/shared/src/utils/gw-embed.utils.ts`           | Route-prefix resolution and the tenant allowlist test  |
-| `packages/shared/src/utils/auth-fragment.utils.ts`      | Redacting the auth fragment before it reaches RUM      |
-| `packages/shared/src/interfaces/gw-embed.interface.ts`  | The `GwHostContext` mount contract                     |
-| `apps/lfx-one/scripts/lib/contain-gw-embed-css.mjs`     | Stylesheet containment transform                       |
+| File                                                       | Role                                                       |
+| ---------------------------------------------------------- | ---------------------------------------------------------- |
+| `src/app/modules/gw/gw-module-outlet/`                     | The outlet component, template and spec                    |
+| `src/app/modules/gw/gw.routes.ts`                          | Route definitions for both mounts                          |
+| `src/app/shared/guards/gatewaze-embed-enabled.guard.ts`    | `CanMatch` flag gate                                       |
+| `src/app/shared/guards/gw-embed-tenant.guard.ts`           | `CanActivate` tenant allowlist gate                        |
+| `packages/shared/src/constants/gw-embed.constants.ts`      | Mount prefixes, enabled modules/features, storage keys     |
+| `packages/shared/src/utils/gw-embed.utils.ts`              | Route-prefix resolution and the tenant allowlist test      |
+| `packages/shared/src/utils/auth-fragment.utils.ts`         | Redacting the auth fragment before it reaches RUM          |
+| `packages/shared/src/interfaces/gw-embed.interface.ts`     | The `GwHostContext` mount contract                         |
+| `apps/lfx-one/scripts/lib/contain-gw-embed-css.mjs`        | Stylesheet containment transform                           |
 | `src/server/controllers/gw-embed-stylesheet.controller.ts` | Serves the scoped stylesheet (`GW_EMBED_STYLESHEET_ROUTE`) |
 
 ## Why embed rather than port
@@ -110,11 +110,11 @@ Two rules about that fragment, both learned the hard way:
 
 **Three** gates, all of which must pass:
 
-| Gate                             | Kind                                                                 |
-| -------------------------------- | -------------------------------------------------------------------- |
-| `GW_EMBED_ALLOWED_PROJECT_SLUGS` | Hard-coded tenant allowlist — currently `agentic-ai-foundation` only |
-| `gatewaze-embed-enabled`         | Client flag (`CanMatch`)                                             |
-| `LFX_GATEWAZE_EMBED_ENABLED`     | Server env                                                           |
+| Gate                             | Kind                                                                                     |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| `GW_EMBED_ALLOWED_PROJECT_SLUGS` | Hard-coded tenant allowlist — currently `agentic-ai-foundation` only                     |
+| `gatewaze-embed-enabled`         | Client flag (`CanMatch`)                                                                 |
+| `LFX_GATEWAZE_EMBED_ENABLED`     | Server env                                                                               |
 | `GW_EMBED_URL`                   | Server env; where the loader fetches the admin from. Empty = the outlet refuses to mount |
 
 The tenant allowlist is a **data-isolation control, not a rollout convenience**. Gatewaze has no multi-foundation scoping yet — one deployment serves one tenant's content — so opening the embed from another foundation would render _that_ foundation's chrome around AAIF's newsletters. Wrong data under the wrong brand, not an empty state.

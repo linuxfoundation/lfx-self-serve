@@ -36,7 +36,9 @@ describe('getGwEmbedBaseUrl', () => {
     } else {
       process.env['GW_EMBED_URL'] = value;
     }
-    expect(() => getGwEmbedBaseUrl('spec')).toThrowError(expect.objectContaining({ statusCode: 503, code: 'GW_EMBED_URL_MISCONFIGURED', message: expect.stringContaining(reason) }));
+    expect(() => getGwEmbedBaseUrl('spec')).toThrowError(
+      expect.objectContaining({ statusCode: 503, code: 'GW_EMBED_URL_MISCONFIGURED', message: expect.stringContaining(reason) })
+    );
   });
 });
 

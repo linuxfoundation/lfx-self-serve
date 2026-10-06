@@ -258,7 +258,11 @@ describe('GwEmbedStylesheetController', () => {
     });
 
     it('reports a transport failure, a timeout and a refused redirect as 502 with a static message', async () => {
-      for (const failure of [new Error('connect ECONNREFUSED'), Object.assign(new Error('The operation was aborted'), { name: 'TimeoutError' }), new TypeError('unexpected redirect')]) {
+      for (const failure of [
+        new Error('connect ECONNREFUSED'),
+        Object.assign(new Error('The operation was aborted'), { name: 'TimeoutError' }),
+        new TypeError('unexpected redirect'),
+      ]) {
         next.mockClear();
         controller = new GwEmbedStylesheetController();
         fetchMock.mockImplementationOnce(async () => {
@@ -338,7 +342,15 @@ describe('GwEmbedStylesheetController', () => {
 
   describe('configuration', () => {
     it('answers 503 with a named code when GW_EMBED_URL is unset or unusable, without fetching', async () => {
-      for (const bad of [undefined, '', `${EMBED_URL}/`, 'ftp://admin.example.test/embed', 'https://user:pw@admin.example.test/embed', 'not a url', `${EMBED_URL}?x=1`]) {
+      for (const bad of [
+        undefined,
+        '',
+        `${EMBED_URL}/`,
+        'ftp://admin.example.test/embed',
+        'https://user:pw@admin.example.test/embed',
+        'not a url',
+        `${EMBED_URL}?x=1`,
+      ]) {
         next.mockClear();
         if (bad === undefined) {
           delete process.env['GW_EMBED_URL'];

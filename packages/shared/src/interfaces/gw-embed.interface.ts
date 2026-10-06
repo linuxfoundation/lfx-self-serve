@@ -85,7 +85,6 @@ export interface GwEmbedFatalError {
   recoverable: boolean;
 }
 
-
 /** Severity of a notification the embed hands to the host, mapped from its own toast levels. */
 export type GwEmbedNotificationLevel = 'success' | 'error' | 'warning' | 'info';
 
