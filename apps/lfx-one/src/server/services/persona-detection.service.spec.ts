@@ -240,16 +240,37 @@ describe('PersonaDetectionService', () => {
 
     // `global_marketing_ops` does not cascade, so a ROOT-only grant must not answer for a named
     // project; that project's own `campaign_manager` (which folds in the cascading `marketing_ops`) does.
-    it('does not let a ROOT grant answer for a named project', async () => {
+    it('does not let a ROOT `global_marketing_ops` grant answer for a named project', async () => {
       personaEnv();
-      checkSingleAccess.mockImplementation((_req: Request, args: { id: string }) => Promise.resolve(args.id === 'uid-root'));
+      checkSingleAccess.mockImplementation((_req: Request, args: { id: string; access: string }) =>
+        Promise.resolve(args.id === 'uid-root' && args.access === 'global_marketing_ops')
+      );
       getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
 
       const response = await service.getPersonas(req, 'some-project', 'campaign_manager');
 
       expect(response.isCampaignManager).toBe(false);
-      expect(response.isCampaignManagerRootGrant).toBe(true);
+      expect(response.isCampaignManagerRootGrant).toBe(false);
       expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'project', id: 'uid-project', access: 'campaign_manager' });
+    });
+
+    // ROOT `marketing_ops` cascades to every project, so a named-project answer must not depend on
+    // the slug lookup: a false here would make the frontend clear the cascading grant.
+    it.each([
+      ['an unknown slug', () => getProjectIdBySlug.mockResolvedValue({ uid: '', slug: 'ghost-project', exists: false })],
+      ['a failed slug lookup', () => getProjectIdBySlug.mockRejectedValue(new Error('nats unavailable'))],
+    ])('keeps a cascading ROOT `marketing_ops` grant for a named project with %s', async (_case, arrange) => {
+      personaEnv();
+      checkSingleAccess.mockImplementation((_req: Request, args: { id: string; access: string }) =>
+        Promise.resolve(args.id === 'uid-root' && args.access === 'marketing_ops')
+      );
+      arrange();
+
+      const response = await service.getPersonas(req, 'ghost-project', 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(true);
+      expect(response.isCampaignManagerRootGrant).toBe(true);
+      expect(getProjectIdBySlug).not.toHaveBeenCalled();
     });
 
     // The frontend stores a true `isCampaignManagerRootGrant` as a grant on every project, so a
