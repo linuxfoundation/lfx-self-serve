@@ -195,6 +195,26 @@ describe('CampaignsComponent brief persistence', () => {
     page.destroy();
   });
 
+  // A foundation switch from a saved brief: the old brief id can still be on the signal when the
+  // project changes, and the clear that follows must not read as a same-project save.
+  it('scopes a foundation switch from a saved brief to the new project with no brief', async () => {
+    const service = TestBed.inject(CampaignNegativeKeywordsService);
+    const setScope = vi.spyOn(service, 'setScope');
+    const page = TestBed.createComponent(CampaignsComponent);
+    const persistence = (page.componentInstance as unknown as { briefPersistence: WritableSignal<CampaignBriefPersistenceState> }).briefPersistence;
+    page.detectChanges();
+    persistence.set({ status: 'saved', briefId: 'b-old', message: null, approved: false });
+    TestBed.tick();
+
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-b', slug: 'foundation-b', name: 'Foundation B' }, false);
+    TestBed.tick();
+    await page.whenStable();
+    TestBed.tick();
+
+    expect(setScope.mock.calls.at(-1)).toEqual(['foundation-b', '']);
+    page.destroy();
+  });
+
   it('switches to the Implementation tab before the save resolves', async () => {
     // Never completes: the point is that the handoff does not wait on the network. If this ever
     // starts gating on the response, a campaign-service outage strands the user on Planning.

@@ -2069,16 +2069,29 @@ export class CampaignsComponent {
     // `null` while the request is out (and a failed save leaves it `null`), and reading that as
     // "no brief" would drop the brief's settled results mid-save. Only a project change, or a
     // different real brief id, moves the scope.
+    //
+    // A project change is the opposite case: the brief id still on the signal can be the OLD
+    // project's, because this observer may run before the foundation-switch handler clears it. That
+    // id is never the new project's brief, so a project change carrying the previous brief's id is
+    // scoped as "no brief" — otherwise the clear that follows would read as a same-project save and
+    // leave the scope pointing at the old brief.
     let scopedProject: string | undefined;
+    let scopedBrief = '';
     toObservable(computed(() => ({ projectSlug: this.activeFoundationSlug(), briefId: this.briefPersistence().briefId })))
       .pipe(takeUntilDestroyed())
       .subscribe(({ projectSlug, briefId }) => {
-        if (briefId === null && projectSlug === scopedProject) {
+        let brief: string;
+        if (projectSlug !== scopedProject) {
+          brief = scopedProject !== undefined && briefId === scopedBrief ? '' : (briefId ?? '');
+        } else if (briefId === null) {
           return;
+        } else {
+          brief = briefId;
         }
         scopedProject = projectSlug;
-        this.negativeKeywordsService.setScope(projectSlug, briefId ?? '');
-        this.removedKeywordsService.setScope(projectSlug, briefId ?? '');
+        scopedBrief = brief;
+        this.negativeKeywordsService.setScope(projectSlug, brief);
+        this.removedKeywordsService.setScope(projectSlug, brief);
       });
     this.destroyRef.onDestroy(() => {
       this.negativeKeywordsService.releaseScope();
