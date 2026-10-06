@@ -1,6 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+export * from './campaign-bid.validator';
+export * from './campaign-budget.validator';
+export * from './campaign-negative-keywords.validator';
 export * from './committee.validators';
 export * from './date.validators';
 export * from './github-repo-url.validator';

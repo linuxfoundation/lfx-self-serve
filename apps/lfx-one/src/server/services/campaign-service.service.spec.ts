@@ -4090,7 +4090,9 @@ describe('CampaignServiceClient.getBriefMetrics', () => {
     expect(declarations).toContain('conversions?: number;');
     // The fifth rule. campaign-service can return it, so an exhaustive consumer that has never
     // heard of it would drop or mishandle a real action item.
-    expect(declarations).toMatch(/rule: .*'no_conversions'/);
+    // Declared through the `BriefMetricsActionRule` union, which `BriefMetricsActionItem.rule` uses.
+    expect(declarations).toMatch(/type BriefMetricsActionRule = .*'no_conversions'/);
+    expect(declarations).toContain('rule: BriefMetricsActionRule;');
   });
 
   /**
