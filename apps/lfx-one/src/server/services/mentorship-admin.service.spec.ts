@@ -724,3 +724,31 @@ describe('MentorshipAdminService application decisions', () => {
     expect(spy.mock.calls[0][3]).toBe('POST');
   });
 });
+
+describe('MentorshipAdminService.updateProgramMentor', () => {
+  const MEMBER_ID = '4e5f6a7b-8c9d-4e0f-9a1b-3c4d5e6f7a8b';
+  const MEMBER_PATH = `${PROGRAM_PATH}/members/${MEMBER_ID}`;
+  let service: InstanceType<typeof MentorshipAdminService>;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('patches the member of the program with the status only', async () => {
+    const spy = stubProgramReads({ [MEMBER_PATH]: {} });
+
+    await service.updateProgramMentor(buildReq(), PROGRAM_ID, MEMBER_ID, { status: 'withdrawn' });
+
+    expect(spy.mock.calls.map((call) => [call[2], call[3], call[5]])).toEqual([[MEMBER_PATH, 'PATCH', { status: 'withdrawn' }]]);
+  });
+
+  it.each([403, 404, 409])('passes an upstream %s on', async (status) => {
+    stubProgramReads({ [MEMBER_PATH]: new MicroserviceError('upstream', status, 'UPSTREAM') });
+
+    await expect(service.updateProgramMentor(buildReq(), PROGRAM_ID, MEMBER_ID, { status: 'active' })).rejects.toMatchObject({ statusCode: status });
+  });
+});

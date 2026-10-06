@@ -6,6 +6,7 @@ import { inject, Injectable } from '@angular/core';
 import {
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminDeclinePendingResponse,
+  MentorshipAdminMentorStatusUpdate,
   MentorshipAdminMenteesQuery,
   MentorshipAdminMenteesResponse,
   MentorshipAdminMentorsQuery,
@@ -118,6 +119,13 @@ export class MentorshipAdminService {
   /** Gives accepted mentees a task. With one application a failure arrives as the error; with several, the ones not created are in `failed`. */
   public createTasks(request: MentorshipMentorTaskCreateRequest): Observable<MentorshipMentorTaskCreateResponse> {
     return this.http.post<MentorshipMentorTaskCreateResponse>('/api/mentorship/admin/tasks', request).pipe(take(1), this.logFailure('createTasks'));
+  }
+
+  /** Accepts, declines, revokes the invite of or removes one mentor of a program (the `status` it moves to). Resolves on 204. */
+  public updateProgramMentor(programId: string, memberId: string, body: MentorshipAdminMentorStatusUpdate): Observable<void> {
+    return this.http
+      .patch<void>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/mentors/${encodeURIComponent(memberId)}`, body)
+      .pipe(take(1), this.logFailure('updateProgramMentor'));
   }
 
   /** Declines every pending application of one term. */

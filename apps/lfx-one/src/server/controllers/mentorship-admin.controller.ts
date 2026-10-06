@@ -9,6 +9,7 @@ import {
   MENTORSHIP_ADMIN_MENTEES_MAX_LIMIT,
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTOR_STATUSES,
+  MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES,
   MENTORSHIP_ATTENDANCE_TYPES,
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_PROGRAM_PAGE_SIZE,
@@ -19,6 +20,7 @@ import {
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminMenteeTab,
   MentorshipAdminMentorStatus,
+  MentorshipAdminMentorStatusUpdate,
   MentorshipAttendanceType,
   MentorshipMenteeStatus,
 } from '@lfx-one/shared/interfaces';
@@ -329,6 +331,38 @@ export class MentorshipAdminController {
     }
   }
 
+  // PATCH /api/mentorship/admin/programs/:programId/mentors/:memberId — body { status } -> 204
+  public async updateProgramMentor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'update_mentorship_admin_program_mentor';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      const memberId = this.requireUuidParam(req, 'memberId', operation);
+      const body = this.parseMentorStatusUpdate(req.body, operation);
+      await this.mentorshipAdminService.updateProgramMentor(req, programId, memberId, body);
+
+      logger.success(req, operation, startTime, { programId, memberId, status: body.status });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `status` must be one the admin can set on a mentor. */
+  private parseMentorStatusUpdate(body: unknown, operation: string): MentorshipAdminMentorStatusUpdate {
+    const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+    const statuses: readonly string[] = MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES;
+    if (typeof raw['status'] !== 'string' || !statuses.includes(raw['status'])) {
+      throw ServiceValidationError.forField('status', `status must be one of: ${statuses.join(', ')}`, { operation });
+    }
+    return { status: raw['status'] as MentorshipAdminMentorStatusUpdate['status'] };
+  }
+
   /** `status` must be one the admin can set; an accept also needs an `attendanceType`. */
   private parseStatusUpdate(body: unknown, operation: string): MentorshipAdminApplicationStatusUpdate {
     const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
@@ -354,7 +388,7 @@ export class MentorshipAdminController {
     return { status, attendanceType: attendanceType as MentorshipAttendanceType };
   }
 
-  private requireUuidParam(req: Request, name: 'programId' | 'applicationId' | 'termId', operation: string): string {
+  private requireUuidParam(req: Request, name: 'programId' | 'applicationId' | 'termId' | 'memberId', operation: string): string {
     const value = typeof req.params[name] === 'string' ? req.params[name].trim() : '';
     if (!isUuid(value)) {
       throw ServiceValidationError.forField(name, `${name} must be a UUID.`, { operation });
