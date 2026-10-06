@@ -22,6 +22,9 @@ class IdentityBarStubComponent {
 @Component({ selector: 'lfx-meeting-header', template: '<h1>stub header</h1>' })
 class HeaderStubComponent {}
 
+@Component({ selector: 'lfx-meeting-time-banner', template: '' })
+class TimeBannerStubComponent {}
+
 @Component({ selector: 'lfx-impersonation-banner', template: '' })
 class ImpersonationBannerStubComponent {}
 
@@ -53,6 +56,7 @@ describe('MeetingDetailsPageComponent', () => {
             HeaderStubComponent,
             IdentityBarStubComponent,
             ImpersonationBannerStubComponent,
+            TimeBannerStubComponent,
             SkeletonModule,
           ],
           providers: [{ provide: MeetingDetailsStateService, useValue: { status, meeting: signal(meeting), refresh, retrying, failureCount } }],

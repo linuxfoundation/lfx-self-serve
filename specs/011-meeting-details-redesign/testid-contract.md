@@ -58,7 +58,14 @@ own namespace; the two never share a value.
 | `meeting-header-copy-link`              | Copy meeting link                                                                                                 |
 | `meeting-status-pill`                   | Status pill: time state, or the viewer's RSVP (see `data-status`)                                                 |
 | `meeting-privacy-chip`                  | The single privacy chip (see below)                                                                               |
-| `meeting-time-banner`                   | The date/time banner                                                                                              |
+| `meeting-time-banner`                   | The time banner at the top of the rail card (see below)                                                           |
+| `meeting-time-banner-date`              | Its weekday and date, in the viewer's timezone                                                                    |
+| `meeting-time-banner-time`              | Its start – end time                                                                                              |
+| `meeting-time-banner-timezone`          | Its timezone name                                                                                                 |
+| `meeting-time-banner-skeleton`          | Its placeholder until the viewer's timezone resolves                                                              |
+| `meeting-time-banner-message`           | Its one phase line (starts … / starting soon / in progress / ended)                                               |
+| `meeting-time-banner-relative`          | Before the meeting, the ticking relative start (not announced)                                                    |
+| `meeting-time-banner-phase`             | The phase sentence, a polite atomic live region that stays mounted                                                |
 | `meeting-action-slot`                   | The action slot inside the rail (see below)                                                                       |
 | `meeting-error-state`                   | Terminal error state                                                                                              |
 | `meeting-error-retry-button`            | The error state's "Try again" control                                                                             |

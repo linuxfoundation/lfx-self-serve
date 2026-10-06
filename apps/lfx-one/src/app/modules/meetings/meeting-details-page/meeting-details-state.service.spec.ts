@@ -435,6 +435,54 @@ describe('MeetingDetailsStateService', () => {
       expect(state.meetingStatus()).toBe('live');
     });
 
+    // `getCurrentOrNextOccurrence` reads the wall clock, so the test moves it along with the state clock.
+    it('moves to the next occurrence on the clock once one ends, on a series left open', async () => {
+      const soon = Date.now() + 60 * 60 * 1000;
+      const later = soon + 7 * DAY;
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: {
+            ...buildMeeting(),
+            start_time: new Date(soon).toISOString(),
+            duration: 60,
+            recurrence: { type: 2 },
+            occurrences: [
+              { occurrence_id: '1', start_time: new Date(soon).toISOString(), duration: 60 },
+              { occurrence_id: '2', start_time: new Date(later).toISOString(), duration: 60 },
+            ],
+            cancelled_occurrences: [],
+          },
+          project,
+        })
+      );
+      // Faked before the service exists, so its 30 s clock runs on the fake interval. RxJS schedules
+      // even its zero-delay lookup timer on setInterval, so the lookup is flushed by advancing too.
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      try {
+        const state = create();
+        vi.advanceTimersByTime(1);
+        expect(state.selectedOccurrence()?.occurrence_id).toBe('1');
+
+        vi.setSystemTime(soon + 2 * 60 * 60 * 1000);
+        vi.advanceTimersByTime(30_000);
+
+        expect(state.selectedOccurrence()?.occurrence_id).toBe('2');
+        expect(state.timeState()).toBe('before');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps the last occurrence once a series is exhausted, not the series start', async () => {
+      const ended = series().occurrences.map((occurrence, i) => ({ ...occurrence, start_time: new Date(Date.now() - (9 - i * 7) * DAY).toISOString() }));
+      getPublicMeeting.mockReturnValue(of({ meeting: { ...series(), start_time: ended[0].start_time, occurrences: ended }, project }));
+      const state = create();
+      await settle();
+
+      expect(state.selectedOccurrence()?.occurrence_id).toBe('2');
+      expect(state.timeState()).toBe('ended');
+    });
+
     it('has no time state before the meeting loads', () => {
       getPublicMeeting.mockReturnValue(new Subject());
       const state = create();

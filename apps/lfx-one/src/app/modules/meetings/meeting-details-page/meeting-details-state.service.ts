@@ -91,8 +91,8 @@ export class MeetingDetailsStateService {
   /**
    * The occurrence the page is about, for every section to share (data-model.md § View-scoped state).
    * @description `?occurrence=<start ms>` first, among active (non-cancelled) occurrences; otherwise the
-   * current or next one, re-selected on each clock tick so a series left open moves on. `null` for a
-   * one-off meeting and for a past occurrence opened by its composite id, where the meeting payload is
+   * current or next one, re-selected on each clock tick so a series left open moves on; once a series
+   * is exhausted, its last occurrence. `null` for a one-off meeting and for a past occurrence opened by its composite id, where the meeting payload is
    * the occurrence itself.
    */
   public readonly selectedOccurrence: Signal<MeetingOccurrence | null> = this.initSelectedOccurrence();
@@ -141,16 +141,17 @@ export class MeetingDetailsStateService {
         return null;
       }
 
+      const active = getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences);
       const requested = Number(query().get('occurrence'));
-      if (requested && meeting.occurrences?.length) {
-        const match = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences).find(
-          (occurrence) => new Date(occurrence.start_time).getTime() === requested
-        );
+      if (requested) {
+        const match = active.find((occurrence) => new Date(occurrence.start_time).getTime() === requested);
         if (match) {
           return match;
         }
       }
-      return getCurrentOrNextOccurrence(meeting);
+      // A series with none current or next left has ended: its last occurrence, not the series'
+      // first start_time, so the page does not jump back to the first date.
+      return getCurrentOrNextOccurrence(meeting) ?? this.lastOccurrence(active);
     });
   }
 
@@ -316,5 +317,12 @@ export class MeetingDetailsStateService {
 
     const stated = (history.state as { password?: unknown } | null)?.password;
     return typeof stated === 'string' && stated ? stated : null;
+  }
+
+  private lastOccurrence(occurrences: MeetingOccurrence[]): MeetingOccurrence | null {
+    return occurrences.reduce<MeetingOccurrence | null>(
+      (last, occurrence) => (!last || new Date(occurrence.start_time) > new Date(last.start_time) ? occurrence : last),
+      null
+    );
   }
 }

@@ -8,6 +8,7 @@ import {
   formatIsoDateLabel,
   formatIsoDateShortLabel,
   formatMemberSince,
+  formatDisplayTimeInTimezone,
   formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
@@ -351,6 +352,18 @@ describe('tryParseLocalDateString', () => {
     expect(tryParseLocalDateString('')).toBeNull();
     expect(tryParseLocalDateString('not-a-date')).toBeNull();
     expect(tryParseLocalDateString('2026-1-5')).toBeNull();
+  });
+});
+
+describe('formatDisplayTimeInTimezone', () => {
+  it('formats an unpadded 12-hour time in the given zone', () => {
+    const instant = new Date('2026-07-23T16:05:00Z');
+    expect(formatDisplayTimeInTimezone(instant, 'America/Los_Angeles')).toBe('9:05 AM');
+    expect(formatDisplayTimeInTimezone(instant, 'Europe/Lisbon')).toBe('5:05 PM');
+  });
+
+  it('falls back to the local zone for an invalid zone rather than throwing', () => {
+    expect(formatDisplayTimeInTimezone(new Date('2026-07-23T16:05:00Z'), 'Not/AZone')).toMatch(/^\d{1,2}:\d{2} [AP]M$/);
   });
 });
 

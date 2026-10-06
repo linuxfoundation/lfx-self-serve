@@ -27,6 +27,12 @@ export interface MeetingCommitteeLink {
  */
 export type MeetingStatusKind = 'upcoming' | 'starting-soon' | 'live' | 'ended' | 'awaiting-rsvp' | 'going' | 'maybe' | 'cant-attend';
 
+/** Start and end of the occurrence a V2 section is about, end derived from its duration. */
+export interface MeetingTimeWindow {
+  start: Date;
+  end: Date;
+}
+
 /** Inputs to `resolveMeetingStatus`. */
 export interface MeetingStatusInput {
   timeState: MeetingTimeState;
