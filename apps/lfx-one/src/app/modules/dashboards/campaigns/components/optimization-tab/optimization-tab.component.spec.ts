@@ -3572,6 +3572,27 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
       expect(q('microsoft-keyword-remove-microsoft-ads:11-22')).toBeNull();
     });
 
+    // The tab is destroyed on every tab switch (the shell renders it inside `@case`), so the record
+    // lives in a root service: a REMOVE confirmed while another tab was open still withdraws the
+    // controls when the operator comes back to a report that still lists the keyword.
+    it('keeps them withdrawn across a tab switch, even when the response lands while away', () => {
+      const response = renderWithMicrosoftKeywords();
+      fixture.destroy();
+
+      response.next(removed);
+      response.complete();
+
+      // A fresh tab, as the shell creates on the way back to Optimize.
+      fixture = TestBed.createComponent(OptimizationTabComponent);
+      fixture.componentRef.setInput('projectSlug', 'tlf');
+      fixture.componentRef.setInput('briefId', 'b-1');
+      render([doc()]);
+
+      expect(q('microsoft-keyword-row-microsoft-ads:11-22')).not.toBeNull();
+      expect(q('microsoft-keyword-pause-microsoft-ads:11-22')).toBeNull();
+      expect(q('microsoft-keyword-remove-microsoft-ads:11-22')).toBeNull();
+    });
+
     it('keeps the controls after a confirmed PAUSE, and after an unconfirmed REMOVE', () => {
       const response = renderWithMicrosoftKeywords();
       response.next({ ...removed, results: [{ success: false, action: 'remove', keyword: '22', message: 'could not be confirmed' }] });

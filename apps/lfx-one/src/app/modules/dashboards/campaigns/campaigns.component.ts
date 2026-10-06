@@ -68,6 +68,7 @@ import { EmailBodyPreviewComponent } from '@components/email-body-preview/email-
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
+import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
@@ -156,6 +157,8 @@ export class CampaignsComponent {
   // Root-provided because a negative-keyword request outlives the Optimize tab; this page, which
   // stays mounted across tabs, is what scopes its settled results (see `setScope`).
   private readonly negativeKeywordsService = inject(CampaignNegativeKeywordsService);
+  // Same scoping for the keywords a confirmed REMOVE deleted (see `CampaignRemovedKeywordsService`).
+  private readonly removedKeywordsService = inject(CampaignRemovedKeywordsService);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — see LFXV2-2235/LFXV2-2236. */
   private readonly marketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
 
@@ -2066,8 +2069,12 @@ export class CampaignsComponent {
       .subscribe((scope) => {
         const [projectSlug, briefId] = scope.split('\u0000');
         this.negativeKeywordsService.setScope(projectSlug, briefId);
+        this.removedKeywordsService.setScope(projectSlug, briefId);
       });
-    this.destroyRef.onDestroy(() => this.negativeKeywordsService.releaseScope());
+    this.destroyRef.onDestroy(() => {
+      this.negativeKeywordsService.releaseScope();
+      this.removedKeywordsService.releaseScope();
+    });
 
     // Discard the persistence state when the selected foundation changes — see
     // `activeFoundationSlug`. The generation bump is what stops a save already in flight for the

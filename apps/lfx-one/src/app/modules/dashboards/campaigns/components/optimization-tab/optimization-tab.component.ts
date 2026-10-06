@@ -80,6 +80,7 @@ import { campaignBudgetFailureOutcome } from '@shared/utils/campaign-budget-erro
 import { classifyCampaignWriteFailure } from '@shared/utils/campaign-write-error.utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
+import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywords.service';
 import { campaignNegativeKeywordsKey } from '@shared/utils/campaign-negative-keywords.utils';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
@@ -649,9 +650,11 @@ export class OptimizationTabComponent implements OnInit {
    * Keywords a confirmed REMOVE deleted on this page, by `keywordIdentityKey`. Recorded when the
    * response lands, from the action that request carried, and never cleared by a re-read: Microsoft's
    * keywords come from a finished saved report, which can still list a keyword after it is gone, and
-   * offering Pause/Remove on it again would act on nothing.
+   * offering Pause/Remove on it again would act on nothing. Held by a root service scoped by the
+   * campaigns page, because this tab is destroyed on every tab switch.
    */
-  protected readonly removedKeywords = signal<ReadonlySet<string>>(new Set<string>());
+  private readonly removedKeywordsService = inject(CampaignRemovedKeywordsService);
+  protected readonly removedKeywords = this.removedKeywordsService.removed;
   /**
    * Label and colour per outcome state, as lookup maps so the template does no work.
    *
@@ -1406,7 +1409,7 @@ export class OptimizationTabComponent implements OnInit {
           // what this response answered.
           if (outcome.action === 'remove' && outcome.state === 'done') {
             const identity = keywordIdentityKey(platform, kw.campaignId, kw.adGroupId, kw.criterionId);
-            this.removedKeywords.update((removed) => new Set(removed).add(identity));
+            this.removedKeywordsService.markRemoved(identity);
           }
           this.announceKeywordOutcome(action, 1, outcome.state, outcome.message);
         },
