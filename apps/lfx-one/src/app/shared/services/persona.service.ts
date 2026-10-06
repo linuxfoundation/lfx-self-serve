@@ -44,7 +44,7 @@ export class PersonaService {
   public readonly personaLoaded: WritableSignal<boolean>;
   /** True once enriched persona data has been fetched this session — guards against redundant refetches on re-navigation. */
   public readonly enrichedPersonasLoaded: WritableSignal<boolean> = signal<boolean>(false);
-  /** Writer on the tenant root project — bypasses nav persona filtering */
+  /** `writer_guard` on the tenant root project — bypasses nav persona filtering; does not imply writer on a named project */
   public readonly isRootWriter: WritableSignal<boolean> = signal<boolean>(false);
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona */
   public readonly isLFStaff: WritableSignal<boolean> = signal<boolean>(false);

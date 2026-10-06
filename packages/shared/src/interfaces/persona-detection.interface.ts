@@ -57,7 +57,11 @@ export interface PersonaDetections {
 }
 
 export interface PersonaApiResponse extends PersonaDetections {
-  /** Writer on the tenant root project — bypasses nav persona filtering. Request-scoped, not cached. */
+  /**
+   * `writer_guard` on the tenant root project — bypasses nav persona filtering. The ROOT
+   * `global_writer` half does not cascade, so this does not imply writer on a named project.
+   * Request-scoped, not cached.
+   */
   isRootWriter: boolean;
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona. Request-scoped, not cached. */
   isLFStaff: boolean;
@@ -85,7 +89,11 @@ export interface PersonaApiResponse extends PersonaDetections {
    * foundation). `false` (not `undefined`) whenever {@link isMarketingAuditor} is `false`.
    */
   isMarketingAuditorRootGrant: boolean;
-  /** Same distinction as {@link isMarketingAuditorRootGrant}, for {@link isCampaignManager}. */
+  /**
+   * True only when {@link isCampaignManager} is backed by the cascading ROOT `marketing_ops` grant.
+   * ROOT `global_marketing_ops` does not cascade, so it leaves this `false` even when it satisfied an
+   * unscoped {@link isCampaignManager}.
+   */
   isCampaignManagerRootGrant: boolean;
 }
 
