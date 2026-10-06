@@ -5,17 +5,29 @@ import { MAX_EVENTS_PAGE_SIZE, MAX_SNOWFLAKE_PAGINATION_PAGE } from '@lfx-one/sh
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
-const { getMyEvents, getEvents, getVisaRequests, getTravelFundRequests, getEventOrganizations, getAffiliatedProjectSlugs, generateVisaLetter, logger } =
-  vi.hoisted(() => ({
-    getMyEvents: vi.fn(),
-    getEvents: vi.fn(),
-    getVisaRequests: vi.fn(),
-    getTravelFundRequests: vi.fn(),
-    getEventOrganizations: vi.fn(),
-    getAffiliatedProjectSlugs: vi.fn(),
-    generateVisaLetter: vi.fn(),
-    logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
-  }));
+const {
+  getEffectiveEmail,
+  getTravelFundEvents,
+  getMyEvents,
+  getEvents,
+  getVisaRequests,
+  getTravelFundRequests,
+  getEventOrganizations,
+  getAffiliatedProjectSlugs,
+  generateVisaLetter,
+  logger,
+} = vi.hoisted(() => ({
+  getEffectiveEmail: vi.fn(() => 'user@example.com'),
+  getTravelFundEvents: vi.fn(),
+  getMyEvents: vi.fn(),
+  getEvents: vi.fn(),
+  getVisaRequests: vi.fn(),
+  getTravelFundRequests: vi.fn(),
+  getEventOrganizations: vi.fn(),
+  getAffiliatedProjectSlugs: vi.fn(),
+  generateVisaLetter: vi.fn(),
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
+}));
 
 // validation.helper imports `@lfx-one/shared/utils`, whose barrel pulls Angular; see validation.helper.spec.ts.
 // The real pagination parsing is what runs here.
@@ -23,6 +35,7 @@ vi.mock('@lfx-one/shared/utils', () => ({}));
 vi.mock('../services/events.service', () => ({
   EventsService: class {
     public getMyEvents = getMyEvents;
+    public getTravelFundEvents = getTravelFundEvents;
     public getEvents = getEvents;
     public getVisaRequests = getVisaRequests;
     public getTravelFundRequests = getTravelFundRequests;
@@ -41,7 +54,7 @@ vi.mock('../services/persona-detection.service', () => ({
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: () => 'user@example.com', getEffectiveName: () => 'User' }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail, getEffectiveName: () => 'User' }));
 
 import { EventsController } from './events.controller';
 
@@ -96,6 +109,34 @@ describe('EventsController Foundation scope', () => {
 
     expect(getAffiliatedProjectSlugs).not.toHaveBeenCalled();
     expect(getEventOrganizations.mock.calls[0][2]).toMatchObject({ isPast: true, projectName: 'Example Foundation' });
+  });
+});
+
+describe('EventsController.getTravelFundEvents', () => {
+  const controller = new EventsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getTravelFundEvents.mockResolvedValue({ data: [], total: 0 });
+  });
+
+  it('rejects an unauthenticated request without querying', async () => {
+    getEffectiveEmail.mockReturnValueOnce(undefined as never);
+    const next = vi.fn();
+
+    await controller.getTravelFundEvents(buildReq({}), buildRes(), next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(getTravelFundEvents).not.toHaveBeenCalled();
+  });
+
+  it('passes the filters through without registration scoping', async () => {
+    const res = buildRes();
+
+    await controller.getTravelFundEvents(buildReq({ eventId: 'evt-1', searchQuery: ' summit ', country: 'China' }), res, vi.fn());
+
+    expect(getTravelFundEvents.mock.calls[0][1]).toMatchObject({ eventId: 'evt-1', searchQuery: 'summit', country: 'China' });
+    expect(res.json).toHaveBeenCalledWith({ data: [], total: 0 });
   });
 });
 

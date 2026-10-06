@@ -22,6 +22,9 @@ vi.mock('@lfx-one/shared/constants', () => ({
   DEFAULT_VISA_REQUEST_SORT_FIELD: 'APPLICATION_DATE',
   EVENT_SOURCE_BACKFILL: 'backfill',
   MY_EVENT_STATUS: { ATTENDED: 'Attended', REGISTERED: 'Registered', NOT_REGISTERED: 'Not Registered' },
+  TRAVEL_FUND_OFFERED_AGG: 'BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED)',
+  TRAVEL_FUND_OPEN_ENDED_AGG: 'BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED AND TRAVEL_FUND_END_TS IS NULL)',
+  TRAVEL_FUND_LATEST_DEADLINE_AGG: 'MAX(IFF(IS_TRAVEL_FUND_ACCEPTED, TRAVEL_FUND_END_TS, NULL))',
   VALID_EVENT_SORT_FIELDS: new Set(['EVENT_NAME', 'PROJECT_NAME', 'EVENT_START_DATE', 'EVENT_CITY']),
   VALID_VISA_REQUEST_SORT_FIELDS: new Set(['EVENT_NAME', 'EVENT_CITY', 'APPLICATION_DATE']),
   WHOLE_NUMBER_PATTERN: /^\d+$/,
@@ -429,6 +432,32 @@ describe('EventsService.getTravelFundEvents', () => {
     expect(binds).not.toContain(USER_EMAIL);
   });
 
+  it('treats an open-ended flagged row as an open deadline even when another flagged row has expired', async () => {
+    const [sql] = await callFor();
+
+    expect(sql).toContain(
+      'IFF(BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED AND TRAVEL_FUND_END_TS IS NULL) OVER (PARTITION BY EVENT_ID), NULL, MAX(IFF(IS_TRAVEL_FUND_ACCEPTED, TRAVEL_FUND_END_TS, NULL)) OVER (PARTITION BY EVENT_ID))'
+    );
+  });
+
+  it('maps rows to events with the travel fund deadline and no registration', async () => {
+    snowflakeMocks.execute.mockResolvedValue({
+      rows: [buildRow({ IS_REGISTERED: false, REGISTRATION_STATUS: null, TRAVEL_FUND_END_TS: '2026-10-19T00:00:00.000Z', TOTAL_RECORDS: 5 })],
+    });
+
+    const result = await service.getTravelFundEvents({} as never, { pageSize: 10, offset: 0 } as never);
+
+    expect(result.total).toBe(5);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({ id: 'evt-1', travelFundEnd: '2026-10-19T00:00:00.000Z', status: 'Not Registered' });
+  });
+
+  it('propagates Snowflake errors so the picker can show its load-error state', async () => {
+    snowflakeMocks.execute.mockRejectedValue(new Error('snowflake down'));
+
+    await expect(service.getTravelFundEvents({} as never, { pageSize: 10, offset: 0 } as never)).rejects.toThrow('snowflake down');
+  });
+
   it('filters by event id for the deep link', async () => {
     const [sql, binds] = await callFor({ eventId: 'evt-1' });
 
@@ -545,6 +574,9 @@ describe('EventsService.isEligibleForEventRequest', () => {
     const [sql, binds] = lastCall();
     expect(sql).not.toContain('USER_EMAIL');
     expect(sql).toContain('BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED)');
+    expect(sql).toContain(
+      'IFF(BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED AND TRAVEL_FUND_END_TS IS NULL), NULL, MAX(IFF(IS_TRAVEL_FUND_ACCEPTED, TRAVEL_FUND_END_TS, NULL)))'
+    );
     expect(sql).toContain('>= CURRENT_TIMESTAMP()');
     expect(binds).toEqual(['evt-1']);
   });

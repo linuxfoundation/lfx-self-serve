@@ -4,7 +4,7 @@ description: Request travel funding to attend a Linux Foundation event that is a
 audience: [all]
 product_area: Events
 tags: [events, travel-funding, travel-fund, attendance]
-last_updated: 2026-10-02
+last_updated: 2026-10-06
 intercom_collection: Events
 ---
 

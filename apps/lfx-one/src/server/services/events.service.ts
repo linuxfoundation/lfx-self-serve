@@ -9,6 +9,9 @@ import {
   DEFAULT_VISA_REQUEST_SORT_FIELD,
   EVENT_SOURCE_BACKFILL,
   MY_EVENT_STATUS,
+  TRAVEL_FUND_LATEST_DEADLINE_AGG,
+  TRAVEL_FUND_OFFERED_AGG,
+  TRAVEL_FUND_OPEN_ENDED_AGG,
   VALID_EVENT_SORT_FIELDS,
   VALID_VISA_REQUEST_SORT_FIELDS,
   WHOLE_NUMBER_PATTERN,
@@ -47,10 +50,6 @@ import { MicroserviceError } from '../errors';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { UserService } from './user.service';
-
-// Per-event travel fund signals, shared by the picker list and the submit-time eligibility check.
-const TRAVEL_FUND_OFFERED_AGG = 'BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED)';
-const TRAVEL_FUND_DEADLINE_AGG = 'MAX(IFF(IS_TRAVEL_FUND_ACCEPTED, TRAVEL_FUND_END_TS, NULL))';
 
 export class EventsService {
   private snowflakeService: SnowflakeService;
@@ -398,7 +397,7 @@ export class EventsService {
           EVENT_URL,
           EVENT_REGISTRATION_URL,
           ${TRAVEL_FUND_OFFERED_AGG} OVER (PARTITION BY EVENT_ID) AS EVENT_OFFERS_TRAVEL_FUND,
-          ${TRAVEL_FUND_DEADLINE_AGG} OVER (PARTITION BY EVENT_ID) AS EVENT_TRAVEL_FUND_END_TS
+          ${this.travelFundDeadlineSql(' OVER (PARTITION BY EVENT_ID)')} AS EVENT_TRAVEL_FUND_END_TS
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE NOT (${this.isPastEventSql()})
           ${eventIdFilter}
@@ -454,12 +453,13 @@ export class EventsService {
     try {
       result = await this.snowflakeService.execute<MyEventRow>(sql, binds);
     } catch (error) {
-      logger.warning(req, 'get_travel_fund_events', 'Snowflake query failed, returning empty events', {
+      // Propagate so the picker shows its load-error state instead of "no events accepting applications".
+      logger.warning(req, 'get_travel_fund_events', 'Snowflake query failed', {
         error: error instanceof Error ? error.message : String(error),
         page_size: normalizedPageSize,
         offset: normalizedOffset,
       });
-      return { data: [], total: 0, pageSize: normalizedPageSize, offset: normalizedOffset };
+      throw error;
     }
 
     const total = result.rows.length > 0 ? result.rows[0].TOTAL_RECORDS : 0;
@@ -685,7 +685,7 @@ export class EventsService {
       WHERE EVENT_ID = ?
         AND NOT (${this.isPastEventSql()})
       GROUP BY EVENT_ID
-      HAVING ${this.travelFundOpenSql(TRAVEL_FUND_OFFERED_AGG, TRAVEL_FUND_DEADLINE_AGG)}
+      HAVING ${this.travelFundOpenSql(TRAVEL_FUND_OFFERED_AGG, this.travelFundDeadlineSql())}
       LIMIT 1
     `
       : `
@@ -1144,6 +1144,11 @@ export class EventsService {
   }
 
   /** Event offers travel funding and its deadline (among the flagged rows) is unset or still ahead. */
+  /** Latest deadline across flagged rows; NULL (open-ended) when any flagged row has no deadline. `over` makes it a window aggregate. */
+  private travelFundDeadlineSql(over = ''): string {
+    return `IFF(${TRAVEL_FUND_OPEN_ENDED_AGG}${over}, NULL, ${TRAVEL_FUND_LATEST_DEADLINE_AGG}${over})`;
+  }
+
   private travelFundOpenSql(offered: string, deadline: string): string {
     return `${offered} AND (${deadline} IS NULL OR ${deadline} >= CURRENT_TIMESTAMP())`;
   }

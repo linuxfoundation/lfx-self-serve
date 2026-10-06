@@ -4,7 +4,7 @@ description: Frequently asked questions about LFX events.
 audience: [all]
 product_area: Events
 tags: [events, faq, attendance]
-last_updated: 2026-10-02
+last_updated: 2026-10-06
 intercom_collection: Events
 ---
 
