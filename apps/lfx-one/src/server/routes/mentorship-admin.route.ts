@@ -23,5 +23,10 @@ router.patch('/programs/:programId/mentors/:memberId', blockDuringImpersonation,
 router.post('/programs/:programId/terms/:termId/decline-pending', blockDuringImpersonation, (req, res, next) =>
   adminController.declinePendingForTerm(req, res, next)
 );
+router.post('/programs/:programId/terms', blockDuringImpersonation, (req, res, next) => adminController.createTerm(req, res, next));
+router.patch('/programs/:programId/terms/:termId', blockDuringImpersonation, (req, res, next) => adminController.updateTerm(req, res, next));
+router.post('/programs/:programId/terms/:termId/close', blockDuringImpersonation, (req, res, next) => adminController.closeTerm(req, res, next));
+router.post('/programs/:programId/terms/:termId/reopen', blockDuringImpersonation, (req, res, next) => adminController.reopenTerm(req, res, next));
+router.delete('/programs/:programId/terms/:termId', blockDuringImpersonation, (req, res, next) => adminController.deleteTerm(req, res, next));
 
 export default router;

@@ -6,6 +6,8 @@ import {
   MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
+  MENTORSHIP_MAX_OPEN_TERMS,
+  MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_PROGRAM_STATUSES,
 } from '@lfx-one/shared/constants';
 import {
@@ -18,6 +20,7 @@ import {
   MentorshipAdminMentorStatusUpdate,
   MentorshipAdminProgramPage,
   MentorshipAdminProgramTabCounts,
+  MentorshipAdminTermInput,
   MentorshipAdminTermOption,
   MentorshipAdminTermsQuery,
   MentorshipAdminTermsResponse,
@@ -26,6 +29,7 @@ import {
   MentorshipMentorTaskCreateResponse,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
+  MentorshipProgramTermRow,
   MentorshipTermRowStatus,
   MentorshipUpstreamAdministeredProgram,
   MentorshipUpstreamApplication,
@@ -38,6 +42,7 @@ import {
   MentorshipUpstreamTask,
   MentorshipUpstreamTermManagementRow,
 } from '@lfx-one/shared/interfaces';
+import { lastDayOfMentorshipMonth, toMentorshipUtcEndOfDayInstant, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import {
@@ -407,6 +412,124 @@ export class MentorshipAdminService {
     const declinedCount = typeof result?.declined_count === 'number' ? result.declined_count : 0;
     logger.debug(req, 'mentorship_admin_decline_pending_for_term', 'Pending applications declined', { programId, termId, declinedCount });
     return { declinedCount };
+  }
+
+  /**
+   * Creates an open term. Upstream enforces the four-open-term limit too, but the open terms are counted first so a full
+   * program is refused with the limit's message and no write call. Upstream's 400, 403 and 409 pass through. The name is never logged.
+   */
+  public async createTerm(req: Request, programId: string, input: MentorshipAdminTermInput): Promise<MentorshipProgramTermRow> {
+    logger.debug(req, 'mentorship_admin_create_term', 'Creating program term', { programId });
+    await this.assertOpenTermSlot(req, programId, 'mentorship_admin_create_term');
+
+    const created = await proxyMentorshipRequest<MentorshipUpstreamProgramTerm>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/terms`,
+      'POST',
+      undefined,
+      { ...this.toUpstreamTermBody(input), status: 'open' }
+    );
+    return this.toTermRow(created, input, 'open');
+  }
+
+  /** Edits a term's name and dates. Upstream's 400, 404 and 409 (a closed term that has ended) pass through. Counts come back as 0; the page reads them again. */
+  public async updateTerm(req: Request, programId: string, termId: string, input: MentorshipAdminTermInput): Promise<MentorshipProgramTermRow> {
+    logger.debug(req, 'mentorship_admin_update_term', 'Updating program term', { programId, termId });
+
+    const updated = await proxyMentorshipRequest<MentorshipUpstreamProgramTerm>(
+      this.microserviceProxy,
+      req,
+      this.termPath(programId, termId),
+      'PATCH',
+      undefined,
+      this.toUpstreamTermBody(input)
+    );
+    return this.toTermRow(updated, input, updated.status === 'closed' ? 'closed' : 'open');
+  }
+
+  /** Closes a term; upstream declines its pending applications and answers 409 while accepted ones remain. */
+  public async closeTerm(req: Request, programId: string, termId: string): Promise<void> {
+    logger.debug(req, 'mentorship_admin_close_term', 'Closing program term', { programId, termId });
+    await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, `${this.termPath(programId, termId)}/close`, 'POST');
+  }
+
+  /** Re-opens a closed term, refused first (no write call) when the program already has the most open terms. */
+  public async reopenTerm(req: Request, programId: string, termId: string): Promise<void> {
+    logger.debug(req, 'mentorship_admin_reopen_term', 'Re-opening program term', { programId, termId });
+    await this.assertOpenTermSlot(req, programId, 'mentorship_admin_reopen_term');
+    await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, `${this.termPath(programId, termId)}/reopen`, 'POST');
+  }
+
+  /** Deletes a term; upstream answers 409 when the term has any application. */
+  public async deleteTerm(req: Request, programId: string, termId: string): Promise<void> {
+    logger.debug(req, 'mentorship_admin_delete_term', 'Deleting program term', { programId, termId });
+    await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, this.termPath(programId, termId), 'DELETE');
+  }
+
+  private termPath(programId: string, termId: string): string {
+    return `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/terms/${encodeURIComponent(termId)}`;
+  }
+
+  /**
+   * Throws a 409 with the limit's message when the program already has `MENTORSHIP_MAX_OPEN_TERMS` open terms. The count
+   * and the write are two calls, so two writes at once can both pass it: upstream's own limit stays the source of truth.
+   */
+  private async assertOpenTermSlot(req: Request, programId: string, operation: string): Promise<void> {
+    const open = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamProgramTerm>>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/terms`,
+      'GET',
+      { status: 'open', offset: 0, limit: MENTORSHIP_MAX_OPEN_TERMS }
+    );
+    const openCount = open.meta?.total ?? (open.data ?? []).length;
+    if (openCount >= MENTORSHIP_MAX_OPEN_TERMS) {
+      logger.warning(req, operation, 'Program already has the most open terms, skipping the write', { programId, openCount });
+      throw new ConflictError(MENTORSHIP_MAX_OPEN_TERMS_MESSAGE, 'MENTORSHIP_MAX_OPEN_TERMS', { operation });
+    }
+  }
+
+  /**
+   * Upstream takes RFC 3339 timestamps, sent in UTC. Each date goes as the start of its day, except the application end,
+   * which goes as the end of its day so the term takes applications through that whole date, and the term end, which goes
+   * as the end of the last day of its month: the dialog picks months, and the UI treats a term as running through its end month.
+   */
+  private toUpstreamTermBody(input: MentorshipAdminTermInput): Record<string, string> {
+    return {
+      name: input.name,
+      start_date_time: toMentorshipUtcInstant(input.startDate),
+      end_date_time: toMentorshipUtcEndOfDayInstant(lastDayOfMentorshipMonth(input.endDate)),
+      application_start_date: toMentorshipUtcInstant(input.applicationStartDate),
+      application_end_date: toMentorshipUtcEndOfDayInstant(input.applicationEndDate),
+    };
+  }
+
+  /** Maps upstream's answer to a write; a status missing or one the table can't show falls back to `fallbackStatus`, the rest to the input. */
+  private toTermRow(term: MentorshipUpstreamProgramTerm, input: MentorshipAdminTermInput, fallbackStatus: MentorshipTermRowStatus): MentorshipProgramTermRow {
+    const row = mapMentorshipAdminTermRow({
+      ...term,
+      status: term.status ?? fallbackStatus,
+      pending: 0,
+      declined: 0,
+      accepted: 0,
+      graduated: 0,
+    } as MentorshipUpstreamTermManagementRow);
+    return (
+      row ?? {
+        id: term.id,
+        name: input.name,
+        status: fallbackStatus,
+        pending: 0,
+        declined: 0,
+        accepted: 0,
+        graduated: 0,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        applicationStartDate: input.applicationStartDate,
+        applicationEndDate: input.applicationEndDate,
+      }
+    );
   }
 }
 

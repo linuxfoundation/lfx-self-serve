@@ -28,6 +28,7 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { parseMentorshipAdminTermInput } from '../helpers/mentorship-admin-term.helper';
 import { parseMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
 import { parseMentorshipMentorTaskCreateRequest } from '../helpers/mentorship-mentor-task.helper';
 import { parseMentorshipAdminPaging, parseTrimmedString } from '../helpers/mentorship-params.helper';
@@ -347,6 +348,96 @@ export class MentorshipAdminController {
       await this.mentorshipAdminService.updateProgramMentor(req, programId, memberId, body);
 
       logger.success(req, operation, startTime, { programId, memberId, status: body.status });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/admin/programs/:programId/terms — body MentorshipAdminTermInput -> 201 + the term row
+  public async createTerm(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'create_mentorship_admin_term';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      const input = parseMentorshipAdminTermInput(req.body, operation);
+      const term = await this.mentorshipAdminService.createTerm(req, programId, input);
+
+      logger.success(req, operation, startTime, { programId, termId: term.id });
+      res.status(201).json(term);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/mentorship/admin/programs/:programId/terms/:termId — body MentorshipAdminTermInput -> 200 + the term row
+  public async updateTerm(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'update_mentorship_admin_term';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      const termId = this.requireUuidParam(req, 'termId', operation);
+      const input = parseMentorshipAdminTermInput(req.body, operation);
+      const term = await this.mentorshipAdminService.updateTerm(req, programId, termId, input);
+
+      logger.success(req, operation, startTime, { programId, termId });
+      res.json(term);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/admin/programs/:programId/terms/:termId/close -> 204
+  public async closeTerm(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.runTermAction(req, res, next, 'close_mentorship_admin_term', (programId, termId) =>
+      this.mentorshipAdminService.closeTerm(req, programId, termId)
+    );
+  }
+
+  // POST /api/mentorship/admin/programs/:programId/terms/:termId/reopen -> 204
+  public async reopenTerm(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.runTermAction(req, res, next, 'reopen_mentorship_admin_term', (programId, termId) =>
+      this.mentorshipAdminService.reopenTerm(req, programId, termId)
+    );
+  }
+
+  // DELETE /api/mentorship/admin/programs/:programId/terms/:termId -> 204
+  public async deleteTerm(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.runTermAction(req, res, next, 'delete_mentorship_admin_term', (programId, termId) =>
+      this.mentorshipAdminService.deleteTerm(req, programId, termId)
+    );
+  }
+
+  /** The shared shape of close, re-open and delete: authenticate, check both ids, write, answer 204. */
+  private async runTermAction(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    operation: string,
+    action: (programId: string, termId: string) => Promise<void>
+  ): Promise<void> {
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      const termId = this.requireUuidParam(req, 'termId', operation);
+      await action(programId, termId);
+
+      logger.success(req, operation, startTime, { programId, termId });
       res.status(204).send();
     } catch (error) {
       next(error);
