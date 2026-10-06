@@ -130,7 +130,7 @@ test.describe('Admin Current Mentees — Create task', () => {
     expect(requests.tasks).toEqual([OTHER_ACCEPTED_ID]);
   });
 
-  test('shows the failure and does not reload when the create fails', async ({ page }) => {
+  test('shows the failure and still reloads the page, since a 502 may have created the task', async ({ page }) => {
     await open(page, requests, created, 502);
     const readsBefore = requests.mentees.length;
 
@@ -138,7 +138,7 @@ test.describe('Admin Current Mentees — Create task', () => {
     await submitTask(page);
 
     await expect(page.getByText('Could not create the task')).toBeVisible();
-    expect(requests.mentees).toHaveLength(readsBefore);
+    await expect.poll(() => requests.mentees.length).toBeGreaterThan(readsBefore);
   });
 
   test('tells the admin the application can no longer be given tasks when the create is a 400', async ({ page }) => {
