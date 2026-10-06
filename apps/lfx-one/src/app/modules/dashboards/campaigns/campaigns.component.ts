@@ -3086,7 +3086,7 @@ export class CampaignsComponent {
     // precondition upstream actively refuses on (`resolveBuiltAudience`), so omitting it here
     // would let the enumeration drift from the guard it mirrors -- and the failure would arrive
     // from HubSpot after the draft work had begun rather than from this early return.
-    if (brief === null || sourceEmailId === '' || projectSlug === '' || this.emailAudience()?.status !== 'built') {
+    if (brief === null || sourceEmailId === '' || projectSlug === '' || this.emailAudience()?.status !== 'built' || this.emailAudienceWriteInFlight()) {
       return;
     }
 
@@ -3104,6 +3104,14 @@ export class CampaignsComponent {
       // A reset can land during that await. Abandoning here is what stops the create below --
       // which CLONES a HubSpot draft -- from running against the previous brief.
       if (!isCurrent()) {
+        return;
+      }
+      // And the AUDIENCE can change during it: the Audience tab stays mounted, so a replacement
+      // compose or attach started while the brief id was resolving would otherwise have the create
+      // clone a draft against the list being replaced. Same gate `canStageEmail` holds, re-read.
+      if (this.emailAudienceWriteInFlight() || this.emailAudience()?.status !== 'built') {
+        this.emailStaging.set('error');
+        this.emailStagingMessage.set('The send audience changed while staging. Stage again once it has finished updating.');
         return;
       }
 

@@ -3506,6 +3506,26 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStaging(), 'a finished stage\'s "Draft created" was erased').toBe('done');
     });
 
+    it('refuses to create when an audience write started during the brief-id await', async () => {
+      // The Audience tab stays mounted, so a replacement write could start while staging resolved
+      // its brief id; the create would then clone a draft against the list being replaced.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+      const persist = vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(() => {
+        internals().emailAudienceWriteInFlight.set(true);
+        return of({ status: 'saved', approved: true, briefId: composed.briefId, etag: null }) as never;
+      });
+      internals().emailBriefId.set('');
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(persist).toHaveBeenCalled();
+      expect(create, 'a draft was cloned against an audience being replaced').not.toHaveBeenCalled();
+      expect(internals().emailStaging()).toBe('error');
+    });
+
     it('explains a Stage blocked by a FIRST compose, not "compose it first"', () => {
       // The audience is still null while the first compose runs, so a hint keyed on the audience
       // told the operator to do exactly what was already in progress.

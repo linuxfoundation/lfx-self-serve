@@ -845,6 +845,59 @@ describe('AudienceBuilderTabComponent', () => {
       expect(composeAudienceMaster, 'a second compose ran over the stranded one').toHaveBeenCalledTimes(1);
     });
 
+    it('keeps the write lock through a context switch until an in-flight attach SETTLES', async () => {
+      // A reset discards the reply but the attach is still being recorded upstream. Releasing the
+      // lock on the reset let A -> B -> A start a second write that the first could then overwrite.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      const reply = new Subject<AudienceAttachExistingResult>();
+      attachExistingAudience.mockReturnValue(reply);
+      click('campaigns-audience-use-direct');
+      const seen: boolean[] = [];
+      fixture.componentInstance.audienceWriteInFlight.subscribe((busy) => seen.push(busy));
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-a');
+      fixture.detectChanges();
+      const gate = fixture.componentInstance as unknown as { canAttach: () => boolean; canCompose: () => boolean };
+      expect(gate.canAttach(), 'a second attach could start while the first was on the wire').toBe(false);
+      expect(seen.at(-1), 'Stage was released while the attach was still recording').toBe(true);
+
+      reply.next({
+        master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' },
+        suppressionListIds: [],
+        audience: { id: 'a', briefId: 'brief-a', platform: 'hubspot', status: 'built', version: 1 },
+      } as AudienceAttachExistingResult);
+      reply.complete();
+      fixture.detectChanges();
+      expect(seen.at(-1), 'the lock never released after the attach settled').toBe(false);
+    });
+
+    it('holds Stage while a compose a reset abandoned is still being created', async () => {
+      // `composing` is cleared by the reset so the new context is not stuck on a spinner, but the
+      // HubSpot lists are still being created -- Stage must not unlock on the old audience.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      const reply = new Subject<never>();
+      composeAudienceMaster.mockReturnValue(reply);
+      click('campaigns-audience-compose');
+      const seen: boolean[] = [];
+      fixture.componentInstance.audienceWriteInFlight.subscribe((busy) => seen.push(busy));
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+      expect(seen.at(-1), 'Stage unlocked mid-compose').toBe(true);
+
+      reply.error(new HttpErrorResponse({ status: 500 }));
+      fixture.detectChanges();
+      expect(seen.at(-1), 'the lock never released after the compose settled').toBe(false);
+    });
+
     it("drops a discovery still streaming when a different event's brief arrives", async () => {
       // `hasDiscovered` turns true only on the final frame, so a mid-stream switch let A's frames
       // finish under B's brief.

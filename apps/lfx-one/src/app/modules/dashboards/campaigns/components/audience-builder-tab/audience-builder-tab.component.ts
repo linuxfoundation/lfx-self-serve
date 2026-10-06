@@ -7,7 +7,7 @@ import { outputFromObservable, takeUntilDestroyed, toObservable, toSignal } from
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, of, pairwise, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, pairwise, startWith, switchMap, tap } from 'rxjs';
 
 import { AUDIENCE_SIGNAL_INFO, AUDIENCE_SIGNAL_ORDER, AUDIENCE_UNION_EXACT_CAP } from '@lfx-one/shared/constants';
 import type {
@@ -165,7 +165,7 @@ export class AudienceBuilderTabComponent {
    * cloned pointed at a list the operator was in the middle of replacing.
    */
   public readonly audienceWriteInFlight = outputFromObservable(
-    toObservable(computed(() => this.composing() || this.attachInFlight())).pipe(distinctUntilChanged())
+    toObservable(computed(() => this.composeOnWire() || this.attachInFlight())).pipe(distinctUntilChanged())
   );
 
   // === Forms ===
@@ -307,7 +307,6 @@ export class AudienceBuilderTabComponent {
    */
   private readonly lastWriteWasAttach = signal<boolean>(false);
   protected readonly attachError = signal<string | null>(null);
-  /** The brief a compose was dispatched with, so its `recorded` result is not read as another brief's. */
   /**
    * An attach is on the wire, from dispatch until its reply SETTLES -- whatever brief is on screen.
    *
@@ -316,8 +315,22 @@ export class AudienceBuilderTabComponent {
    * request was still running: switch A -> B -> A and a second attach for A could start, and if its
    * reply landed first the older one then overwrote the record with the earlier selection. Writes
    * are serialized on this instead, so there is never a second reply to arrive out of order.
+   *
+   * Released ONLY when the request settles (a `finalize` on the request itself), never by a reset:
+   * a reset discards the reply, but the request is still being recorded upstream, and releasing
+   * early let a context switch A -> B -> A start a second write against the first.
    */
   protected readonly attachInFlight = signal(false);
+  /**
+   * A compose request is on the wire, from dispatch until it settles -- unlike `composing`, which a
+   * reset clears so the new context's UI is not stuck on a spinner.
+   *
+   * The HubSpot lists are still being created after a reset abandons the reply, so writes and
+   * staging are held on THIS. Releasing the hold with `composing` let Stage unlock mid-compose and
+   * clone a draft against the audience that compose was about to replace.
+   */
+  private readonly composeOnWire = signal(false);
+  /** The brief a compose was dispatched with, so its `recorded` result is not read as another brief's. */
   protected readonly composeBriefId = signal('');
   /** The parent's `audienceScope` at the last compose's dispatch -- which SEND it belonged to. */
   private readonly composeScope = signal(0);
@@ -532,7 +545,7 @@ export class AudienceBuilderTabComponent {
    * and the second write is a real HubSpot record either way.
    */
   protected readonly canAttach = computed(
-    () => this.briefId() !== '' && !this.degraded() && !this.audienceUnknown() && !this.composing() && !this.attachInFlight()
+    () => this.briefId() !== '' && !this.degraded() && !this.audienceUnknown() && !this.composing() && !this.composeOnWire() && !this.attachInFlight()
   );
 
   /**
@@ -794,7 +807,9 @@ export class AudienceBuilderTabComponent {
       // The other half of the serialization above: an attach in flight is a write to this same
       // brief's audience, and the later reply would decide the record. `attachInFlight`, not the
       // spinner: the spinner is cleared on a brief switch while the request is still running.
+      // Likewise a compose a reset abandoned is still being created upstream.
       !this.attachInFlight() &&
+      !this.composeOnWire() &&
       !this.suppressionFailed() &&
       !this.suppressionLoading() &&
       !this.composeAttempted() &&
@@ -909,9 +924,9 @@ export class AudienceBuilderTabComponent {
 
   protected onDiscover(): void {
     const eventUrl = this.eventUrlControl.value.trim();
-    // Not while an attach is on the wire, either. Discovery resets the run, which releases
-    // `attachInFlight` and discards that attach's reply -- so a second write could start while the
-    // first was still being recorded, and its outcome was never shown.
+    // Not while an attach is on the wire, either. Discovery resets the run, which discards that
+    // attach's reply -- so its outcome, success or error, would never be shown for the brief it was
+    // recorded against.
     if (this.degraded() || this.discovering() || this.attachInFlight() || eventUrl.length === 0) {
       return;
     }
@@ -1174,6 +1189,7 @@ export class AudienceBuilderTabComponent {
 
     const event = this.identity();
     this.composing.set(true);
+    this.composeOnWire.set(true);
     this.composeAttempted.set(true);
     this.composedEventUrl.set(this.eventUrlControl.value.trim());
     const run = this.runGeneration;
@@ -1206,7 +1222,11 @@ export class AudienceBuilderTabComponent {
         // actually happened.
         briefId: dispatchBriefId || undefined,
       })
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      // Released when the REQUEST settles, whatever the run generation says about its reply.
+      .pipe(
+        finalize(() => this.composeOnWire.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe({
         next: (result) => {
           if (run !== this.runGeneration) {
@@ -1465,7 +1485,12 @@ export class AudienceBuilderTabComponent {
         suppressionListIds: sentExclusions,
         ...(summary ? { inclusionSummary: summary } : {}),
       })
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      // Released when the REQUEST settles -- see `attachInFlight`. The generation guards below
+      // still decide whether its result is shown.
+      .pipe(
+        finalize(() => this.attachInFlight.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe({
         next: (result) => {
           if (run !== this.runGeneration) {
@@ -1656,8 +1681,8 @@ export class AudienceBuilderTabComponent {
     this.discoveryError.set(null);
     this.composeAttempted.set(false);
     this.replaceRequestedFor.set(null);
-    // The run generation discards the in-flight reply, so nothing else will release this.
-    this.attachInFlight.set(false);
+    // `attachInFlight` and `composeOnWire` are deliberately NOT released here: the requests are
+    // still running, and their own `finalize` releases them when they settle.
     this.attachingId.set(null);
     this.attachResult.set(null);
     this.attachError.set(null);
