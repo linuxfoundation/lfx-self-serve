@@ -1221,7 +1221,7 @@ describe('CampaignsComponent brief persistence', () => {
        */
       it('loads the demand-gen capability on a first-create Planning to Implementation flow', async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
-          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true })
+          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false })
         );
 
         await withSavedBrief();
@@ -1247,7 +1247,7 @@ describe('CampaignsComponent brief persistence', () => {
       it('sends no capability request when brief persistence is disabled', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(of({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true }));
+          .mockReturnValue(of({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false }));
 
         persistBrief.mockReturnValue(of({ enabled: false, briefId: '', etag: null, created: false, approved: false }));
         proceed();
@@ -1272,6 +1272,48 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       /**
+       * The google-channels capability rides the SAME response and the same six set-sites, and is asserted
+       * with the OPPOSITE value to the demand-gen flag on the same payload.
+       *
+       * That opposition is the test. The two capabilities are derived by inverse rules upstream —
+       * `demandGenEnabled` is true while the create cutover is dark, `googleChannelsEnabled` is
+       * false there — so a component that mirrored one signal onto the other, or read the wrong
+       * key, would pass every demand-gen test above and fail here.
+       */
+      it('loads the google-channels capability alongside the demand-gen one', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: false, googleChannelsEnabled: true })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsDemandGenEnabled(): boolean | null;
+          briefCampaignsGoogleChannelsEnabled(): boolean | null;
+        };
+        expect(c.briefCampaignsGoogleChannelsEnabled()).toBe(true);
+        expect(c.briefCampaignsDemandGenEnabled()).toBe(false);
+      });
+
+      /**
+       * `null`, never `false`, for the same reason the demand-gen sibling above insists on it: the
+       * tab's draft restore CLEARS a saved selection on an explicit `false`, and a failed read has
+       * established nothing. Collapsing the two here would destroy a user's saved channel
+       * selection because a query service was briefly down.
+       */
+      it('leaves the google-channels capability unknown when the capability read fails', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        expect(
+          (fixture.componentInstance as unknown as { briefCampaignsGoogleChannelsEnabled(): boolean | null }).briefCampaignsGoogleChannelsEnabled()
+        ).toBeNull();
+      });
+
+      /**
        * The return-entry trigger — the second of the two triggers at lines 947-949.
        *
        * A first-create persist calls `loadCreateCapabilitiesFor` on success, but if that read
@@ -1289,7 +1331,7 @@ describe('CampaignsComponent brief persistence', () => {
         expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBeNull();
 
         // User navigates away and comes back via the tab bar.
-        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false }));
         (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('planning', 'paid-marketing');
         (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab(
           'implementation',
@@ -1322,12 +1364,12 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
 
         // Optimize entry lands on top of the still-open capability request.
-        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false }));
         load();
         await fixture.whenStable();
 
         // ...and the original request answers only now.
-        capability.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true });
+        capability.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false });
         capability.complete();
         await fixture.whenStable();
 
@@ -1348,7 +1390,7 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
 
         // A newer capability read answers while that list request is still open.
-        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false }));
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
         await fixture.whenStable();
         expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
@@ -1370,7 +1412,7 @@ describe('CampaignsComponent brief persistence', () => {
        */
       it('loads the capability for a brief restored from campaign-service', async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
-          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true })
+          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false })
         );
 
         restore(brief, 'brief-9', true);
@@ -1389,7 +1431,7 @@ describe('CampaignsComponent brief persistence', () => {
       it('clears a previously known capability when a later read fails', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+          .mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false }));
 
         await withSavedBrief();
         await fixture.whenStable();
@@ -1418,7 +1460,7 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
 
         // A second Implementation entry supersedes the first, and answers first.
-        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false }));
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
         await fixture.whenStable();
         expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
@@ -1449,7 +1491,7 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
 
         // The previous foundation's read answers only now.
-        pending.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true });
+        pending.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false });
         pending.complete();
         await fixture.whenStable();
 
@@ -1481,7 +1523,7 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
 
         // ...and the second still succeeds. Its answer must land.
-        second.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true });
+        second.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false });
         second.complete();
         await fixture.whenStable();
 
@@ -1498,7 +1540,7 @@ describe('CampaignsComponent brief persistence', () => {
       it('does not refetch the capability once it is known', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true }));
+          .mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false }));
 
         await withSavedBrief();
         await fixture.whenStable();
@@ -1516,13 +1558,15 @@ describe('CampaignsComponent brief persistence', () => {
       it('clears the previous brief campaigns when the foundation changes', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false }));
+          .mockReturnValue(
+            of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false, googleChannelsEnabled: false })
+          );
         await withSavedBrief();
         load();
         await fixture.whenStable();
         expect(campaigns()).toHaveLength(1);
 
-        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false }));
+        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false, googleChannelsEnabled: false }));
         selectFoundation('cncf');
         await fixture.whenStable();
 
@@ -1542,7 +1586,7 @@ describe('CampaignsComponent brief persistence', () => {
 
         // The response the switch invalidated. Clearing the signal alone cannot stop this — the
         // request was already in flight and lands afterwards.
-        late.next({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false });
+        late.next({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false, googleChannelsEnabled: false });
         await fixture.whenStable();
 
         expect(campaigns()).toBeNull();
@@ -1565,7 +1609,7 @@ describe('CampaignsComponent brief persistence', () => {
 
       it('does not mark a genuinely empty list as unavailable', async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
-          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false })
+          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false, googleChannelsEnabled: false })
         );
         await withSavedBrief();
         load();
@@ -1587,11 +1631,15 @@ describe('CampaignsComponent brief persistence', () => {
        * assertion passes even if the template still paints the old rows.
        */
       it('stops rendering the previous brief campaigns while the next brief is still loading', async () => {
-        const list = vi
-          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(
-            of({ campaigns: [indexed({ campaign_name: 'Brief A campaign' })], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false })
-          );
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [indexed({ campaign_name: 'Brief A campaign' })],
+            possiblyStale: false,
+            statusToggleEnabled: true,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+          })
+        );
         await withSavedBrief();
         openOptimize();
         await fixture.whenStable();
@@ -1621,6 +1669,7 @@ describe('CampaignsComponent brief persistence', () => {
           possiblyStale: false,
           statusToggleEnabled: true,
           demandGenEnabled: false,
+          googleChannelsEnabled: false,
         });
         await fixture.whenStable();
         expect(optimizeText()).toContain('Brief B campaign');
@@ -1677,7 +1726,9 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
         expect(unavailable()).toBe(true);
 
-        list.mockReturnValue(of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false }));
+        list.mockReturnValue(
+          of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false, googleChannelsEnabled: false })
+        );
         load();
         await fixture.whenStable();
 
@@ -6401,6 +6452,9 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
       endDate: '2026-02-01',
       includeSearch: true,
       includeDemandGen: false,
+      includePerformanceMax: false,
+      includeVideo: false,
+      includeDisplay: false,
       // Event A's LinkedIn picks (LFXV2-3230). Present so this stale draft is a COMPLETE one —
       // the guard under test must reject it on the slug alone, not because it happened to be
       // missing fields.
