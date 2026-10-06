@@ -557,6 +557,41 @@ describe('CampaignProxyService model JSON fences', () => {
     expect((eventFrame?.data as { name: string }).name).toBe('KubeCon EU 2026');
   });
 
+  it('does not tell the model to null a registration URL that is not an anchor', async () => {
+    // Registration is often driven from a scripted button, not an `<a href>`, and it is the one URL
+    // not verified against the page's anchors. Under the shared anchor-only rule the model was told
+    // to return null for exactly those pages, and the brief lost its primary call to action.
+    stubAiReturning(details);
+    await drain(
+      service.streamBrief(req, { url: 'https://events.example.com/kubecon-eu-2026', deliveryType: 'email' }, new AbortController().signal) as AsyncGenerator<{
+        type: string;
+        data: unknown;
+      }>
+    );
+
+    const fetchMock = globalThis.fetch as unknown as { mock: { calls: [string, { body?: string }][] } };
+    // Matched on the parsed HOST, not a string prefix (which also matches `ai.example.test.evil`).
+    const isAiCall = (url: string): boolean => {
+      try {
+        return new URL(url).host === 'ai.example.test';
+      } catch {
+        return false;
+      }
+    };
+    const prompts = fetchMock.mock.calls.filter(([url]) => isAiCall(String(url))).map(([, init]) => String(init?.body ?? ''));
+    const extraction = prompts.find((body) => body.includes('registration_url'));
+
+    expect(extraction, 'no extraction prompt was sent').toBeDefined();
+    expect(extraction).toContain('For registration_url');
+    expect(extraction, 'the anchor-only rule still covers every *_url').not.toContain('For every *_url field');
+    // Still told not to fabricate it: registration is the one URL emitted WITHOUT anchor
+    // verification, so a URL composed from the site's shape would ship as the primary CTA.
+    // Whitespace-normalized: the prompt wraps lines, and the JSON body escapes the newlines.
+    const registrationRule = (extraction?.slice(extraction.indexOf('For registration_url')) ?? '').replace(/(\\n|\s)+/g, ' ');
+    expect(registrationRule, 'the anti-fabrication rule was dropped for the unverified field').toContain("never derive it from the site's URL pattern");
+    expect(registrationRule, 'the model was pointed at script bodies it never receives').not.toMatch(/\bscript\b/);
+  });
+
   it('still extracts details from an unfenced response', async () => {
     stubAiReturning(details);
     const events = await drain(

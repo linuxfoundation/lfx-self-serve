@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { extractPageLinks, resolveRegistrationUrl, verifyPageLink } from './event-links.helper';
+import { documentBaseUrl, extractPageLinks, resolveRegistrationUrl, scanPageLinks, verifyPageLink } from './event-links.helper';
 
 const BASE_URL = 'https://example.com/events/kubecon';
 
@@ -250,7 +250,7 @@ describe('extractPageLinks — malformed and hostile markup', () => {
   });
 
   it('treats a closer cut off at the end of the input as closing the region', () => {
-    // The `opensAnElement` EOF branch: nothing follows `</script`, so the name ends there. The real
+    // A `</script` cut off at end of input: the closer's name ends at EOF. The real
     // link BEFORE the script must survive and the decoy inside it must not.
     const html = `<a href="https://events.linuxfoundation.org/real">Real</a><script><a href="https://evil.example/fake">x</a></script`;
 
@@ -372,6 +372,169 @@ describe('extractPageLinks — malformed and hostile markup', () => {
   });
 });
 
+describe('extractPageLinks — links a browser does not render (tokenized, not scanned)', () => {
+  const REAL = '<a href="https://events.linuxfoundation.org/real">Real</a>';
+  const base = 'https://events.linuxfoundation.org/';
+
+  // Each of these was reproduced against the hand-rolled scanner after #3220 merged. The parser
+  // answers them by construction; the table pins that a regression back to scanning would fail.
+  it.each([
+    ['an href inside a framework attribute value', `<a @click="go href='https://evil.example/at'" href="https://events.linuxfoundation.org/real">Real</a>`],
+    ['an href inside a bound attribute value', `<a :title="' href=https://evil.example/t'" href="https://events.linuxfoundation.org/real">Real</a>`],
+    ["anchor markup inside another tag's attribute", `<div title="<a href='https://evil.example/attr'>">x</div>${REAL}`],
+    ['an anchor inside <textarea>', `<textarea><a href="https://evil.example/ta">x</a></textarea>${REAL}`],
+    ['an anchor inside <title>', `<title><a href="https://evil.example/title"></a></title>${REAL}`],
+    ['an anchor inside <noscript>', `<noscript><a href="https://evil.example/ns">x</a></noscript>${REAL}`],
+    ['an anchor inside <xmp>', `<xmp><a href="https://evil.example/xmp">x</a></xmp>${REAL}`],
+    ['an anchor inside <template>', `<template><a href="https://evil.example/tpl">x</a></template>${REAL}`],
+    ['an anchor inside a <? bogus comment', `<? <a href="https://evil.example/pi"> ?>${REAL}`],
+    ['an anchor inside a <!x bogus comment', `<!x <a href="https://evil.example/bang">>${REAL}`],
+    ['a tag name joined by U+00A0, which is not HTML whitespace', `<a\u00a0href="https://evil.example/nbsp">x</a>${REAL}`],
+    // A self-closing slash is IGNORED on a non-void HTML element: `<textarea/>` still opens one.
+    ['a self-closed <textarea/>', `<textarea/><a href="https://evil.example/ta">x</a></textarea>${REAL}`],
+    ['a self-closed <script/>', `<script/><a href="https://evil.example/s">x</a></script>${REAL}`],
+    ['a self-closed <title/>', `<title/><a href="https://evil.example/t">x</a></title>${REAL}`],
+    ['a self-closed <iframe/>', `<iframe/><a href="https://evil.example/if">x</a></iframe>${REAL}`],
+    ['a self-closed <template/>', `<template/><a href="https://evil.example/tpl">x</a></template>${REAL}`],
+    // Reproduced against the previous revision of this scanner (fail-OPEN), each now inert.
+    ['a template closer written inside an <iframe> in a template', `<template><iframe></template><a href="https://evil.example/a"></iframe></template>${REAL}`],
+    [
+      'a template closer inside a self-closed <textarea/> in a template',
+      `<template><textarea/></template><a href="https://evil.example/a"></textarea></template>${REAL}`,
+    ],
+    ['<plaintext> inside a template', `${REAL}<template><plaintext></template><a href="https://evil.example/a">`],
+    [
+      'a declarative shadow root (validity depends on the host)',
+      `<div><template shadowrootmode="open"><a href="https://evil.example/a"></template></div>${REAL}`,
+    ],
+    ['a shadow root nested in a template', `<template><template shadowrootmode="open"></template><a href="https://evil.example/a"></template>${REAL}`],
+    ['a closer with a space after </, which is a bogus comment', `<iframe></ iframe><a href="https://evil.example/a"></iframe>${REAL}`],
+    ['a template closer with a space after </', `<template></ template><a href="https://evil.example/a"></template>${REAL}`],
+    ['a self-closed <script/> after a self-closed <svg/>', `<svg/><script src="a.js"/><a href="https://evil.example/a"></script>${REAL}`],
+    ['a self-closed <script/> after </svg/>', `<svg></svg/><script src="a.js"/><a href="https://evil.example/a"></script>${REAL}`],
+    ['a self-closed <textarea/> after an SVG breakout', `<svg><p><textarea/><a href="https://evil.example/a"></textarea>${REAL}`],
+  ])('ignores %s', (_label, html) => {
+    expect([...extractPageLinks(html, base).values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it('treats the rest of the page as inert after a double-escaped script', () => {
+    // In a browser `<!--<script>` inside script data can run past the first `</script>`; the
+    // tokenizer ends there. Unmodelled, so fail safe: nothing after it is kept.
+    const html = `${REAL}<script><!--<script></script><a href="https://evil.example/a">--></script>`;
+
+    expect([...extractPageLinks(html, base).values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it.each([
+    ['a numeric entity', '<a href="&#47;agenda">Agenda</a>', 'https://events.linuxfoundation.org/agenda'],
+    ['an upper-case named entity', '<a href="/agenda?day=2&AMP;track=main">Agenda</a>', 'https://events.linuxfoundation.org/agenda?day=2&track=main'],
+  ])('decodes %s in a real href rather than keeping it literal', (_label, html, expected) => {
+    expect([...extractPageLinks(html, base).values()]).toEqual([expected]);
+  });
+
+  it.each([
+    [
+      'a named entity outside the old six',
+      '<a href="https&colon;//events.linuxfoundation.org/agenda">A</a>',
+      'https&colon;//events.linuxfoundation.org/agenda',
+    ],
+    ['a legacy entity with no semicolon', '<a href="/agenda?a=1&copy=2">A</a>', '/agenda?a=1&copy=2'],
+  ])("decodes a candidate with the tokenizer's own decoder: %s", (_label, html, candidate) => {
+    // A narrower decoder on the candidate side rejected genuine page links the parser had decoded.
+    const links = extractPageLinks(html, base);
+
+    expect(verifyPageLink(candidate, links, base), 'a real page link was rejected').not.toBe('');
+  });
+
+  it('returns links and base from one pass, matching the separate helpers', () => {
+    const html = '<base href="/kubecon-eu/"><a href="agenda">Agenda</a>';
+    const both = scanPageLinks(html, 'https://events.example.org/kubecon-eu');
+
+    expect([...both.links.values()]).toEqual([...extractPageLinks(html, 'https://events.example.org/kubecon-eu').values()]);
+    expect(both.baseUrl).toBe(documentBaseUrl(html, 'https://events.example.org/kubecon-eu'));
+  });
+
+  it("verifies a model candidate written with the page's entities against the decoded link", () => {
+    const links = extractPageLinks('<a href="/agenda?day=2&amp;track=main">Agenda</a>', base);
+
+    expect(verifyPageLink('/agenda?day=2&amp;track=main', links, base)).toBe('https://events.linuxfoundation.org/agenda?day=2&track=main');
+  });
+
+  // Sized at the 5 MiB fetch cap, and HOSTILE rather than well-formed: a tree builder's open-element
+  // stack made each of these quadratic (parse5: 400 KB of unclosed <div> took 20 s). This runs
+  // synchronously on the SSR process, so the bound is the property, not a nicety.
+  const CAP = 5 * 1024 * 1024;
+  const fill = (unit: string): string => unit.repeat(Math.floor(CAP / unit.length));
+  it.each([
+    ['unclosed nesting', () => fill('<div>')],
+    ['unclosed formatting elements', () => fill('<b>')],
+    ['unmatched end tags over a deep stack', () => `${'<span>'.repeat(CAP / 12)}${'</q>'.repeat(CAP / 8)}`],
+    ['one tag with a huge number of attributes', () => `<a href="/x" ${Array.from({ length: CAP / 8 }, (_unused, i) => `a${i}`).join(' ')}>`],
+    ['many closed comments', () => fill('<!---->')],
+    ['many unclosed openers', () => fill('<!--')],
+  ])('stays linear on %s at the fetch cap', (_label, build) => {
+    const html = `${build()}${REAL}`;
+
+    const started = performance.now();
+    extractPageLinks(html, base);
+    const elapsed = performance.now() - started;
+
+    expect(elapsed, `${html.length} chars in ${elapsed.toFixed(0)}ms`).toBeLessThan(3_000);
+  });
+
+  it.each([
+    ['an iframe', `<iframe><a href="https://evil.example/if">x</a></iframe>${REAL}`],
+    ['everything after <plaintext>', `${REAL}<plaintext><a href="https://evil.example/pt">x</a>`],
+  ])('ignores anchors inside %s', (_label, html) => {
+    expect([...extractPageLinks(html, base).values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  // The fail-SAFE direction: these drop nothing a browser renders.
+  it.each([
+    ['an inert closer written with a slash', `<iframe>x</iframe/>${REAL}`],
+    ['a template closer written with a slash', `<template>x</template/>${REAL}`],
+    ['a nested iframe, which raw text does not nest', `<iframe><iframe></iframe>${REAL}`],
+    ['an unclosed <math>', `<math><mi>x</mi><p>${REAL}`],
+    ['a self-closed SVG shape', `<svg><path d="M0 0"/></svg>${REAL}`],
+  ])('keeps a real link after %s', (_label, html) => {
+    expect([...extractPageLinks(html, base).values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it('honours a <base> after a self-closed <svg/>, which leaves no svg open', () => {
+    // Counted as an open <svg>, it never closed, and every later <base> was ignored.
+    expect(documentBaseUrl('<svg/><base href="/sub/"><a href="agenda">x</a>', 'https://events.example.org/e')).toBe('https://events.example.org/sub/');
+  });
+
+  it('does not take a <base> inside <svg> as the document base', () => {
+    expect(documentBaseUrl('<svg><base href="https://evil.example/"/></svg><a href="agenda">x</a>', 'https://events.example.org/e/')).toBe(
+      'https://events.example.org/e/'
+    );
+  });
+
+  it('reads an SVG anchor by its plain href, not xlink:href, as an SVG2 browser follows it', () => {
+    const html = '<svg><a xlink:href="https://evil.example/x" href="https://events.linuxfoundation.org/real"><text>x</text></a></svg>';
+
+    expect([...extractPageLinks(html, base).values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it('resolves relative links against the document <base href>, as a browser does', () => {
+    // A sub-path deployment served without its trailing slash: resolving against the request URL
+    // turned `agenda` into `/agenda`, a 404 inside a sent email.
+    const html = '<head><base href="/kubecon-eu/"></head><a href="agenda">Agenda</a>';
+
+    expect([...extractPageLinks(html, 'https://events.example.org/kubecon-eu').values()]).toEqual(['https://events.example.org/kubecon-eu/agenda']);
+    expect(documentBaseUrl(html, 'https://events.example.org/kubecon-eu')).toBe('https://events.example.org/kubecon-eu/');
+  });
+
+  it.each([
+    ['no <base>', '<a href="agenda">x</a>'],
+    ['a non-http(s) <base>', '<base href="javascript:alert(1)"><a href="agenda">x</a>'],
+    ['a <base> inside <template>', '<template><base href="https://evil.example/"></template><a href="agenda">x</a>'],
+  ])('falls back to the request URL with %s', (_label, html) => {
+    expect(documentBaseUrl(html, 'https://events.example.org/e/')).toBe('https://events.example.org/e/');
+  });
+});
+
 describe('verifyPageLink', () => {
   const html = `<a href="/agenda/">Agenda</a><a href="https://example.com/sponsor-us">Sponsor</a><a href="https://other.example/cfp">CFP</a>`;
   const links = extractPageLinks(html, BASE_URL);
@@ -447,6 +610,11 @@ describe('resolveRegistrationUrl', () => {
   it('keeps an absolute http(s) URL unverified, including off-site registration hosts', () => {
     // Scripted CTAs carry no `<a href>`, so verifying an absolute URL would strip working links.
     expect(resolveRegistrationUrl('https://cvent.example/kubecon?code=A&amp;b=2', new Map(), BASE_URL)).toBe('https://cvent.example/kubecon?code=A&b=2');
+  });
+
+  it('unescapes JSON-escaped slashes from a JSON-LD offers.url', () => {
+    // PHP/WordPress `json_encode` writes `https:\/\/…`; copied verbatim it became `https://host//register`.
+    expect(resolveRegistrationUrl('https:\\/\\/cvent.example\\/kubecon\\/register', page, BASE_URL)).toBe('https://cvent.example/kubecon/register');
   });
 
   it('drops a non-http(s) scheme and userinfo', () => {
