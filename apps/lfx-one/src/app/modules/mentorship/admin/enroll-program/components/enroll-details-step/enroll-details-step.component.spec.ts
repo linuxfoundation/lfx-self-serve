@@ -5,7 +5,12 @@ import { Component, CUSTOM_ELEMENTS_SCHEMA, input, output } from '@angular/core'
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { By } from '@angular/platform-browser';
-import { createEmptyMentorshipEnrollForm, MENTORSHIP_ENROLL_DESCRIPTION_MAX, MENTORSHIP_RICH_TEXT_RAW_MAX } from '@lfx-one/shared/constants';
+import {
+  createEmptyMentorshipEnrollForm,
+  MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_LF_PROJECT_PAGE_SIZE,
+  MENTORSHIP_RICH_TEXT_RAW_MAX,
+} from '@lfx-one/shared/constants';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { of } from 'rxjs';
@@ -150,9 +155,11 @@ describe('EnrollDetailsStepComponent — selected project', () => {
 });
 
 describe('EnrollDetailsStepComponent — project lazy loading', () => {
-  const alpha = { id: 'uid-alpha', name: 'Alpha', slug: 'alpha' };
-  const beta = { id: 'uid-beta', name: 'Beta', slug: 'beta' };
+  const lfProject = (key: string) => ({ id: `uid-${key}`, name: key, slug: key });
+  const fullPage = Array.from({ length: MENTORSHIP_LF_PROJECT_PAGE_SIZE }, (_, index) => lfProject(`p${index}`));
+  const beta = lfProject('beta');
   let fixture: ComponentFixture<EnrollDetailsStepComponent>;
+  let form: FormGroup;
   let getLfProjects: ReturnType<typeof vi.fn>;
 
   const projectSelect = (): StubSelectComponent =>
@@ -163,9 +170,9 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
 
   const optionIds = (): string[] => (projectSelect().options() as { value: string }[]).map((option) => option.value);
 
-  beforeEach(async () => {
+  const setUp = async (firstPage: { id: string; name: string; slug: string }[]): Promise<void> => {
     getLfProjects = vi.fn((params: { pageToken?: string }) =>
-      of(params.pageToken === 'page-2' ? { data: [beta], nextPageToken: null } : { data: [alpha], nextPageToken: 'page-2' })
+      of(params.pageToken === 'page-2' ? { data: [beta], nextPageToken: null } : { data: firstPage, nextPageToken: 'page-2' })
     );
     TestBed.overrideComponent(EnrollDetailsStepComponent, { set: { imports: [ReactiveFormsModule, StubSelectComponent], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
 
@@ -178,29 +185,53 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
     }).compileComponents();
 
     const defaults = createEmptyMentorshipEnrollForm() as unknown as Record<string, unknown>;
-    const form = new FormGroup(Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, new FormControl(value)])));
+    form = new FormGroup(Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, new FormControl(value)])));
 
     fixture = TestBed.createComponent(EnrollDetailsStepComponent);
     fixture.componentRef.setInput('form', form);
     fixture.detectChanges();
-  });
+  };
 
-  it('loads the next page with the cursor once the list is scrolled to its end', () => {
-    expect(optionIds()).toEqual(['uid-alpha']);
+  it('loads the next page with the cursor once a full list is scrolled to its end', async () => {
+    await setUp(fullPage);
+    expect(optionIds()).toHaveLength(MENTORSHIP_LF_PROJECT_PAGE_SIZE);
+    expect(getLfProjects).toHaveBeenCalledTimes(1);
 
-    projectSelect().onLazyLoad.emit({ first: 0, last: 0 });
+    projectSelect().onLazyLoad.emit({ first: 0, last: MENTORSHIP_LF_PROJECT_PAGE_SIZE - 1 });
     fixture.detectChanges();
 
     expect(getLfProjects).toHaveBeenLastCalledWith(expect.objectContaining({ pageToken: 'page-2' }));
+    expect(optionIds()).toEqual([...fullPage.map((project) => project.id), 'uid-beta']);
+  });
+
+  it('follows a short page cursor without waiting for a scroll', async () => {
+    await setUp([lfProject('alpha')]);
+
+    expect(getLfProjects).toHaveBeenCalledTimes(2);
     expect(optionIds()).toEqual(['uid-alpha', 'uid-beta']);
   });
 
-  it('stops requesting once the cursor runs out', () => {
-    projectSelect().onLazyLoad.emit({ first: 0, last: 0 });
+  it('stops requesting once the cursor runs out', async () => {
+    await setUp(fullPage);
+    projectSelect().onLazyLoad.emit({ first: 0, last: MENTORSHIP_LF_PROJECT_PAGE_SIZE - 1 });
     fixture.detectChanges();
-    projectSelect().onLazyLoad.emit({ first: 0, last: 1 });
+    projectSelect().onLazyLoad.emit({ first: 0, last: MENTORSHIP_LF_PROJECT_PAGE_SIZE });
     fixture.detectChanges();
 
     expect(getLfProjects).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears the project instead of keeping the previous one when the new id is not loaded', async () => {
+    await setUp(fullPage);
+    form.controls['projectId'].setValue(fullPage[0].id);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.project()).toEqual(fullPage[0]);
+
+    form.controls['projectId'].setValue('uid-not-loaded');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.project()).toBeNull();
   });
 });

@@ -27,7 +27,13 @@ import {
 import { isMentorshipCiiProjectId } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { MENTORSHIP_LF_PROJECT_MAX_READS, MENTORSHIP_ME_PROFILES_PATH, MENTORSHIP_PROGRAMS_PATH } from '../constants';
+import {
+  MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH,
+  MENTORSHIP_LF_PROJECT_MAX_LIMIT,
+  MENTORSHIP_LF_PROJECT_MAX_READS,
+  MENTORSHIP_ME_PROFILES_PATH,
+  MENTORSHIP_PROGRAMS_PATH,
+} from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import {
@@ -78,11 +84,13 @@ export class MentorshipService {
    * One lazy-load page of LF projects for the enroll picker (ROOT excluded): by name when `search` is blank, by relevance otherwise.
    * The query service can trim a page after cutting it (access filtering) and still return a `page_token`, so this follows the
    * token until `limit` projects are in hand or `MENTORSHIP_LF_PROJECT_MAX_READS` reads are spent, and hands back the token it
-   * stopped at. The page may hold a little more than `limit`, since a project is never dropped between two cursors.
+   * stopped at, so a short page can still carry a cursor. The page may hold a little more than `limit`, since a project is never
+   * dropped between two cursors. `limit` is held to 1–`MENTORSHIP_LF_PROJECT_MAX_LIMIT` and `search` is cut to
+   * `MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH`.
    */
   public async getLfProjects(req: Request, options: { search?: string; pageToken?: string; limit?: number } = {}): Promise<MentorshipLfProjectsResponse> {
-    const search = options.search?.trim() ?? '';
-    const limit = options.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE;
+    const search = (options.search?.trim() ?? '').slice(0, MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH);
+    const limit = Math.min(MENTORSHIP_LF_PROJECT_MAX_LIMIT, Math.max(1, options.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
     let pageToken = options.pageToken || undefined;
     logger.debug(req, 'mentorship_get_lf_projects', 'Listing LF projects', { has_search: search.length > 0, has_page_token: !!pageToken, limit });
 
@@ -108,7 +116,7 @@ export class MentorshipService {
     }));
 
     logger.debug(req, 'mentorship_get_lf_projects', 'LF projects page built', { count: data.length, reads, has_more: !!pageToken });
-    return { data, nextPageToken: data.length < limit ? null : (pageToken ?? null) };
+    return { data, nextPageToken: pageToken ?? null };
   }
 
   /**

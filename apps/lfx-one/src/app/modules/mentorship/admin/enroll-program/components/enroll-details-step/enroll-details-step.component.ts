@@ -52,9 +52,9 @@ import {
   debounceTime,
   distinctUntilChanged,
   EMPTY,
-  exhaustMap,
   map,
   merge,
+  mergeMap,
   of,
   share,
   startWith,
@@ -260,8 +260,10 @@ export class EnrollDetailsStepComponent {
       )
     );
 
+    // mergeMap, not exhaustMap: a short page asks for the next one while its own read is still finishing, and the
+    // lfProjectsLoading guard below already keeps two page reads from overlapping.
     const nextPage$ = this.lfLoadMore$.pipe(
-      exhaustMap(() => {
+      mergeMap(() => {
         const pageToken = this.lfNextPageToken();
         if (this.lfProjectsLoading() || !pageToken) return EMPTY;
         this.lfProjectsLoading.set(true);
@@ -276,12 +278,15 @@ export class EnrollDetailsStepComponent {
       })
     );
 
-    merge(firstPage$, nextPage$)
+    // nextPage$ subscribes first so lfLoadMore$ is already listened to when the first page asks to follow its cursor.
+    merge(nextPage$, firstPage$)
       .pipe(takeUntilDestroyed())
       .subscribe((page) => {
         this.lfProjects.set(page.append ? [...this.lfProjects(), ...page.data] : page.data);
         this.lfNextPageToken.set(page.nextPageToken);
         this.lfProjectsLoading.set(false);
+        // A page that access filtering left short may not fill the scroller enough to fire onLazyLoad, so follow its cursor here.
+        if (page.nextPageToken && page.data.length < MENTORSHIP_LF_PROJECT_PAGE_SIZE) this.lfLoadMore$.next();
       });
   }
 
@@ -366,8 +371,8 @@ export class EnrollDetailsStepComponent {
       this.project.set(null);
       return;
     }
-    const remembered = this.resolveSelectedProject(projectId, this.lfProjects());
-    if (remembered) this.project.set(remembered);
+    // Unresolved ids clear the model rather than keep the previous project; the lfProjects watcher fills it once the id loads.
+    this.project.set(this.resolveSelectedProject(projectId, this.lfProjects()) ?? null);
   }
 
   private resolveSelectedProject(projectId: string, loaded: MentorshipLfProject[]): MentorshipLfProject | undefined {

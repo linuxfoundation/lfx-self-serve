@@ -66,10 +66,13 @@ export const MENTORSHIP_MENTORS_PATH = '/mentorship/v1/mentors';
 export const MENTORSHIP_LIST_PAGE_SIZE = 100;
 
 /** Most pages one upstream mentorship list read follows, so a list that never ends cannot loop forever. */
-export const MENTORSHIP_LIST_MAX_PAGES = 12;
+export const MENTORSHIP_LIST_MAX_PAGES = 50;
 
 /** Most query-service reads one enroll project-picker page spends filling itself when access filtering leaves pages short. */
 export const MENTORSHIP_LF_PROJECT_MAX_READS = 5;
+
+/** Largest project-picker page a caller may ask for; a larger `limit` is cut to this, a non-positive one raised to 1. */
+export const MENTORSHIP_LF_PROJECT_MAX_LIMIT = 50;
 
 /** Page size for a program's applications: the largest `limit` upstream accepts there, which resets anything above it to 10. */
 export const MENTORSHIP_PROGRAM_APPLICATIONS_PAGE_SIZE = 50;

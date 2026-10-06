@@ -7,7 +7,7 @@ import { MENTORSHIP_LF_PROJECT_PAGE_SIZE } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi, afterEach, type MockInstance } from 'vitest';
 
-import { MENTORSHIP_LF_PROJECT_MAX_READS } from '../constants';
+import { MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH, MENTORSHIP_LF_PROJECT_MAX_LIMIT, MENTORSHIP_LF_PROJECT_MAX_READS } from '../constants';
 
 // The service resolves its request-scoped logger through this module; stubbing it here
 // avoids booting the real pino instance for a synchronous, in-memory lookup path.
@@ -219,6 +219,36 @@ describe('MentorshipService LF project search', () => {
 
     expect(proxyRequest).toHaveBeenCalledTimes(MENTORSHIP_LF_PROJECT_MAX_READS);
     expect(result).toEqual({ data: [], nextPageToken: 'cursor-n' });
+  });
+
+  it.each([
+    [0, 1],
+    [-5, 1],
+    [100_000, MENTORSHIP_LF_PROJECT_MAX_LIMIT],
+  ])('holds a requested limit of %d to a page_size of %d', async (limit, pageSize) => {
+    proxyRequest.mockResolvedValue(page([project('uid-1', 'Alpha')]));
+
+    await service.getLfProjects(buildReq(), { limit });
+
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'project',
+      sort: 'name_asc',
+      page_size: pageSize,
+    });
+  });
+
+  it('cuts an overlong search to MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH', async () => {
+    proxyRequest.mockResolvedValue(page([]));
+
+    await service.getLfProjects(buildReq(), { search: 'a'.repeat(MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH + 50) });
+
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      expect.objectContaining({ name: 'a'.repeat(MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH) })
+    );
   });
 
   it('maps a logo when present and omits an empty one', async () => {
