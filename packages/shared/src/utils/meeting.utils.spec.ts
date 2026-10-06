@@ -887,8 +887,17 @@ describe('collectMeetingOrganizers', () => {
 });
 
 describe('formatMeetingMailtoDate', () => {
-  it('formats a timestamp as a medium en-US date', () => {
-    expect(formatMeetingMailtoDate('2026-10-09T12:00:00Z')).toBe('Oct 9, 2026');
+  it('formats a timestamp as a medium en-US date, in UTC by default', () => {
+    expect(formatMeetingMailtoDate('2026-10-09T00:30:00Z')).toBe('Oct 9, 2026');
+  });
+
+  // The same instant is a different day in another zone; the caller's zone decides, never the runtime's.
+  it('formats in the given timezone', () => {
+    expect(formatMeetingMailtoDate('2026-10-09T00:30:00Z', 'America/Los_Angeles')).toBe('Oct 8, 2026');
+  });
+
+  it('falls back to UTC for an invalid timezone', () => {
+    expect(formatMeetingMailtoDate('2026-10-09T00:30:00Z', 'Not/AZone')).toBe('Oct 9, 2026');
   });
 
   it.each([[undefined], [null], [''], ['not a date'], ['0001-01-01T00:00:00Z']])('returns an empty string for %s', (value) => {

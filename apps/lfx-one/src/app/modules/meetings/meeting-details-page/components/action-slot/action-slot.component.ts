@@ -4,11 +4,11 @@
 import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { environment } from '@environments/environment';
 import { DEFAULT_EARLY_JOIN_TIME } from '@lfx-one/shared/constants';
 import { ActionSlotKind, MeetingViewerRole } from '@lfx-one/shared/interfaces';
 import { buildMeetingOrganizerMailto, formatMeetingMailtoDate, resolveMeetingOrganizer } from '@lfx-one/shared/utils';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingJoinActionComponent } from '../join-action/join-action.component';
@@ -65,11 +65,12 @@ export class MeetingActionSlotComponent {
       if (!meeting || this.kind() !== 'invitation-required') {
         return null;
       }
-      // The selected occurrence's date, so a series' email names the occurrence the page is about.
+      // The selected occurrence's date, so a series' email names the occurrence the page is about, in
+      // the meeting's own timezone so the server render and the browser agree.
       return buildMeetingOrganizerMailto({
         email: resolveMeetingOrganizer(meeting)?.email,
         meetingTitle: meeting.title,
-        meetingDate: formatMeetingMailtoDate(this.state.selectedOccurrence()?.start_time ?? meeting.start_time),
+        meetingDate: formatMeetingMailtoDate(this.state.selectedOccurrence()?.start_time ?? meeting.start_time, meeting.timezone),
         detailUrl: `${environment.urls.home}/meetings/${encodeURIComponent(meeting.id)}`,
       });
     });

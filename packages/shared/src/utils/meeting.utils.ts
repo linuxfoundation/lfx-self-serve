@@ -1339,16 +1339,25 @@ export function collectMeetingOrganizers(
 
 /**
  * The meeting date for an organizer `mailto:` subject (`buildMeetingOrganizerMailto`'s
- * `meetingDate`): a medium `en-US` date, e.g. `Oct 9, 2026`. Returns an empty string for a
- * missing or unparseable timestamp and for Go's zero date (`0001-01-01…`), which past records can
- * carry, so the subject never reads "Jan 1, 1".
+ * `meetingDate`): a medium `en-US` date, e.g. `Oct 9, 2026`, in an explicit timezone, so a server
+ * render and the browser always produce the same subject. Callers pass the meeting's own timezone,
+ * the day the organizer scheduled; an absent or invalid zone falls back to UTC. Returns an empty
+ * string for a missing or unparseable timestamp and for Go's zero date (`0001-01-01…`), which past
+ * records can carry, so the subject never reads "Jan 1, 1".
  */
-export function formatMeetingMailtoDate(iso: string | null | undefined): string {
+export function formatMeetingMailtoDate(iso: string | null | undefined, timeZone?: string | null): string {
   if (!iso || iso.startsWith('0001-01-01')) {
     return '';
   }
-  const ms = new Date(iso).getTime();
-  return Number.isNaN(ms) ? '' : new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(new Date(ms));
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  try {
+    return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: timeZone || 'UTC' }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
+  }
 }
 
 /**
