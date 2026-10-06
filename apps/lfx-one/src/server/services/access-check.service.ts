@@ -198,8 +198,8 @@ export class AccessCheckService {
 
   /**
    * Adds the `writer` field to projects, resolved from `writer_guard` rather than bare `writer`.
-   * Staff whose project access comes from a per-project global-team grant (`global_writer`,
-   * `global_owner`) hold `writer_guard` without holding `writer`. The field keeps the name `writer`
+   * Staff whose project access comes from a per-project `global_writer` team grant hold
+   * `writer_guard` without holding `writer`. The field keeps the name `writer`
    * because the frontend's edit affordances and `writer.guard.ts` read it by that name —
    * `addAccessToResources` would name it `writer_guard`.
    */

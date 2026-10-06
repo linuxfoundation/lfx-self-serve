@@ -49,9 +49,9 @@ export class PersonaService {
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona */
   public readonly isLFStaff: WritableSignal<boolean> = signal<boolean>(false);
   /**
-   * `auditor` FGA grant on the tenant ROOT project — the Formations queue's (`foundation/formations`,
+   * `auditor_guard` FGA grant on the tenant ROOT project — the Formations queue's (`foundation/formations`,
    * GH-1958) authorization boundary. Unlike {@link isMarketingAuditor}/{@link isCampaignManager},
-   * `auditor` has no project-scoped variant to race against, so it rides the same simple, ungated
+   * it has no project-scoped variant to race against, so it rides the same simple, ungated
    * write as {@link isRootWriter}/{@link isLFStaff} rather than the probe-recency machinery below.
    */
   public readonly isAuditor: WritableSignal<boolean> = signal<boolean>(false);
