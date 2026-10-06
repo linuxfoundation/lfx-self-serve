@@ -48,7 +48,9 @@ export class RecurringMeetingEditOptionsComponent {
       return;
     }
 
-    const { scope, occurrenceId } = this.editForm.getRawValue();
+    const { scope } = this.editForm.getRawValue();
+    // Flag off has no picker: always the occurrence the dialog was opened on, never a picker fallback.
+    const occurrenceId = this.meetingsV2Enabled() ? this.editForm.getRawValue().occurrenceId : this.occurrence?.occurrence_id;
     const result: RecurringMeetingEditScopeResult = scope === 'occurrence' ? { scope, proceed: true, occurrenceId } : { scope: 'series', proceed: true };
     this.dialogRef.close(result);
   }
@@ -62,6 +64,14 @@ export class RecurringMeetingEditOptionsComponent {
   }
 
   private initializeEditForm(): FormGroup {
+    // Pre-v2 always opens on the occurrence it was given, exactly as before the picker existed.
+    if (!this.meetingsV2Enabled()) {
+      return new FormGroup({
+        scope: new FormControl<RecurringMeetingEditScope>('occurrence', { nonNullable: true }),
+        occurrenceId: new FormControl<string | null>(this.occurrence?.occurrence_id ?? null),
+      });
+    }
+
     // Only preselect an occurrence the picker actually lists, so the select never shows a value it has no row for.
     const preselected =
       this.occurrenceOptions.find((option) => option.value === this.occurrence?.occurrence_id)?.value ?? this.occurrenceOptions[0]?.value ?? null;

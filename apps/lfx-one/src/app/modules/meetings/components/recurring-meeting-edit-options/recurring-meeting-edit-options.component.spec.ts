@@ -93,4 +93,14 @@ describe('RecurringMeetingEditOptionsComponent', () => {
 
     expect(close).toHaveBeenCalledWith({ scope: 'occurrence', proceed: true, occurrenceId: SECOND.occurrence_id });
   });
+
+  it('keeps the occurrence it was opened on with the flag off, even when the picker would not list it', async () => {
+    meetingsV2Enabled = false;
+    const ended = { occurrence_id: '946717200', start_time: '2000-01-01T09:00:00.000Z', duration: 30 } as MeetingOccurrence;
+    const component = await mount(ended);
+
+    component.onConfirm();
+
+    expect(close).toHaveBeenCalledWith({ scope: 'occurrence', proceed: true, occurrenceId: ended.occurrence_id });
+  });
 });

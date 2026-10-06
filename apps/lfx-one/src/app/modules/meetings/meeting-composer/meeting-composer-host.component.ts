@@ -8,7 +8,7 @@ import { Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { MEETING_COMPOSER_TOAST_KEY, MEETING_COMPOSER_TOAST_POSITION } from '@lfx-one/shared/constants';
-import type { EntityWithProject, Meeting, MeetingComposerSection, MeetingComposerToastData } from '@lfx-one/shared/interfaces';
+import type { EntityWithProject, Meeting, MeetingComposerEditScope, MeetingComposerSection, MeetingComposerToastData } from '@lfx-one/shared/interfaces';
 import { formatMeetingOccurrenceLabel } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
@@ -104,7 +104,7 @@ export class MeetingComposerHostComponent {
    * `occurrence` names the occurrence by its *saved* start in the series timezone — the form's start is
    * the thing being edited and would make the banner move as the organizer types.
    */
-  protected readonly editScope: Signal<{ kind: 'occurrence'; label: string } | { kind: 'series' } | null> = computed(() => {
+  protected readonly editScope: Signal<MeetingComposerEditScope | null> = computed(() => {
     const meeting = this.formService.meeting();
 
     if (!this.isEditMode() || !meeting) {

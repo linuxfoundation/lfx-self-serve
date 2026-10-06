@@ -1795,28 +1795,28 @@ describe('countMeetingDatesBefore', () => {
 
 describe('formatMeetingOccurrenceLabel', () => {
   it('formats the start in the series timezone, naming the zone', () => {
-    const occurrence = { occurrence_id: '1894114800', start_time: '2030-01-09T15:00:00Z', duration: 60 } as MeetingOccurrence;
+    const fixture = occurrence({ occurrence_id: '1894114800', start_time: '2030-01-09T15:00:00Z', duration: 60 });
 
-    expect(formatMeetingOccurrenceLabel(occurrence, 'America/New_York')).toBe('Wed, Jan 9, 2030 · 10:00 AM EST');
+    expect(formatMeetingOccurrenceLabel(fixture, 'America/New_York')).toBe('Wed, Jan 9, 2030 · 10:00 AM EST');
   });
 
   it('falls back to the occurrence id for an unparseable start', () => {
-    expect(formatMeetingOccurrenceLabel({ occurrence_id: '42', start_time: 'nope', duration: 30 } as MeetingOccurrence, 'UTC')).toBe('42');
+    expect(formatMeetingOccurrenceLabel(occurrence({ occurrence_id: '42', start_time: 'nope', duration: 30 }), 'UTC')).toBe('42');
   });
 });
 
 describe('buildMeetingOccurrenceOptions', () => {
   const NOW = new Date('2030-01-05T12:00:00Z');
-  const ended = { occurrence_id: '1893494400', start_time: '2030-01-01T09:00:00Z', duration: 30 };
-  const upcomingLater = { occurrence_id: '1894608000', start_time: '2030-01-15T09:00:00Z', duration: 30 };
-  const upcoming = { occurrence_id: '1894006800', start_time: '2030-01-08T09:00:00Z', duration: 30 };
-  const cancelled = { occurrence_id: '1894611600', start_time: '2030-01-22T09:00:00Z', duration: 30 };
-  const meeting = {
+  const ended = occurrence({ occurrence_id: '1893494400', start_time: '2030-01-01T09:00:00Z', duration: 30 });
+  const upcomingLater = occurrence({ occurrence_id: '1894608000', start_time: '2030-01-15T09:00:00Z', duration: 30 });
+  const upcoming = occurrence({ occurrence_id: '1894006800', start_time: '2030-01-08T09:00:00Z', duration: 30 });
+  const cancelled = occurrence({ occurrence_id: '1894611600', start_time: '2030-01-22T09:00:00Z', duration: 30 });
+  const meeting = buildMeetingFixture({
     id: 'meeting-1',
     timezone: 'UTC',
     occurrences: [ended, upcomingLater, upcoming, cancelled],
     cancelled_occurrences: [cancelled.occurrence_id],
-  } as unknown as Meeting;
+  });
 
   it('lists active occurrences that have not ended, earliest first', () => {
     expect(buildMeetingOccurrenceOptions(meeting, null, NOW).map((option) => option.value)).toEqual([upcoming.occurrence_id, upcomingLater.occurrence_id]);

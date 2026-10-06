@@ -87,14 +87,19 @@
     </div>
 
     <!-- Selection Options -->
-    <div class="flex flex-col gap-3 mb-6">
+    <div class="flex flex-col gap-3 mb-6" role="radiogroup" aria-label="What to delete">
       <div
         class="border rounded-lg p-4 cursor-pointer transition-all"
         [ngClass]="{
           'border-blue-500 bg-blue-50': selectedType() === 'occurrence',
           'border-gray-200': selectedType() !== 'occurrence',
         }"
+        role="radio"
+        tabindex="0"
+        [attr.aria-checked]="selectedType() === 'occurrence'"
         (click)="selectType('occurrence')"
+        (keydown.enter)="selectType('occurrence')"
+        (keydown.space)="$event.preventDefault(); selectType('occurrence')"
         data-testid="delete-type-occurrence-option">
         <div class="flex items-start gap-3">
           <div class="mt-1">
@@ -118,7 +123,12 @@
           'border-blue-500 bg-blue-50': selectedType() === 'series',
           'border-gray-200': selectedType() !== 'series',
         }"
+        role="radio"
+        tabindex="0"
+        [attr.aria-checked]="selectedType() === 'series'"
         (click)="selectType('series')"
+        (keydown.enter)="selectType('series')"
+        (keydown.space)="$event.preventDefault(); selectType('series')"
         data-testid="delete-type-series-option">
         <div class="flex items-start gap-3">
           <div class="mt-1">

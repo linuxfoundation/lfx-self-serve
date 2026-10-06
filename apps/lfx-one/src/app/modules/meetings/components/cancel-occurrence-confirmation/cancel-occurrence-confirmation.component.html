@@ -37,6 +37,9 @@
   <!-- Cancellation Note -->
   <div class="flex flex-col gap-1.5 mb-6">
     <label for="cancel-occurrence-note" class="text-sm font-medium text-gray-900">Reason <span class="font-normal text-gray-500">(optional)</span></label>
+    <!-- Arbitrary 64px min height (about two lines) is the size the design review asked for in v2. The
+         shared textarea sets \`field-sizing: content\`, which ignores \`rows\`, so a min height is the only
+         way to give it a starting height. -->
     <lfx-textarea
       [form]="form"
       control="note"

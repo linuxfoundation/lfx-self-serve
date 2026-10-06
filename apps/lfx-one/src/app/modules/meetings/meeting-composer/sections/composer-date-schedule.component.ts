@@ -68,6 +68,8 @@ export class ComposerDateScheduleComponent implements OnInit {
    * instead — and an occurrence cannot change how its series repeats.
    */
   public readonly showSeriesSchedule = input(true);
+  /** The series' own timezone, named in place of the select when {@link showSeriesSchedule} is off. */
+  protected readonly seriesTimezone: Signal<string> = computed(() => this.formService.meeting()?.timezone ?? '');
   /**
    * Narrow-column layout for the quick create dialog's right-hand rail.
    * @description Not a media query: the section is the same width on a phone and in the dialog's 2/5

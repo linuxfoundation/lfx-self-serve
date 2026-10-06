@@ -2118,6 +2118,17 @@ export interface MeetingComposerContext {
   occurrenceId?: string;
 }
 
+/**
+ * Which part of a recurring meeting an open composer edit changes, as its header banner states it.
+ * @description `label` is the occurrence's saved start in the series timezone. Absent for a create and
+ * for a one-off meeting, which have no scope to state.
+ */
+export interface MeetingComposerEditScope {
+  kind: RecurringMeetingEditScope;
+  /** Set for `occurrence` only. */
+  label?: string;
+}
+
 /** Composer surface: the full sectioned drawer, or the condensed quick create dialog. */
 export type MeetingComposerVariant = 'drawer' | 'quick';
 
