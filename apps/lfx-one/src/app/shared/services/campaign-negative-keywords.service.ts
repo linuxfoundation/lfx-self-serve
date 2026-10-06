@@ -119,7 +119,27 @@ export class CampaignNegativeKeywordsService {
       return;
     }
     this.activeScope = scope;
-    this.dropSettled((key) => !key.startsWith(scope));
+    this.dropSettled((key) => !this.inScope(key));
+  }
+
+  /**
+   * Whether a request key belongs to the active scope. An EMPTY brief id on either side matches any
+   * brief of the same project: the page's brief id goes empty while a Proceed save runs, and stays
+   * empty after a failed one, and neither is a switch to another brief — so they must not drop the
+   * brief's results, nor a request the tab sent meanwhile under the empty id. Only a different
+   * project, or a different real brief id, is out of scope.
+   */
+  private inScope(key: string): boolean {
+    const scope = this.activeScope;
+    if (scope === undefined) {
+      return true;
+    }
+    if (scope === null) {
+      return false;
+    }
+    const [activeProject, activeBrief] = scope.split('|');
+    const [project, brief] = key.split('|');
+    return project === activeProject && (activeBrief === '' || brief === '' || brief === activeBrief);
   }
 
   /** The campaigns page is gone: drops every settled request. Ones in flight are dropped as they settle. */
@@ -153,8 +173,7 @@ export class CampaignNegativeKeywordsService {
 
   /** Records a settled request, unless it settled outside the page's active scope. */
   private settle(key: string, request: CampaignNegativeKeywordsRequestState): void {
-    const scope = this.activeScope;
-    if (scope === null || (scope !== undefined && !key.startsWith(scope))) {
+    if (!this.inScope(key)) {
       this.state.update((all) => {
         const next = { ...all };
         delete next[key];

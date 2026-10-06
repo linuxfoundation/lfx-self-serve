@@ -2064,34 +2064,15 @@ export class CampaignsComponent {
     // The Optimize tab's negative-keyword results belong to this page's (project, brief): the same
     // address the tab is given. Reported from here, not from the tab, because the tab is destroyed
     // whenever another tab is open, and a switch made there would otherwise never clear anything.
-    //
-    // A `null` brief id within the same project is NOT a scope change: a Proceed save sets it to
-    // `null` while the request is out (and a failed save leaves it `null`), and reading that as
-    // "no brief" would drop the brief's settled results mid-save. Only a project change, or a
-    // different real brief id, moves the scope.
-    //
-    // A project change is the opposite case: the brief id still on the signal can be the OLD
-    // project's, because this observer may run before the foundation-switch handler clears it. That
-    // id is never the new project's brief, so a project change carrying the previous brief's id is
-    // scoped as "no brief" — otherwise the clear that follows would read as a same-project save and
-    // leave the scope pointing at the old brief.
-    let scopedProject: string | undefined;
-    let scopedBrief = '';
-    toObservable(computed(() => ({ projectSlug: this.activeFoundationSlug(), briefId: this.briefPersistence().briefId })))
+    // The brief id goes empty while a Proceed save runs (and stays empty after a failed one); the
+    // service treats an empty brief as the same project's, so that is never read as a brief switch.
+    // Removed keywords are project-level, so they are scoped by the project alone.
+    toObservable(computed(() => `${this.activeFoundationSlug()}\u0000${this.briefPersistence().briefId ?? ''}`))
       .pipe(takeUntilDestroyed())
-      .subscribe(({ projectSlug, briefId }) => {
-        let brief: string;
-        if (projectSlug !== scopedProject) {
-          brief = scopedProject !== undefined && briefId === scopedBrief ? '' : (briefId ?? '');
-        } else if (briefId === null) {
-          return;
-        } else {
-          brief = briefId;
-        }
-        scopedProject = projectSlug;
-        scopedBrief = brief;
-        this.negativeKeywordsService.setScope(projectSlug, brief);
-        this.removedKeywordsService.setScope(projectSlug, brief);
+      .subscribe((scope) => {
+        const [projectSlug, briefId] = scope.split('\u0000');
+        this.negativeKeywordsService.setScope(projectSlug, briefId);
+        this.removedKeywordsService.setScope(projectSlug);
       });
     this.destroyRef.onDestroy(() => {
       this.negativeKeywordsService.releaseScope();

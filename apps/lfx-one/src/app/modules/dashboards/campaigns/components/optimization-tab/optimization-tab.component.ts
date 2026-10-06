@@ -1376,8 +1376,8 @@ export class OptimizationTabComponent implements OnInit {
     action: KeywordActionType,
     platform: KeywordActionPlatform = 'google-ads'
   ): void {
-    // The scope this request is sent from: a removal is recorded only if the page is still there.
-    const sentFrom = { projectSlug: this.projectSlug(), briefId: this.briefId() };
+    // The project this request is sent from: a removal is recorded only if the page is still there.
+    const sentFrom = this.projectSlug();
     const key = keywordActionKey(platform, kw.adGroupId, kw.criterionId);
     this.actionInProgress.update((map) => ({ ...map, [key]: true }));
     const item = { campaignId: kw.campaignId, adGroupId: kw.adGroupId, criterionId: kw.criterionId, action };
@@ -1411,7 +1411,7 @@ export class OptimizationTabComponent implements OnInit {
           // what this response answered.
           if (outcome.action === 'remove' && outcome.state === 'done') {
             const identity = keywordIdentityKey(platform, kw.campaignId, kw.adGroupId, kw.criterionId);
-            this.removedKeywordsService.markRemoved(sentFrom.projectSlug, sentFrom.briefId, identity);
+            this.removedKeywordsService.markRemoved(sentFrom, identity);
           }
           this.announceKeywordOutcome(action, 1, outcome.state, outcome.message);
         },

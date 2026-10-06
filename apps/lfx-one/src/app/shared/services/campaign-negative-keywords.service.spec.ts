@@ -184,6 +184,40 @@ describe('CampaignNegativeKeywordsService', () => {
       expect(service.requests()['tlf|b-1|c-1'].pending).toBe(false);
     });
 
+    // A Proceed save empties the page's brief id while it runs, and a failed save leaves it empty.
+    // Neither is a switch to another brief.
+    it("keeps the brief's results while its id is empty during a save, and through its return", () => {
+      service.setScope('tlf', 'b-1');
+      service.submit(submission());
+      answer(0, ['APPLIED', 'APPLIED']);
+
+      service.setScope('tlf', '');
+      service.setScope('tlf', 'b-1');
+
+      expect(service.requests()['tlf|b-1|c-1'].pending).toBe(false);
+    });
+
+    it('keeps a request sent under the empty id after a failed save, and one that settles then', () => {
+      service.setScope('tlf', '');
+      service.submit(submission({ briefId: '' }));
+      service.submit(submission({ campaignId: 'c-2' }));
+      answer(0, ['APPLIED', 'APPLIED']);
+      answer(1, ['APPLIED', 'APPLIED']);
+
+      expect(service.requests()['tlf||c-1'].pending).toBe(false);
+      expect(service.requests()['tlf|b-1|c-2'].pending).toBe(false);
+    });
+
+    it("drops another project's settled requests, whatever the brief", () => {
+      service.setScope('tlf', 'b-1');
+      service.submit(submission());
+      answer(0, ['APPLIED', 'APPLIED']);
+
+      service.setScope('cncf', '');
+
+      expect(service.requests()['tlf|b-1|c-1']).toBeUndefined();
+    });
+
     it('drops every settled request when the page is released, and ones in flight as they settle', () => {
       service.setScope('tlf', 'b-1');
       service.submit(submission({ campaignId: 'c-1' }));

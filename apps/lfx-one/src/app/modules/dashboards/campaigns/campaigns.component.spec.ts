@@ -32,6 +32,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { provideRouter } from '@angular/router';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
+import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
@@ -171,10 +172,11 @@ describe('CampaignsComponent brief persistence', () => {
   });
 
   // A Proceed save sets the brief id to `null` while it runs (and a failed save leaves it `null`).
-  // That is not a brief switch: reading it as one dropped the brief's settled results mid-save.
-  it('keeps the scope while a save clears the brief id, and moves it for a different brief', () => {
-    const service = TestBed.inject(CampaignNegativeKeywordsService);
-    const setScope = vi.spyOn(service, 'setScope');
+  // The page reports it as the empty brief; the services read that as the same project's brief
+  // (see their specs), and removed keywords are scoped by the project alone.
+  it("reports the save's empty brief id to the services, and removed keywords by project only", () => {
+    const negatives = vi.spyOn(TestBed.inject(CampaignNegativeKeywordsService), 'setScope');
+    const removed = vi.spyOn(TestBed.inject(CampaignRemovedKeywordsService), 'setScope');
     const page = TestBed.createComponent(CampaignsComponent);
     const persistence = (page.componentInstance as unknown as { briefPersistence: WritableSignal<CampaignBriefPersistenceState> }).briefPersistence;
     page.detectChanges();
@@ -182,16 +184,12 @@ describe('CampaignsComponent brief persistence', () => {
 
     persistence.set({ status: 'saved', briefId: 'b-1', message: null, approved: false });
     TestBed.tick();
-    expect(setScope.mock.calls.at(-1)?.[1]).toBe('b-1');
-
-    setScope.mockClear();
     persistence.set({ status: 'saving', briefId: null, message: null, approved: false });
     TestBed.tick();
-    expect(setScope).not.toHaveBeenCalled();
 
-    persistence.set({ status: 'saved', briefId: 'b-2', message: null, approved: false });
-    TestBed.tick();
-    expect(setScope.mock.calls.at(-1)?.[1]).toBe('b-2');
+    expect(negatives.mock.calls.at(-2)?.[1]).toBe('b-1');
+    expect(negatives.mock.calls.at(-1)?.[1]).toBe('');
+    expect(removed.mock.calls.every((call) => call.length === 1)).toBe(true);
     page.destroy();
   });
 
