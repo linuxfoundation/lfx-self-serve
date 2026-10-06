@@ -938,18 +938,51 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "B's hand-built selection survived under A").toBeNull();
     });
 
-    it('keeps hand-started work when the incoming brief is for the event the operator discovered', async () => {
-      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+    it('keeps exploratory work when the FIRST brief is for the URL the operator discovered', async () => {
+      await render({ briefId: '' });
       typeEventUrl('https://events.example.org/event-b');
       click('campaigns-audience-discover');
       completeDiscovery();
       click('audience-card-grid-toggle-101');
 
+      fixture.componentRef.setInput('eventKey', 'event-b');
       fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
       fixture.componentRef.setInput('briefId', 'brief-b');
       fixture.detectChanges();
 
-      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "B's own brief wiped the B work").not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "B's own first brief wiped the B work").not.toBeNull();
+    });
+
+    it('starts over on a different event key even when the edited URL matches the new brief', async () => {
+      // Fail-safe: two events can share a URL, and a wrong guess composes A's lists with B's brief.
+      await render({ initialEventUrl: 'https://events.example.org/shared', briefId: 'brief-a' });
+      fixture.componentRef.setInput('eventKey', 'event-a');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/shared');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('eventKey', 'event-b');
+      fixture.componentRef.setInput('briefId', 'brief-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "A's lists survived into B on a shared URL").toBeNull();
+    });
+
+    it("starts over when the same event's advertised URL is corrected", async () => {
+      // The slug-based key does not change, but the lists came from the old URL.
+      await render({ initialEventUrl: 'https://events.example.org/old', briefId: 'brief-a' });
+      fixture.componentRef.setInput('eventKey', 'event-a');
+      fixture.detectChanges();
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/corrected');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), 'lists from the old URL survived a correction').toBeNull();
     });
 
     it('holds Stage while a compose a reset abandoned is still being created', async () => {

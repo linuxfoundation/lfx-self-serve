@@ -854,6 +854,7 @@ export class AudienceBuilderTabComponent {
     // because a project switch must clear it too: carried over, project A's last event made a
     // brief for project B's event read as a CHANGE, wiping work the operator started by hand in B.
     let lastEventKey = '';
+    let lastAdvertisedUrl = '';
 
     // A project switch must drop the previous portal's audience state, not just refetch
     // capabilities. The campaigns component stays mounted across `activeFoundationSlug`
@@ -868,6 +869,7 @@ export class AudienceBuilderTabComponent {
       .subscribe(([previousProject]) => {
         this.resetForNewContext(previousProject);
         lastEventKey = '';
+        lastAdvertisedUrl = '';
         this.capabilitiesFailed.set(false);
         // reset(), not setValue(''): the dirty flag is project-scoped state too. setValue leaves
         // the control dirty, and the `initialEventUrl` seed below only fires while it is pristine
@@ -920,23 +922,27 @@ export class AudienceBuilderTabComponent {
     //
     // The EVENT is identified by `eventKey` (slug, then name, then URL), not by URL alone: two events
     // with no registration URL, or sharing one, otherwise looked identical.
-    toObservable(computed(() => this.eventKey().trim().toLowerCase() || this.initialEventUrl()))
+    //
+    // FAIL-SAFE where these disagree: a different event KEY always starts over, even when the
+    // operator had discovered the incoming event's URL by hand. Two events can share a URL, and the
+    // cost of a wrong guess is A's lists composed with B's brief; the cost of the reset is re-running
+    // a discovery. Within the same key, a corrected advertised URL, or edited work discovered for a
+    // different URL, also starts over. Only the FIRST brief after exploratory work keeps it, when
+    // that work was discovered for the URL the brief advertises.
+    toObservable(computed(() => ({ key: this.eventKey().trim().toLowerCase() || this.initialEventUrl(), url: this.initialEventUrl() })))
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((nextKey) => {
+      .subscribe(({ key: nextKey, url: advertised }) => {
         if (nextKey === '') {
           return;
         }
         const previousKey = lastEventKey;
+        const previousUrl = lastAdvertisedUrl;
         lastEventKey = nextKey;
+        lastAdvertisedUrl = advertised;
         if (!(this.hasDiscovered() || this.discovering())) {
           return;
         }
-        const advertised = this.initialEventUrl();
-        // Edited work is identified by what was DISCOVERED, compared with the URL the new brief
-        // advertises; with no advertised URL there is nothing to compare, so the event key decides.
-        const differentEvent =
-          this.eventUrlControl.dirty && advertised !== '' ? this.discoveredEventUrl() !== advertised : previousKey !== '' && previousKey !== nextKey;
-        if (!differentEvent) {
+        if (!this.isDifferentEvent(previousKey, nextKey, previousUrl, advertised)) {
           return;
         }
         this.resetForNewContext(this.projectSlug());
@@ -1683,6 +1689,24 @@ export class AudienceBuilderTabComponent {
    * record the create as unconfirmed in the context it was made in, because losing that silently
    * is how a duplicate gets composed later.
    */
+  /** Whether a brief arriving now is for a different event than the panel's work. See the reset. */
+  private isDifferentEvent(previousKey: string, nextKey: string, previousUrl: string, advertised: string): boolean {
+    const edited = this.eventUrlControl.dirty;
+    const discoveredElsewhere = advertised !== '' && this.discoveredEventUrl() !== advertised;
+    if (previousKey === '') {
+      // First brief after exploratory work: kept only if it was discovered for this brief's URL.
+      return edited && discoveredElsewhere;
+    }
+    if (previousKey !== nextKey) {
+      return true;
+    }
+    if (edited) {
+      return discoveredElsewhere;
+    }
+    // Same event, untouched field: a CORRECTED advertised URL means the lists came from the old one.
+    return previousUrl !== '' && advertised !== '' && previousUrl !== advertised;
+  }
+
   private resetForNewContext(strandedIn: string): void {
     const wasComposing = this.composing();
     this.resetRunState();
