@@ -3,8 +3,11 @@
 
 import '@angular/compiler';
 
+import { MENTORSHIP_LF_PROJECT_PAGE_SIZE } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi, afterEach, type MockInstance } from 'vitest';
+
+import { MENTORSHIP_LF_PROJECT_MAX_READS } from '../constants';
 
 // The service resolves its request-scoped logger through this module; stubbing it here
 // avoids booting the real pino instance for a synchronous, in-memory lookup path.
@@ -22,6 +25,7 @@ vi.mock('./logger.service', () => ({
 const { MentorshipService } = await import('./mentorship.service');
 const { MicroserviceProxyService } = await import('./microservice-proxy.service');
 const { EmailVerificationService } = await import('./email-verification.service');
+const { logger } = await import('./logger.service');
 
 function buildReq(): Request {
   return { path: '/api/mentorship/program-review/x' } as Request;
@@ -78,6 +82,162 @@ describe('MentorshipService program review', () => {
     proxyRequest.mockRejectedValue(forbidden);
 
     await expect(service.submitProgramDecision(buildReq(), programId, 'approve')).rejects.toBe(forbidden);
+  });
+});
+
+describe('MentorshipService enroll name availability', () => {
+  let service: InstanceType<typeof MentorshipService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  beforeEach(() => {
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipService();
+  });
+
+  afterEach(() => {
+    proxyRequest.mockRestore();
+    vi.clearAllMocks();
+  });
+
+  it.each([true, false])('sends the trimmed name upstream and passes available=%s through', async (available) => {
+    proxyRequest.mockResolvedValue({ available });
+
+    const result = await service.isProgramNameAvailable(buildReq(), '  Secret Program Name  ');
+
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/programs/name-availability',
+      'GET',
+      {
+        name: 'Secret Program Name',
+      },
+      undefined
+    );
+    expect(result).toEqual({ available });
+  });
+
+  it('never logs the program name', async () => {
+    proxyRequest.mockResolvedValue({ available: true });
+
+    await service.isProgramNameAvailable(buildReq(), 'Secret Program Name');
+
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain('Secret Program Name');
+  });
+
+  it('lets an upstream failure reject', async () => {
+    const failure = Object.assign(new Error('boom'), { statusCode: 500 });
+    proxyRequest.mockRejectedValue(failure);
+
+    await expect(service.isProgramNameAvailable(buildReq(), 'Program')).rejects.toBe(failure);
+  });
+});
+
+describe('MentorshipService LF project search', () => {
+  let service: InstanceType<typeof MentorshipService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  const project = (uid: string, name: string, logoUrl = '') => ({ uid, name, slug: `${name.toLowerCase()}-slug`, logo_url: logoUrl });
+  const page = (projects: ReturnType<typeof project>[], pageToken?: string) => ({
+    resources: projects.map((data) => ({ type: 'project', id: data.uid, data })),
+    ...(pageToken ? { page_token: pageToken } : {}),
+  });
+
+  beforeEach(() => {
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipService();
+  });
+
+  afterEach(() => {
+    proxyRequest.mockRestore();
+  });
+
+  it.each(['', '   ', undefined])('lists projects by name, without ROOT, for search %j', async (search) => {
+    proxyRequest.mockResolvedValue(page([{ ...project('uid-root', 'Root'), slug: 'ROOT' }, project('uid-1', 'Alpha')]));
+
+    const result = await service.getLfProjects(buildReq(), { search });
+
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'project',
+      sort: 'name_asc',
+      page_size: MENTORSHIP_LF_PROJECT_PAGE_SIZE,
+    });
+    expect(result).toEqual({ data: [{ id: 'uid-1', name: 'Alpha', slug: 'alpha-slug' }], nextPageToken: null });
+  });
+
+  it('searches by relevance when a term is typed', async () => {
+    proxyRequest.mockResolvedValue(page([project('uid-1', 'Alpha')]));
+
+    await service.getLfProjects(buildReq(), { search: ' alp ', limit: 5 });
+
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'project',
+      name: 'alp',
+      sort: 'best_match',
+      page_size: 5,
+    });
+  });
+
+  it('resumes from the page token it is given', async () => {
+    proxyRequest.mockResolvedValue(page([project('uid-1', 'Alpha')]));
+
+    await service.getLfProjects(buildReq(), { pageToken: 'cursor-2', limit: 1 });
+
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'project',
+      sort: 'name_asc',
+      page_size: 1,
+      page_token: 'cursor-2',
+    });
+  });
+
+  it('follows the page token while a page comes back short, and returns the token it stopped at', async () => {
+    proxyRequest.mockResolvedValueOnce(page([project('uid-1', 'Alpha')], 'cursor-2')).mockResolvedValueOnce(page([project('uid-2', 'Beta')], 'cursor-3'));
+
+    const result = await service.getLfProjects(buildReq(), { limit: 2 });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenLastCalledWith(expect.anything(), 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'project',
+      sort: 'name_asc',
+      page_size: 2,
+      page_token: 'cursor-2',
+    });
+    expect(result).toEqual({
+      data: [
+        { id: 'uid-1', name: 'Alpha', slug: 'alpha-slug' },
+        { id: 'uid-2', name: 'Beta', slug: 'beta-slug' },
+      ],
+      nextPageToken: 'cursor-3',
+    });
+  });
+
+  it('stops after MENTORSHIP_LF_PROJECT_MAX_READS reads and hands the cursor back', async () => {
+    proxyRequest.mockResolvedValue(page([], 'cursor-n'));
+
+    const result = await service.getLfProjects(buildReq(), { limit: 10 });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(MENTORSHIP_LF_PROJECT_MAX_READS);
+    expect(result).toEqual({ data: [], nextPageToken: 'cursor-n' });
+  });
+
+  it('maps a logo when present and omits an empty one', async () => {
+    proxyRequest.mockResolvedValue(page([project('uid-1', 'Alpha', 'https://cdn.example/alpha.png'), project('uid-2', 'Beta')]));
+
+    const result = await service.getLfProjects(buildReq(), { search: 'a' });
+
+    expect(result.data).toEqual([
+      { id: 'uid-1', name: 'Alpha', slug: 'alpha-slug', logoUrl: 'https://cdn.example/alpha.png' },
+      { id: 'uid-2', name: 'Beta', slug: 'beta-slug' },
+    ]);
+    expect(result.data[1]).not.toHaveProperty('logoUrl');
+  });
+
+  it('lets a query-service failure reject', async () => {
+    const failure = new Error('query service down');
+    proxyRequest.mockRejectedValue(failure);
+
+    await expect(service.getLfProjects(buildReq(), { search: 'a' })).rejects.toBe(failure);
   });
 });
 

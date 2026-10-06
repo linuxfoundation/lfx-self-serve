@@ -4,12 +4,10 @@
 import type {
   MentorshipEnrollForm,
   MentorshipEnrollStep,
-  MentorshipLfProject,
   MentorshipLfProjectsResponse,
   MentorshipPrerequisite,
   MentorshipProgramTerm,
 } from '../interfaces/mentorship.interface';
-import { mentorshipArtworkIconUrl } from './mentorship.constants';
 import { toLocalDateOnlyString } from '../utils/date-time.utils';
 
 export const MENTORSHIP_ENROLL_STEPS_ORDER: MentorshipEnrollStep[] = ['details', 'setup', 'prerequisites'];
@@ -41,7 +39,7 @@ export const MENTORSHIP_MAX_OPEN_TERMS = 4;
 export const MENTORSHIP_CUSTOM_PREREQ_NAME_MAX = 20;
 export const MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX = 500;
 export const MENTORSHIP_CUSTOM_PREREQ_FILE_LABEL = 'Check if completion of this task requires that the mentee submits a file.';
-export const MENTORSHIP_LF_PROJECT_PAGE_SIZE = 10;
+export const MENTORSHIP_LF_PROJECT_PAGE_SIZE = 12;
 
 /** Year choices for the term dialog — last year through 10 years ahead. */
 export const MENTORSHIP_TERM_YEAR_OPTIONS: ReadonlyArray<{ label: string; value: string }> = Array.from({ length: 12 }, (_, index) => {
@@ -118,30 +116,13 @@ export const MENTORSHIP_POLICY_LINKS: ReadonlyArray<{ label: string; href: strin
   { label: 'Privacy Policy', href: 'https://www.linuxfoundation.org/privacy' },
 ];
 
-export const MOCK_MENTORSHIP_LF_PROJECTS: readonly MentorshipLfProject[] = [
-  { id: 'proj-gridflow', name: 'GridFlow', logoUrl: mentorshipArtworkIconUrl('lf-energy', 'grid-exchange-fabric') },
-  { id: 'proj-apicurio', name: 'Apicurio Registry', logoUrl: mentorshipArtworkIconUrl('cncf', 'apicurio-registry') },
-  { id: 'proj-janusgraph', name: 'JanusGraph', logoUrl: mentorshipArtworkIconUrl('lfai', 'janusgraph') },
-  { id: 'proj-thanos', name: 'Thanos', logoUrl: mentorshipArtworkIconUrl('cncf', 'thanos') },
-  { id: 'proj-k8s', name: 'Kubernetes', logoUrl: mentorshipArtworkIconUrl('cncf', 'kubernetes') },
-  { id: 'proj-prometheus', name: 'Prometheus', logoUrl: mentorshipArtworkIconUrl('cncf', 'prometheus') },
-  { id: 'proj-envoy', name: 'Envoy', logoUrl: mentorshipArtworkIconUrl('cncf', 'envoy') },
-  { id: 'proj-istio', name: 'Istio', logoUrl: mentorshipArtworkIconUrl('cncf', 'istio') },
-  { id: 'proj-helm', name: 'Helm', logoUrl: mentorshipArtworkIconUrl('cncf', 'helm') },
-  { id: 'proj-containerd', name: 'containerd', logoUrl: mentorshipArtworkIconUrl('cncf', 'containerd') },
-  { id: 'proj-fluentd', name: 'Fluentd', logoUrl: mentorshipArtworkIconUrl('cncf', 'fluentd') },
-  { id: 'proj-linkerd', name: 'Linkerd', logoUrl: mentorshipArtworkIconUrl('cncf', 'linkerd') },
-  { id: 'proj-opa', name: 'Open Policy Agent', logoUrl: mentorshipArtworkIconUrl('cncf', 'open-policy-agent', 'opa') },
-  { id: 'proj-spiffe', name: 'SPIFFE', logoUrl: mentorshipArtworkIconUrl('cncf', 'spiffe') },
-  { id: 'proj-argo', name: 'Argo', logoUrl: mentorshipArtworkIconUrl('cncf', 'argo') },
-  { id: 'proj-coredns', name: 'CoreDNS', logoUrl: mentorshipArtworkIconUrl('cncf', 'coredns') },
-  { id: 'proj-etcd', name: 'etcd', logoUrl: mentorshipArtworkIconUrl('cncf', 'etcd') },
-  { id: 'proj-crio', name: 'CRI-O', logoUrl: mentorshipArtworkIconUrl('cncf', 'crio') },
-  { id: 'proj-tikv', name: 'TiKV', logoUrl: mentorshipArtworkIconUrl('cncf', 'tikv') },
-  { id: 'proj-rook', name: 'Rook', logoUrl: mentorshipArtworkIconUrl('cncf', 'rook') },
-];
+/** Shown in the project picker's list while a search waits on its answer, so a slow read never says there are no projects. */
+export const MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE = 'Searching projects…';
 
-export const EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE: MentorshipLfProjectsResponse = { data: [], total: 0 };
+/** Shown in the project picker's list once a read answers with no projects. */
+export const MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE = 'No results found';
+
+export const EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE: MentorshipLfProjectsResponse = { data: [], nextPageToken: null };
 
 /**
  * Canonical skill / technology catalog used by the enroll wizard.

@@ -36,10 +36,11 @@ export class MentorshipService {
     return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params: new HttpParams().set('name', name) }).pipe(take(1));
   }
 
-  public getLfProjects(params?: { search?: string; offset?: number; limit?: number }): Observable<MentorshipLfProjectsResponse> {
+  /** One lazy-load page of LF projects; pass the previous page's `nextPageToken` as `pageToken` for the next one. */
+  public getLfProjects(params?: { search?: string; pageToken?: string | null; limit?: number }): Observable<MentorshipLfProjectsResponse> {
     let httpParams = new HttpParams();
     if (params?.search) httpParams = httpParams.set('search', params.search);
-    if (params?.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
+    if (params?.pageToken) httpParams = httpParams.set('pageToken', params.pageToken);
     httpParams = httpParams.set('limit', String(params?.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
 
     return this.http

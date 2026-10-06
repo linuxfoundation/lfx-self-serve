@@ -5,7 +5,7 @@
 
 The admin pages under `/mentorship/admin/*` read their data from the LFX One BFF's `/api/mentorship/admin/*` routes. The admin code has its own router, controller and services, separate from the mentor and mentee code, so each admin screen can move to the mentorship service without touching the other two (linuxfoundation/lfx-mentorship#229).
 
-The program list and the program page (header, tab counts and all four tabs) read the mentorship service (see [Program list sourcing](#program-list-sourcing) and [Program page sourcing](#program-page-sourcing)). The program page reads no mock data; the Enroll form's lookups and the Mentors tab's invite picker still do (see [Program list sourcing](#program-list-sourcing)). Application decisions on Current Mentees (accept, decline, withdraw, graduate, decline by term), the reviewer note, Create task and the Mentors tab's Accept, Decline, Revoke invite and Remove write through the mentorship service (see [Application decisions](#application-decisions), [Reviewer note](#reviewer-note), [Create task](#create-task) and [Mentor status](#mentor-status)). The Terms tab's create, edit, close, re-open and delete write through it too (see [Term writes](#term-writes)). Mentor invite stays a "coming soon" stub until its PR.
+The program list and the program page (header, tab counts and all four tabs) read the mentorship service (see [Program list sourcing](#program-list-sourcing) and [Program page sourcing](#program-page-sourcing)). The program page reads no mock data; the Mentors tab's invite picker still does (see [Program list sourcing](#program-list-sourcing)). The Enroll form's name check and project picker are live (see [Enroll lookups](#enroll-lookups)). Application decisions on Current Mentees (accept, decline, withdraw, graduate, decline by term), the reviewer note, Create task and the Mentors tab's Accept, Decline, Revoke invite and Remove write through the mentorship service (see [Application decisions](#application-decisions), [Reviewer note](#reviewer-note), [Create task](#create-task) and [Mentor status](#mentor-status)). The Terms tab's create, edit, close, re-open and delete write through it too (see [Term writes](#term-writes)). Mentor invite stays a "coming soon" stub until its PR.
 
 ## Routes
 
@@ -155,6 +155,15 @@ Upstream works out `admin_status` from the program status and its terms. The BFF
 | `hidden`                | Hidden         | `archived`, `hidden`                            |
 
 An unrecognised `admin_status` is shown as Pending Review and logged (program id and value only).
+
+## Enroll lookups
+
+Two read routes under `/api/mentorship` feed the Enroll details step. Neither blocks impersonation, and both use the caller's bearer token.
+
+- `GET /api/mentorship/programs/name-available?name=` trims `name` (blank is a 400) and calls upstream `GET /mentorship/v1/programs/name-availability` through `proxyMentorshipRequest`, so a first-time caller is provisioned and retried. It returns upstream's `{ available }`; an upstream error propagates and the form shows its "could not check" state. The name is never logged.
+- `GET /api/mentorship/lf-projects?search=&pageToken=&limit=` is the picker's lazy-load source. It reads the query service directly (`GET /query/resources`, `type=project`, `page_size = limit`, default `MENTORSHIP_LF_PROJECT_PAGE_SIZE`): by name (`sort=name_asc`) when `search` is blank, so the picker has options before the user types, and by relevance (`name=`, `sort=best_match`) otherwise. The ROOT project is dropped. The query service can trim a page after cutting it (access filtering) and still return a `page_token`, so the BFF follows the token until it holds `limit` projects or has spent `MENTORSHIP_LF_PROJECT_MAX_READS` reads, then returns `{ data, nextPageToken }`, with `nextPageToken` null once the list is exhausted. Projects are mapped to `{ id: uid, name, slug, logoUrl? }`, with `logoUrl` left out when empty. Upstream mentorship has no project list, and create needs the project's uid, slug and name.
+
+The details step keeps the chosen `MentorshipLfProject` in its `project` model, bound to the wizard's `selectedProject` signal, so no lookup table is needed. As the virtual scroller reaches the end of the loaded rows, the step requests the next page with the last `nextPageToken`; a new search starts again from the first page. The picker reuses the mentor-picker dropdown fixes (`MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS`, a row-count scroll height, and clearing the filter when the overlay closes) so an empty or short list is not mis-sized.
 
 ## Flow
 

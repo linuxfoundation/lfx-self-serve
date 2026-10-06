@@ -27,6 +27,7 @@ const { MentorshipController } = await import('./mentorship.controller');
 const { MentorshipService } = await import('../services/mentorship.service');
 const { AuthenticationError, MicroserviceError, ServiceValidationError } = await import('../errors');
 const { getUsernameFromAuth } = await import('../utils/auth-helper');
+const { logger } = await import('../services/logger.service');
 
 describe('MentorshipController program review', () => {
   const programId = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
@@ -107,6 +108,69 @@ describe('MentorshipController program review', () => {
     expect(next).toHaveBeenCalledWith(error);
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: status }));
     expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+describe('MentorshipController enroll lookups', () => {
+  let controller: InstanceType<typeof MentorshipController>;
+  let res: Response;
+  let next: NextFunction;
+
+  const buildReq = (query: Record<string, string>): Request => ({ query }) as unknown as Request;
+
+  beforeEach(() => {
+    controller = new MentorshipController();
+    res = { json: vi.fn() } as unknown as Response;
+    next = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  it('returns the upstream availability and logs only the flag', async () => {
+    const isAvailable = vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable').mockResolvedValue({ available: false });
+
+    await controller.isProgramNameAvailable(buildReq({ name: '  Secret Program Name ' }), res, next);
+
+    expect(isAvailable).toHaveBeenCalledWith(expect.anything(), 'Secret Program Name');
+    expect(res.json).toHaveBeenCalledWith({ available: false });
+    expect(
+      vi
+        .mocked(logger.success)
+        .mock.calls.map(([, , , metadata]) => JSON.stringify(metadata))
+        .join()
+    ).not.toContain('Secret Program Name');
+  });
+
+  it('rejects a blank name before calling upstream', async () => {
+    const isAvailable = vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable');
+
+    await controller.isProgramNameAvailable(buildReq({ name: '   ' }), res, next);
+
+    expect(isAvailable).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  it('forwards an upstream name-check failure to the error handler', async () => {
+    const failure = new MicroserviceError('upstream failed', 500, 'UPSTREAM_ERROR');
+    vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable').mockRejectedValue(failure);
+
+    await controller.isProgramNameAvailable(buildReq({ name: 'Program' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('parses the project search, page token and limit and returns the page', async () => {
+    const page = { data: [{ id: 'uid-1', name: 'Alpha', slug: 'alpha' }], nextPageToken: 'cursor-3' };
+    const getLfProjects = vi.spyOn(MentorshipService.prototype, 'getLfProjects').mockResolvedValue(page);
+
+    await controller.getLfProjects(buildReq({ search: ' alp ', pageToken: ' cursor-2 ', limit: '5' }), res, next);
+
+    expect(getLfProjects).toHaveBeenCalledWith(expect.anything(), { search: 'alp', pageToken: 'cursor-2', limit: 5 });
+    expect(res.json).toHaveBeenCalledWith(page);
   });
 });
 

@@ -27,6 +27,7 @@
         <lfx-mentorship-enroll-details-step
           [form]="form"
           [errors]="stepErrors()"
+          [(project)]="selectedProject"
           (ciiLookupStatusChange)="onCiiLookupStatusChange($event)"
           (nameLookupStatusChange)="onNameLookupStatusChange($event)" />
       }

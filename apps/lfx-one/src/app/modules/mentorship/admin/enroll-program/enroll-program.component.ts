@@ -26,6 +26,7 @@ import {
   MentorshipCiiLookupStatus,
   MentorshipEnrollForm,
   MentorshipEnrollStep,
+  MentorshipLfProject,
   MentorshipNameLookupStatus,
   MentorshipPrerequisite,
   MentorshipProgramTerm,
@@ -91,6 +92,7 @@ export class EnrollProgramComponent {
 
   protected readonly step = signal<MentorshipEnrollStep>('details');
   protected readonly showErrors = signal(false);
+  protected readonly selectedProject = signal<MentorshipLfProject | null>(null);
   protected readonly ciiLookupStatus = signal<MentorshipCiiLookupStatus>('idle');
   protected readonly nameLookupStatus = signal<MentorshipNameLookupStatus>('idle');
   protected readonly formIncomplete = MENTORSHIP_ENROLL_FORM_INCOMPLETE;

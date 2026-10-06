@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, output } from '@angular/core';
+import { Component, input, model, output } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -9,7 +9,13 @@ import { FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { createEmptyMentorshipEnrollForm, MENTORSHIP_COMING_SOON_DETAIL } from '@lfx-one/shared/constants';
-import { MentorshipCiiLookupStatus, MentorshipEnrollFieldErrors, MentorshipEnrollStep, MentorshipNameLookupStatus } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipCiiLookupStatus,
+  MentorshipEnrollFieldErrors,
+  MentorshipEnrollStep,
+  MentorshipLfProject,
+  MentorshipNameLookupStatus,
+} from '@lfx-one/shared/interfaces';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,6 +39,7 @@ class StubStepperComponent {
 class StubDetailsStepComponent {
   public readonly form = input.required<FormGroup>();
   public readonly errors = input<MentorshipEnrollFieldErrors>({});
+  public readonly project = model<MentorshipLfProject | null>(null);
   public readonly ciiLookupStatusChange = output<MentorshipCiiLookupStatus>();
   public readonly nameLookupStatusChange = output<MentorshipNameLookupStatus>();
 }

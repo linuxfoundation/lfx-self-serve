@@ -7,26 +7,27 @@ import {
   MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS,
   MENTORSHIP_PROGRAM_REVIEW_DECISIONS,
   MOCK_MENTORSHIP_INVITABLE_USERS,
-  MOCK_MENTORSHIP_LF_PROJECTS,
-  MOCK_MENTORSHIP_PROGRAMS,
+  ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiBadge,
   MentorshipInvitableUsersResponse,
+  MentorshipLfProject,
   MentorshipLfProjectsResponse,
   MentorshipNameAvailability,
-  MentorshipProgram,
   MentorshipProgramReview,
   MentorshipProgramReviewDecision,
   MentorshipLfxProfileFields,
   MentorshipUpstreamProgram,
   MentorshipUpstreamProgramDecisionRequest,
   MentorshipUpstreamUserProfile,
+  Project,
+  QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
 import { isMentorshipCiiProjectId } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { MENTORSHIP_ME_PROFILES_PATH } from '../constants';
+import { MENTORSHIP_LF_PROJECT_MAX_READS, MENTORSHIP_ME_PROFILES_PATH, MENTORSHIP_PROGRAMS_PATH } from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import {
@@ -42,13 +43,6 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 const CII_BADGE_TIMEOUT_MS = 10_000;
-
-/**
- * Read-only mock seed data for the enroll name-availability check while the upstream
- * mentorship-service is not yet wired. No writes; enrollment shows a coming-soon
- * toast instead.
- */
-const mockPrograms: readonly MentorshipProgram[] = MOCK_MENTORSHIP_PROGRAMS.map((program) => ({ ...program }));
 
 /**
  * Allowlisted CII badge URL. `Number()` is the sanitizer CodeQL models for path IDs
@@ -68,20 +62,53 @@ export class MentorshipService {
   private readonly emailVerificationService = new EmailVerificationService();
 
   public async isProgramNameAvailable(req: Request, name: string): Promise<MentorshipNameAvailability> {
-    logger.debug(req, 'mentorship_name_available', 'Checking mentorship program name availability', { name });
-    const needle = name.trim().toLowerCase();
-    const taken = mockPrograms.some((program) => program.name.trim().toLowerCase() === needle);
-    logger.debug(req, 'mentorship_name_available', 'Mentorship program name availability resolved', { available: !taken });
-    return { available: !taken };
+    logger.debug(req, 'mentorship_name_available', 'Checking mentorship program name availability');
+    const result = await proxyMentorshipRequest<MentorshipNameAvailability>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/name-availability`,
+      'GET',
+      { name: name.trim() }
+    );
+    logger.debug(req, 'mentorship_name_available', 'Mentorship program name availability resolved', { available: result.available });
+    return { available: result.available };
   }
 
-  public async getLfProjects(req: Request, options: { search?: string; offset?: number; limit?: number } = {}): Promise<MentorshipLfProjectsResponse> {
-    logger.debug(req, 'mentorship_get_lf_projects', 'Filtering LF projects', options);
-    const needle = options.search?.trim().toLowerCase() ?? '';
-    const filtered = needle ? MOCK_MENTORSHIP_LF_PROJECTS.filter((project) => project.name.toLowerCase().includes(needle)) : [...MOCK_MENTORSHIP_LF_PROJECTS];
-    const page = paginateOffsetLimit(filtered, options.offset ?? 0, options.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE);
-    logger.debug(req, 'mentorship_get_lf_projects', 'LF projects page built', { count: page.data.length, total: page.total });
-    return page;
+  /**
+   * One lazy-load page of LF projects for the enroll picker (ROOT excluded): by name when `search` is blank, by relevance otherwise.
+   * The query service can trim a page after cutting it (access filtering) and still return a `page_token`, so this follows the
+   * token until `limit` projects are in hand or `MENTORSHIP_LF_PROJECT_MAX_READS` reads are spent, and hands back the token it
+   * stopped at. The page may hold a little more than `limit`, since a project is never dropped between two cursors.
+   */
+  public async getLfProjects(req: Request, options: { search?: string; pageToken?: string; limit?: number } = {}): Promise<MentorshipLfProjectsResponse> {
+    const search = options.search?.trim() ?? '';
+    const limit = options.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE;
+    let pageToken = options.pageToken || undefined;
+    logger.debug(req, 'mentorship_get_lf_projects', 'Listing LF projects', { has_search: search.length > 0, has_page_token: !!pageToken, limit });
+
+    const projects: Project[] = [];
+    let reads = 0;
+    do {
+      const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'project',
+        ...(search ? { name: search, sort: 'best_match' } : { sort: 'name_asc' }),
+        page_size: limit,
+        ...(pageToken && { page_token: pageToken }),
+      });
+      projects.push(...response.resources.map((resource) => resource.data).filter((project) => project.slug !== ROOT_PROJECT_SLUG));
+      pageToken = response.page_token || undefined;
+      reads++;
+    } while (pageToken && projects.length < limit && reads < MENTORSHIP_LF_PROJECT_MAX_READS);
+
+    const data: MentorshipLfProject[] = projects.map((project) => ({
+      id: project.uid,
+      name: project.name,
+      slug: project.slug,
+      ...(project.logo_url ? { logoUrl: project.logo_url } : {}),
+    }));
+
+    logger.debug(req, 'mentorship_get_lf_projects', 'LF projects page built', { count: data.length, reads, has_more: !!pageToken });
+    return { data, nextPageToken: data.length < limit ? null : (pageToken ?? null) };
   }
 
   /**

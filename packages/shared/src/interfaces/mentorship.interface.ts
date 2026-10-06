@@ -98,12 +98,15 @@ export interface MentorshipEnrollFieldErrors {
 export interface MentorshipLfProject {
   id: string;
   name: string;
+  /** Required by the upstream create body as `projectSlug`. */
+  slug: string;
   logoUrl?: string;
 }
 
 export type MentorshipLfProjectsResponse = {
   data: MentorshipLfProject[];
-  total: number;
+  /** Query-service cursor for the next lazy-load page; null once the list is exhausted. */
+  nextPageToken: string | null;
 };
 
 /** LFX user option surfaced in the admin Mentors tab "invite mentor" picker. */

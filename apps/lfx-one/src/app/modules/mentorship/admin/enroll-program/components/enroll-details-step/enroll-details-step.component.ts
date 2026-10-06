@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, output, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, model, output, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -31,10 +31,14 @@ import {
   MENTORSHIP_ENROLL_NAME_UNAVAILABLE,
   MENTORSHIP_ENROLL_REPO_HELPER,
   MENTORSHIP_ENROLL_WEBSITE_HELPER,
+  MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE,
+  MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
+  MENTORSHIP_MENTOR_PICKER_LIST_PADDING,
+  MENTORSHIP_MENTOR_PICKER_MAX_HEIGHT,
+  MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS,
   MENTORSHIP_PROGRAMS_MAX_LIMIT,
   MENTORSHIP_SKILL_OPTIONS,
-  MOCK_MENTORSHIP_LF_PROJECTS,
   mentorshipCiiBadgeImageUrl,
   mentorshipCiiProjectUrl,
 } from '@lfx-one/shared/constants';
@@ -42,6 +46,7 @@ import { MentorshipCiiLookupStatus, MentorshipEnrollFieldErrors, MentorshipLfPro
 import { isMentorshipCiiProjectId, isMentorshipLogoFileName, isMentorshipRichTextOverRawMax, mentorshipDescriptionLength } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
+import { OverlayOptions } from 'primeng/api';
 import {
   catchError,
   debounceTime,
@@ -69,6 +74,8 @@ import {
 export class EnrollDetailsStepComponent {
   public readonly form = input.required<FormGroup>();
   public readonly errors = input<MentorshipEnrollFieldErrors>({});
+  /** The project chosen in the picker; the wizard needs its slug and name to create the program. */
+  public readonly project = model<MentorshipLfProject | null>(null);
   public readonly ciiLookupStatusChange = output<MentorshipCiiLookupStatus>();
   public readonly nameLookupStatusChange = output<MentorshipNameLookupStatus>();
 
@@ -77,6 +84,9 @@ export class EnrollDetailsStepComponent {
   private readonly lfFilter$ = new Subject<string>();
   private readonly lfLoadMore$ = new Subject<void>();
   protected readonly lfProjectItemSize = 40;
+  protected readonly lfScrollerOptions = MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS;
+  /** On close the select clears its filter box (`resetFilterOnHide`); this clears the search behind it. */
+  protected readonly lfOverlayOptions: OverlayOptions = { onBeforeHide: () => this.onLfFilter({ filter: '' }) };
 
   protected readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
   protected readonly logoError = signal('');
@@ -84,8 +94,8 @@ export class EnrollDetailsStepComponent {
   protected readonly importOptions = signal<{ value: string; label: string }[]>([{ value: '', label: 'None' }]);
   protected readonly lfProjects = signal<MentorshipLfProject[]>([]);
   protected readonly lfProjectsLoading = signal(false);
-  protected readonly lfProjectsTotal = signal(0);
-  private readonly selectedProject = signal<MentorshipLfProject | null>(null);
+  /** Cursor for the next lazy-load page; null once every project has been loaded. */
+  protected readonly lfNextPageToken = signal<string | null>(null);
   private readonly nameLookupRetry = signal(0);
   private readonly ciiLookupRetry = signal(0);
   private lfSearch = '';
@@ -129,6 +139,14 @@ export class EnrollDetailsStepComponent {
   });
   protected readonly logoFileName = computed(() => String(this.formSnapshot()['logoFileName'] ?? this.form().controls['logoFileName']?.value ?? ''));
   protected readonly logoPreviewUrl = computed(() => String(this.formSnapshot()['logoPreviewUrl'] ?? this.form().controls['logoPreviewUrl']?.value ?? ''));
+  protected readonly lfEmptyMessage = computed(() =>
+    this.lfProjectsLoading() ? MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE : MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE
+  );
+  /** Sized from the rows so a short list does not scroll and a list that grew after an empty one is not left a few px tall. */
+  protected readonly lfScrollHeight = computed(() => {
+    const rows = Math.max(1, this.projectOptions().length) * this.lfProjectItemSize;
+    return `min(${MENTORSHIP_MENTOR_PICKER_MAX_HEIGHT}px, calc(${rows}px + ${MENTORSHIP_MENTOR_PICKER_LIST_PADDING}))`;
+  });
   protected readonly projectOptions = computed(() => {
     const selectedId = String(this.formSnapshot()['projectId'] ?? this.form().controls['projectId']?.value ?? '');
     const loaded = this.lfProjects();
@@ -136,7 +154,7 @@ export class EnrollDetailsStepComponent {
     if (selectedId && !options.some((option) => option.value === selectedId)) {
       const remembered = this.resolveSelectedProject(selectedId, loaded);
       const label = remembered?.name ?? selectedId;
-      options.unshift({ id: selectedId, name: label, value: selectedId, label, logoUrl: remembered?.logoUrl });
+      options.unshift({ id: selectedId, name: label, slug: remembered?.slug ?? '', value: selectedId, label, logoUrl: remembered?.logoUrl });
     }
     return options;
   });
@@ -207,7 +225,7 @@ export class EnrollDetailsStepComponent {
       .subscribe((projects) => {
         const projectId = String(this.form().controls['projectId']?.value ?? '');
         const found = projects.find((project) => project.id === projectId);
-        if (found) this.selectedProject.set(found);
+        if (found) this.project.set(found);
       });
 
     this.mentorshipAdminService
@@ -232,7 +250,7 @@ export class EnrollDetailsStepComponent {
         this.lfProjectsLoading.set(true);
       }),
       switchMap((search) =>
-        this.mentorshipService.getLfProjects({ search, offset: 0, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
+        this.mentorshipService.getLfProjects({ search, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
           map((response) => ({ ...response, append: false as const })),
           catchError(() => {
             this.lfProjectsLoading.set(false);
@@ -244,9 +262,10 @@ export class EnrollDetailsStepComponent {
 
     const nextPage$ = this.lfLoadMore$.pipe(
       exhaustMap(() => {
-        if (this.lfProjectsLoading() || this.lfProjects().length >= this.lfProjectsTotal()) return EMPTY;
+        const pageToken = this.lfNextPageToken();
+        if (this.lfProjectsLoading() || !pageToken) return EMPTY;
         this.lfProjectsLoading.set(true);
-        return this.mentorshipService.getLfProjects({ search: this.lfSearch, offset: this.lfProjects().length, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
+        return this.mentorshipService.getLfProjects({ search: this.lfSearch, pageToken, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
           takeUntil(search$),
           map((response) => ({ ...response, append: true as const })),
           catchError(() => {
@@ -261,7 +280,7 @@ export class EnrollDetailsStepComponent {
       .pipe(takeUntilDestroyed())
       .subscribe((page) => {
         this.lfProjects.set(page.append ? [...this.lfProjects(), ...page.data] : page.data);
-        this.lfProjectsTotal.set(page.total);
+        this.lfNextPageToken.set(page.nextPageToken);
         this.lfProjectsLoading.set(false);
       });
   }
@@ -287,8 +306,9 @@ export class EnrollDetailsStepComponent {
     this.lfFilter$.next((event.filter ?? '').trim());
   }
 
+  /** The virtual scroller's lazy-load: fetches the next page once the rendered window nears the end of what is loaded. */
   protected onLfLazyLoad(event?: { last?: number }): void {
-    if (this.lfProjectsLoading() || this.lfProjects().length >= this.lfProjectsTotal()) return;
+    if (this.lfProjectsLoading() || !this.lfNextPageToken()) return;
     if (event?.last !== undefined && event.last < this.lfProjects().length - 1) return;
     this.lfLoadMore$.next();
   }
@@ -343,19 +363,18 @@ export class EnrollDetailsStepComponent {
 
   private rememberSelectedProject(projectId: string): void {
     if (!projectId) {
-      this.selectedProject.set(null);
+      this.project.set(null);
       return;
     }
     const remembered = this.resolveSelectedProject(projectId, this.lfProjects());
-    if (remembered) this.selectedProject.set(remembered);
+    if (remembered) this.project.set(remembered);
   }
 
   private resolveSelectedProject(projectId: string, loaded: MentorshipLfProject[]): MentorshipLfProject | undefined {
     const fromLoaded = loaded.find((project) => project.id === projectId);
     if (fromLoaded) return fromLoaded;
-    const cached = this.selectedProject();
-    if (cached?.id === projectId) return cached;
-    return MOCK_MENTORSHIP_LF_PROJECTS.find((project) => project.id === projectId);
+    const cached = this.project();
+    return cached?.id === projectId ? cached : undefined;
   }
 
   private clearLogo(): void {

@@ -18,7 +18,6 @@ import {
   MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE,
   MENTORSHIP_SKILL_OPTIONS,
   MENTORSHIP_TERM_NAME_MAX,
-  MOCK_MENTORSHIP_LF_PROJECTS,
 } from '../constants/mentorship-enroll.constants';
 import {
   MENTORSHIP_MENTEE_APPLICATION_PROGRESS_LABELS,
@@ -383,9 +382,8 @@ export function getMentorshipTermDateErrors(
 /**
  * Field-keyed validation errors for a single enroll wizard step.
  *
- * **Note:** The `details` step validates `projectId` against `MOCK_MENTORSHIP_LF_PROJECTS`
- * — a temporary mock-backed allowlist that must be replaced with server-side validation
- * when the upstream mentorship-service project endpoint is wired up (see GH-2717).
+ * The `details` step only requires a selected project; the picker offers live query-service
+ * projects, so there is no client-side allowlist to check the id against.
  */
 export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollValidationInput): MentorshipEnrollFieldErrors {
   if (step === 'details') {
@@ -398,10 +396,6 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     const projectId = form.projectId.trim();
     if (!projectId) {
       errors.projectId = 'Select a Linux Foundation project.';
-    } else if (!MOCK_MENTORSHIP_LF_PROJECTS.some((project) => project.id === projectId)) {
-      // Temporary mock-backed allowlist — replace with server-side validation
-      // when the upstream mentorship-service project endpoint is wired up (GH-2717).
-      errors.projectId = 'Select a valid Linux Foundation project.';
     }
     if (!form.technologies.length) errors.technologies = 'Add at least one technology.';
     const descriptionError = mentorshipRichTextError(
