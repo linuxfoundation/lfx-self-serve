@@ -85,7 +85,7 @@ test.describe('Admin Mentors tab — manage mentors', () => {
     await expect(rowAction(page, 'revoke', MENTOR_INVITED_ID)).toHaveAccessibleName('Revoke invite Test Mentor Invited');
     await expect(rowAction(page, 'remove', MENTOR_ACTIVE_ID)).toBeVisible();
     await expect(page.getByTestId(`mentorship-mentor-row-${MENTOR_DECLINED_ID}`).getByRole('button')).toHaveCount(0);
-    await expect(page.locator('[data-testid^="mentorship-mentor-delete-"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="mentorship-admin-mentors-delete-"]')).toHaveCount(0);
   });
 
   test('accepts a mentor request after the confirmation, then reloads the rows and the tab counts', async ({ page }) => {
@@ -100,7 +100,7 @@ test.describe('Admin Mentors tab — manage mentors', () => {
 
     await expect(page.getByText('Mentor accepted.')).toBeVisible();
     expect(state.writes).toEqual([{ id: MENTOR_REQUESTED_ID, method: 'PATCH', body: { status: 'active' } }]);
-    await expect(page.getByTestId(`mentorship-mentor-row-${MENTOR_REQUESTED_ID}`)).toContainText('Active');
+    await expect(page.getByTestId(`mentorship-mentor-row-${MENTOR_REQUESTED_ID}`)).toContainText('Accepted');
     expect(state.reads).toBeGreaterThan(mentorReadsBefore);
     await expect.poll(() => programReads.count()).toBeGreaterThan(programReadsBefore);
   });

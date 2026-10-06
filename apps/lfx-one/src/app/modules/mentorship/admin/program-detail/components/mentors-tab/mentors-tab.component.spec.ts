@@ -190,7 +190,7 @@ describe('MentorsTabComponent', () => {
     it('offers each mentor the actions its status allows, and no Delete', () => {
       expect(actionIds('mem_1')).toEqual(['remove']);
       expect(actionIds('mem_2')).toEqual(['revoke']);
-      expect(element().querySelector('[data-testid^="mentorship-mentor-delete-"]')).toBeNull();
+      expect(element().querySelector('[data-testid^="mentorship-admin-mentors-delete-"]')).toBeNull();
     });
 
     it.each([
@@ -277,7 +277,7 @@ describe('MentorsTabComponent', () => {
 
       confirmAction('mem_1', 'active', 'remove');
 
-      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error' });
+      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: 'Read only while impersonating.' });
     });
 
     it('sends one write at a time', () => {
