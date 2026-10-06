@@ -54,6 +54,7 @@ import {
   mapMentorshipAdminTermRow,
 } from '../helpers/mentorship-admin-program.helper';
 import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import { saveMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
 import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask } from '../helpers/mentorship-program-application.helper';
 
@@ -329,6 +330,15 @@ export class MentorshipAdminService {
       undefined,
       { status: body.status, ...(body.status === 'accepted' ? { attendance_type: body.attendanceType } : {}) }
     );
+  }
+
+  /**
+   * Saves, edits or clears (an empty `note`) the one reviewer note of an application, through the save the mentor route
+   * uses too. Upstream's 403, 404 and 409 pass through. The note is never logged.
+   */
+  public async updateApplicationNote(req: Request, applicationId: string, note: string): Promise<void> {
+    logger.debug(req, 'mentorship_admin_update_application_note', 'Saving application reviewer note', { applicationId, noteLength: note.length });
+    await saveMentorshipApplicationNote(this.microserviceProxy, req, applicationId, note);
   }
 
   /**

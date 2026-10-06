@@ -195,6 +195,20 @@ describe('MentorshipAdminService', () => {
     req.flush(null, { status: 204, statusText: 'No Content' });
   });
 
+  it('puts a reviewer note for one application, and an empty one to clear it', () => {
+    let done = 0;
+    service.updateApplicationNote('app 1', 'needs a second look').subscribe(() => done++);
+    service.updateApplicationNote('app 1', '').subscribe(() => done++);
+
+    const requests = http.match('/api/mentorship/admin/applications/app%201/note');
+    expect(requests.map((req) => [req.request.method, req.request.body])).toEqual([
+      ['PUT', { note: 'needs a second look' }],
+      ['PUT', { note: '' }],
+    ]);
+    requests.forEach((req) => req.flush(null, { status: 204, statusText: 'No Content' }));
+    expect(done).toBe(2);
+  });
+
   it('declines the pending applications of a term and returns the count', () => {
     let declined = -1;
     service.declinePendingForTerm('prog_1', 'trm_1').subscribe((response) => (declined = response.declinedCount));

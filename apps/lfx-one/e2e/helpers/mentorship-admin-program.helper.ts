@@ -168,9 +168,10 @@ export async function stubAdminProgramPageError(page: Page, status: number): Pro
 
 /**
  * Answers the mentees read from the 37 synthetic applications, honoring `offset`, `limit`, `status` and `search`.
- * Pass `failWith` to answer every read with that error status instead.
+ * Pass `failWith` to answer every read with that error status instead. `notes`, keyed by application id, is read on
+ * every request, so a spec that records a saved note there gets it back on the next read.
  */
-export async function stubAdminMentees(page: Page, requests: AdminProgramRequests, failWith?: number): Promise<void> {
+export async function stubAdminMentees(page: Page, requests: AdminProgramRequests, failWith?: number, notes: Record<string, string> = {}): Promise<void> {
   await page.route(MENTEES_ROUTE, (route) => {
     const params = new URL(route.request().url()).searchParams;
     requests.mentees.push(params);
@@ -182,7 +183,10 @@ export async function stubAdminMentees(page: Page, requests: AdminProgramRequest
     const matching = source.filter((application) => (!status || application.status === status) && (!search || application.name.toLowerCase().includes(search)));
     const offset = Number(params.get('offset') ?? 0);
     const limit = Number(params.get('limit') ?? ADMIN_MENTEES_PAGE_SIZE);
-    return fulfillJson(route, { data: matching.slice(offset, offset + limit), total: matching.length } satisfies MentorshipAdminMenteesResponse);
+    const data = matching
+      .slice(offset, offset + limit)
+      .map((application) => (application.id in notes ? { ...application, note: notes[application.id] } : application));
+    return fulfillJson(route, { data, total: matching.length } satisfies MentorshipAdminMenteesResponse);
   });
 }
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -43,6 +43,7 @@ import {
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_MENTEE_STATUS_LABELS,
   MENTORSHIP_MENTEE_STATUSES,
+  MENTORSHIP_NOTE_DIALOG_HEADER,
 } from '@lfx-one/shared/constants';
 import {
   FilterOption,
@@ -52,7 +53,6 @@ import {
   MentorshipCurrentMenteeAction,
   MentorshipAttendanceType,
   MentorshipMenteeStatus,
-  MentorshipNoteRequest,
   MentorshipProgramApplicant,
   MentorshipRowAction,
 } from '@lfx-one/shared/interfaces';
@@ -76,9 +76,11 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, distinctUntilChanged, map, Observable, of, switchMap, take, tap } from 'rxjs';
 
+import { AdminNoteSaveService } from '../../../../services/admin-note-save.service';
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 import { ApplicantTasksPanelComponent } from '../../../../components/applicant-tasks-panel/applicant-tasks-panel.component';
+import { MenteeNoteDialogComponent } from '../../../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { AcceptApplicationDialogComponent } from '../accept-application-dialog/accept-application-dialog.component';
 import { DeclineByTermDialogComponent } from '../decline-by-term-dialog/decline-by-term-dialog.component';
 import { PersonCellComponent } from '../../../../components/person-cell/person-cell.component';
@@ -92,8 +94,9 @@ import { RowActionsComponent } from '../../../../components/row-actions/row-acti
  * (with an attendance type), Decline, Withdraw, Graduate and Decline by Term write through the BFF; each
  * reloads the page and tells the parent to refresh the tab counts, and a 409 or 422 answers with its own
  * message. Graduate always confirms, warning from the row's task counts without reading any task. Create task
- * opens the task form first and the status export still stubs to coming soon. The reviewer note is the one
- * other action that takes effect; the parent owns its state, so it outlives a tab switch.
+ * opens the task form first and the status export still stubs to coming soon. The reviewer note saves through the
+ * BFF too and is written into its row, so the table shows it without a read; a later read brings the saved note back,
+ * and a read that was already in flight when the save landed keeps the saved note over its older answer.
  */
 @Component({
   selector: 'lfx-mentorship-current-mentees-tab',
@@ -121,14 +124,12 @@ export class CurrentMenteesTabComponent {
   private readonly dialogService = inject(DialogService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
+  private readonly noteSave = inject(AdminNoteSaveService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly programId = input.required<string>();
   /** The program's terms; only the open ones feed the term filter. */
   public readonly terms = input<MentorshipAdminTermOption[]>([]);
-  /** Notes edited this session, keyed by person id; overrides the note a row arrived with. */
-  public readonly noteDrafts = input<Record<string, string>>({});
-  public readonly noteRequested = output<MentorshipNoteRequest>();
   /**
    * Called when a decision changed the program's application counts, so the parent reads the tab counts again. A
    * callback rather than an output: Angular drops an output emitted after destroy, and a tab switch destroys this tab
@@ -183,6 +184,7 @@ export class CurrentMenteesTabComponent {
     this.destroyRef.onDestroy(() => (this.destroyed = true));
     this.initFilters();
     this.initPageReads();
+    this.initSavedNotes();
   }
 
   protected onLazyLoad(event: { first?: number | null }): void {
@@ -193,8 +195,29 @@ export class CurrentMenteesTabComponent {
     this.reloadCount.update((count) => count + 1);
   }
 
+  /** Opens the note dialog on the row's note; an unchanged note, or a dismissed dialog, saves nothing. */
   protected onOpenNote(id: string, name: string, note?: string): void {
-    this.noteRequested.emit({ personId: id, personName: name, note });
+    if (this.noteSave.isSaving(id)) return;
+    const current = (note ?? '').trim();
+    // `open()` returns null when a dialog of the same component is still registered,
+    // which a quick second click on another row's note can do.
+    const dialogRef: DynamicDialogRef | null = this.dialogService.open(MenteeNoteDialogComponent, {
+      header: MENTORSHIP_NOTE_DIALOG_HEADER,
+      width: '34rem',
+      style: { maxWidth: '90vw' },
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { personName: name, note: current },
+    });
+    if (!dialogRef) return;
+
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((value: string | undefined) => {
+      // A dismissed dialog closes with `undefined`; an empty string is an explicit clear.
+      if (value === undefined || value.trim() === current) return;
+      // Not tied to the tab: the save, and its toast, finish even if the admin leaves first.
+      this.noteSave.save(id, value.trim()).subscribe();
+    });
   }
 
   protected onAction(summary: string): void {
@@ -482,8 +505,10 @@ export class CurrentMenteesTabComponent {
           this.tasksByApplication.set(new Map());
           this.expandedTaskMenteeIds.set({});
         }),
-        switchMap(({ programId, search, status, termId, offset }) =>
-          this.mentorshipAdminService
+        switchMap(({ programId, search, status, termId, offset }) => {
+          // A note saved while this read is in flight may be missing from its answer, so the read keeps it.
+          const notesVersion = this.noteSave.currentVersion();
+          return this.mentorshipAdminService
             .getProgramMentees(programId, {
               type: 'current',
               search: search || undefined,
@@ -493,10 +518,10 @@ export class CurrentMenteesTabComponent {
               limit: MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
             })
             .pipe(
-              map((page) => ({ page })),
+              map((page) => ({ page: { ...page, data: this.withNotesSavedSince(page.data, notesVersion) } })),
               catchError(() => of({ page: null }))
-            )
-        ),
+            );
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(({ page }) => {
@@ -510,6 +535,27 @@ export class CurrentMenteesTabComponent {
         this.applications.set(page.data);
         this.total.set(page.total);
       });
+  }
+
+  /**
+   * Writes each saved note into its row, so the table shows it without a read. The saves come from the service, so a
+   * save started before a tab switch still lands in this tab; a failed save leaves the row as it was. A page read in
+   * flight when a save lands keeps that note too (see `withNotesSavedSince`).
+   */
+  private initSavedNotes(): void {
+    this.noteSave.saved$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ applicationId, note }) => {
+      this.applications.update((applications) => applications.map((row) => (row.id === applicationId ? { ...row, note } : row)));
+    });
+  }
+
+  /** Lays the notes saved since a read started over its rows, so an answer older than a save cannot undo it. */
+  private withNotesSavedSince(applications: MentorshipProgramApplicant[], notesVersion: number): MentorshipProgramApplicant[] {
+    const saved = this.noteSave.notesSavedSince(notesVersion);
+    if (!saved.size) return applications;
+    return applications.map((row) => {
+      const note = saved.get(row.id);
+      return note === undefined ? row : { ...row, note };
+    });
   }
 
   private toRow(person: MentorshipProgramApplicant) {
@@ -530,7 +576,7 @@ export class CurrentMenteesTabComponent {
           ...application,
           statusLabel: MENTORSHIP_APPLICANT_STATUS_LABELS[mentorshipApplicantDisplayStatus(application)],
         })),
-      ...mentorshipNoteDisplay(this.noteDrafts(), person, MENTORSHIP_ADD_NOTE_LABEL),
+      ...mentorshipNoteDisplay({}, person, MENTORSHIP_ADD_NOTE_LABEL),
       actions: mentorshipRowActions(
         MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[person.status],
         MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,

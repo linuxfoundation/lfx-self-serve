@@ -14,7 +14,6 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { ProgramDetailComponent } from './program-detail.component';
 
 describe('ProgramDetailComponent', () => {
@@ -52,19 +51,12 @@ describe('ProgramDetailComponent', () => {
   });
 
   let fixture: ComponentFixture<ProgramDetailComponent>;
-  let dialogOpen: ReturnType<typeof vi.fn>;
   let getProgram: ReturnType<typeof vi.fn<(programId: string) => Observable<MentorshipAdminProgramPage>>>;
   let getProgramMentees: ReturnType<typeof vi.fn>;
 
-  // Takes the observable rather than the value: a dismissed dialog closes with `undefined`,
-  // and passing that through a defaulted parameter would silently restore the default.
-  const buildWith = (
-    onClose: Observable<string | undefined>,
-    options: { page?: Observable<MentorshipAdminProgramPage>; mentees?: MentorshipAdminMenteesResponse; dialog?: ReturnType<typeof vi.fn> } = {}
-  ): void => {
-    dialogOpen = options.dialog ?? vi.fn(() => ({ onClose }));
+  const buildWith = (options: { page?: Observable<MentorshipAdminProgramPage> } = {}): void => {
     getProgram = vi.fn().mockReturnValue(options.page ?? of(programPage()));
-    getProgramMentees = vi.fn().mockReturnValue(of(options.mentees ?? menteesPage()));
+    getProgramMentees = vi.fn().mockReturnValue(of(menteesPage()));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -73,7 +65,7 @@ describe('ProgramDetailComponent', () => {
         provideNoopAnimations(),
         provideRouter([]),
         MessageService,
-        { provide: DialogService, useValue: { open: dialogOpen } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         {
           provide: MentorshipAdminService,
           useValue: {
@@ -86,8 +78,7 @@ describe('ProgramDetailComponent', () => {
         },
         {
           provide: MentorshipService,
-          // The Mentors tab loads its invite picker on construction, and the persistence
-          // test renders that tab to prove notes survive one being destroyed.
+          // The Mentors tab loads its invite picker on construction, and the counts refresh test renders that tab.
           useValue: { getInvitableUsers: () => of(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE) },
         },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_example_fall26']]) as never) } },
@@ -104,16 +95,11 @@ describe('ProgramDetailComponent', () => {
     fixture.detectChanges();
   };
 
-  const build = (): void => buildWith(of('a saved note'));
+  const build = (): void => buildWith();
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const showTab = (tab: string): void => {
     fixture.componentInstance['activeTab'].set(tab as never);
-    settle();
-  };
-  const noteText = (id: string): string | undefined => element().querySelector(`[data-testid="mentorship-current-mentee-note-${id}"]`)?.textContent?.trim();
-  const clickNote = (id: string): void => {
-    element().querySelector<HTMLButtonElement>(`[data-testid="mentorship-current-mentee-note-${id}"]`)?.click();
     settle();
   };
   const tabText = (value: string): string =>
@@ -146,29 +132,6 @@ describe('ProgramDetailComponent', () => {
       expect(element().querySelector('[data-testid="mentorship-past-mentees-tab"]')).not.toBeNull();
       expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_1"]')).toBeNull();
       expect(element().querySelector('[data-testid="mentorship-current-mentee-actions-app_1"]')).toBeNull();
-    });
-
-    it('keeps a reviewer note when the admin leaves the tab and comes back', () => {
-      clickNote('app_1');
-
-      expect(dialogOpen).toHaveBeenCalledTimes(1);
-      expect(noteText('app_1')).toBe('a saved note');
-
-      // The tab panel is an `@switch`, so this destroys the tab component outright.
-      showTab('mentors');
-      showTab('current-mentees');
-
-      expect(noteText('app_1')).toBe('a saved note');
-    });
-
-    it('holds notes per person', () => {
-      clickNote('app_1');
-
-      expect(noteText('app_2')).toBe('Add note');
-
-      clickNote('app_2');
-
-      expect(fixture.componentInstance['noteDrafts']()).toEqual({ app_1: 'a saved note', app_2: 'a saved note' });
     });
 
     it('reads the counts again without the loading state when a decision changes them', () => {
@@ -230,46 +193,8 @@ describe('ProgramDetailComponent', () => {
     });
   });
 
-  it('leaves the note untouched when the dialog is dismissed', () => {
-    buildWith(of(undefined));
-
-    clickNote('app_1');
-
-    expect(fixture.componentInstance['noteDrafts']()).toEqual({});
-    expect(noteText('app_1')).toBe('Add note');
-  });
-
-  it('seeds the dialog with the row note, then with the draft once one exists', () => {
-    buildWith(of('a saved note'), { mentees: { data: [application({ note: 'from the server' })], total: 1 } });
-
-    clickNote('app_1');
-
-    expect(dialogOpen).toHaveBeenLastCalledWith(
-      MenteeNoteDialogComponent,
-      expect.objectContaining({ data: { personName: 'Ifeoma Adeyemi', note: 'from the server' } })
-    );
-
-    // Reopening the same row must offer the draft, not the note it started with.
-    clickNote('app_1');
-
-    expect(dialogOpen).toHaveBeenLastCalledWith(
-      MenteeNoteDialogComponent,
-      expect.objectContaining({ data: { personName: 'Ifeoma Adeyemi', note: 'a saved note' } })
-    );
-  });
-
-  it('survives the dialog service declining to open a second dialog', () => {
-    // PrimeNG returns null when a dialog of the same component is still registered,
-    // which a quick second click on another row can do.
-    buildWith(of(undefined), { dialog: vi.fn(() => null) });
-
-    expect(() => clickNote('app_1')).not.toThrow();
-
-    expect(fixture.componentInstance['noteDrafts']()).toEqual({});
-  });
-
   describe('when the page cannot be shown', () => {
-    const failWith = (status: number): void => buildWith(of(undefined), { page: throwError(() => new HttpErrorResponse({ status })) });
+    const failWith = (status: number): void => buildWith({ page: throwError(() => new HttpErrorResponse({ status })) });
 
     it('shows a no-access state for a 403', () => {
       failWith(403);

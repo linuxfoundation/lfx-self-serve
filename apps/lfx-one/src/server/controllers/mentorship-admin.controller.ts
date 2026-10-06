@@ -26,6 +26,7 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { parseMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
 import { parseMentorshipAdminPaging, parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
 import { isMentorshipProgramStatus, MentorshipAdminService } from '../services/mentorship-admin.service';
@@ -230,6 +231,29 @@ export class MentorshipAdminController {
       await this.mentorshipAdminService.updateApplicationStatus(req, applicationId, body);
 
       logger.success(req, operation, startTime, { applicationId, status: body.status });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PUT /api/mentorship/admin/applications/:applicationId/note — body { note } -> 204. A note blank once trimmed clears it;
+  // one over MENTORSHIP_MENTEE_NOTE_MAX characters is a 400. The note is never logged, only its length.
+  public async updateApplicationNote(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'update_mentorship_admin_application_note';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const applicationId = this.requireUuidParam(req, 'applicationId', operation);
+      const note = parseMentorshipApplicationNote(req.body, operation);
+
+      await this.mentorshipAdminService.updateApplicationNote(req, applicationId, note);
+
+      logger.success(req, operation, startTime, { applicationId, noteLength: note.length });
       res.status(204).send();
     } catch (error) {
       next(error);

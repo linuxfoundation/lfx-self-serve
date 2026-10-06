@@ -1,0 +1,90 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Same reason as profile.route.spec.ts: the import graph can reach Angular's partially-compiled
+// @angular/common, which needs the JIT compiler under vitest.
+import '@angular/compiler';
+
+import express from 'express';
+import type { Server } from 'node:http';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * Router-level coverage for the impersonation gate on the admin reviewer-note write. The middleware has its own unit
+ * tests, but those call it directly and would keep passing if it were dropped from this route.
+ */
+
+const noteHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.status(204).end();
+});
+
+vi.mock('../controllers/mentorship-admin.controller', () => ({
+  MentorshipAdminController: class {
+    public updateApplicationNote = noteHandler;
+  },
+}));
+let impersonatingStub = false;
+vi.mock('../utils/auth-helper', () => ({ isImpersonating: () => impersonatingStub }));
+vi.mock('../services/logger.service', () => ({
+  logger: {
+    info: vi.fn(),
+    warning: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    startOperation: vi.fn(() => Date.now()),
+    success: vi.fn(),
+  },
+}));
+
+const adminRouter = (await import('./mentorship-admin.route')).default;
+
+const APPLICATION_ID = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+
+let server: Server;
+let baseUrl: string;
+
+const putNote = (): Promise<Response> =>
+  fetch(`${baseUrl}/api/mentorship/admin/applications/${APPLICATION_ID}/note`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note: 'needs a second look' }),
+  });
+
+beforeAll(async () => {
+  const app = express();
+  app.use(express.json());
+  app.use('/api/mentorship/admin', adminRouter);
+  await new Promise<void>((resolve) => {
+    server = app.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  const port = typeof address === 'object' && address ? address.port : 0;
+  baseUrl = `http://127.0.0.1:${port}`;
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  impersonatingStub = true;
+});
+
+describe('mentorship admin router — reviewer note impersonation gate', () => {
+  it('refuses the note write with 403 while impersonating and never reaches the controller', async () => {
+    const res = await putNote();
+
+    expect(res.status).toBe(403);
+    expect(noteHandler).not.toHaveBeenCalled();
+  });
+
+  it('admits the note write when not impersonating', async () => {
+    impersonatingStub = false;
+
+    const res = await putNote();
+
+    expect(res.status).toBe(204);
+    expect(noteHandler).toHaveBeenCalledTimes(1);
+  });
+});
