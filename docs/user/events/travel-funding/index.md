@@ -1,6 +1,6 @@
 ---
 title: Apply for Travel Funding
-description: Request travel funding to attend a Linux Foundation event you are registered for in LFX Self Serve
+description: Request travel funding to attend a Linux Foundation event that is accepting travel fund applications in LFX Self Serve
 audience: [all]
 product_area: Events
 tags: [events, travel-funding, travel-fund, attendance]
@@ -18,7 +18,7 @@ The Travel Fund helps open-source developers and community members attend Linux 
 2. Select **Events** from the left navigation sidebar.
 3. Open the **Travel Funding** tab.
 4. Select **New Funding Application**.
-5. **Choose an Event** — select the event you want to attend, then continue. The list shows upcoming events you have registered for that offer travel funding. Your registration does not need to be accepted yet.
+5. **Choose an Event** — select the event you want to attend, then continue. The list shows upcoming events that offer travel funding and are still accepting applications. You do not need to be registered for the event.
 6. Review the **Terms and Conditions** and continue to accept them.
 7. Complete the **About Me** step with your applicant details.
 8. Complete the **Expenses** step with your estimated costs.

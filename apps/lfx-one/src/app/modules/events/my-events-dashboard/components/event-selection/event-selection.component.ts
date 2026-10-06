@@ -10,8 +10,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { EMPTY_MY_EVENTS_RESPONSE } from '@lfx-one/shared/constants';
-import { MyEvent, RequestType, TimeFilterValue } from '@lfx-one/shared/interfaces';
-import { catchError, combineLatest, debounceTime, EMPTY, filter, finalize, map, of, scan, skip, switchMap, take, tap } from 'rxjs';
+import { MyEvent, MyEventsResponse, RequestType, TimeFilterValue } from '@lfx-one/shared/interfaces';
+import { catchError, combineLatest, debounceTime, EMPTY, filter, finalize, map, Observable, of, scan, skip, switchMap, take, tap } from 'rxjs';
 import { EVENT_SELECTION_PAGE_SIZE } from '@lfx-one/shared/constants/events.constants';
 @Component({
   selector: 'lfx-event-selection',
@@ -63,17 +63,12 @@ export class EventSelectionComponent {
   // Debounced search to avoid API calls on every keystroke
   private readonly debouncedSearch = toSignal(this.searchForm.get('searchQuery')!.valueChanges.pipe(debounceTime(500)), { initialValue: '' });
 
-  // Travel funding counts a registration of any status; visa letters need an accepted one.
-  private readonly anyRegistrationStatus = computed(() => (this.requestType() === 'travel-fund' ? true : undefined));
-
   // Combined server-side filter params — changing this resets pagination and triggers a reload
   private readonly activeFilters = computed(() => ({
     searchQuery: this.debouncedSearch() || undefined,
     ...this.computeTimeFilterParams(this.filtersValue().timeFilter as TimeFilterValue),
     country: this.filtersValue().locationFilter !== 'any' ? (this.filtersValue().locationFilter ?? undefined) : undefined,
     isVisaRequestAccepted: this.requestType() === 'visa' ? true : undefined,
-    isTravelFundRequestAccepted: this.requestType() === 'travel-fund' ? true : undefined,
-    anyRegistrationStatus: this.anyRegistrationStatus(),
   }));
 
   // Initial events loaded reactively from activeFilters
@@ -97,6 +92,7 @@ export class EventSelectionComponent {
 
   protected readonly emptyState = computed(() => {
     const isVisa = this.requestType() === 'visa';
+    const isTravelFund = this.requestType() === 'travel-fund';
 
     // 1. Initial load failed — show a neutral error rather than a misleading "not available" message.
     if (this.eventsLoadError()) {
@@ -107,14 +103,12 @@ export class EventSelectionComponent {
       };
     }
 
-    // 2. No registered upcoming events at all — must register first.
-    if (this.hasNoRegisteredUpcomingEvents()) {
+    // 2. Visa letters only: no registered upcoming events at all — must register first.
+    if (isVisa && this.hasNoRegisteredUpcomingEvents()) {
       return {
         icon: 'fa-light fa-calendar-xmark text-3xl text-gray-300',
         title: 'No registered events',
-        description: isVisa
-          ? 'You must have an accepted registration for an upcoming event to apply for a visa letter.'
-          : 'You must be registered for an upcoming event to apply for travel funding.',
+        description: 'You must have an accepted registration for an upcoming event to apply for a visa letter.',
       };
     }
 
@@ -127,13 +121,20 @@ export class EventSelectionComponent {
       };
     }
 
-    // 4. User has registered events but none support this request type.
+    // 4. Travel funding: no upcoming event is accepting applications (the list is the same for every user).
+    if (isTravelFund) {
+      return {
+        icon: 'fa-light fa-calendar-xmark text-3xl text-gray-300',
+        title: 'Travel funding not available',
+        description: 'No upcoming events are currently accepting travel fund applications. Check back later.',
+      };
+    }
+
+    // 5. Visa letters: user has registered events but none support this request type.
     return {
       icon: 'fa-light fa-calendar-xmark text-3xl text-gray-300',
-      title: isVisa ? 'Visa letters not available' : 'Travel funding not available',
-      description: isVisa
-        ? 'None of your registered events currently offer visa letter requests. Check back later or contact the event organizer for more information.'
-        : 'None of your registered events currently offer travel funding. Check back later or contact the event organizer for more information.',
+      title: 'Visa letters not available',
+      description: 'None of your registered events currently offer visa letter requests. Check back later or contact the event organizer for more information.',
     };
   });
 
@@ -184,7 +185,7 @@ export class EventSelectionComponent {
           }
         }),
         switchMap(([filters, offset]) =>
-          this.eventsService.getMyEvents({ isPast: false, pageSize: EVENT_SELECTION_PAGE_SIZE, offset, registeredOnly: true, ...filters }).pipe(
+          this.fetchEvents(filters, offset).pipe(
             catchError(() => {
               if (offset === 0) {
                 this.eventsLoadError.set(true);
@@ -212,6 +213,24 @@ export class EventSelectionComponent {
     );
   }
 
+  // Travel funding lists every open event; visa letters list the user's own accepted registrations.
+  private fetchEvents(filters: ReturnType<typeof this.activeFilters>, offset: number): Observable<MyEventsResponse> {
+    const { isVisaRequestAccepted, ...common } = filters;
+
+    if (this.requestType() === 'travel-fund') {
+      return this.eventsService.getTravelFundEvents({ pageSize: EVENT_SELECTION_PAGE_SIZE, offset, ...common });
+    }
+
+    return this.eventsService.getMyEvents({
+      isPast: false,
+      pageSize: EVENT_SELECTION_PAGE_SIZE,
+      offset,
+      registeredOnly: true,
+      isVisaRequestAccepted,
+      ...common,
+    });
+  }
+
   private initializeCountries() {
     return toSignal(this.eventsService.getUpcomingCountries().pipe(catchError(() => of({ data: [] }))), {
       initialValue: { data: [] as string[] },
@@ -225,11 +244,12 @@ export class EventSelectionComponent {
         filter((loading) => !loading),
         take(1),
         switchMap(() => {
-          if (this.allEvents().length > 0 || this.eventsLoadError()) {
+          // The registration probe only explains the visa empty state; travel funding is not registration-based.
+          if (this.requestType() === 'travel-fund' || this.allEvents().length > 0 || this.eventsLoadError()) {
             this.registeredEventsLoading.set(false);
             return of(null as number | null);
           }
-          return this.eventsService.getMyEvents({ isPast: false, registeredOnly: true, anyRegistrationStatus: this.anyRegistrationStatus(), pageSize: 1 }).pipe(
+          return this.eventsService.getMyEvents({ isPast: false, registeredOnly: true, pageSize: 1 }).pipe(
             map((res) => res.total ?? 0),
             catchError(() => of(null as number | null)),
             finalize(() => this.registeredEventsLoading.set(false))

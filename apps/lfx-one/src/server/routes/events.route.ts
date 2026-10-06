@@ -11,6 +11,7 @@ const eventsController = new EventsController();
 router.get('/', (req, res, next) => eventsController.getMyEvents(req, res, next));
 router.get('/all', (req, res, next) => eventsController.getEvents(req, res, next));
 router.get('/organizations', (req, res, next) => eventsController.getEventOrganizations(req, res, next));
+router.get('/travel-fund-events', (req, res, next) => eventsController.getTravelFundEvents(req, res, next));
 router.get('/countries', (req, res, next) => eventsController.getUpcomingCountries(req, res, next));
 router.get('/visa-requests', (req, res, next) => eventsController.getVisaRequests(req, res, next));
 router.get('/travel-fund-requests', (req, res, next) => eventsController.getTravelFundRequests(req, res, next));

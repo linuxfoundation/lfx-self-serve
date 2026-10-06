@@ -154,11 +154,7 @@ export class TravelFundApplicationDialogComponent {
     if (!eventId) return;
 
     this.resolvingDeepLink.set(true);
-    resolveDeepLinkedEvent$(
-      this.eventsService.getMyEvents({ eventId, isPast: false, registeredOnly: true, isTravelFundRequestAccepted: true, anyRegistrationStatus: true }),
-      eventId,
-      'travel fund request'
-    )
+    resolveDeepLinkedEvent$(this.eventsService.getTravelFundEvents({ eventId }), eventId, 'travel fund request')
       .pipe(
         finalize(() => this.resolvingDeepLink.set(false)),
         takeUntilDestroyed(this.destroyRef)
@@ -185,7 +181,7 @@ export class TravelFundApplicationDialogComponent {
         this.messageService.add({
           severity: 'info',
           summary: 'Event not found',
-          detail: "We couldn't find that event among your eligible registered events — please choose it below.",
+          detail: "We couldn't find that event among the events accepting travel fund applications — please choose it below.",
         });
       });
   }

@@ -42,12 +42,12 @@ Open the [**Travel Funding**](../travel-funding/) tab on the My Events page and 
 
 ## Why don't I see my event when applying for a visa letter or travel funding?
 
-The **Choose an Event** step lists only upcoming events you have registered for with the email address you use to sign in to LFX. Two more rules apply:
+The **Choose an Event** step depends on what you are applying for:
 
-- **Visa letters** — your registration must be accepted, and the event must offer visa letters.
-- **Travel funding** — the event must offer travel funding. Any registration counts, even if it has not been accepted yet.
+- **Visa letters** — lists only upcoming events you have registered for with the email address you use to sign in to LFX. Your registration must be accepted, and the event must offer visa letters.
+- **Travel funding** — lists every upcoming event that offers travel funding and is still accepting applications, whether or not you are registered. If an event is missing, its travel fund application deadline may have passed.
 
-If your event is still missing, check that you registered with the same email address, or contact the event organizer.
+If your visa letter event is still missing, check that you registered with the same email address, or contact the event organizer.
 
 ## How do I download my attendance certificate?
 

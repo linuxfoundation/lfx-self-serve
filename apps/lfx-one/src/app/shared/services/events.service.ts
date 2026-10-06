@@ -13,6 +13,7 @@ import {
   GetEventsParams,
   GetMyEventsParams,
   GetOrgEventsParams,
+  GetTravelFundEventsParams,
   GetUpcomingCountriesResponse,
   MyEventOrganizationsResponse,
   MyEventsResponse,
@@ -54,10 +55,22 @@ export class EventsService {
     if (params.startDateTo) httpParams = httpParams.set('startDateTo', params.startDateTo);
     if (params.country) httpParams = httpParams.set('country', params.country);
     if (params.isVisaRequestAccepted) httpParams = httpParams.set('isVisaRequestAccepted', 'true');
-    if (params.isTravelFundRequestAccepted) httpParams = httpParams.set('isTravelFundRequestAccepted', 'true');
-    if (params.anyRegistrationStatus) httpParams = httpParams.set('anyRegistrationStatus', 'true');
 
     return this.http.get<MyEventsResponse>('/api/events', { params: httpParams });
+  }
+
+  public getTravelFundEvents(params: GetTravelFundEventsParams = {}): Observable<MyEventsResponse> {
+    let httpParams = new HttpParams();
+
+    if (params.eventId) httpParams = httpParams.set('eventId', params.eventId);
+    if (params.searchQuery) httpParams = httpParams.set('searchQuery', params.searchQuery);
+    if (params.startDateFrom) httpParams = httpParams.set('startDateFrom', params.startDateFrom);
+    if (params.startDateTo) httpParams = httpParams.set('startDateTo', params.startDateTo);
+    if (params.country) httpParams = httpParams.set('country', params.country);
+    if (params.pageSize) httpParams = httpParams.set('pageSize', String(params.pageSize));
+    if (params.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
+
+    return this.http.get<MyEventsResponse>('/api/events/travel-fund-events', { params: httpParams });
   }
 
   public getEvents(params: GetEventsParams = {}): Observable<EventsResponse> {

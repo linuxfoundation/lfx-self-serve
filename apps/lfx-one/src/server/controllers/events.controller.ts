@@ -75,8 +75,6 @@ export class EventsController {
       const startDateTo = req.query['startDateTo'] ? String(req.query['startDateTo']) : undefined;
       const country = req.query['country'] ? String(req.query['country']) : undefined;
       const isVisaRequestAccepted = req.query['isVisaRequestAccepted'] === 'true' ? true : undefined;
-      const isTravelFundRequestAccepted = req.query['isTravelFundRequestAccepted'] === 'true' ? true : undefined;
-      const anyRegistrationStatus = req.query['anyRegistrationStatus'] === 'true' ? true : undefined;
 
       const sortOrder: EventSortOrder = VALID_EVENT_SORT_ORDERS.includes(rawSortOrder) ? rawSortOrder : 'ASC';
       let isPast: boolean | undefined;
@@ -109,8 +107,6 @@ export class EventsController {
         country,
         affiliatedProjectSlugs,
         isVisaRequestAccepted,
-        isTravelFundRequestAccepted,
-        anyRegistrationStatus,
       });
 
       logger.success(req, 'get_my_events', startTime, {
@@ -230,6 +226,47 @@ export class EventsController {
 
       logger.success(req, 'get_event_organizations', startTime, {
         result_count: response.data.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/events/travel-fund-events
+   * Get upcoming events accepting travel fund applications (the same list for every user)
+   * Query params: eventId (string), searchQuery (string), startDateFrom (ISO), startDateTo (ISO), country (string),
+   *               pageSize (number), offset (number)
+   */
+  public async getTravelFundEvents(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_travel_fund_events', {
+      has_query: Object.keys(req.query).length > 0,
+    });
+
+    try {
+      if (!getEffectiveEmail(req)) {
+        throw new AuthenticationError('User authentication required', {
+          operation: 'get_travel_fund_events',
+        });
+      }
+
+      const { pageSize, offset } = parseOffsetPagination(req, { defaultPageSize: DEFAULT_EVENTS_PAGE_SIZE, maxPageSize: MAX_EVENTS_PAGE_SIZE });
+
+      const response = await this.eventsService.getTravelFundEvents(req, {
+        eventId: req.query['eventId'] ? String(req.query['eventId']) : undefined,
+        searchQuery: req.query['searchQuery'] ? String(req.query['searchQuery']).trim() : undefined,
+        startDateFrom: req.query['startDateFrom'] ? String(req.query['startDateFrom']) : undefined,
+        startDateTo: req.query['startDateTo'] ? String(req.query['startDateTo']) : undefined,
+        country: req.query['country'] ? String(req.query['country']) : undefined,
+        pageSize,
+        offset,
+      });
+
+      logger.success(req, 'get_travel_fund_events', startTime, {
+        result_count: response.data.length,
+        total: response.total,
       });
 
       res.json(response);

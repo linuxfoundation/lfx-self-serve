@@ -391,7 +391,7 @@ describe('EventsService.getMyEvents upcoming eligibility filters', () => {
   });
 
   it('keeps one registration per event, preferring Accepted', async () => {
-    const sql = await sqlFor({ registeredOnly: true, anyRegistrationStatus: true });
+    const sql = await sqlFor({ registeredOnly: true });
 
     expect(sql).toContain("QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1)) = 1");
   });
@@ -402,13 +402,38 @@ describe('EventsService.getMyEvents upcoming eligibility filters', () => {
     expect(sql.match(/AND REGISTRATION_STATUS = 'Accepted'/g)).toHaveLength(2);
     expect(sql).toContain('AND r.IS_VISA_REQUEST_ACCEPTED = TRUE');
   });
+});
 
-  it('counts any registration status when anyRegistrationStatus is set (travel funding)', async () => {
-    const sql = await sqlFor({ registeredOnly: true, isTravelFundRequestAccepted: true, anyRegistrationStatus: true });
+describe('EventsService.getTravelFundEvents', () => {
+  let service: InstanceType<typeof EventsService>;
 
-    expect(sql).not.toContain("AND REGISTRATION_STATUS = 'Accepted'");
-    expect(sql).toContain('AND r.IS_TRAVEL_FUND_ACCEPTED = TRUE');
-    expect(sql).not.toContain('TRAVEL_FUND_END_TS >=');
+  beforeEach(() => {
+    vi.clearAllMocks();
+    snowflakeMocks.execute.mockResolvedValue({ rows: [] });
+    service = new EventsService();
+  });
+
+  async function callFor(options: Record<string, unknown> = {}): Promise<[string, unknown[]]> {
+    await service.getTravelFundEvents({} as never, { pageSize: 10, offset: 0, ...options } as never);
+    return snowflakeMocks.execute.mock.calls[0] as [string, unknown[]];
+  }
+
+  it('is independent of the signed-in user and requires an open travel fund event', async () => {
+    const [sql, binds] = await callFor();
+
+    expect(sql).not.toContain('USER_EMAIL');
+    expect(sql).toContain('BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED)');
+    expect(sql).toContain('IS NULL OR');
+    expect(sql).toContain('>= CURRENT_TIMESTAMP()');
+    expect(sql).toContain('QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY EVENT_START_DATE) = 1');
+    expect(binds).not.toContain(USER_EMAIL);
+  });
+
+  it('filters by event id for the deep link', async () => {
+    const [sql, binds] = await callFor({ eventId: 'evt-1' });
+
+    expect(sql).toContain('EVENT_ID = ?');
+    expect(binds).toContain('evt-1');
   });
 });
 
@@ -512,15 +537,16 @@ describe('EventsService.isEligibleForEventRequest', () => {
     expect(binds).toEqual([USER_EMAIL, 'evt-1']);
   });
 
-  it('accepts any registration status for travel funding', async () => {
+  it('checks the event, not the user, for travel funding and requires an open deadline', async () => {
     snowflakeMocks.execute.mockResolvedValue({ rows: [{ ELIGIBLE: 1 }] });
 
-    await service.isEligibleForEventRequest({} as never, USER_EMAIL, 'evt-1', 'travel-fund');
+    await expect(service.isEligibleForEventRequest({} as never, USER_EMAIL, 'evt-1', 'travel-fund')).resolves.toBe(true);
 
-    const [sql] = lastCall();
-    expect(sql).toContain('AND IS_TRAVEL_FUND_ACCEPTED = TRUE');
-    expect(sql).not.toContain('REGISTRATION_STATUS');
-    expect(sql).not.toContain('TRAVEL_FUND_END_TS');
+    const [sql, binds] = lastCall();
+    expect(sql).not.toContain('USER_EMAIL');
+    expect(sql).toContain('BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED)');
+    expect(sql).toContain('>= CURRENT_TIMESTAMP()');
+    expect(binds).toEqual(['evt-1']);
   });
 
   it('returns false when no registration matches', async () => {
