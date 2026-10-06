@@ -11,11 +11,19 @@ import {
   MeetingDetailsLoadStatus,
   MeetingJoinPageState,
   MeetingOccurrence,
+  MeetingStatusKind,
   MeetingTimeState,
   PublicMeetingProject,
   PublicPastMeetingResponse,
 } from '@lfx-one/shared/interfaces';
-import { getActiveOccurrences, getCurrentOrNextOccurrence, isPastMeetingCompositeId, resolveTimeState } from '@lfx-one/shared/utils';
+import {
+  getActiveOccurrences,
+  getCurrentOrNextOccurrence,
+  isMeetingInviteResponsesEnabled,
+  isPastMeetingCompositeId,
+  resolveMeetingStatus,
+  resolveTimeState,
+} from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { BehaviorSubject, catchError, combineLatest, EMPTY, interval, map, Observable, switchMap, tap, timer } from 'rxjs';
 
@@ -90,6 +98,12 @@ export class MeetingDetailsStateService {
   public readonly selectedOccurrence: Signal<MeetingOccurrence | null> = this.initSelectedOccurrence();
   /** The selected occurrence's time state on the clock; `null` until the meeting has loaded. */
   public readonly timeState: Signal<MeetingTimeState | null> = this.initTimeState();
+  /**
+   * The meeting status the pill and the identity bar both show (E1-05), so the two cannot disagree.
+   * The viewer's own RSVP is not loaded until E2-04 (`myRsvp: undefined`), so an invited viewer sees
+   * the time state until it is; E2-04 sets it here, once, for both.
+   */
+  public readonly meetingStatus: Signal<MeetingStatusKind | null> = this.initMeetingStatus();
   public readonly status: Signal<MeetingDetailsLoadStatus> = this.initStatus();
 
   public constructor() {
@@ -144,6 +158,24 @@ export class MeetingDetailsStateService {
     return computed(() => {
       const meeting = this.meeting();
       return meeting ? resolveTimeState(meeting, this.selectedOccurrence(), this.now()) : null;
+    });
+  }
+
+  private initMeetingStatus(): Signal<MeetingStatusKind | null> {
+    return computed(() => {
+      const meeting = this.meeting();
+      const timeState = this.timeState();
+      if (!meeting || !timeState) {
+        return null;
+      }
+      const start = new Date(this.selectedOccurrence()?.start_time ?? meeting.start_time).getTime();
+      return resolveMeetingStatus({
+        timeState,
+        hasStarted: this.now().getTime() >= start,
+        invited: meeting.invited === true,
+        inviteResponsesEnabled: isMeetingInviteResponsesEnabled(meeting),
+        myRsvp: undefined,
+      });
     });
   }
 

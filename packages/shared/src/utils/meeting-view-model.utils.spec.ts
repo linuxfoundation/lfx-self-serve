@@ -630,11 +630,13 @@ describe('resolveVisibleSections', () => {
 });
 
 describe('resolveMeetingStatus', () => {
-  const before = { timeState: 'before' as const, invited: true, inviteResponsesEnabled: true };
+  const before = { timeState: 'before' as const, hasStarted: false, invited: true, inviteResponsesEnabled: true };
 
   it.each([
     [{ ...before, timeState: 'ended' as const, myRsvp: 'accepted' as const }, 'ended'],
-    [{ ...before, timeState: 'live' as const, myRsvp: 'declined' as const }, 'live'],
+    [{ ...before, timeState: 'live' as const, hasStarted: true, myRsvp: 'declined' as const }, 'live'],
+    // Inside the join window but before the scheduled start.
+    [{ ...before, timeState: 'live' as const, hasStarted: false, myRsvp: null }, 'starting-soon'],
     [{ ...before, myRsvp: 'accepted' as const }, 'going'],
     [{ ...before, myRsvp: 'maybe' as const }, 'maybe'],
     [{ ...before, myRsvp: 'declined' as const }, 'cant-attend'],

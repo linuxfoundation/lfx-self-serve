@@ -3,7 +3,7 @@
 
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Meeting, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingStatusKind, MeetingTimeState, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { environment } from '@environments/environment';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -19,7 +19,8 @@ describe('MeetingHeaderComponent', () => {
   let meeting: WritableSignal<LoadedMeeting | undefined>;
   let setFoundation: ReturnType<typeof vi.fn>;
   let copyLink: ReturnType<typeof vi.fn>;
-  let now: WritableSignal<Date>;
+  let timeState: WritableSignal<MeetingTimeState | null>;
+  let meetingStatus: WritableSignal<MeetingStatusKind | null>;
 
   const project: PublicMeetingProject = {
     uid: 'project-1',
@@ -51,7 +52,7 @@ describe('MeetingHeaderComponent', () => {
       imports: [MeetingHeaderComponent],
       providers: [
         { provide: PLATFORM_ID, useValue: platform },
-        { provide: MeetingDetailsStateService, useValue: { meeting, now, selectedOccurrence: signal(null) } },
+        { provide: MeetingDetailsStateService, useValue: { meeting, timeState, meetingStatus, selectedOccurrence: signal(null) } },
         { provide: ProjectContextService, useValue: { setFoundation } },
         { provide: ClipboardShareService, useValue: { copyLink } },
       ],
@@ -65,7 +66,8 @@ describe('MeetingHeaderComponent', () => {
     meeting = signal<LoadedMeeting | undefined>(build());
     setFoundation = vi.fn();
     copyLink = vi.fn();
-    now = signal(new Date());
+    timeState = signal<MeetingTimeState | null>('before');
+    meetingStatus = signal<MeetingStatusKind | null>('upcoming');
     await create();
   });
 
@@ -131,40 +133,40 @@ describe('MeetingHeaderComponent', () => {
     expect(glyph?.classList.contains('text-[var(--md-text-muted)]')).toBe(!open);
   });
 
+  // The status itself is resolved once in the state service (and tested there and in
+  // resolveMeetingStatus); the header renders it.
   describe('status pill', () => {
     const pill = (): HTMLElement | null => query('meeting-status-pill');
-    const day = 24 * 60 * 60 * 1000;
 
-    it('leads the badge row with the time state', () => {
-      show({ start_time: new Date(Date.now() + 3 * day).toISOString(), duration: 60 } as Partial<Meeting>);
+    function status(state: MeetingTimeState, kind: MeetingStatusKind): void {
+      timeState.set(state);
+      meetingStatus.set(kind);
+      fixture.detectChanges();
+    }
 
+    it('leads the badge row with the page status', () => {
       expect(query('meeting-header-badges')?.firstElementChild).toBe(pill());
       expect(pill()?.textContent?.trim()).toBe('Upcoming');
       expect(pill()?.getAttribute('data-state')).toBe('before');
       expect(pill()?.getAttribute('data-status')).toBe('upcoming');
     });
 
-    it('moves to In progress and then Ended as the clock passes the meeting', () => {
-      const start = Date.now() + 3 * day;
-      show({ start_time: new Date(start).toISOString(), duration: 60 } as Partial<Meeting>);
+    it.each([
+      ['live', 'starting-soon', 'Starting soon'],
+      ['live', 'live', 'In progress'],
+      ['ended', 'ended', 'Ended'],
+      ['before', 'going', "You're going"],
+      ['before', 'cant-attend', "Can't attend"],
+    ] as [MeetingTimeState, MeetingStatusKind, string][])('renders %s / %s as "%s"', (state, kind, label) => {
+      status(state, kind);
 
-      now.set(new Date(start + 10 * 60 * 1000));
-      fixture.detectChanges();
-      expect(pill()?.textContent?.trim()).toBe('In progress');
-      expect(pill()?.getAttribute('data-state')).toBe('live');
-
-      now.set(new Date(start + 2 * day));
-      fixture.detectChanges();
-      expect(pill()?.textContent?.trim()).toBe('Ended');
-      expect(pill()?.getAttribute('data-state')).toBe('ended');
+      expect(pill()?.textContent?.trim()).toBe(label);
+      expect(pill()?.getAttribute('data-state')).toBe(state);
+      expect(pill()?.getAttribute('data-status')).toBe(kind);
     });
 
-    // The viewer's own RSVP is not loaded until E2-04, so an invited viewer sees the time state, and
-    // data-my-rsvp is absent rather than a wrong "none".
-    it('never shows Awaiting your RSVP before the RSVP is loaded', () => {
-      show({ start_time: new Date(Date.now() + 3 * day).toISOString(), duration: 60, invited: true, is_invite_responses_enabled: true } as Partial<Meeting>);
-
-      expect(pill()?.textContent?.trim()).toBe('Upcoming');
+    // E2-04 has not loaded the viewer's RSVP yet, so data-my-rsvp is absent rather than a wrong "none".
+    it('leaves data-my-rsvp off until the RSVP is loaded', () => {
       expect(pill()?.hasAttribute('data-my-rsvp')).toBe(false);
     });
   });

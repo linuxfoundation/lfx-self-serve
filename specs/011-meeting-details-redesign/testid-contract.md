@@ -106,7 +106,7 @@ pill's phase without reading its copy. `data-status` carries the full `MeetingSt
 
 ```text
 data-state:   before | live | ended
-data-status:  upcoming | live | ended | awaiting-rsvp | going | maybe | cant-attend
+data-status:  upcoming | starting-soon | live | ended | awaiting-rsvp | going | maybe | cant-attend
 data-my-rsvp: accepted | maybe | declined | none
 ```
 

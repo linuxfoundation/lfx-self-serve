@@ -8,7 +8,6 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MEETING_STATUS_LABELS } from '@lfx-one/shared/constants';
-import { isMeetingInviteResponsesEnabled, resolveMeetingStatus } from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
 import { LensService } from '@services/lens.service';
 import { UserService } from '@services/user.service';
@@ -73,20 +72,13 @@ export class MeetingIdentityBarComponent {
   private initSubtitle(): Signal<string> {
     return computed(() => {
       const meeting = this.meeting();
-      const timeState = this.state.timeState();
-      if (!meeting || !timeState) {
+      const status = this.state.meetingStatus();
+      if (!meeting || !status) {
         return '';
       }
-      const status =
-        MEETING_STATUS_LABELS[
-          resolveMeetingStatus({
-            timeState,
-            invited: meeting.invited === true,
-            inviteResponsesEnabled: isMeetingInviteResponsesEnabled(meeting),
-            myRsvp: undefined,
-          })
-        ];
-      return [meeting.project?.name, status].filter(Boolean).join(' · ');
+      // The state service's status, which the header's pill shows too (E1-05).
+      const label = MEETING_STATUS_LABELS[status];
+      return [meeting.project?.name, label].filter(Boolean).join(' · ');
     });
   }
 

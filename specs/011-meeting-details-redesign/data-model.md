@@ -44,7 +44,8 @@ What `meeting-view-model.interface.ts` defines, and the rule behind each piece:
 
 - **`MeetingTimeState`** — `before | live | ended`.
 - **`MeetingStatusKind`** — what the status pill and identity bar say (`resolveMeetingStatus`, E1-05):
-  `ended` and `live` for everyone; before the meeting, a viewer on the invite list with RSVP tracking
+  `ended` and `live` for everyone, with the join window before the scheduled start reading as
+  `starting-soon` (`data-state` stays `live`); before the meeting, a viewer on the invite list with RSVP tracking
   on sees their own answer (`awaiting-rsvp | going | maybe | cant-attend`), and everyone else sees
   `upcoming`. An RSVP that has not loaded, or a pre-2024 meeting, reads as `upcoming`, never as
   `awaiting-rsvp`.

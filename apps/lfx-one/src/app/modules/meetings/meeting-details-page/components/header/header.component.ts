@@ -18,14 +18,7 @@ import {
   ProjectContext,
   PublicMeetingProject,
 } from '@lfx-one/shared/interfaces';
-import {
-  getCurrentOrNextOccurrence,
-  isMeetingInviteResponsesEnabled,
-  resolveMeetingStatus,
-  resolveOccurrenceRecurrence,
-  resolvePrivacy,
-  resolveTimeState,
-} from '@lfx-one/shared/utils';
+import { resolveOccurrenceRecurrence, resolvePrivacy } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -67,6 +60,7 @@ export class MeetingHeaderComponent {
     upcoming: { pill: 'bg-[var(--md-accent-bg)] text-[var(--md-accent-ink)]', dot: 'bg-[var(--md-accent)]' },
     live: { pill: 'bg-[var(--md-status-live-bg)] text-[var(--md-status-live)]', dot: 'bg-[var(--md-status-live)]' },
     ended: { pill: 'bg-[var(--md-border)] text-[var(--md-text-body)]', dot: 'bg-[var(--md-glyph-faint)]' },
+    'starting-soon': { pill: 'bg-[var(--md-status-live-bg)] text-[var(--md-status-live)]', dot: 'bg-[var(--md-status-live)]' },
     'awaiting-rsvp': { pill: 'bg-[var(--md-status-warn-bg)] text-[var(--md-status-warn)]', dot: 'bg-[var(--md-status-warn)]' },
     going: { pill: 'bg-[var(--md-status-good-bg)] text-[var(--md-status-good)]', glyph: 'fa-solid fa-check' },
     maybe: { pill: 'bg-[var(--md-status-warn-bg)] text-[var(--md-status-warn)]', glyph: 'fa-solid fa-question' },
@@ -109,10 +103,9 @@ export class MeetingHeaderComponent {
    * on inconsistent context, so the project then shows without a link.
    */
   protected readonly foundation: Signal<ProjectContext | null> = this.initFoundation();
-  /** The selected occurrence's time state, ticking with the state service's clock. */
-  protected readonly timeState: Signal<MeetingTimeState | null> = this.initTimeState();
-  /** The status pill's variant (E1-05, FR-011) and its label. */
-  protected readonly status: Signal<MeetingStatusKind | null> = this.initStatus();
+  /** The page's time state and meeting status, from the state service so the bar shows the same. */
+  protected readonly timeState: Signal<MeetingTimeState | null> = this.state.timeState;
+  protected readonly status: Signal<MeetingStatusKind | null> = this.state.meetingStatus;
   protected readonly statusLabel = computed(() => {
     const status = this.status();
     return status ? MEETING_STATUS_LABELS[status] : '';
@@ -170,31 +163,6 @@ export class MeetingHeaderComponent {
         return { uid: project.parent.uid, name: project.parent.name, slug: project.parent.slug };
       }
       return project.parent_uid ? null : { uid: project.uid, name: project.name, slug: project.slug };
-    });
-  }
-
-  private initTimeState(): Signal<MeetingTimeState | null> {
-    return computed(() => {
-      const meeting = this.meeting();
-      return meeting ? resolveTimeState(meeting, getCurrentOrNextOccurrence(meeting), this.state.now()) : null;
-    });
-  }
-
-  private initStatus(): Signal<MeetingStatusKind | null> {
-    return computed(() => {
-      const meeting = this.meeting();
-      const timeState = this.timeState();
-      if (!meeting || !timeState) {
-        return null;
-      }
-      // `myRsvp` stays unknown until E2-04 loads it (`GET /api/meetings/:uid/rsvp/me`, per occurrence),
-      // so an invited viewer sees the time state rather than a wrong "Awaiting your RSVP".
-      return resolveMeetingStatus({
-        timeState,
-        invited: meeting.invited === true,
-        inviteResponsesEnabled: isMeetingInviteResponsesEnabled(meeting),
-        myRsvp: undefined,
-      });
     });
   }
 

@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, ParamMap, provideRouter, Router } from '@angular/router';
 import { environment } from '@environments/environment';
-import { Meeting, MeetingDetailsLoadStatus, MeetingOccurrence, MeetingTimeState, PublicMeetingProject, User } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingDetailsLoadStatus, MeetingOccurrence, MeetingStatusKind, PublicMeetingProject, User } from '@lfx-one/shared/interfaces';
 import { LensService } from '@services/lens.service';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject } from 'rxjs';
@@ -23,7 +23,7 @@ describe('MeetingIdentityBarComponent', () => {
   let status: WritableSignal<MeetingDetailsLoadStatus>;
   let queryParamMap$: BehaviorSubject<ParamMap>;
   let setLens: ReturnType<typeof vi.fn>;
-  let timeState: WritableSignal<MeetingTimeState | null>;
+  let meetingStatus: WritableSignal<MeetingStatusKind | null>;
   let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
 
   // A start a year out, so the subtitle's status is "Upcoming" whatever day the suite runs.
@@ -43,7 +43,7 @@ describe('MeetingIdentityBarComponent', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: MeetingDetailsStateService, useValue: { status, meeting: signal(meeting), timeState, selectedOccurrence } },
+        { provide: MeetingDetailsStateService, useValue: { status, meeting: signal(meeting), meetingStatus, selectedOccurrence } },
         {
           provide: UserService,
           useValue: {
@@ -81,7 +81,7 @@ describe('MeetingIdentityBarComponent', () => {
     status = signal<MeetingDetailsLoadStatus>('ready');
     queryParamMap$ = new BehaviorSubject<ParamMap>(convertToParamMap({}));
     setLens = vi.fn();
-    timeState = signal<MeetingTimeState | null>('before');
+    meetingStatus = signal<MeetingStatusKind | null>('upcoming');
     selectedOccurrence = signal<MeetingOccurrence | null>(null);
   });
 
@@ -187,16 +187,18 @@ describe('MeetingIdentityBarComponent', () => {
       expect(query('meeting-identity-bar-subtitle')?.getAttribute('title')).toBe('Acme Project · Upcoming');
     });
 
-    it('follows the page time state', async () => {
+    // The subtitle shows the same status as the header's pill: both read the state service's.
+    it.each([
+      ['starting-soon', 'Acme Project · Starting soon'],
+      ['live', 'Acme Project · In progress'],
+      ['ended', 'Acme Project · Ended'],
+    ] as [MeetingStatusKind, string][])('shows the page status %s as "%s"', async (kind, subtitle) => {
       await create();
 
-      timeState.set('live');
+      meetingStatus.set(kind);
       fixture.detectChanges();
-      expect(query('meeting-identity-bar-subtitle')?.textContent?.trim()).toBe('Acme Project · Live');
 
-      timeState.set('ended');
-      fixture.detectChanges();
-      expect(query('meeting-identity-bar-subtitle')?.textContent?.trim()).toBe('Acme Project · Ended');
+      expect(query('meeting-identity-bar-subtitle')?.textContent?.trim()).toBe(subtitle);
     });
 
     // The date tile follows the page's selected occurrence (?occurrence=), not the meeting's first start.

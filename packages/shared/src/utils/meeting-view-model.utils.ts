@@ -83,7 +83,8 @@ export function resolveViewerRole(context: MeetingViewerContext): MeetingViewerR
 /**
  * Resolves the meeting status shown in the V2 status pill and identity bar (E1-05, FR-011).
  *
- * Ended and live are time states for everyone. Before the meeting, a viewer on the invite list with
+ * Ended and live are time states for everyone; inside the join window but before the scheduled start,
+ * live reads as starting soon. Before the meeting, a viewer on the invite list with
  * RSVP tracking on sees their own answer; with tracking off (pre-2024 meetings) or the answer not
  * loaded yet, the pill falls back to the time state rather than claiming the viewer has not answered.
  */
@@ -92,7 +93,7 @@ export function resolveMeetingStatus(input: MeetingStatusInput): MeetingStatusKi
     return 'ended';
   }
   if (input.timeState === 'live') {
-    return 'live';
+    return input.hasStarted ? 'live' : 'starting-soon';
   }
   if (!input.invited || !input.inviteResponsesEnabled || input.myRsvp === undefined) {
     return 'upcoming';

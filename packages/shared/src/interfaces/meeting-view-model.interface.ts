@@ -25,11 +25,16 @@ export interface MeetingCommitteeLink {
  * @description The time state, except that before the meeting a viewer on the invite list with RSVP
  * tracking on sees their own answer: `awaiting-rsvp`, `going`, `maybe` or `cant-attend`.
  */
-export type MeetingStatusKind = 'upcoming' | 'live' | 'ended' | 'awaiting-rsvp' | 'going' | 'maybe' | 'cant-attend';
+export type MeetingStatusKind = 'upcoming' | 'starting-soon' | 'live' | 'ended' | 'awaiting-rsvp' | 'going' | 'maybe' | 'cant-attend';
 
 /** Inputs to `resolveMeetingStatus`. */
 export interface MeetingStatusInput {
   timeState: MeetingTimeState;
+  /**
+   * Whether the scheduled start has passed. The join window opens before it, so a `live` time state
+   * before the start reads as `starting-soon`.
+   */
+  hasStarted: boolean;
   /** `Meeting.invited`: the viewer is on the invite list (a registrant, or an invited organizer). */
   invited: boolean;
   /** `Meeting.is_invite_responses_enabled`; pre-2024 meetings never collected RSVPs. */
