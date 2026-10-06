@@ -473,6 +473,16 @@ describe('MeetingDetailsStateService', () => {
       }
     });
 
+    it('keeps the last occurrence once a series is exhausted, not the series start', async () => {
+      const ended = series().occurrences.map((occurrence, i) => ({ ...occurrence, start_time: new Date(Date.now() - (9 - i * 7) * DAY).toISOString() }));
+      getPublicMeeting.mockReturnValue(of({ meeting: { ...series(), start_time: ended[0].start_time, occurrences: ended }, project }));
+      const state = create();
+      await settle();
+
+      expect(state.selectedOccurrence()?.occurrence_id).toBe('2');
+      expect(state.timeState()).toBe('ended');
+    });
+
     it('has no time state before the meeting loads', () => {
       getPublicMeeting.mockReturnValue(new Subject());
       const state = create();
