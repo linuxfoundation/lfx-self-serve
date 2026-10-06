@@ -854,12 +854,26 @@ export class AudienceBuilderTabComponent {
     // survived, and a compose then sent A's lists (and A's event name into the list names) with
     // B's brief id. Keyed on the advertised event URL, which is what names the event here: the
     // same event re-proceeded, or another email stage for it, keeps the operator's selection.
-    // From an EMPTY previous URL is not a change of event -- a brief arriving for an exploratory
+    //
+    // An EMPTY URL means "no brief right now", not "a different event", so it is skipped and the
+    // comparison is against the last NON-empty one. Every stage change and every return to Plan
+    // clears the brief first, so a plain previous/next pair saw A -> '' and wiped the same event's
+    // work. From no event at all is not a change either: a brief arriving for an exploratory
     // session the operator started by hand is the same work.
+    //
+    // A discovery still STREAMING counts as work too: `hasDiscovered` turns true only on the final
+    // frame, while `identity` and the lists land earlier, so B's brief arriving mid-stream let A's
+    // frames finish under it.
+    let lastEventUrl = '';
     toObservable(this.initialEventUrl)
-      .pipe(distinctUntilChanged(), pairwise(), takeUntilDestroyed(this.destroyRef))
-      .subscribe(([previous, next]) => {
-        if (previous === '' || !this.hasDiscovered()) {
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((next) => {
+        if (next === '') {
+          return;
+        }
+        const previous = lastEventUrl;
+        lastEventUrl = next;
+        if (previous === '' || previous === next || !(this.hasDiscovered() || this.discovering())) {
           return;
         }
         this.resetForNewContext(this.projectSlug());

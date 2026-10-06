@@ -769,6 +769,51 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value).toBe('https://events.example.org/event-b');
     });
 
+    it('keeps the selection across a stage change that clears the brief and hands back the SAME event', async () => {
+      // Every stage change clears the brief first, so the URL goes A -> '' -> A. Comparing plain
+      // previous/next pairs saw A -> '' as a change of event and wiped the same event's work.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('initialEventUrl', '');
+      fixture.componentRef.setInput('briefId', '');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-a');
+      fixture.componentRef.setInput('briefId', 'brief-a-cfp');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), 'a stage change wiped the same event').not.toBeNull();
+    });
+
+    it('resets across a cleared brief when it is a DIFFERENT event that comes back', async () => {
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('initialEventUrl', '');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "event A's selection survived into event B").toBeNull();
+    });
+
+    it("drops a discovery still streaming when a different event's brief arrives", async () => {
+      // `hasDiscovered` turns true only on the final frame, so a mid-stream switch let A's frames
+      // finish under B's brief.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+      completeDiscovery();
+
+      expect(host().querySelector('[data-testid="audience-card-grid-toggle-101"]'), "event A's late frames landed under event B").toBeNull();
+    });
+
     it('keeps the selection when the SAME event is handed back (another stage, or a re-proceed)', async () => {
       await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
       click('campaigns-audience-discover');
