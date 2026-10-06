@@ -2827,7 +2827,7 @@ describe('CampaignController.updateCampaignBudget', () => {
     controller = new CampaignController();
     res = buildRes();
     next = vi.fn();
-    updateCampaignBudget.mockResolvedValue({ id: UUID, platform: 'google_ads', status: 'active', version: 2, etag: '"2"' });
+    updateCampaignBudget.mockResolvedValue({ id: UUID, platform: 'google-ads', status: 'active', version: 2, etag: '"2"' });
   });
 
   it('sends the change to campaign-service and reports the row it answered with', async () => {
@@ -2843,7 +2843,7 @@ describe('CampaignController.updateCampaignBudget', () => {
       etag: '"1"',
     });
     expect(res.json).toHaveBeenCalledWith({
-      platform: 'google_ads',
+      platform: 'google-ads',
       campaignId: UUID,
       budget: 150.25,
       budgetType: 'daily',
@@ -2855,7 +2855,7 @@ describe('CampaignController.updateCampaignBudget', () => {
   // A budget change leaves the row's status as found, so a created_degraded campaign keeps its
   // reconciliation marker. Reporting anything else would hide that.
   it('reports the service status of a degraded campaign unchanged', async () => {
-    updateCampaignBudget.mockResolvedValue({ id: UUID, platform: 'meta', status: 'created_degraded', version: 5, etag: '"5"' });
+    updateCampaignBudget.mockResolvedValue({ id: UUID, platform: 'meta-ads', status: 'created_degraded', version: 5, etag: '"5"' });
 
     await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, budgetType: 'lifetime' }), res, next);
 

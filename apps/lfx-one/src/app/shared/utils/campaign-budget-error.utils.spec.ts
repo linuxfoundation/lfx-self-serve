@@ -70,7 +70,10 @@ describe('campaignBudgetFailureOutcome', () => {
   });
 
   it('falls back to a generic failure for a refusal with no readable message', () => {
-    expect(campaignBudgetFailureOutcome(httpError(400, null))).toEqual({ state: 'failed', message: CAMPAIGN_BUDGET_FAILURE_FALLBACK });
+    expect(campaignBudgetFailureOutcome(httpError(400, { error: '', code: 'BAD_REQUEST' }))).toEqual({
+      state: 'failed',
+      message: CAMPAIGN_BUDGET_FAILURE_FALLBACK,
+    });
   });
 
   // The BFF answers every error with its JSON `{ error, code }` envelope. A body without it came from

@@ -2205,7 +2205,7 @@ export class CampaignController {
       // amount requested, which the platform accepted; the platform may hold it rounded to its
       // smallest settable unit.
       const result: CampaignBudgetUpdateResult = {
-        platform: campaign.platform,
+        platform: campaign.platform as CampaignPlatform,
         campaignId,
         budget: body.budget,
         budgetType,
@@ -2336,7 +2336,7 @@ export class CampaignController {
       // `platform`, `etag` and `serviceStatus` come from the ROW; `bid` and `bidType` echo the
       // request, which the platform accepted.
       const result: CampaignBidUpdateResult = {
-        platform: campaign.platform,
+        platform: campaign.platform as CampaignPlatform,
         campaignId,
         bid: body.bid,
         bidType,

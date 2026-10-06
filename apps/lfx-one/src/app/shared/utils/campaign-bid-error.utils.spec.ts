@@ -28,7 +28,7 @@ describe('campaignBidFailureOutcome', () => {
   // Its wording contains "could not be confirmed", which must not turn a definite refusal unconfirmed.
   it('keeps a 409 a failure even though its wording mentions confirmation', () => {
     const message = 'the ad group this service created for it could not be confirmed';
-    expect(campaignBidFailureOutcome(httpError(409, { error: message })).state).toBe('failed');
+    expect(campaignBidFailureOutcome(httpError(409, { error: message, code: 'CONFLICT' })).state).toBe('failed');
   });
 
   it('passes a platform floor 400 through verbatim', () => {
@@ -78,6 +78,6 @@ describe('campaignBidFailureOutcome', () => {
   });
 
   it('falls back to a generic failure for a message-less refusal', () => {
-    expect(campaignBidFailureOutcome(httpError(400, null))).toEqual({ state: 'failed', message: CAMPAIGN_BID_FAILURE_FALLBACK });
+    expect(campaignBidFailureOutcome(httpError(400, { error: '', code: 'BAD_REQUEST' }))).toEqual({ state: 'failed', message: CAMPAIGN_BID_FAILURE_FALLBACK });
   });
 });

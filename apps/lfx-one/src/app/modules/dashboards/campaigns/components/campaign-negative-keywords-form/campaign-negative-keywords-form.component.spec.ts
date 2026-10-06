@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED, MAX_NEGATIVE_KEYWORDS_PER_REQUEST } from '@lfx-one/shared/constants';
 import { CampaignNegativeKeywordsResult } from '@lfx-one/shared/interfaces';
+import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
@@ -166,7 +167,7 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
 
   it('shows a refusal verbatim as a failure', () => {
     const message = 'negative keywords can be added to Microsoft Advertising campaigns only';
-    addNegativeKeywords.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { error: message } })));
+    addNegativeKeywords.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { error: message, code: 'BAD_REQUEST' } })));
     typeKeywords('alpha');
     submit();
 
@@ -174,20 +175,57 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
     expect(q('optimization-campaign-negatives-unconfirmed-c-1')).toBeNull();
   });
 
-  it('reports pending to the parent when a request starts and when it settles', () => {
+  it('shows pending while a request runs, then the outcome', () => {
     const response = new Subject<CampaignNegativeKeywordsResult>();
     addNegativeKeywords.mockReturnValue(response);
-    const emitted: boolean[] = [];
-    fixture.componentInstance.pendingChange.subscribe((value) => emitted.push(value));
     typeKeywords('alpha');
     submit();
 
-    expect(emitted).toEqual([true]);
+    expect(TestBed.inject(CampaignNegativeKeywordsService).pendingByCampaign()).toEqual({ 'c-1': true });
     response.error(new HttpErrorResponse({ status: 504, error: 'upstream request timeout' }));
     fixture.detectChanges();
 
-    expect(emitted).toEqual([true, false]);
+    expect(TestBed.inject(CampaignNegativeKeywordsService).pendingByCampaign()).toEqual({});
     // A proxy's plain-text timeout is not the BFF's envelope: the keywords may have been added.
     expect(q('optimization-campaign-negatives-unconfirmed-c-1')!.textContent).toContain('alpha');
+  });
+
+  // A campaign-list re-read or a tab switch destroys the form while the request runs on. The
+  // request and its per-keyword outcomes must survive that, or the operator cannot tell which
+  // keywords are safe to resend, and the parent's pending flag is never cleared.
+  it('keeps the request and its per-keyword outcomes across a remount', () => {
+    const response = new Subject<CampaignNegativeKeywordsResult>();
+    addNegativeKeywords.mockReturnValue(response);
+    typeKeywords('alpha\nbeta');
+    submit();
+    fixture.destroy();
+
+    const remounted = TestBed.createComponent(CampaignNegativeKeywordsFormComponent);
+    remounted.componentRef.setInput('projectSlug', 'tlf');
+    remounted.componentRef.setInput('briefId', 'b-1');
+    remounted.componentRef.setInput('campaignId', 'c-1');
+    remounted.componentRef.setInput('campaignName', 'KubeCon EU');
+    remounted.detectChanges();
+    const root = remounted.nativeElement as HTMLElement;
+    const submitButton = root.querySelector('[data-testid="optimization-campaign-negatives-submit-c-1"] button') as HTMLButtonElement;
+    expect(submitButton.disabled).toBe(true);
+
+    response.next({
+      campaignId: 'c-1',
+      appliedCount: 1,
+      results: [
+        { text: 'alpha', matchType: 'Exact', outcome: 'APPLIED' },
+        { text: 'beta', matchType: 'Exact', outcome: 'UNCONFIRMED' },
+      ],
+    });
+    response.complete();
+    remounted.detectChanges();
+
+    expect(TestBed.inject(CampaignNegativeKeywordsService).pendingByCampaign()).toEqual({});
+    const items = Array.from(root.querySelectorAll('[data-testid^="optimization-campaign-negatives-result-"]'));
+    expect(items.map((item) => item.querySelector('[data-outcome]')!.getAttribute('data-outcome'))).toEqual(['APPLIED', 'UNCONFIRMED']);
+    expect(items.map((item) => item.querySelector('.font-medium')!.textContent!.trim())).toEqual(['alpha', 'beta']);
+    expect(messageAdd).toHaveBeenCalledTimes(1);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', sticky: true, detail: expect.stringContaining('to see which') }));
   });
 });

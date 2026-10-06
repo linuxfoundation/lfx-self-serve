@@ -15,9 +15,11 @@ import { classifyCampaignWriteFailure } from './campaign-write-error.utils';
  * Classify a failed `PATCH /api/campaigns/:campaignId/bid` for the Optimize tab, through the
  * shared `classifyCampaignWriteFailure`.
  *
- * - **412** is a stale validator: `conflict`, and the operator is told to refresh the list.
- * - Any other **4xx** except 408 is a definite refusal (`failed`, message verbatim), decided before
- *   the wording is read: the neutral 409 says an ad group "could not be confirmed".
+ * - **412** in the BFF's `{ error, code }` envelope is a stale validator: `conflict`, and the
+ *   operator is told to refresh the list.
+ * - Any other **4xx** except 408, in that envelope, is a definite refusal (`failed`, message
+ *   verbatim), decided before the wording is read: the neutral 409 says an ad group "could not be
+ *   confirmed". A 4xx WITHOUT the envelope came from a proxy and is `unconfirmed`.
  * - **Unconfirmed** is any message that says so (the BFF's `CAMPAIGN_BID_OUTCOME_UNCONFIRMED`, or
  *   campaign-service's "the campaign bid change is unconfirmed ..."), any response that is not the
  *   BFF's `{ error, code }` envelope, and ANY 503 that does not carry campaign-service's definite

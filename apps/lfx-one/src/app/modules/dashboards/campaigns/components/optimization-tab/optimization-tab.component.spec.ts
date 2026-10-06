@@ -2689,7 +2689,11 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
     updateCampaignBudget.mockReturnValue(
       throwError(
         () =>
-          new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed', error: { error: 'the supplied ETag does not match the current version' } })
+          new HttpErrorResponse({
+            status: 412,
+            statusText: 'Precondition Failed',
+            error: { error: 'the supplied ETag does not match the current version', code: 'PRECONDITION_FAILED' },
+          })
       )
     );
     render([doc()]);
@@ -2725,7 +2729,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
     fixture.detectChanges();
     render([doc({ etag: '"8"' })]);
 
-    inFlight.error(new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed' }));
+    inFlight.error(new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed', error: { error: 'etag mismatch', code: 'PRECONDITION_FAILED' } }));
     fixture.detectChanges();
 
     expect(q('optimization-campaigns-conflict')).toBeNull();
@@ -2906,18 +2910,30 @@ describe('OptimizationTabComponent — monitor findings and their levers', () =>
 
     expect(updateCampaignStatus).toHaveBeenCalledTimes(1);
     expect(q('optimization-campaign-toggle-c-1')!.textContent).toContain('Resume');
-    expect(lever('c-1-zero_delivery')).toBeNull();
-    expect(q('optimization-finding-no-lever-c-1-zero_delivery')).not.toBeNull();
+    // Still the Pause lever, disabled with the already-paused reason: the row HAS a control, so
+    // "No control for this in LFX One" would be false.
+    const button = lever('c-1-zero_delivery')!;
+    expect(button.textContent).toContain('Pause');
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-describedby')).toBe('optimization-finding-blocked-c-1-zero_delivery');
+    expect(q('optimization-finding-no-lever-c-1-zero_delivery')).toBeNull();
     expect(q('optimization-finding-c-1-zero_delivery')!.textContent).not.toContain('Resume');
     expect(q('optimization-finding-blocked-c-1-zero_delivery')!.textContent).toContain(CAMPAIGN_FINDING_ALREADY_PAUSED_REASON);
+    button.click();
+    expect(updateCampaignStatus).toHaveBeenCalledTimes(1);
   });
 
   it('never offers Resume for a finding about a campaign that is already paused', async () => {
     await render([doc({ status: 'paused' })], [item({ rule: 'zero_delivery' })]);
 
     expect(q('optimization-campaign-toggle-c-1')!.textContent).toContain('Resume');
-    expect(lever('c-1-zero_delivery')).toBeNull();
+    const button = lever('c-1-zero_delivery')!;
+    expect(button.textContent).toContain('Pause');
+    expect(button.textContent).not.toContain('Resume');
+    expect(button.disabled).toBe(true);
+    expect(q('optimization-finding-no-lever-c-1-zero_delivery')).toBeNull();
     expect(q('optimization-finding-blocked-c-1-zero_delivery')!.textContent).toContain(CAMPAIGN_FINDING_ALREADY_PAUSED_REASON);
+    button.click();
     expect(updateCampaignStatus).not.toHaveBeenCalled();
   });
 
@@ -3187,7 +3203,7 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
   });
 
   it('marks the row conflicted on a 412, which blocks the budget editor too', () => {
-    updateCampaignBid.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412, error: { error: 'etag mismatch' } })));
+    updateCampaignBid.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412, error: { error: 'etag mismatch', code: 'PRECONDITION_FAILED' } })));
     render([doc()]);
     changeBid(1);
 
@@ -3250,6 +3266,62 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     form.cancelEdit.emit();
     fixture.detectChanges();
     expect(q('optimization-campaign-negatives-form-c-1')).toBeNull();
+  });
+
+  // A campaign-list re-read sets the list to null, which unmounts every row and the editor with
+  // it, while the request runs on. The pending flag used to be fed by the editor's output, which a
+  // destroyed editor cannot emit, so it stayed true: Close was dead and the disclosure disabled.
+  it('clears negative-keyword pending when the editor was unmounted mid-request, and keeps the outcome', () => {
+    const response = new Subject<CampaignNegativeKeywordsResult>();
+    (TestBed.inject(CampaignService).addNegativeKeywords as ReturnType<typeof vi.fn>).mockReturnValue(response);
+    render([doc()]);
+    (q('optimization-campaign-negatives-edit-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const form = fixture.debugElement.query(By.directive(CampaignNegativeKeywordsFormComponent)).componentInstance as CampaignNegativeKeywordsFormComponent;
+    form.form.setValue({ keywords: 'free\ncheap', matchType: 'Exact' });
+    q('optimization-campaign-negatives-form-c-1')!.dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+
+    // The re-read: the rows (and the editor) go away, then come back with the editor redrawn.
+    render(null);
+    expect(q('optimization-campaign-negatives-form-c-1')).toBeNull();
+    render([doc()]);
+    const remounted = () =>
+      fixture.debugElement.query(By.directive(CampaignNegativeKeywordsFormComponent)).componentInstance as CampaignNegativeKeywordsFormComponent;
+    expect(remounted()).not.toBe(form);
+    // Still in flight: the redrawn editor holds, and Close does nothing yet.
+    remounted().cancelEdit.emit();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-negatives-form-c-1')).not.toBeNull();
+
+    response.next({
+      campaignId: 'c-1',
+      appliedCount: 1,
+      results: [
+        { text: 'free', matchType: 'Exact', outcome: 'APPLIED' },
+        { text: 'cheap', matchType: 'Exact', outcome: 'UNCONFIRMED' },
+      ],
+    });
+    response.complete();
+    fixture.detectChanges();
+
+    // The redrawn editor shows which keywords the request answered, in the order they were sent.
+    const items = Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="optimization-campaign-negatives-result-"]')) as HTMLElement[];
+    expect(items.map((item) => item.querySelector('[data-outcome]')!.getAttribute('data-outcome'))).toEqual(['APPLIED', 'UNCONFIRMED']);
+    const disclosure = q('optimization-campaign-negatives-edit-c-1') as HTMLButtonElement;
+    expect(disclosure.disabled).toBe(false);
+
+    // Pending cleared, so Close works; the unconfirmed keyword then stays stated on the row.
+    remounted().cancelEdit.emit();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-negatives-form-c-1')).toBeNull();
+    expect(q('optimization-campaign-negatives-unconfirmed-note-c-1')!.textContent).toContain('may have been added');
+
+    // Reopening shows the same outcomes again.
+    disclosure.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="optimization-campaign-negatives-result-"]').length).toBe(2);
+    expect(q('optimization-campaign-negatives-unconfirmed-note-c-1')).toBeNull();
   });
 
   it('disables negative keywords for a Microsoft campaign never created on the platform', () => {

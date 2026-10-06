@@ -10,15 +10,19 @@ import type { CampaignBudgetOutcome, CampaignNegativeKeywordsBatchOutcome, Campa
  * failed-vs-unconfirmed decision is made, so the three levers cannot drift apart.
  *
  * In order:
- * 1. **412** with a `conflict` message: the row's validator is stale (`conflict`).
- * 2. Any other **4xx** except 408: a definite refusal (`failed`, message verbatim), decided before
- *    the wording is read — upstream's neutral bid 409 itself says something "could not be confirmed".
+ * 1. **412** in the BFF's envelope, with a `conflict` message: the row's validator is stale
+ *    (`conflict`).
+ * 2. Any other **4xx** except 408, in the BFF's envelope: a definite refusal (`failed`, message
+ *    verbatim), decided before the wording is read — upstream's neutral bid 409 itself says
+ *    something "could not be confirmed".
  * 3. A message that says the outcome is unknown (the BFF's unconfirmed constants, or
  *    campaign-service's "... is unconfirmed" 503s): `unconfirmed`, keeping its words.
  * 4. A body that is NOT the BFF's own JSON `{ error, code }` envelope: `unconfirmed`. The BFF
  *    answers every error through that envelope, so anything else — no answer at all (status 0), a
- *    proxy's "upstream request timeout" or "Bad Gateway" text, an HTML error page, a 2xx that could
- *    not be parsed — came from something in front of it, and the write may already have applied.
+ *    proxy's "upstream request timeout" or "Bad Gateway" text, an HTML error page, a proxy's plain
+ *    400/403/409/412, a 2xx that could not be parsed — came from something in front of it, and the
+ *    write may already have applied. Steps 1 and 2 are gated on the envelope for this reason: a
+ *    status alone does not prove the BFF refused the write.
  * 5. With `definiteFailureMarker`, a 503 whose message lacks it: `unconfirmed`.
  * 6. Everything else is `failed`, with the BFF's message verbatim (a definite 503, a BFF 500).
  */
@@ -29,19 +33,20 @@ export function classifyCampaignWriteFailure(
 ): CampaignNegativeKeywordsBatchOutcome;
 export function classifyCampaignWriteFailure(error: unknown, messages: CampaignWriteFailureMessages): CampaignBudgetOutcome {
   const status = error instanceof HttpErrorResponse ? error.status : 0;
-  if (status === 412 && messages.conflict !== undefined) {
+  const body: unknown = error instanceof HttpErrorResponse ? error.error : undefined;
+  const fromBff = isBffErrorEnvelope(body);
+  if (status === 412 && fromBff && messages.conflict !== undefined) {
     return { state: 'conflict', message: messages.conflict };
   }
 
-  const body: unknown = error instanceof HttpErrorResponse ? error.error : undefined;
   const message = readCampaignWriteErrorMessage(body);
-  if (isDefiniteRefusal(status)) {
+  if (isDefiniteRefusal(status) && fromBff) {
     return { state: 'failed', message: message ?? messages.failureFallback };
   }
   if (message !== undefined && isUnconfirmedWriteMessage(message)) {
     return { state: 'unconfirmed', message };
   }
-  if (!isBffErrorEnvelope(body)) {
+  if (!fromBff) {
     return { state: 'unconfirmed', message: messages.unconfirmed };
   }
   if (messages.definiteFailureMarker !== undefined && status === 503 && !(message ?? '').toLowerCase().includes(messages.definiteFailureMarker)) {

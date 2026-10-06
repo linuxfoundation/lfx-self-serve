@@ -77,6 +77,7 @@ import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityC
 import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
 import { campaignBudgetFailureOutcome } from '@shared/utils/campaign-budget-error.utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
 import { catchError, EMPTY, map, of, skip, switchMap, take, type Subscription } from 'rxjs';
@@ -112,6 +113,7 @@ export class OptimizationTabComponent implements OnInit {
   // the component, so its result has to land somewhere the component's destruction cannot take
   // with it.
   private readonly messageService = inject(MessageService);
+  private readonly negativeKeywordsService = inject(CampaignNegativeKeywordsService);
   // Both serve the finding levers' focus hand-off: `afterNextRender` needs an injector outside the
   // constructor, and the editor it focuses is rendered by this template a tick after it opens.
   private readonly injector = inject(Injector);
@@ -218,14 +220,20 @@ export class OptimizationTabComponent implements OnInit {
   /** The bid this session CONFIRMED per row. The index carries no bid, so this is the only one the row can show. */
   protected readonly confirmedBid = signal<Partial<Record<string, CampaignBidChange>>>({});
 
-  /** Which Microsoft rows have their negative-keyword editor open. The editor owns its own request. */
+  /** Which Microsoft rows have their negative-keyword editor open. */
   protected readonly negativesEditorOpen = signal<Record<string, boolean>>({});
   /**
-   * Which rows' negative-keyword request is in flight, as the editor reports it (`pendingChange`).
-   * The editor owns the request; this only holds it open, like the budget and bid editors, because
-   * closing it would destroy the form and lose the per-keyword outcomes.
+   * Which rows' negative-keyword request is in flight. Read from the root
+   * `CampaignNegativeKeywordsService`, which owns the request, rather than reported by the editor:
+   * a campaign-list re-read or a tab switch destroys the editor mid-flight, and a flag fed by its
+   * output then stayed `true` forever, leaving Close dead and the disclosure disabled.
    */
-  protected readonly negativesPending = signal<Record<string, boolean>>({});
+  protected readonly negativesPending: Signal<Record<string, boolean>> = this.negativeKeywordsService.pendingByCampaign;
+  /**
+   * Rows whose last negative-keyword request has keywords not confirmed, stated on the row while
+   * the editor is closed: they may already have been added, and the sticky toast can be dismissed.
+   */
+  protected readonly negativesUnconfirmed: Signal<Record<string, boolean>> = this.initNegativesUnconfirmed();
 
   /** Bumped by Refresh to re-read the Microsoft keyword table, which owns its own read. */
   protected readonly microsoftKeywordsReload = signal(0);
@@ -1034,12 +1042,12 @@ export class OptimizationTabComponent implements OnInit {
     this.closeBidEditor(campaignId);
   }
 
-  /** Opens or closes one Microsoft row's negative-keyword editor. A request in flight keeps it open. */
+  /**
+   * Opens or closes one Microsoft row's negative-keyword editor. A request in flight keeps it open,
+   * but does not keep a CLOSED one shut: after a remount the editor shows the request's progress.
+   */
   protected toggleNegativesEditor(row: CampaignRow): void {
     const id = row.campaign.id;
-    if (this.negativesPending()[id]) {
-      return;
-    }
     if (this.negativesEditorOpen()[id]) {
       this.closeNegativesEditor(id);
       return;
@@ -1055,10 +1063,6 @@ export class OptimizationTabComponent implements OnInit {
       return;
     }
     this.negativesEditorOpen.update((open) => this.omitKeys(open, [campaignId]));
-  }
-
-  protected setNegativesPending(campaignId: string, pending: boolean): void {
-    this.negativesPending.update((p) => (pending ? { ...p, [campaignId]: true } : this.omitKeys(p, [campaignId])));
   }
 
   /**
@@ -1705,6 +1709,18 @@ export class OptimizationTabComponent implements OnInit {
       });
   }
 
+  private initNegativesUnconfirmed(): Signal<Record<string, boolean>> {
+    return computed(() => {
+      const unconfirmed: Record<string, boolean> = {};
+      for (const [campaignId, request] of Object.entries(this.negativeKeywordsService.requests())) {
+        if (request.batchOutcome?.state === 'unconfirmed' || request.outcomeRows.some((row) => row.outcome === 'UNCONFIRMED')) {
+          unconfirmed[campaignId] = true;
+        }
+      }
+      return unconfirmed;
+    });
+  }
+
   private initFindings(): Signal<CampaignOptimizeFinding[]> {
     return computed(() => {
       const items = this.briefMetrics()?.action_items ?? [];
@@ -1715,7 +1731,7 @@ export class OptimizationTabComponent implements OnInit {
       return items.map((item) => {
         const row = rowsById.get(item.campaign_id) ?? null;
         // The row's platform when the row is known: it is what the control itself is gated on.
-        let lever: CampaignOptimizeLever = row === null ? 'none' : campaignActionItemLever(item.rule, row.campaign.platform);
+        const lever: CampaignOptimizeLever = row === null ? 'none' : campaignActionItemLever(item.rule, row.campaign.platform);
         const campaignName = row?.campaign.campaign_name ?? 'A campaign not in the list below';
         let leverLabel = '';
         let leverBlockedReason = '';
@@ -1728,8 +1744,11 @@ export class OptimizationTabComponent implements OnInit {
         } else if (row !== null && lever === 'pause_resume' && row.action === 'resume') {
           // A `zero_delivery` finding only ever offers PAUSE. Offering the row's current toggle
           // label meant that once the finding had paused the campaign it offered "Resume", and one
-          // more click restarted spend on a campaign flagged for delivering nothing.
-          lever = 'none';
+          // more click restarted spend on a campaign flagged for delivering nothing. The lever
+          // stays `pause_resume` (NOT `none`, which renders "No control for this in LFX One" over a
+          // row that has one): still labelled Pause, disabled with the already-paused reason, and
+          // `resolveFinding` refuses a blocked finding and only ever toggles a row offering Pause.
+          leverLabel = CAMPAIGN_TOGGLE_LABELS.pause;
           leverBlockedReason = CAMPAIGN_FINDING_ALREADY_PAUSED_REASON;
         } else if (row !== null && lever === 'pause_resume') {
           // `pause`, or `unavailable` (shown disabled with the row's reason): the label is always
@@ -1849,8 +1868,8 @@ export class OptimizationTabComponent implements OnInit {
         this.bidPending.set({});
         this.bidOutcome.set({});
         this.confirmedBid.set({});
+        // Negative-keyword requests are keyed by campaign id in the root service and finish there.
         this.negativesEditorOpen.set({});
-        this.negativesPending.set({});
         this.lastDeliveredEtags = {};
         this.hasDeliveredList = false;
         this.etagsWrittenDuringRead.clear();

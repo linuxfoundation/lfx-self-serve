@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, DecimalPipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, output, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import {
@@ -23,6 +24,7 @@ import { keywordActionKey } from '@lfx-one/shared/utils';
 import { AdsPctPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
 import { ButtonComponent } from '@components/button/button.component';
+import { isBffErrorEnvelope } from '@shared/utils/campaign-write-error.utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { catchError, EMPTY, map, of, switchMap } from 'rxjs';
 
@@ -122,10 +124,11 @@ export class MicrosoftKeywordsTableComponent {
               of({
                 data: null,
                 error: extractErrorMessage(err, 'Microsoft keyword metrics are unavailable right now.'),
-                // A foundation with no Microsoft Advertising connection (404), or a deployment where
-                // Microsoft metrics are not enabled (400), is not a failure to retry — it is a
-                // state to state plainly, without an error box on every project page.
-                notConnected: isNotConnectedStatus(err),
+                // A foundation with no Microsoft Advertising connection, or a deployment where
+                // Microsoft metrics are not enabled, is not a failure to retry — it is a state to
+                // state plainly, without an error box on every project page. Decided on what the
+                // response SAYS, not its status alone (see `isNotConnectedError`).
+                notConnected: isNotConnectedError(err),
               })
             )
           );
@@ -167,8 +170,26 @@ export class MicrosoftKeywordsTableComponent {
   }
 }
 
-/** 404 (no Microsoft connection for this foundation) or 400 (Microsoft metrics not enabled). */
-function isNotConnectedStatus(err: unknown): boolean {
-  const status = (err as { status?: unknown } | null)?.status;
-  return status === 404 || status === 400;
+/**
+ * Whether a failed read means "Microsoft metrics are not available for this foundation", rather
+ * than a read that failed.
+ *
+ * Only campaign-service's own answers, relayed in the BFF's `{ error, code }` envelope, qualify:
+ * a 404 saying no connection is configured for the project, or a 400 saying the read is not
+ * supported (Microsoft metrics switched off). Every other 400 (an unusable connection, a rejected
+ * window) and every other 404 (a deployment that has not exposed the route answers a bare
+ * "Not Found") is a read failure, shown with its message and a Retry — never as a missing
+ * connection, which would hide it.
+ */
+function isNotConnectedError(err: unknown): boolean {
+  const status = err instanceof HttpErrorResponse ? err.status : undefined;
+  const body: unknown = err instanceof HttpErrorResponse ? err.error : undefined;
+  if ((status !== 404 && status !== 400) || !isBffErrorEnvelope(body)) {
+    return false;
+  }
+  const message = (body as { error: string }).error;
+  if (status === 404) {
+    return /^no .+ connection configured for this project$/i.test(message.trim());
+  }
+  return /\bnot supported for this platform\b/i.test(message);
 }

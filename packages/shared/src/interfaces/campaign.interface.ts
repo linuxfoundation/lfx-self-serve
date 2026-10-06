@@ -2408,6 +2408,32 @@ export interface CampaignNegativeKeywordsBatchOutcome {
   message: string;
 }
 
+/**
+ * One campaign's latest negative-keyword request, as the Optimize tab keeps it ACROSS the editor's
+ * lifetime. A tab switch or a campaign-list re-read destroys the editor while the request runs on;
+ * this is what the editor (and the row) read back when they are drawn again.
+ */
+export interface CampaignNegativeKeywordsRequestState {
+  pending: boolean;
+  /** Per-keyword outcomes, in the order the keywords were SENT: never filtered or re-sorted. */
+  outcomeRows: CampaignNegativeKeywordOutcomeRow[];
+  /** The request's outcome when it produced no per-keyword results at all. */
+  batchOutcome: CampaignNegativeKeywordsBatchOutcome | null;
+  /** The keywords the batch outcome is about, so an unconfirmed batch can name them. */
+  batchKeywords: string[];
+}
+
+/** One negative-keyword request, as the editor hands it to `CampaignNegativeKeywordsService`. */
+export interface CampaignNegativeKeywordsSubmission {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  campaignName: string;
+  /** Parsed once by the editor and sent as-is: the outcomes are zipped onto this exact list. */
+  keywords: string[];
+  matchType: CampaignNegativeKeywordMatchType;
+}
+
 /** One reporting-window choice of the Microsoft keyword table. */
 export interface MicrosoftKeywordsWindowOption {
   value: MicrosoftKeywordsWindow;
@@ -2708,8 +2734,11 @@ export interface CampaignBudgetUpdateParams {
 }
 
 export interface CampaignBudgetUpdateResult {
-  /** The ROW's platform as campaign-service reports it. The request does not name one. */
-  platform: string;
+  /**
+   * The ROW's platform as campaign-service reports it, in the hyphenated paid-platform vocabulary
+   * (`google-ads`, …). The request does not name one, and upstream refuses unsupported platforms.
+   */
+  platform: CampaignPlatform;
   campaignId: string;
   /**
    * The amount requested, which the platform accepted; the platform may hold it rounded to its
@@ -2773,8 +2802,11 @@ export interface CampaignBidUpdateParams {
 }
 
 export interface CampaignBidUpdateResult {
-  /** The ROW's platform as campaign-service reports it. The request does not name one. */
-  platform: string;
+  /**
+   * The ROW's platform as campaign-service reports it, in the hyphenated paid-platform vocabulary
+   * (`google-ads`, …). The request does not name one, and upstream refuses unsupported platforms.
+   */
+  platform: CampaignPlatform;
   campaignId: string;
   /**
    * The bid requested, which the platform accepted. An echo of the request, like

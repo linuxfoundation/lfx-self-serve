@@ -10,9 +10,11 @@ import { classifyCampaignWriteFailure } from './campaign-write-error.utils';
  * Classify a failed `PATCH /api/campaigns/:campaignId/budget` for the Optimize tab, through the
  * shared `classifyCampaignWriteFailure`.
  *
- * - **412** is a stale validator: `conflict`, and the operator is told to refresh the list.
- * - Any other **4xx** except 408 is a definite refusal, its message VERBATIM: a 400 naming a
- *   platform minimum, a 409 (shared budget, pacing mismatch, currency, provenance …).
+ * - **412** in the BFF's `{ error, code }` envelope is a stale validator: `conflict`, and the
+ *   operator is told to refresh the list.
+ * - Any other **4xx** except 408, in that envelope, is a definite refusal, its message VERBATIM: a
+ *   400 naming a platform minimum, a 409 (shared budget, pacing mismatch, currency, provenance …).
+ *   A 4xx WITHOUT the envelope came from a proxy and is `unconfirmed`.
  * - **Unconfirmed** is any message that says so — the BFF's own `CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED`
  *   for a write nobody answered, or campaign-service's 503 "the campaign budget change is
  *   unconfirmed …" — and any response that is not the BFF's `{ error, code }` envelope (a lost

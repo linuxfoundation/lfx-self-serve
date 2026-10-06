@@ -1,11 +1,14 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Focus target for a finding's keyword lever on a Microsoft campaign, hence the id and `tabindex="-1"`. -->
+<!--
+  Focus target for a finding's keyword lever on a Microsoft campaign, hence the id and `tabindex="-1"`.
+  The ring replaces the outline so the operator can see where the lever moved focus.
+-->
 <section
   id="optimization-microsoft-keywords"
   tabindex="-1"
-  class="flex flex-col gap-3 focus:outline-none"
+  class="flex flex-col gap-3 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
   aria-labelledby="optimization-microsoft-keywords-heading"
   data-testid="optimization-microsoft-keywords">
   <div class="flex flex-wrap items-center justify-between gap-2">
@@ -131,35 +134,43 @@
                           }
                         </td>
                         <td class="px-4 py-2.5 text-center">
-                          @if (row.result; as result) {
-                            <!-- Three states: an unconfirmed REMOVE may already have applied, so it is never "Failed". -->
-                            <span class="flex flex-col items-center gap-0.5" [attr.data-testid]="'microsoft-keyword-outcome-' + row.key">
-                              <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
-                              @if (!result.success) {
-                                <span class="max-w-64 text-xs leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
-                              }
-                            </span>
-                          } @else if (row.inProgress) {
+                          @if (row.inProgress) {
                             <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
                             <span class="sr-only">Working on {{ row.keyword.keyword }}</span>
                           } @else {
-                            <div class="flex items-center justify-center gap-1">
-                              <button
-                                type="button"
-                                (click)="act(row.keyword, 'pause')"
-                                class="rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
-                                [attr.aria-label]="'Pause keyword ' + row.keyword.keyword"
-                                [attr.data-testid]="'microsoft-keyword-pause-' + row.key">
-                                <i class="fa-light fa-pause" aria-hidden="true"></i>
-                              </button>
-                              <button
-                                type="button"
-                                (click)="act(row.keyword, 'remove')"
-                                class="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                                [attr.aria-label]="'Remove keyword ' + row.keyword.keyword"
-                                [attr.data-testid]="'microsoft-keyword-remove-' + row.key">
-                                <i class="fa-light fa-trash" aria-hidden="true"></i>
-                              </button>
+                            <!--
+                              The outcome is shown WITH the controls, never instead of them: the parent keeps
+                              it (Refresh included), so replacing the buttons left no way to retry a failed
+                              action, or to act again once an unconfirmed one had been verified.
+                            -->
+                            <div class="flex flex-col items-center gap-1">
+                              @if (row.result; as result) {
+                                <!-- Three states: an unconfirmed REMOVE may already have applied, so it is never "Failed". -->
+                                <span class="flex flex-col items-center gap-0.5" [attr.data-testid]="'microsoft-keyword-outcome-' + row.key">
+                                  <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
+                                  @if (!result.success) {
+                                    <span class="max-w-64 text-xs leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                                  }
+                                </span>
+                              }
+                              <div class="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  (click)="act(row.keyword, 'pause')"
+                                  class="rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                                  [attr.aria-label]="'Pause keyword ' + row.keyword.keyword"
+                                  [attr.data-testid]="'microsoft-keyword-pause-' + row.key">
+                                  <i class="fa-light fa-pause" aria-hidden="true"></i>
+                                </button>
+                                <button
+                                  type="button"
+                                  (click)="act(row.keyword, 'remove')"
+                                  class="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                                  [attr.aria-label]="'Remove keyword ' + row.keyword.keyword"
+                                  [attr.data-testid]="'microsoft-keyword-remove-' + row.key">
+                                  <i class="fa-light fa-trash" aria-hidden="true"></i>
+                                </button>
+                              </div>
                             </div>
                           }
                         </td>
