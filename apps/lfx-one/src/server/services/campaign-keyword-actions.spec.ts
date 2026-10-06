@@ -4,10 +4,14 @@
 import type { KeywordActionRequest } from '@lfx-one/shared/interfaces';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { MICROSOFT_KEYWORD_ACTION_OUTCOME_UNCONFIRMED } from '@lfx-one/shared/constants';
+
 import {
   appliedResults,
+  CAMPAIGN_AMBIGUOUS,
   CAMPAIGN_OUTCOME_UNCONFIRMED,
   classifyMutationFailure,
+  microsoftItemResults,
   failedResults,
   groupByCampaign,
   inRequestOrder,
@@ -433,6 +437,52 @@ describe('classifyMutationFailure — what proves upstream answered', () => {
     expect(String(res.results[0].message)).toMatch(/did not match the request/i);
   });
 
+  // resource_name is optional now (Microsoft has none), and a Google result still carries it.
+  // Both shapes must confirm an applied batch when every entry agrees.
+  it.each([
+    ['a Google result carrying resource_name', { resource_name: 'customers/1/adGroupCriteria/ag-1~k-1' }],
+    ['a result with no resource_name', {}],
+    ['a result whose outcome is APPLIED', { outcome: 'APPLIED' }],
+  ])('reports %s as applied', async (_label, extra) => {
+    const resolveGoogleAdsCampaign = vi
+      .fn()
+      .mockResolvedValue({ platform_campaign_id: 'camp-1', match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    const applyKeywordActions = vi
+      .fn()
+      .mockResolvedValue({ campaign_id: 'c-1', applied_count: 1, results: [{ ad_group_id: 'ag-1', criterion_id: 'k-1', action: 'PAUSE', ...extra }] });
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    const req = { log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', { action: 'pause', keywords: [kw('camp-1', 'k-1')] });
+
+    expect(res.results[0].success).toBe(true);
+  });
+
+  // A per-item outcome other than APPLIED contradicts reporting the keyword as paused, even when
+  // applied_count happens to agree. Positions are kept: the second keyword's result stays second.
+  it.each([['FAILED'], ['UNCONFIRMED']])('never reports an entry with outcome %s as applied', async (outcome) => {
+    const resolveGoogleAdsCampaign = vi
+      .fn()
+      .mockResolvedValue({ platform_campaign_id: 'camp-1', match_count: 1, matches: [{ brief_id: 'b-1', campaign_id: 'c-1' }] });
+    const applyKeywordActions = vi.fn().mockResolvedValue({
+      campaign_id: 'c-1',
+      applied_count: 2,
+      results: [
+        { ad_group_id: 'ag-1', criterion_id: 'k-1', action: 'PAUSE', outcome: 'APPLIED' },
+        { ad_group_id: 'ag-1', criterion_id: 'k-2', action: 'PAUSE', outcome, error_code: 'CampaignServiceInvalidKeywordId' },
+      ],
+    });
+    const client = { resolveGoogleAdsCampaign, applyKeywordActions } as never;
+    const req = { log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(req, client, 'aswf', { action: 'pause', keywords: [kw('camp-1', 'k-1'), kw('camp-1', 'k-2')] });
+
+    expect(res.results).toHaveLength(2);
+    expect(res.results.map((r) => r.keyword)).toEqual(['Criterion k-1', 'Criterion k-2']);
+    expect(res.results.every((r) => r.success === false)).toBe(true);
+    expect(String(res.results[1].message)).toMatch(/did not match the request/i);
+  });
+
   it('refuses a resolution that describes a DIFFERENT campaign', async () => {
     // Copilot: `platform_campaign_id` is part of the resolution contract and nothing checked it.
     // A stale or misrouted 200 for another campaign is internally CONSISTENT -- count agrees,
@@ -685,5 +735,210 @@ describe('applyKeywordActionsViaCampaignService — the fan-out stop', () => {
     // The second group was never probed -- that is the whole fix.
     expect(resolveGoogleAdsCampaign).toHaveBeenCalledTimes(1);
     expect(res.results[1].success).toBe(false);
+  });
+});
+
+// ─── Microsoft Advertising (LFXV2-2665) ───
+
+const msKw = (campaignId: string, criterionId: string, adGroupId = 'ag-1'): KeywordActionRequest => ({
+  ...kw(campaignId, criterionId, adGroupId),
+  platform: 'microsoft-ads',
+});
+
+const quietReq = (): never => ({ log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } }) as never;
+
+describe('groupByCampaign — platforms', () => {
+  it('treats an absent platform as Google Ads', () => {
+    const [group] = groupByCampaign([kw('555', '1')]);
+
+    expect(group.platform).toBe('google-ads');
+  });
+
+  it('keeps the same digits on Google and Microsoft in SEPARATE groups', () => {
+    const groups = groupByCampaign([kw('555', '1'), msKw('555', '2'), kw('555', '3')]);
+
+    expect(groups.map((g) => [g.platform, g.platformCampaignId, g.keywords.length])).toEqual([
+      ['google-ads', '555', 2],
+      ['microsoft-ads', '555', 1],
+    ]);
+  });
+});
+
+describe('inRequestOrder — platforms', () => {
+  it('does not hand a Microsoft outcome to the Google keyword with the same ids', () => {
+    const request = [kw('555', '1'), msKw('555', '1')];
+    const [google, microsoft] = groupByCampaign(request);
+    // Microsoft's result arrives FIRST and is a failure; Google's applied.
+    const results = [...failedResults(microsoft, 'pause', 'ms failed'), ...appliedResults(google, 'pause')];
+
+    const ordered = inRequestOrder(request, results);
+
+    expect(ordered.map((r) => r.success)).toEqual([true, false]);
+  });
+});
+
+describe('classifyMutationFailure — platform wording', () => {
+  it('sends a Microsoft operator to Microsoft Advertising, and leaves Google wording unchanged', () => {
+    const timeout = Object.assign(new Error('timed out'), { code: 'TIMEOUT' });
+
+    expect(classifyMutationFailure(timeout, 'microsoft-ads')).toContain(MICROSOFT_KEYWORD_ACTION_OUTCOME_UNCONFIRMED);
+    expect(classifyMutationFailure(timeout)).toContain(CAMPAIGN_OUTCOME_UNCONFIRMED);
+    expect(classifyMutationFailure(timeout, 'google-ads')).toBe(classifyMutationFailure(timeout));
+  });
+});
+
+describe('microsoftItemResults', () => {
+  const group = groupByCampaign([msKw('555', '1'), msKw('555', '2'), msKw('555', '3')])[0];
+  const entry = (criterion: string, outcome?: string, extra: Record<string, unknown> = {}) => ({
+    ad_group_id: 'ag-1',
+    criterion_id: criterion,
+    action: 'PAUSE' as const,
+    ...(outcome === undefined ? {} : { outcome }),
+    ...extra,
+  });
+
+  it('reports each keyword by ITS OWN outcome, in request order', () => {
+    const out = microsoftItemResults(
+      group,
+      'pause',
+      {
+        campaign_id: 'c-1',
+        applied_count: 1,
+        results: [entry('1', 'APPLIED'), entry('2', 'FAILED', { error_code: 'CampaignServiceInvalidKeywordId' }), entry('3', 'UNCONFIRMED')],
+      } as never,
+      'c-1'
+    );
+
+    expect('results' in out).toBe(true);
+    const results = (out as { results: { source: KeywordActionRequest; response: { success: boolean; message: string } }[] }).results;
+    expect(results.map((r) => r.source.criterionId)).toEqual(['1', '2', '3']);
+    expect(results.map((r) => r.response.success)).toEqual([true, false, false]);
+    expect(results[1].response.message).toContain('CampaignServiceInvalidKeywordId');
+    expect(results[1].response.message).not.toContain('could not be confirmed');
+    expect(results[2].response.message).toContain(MICROSOFT_KEYWORD_ACTION_OUTCOME_UNCONFIRMED);
+  });
+
+  it.each([
+    ['another campaign', { campaign_id: 'c-9', applied_count: 3, results: [entry('1', 'APPLIED'), entry('2', 'APPLIED'), entry('3', 'APPLIED')] }],
+    ['a short results array', { campaign_id: 'c-1', applied_count: 2, results: [entry('1', 'APPLIED'), entry('2', 'APPLIED')] }],
+    ['entries out of order', { campaign_id: 'c-1', applied_count: 3, results: [entry('2', 'APPLIED'), entry('1', 'APPLIED'), entry('3', 'APPLIED')] }],
+    ['an entry with no outcome', { campaign_id: 'c-1', applied_count: 2, results: [entry('1', 'APPLIED'), entry('2'), entry('3', 'APPLIED')] }],
+    [
+      'an applied_count that disagrees',
+      { campaign_id: 'c-1', applied_count: 3, results: [entry('1', 'APPLIED'), entry('2', 'FAILED'), entry('3', 'APPLIED')] },
+    ],
+    ['a null entry', { campaign_id: 'c-1', applied_count: 2, results: [entry('1', 'APPLIED'), null, entry('3', 'APPLIED')] }],
+  ])('refuses to read %s', (_label, applied) => {
+    expect('mismatch' in microsoftItemResults(group, 'pause', applied as never, 'c-1')).toBe(true);
+  });
+
+  it('drops an error code that is not an identifier rather than rendering it', () => {
+    const one = groupByCampaign([msKw('555', '1')])[0];
+    const out = microsoftItemResults(
+      one,
+      'pause',
+      { campaign_id: 'c-1', applied_count: 0, results: [entry('1', 'FAILED', { error_code: '<img src=x>' })] } as never,
+      'c-1'
+    ) as { results: { response: { message: string } }[] };
+
+    expect(out.results[0].response.message).not.toContain('<img');
+  });
+});
+
+describe('applyKeywordActionsViaCampaignService — Microsoft', () => {
+  const resolved = (id: string, campaignId = 'c-ms') => ({
+    platform_campaign_id: id,
+    match_count: 1,
+    matches: [{ brief_id: 'b-ms', campaign_id: campaignId }],
+  });
+
+  it('resolves through the Microsoft lookup and reports a partial apply per keyword', async () => {
+    const resolveGoogleAdsCampaign = vi.fn();
+    const resolveMicrosoftAdsCampaign = vi.fn().mockResolvedValue(resolved('555'));
+    const applyKeywordActions = vi.fn().mockResolvedValue({
+      campaign_id: 'c-ms',
+      applied_count: 1,
+      results: [
+        { ad_group_id: 'ag-1', criterion_id: 'k-1', action: 'PAUSE', outcome: 'APPLIED' },
+        { ad_group_id: 'ag-1', criterion_id: 'k-2', action: 'PAUSE', outcome: 'FAILED', error_code: 'CampaignServiceInvalidKeywordId' },
+      ],
+    });
+    const client = { resolveGoogleAdsCampaign, resolveMicrosoftAdsCampaign, applyKeywordActions } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(quietReq(), client, 'aswf', {
+      action: 'pause',
+      keywords: [msKw('555', 'k-1'), msKw('555', 'k-2')],
+    });
+
+    expect(resolveGoogleAdsCampaign).not.toHaveBeenCalled();
+    expect(resolveMicrosoftAdsCampaign).toHaveBeenCalledWith(expect.anything(), 'aswf', '555', expect.any(Number));
+    expect(res.results.map((r) => r.success)).toEqual([true, false]);
+    expect(res).toMatchObject({ success: false, total: 2, succeeded: 1, failed: 1 });
+  });
+
+  it('keeps the caller order across interleaved Google and Microsoft campaigns', async () => {
+    const resolveGoogleAdsCampaign = vi
+      .fn()
+      .mockResolvedValue({ platform_campaign_id: '777', match_count: 1, matches: [{ brief_id: 'b-g', campaign_id: 'c-g' }] });
+    const resolveMicrosoftAdsCampaign = vi.fn().mockResolvedValue(resolved('555'));
+    const applyKeywordActions = vi.fn().mockImplementation((_r: unknown, _s: string, _b: string, campaignId: string, actions: { criterion_id: string }[]) =>
+      Promise.resolve(
+        campaignId === 'c-g'
+          ? { campaign_id: 'c-g', applied_count: actions.length, results: actions.map((a) => ({ ...a })) }
+          : {
+              campaign_id: 'c-ms',
+              applied_count: 0,
+              results: actions.map((a) => ({ ...a, outcome: 'FAILED' })),
+            }
+      )
+    );
+    const client = { resolveGoogleAdsCampaign, resolveMicrosoftAdsCampaign, applyKeywordActions } as never;
+    const keywords = [msKw('555', 'm-1'), kw('777', 'g-1'), msKw('555', 'm-2'), kw('777', 'g-2')];
+
+    const res = await applyKeywordActionsViaCampaignService(quietReq(), client, 'aswf', { action: 'pause', keywords });
+
+    // results[i] answers keywords[i]: Microsoft rows failed, Google rows applied, interleaved.
+    expect(res.results.map((r) => [r.keyword, r.success])).toEqual([
+      ['Criterion m-1', false],
+      ['Criterion g-1', true],
+      ['Criterion m-2', false],
+      ['Criterion g-2', true],
+    ]);
+  });
+
+  it('refuses two Microsoft matches without mutating', async () => {
+    const resolveMicrosoftAdsCampaign = vi.fn().mockResolvedValue({
+      platform_campaign_id: '555',
+      match_count: 2,
+      matches: [
+        { brief_id: 'b-1', campaign_id: 'c-1' },
+        { brief_id: 'b-2', campaign_id: 'c-2' },
+      ],
+    });
+    const applyKeywordActions = vi.fn();
+    const client = { resolveGoogleAdsCampaign: vi.fn(), resolveMicrosoftAdsCampaign, applyKeywordActions } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(quietReq(), client, 'aswf', { action: 'remove', keywords: [msKw('555', 'k-1')] });
+
+    expect(applyKeywordActions).not.toHaveBeenCalled();
+    expect(res.results[0].message).toBe(CAMPAIGN_AMBIGUOUS);
+  });
+
+  it('reports every keyword UNCONFIRMED, in Microsoft wording, when the 200 cannot be read', async () => {
+    const resolveMicrosoftAdsCampaign = vi.fn().mockResolvedValue(resolved('555'));
+    const applyKeywordActions = vi.fn().mockResolvedValue({
+      campaign_id: 'c-ms',
+      applied_count: 1,
+      results: [{ ad_group_id: 'ag-1', criterion_id: 'k-1', action: 'PAUSE', outcome: 'APPLIED' }],
+    });
+    const client = { resolveGoogleAdsCampaign: vi.fn(), resolveMicrosoftAdsCampaign, applyKeywordActions } as never;
+
+    const res = await applyKeywordActionsViaCampaignService(quietReq(), client, 'aswf', {
+      action: 'pause',
+      keywords: [msKw('555', 'k-1'), msKw('555', 'k-2')],
+    });
+
+    expect(res.results.map((r) => r.success)).toEqual([false, false]);
+    expect(res.results.every((r) => r.message === MICROSOFT_KEYWORD_ACTION_OUTCOME_UNCONFIRMED)).toBe(true);
   });
 });
