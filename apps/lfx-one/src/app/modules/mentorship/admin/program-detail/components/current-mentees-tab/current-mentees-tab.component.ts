@@ -98,7 +98,8 @@ import { RowActionsComponent } from '../../../../components/row-actions/row-acti
  * reloads the page and tells the parent to refresh the tab counts, and a 409 or 422 answers with its own
  * message. Graduate always confirms, warning from the row's task counts without reading any task. Create task
  * opens the task form and then creates through the BFF like the other writes; an expanded row stays expanded across
- * the reload and re-reads its tasks once, a collapsed row reads none. The status export still stubs to coming
+ * the reload and re-reads its tasks once, a collapsed row reads none. A create still running for a mentee, even one a
+ * tab switch outlived, keeps that mentee's form shut. The status export still stubs to coming
  * soon. The reviewer note saves through the BFF too and is written into its row, so the table shows it without a
  * read; a later read brings the saved note back, and a read that was already in flight when the save landed keeps
  * the saved note over its older answer.
@@ -401,7 +402,7 @@ export class CurrentMenteesTabComponent {
    */
   private runWrite<T>(write: Observable<T>, onDone: (result: T) => void, termClosedMessage?: string): void {
     if (this.decisionInFlight()) {
-      this.messageService.add({ severity: 'info', summary: 'Please wait', detail: MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE, life: 3000 });
+      this.showPleaseWait();
       return;
     }
     this.decisionInFlight.set(true);
@@ -449,7 +450,16 @@ export class CurrentMenteesTabComponent {
     this.messageService.add({ severity: 'error', summary: 'Error', detail, life: 5000 });
   }
 
+  private showPleaseWait(): void {
+    this.messageService.add({ severity: 'info', summary: 'Please wait', detail: MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE, life: 3000 });
+  }
+
+  /** Opens the task form, unless a task is still being created for the mentee, by this tab or one a tab switch destroyed. */
   private onCreateTask(mentee: MentorshipProgramApplicant): void {
+    if (this.taskCreate.isCreating(mentee.id)) {
+      this.showPleaseWait();
+      return;
+    }
     this.taskDialog
       .openCreate({ id: mentee.id, name: mentee.name, email: mentee.email, avatarUrl: mentee.avatarUrl })
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
@@ -462,11 +472,12 @@ export class CurrentMenteesTabComponent {
   /**
    * Creates the task, which toasts its own outcome. Like every write it is never cancelled by the tab going away. On
    * success the parent refreshes the counts and the page reloads; a row whose tasks were expanded stays expanded and
-   * re-reads its tasks once after that reload (R4a), while a collapsed row's tasks are not read.
+   * re-reads its tasks once after that reload (R4a), while a collapsed row's tasks are not read. While another write
+   * of this tab, or a create for the mentee that outlived an earlier tab, is in flight, nothing is sent.
    */
   private createTask(mentee: MentorshipProgramApplicant, value: MentorshipTaskFormValue): void {
-    if (this.decisionInFlight()) {
-      this.messageService.add({ severity: 'info', summary: 'Please wait', detail: MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE, life: 3000 });
+    if (this.decisionInFlight() || this.taskCreate.isCreating(mentee.id)) {
+      this.showPleaseWait();
       return;
     }
     this.decisionInFlight.set(true);

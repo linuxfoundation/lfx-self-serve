@@ -704,6 +704,11 @@ describe('MentorshipAdminService application decisions', () => {
       expect(result.failed).toEqual([failing]);
       expect(result.created).toEqual(applicationIds.filter((id) => id !== failing));
       expect(peak).toBeLessThanOrEqual(3);
+      expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'create_mentorship_admin_tasks', expect.any(String), {
+        applicationId: failing,
+        status: 409,
+        code: 'UPSTREAM',
+      });
       const logged = JSON.stringify([...vi.mocked(logger.debug).mock.calls, ...vi.mocked(logger.warning).mock.calls].map((call) => call.slice(1)));
       expect(logged).not.toContain('private-task-text');
       expect(logged).not.toContain('Read the guide');

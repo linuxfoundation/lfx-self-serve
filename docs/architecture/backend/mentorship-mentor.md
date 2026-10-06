@@ -141,7 +141,7 @@ PUT /applications/:applicationId/note { note } → isUuid(applicationId), else 4
 
 ## Tasks
 
-A mentor creates a task for one accepted mentee, or the same task for several, from the task dialog on the program detail's Mentees tab, through `POST /api/mentorship/mentor/tasks` (linuxfoundation/lfx-mentorship#214). Upstream has no batch create, so the BFF writes one task per application.
+A mentor creates a task for one accepted mentee, or the same task for several, from the task dialog on the program detail's Mentees tab, through `POST /api/mentorship/mentor/tasks` (linuxfoundation/lfx-mentorship#214). Upstream has no batch create, so the BFF writes one task per application. The body check and the writes live in `mentorship-mentor-task.helper.ts` (`parseMentorshipMentorTaskCreateRequest`, `createMentorshipMenteeTasks`), which the admin create (`POST /api/mentorship/admin/tasks`) shares, each route logging under its own operation.
 
 ```text
 POST /tasks { applicationIds, name, description, dueDate?, requiresFileSubmission? }

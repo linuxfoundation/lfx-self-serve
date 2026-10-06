@@ -737,6 +737,33 @@ describe('CurrentMenteesTabComponent', () => {
       expect((toast.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Please wait');
     });
 
+    it('keeps the form shut in the tab rebuilt by a tab switch while the create is in flight', () => {
+      const pending = new Subject<{ created: string[]; failed: string[] }>();
+      createTasks.mockReturnValue(pending);
+      openCreate.mockReturnValue(of(formValue()));
+      createFor('app_4');
+
+      // The parent's `@switch` destroys the tab on a switch and builds a new one on the way back.
+      fixture.destroy();
+      fixture = TestBed.createComponent(CurrentMenteesTabComponent);
+      fixture.componentRef.setInput('programId', 'prog_1');
+      settle();
+      const toast = vi.spyOn(TestBed.inject(MessageService), 'add');
+      createFor('app_4');
+
+      expect(openCreate).toHaveBeenCalledTimes(1);
+      expect(createTasks).toHaveBeenCalledTimes(1);
+      expect((toast.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Please wait');
+
+      pending.next({ created: ['app_4'], failed: [] });
+      pending.complete();
+      createTasks.mockReturnValue(of({ created: ['app_4'], failed: [] }));
+      createFor('app_4');
+
+      expect(openCreate).toHaveBeenCalledTimes(2);
+      expect(createTasks).toHaveBeenCalledTimes(2);
+    });
+
     it('offers no Create task on a pending row', () => {
       expect(labelsFor('app_1')).not.toContain('Create task');
     });

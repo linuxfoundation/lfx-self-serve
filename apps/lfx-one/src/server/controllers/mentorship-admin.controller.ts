@@ -294,7 +294,7 @@ export class MentorshipAdminController {
         throw new AuthenticationError('User authentication required', { operation });
       }
 
-      const request = parseMentorshipMentorTaskCreateRequest(req.body);
+      const request = parseMentorshipMentorTaskCreateRequest(req.body, operation);
       const result = await this.mentorshipAdminService.createTasks(req, request);
 
       logger.success(req, operation, startTime, {

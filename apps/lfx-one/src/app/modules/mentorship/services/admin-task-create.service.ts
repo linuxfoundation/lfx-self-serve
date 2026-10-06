@@ -15,7 +15,7 @@ import {
 import { MentorshipMentorTaskCreateRequest } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MessageService } from 'primeng/api';
-import { catchError, map, Observable, of } from 'rxjs';
+import { catchError, defer, finalize, map, Observable, of } from 'rxjs';
 
 /**
  * Gives one accepted mentee a task for an admin and toasts the outcome, for the admin program detail.
@@ -23,14 +23,27 @@ import { catchError, map, Observable, of } from 'rxjs';
  * showing why. Upstream's create is not idempotent, and a failure without a status of its own (a timeout, a 5xx) may
  * still have created the task, so that copy sends the admin to the mentee's row rather than to a retry. A 400, a 403
  * and a 404 get their own copy; the impersonation guard's 403 shows the server's message.
+ *
+ * Which applications are getting a task lives here rather than in the tab: switching tabs destroys the Current
+ * Mentees tab, so a create can outlive the tab that started it, and a rebuilt tab must not send the same task again.
  */
 @Injectable({ providedIn: 'root' })
 export class AdminTaskCreateService {
   private readonly adminService = inject(MentorshipAdminService);
   private readonly messageService = inject(MessageService);
 
+  private readonly creatingIds = new Set<string>();
+
+  /** Whether a task is being created for the application; the tab sends no other create for it meanwhile. */
+  public isCreating(applicationId: string): boolean {
+    return this.creatingIds.has(applicationId);
+  }
+
   public create(request: MentorshipMentorTaskCreateRequest): Observable<boolean> {
-    return this.adminService.createTasks(request).pipe(
+    return defer(() => {
+      request.applicationIds.forEach((applicationId) => this.creatingIds.add(applicationId));
+      return this.adminService.createTasks(request);
+    }).pipe(
       map(({ failed }) => {
         if (failed.length > 0) {
           this.showCreateError(undefined);
@@ -42,7 +55,8 @@ export class AdminTaskCreateService {
       catchError((err: HttpErrorResponse) => {
         this.showCreateError(err);
         return of(false);
-      })
+      }),
+      finalize(() => request.applicationIds.forEach((applicationId) => this.creatingIds.delete(applicationId)))
     );
   }
 

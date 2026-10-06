@@ -13,7 +13,7 @@ import {
 import { MentorshipMentorTaskCreateRequest, MentorshipMentorTaskCreateResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MessageService } from 'primeng/api';
-import { firstValueFrom, Observable, of, throwError } from 'rxjs';
+import { firstValueFrom, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AdminTaskCreateService } from './admin-task-create.service';
@@ -66,12 +66,34 @@ describe('AdminTaskCreateService', () => {
     );
   });
 
-  it('sends the admin to the mentee row for a failure without copy of its own', async () => {
-    createTasks.mockReturnValueOnce(throwError(() => httpError(502)));
+  it.each([409, 502])('sends the admin to the mentee row for a %i, which has no copy of its own', async (status) => {
+    createTasks.mockReturnValueOnce(throwError(() => httpError(status)));
 
     await expect(firstValueFrom(service.create(request))).resolves.toBe(false);
 
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: MENTORSHIP_ADMIN_TASK_CREATE_ERROR_FALLBACK }));
+  });
+
+  it('reports the mentee as getting a task from the subscribe until the create settles', () => {
+    const response = new Subject<MentorshipMentorTaskCreateResponse>();
+    createTasks.mockReturnValueOnce(response);
+    const create = service.create(request);
+
+    expect(service.isCreating(APPLICATION_ID)).toBe(false);
+    create.subscribe();
+    expect(service.isCreating(APPLICATION_ID)).toBe(true);
+
+    response.next({ created: [APPLICATION_ID], failed: [] });
+    response.complete();
+    expect(service.isCreating(APPLICATION_ID)).toBe(false);
+  });
+
+  it('stops reporting the mentee as getting a task once the create fails', async () => {
+    createTasks.mockReturnValueOnce(throwError(() => httpError(502)));
+
+    await firstValueFrom(service.create(request));
+
+    expect(service.isCreating(APPLICATION_ID)).toBe(false);
   });
 
   it("shows the server's message for the impersonation guard's 403", async () => {
