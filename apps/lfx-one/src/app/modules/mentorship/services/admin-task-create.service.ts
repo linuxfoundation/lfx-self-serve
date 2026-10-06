@@ -24,6 +24,9 @@ import { catchError, defer, finalize, map, Observable, of } from 'rxjs';
  * still have created the task, so that copy sends the admin to the mentee's row rather than to a retry. A 400, a 403
  * and a 404 get their own copy; the impersonation guard's 403 shows the server's message.
  *
+ * Only single-application requests are supported: an application listed as failed makes the whole create a failure,
+ * with no partial-success copy, so a bulk caller would need its own handling of `created`.
+ *
  * Which applications are getting a task lives here rather than in the tab: switching tabs destroys the Current
  * Mentees tab, so a create can outlive the tab that started it, and a rebuilt tab must not send the same task again.
  */

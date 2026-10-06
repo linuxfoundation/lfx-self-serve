@@ -97,9 +97,10 @@ import { RowActionsComponent } from '../../../../components/row-actions/row-acti
  * (with an attendance type), Decline, Withdraw, Graduate and Decline by Term write through the BFF; each
  * reloads the page and tells the parent to refresh the tab counts, and a 409 or 422 answers with its own
  * message. Graduate always confirms, warning from the row's task counts without reading any task. Create task
- * opens the task form and then creates through the BFF like the other writes; an expanded row stays expanded across
- * the reload and re-reads its tasks once, a collapsed row reads none. A create still running for a mentee, even one a
- * tab switch outlived, keeps that mentee's form shut. The status export still stubs to coming
+ * opens the task form and then creates through the BFF like the other writes, reloading even on a failure, which may
+ * still have created the task; an expanded row stays expanded across the reload and re-reads its tasks once, a
+ * collapsed row reads none. The form stays shut while another write is in flight, or while a create is still running
+ * for the mentee, even one a tab switch outlived. The status export still stubs to coming
  * soon. The reviewer note saves through the BFF too and is written into its row, so the table shows it without a
  * read; a later read brings the saved note back, and a read that was already in flight when the save landed keeps
  * the saved note over its older answer.
@@ -183,7 +184,7 @@ export class CurrentMenteesTabComponent {
   protected readonly decisionInFlight = signal(false);
   /** Set when the tab is destroyed, so a decision that lands afterwards does not reload the gone table. */
   private destroyed = false;
-  /** The one row a successful Create task left expanded; its tasks are read again when the reloaded page lands. */
+  /** The one row a settled Create task left expanded; its tasks are read again when the reloaded page lands. */
   private rereadTasksForId: string | null = null;
 
   protected readonly termOptions = this.initTermOptions();
@@ -454,9 +455,12 @@ export class CurrentMenteesTabComponent {
     this.messageService.add({ severity: 'info', summary: 'Please wait', detail: MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE, life: 3000 });
   }
 
-  /** Opens the task form, unless a task is still being created for the mentee, by this tab or one a tab switch destroyed. */
+  /**
+   * Opens the task form, unless another write of this tab is in flight or a task is still being created for the mentee
+   * by a tab a tab switch destroyed: the form would only be dropped on submit.
+   */
   private onCreateTask(mentee: MentorshipProgramApplicant): void {
-    if (this.taskCreate.isCreating(mentee.id)) {
+    if (this.decisionInFlight() || this.taskCreate.isCreating(mentee.id)) {
       this.showPleaseWait();
       return;
     }
@@ -470,10 +474,11 @@ export class CurrentMenteesTabComponent {
   }
 
   /**
-   * Creates the task, which toasts its own outcome. Like every write it is never cancelled by the tab going away. On
-   * success the parent refreshes the counts and the page reloads; a row whose tasks were expanded stays expanded and
-   * re-reads its tasks once after that reload (R4a), while a collapsed row's tasks are not read. While another write
-   * of this tab, or a create for the mentee that outlived an earlier tab, is in flight, nothing is sent.
+   * Creates the task, which toasts its own outcome. Like every write it is never cancelled by the tab going away. Once
+   * it settles the parent refreshes the counts and the page reloads, whatever the outcome: a failure may still have
+   * created the task, and its toast sends the admin to the mentee's row. A row whose tasks were expanded stays
+   * expanded and re-reads its tasks once after that reload (R4a), while a collapsed row's tasks are not read. While
+   * another write of this tab, or a create for the mentee that outlived an earlier tab, is in flight, nothing is sent.
    */
   private createTask(mentee: MentorshipProgramApplicant, value: MentorshipTaskFormValue): void {
     if (this.decisionInFlight() || this.taskCreate.isCreating(mentee.id)) {
@@ -491,9 +496,8 @@ export class CurrentMenteesTabComponent {
     this.taskCreate
       .create(request)
       .pipe(take(1))
-      .subscribe((created) => {
+      .subscribe(() => {
         this.decisionInFlight.set(false);
-        if (!created) return;
         this.countsRefresh()();
         if (this.destroyed) return;
         if (this.expandedTaskMenteeIds()[mentee.id]) this.rereadTasksForId = mentee.id;

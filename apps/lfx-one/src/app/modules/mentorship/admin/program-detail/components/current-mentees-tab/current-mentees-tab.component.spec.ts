@@ -666,17 +666,36 @@ describe('CurrentMenteesTabComponent', () => {
       expect(getProgramMentees.mock.calls.length).toBe(reads + 1);
     });
 
-    it('leaves the page and the counts alone when the task was not created', () => {
+    it('reloads the page and the counts after a failure, which may still have created the task', () => {
+      clickViewTasks('app_4');
       openCreate.mockReturnValue(of(formValue()));
-      createTasks.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
+      createTasks.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
       const emitted = vi.fn();
       fixture.componentRef.setInput('countsRefresh', emitted);
       const reads = getProgramMentees.mock.calls.length;
 
       createFor('app_4');
 
-      expect(emitted).not.toHaveBeenCalled();
-      expect(getProgramMentees.mock.calls.length).toBe(reads);
+      expect(emitted).toHaveBeenCalledTimes(1);
+      expect(getProgramMentees.mock.calls.length).toBe(reads + 1);
+      expect(getApplicationTasks).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the form shut while a decision is in flight', () => {
+      withdrawApplication.mockReturnValue(new Subject<void>());
+      const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+      const pendingRow = rowFor('app_1')!;
+      fixture.componentInstance['onRowAction'](pendingRow, pendingRow.actions.find((action) => action.value === 'withdraw')!);
+      confirm.mock.calls[0][0].accept?.();
+      const toast = vi.spyOn(TestBed.inject(MessageService), 'add');
+      openCreate.mockReturnValue(of(formValue()));
+
+      createFor('app_4');
+
+      expect(withdrawApplication).toHaveBeenCalledTimes(1);
+      expect(openCreate).not.toHaveBeenCalled();
+      expect(createTasks).not.toHaveBeenCalled();
+      expect((toast.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Please wait');
     });
 
     it('reads no tasks after creating one for a collapsed row', () => {
