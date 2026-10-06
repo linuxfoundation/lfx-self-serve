@@ -1,7 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FilterOption, MeetupFilterOptionsResponse, MeetupSortField, MeetupSortOrder, MeetupStatusFilter, MyMeetupsResponse } from '../interfaces';
+import {
+  FilterPillOption,
+  MeetupFilterOptionsResponse,
+  MeetupSortField,
+  MeetupSortOrder,
+  MeetupStatusFilter,
+  MyMeetup,
+  MyMeetupsResponse,
+  MyMeetupsUpcomingView,
+} from '../interfaces';
 
 export const DEFAULT_MEETUPS_PAGE_SIZE = 10;
 export const MAX_MEETUPS_PAGE_SIZE = 100;
@@ -19,11 +28,16 @@ export const MEETUPS_SNOWFLAKE_SCHEMA_PATTERN = /^[A-Za-z_][A-Za-z0-9_$]*\.[A-Za
 /** Base URL used to build external OCG meetup links from group/event slugs. */
 export const OCG_MEETUP_BASE_URL = 'https://ocgroups.dev';
 
-export const MEETUP_STATUS_OPTIONS: FilterOption<MeetupStatusFilter | null>[] = [
-  { label: 'All Statuses', value: null },
-  { label: 'Registered', value: 'registered' },
-  { label: 'Not Registered', value: 'not-registered' },
+/** Upcoming-tab registration view pills in visible order. */
+export const MY_MEETUPS_UPCOMING_VIEWS: (FilterPillOption & { id: MyMeetupsUpcomingView })[] = [
+  { id: 'registered', label: 'My Registrations' },
+  { id: 'all', label: 'All Meetups' },
 ];
+
+/** Font Awesome icon shown on the meetup registration status tag. */
+export const MEETUP_STATUS_ICON_MAP: Partial<Record<MyMeetup['status'], string>> = {
+  Registered: 'fa-light fa-circle-check',
+};
 
 export const EMPTY_MY_MEETUPS_RESPONSE: MyMeetupsResponse = { data: [], total: 0, pageSize: DEFAULT_MEETUPS_PAGE_SIZE, offset: 0 };
 export const EMPTY_MEETUP_FILTER_OPTIONS: MeetupFilterOptionsResponse = { communities: [], roles: [] };

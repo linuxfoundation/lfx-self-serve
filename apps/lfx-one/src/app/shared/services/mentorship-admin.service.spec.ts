@@ -11,6 +11,7 @@ import {
   MentorshipAdminProgramPage,
   MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
+  MentorshipMentorTaskCreateResponse,
   MentorshipProgramsResponse,
 } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -195,6 +196,32 @@ describe('MentorshipAdminService', () => {
     req.flush(null, { status: 204, statusText: 'No Content' });
   });
 
+  it('puts a reviewer note for one application, and an empty one to clear it', () => {
+    let done = 0;
+    service.updateApplicationNote('app 1', 'needs a second look').subscribe(() => done++);
+    service.updateApplicationNote('app 1', '').subscribe(() => done++);
+
+    const requests = http.match('/api/mentorship/admin/applications/app%201/note');
+    expect(requests.map((req) => [req.request.method, req.request.body])).toEqual([
+      ['PUT', { note: 'needs a second look' }],
+      ['PUT', { note: '' }],
+    ]);
+    requests.forEach((req) => req.flush(null, { status: 204, statusText: 'No Content' }));
+    expect(done).toBe(2);
+  });
+
+  it('posts a task create for one application and returns the created and failed ids', () => {
+    const request = { applicationIds: ['app_1'], name: 'Read the guide', description: 'Start with chapter one', dueDate: '2030-01-31' };
+    let result: MentorshipMentorTaskCreateResponse | undefined;
+    service.createTasks(request).subscribe((response) => (result = response));
+
+    const req = http.expectOne('/api/mentorship/admin/tasks');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(request);
+    req.flush({ created: ['app_1'], failed: [] } satisfies MentorshipMentorTaskCreateResponse);
+    expect(result).toEqual({ created: ['app_1'], failed: [] });
+  });
+
   it('declines the pending applications of a term and returns the count', () => {
     let declined = -1;
     service.declinePendingForTerm('prog_1', 'trm_1').subscribe((response) => (declined = response.declinedCount));
@@ -211,6 +238,28 @@ describe('MentorshipAdminService', () => {
     service.withdrawApplication('app_1').subscribe({ error: (err: { status: number }) => (status = err.status) });
 
     http.expectOne('/api/mentorship/admin/applications/app_1/withdraw').flush({ message: 'changed' }, { status: 409, statusText: 'Conflict' });
+
+    expect(status).toBe(409);
+    expect(JSON.stringify(logged.mock.calls)).toContain('409');
+  });
+
+  it('patches the status of one mentor, with encoded ids', () => {
+    let done = 0;
+    service.updateProgramMentor('prog 1', 'mem/1', { status: 'withdrawn' }).subscribe(() => done++);
+
+    const req = http.expectOne('/api/mentorship/admin/programs/prog%201/mentors/mem%2F1');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ status: 'withdrawn' });
+    req.flush(null, { status: 204, statusText: 'No Content' });
+    expect(done).toBe(1);
+  });
+
+  it('logs a failed mentor change by status only and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.updateProgramMentor('prog_1', 'mem_1', { status: 'active' }).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/admin/programs/prog_1/mentors/mem_1').flush({ message: 'changed' }, { status: 409, statusText: 'Conflict' });
 
     expect(status).toBe(409);
     expect(JSON.stringify(logged.mock.calls)).toContain('409');

@@ -59,10 +59,17 @@ export class ComposerDateScheduleComponent implements OnInit {
   private readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
-  /** Quick create renders these fields under its own dialog header, where a section heading only repeats it. */
-  public readonly showHeading = input(true);
   /** Early join is an advanced setting the quick create dialog leaves at its default. */
   public readonly showEarlyJoin = input(true);
+  /**
+   * Whether the timezone select and the recurrence toggle are offered.
+   * @description Off for a single-occurrence edit. Both belong to the series: the occurrence endpoint
+   * takes no timezone — the new time is always read in the series' own zone, which is shown as text
+   * instead — and an occurrence cannot change how its series repeats.
+   */
+  public readonly showSeriesSchedule = input(true);
+  /** The series' own timezone, named in place of the select when {@link showSeriesSchedule} is off. */
+  protected readonly seriesTimezone: Signal<string> = computed(() => this.formService.meeting()?.timezone ?? '');
   /**
    * Narrow-column layout for the quick create dialog's right-hand rail.
    * @description Not a media query: the section is the same width on a phone and in the dialog's 2/5
@@ -160,6 +167,9 @@ export class ComposerDateScheduleComponent implements OnInit {
   private readonly startTimeTouched = controlTouchedSignal(this.form, 'startTime');
   private readonly futureDateTimeGroupError = formErrorSignal(this.form, 'futureDateTime');
   protected readonly futureDateTimeError = computed(() => this.futureDateTimeGroupError() && (this.startDateTouched() || this.startTimeTouched()));
+  // Only an occurrence edit carries this validator — see `MeetingComposerFormService.occurrenceWallTimeValidator`.
+  private readonly nonexistentWallTimeGroupError = formErrorSignal(this.form, 'nonexistentWallTime');
+  protected readonly nonexistentWallTimeError = computed(() => this.nonexistentWallTimeGroupError() && (this.startDateTouched() || this.startTimeTouched()));
 
   /**
    * Ids of the custom-duration errors on screen, for the input's `aria-describedby`.

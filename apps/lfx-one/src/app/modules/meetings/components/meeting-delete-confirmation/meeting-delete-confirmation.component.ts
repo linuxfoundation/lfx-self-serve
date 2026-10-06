@@ -1,13 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, signal, WritableSignal } from '@angular/core';
+import { Component, inject, signal, type Signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
+import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Meeting } from '@lfx-one/shared/interfaces';
 import { resolveMeetingBaseCount } from '@lfx-one/shared/utils';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -36,6 +38,8 @@ export class MeetingDeleteConfirmationComponent {
   public readonly isPastMeeting: boolean = this.meeting.start_time ? new Date(this.meeting.start_time) < new Date() : false;
   public readonly deleteForm: FormGroup = this.initializeDeleteForm();
   public isDeleting: WritableSignal<boolean> = signal(false);
+  /** Meeting v2 styling (compact details card, icon-only warning, taller reason field). Flag off keeps the pre-v2 look. */
+  protected readonly meetingsV2Enabled: Signal<boolean> = inject(FeatureFlagService).getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
 
   public onConfirm(): void {
     this.isDeleting.set(true);

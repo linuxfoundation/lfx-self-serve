@@ -471,12 +471,17 @@ describe('mentorship router — LFX profile sync', () => {
   });
 });
 
-describe('mentorship router — admin decision writes', () => {
+describe('mentorship router — admin decision and term writes', () => {
   const base = '/api/mentorship/admin';
   const writes = [
     ['PATCH', '/applications/6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f/status'],
     ['POST', '/applications/6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f/withdraw'],
     ['POST', '/programs/3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b/terms/7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d/decline-pending'],
+    ['POST', '/programs/3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b/terms'],
+    ['PATCH', '/programs/3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b/terms/7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d'],
+    ['POST', '/programs/3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b/terms/7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d/close'],
+    ['POST', '/programs/3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b/terms/7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d/reopen'],
+    ['DELETE', '/programs/3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b/terms/7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d'],
   ] as const;
 
   it.each(writes)('routes %s %s (auth required, not 404)', async (method, path) => {

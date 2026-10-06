@@ -5,6 +5,7 @@
 // which needs the JIT compiler under vitest.
 import '@angular/compiler';
 
+import { MENTORSHIP_MENTEE_NOTE_MAX } from '@lfx-one/shared/constants';
 import type { NextFunction, Request, Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -364,6 +365,132 @@ describe('MentorshipAdminController', () => {
       expect(write).not.toHaveBeenCalled();
     });
 
+    describe('updateApplicationNote', () => {
+      const noteReq = (body: unknown, applicationId = APPLICATION_ID): Request => ({ ...buildReq({}, { applicationId }), body }) as Request;
+
+      it('passes the trimmed note and answers 204', async () => {
+        const write = vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationNote').mockResolvedValue();
+        const out = writeRes();
+
+        await controller.updateApplicationNote(noteReq({ note: '  needs a second look  ' }), out, next);
+
+        expect(write).toHaveBeenCalledWith(expect.anything(), APPLICATION_ID, 'needs a second look');
+        expect(out.status).toHaveBeenCalledWith(204);
+        expect(next).not.toHaveBeenCalled();
+      });
+
+      it('passes an empty note on, which clears it', async () => {
+        const write = vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationNote').mockResolvedValue();
+
+        await controller.updateApplicationNote(noteReq({ note: '   ' }), writeRes(), next);
+
+        expect(write).toHaveBeenCalledWith(expect.anything(), APPLICATION_ID, '');
+      });
+
+      it('accepts a note of exactly the largest length', async () => {
+        const write = vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationNote').mockResolvedValue();
+
+        await controller.updateApplicationNote(noteReq({ note: 'a'.repeat(MENTORSHIP_MENTEE_NOTE_MAX) }), writeRes(), next);
+
+        expect(write).toHaveBeenCalledTimes(1);
+        expect(next).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['an application id that is not a UUID', { note: 'x' }, '12'],
+        ['no body', undefined, APPLICATION_ID],
+        ['a note that is not a string', { note: 5 }, APPLICATION_ID],
+        ['a note over the largest length', { note: 'a'.repeat(MENTORSHIP_MENTEE_NOTE_MAX + 1) }, APPLICATION_ID],
+      ])('rejects %s with a 400 and no upstream call', async (_label, body, applicationId) => {
+        const write = vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationNote');
+
+        await controller.updateApplicationNote(noteReq(body, applicationId), writeRes(), next);
+
+        expect(statusCodes()).toEqual([400]);
+        expect(write).not.toHaveBeenCalled();
+      });
+
+      it('passes an upstream 409 on to next', async () => {
+        vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationNote').mockRejectedValue(Object.assign(new Error('changed'), { statusCode: 409 }));
+
+        await controller.updateApplicationNote(noteReq({ note: 'x' }), writeRes(), next);
+
+        expect(statusCodes()).toEqual([409]);
+      });
+
+      it('logs the application id and the note length, never the note', async () => {
+        vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationNote').mockResolvedValue();
+
+        await controller.updateApplicationNote(noteReq({ note: 'private-reviewer-text' }), writeRes(), next);
+
+        // The request is the first argument of every call, so only the rest is what the controller chose to log.
+        const logged = JSON.stringify([...vi.mocked(logger.startOperation).mock.calls, ...vi.mocked(logger.success).mock.calls].map((call) => call.slice(1)));
+        expect(logged).toContain(APPLICATION_ID);
+        expect(logged).toContain(`"noteLength":${'private-reviewer-text'.length}`);
+        expect(logged).not.toContain('private-reviewer-text');
+      });
+    });
+
+    describe('createTasks', () => {
+      const taskReq = (body: unknown): Request => ({ ...buildReq({}, {}), body }) as Request;
+      const validBody = { applicationIds: [APPLICATION_ID], name: ' Read the guide ', description: 'private-task-text', dueDate: '2030-01-31' };
+
+      it('passes the validated request on and answers with the created and failed ids', async () => {
+        const write = vi.spyOn(MentorshipAdminService.prototype, 'createTasks').mockResolvedValue({ created: [APPLICATION_ID], failed: [] });
+        const out = writeRes();
+
+        await controller.createTasks(taskReq({ ...validBody, requiresFileSubmission: true }), out, next);
+
+        expect(write).toHaveBeenCalledWith(expect.anything(), {
+          applicationIds: [APPLICATION_ID],
+          name: 'Read the guide',
+          description: 'private-task-text',
+          dueDate: '2030-01-31',
+          requiresFileSubmission: true,
+        });
+        expect(out.json).toHaveBeenCalledWith({ created: [APPLICATION_ID], failed: [] });
+        expect(next).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['no body', undefined],
+        ['no applications', { ...validBody, applicationIds: [] }],
+        ['an application id that is not a UUID', { ...validBody, applicationIds: ['12'] }],
+        ['a blank name', { ...validBody, name: '   ' }],
+        ['no description', { ...validBody, description: undefined }],
+        ['a due date that is not a calendar date', { ...validBody, dueDate: '2030-02-31' }],
+        ['a file requirement that is not a boolean', { ...validBody, requiresFileSubmission: 'yes' }],
+      ])('rejects %s with a 400 and no upstream call', async (_label, body) => {
+        const write = vi.spyOn(MentorshipAdminService.prototype, 'createTasks');
+
+        await controller.createTasks(taskReq(body), writeRes(), next);
+
+        expect(statusCodes()).toEqual([400]);
+        expect(write).not.toHaveBeenCalled();
+      });
+
+      it.each([403, 404, 409])('passes an upstream %i on to next', async (statusCode) => {
+        vi.spyOn(MentorshipAdminService.prototype, 'createTasks').mockRejectedValue(Object.assign(new Error('upstream'), { statusCode }));
+
+        await controller.createTasks(taskReq(validBody), writeRes(), next);
+
+        expect(statusCodes()).toEqual([statusCode]);
+      });
+
+      it('logs the application count and the outcome counts, never the task text', async () => {
+        vi.spyOn(MentorshipAdminService.prototype, 'createTasks').mockResolvedValue({ created: [APPLICATION_ID], failed: [] });
+
+        await controller.createTasks(taskReq(validBody), writeRes(), next);
+
+        const logged = JSON.stringify([...vi.mocked(logger.startOperation).mock.calls, ...vi.mocked(logger.success).mock.calls].map((call) => call.slice(1)));
+        expect(logged).toContain('"application_count":1');
+        expect(logged).toContain('"created_count":1');
+        expect(logged).toContain('"failed_count":0');
+        expect(logged).not.toContain('private-task-text');
+        expect(logged).not.toContain('Read the guide');
+      });
+    });
+
     it('withdrawApplication answers 204', async () => {
       const write = vi.spyOn(MentorshipAdminService.prototype, 'withdrawApplication').mockResolvedValue();
       const out = writeRes();
@@ -405,6 +532,196 @@ describe('MentorshipAdminController', () => {
     });
   });
 
+  describe('updateProgramMentor', () => {
+    const MEMBER_ID = '4e5f6a7b-8c9d-4e0f-9a1b-3c4d5e6f7a8b';
+    const writeRes = () => ({ json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() }) as unknown as Response;
+    const mentorReq = (body: unknown, params: Record<string, unknown> = { programId: PROGRAM_ID, memberId: MEMBER_ID }): Request =>
+      ({ ...buildReq({}, params), body }) as Request;
+
+    it('passes the validated status on and answers 204', async () => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'updateProgramMentor').mockResolvedValue();
+      const out = writeRes();
+
+      await controller.updateProgramMentor(mentorReq({ status: 'active', extra: 1 }), out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, MEMBER_ID, { status: 'active' });
+      expect(out.status).toHaveBeenCalledWith(204);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a program id that is not a UUID', { status: 'active' }, { programId: '12', memberId: MEMBER_ID }],
+      ['a member id that is not a UUID', { status: 'active' }, { programId: PROGRAM_ID, memberId: 'abc' }],
+      ['a status the admin cannot set', { status: 'requested' }, undefined],
+      ['a status that is not a string', { status: 1 }, undefined],
+      ['no body', undefined, undefined],
+    ])('rejects %s with a 400 and no upstream call', async (_label, body, params) => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'updateProgramMentor');
+
+      await controller.updateProgramMentor(mentorReq(body, params), writeRes(), next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it('passes an upstream 409 on', async () => {
+      vi.spyOn(MentorshipAdminService.prototype, 'updateProgramMentor').mockRejectedValue(Object.assign(new Error('changed'), { statusCode: 409 }));
+
+      await controller.updateProgramMentor(mentorReq({ status: 'declined' }), writeRes(), next);
+
+      expect(statusCodes()).toEqual([409]);
+    });
+
+    it('logs ids and the status only', async () => {
+      vi.spyOn(MentorshipAdminService.prototype, 'updateProgramMentor').mockResolvedValue();
+
+      await controller.updateProgramMentor(mentorReq({ status: 'withdrawn', name: 'private-mentor-name' }), writeRes(), next);
+
+      const logged = JSON.stringify([...vi.mocked(logger.startOperation).mock.calls, ...vi.mocked(logger.success).mock.calls].map((call) => call.slice(1)));
+      expect(logged).toContain(MEMBER_ID);
+      expect(logged).toContain('withdrawn');
+      expect(logged).not.toContain('private-mentor-name');
+    });
+  });
+
+  describe('term writes', () => {
+    const TERM = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
+    const termBody = {
+      name: 'Fall 2026',
+      startDate: '2026-09-01',
+      endDate: '2026-12-01',
+      applicationStartDate: '2026-07-01',
+      applicationEndDate: '2026-08-15',
+    };
+    const writeRes = () => ({ json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() }) as unknown as Response;
+    const termReq = (body: unknown, params: Record<string, unknown> = { programId: PROGRAM_ID, termId: TERM }): Request =>
+      ({ ...buildReq({}, params), body }) as Request;
+    const row = {
+      id: TERM,
+      name: 'Fall 2026',
+      status: 'open',
+      pending: 0,
+      declined: 0,
+      accepted: 0,
+      graduated: 0,
+      startDate: '',
+      endDate: '',
+      applicationStartDate: '',
+      applicationEndDate: '',
+    };
+
+    it('creates a term and answers 201 with the row', async () => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'createTerm').mockResolvedValue(row as never);
+      const out = writeRes();
+
+      await controller.createTerm(termReq({ ...termBody, name: '  Fall 2026 ', extra: 1 }, { programId: PROGRAM_ID }), out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, termBody);
+      expect(out.status).toHaveBeenCalledWith(201);
+      expect(out.json).toHaveBeenCalledWith(row);
+    });
+
+    it('edits a term and answers 200 with the row', async () => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'updateTerm').mockResolvedValue(row as never);
+      const out = writeRes();
+
+      await controller.updateTerm(termReq(termBody), out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, TERM, termBody);
+      expect(out.json).toHaveBeenCalledWith(row);
+    });
+
+    it('accepts an application window that opens and closes on one date', async () => {
+      const oneDay = { ...termBody, applicationEndDate: termBody.applicationStartDate };
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'createTerm').mockResolvedValue(row as never);
+      const out = writeRes();
+
+      await controller.createTerm(termReq(oneDay, { programId: PROGRAM_ID }), out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, oneDay);
+      expect(out.status).toHaveBeenCalledWith(201);
+    });
+
+    it('accepts a term that starts and ends in one month', async () => {
+      const oneMonth = { ...termBody, endDate: termBody.startDate };
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'createTerm').mockResolvedValue(row as never);
+      const out = writeRes();
+
+      await controller.createTerm(termReq(oneMonth, { programId: PROGRAM_ID }), out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, oneMonth);
+      expect(out.status).toHaveBeenCalledWith(201);
+    });
+
+    it.each([
+      ['closeTerm', 'closeTerm'],
+      ['reopenTerm', 'reopenTerm'],
+      ['deleteTerm', 'deleteTerm'],
+    ] as const)('%s answers 204', async (method, serviceMethod) => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, serviceMethod).mockResolvedValue();
+      const out = writeRes();
+
+      await controller[method](termReq(undefined), out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, TERM);
+      expect(out.status).toHaveBeenCalledWith(204);
+    });
+
+    it.each([
+      ['a blank name', { ...termBody, name: '   ' }],
+      ['a name over the limit', { ...termBody, name: 'x'.repeat(51) }],
+      ['a date that is not ISO', { ...termBody, startDate: '09/01/2026' }],
+      ['a date that is not on the calendar', { ...termBody, startDate: '2026-02-30' }],
+      ['an application end before its start', { ...termBody, applicationEndDate: '2026-06-30' }],
+      ['a start on the application end', { ...termBody, startDate: '2026-08-15' }],
+      ['an end before the start', { ...termBody, endDate: '2026-08-01' }],
+      ['no body', undefined],
+    ])('rejects %s with a 400 and no upstream call', async (_label, body) => {
+      const create = vi.spyOn(MentorshipAdminService.prototype, 'createTerm');
+      const update = vi.spyOn(MentorshipAdminService.prototype, 'updateTerm');
+
+      await controller.createTerm(termReq(body, { programId: PROGRAM_ID }), writeRes(), next);
+      await controller.updateTerm(termReq(body), writeRes(), next);
+
+      expect(statusCodes()).toEqual([400, 400]);
+      expect(create).not.toHaveBeenCalled();
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a program id that is not a UUID', { programId: '12', termId: TERM }],
+      ['a term id that is not a UUID', { programId: PROGRAM_ID, termId: 'abc' }],
+    ])('rejects %s with a 400 and no upstream call', async (_label, params) => {
+      const close = vi.spyOn(MentorshipAdminService.prototype, 'closeTerm');
+      const del = vi.spyOn(MentorshipAdminService.prototype, 'deleteTerm');
+
+      await controller.closeTerm(termReq(undefined, params), writeRes(), next);
+      await controller.deleteTerm(termReq(undefined, params), writeRes(), next);
+
+      expect(statusCodes()).toEqual([400, 400]);
+      expect(close).not.toHaveBeenCalled();
+      expect(del).not.toHaveBeenCalled();
+    });
+
+    it('passes an upstream 409 on', async () => {
+      vi.spyOn(MentorshipAdminService.prototype, 'closeTerm').mockRejectedValue(Object.assign(new Error('accepted'), { statusCode: 409 }));
+
+      await controller.closeTerm(termReq(undefined), writeRes(), next);
+
+      expect(statusCodes()).toEqual([409]);
+    });
+
+    it('logs ids only, never the term name', async () => {
+      vi.spyOn(MentorshipAdminService.prototype, 'createTerm').mockResolvedValue(row as never);
+
+      await controller.createTerm(termReq({ ...termBody, name: 'private-term-name' }, { programId: PROGRAM_ID }), writeRes(), next);
+
+      const logged = JSON.stringify([...vi.mocked(logger.startOperation).mock.calls, ...vi.mocked(logger.success).mock.calls].map((call) => call.slice(1)));
+      expect(logged).toContain(PROGRAM_ID);
+      expect(logged).not.toContain('private-term-name');
+    });
+  });
+
   describe('with no signed-in user', () => {
     it.each([
       ['getProgram', 'getProgramPage', { programId: PROGRAM_ID }, {}],
@@ -412,6 +729,14 @@ describe('MentorshipAdminController', () => {
       ['getProgramMentors', 'getProgramMentors', { programId: PROGRAM_ID }, {}],
       ['getProgramTerms', 'getProgramTerms', { programId: PROGRAM_ID }, {}],
       ['getApplicationTasks', 'getApplicationTasks', { applicationId: PROGRAM_ID }, {}],
+      ['updateApplicationNote', 'updateApplicationNote', { applicationId: PROGRAM_ID }, {}],
+      ['createTasks', 'createTasks', {}, {}],
+      ['updateProgramMentor', 'updateProgramMentor', { programId: PROGRAM_ID, memberId: PROGRAM_ID }, {}],
+      ['createTerm', 'createTerm', { programId: PROGRAM_ID }, {}],
+      ['updateTerm', 'updateTerm', { programId: PROGRAM_ID, termId: PROGRAM_ID }, {}],
+      ['closeTerm', 'closeTerm', { programId: PROGRAM_ID, termId: PROGRAM_ID }, {}],
+      ['reopenTerm', 'reopenTerm', { programId: PROGRAM_ID, termId: PROGRAM_ID }, {}],
+      ['deleteTerm', 'deleteTerm', { programId: PROGRAM_ID, termId: PROGRAM_ID }, {}],
     ] as const)('%s passes an AuthenticationError to next without reading upstream', async (method, serviceMethod, params, query) => {
       vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
       const read = vi.spyOn(MentorshipAdminService.prototype, serviceMethod);

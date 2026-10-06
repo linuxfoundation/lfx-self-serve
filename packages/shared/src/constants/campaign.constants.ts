@@ -4,12 +4,15 @@
 import type {
   AudienceSignal,
   AudienceSpeakerScope,
+  CampaignBidType,
   CampaignBudgetType,
   CampaignDeliveryTypeOption,
   CampaignEmailSegment,
   CampaignEmailTypeOption,
   CampaignGoalOption,
   CampaignKeyword,
+  CampaignNegativeKeywordMatchType,
+  CampaignNegativeKeywordOutcome,
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
@@ -17,6 +20,7 @@ import type {
   CampaignTabOption,
   CampaignToggleAction,
   CampaignToggleStatus,
+  KeywordActionPlatform,
   LinkedInGeoTarget,
   MetaObjective,
   MetaObjectiveParams,
@@ -1020,6 +1024,78 @@ export const CAMPAIGN_ETAG_HEADER_PATTERN = /^[\x21-\x7e]+$/;
  */
 export const CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED =
   'The budget change could not be confirmed and may already have been applied. Verify the campaign budget in the ad platform before retrying.';
+
+/** The platforms a keyword pause/remove may name (campaign-service's `apply-keyword-actions`). */
+export const KEYWORD_ACTION_PLATFORMS: ReadonlySet<KeywordActionPlatform> = new Set<KeywordActionPlatform>(['google-ads', 'microsoft-ads']);
+
+/** The platform a keyword action means when it names none: every pre-Microsoft request was Google Ads. */
+export const DEFAULT_KEYWORD_ACTION_PLATFORM: KeywordActionPlatform = 'google-ads';
+
+/**
+ * What a Microsoft keyword action reports when it may or may not have been applied: the Microsoft
+ * twin of the BFF's Google-worded unconfirmed message. A retried REMOVE is irreversible, so the
+ * operator is sent to Microsoft Advertising to check first.
+ */
+export const MICROSOFT_KEYWORD_ACTION_OUTCOME_UNCONFIRMED =
+  'The change was sent but could not be confirmed. Check the keyword in Microsoft Advertising before retrying.';
+
+/** Valid `bidType` values for the campaign bid change endpoint (campaign-service's `bid_type` enum). */
+export const VALID_CAMPAIGN_BID_TYPES: ReadonlySet<CampaignBidType> = new Set<CampaignBidType>(['cpc']);
+
+/** The `bidType` sent when the caller names none: upstream's own default and only value. */
+export const DEFAULT_CAMPAIGN_BID_TYPE: CampaignBidType = 'cpc';
+
+/**
+ * What a bid change reports when no campaign-service answer came back. The bid-lever twin of
+ * `CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED`: the write may already have reached the ad platform, so the
+ * operator is told to verify the bid there first. campaign-service's OWN 503 answers pass through
+ * untouched, because their message already says whether the outcome was definite or unconfirmed.
+ */
+export const CAMPAIGN_BID_OUTCOME_UNCONFIRMED =
+  'The bid change could not be confirmed and may already have been applied. Verify the bid in the ad platform before retrying.';
+
+/** Match types a negative keyword may carry (campaign-service's `negativeKeywordMatchTypeEnum`). */
+export const VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES: ReadonlySet<CampaignNegativeKeywordMatchType> = new Set<CampaignNegativeKeywordMatchType>([
+  'Exact',
+  'Phrase',
+]);
+
+/** Per-keyword outcomes of the negative-keywords lever (campaign-service's `negativeKeywordOutcomeEnum`). */
+export const CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES: ReadonlySet<CampaignNegativeKeywordOutcome> = new Set<CampaignNegativeKeywordOutcome>([
+  'APPLIED',
+  'ALREADY_PRESENT',
+  'FAILED',
+  'UNCONFIRMED',
+]);
+
+/** Most negative keywords one request may carry (the upstream payload's `MaxLength(60)`). */
+export const MAX_NEGATIVE_KEYWORDS_PER_REQUEST = 60;
+
+/** Microsoft's limit on a negative keyword's text, in characters (code points, not bytes). */
+export const MAX_NEGATIVE_KEYWORD_TEXT_LENGTH = 100;
+
+/**
+ * The characters a negative keyword's text may hold: letters, combining marks, digits, spaces and
+ * `& ' - .`. The same pattern as campaign-service's `NegativeKeywordInput.text`, so a request this
+ * admits is not refused upstream on its character set. Upstream additionally refuses adjacent
+ * punctuation and duplicate keywords, and names the reason in its 400.
+ */
+export const NEGATIVE_KEYWORD_TEXT_PATTERN = /^[\p{L}\p{M}\p{N} &'.-]+$/u;
+
+/**
+ * What a negative-keywords request reports when campaign-service answered 2xx with a body that
+ * cannot be read positionally (no results array, the wrong number of results, or another
+ * campaign's id). Negatives may have been added, so nothing is claimed either way.
+ */
+export const CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED =
+  "The negative keywords were sent but the confirmation could not be read. Check the campaign's negative keywords in the ad platform before retrying.";
+
+/**
+ * The reporting windows the Microsoft keyword read accepts: `CAMPAIGN_METRICS_WINDOWS` without
+ * `yesterday` and `last_14_days`, which the Microsoft client cannot map to a report date range
+ * (`microsoftKeywordsWindowEnum`, campaign-service `design/connection.go`).
+ */
+export const MICROSOFT_KEYWORDS_WINDOWS = ['today', 'last_7_days', 'last_30_days', 'this_month', 'last_month'] as const;
 
 // NOTE: LinkedIn ad accounts, default account/org IDs, employer exclusions, and
 // targeting profile URN lists are loaded at runtime from a mounted ConfigMap

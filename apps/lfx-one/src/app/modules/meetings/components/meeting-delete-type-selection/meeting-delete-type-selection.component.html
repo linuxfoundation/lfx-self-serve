@@ -1,76 +1,166 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="meeting-delete-type-selection">
-  <!-- Description -->
-  <div class="mb-6">
-    <p class="text-gray-700">This is a recurring meeting. Would you like to cancel just this occurrence or delete the entire meeting series?</p>
-  </div>
+<div class="meeting-delete-type-selection" data-testid="meeting-delete-type-selection">
+  <!-- Meeting v2 layout: plain radios matching the edit scope dialog, with the occurrence picker. Flag off
+       keeps the pre-v2 card layout, which cancels the occurrence the dialog was opened on. -->
+  @if (meetingsV2Enabled()) {
+    <div class="mb-4">
+      <p class="text-gray-700">This is a recurring meeting. What would you like to delete?</p>
+    </div>
 
-  <!-- Selection Options -->
-  <div class="flex flex-col gap-3 mb-6">
-    <div
-      class="border rounded-lg p-4 cursor-pointer transition-all"
-      [ngClass]="{
-        'border-blue-500 bg-blue-50': selectedType === 'occurrence',
-        'border-gray-200': selectedType !== 'occurrence',
-      }"
-      (click)="selectType('occurrence')"
-      data-testid="delete-type-occurrence-option">
+    <form [formGroup]="deleteForm" class="flex flex-col gap-4">
       <div class="flex items-start gap-3">
-        <div class="mt-1">
-          <i
-            class="fa-light text-lg"
-            [ngClass]="{
-              'fa-circle-dot text-blue-500': selectedType === 'occurrence',
-              'fa-circle text-gray-400': selectedType !== 'occurrence',
-            }"></i>
+        <lfx-radio-button
+          [form]="deleteForm"
+          control="deleteType"
+          name="deleteType"
+          value="occurrence"
+          inputId="delete-type-occurrence"
+          data-testid="delete-type-occurrence-option"></lfx-radio-button>
+        <div class="flex min-w-0 flex-1 flex-col gap-2">
+          <div class="flex flex-col gap-1">
+            <label for="delete-type-occurrence" class="cursor-pointer font-medium text-gray-900">Cancel a single occurrence</label>
+            <span class="text-sm text-gray-600">
+              @if (occurrenceOptions.length > 0) {
+                Only the occurrence you pick will be canceled. The rest of the series will remain.
+              } @else {
+                There are no upcoming occurrences left to cancel on their own.
+              }
+            </span>
+          </div>
+
+          @if (isOccurrenceType() && occurrenceOptions.length > 0) {
+            <div class="flex flex-col gap-1.5">
+              <!-- p-select's inputId lands on a span[role=combobox], so this associates via aria-labelledby, not `for` -->
+              <span id="delete-type-occurrence-picker-label" class="text-xs font-medium text-gray-700">Occurrence</span>
+              <lfx-select
+                [form]="deleteForm"
+                control="occurrenceId"
+                [options]="occurrenceOptions"
+                inputId="delete-type-occurrence-picker"
+                ariaLabelledBy="delete-type-occurrence-picker-label"
+                placeholder="Select an occurrence"
+                styleClass="w-full"
+                scrollHeight="240px"
+                dataTest="delete-type-occurrence-select"
+                data-testid="delete-type-occurrence-select" />
+            </div>
+          }
         </div>
+      </div>
+
+      <div class="flex items-start gap-3">
+        <lfx-radio-button
+          [form]="deleteForm"
+          control="deleteType"
+          name="deleteType"
+          value="series"
+          inputId="delete-type-series"
+          data-testid="delete-type-series-option"></lfx-radio-button>
         <div class="flex-1">
-          <h4 class="font-semibold text-gray-900 mb-1">Cancel This Occurrence</h4>
-          <p class="text-sm text-gray-600">Only this specific meeting instance will be canceled. The rest of the series will remain.</p>
+          <label for="delete-type-series" class="cursor-pointer font-medium text-gray-900">Delete the entire series</label>
+          <div class="mt-1 text-sm text-gray-600">Every occurrence of this recurring meeting will be permanently deleted.</div>
+        </div>
+      </div>
+    </form>
+
+    <!-- Action Buttons -->
+    <div class="mt-6 flex justify-end gap-3">
+      <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" type="button" (click)="onCancel()" data-testid="delete-type-cancel-button">
+      </lfx-button>
+
+      <lfx-button
+        label="Continue"
+        severity="info"
+        size="small"
+        type="button"
+        [disabled]="!canContinue()"
+        (click)="onContinue()"
+        data-testid="delete-type-continue-button">
+      </lfx-button>
+    </div>
+  } @else {
+    <!-- Description -->
+    <div class="mb-6">
+      <p class="text-gray-700">This is a recurring meeting. Would you like to cancel just this occurrence or delete the entire meeting series?</p>
+    </div>
+
+    <!-- Selection Options -->
+    <div class="flex flex-col gap-3 mb-6" role="radiogroup" aria-label="What to delete">
+      <div
+        class="border rounded-lg p-4 cursor-pointer transition-all"
+        [ngClass]="{
+          'border-blue-500 bg-blue-50': selectedType() === 'occurrence',
+          'border-gray-200': selectedType() !== 'occurrence',
+        }"
+        role="radio"
+        tabindex="0"
+        [attr.aria-checked]="selectedType() === 'occurrence'"
+        (click)="selectType('occurrence')"
+        (keydown.enter)="selectType('occurrence')"
+        (keydown.space)="$event.preventDefault(); selectType('occurrence')"
+        data-testid="delete-type-occurrence-option">
+        <div class="flex items-start gap-3">
+          <div class="mt-1">
+            <i
+              class="fa-light text-lg"
+              [ngClass]="{
+                'fa-circle-dot text-blue-500': selectedType() === 'occurrence',
+                'fa-circle text-gray-400': selectedType() !== 'occurrence',
+              }"></i>
+          </div>
+          <div class="flex-1">
+            <h4 class="font-semibold text-gray-900 mb-1">Cancel This Occurrence</h4>
+            <p class="text-sm text-gray-600">Only this specific meeting instance will be canceled. The rest of the series will remain.</p>
+          </div>
+        </div>
+      </div>
+
+      <div
+        class="border rounded-lg p-4 cursor-pointer transition-all"
+        [ngClass]="{
+          'border-blue-500 bg-blue-50': selectedType() === 'series',
+          'border-gray-200': selectedType() !== 'series',
+        }"
+        role="radio"
+        tabindex="0"
+        [attr.aria-checked]="selectedType() === 'series'"
+        (click)="selectType('series')"
+        (keydown.enter)="selectType('series')"
+        (keydown.space)="$event.preventDefault(); selectType('series')"
+        data-testid="delete-type-series-option">
+        <div class="flex items-start gap-3">
+          <div class="mt-1">
+            <i
+              class="fa-light text-lg"
+              [ngClass]="{
+                'fa-circle-dot text-blue-500': selectedType() === 'series',
+                'fa-circle text-gray-400': selectedType() !== 'series',
+              }"></i>
+          </div>
+          <div class="flex-1">
+            <h4 class="font-semibold text-gray-900 mb-1">Delete Entire Series</h4>
+            <p class="text-sm text-gray-600">The entire recurring meeting series will be permanently deleted.</p>
+          </div>
         </div>
       </div>
     </div>
 
-    <div
-      class="border rounded-lg p-4 cursor-pointer transition-all"
-      [ngClass]="{
-        'border-blue-500 bg-blue-50': selectedType === 'series',
-        'border-gray-200': selectedType !== 'series',
-      }"
-      (click)="selectType('series')"
-      data-testid="delete-type-series-option">
-      <div class="flex items-start gap-3">
-        <div class="mt-1">
-          <i
-            class="fa-light text-lg"
-            [ngClass]="{
-              'fa-circle-dot text-blue-500': selectedType === 'series',
-              'fa-circle text-gray-400': selectedType !== 'series',
-            }"></i>
-        </div>
-        <div class="flex-1">
-          <h4 class="font-semibold text-gray-900 mb-1">Delete Entire Series</h4>
-          <p class="text-sm text-gray-600">The entire recurring meeting series will be permanently deleted.</p>
-        </div>
-      </div>
+    <!-- Action Buttons -->
+    <div class="flex justify-end gap-3">
+      <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" type="button" (click)="onCancel()" data-testid="delete-type-cancel-button">
+      </lfx-button>
+
+      <lfx-button
+        label="Continue"
+        severity="info"
+        size="small"
+        type="button"
+        [disabled]="!canContinue()"
+        (click)="onContinue()"
+        data-testid="delete-type-continue-button">
+      </lfx-button>
     </div>
-  </div>
-
-  <!-- Action Buttons -->
-  <div class="flex justify-end gap-3">
-    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" type="button" (click)="onCancel()" data-testid="delete-type-cancel-button">
-    </lfx-button>
-
-    <lfx-button
-      label="Continue"
-      severity="info"
-      size="small"
-      type="button"
-      [disabled]="!selectedType"
-      (click)="onContinue()"
-      data-testid="delete-type-continue-button">
-    </lfx-button>
-  </div>
+  }
 </div>

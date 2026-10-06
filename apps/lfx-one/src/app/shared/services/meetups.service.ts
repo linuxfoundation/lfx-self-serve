@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { GetMyMeetupsParams, MeetupFilterOptionsResponse, MyMeetupsResponse } from '@lfx-one/shared/interfaces';
+import { GetMyMeetupsParams, GetMeetupFiltersParams, MeetupFilterOptionsResponse, MyMeetupsResponse } from '@lfx-one/shared/interfaces';
 import { Observable } from 'rxjs';
 
 @Injectable({
@@ -28,7 +28,10 @@ export class MeetupsService {
     return this.http.get<MyMeetupsResponse>('/api/meetups', { params: httpParams });
   }
 
-  public getMeetupFilters(): Observable<MeetupFilterOptionsResponse> {
-    return this.http.get<MeetupFilterOptionsResponse>('/api/meetups/filters');
+  public getMeetupFilters(params: GetMeetupFiltersParams = {}): Observable<MeetupFilterOptionsResponse> {
+    let httpParams = new HttpParams();
+    if (params.isPast !== undefined) httpParams = httpParams.set('isPast', String(params.isPast));
+    if (params.registeredOnly !== undefined) httpParams = httpParams.set('registeredOnly', String(params.registeredOnly));
+    return this.http.get<MeetupFilterOptionsResponse>('/api/meetups/filters', { params: httpParams });
   }
 }

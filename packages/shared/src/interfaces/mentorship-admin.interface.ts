@@ -5,6 +5,7 @@ import type {
   MENTORSHIP_ADMIN_DECISION_STATUSES,
   MENTORSHIP_ADMIN_MENTEE_TABS,
   MENTORSHIP_ADMIN_MENTOR_STATUSES,
+  MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES,
   MENTORSHIP_ATTENDANCE_TYPES,
   MENTORSHIP_PROGRAM_DETAIL_TABS,
   MENTORSHIP_PROGRAM_STATUSES,
@@ -61,6 +62,21 @@ export type MentorshipProgramDetailTab = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)
 /** Mentor lifecycle on the admin Mentors tab; upstream's `active` mentor shows as Accepted. */
 export type MentorshipAdminMentorStatus = (typeof MENTORSHIP_ADMIN_MENTOR_STATUSES)[number];
 
+/** A status an admin may set on a mentor member. */
+export type MentorshipAdminMentorUpdateStatus = (typeof MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES)[number];
+
+/** Body of `PATCH /api/mentorship/admin/programs/:programId/mentors/:memberId`. */
+export interface MentorshipAdminMentorStatusUpdate {
+  status: MentorshipAdminMentorUpdateStatus;
+}
+
+/** One action on a Mentors tab row: `key` names its copy, `status` is what it sets. */
+export interface MentorshipAdminMentorAction {
+  key: 'accept' | 'decline' | 'revoke' | 'remove';
+  label: string;
+  status: MentorshipAdminMentorUpdateStatus;
+}
+
 /** Mentor row on the Mentors tab. */
 export interface MentorshipProgramMentor extends MentorshipProgramPersonBase {
   status: MentorshipAdminMentorStatus;
@@ -81,6 +97,15 @@ export interface MentorshipProgramTermRow {
   declined: number;
   accepted: number;
   graduated: number;
+  startDate: string;
+  endDate: string;
+  applicationStartDate: string;
+  applicationEndDate: string;
+}
+
+/** Body of `POST /api/mentorship/admin/programs/:programId/terms` and `PATCH …/terms/:termId`. All dates are ISO `YYYY-MM-DD`. */
+export interface MentorshipAdminTermInput {
+  name: string;
   startDate: string;
   endDate: string;
   applicationStartDate: string;
@@ -119,6 +144,18 @@ export type MentorshipAdminDecisionStatus = (typeof MENTORSHIP_ADMIN_DECISION_ST
 export interface MentorshipAdminApplicationStatusUpdate {
   status: MentorshipAdminDecisionStatus;
   attendanceType?: MentorshipAttendanceType;
+}
+
+/** A reviewer note an admin saved, announced so whichever Current Mentees tab is on screen writes it into its row. */
+export interface MentorshipAdminSavedNote {
+  applicationId: string;
+  note: string;
+}
+
+/** A saved reviewer note with the version of its save, so a page read that started before the save knows to keep it. */
+export interface MentorshipAdminVersionedNote {
+  note: string;
+  version: number;
 }
 
 /** Response of `POST /api/mentorship/admin/programs/:programId/terms/:termId/decline-pending`. */

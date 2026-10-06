@@ -33,6 +33,7 @@
       <!-- Initiatives list with filter pills -->
       <lfx-initiatives-list
         [initiatives]="initiatives()"
+        [createUrl]="crowdfundingUrl"
         [hasMore]="initiativesHasMore()"
         [loadingMore]="loadingMore()"
         (loadMore)="onLoadMoreInitiatives()"

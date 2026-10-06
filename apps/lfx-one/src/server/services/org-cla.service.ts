@@ -1486,15 +1486,13 @@ export class OrgClaService {
         }
       );
     } catch (error) {
-      // The producer refuses any acknowledgment that is not approved with 409 — a Not Authorized
-      // row, or one invalidated since the list was read.
       if (error instanceof MicroserviceError && error.statusCode === 409) {
-        logger.warning(req, 'org_cla_invalidate_acknowledgment', 'acknowledgment is not approved, so the producer refused the invalidate', {
+        logger.warning(req, 'org_cla_invalidate_acknowledgment', 'acknowledgment was already invalidated or changed, so the producer refused the invalidate', {
           org_uid: orgUid,
           signature_id: signatureId,
           acknowledgment_signature_id: acknowledgmentSignatureId,
         });
-        return { outcome: 'not-approved' };
+        return { outcome: 'conflict' };
       }
       throw error;
     }
@@ -2111,7 +2109,7 @@ export type OrgClaInvalidateAcknowledgmentOutcome =
   | { outcome: 'not-found' }
   | { outcome: 'not-signed' }
   | { outcome: 'forbidden' }
-  | { outcome: 'not-approved' };
+  | { outcome: 'conflict' };
 
 /**
  * Result of an approval-list write.

@@ -137,6 +137,15 @@ export function toMentorshipUtcInstant(value: string): string {
 }
 
 /**
+ * A date-only value (`YYYY-MM-DD`) as the last millisecond of its UTC day, the instant a term's application window closes,
+ * so applications stay open through the whole end date. Milliseconds are the finest precision `Date` reads. Any other
+ * value comes back unchanged.
+ */
+export function toMentorshipUtcEndOfDayInstant(value: string): string {
+  return MENTORSHIP_ISO_DATE.test(value) ? `${value}T23:59:59.999Z` : value;
+}
+
+/**
  * The instant (ms) a task closes: the end of its due date's UTC day, so a task due `2026-09-30` closes at
  * `2026-10-01T00:00:00Z`. Takes a date-only value or an ISO instant (only its UTC calendar day counts);
  * a missing or unparseable due date never closes, so it returns `null`.

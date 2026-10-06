@@ -35,7 +35,12 @@ vi.mock('./microservice-proxy.service', () => ({
 // logger would print two warnings per run for the paths that deliberately exercise them.
 vi.mock('./logger.service', () => ({ logger }));
 
-import { CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+  JOB_LOST_MESSAGE,
+} from '@lfx-one/shared/constants';
 import { readFileSync } from 'node:fs';
 
 import type { Request } from 'express';
@@ -43,6 +48,7 @@ import type { Request } from 'express';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { ServiceValidationError } from '../errors/service-validation.error';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { adaptJobPollResponse, CampaignServiceClient, deriveEventSlug, fromBriefResponse, isCampaignServiceJobId } from './campaign-service.service';
 
@@ -3398,6 +3404,351 @@ describe('CampaignServiceClient.updateCampaignBudget', () => {
 });
 
 /**
+ * The bid write is the budget write's sibling: the same wire facts, the same split between
+ * upstream's own answers (passed through) and unanswered failures (rewritten as unconfirmed),
+ * and its OWN unconfirmed message, so an operator is told to verify the bid, not the budget.
+ */
+describe('CampaignServiceClient.updateCampaignBid', () => {
+  const args = { projectSlug: 'tlf', briefId: 'b-1', campaignId: 'c-1', bid: 2.75, bidType: 'cpc' as const, etag: '"3"' };
+
+  async function failureFor(error: unknown): Promise<MicroserviceError> {
+    proxyRequestWithResponse.mockRejectedValueOnce(error);
+    const caught = await new CampaignServiceClient().updateCampaignBid(req, args).catch((e: unknown) => e);
+    expect(caught).toBeInstanceOf(MicroserviceError);
+    return caught as MicroserviceError;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('PATCHes the nested bid path with the bid and its unit as the BODY and the etag as If-Match', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', status: 'active', version: 4 }, { etag: '"4"' }));
+
+    await new CampaignServiceClient().updateCampaignBid(req, args);
+
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[1]).toBe('LFX_V2_CAMPAIGN_SERVICE');
+    expect(call[2]).toBe('/projects/tlf/briefs/b-1/campaigns/c-1/bid');
+    expect(call[3]).toBe('PATCH');
+    expect(call[4]).toBeUndefined();
+    expect(call[5]).toEqual({ bid: 2.75, bid_type: 'cpc' });
+    expect(call[6]).toEqual({ 'If-Match': '"3"' });
+  });
+
+  it('encodes every path segment', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'x' }));
+
+    await new CampaignServiceClient().updateCampaignBid(req, { ...args, projectSlug: 'a/b', briefId: 'c d', campaignId: 'e?f' });
+
+    expect(proxyRequestWithResponse.mock.calls[0][2]).toBe('/projects/a%2Fb/briefs/c%20d/campaigns/e%3Ff/bid');
+  });
+
+  it('returns the row with the ETag header as its fresh validator', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({ id: 'c-1', platform: 'microsoft-ads', status: 'active', version: 4, etag: 'stale' }, { etag: '"4"' })
+    );
+
+    const result = await new CampaignServiceClient().updateCampaignBid(req, args);
+
+    expect(result).toEqual({ id: 'c-1', platform: 'microsoft-ads', status: 'active', version: 4, etag: '"4"' });
+  });
+
+  it.each([
+    [400, 'Microsoft Advertising refused the bid: below the minimum of 0.01'],
+    [409, 'the campaign bids under an automated strategy; a manual bid would be ignored'],
+    [412, 'ETag mismatch'],
+    [428, 'If-Match header required'],
+    [503, 'the bid change is unconfirmed: verify the bid in the platform before retrying'],
+    [503, 'the bid change could not be applied: Microsoft Advertising is unavailable. Nothing was changed'],
+  ])("passes campaign-service's own %s through untouched", async (status, message) => {
+    const error = await failureFor(new MicroserviceError(message, status, 'UPSTREAM', { errorBody: { code: String(status), message } }));
+
+    expect(error.statusCode).toBe(status);
+    expect(error.toResponse()['error']).toBe(message);
+  });
+
+  it.each([
+    [
+      'a BFF transport failure',
+      new MicroserviceError('The request could not be completed. Please try again.', 503, 'NETWORK_ERROR', {
+        originalError: new Error('socket hang up'),
+        transportFailure: true,
+      }),
+    ],
+    [
+      'a BFF timeout',
+      new MicroserviceError('Request timeout after 30000ms', 408, 'TIMEOUT', {
+        originalError: Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }),
+        transportFailure: true,
+      }),
+    ],
+    [
+      'a gateway 504 with no campaign-service envelope',
+      new MicroserviceError('Gateway Timeout', 504, 'GATEWAY_TIMEOUT', { errorBody: { message: 'Gateway Timeout' } }),
+    ],
+  ])('reports %s as an unconfirmed BID change, keeping its status and code', async (_label, thrown) => {
+    const error = await failureFor(thrown);
+
+    expect(error.statusCode).toBe(thrown.statusCode);
+    expect(error.code).toBe(thrown.code);
+    expect(error.toResponse()['error']).toBe(CAMPAIGN_BID_OUTCOME_UNCONFIRMED);
+    expect(error.toResponse()['error']).not.toBe(CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED);
+  });
+
+  it('leaves a gateway 4xx refusal alone, since it never dispatched', async () => {
+    const error = await failureFor(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
+
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()['error']).toBe('Forbidden');
+  });
+});
+
+/**
+ * Negative keywords are NOT atomic and the response is POSITIONAL: results[i] answers
+ * negative_keywords[i]. These pin the wire (path, body position, no If-Match) and that the mapped
+ * results keep upstream's order exactly, with nothing filtered, sorted or shifted.
+ */
+describe('CampaignServiceClient.addNegativeKeywords', () => {
+  const sent = [
+    { text: 'free download', matchType: 'Phrase' as const },
+    { text: 'crack', matchType: 'Exact' as const },
+    { text: 'torrent', matchType: 'Phrase' as const },
+    { text: 'cheap', matchType: 'Exact' as const },
+  ];
+  const args = { projectSlug: 'tlf', briefId: 'b-1', campaignId: 'c-1', negativeKeywords: sent };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('POSTs the batch as the BODY in request order, with no query and no If-Match', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: sent.map((k) => ({ text: k.text, match_type: k.matchType, outcome: 'APPLIED' })),
+      applied_count: 4,
+    });
+
+    await new CampaignServiceClient().addNegativeKeywords(req, args);
+
+    const call = proxyRequest.mock.calls[0];
+    expect(call[1]).toBe('LFX_V2_CAMPAIGN_SERVICE');
+    expect(call[2]).toBe('/projects/tlf/briefs/b-1/campaigns/c-1/negative-keywords');
+    expect(call[3]).toBe('POST');
+    expect(call[4]).toBeUndefined();
+    expect(call[5]).toEqual({
+      negative_keywords: [
+        { text: 'free download', match_type: 'Phrase' },
+        { text: 'crack', match_type: 'Exact' },
+        { text: 'torrent', match_type: 'Phrase' },
+        { text: 'cheap', match_type: 'Exact' },
+      ],
+    });
+    // No headers argument at all: this lever persists nothing and takes no If-Match.
+    expect(call).toHaveLength(6);
+  });
+
+  /**
+   * THE POSITIONAL REGRESSION. Mixed outcomes with the successes and failures interleaved, so a
+   * filter (dropping FAILED), a sort (grouping by outcome) or a de-duplication would each move at
+   * least one entry onto a different keyword, and a negative that was never added would be shown
+   * as added.
+   */
+  it('maps every result at its own index, never filtering or reordering', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [
+        { text: 'free download', match_type: 'Phrase', outcome: 'APPLIED', negative_keyword_id: '81' },
+        { text: 'crack', match_type: 'Exact', outcome: 'FAILED', error_code: 'CampaignServiceNegativeKeywordMatchesKeyword' },
+        { text: 'torrent', match_type: 'Phrase', outcome: 'ALREADY_PRESENT' },
+        { text: 'cheap', match_type: 'Exact', outcome: 'UNCONFIRMED' },
+      ],
+      applied_count: 2,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, args);
+
+    expect(result).toEqual({
+      campaignId: 'c-1',
+      results: [
+        { text: 'free download', matchType: 'Phrase', outcome: 'APPLIED', negativeKeywordId: '81' },
+        { text: 'crack', matchType: 'Exact', outcome: 'FAILED', errorCode: 'CampaignServiceNegativeKeywordMatchesKeyword' },
+        { text: 'torrent', matchType: 'Phrase', outcome: 'ALREADY_PRESENT' },
+        { text: 'cheap', matchType: 'Exact', outcome: 'UNCONFIRMED' },
+      ],
+      appliedCount: 2,
+    });
+    expect(result.results.map((r) => r.outcome)).toEqual(['APPLIED', 'FAILED', 'ALREADY_PRESENT', 'UNCONFIRMED']);
+  });
+
+  // Upstream echoes the text it sent the platform, trimmed and whitespace-collapsed. A difference
+  // in whitespace alone is the same keyword; the result reports the SENT keyword, normalised the
+  // same way, rather than adopting the echo.
+  it('accepts an echo that differs only in whitespace, and reports the keyword it sent', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [{ text: 'free download', match_type: 'Phrase', outcome: 'APPLIED' }],
+      applied_count: 1,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, {
+      ...args,
+      negativeKeywords: [{ text: '  free   download ', matchType: 'Phrase' }],
+    });
+
+    expect(result.results).toEqual([{ text: 'free download', matchType: 'Phrase', outcome: 'APPLIED' }]);
+  });
+
+  // error_code is untrusted wire data the UI renders: only an identifier-shaped code is relayed.
+  it.each([
+    ['markup', '<img src=x onerror=alert(1)>'],
+    ['a sentence', 'the keyword matches an existing keyword'],
+    ['an over-long code', 'X'.repeat(101)],
+    ['a non-string', 42],
+  ])('omits an error_code that is %s', async (_label, errorCode) => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [{ text: 'crack', match_type: 'Exact', outcome: 'FAILED', error_code: errorCode }],
+      applied_count: 0,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: [sent[1]] });
+
+    expect(result.results).toEqual([{ text: 'crack', matchType: 'Exact', outcome: 'FAILED' }]);
+  });
+
+  // An entry that cannot say what happened to its keyword stays AT ITS POSITION as UNCONFIRMED,
+  // named by the keyword sent there. Dropping it would shift every later result.
+  it('reports an unreadable entry as UNCONFIRMED in place, and recounts appliedCount', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [
+        { text: 'free download', match_type: 'Phrase', outcome: 'APPLIED' },
+        null,
+        { text: 'torrent', match_type: 'Phrase', outcome: 'SOMETHING_NEW' },
+        { text: 'cheap', match_type: 'Exact', outcome: 'APPLIED' },
+      ],
+      applied_count: 4,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, args);
+
+    expect(result.results.map((r) => [r.text, r.outcome])).toEqual([
+      ['free download', 'APPLIED'],
+      ['crack', 'UNCONFIRMED'],
+      ['torrent', 'UNCONFIRMED'],
+      ['cheap', 'APPLIED'],
+    ]);
+    expect(result.appliedCount).toBe(2);
+  });
+
+  it.each([
+    ['fewer results than keywords sent', { campaign_id: 'c-1', results: [{ text: 'crack', match_type: 'Exact', outcome: 'APPLIED' }], applied_count: 1 }],
+    ['no results array', { campaign_id: 'c-1', applied_count: 0 }],
+    [
+      'another campaign’s id',
+      { campaign_id: 'c-9', results: sent.map((k) => ({ text: k.text, match_type: k.matchType, outcome: 'APPLIED' })), applied_count: 4 },
+    ],
+    // Right count, wrong order: a count-only check would show 'crack' (FAILED upstream) as APPLIED.
+    [
+      'two results swapped in place',
+      {
+        campaign_id: 'c-1',
+        results: [
+          { text: 'crack', match_type: 'Exact', outcome: 'FAILED' },
+          { text: 'free download', match_type: 'Phrase', outcome: 'APPLIED' },
+          { text: 'torrent', match_type: 'Phrase', outcome: 'APPLIED' },
+          { text: 'cheap', match_type: 'Exact', outcome: 'APPLIED' },
+        ],
+        applied_count: 3,
+      },
+    ],
+    [
+      'an entry whose match_type differs from the one sent',
+      {
+        campaign_id: 'c-1',
+        results: sent.map((k, i) => ({ text: k.text, match_type: i === 2 ? 'Exact' : k.matchType, outcome: 'APPLIED' })),
+        applied_count: 4,
+      },
+    ],
+    [
+      'an entry with no text',
+      {
+        campaign_id: 'c-1',
+        results: sent.map((k, i) =>
+          i === 3 ? { match_type: k.matchType, outcome: 'APPLIED' } : { text: k.text, match_type: k.matchType, outcome: 'APPLIED' }
+        ),
+        applied_count: 4,
+      },
+    ],
+  ])('refuses a 2xx with %s as unconfirmed rather than mapping it', async (_label, body) => {
+    proxyRequest.mockResolvedValueOnce(body);
+
+    const caught = await new CampaignServiceClient().addNegativeKeywords(req, args).catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(MicroserviceError);
+    const error = caught as MicroserviceError;
+    expect(error.statusCode).toBe(502);
+    expect(error.toResponse()['error']).toBe(CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED);
+  });
+
+  it.each([
+    [400, 'negative keyword 2 contains consecutive punctuation'],
+    [409, 'the campaign was created under a different ad account'],
+    [503, 'the negative keywords are unconfirmed: verify before retrying'],
+  ])("passes campaign-service's own %s through untouched", async (status, message) => {
+    const upstream = new MicroserviceError(message, status, 'UPSTREAM', { errorBody: { code: String(status), message } });
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().addNegativeKeywords(req, args)).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.getMicrosoftAdsKeywords', () => {
+  const result = {
+    window: 'last_30_days',
+    rows: [],
+    row_count: 0,
+    truncated: false,
+    metrics_pending: true,
+    conversions_complete: true,
+    data_incomplete: false,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('GETs the project-scoped Microsoft keyword read with the window as a QUERY parameter', async () => {
+    proxyRequest.mockResolvedValueOnce(result);
+
+    await new CampaignServiceClient().getMicrosoftAdsKeywords(req, 'cncf', 'this_month');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/microsoft-ads/keywords', 'GET', { window: 'this_month' });
+    expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+  });
+
+  it('sends no window when the caller specifies none, so upstream applies its own default', async () => {
+    proxyRequest.mockResolvedValueOnce(result);
+
+    await new CampaignServiceClient().getMicrosoftAdsKeywords(req, 'a b/c');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/a%20b%2Fc/microsoft-ads/keywords', 'GET', undefined);
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().getMicrosoftAdsKeywords(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors).toEqual([
+      { field: 'project', message: 'A keyword read requires the project it is scoped to.', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * The list read is the only place a campaign becomes addressable after its creating session ends,
  * so what it returns decides whether a later pause or metrics call can name anything at all. The
  * assertions below are about the two ways it could lie: scoping past the brief, and reporting a
@@ -4006,6 +4357,33 @@ describe('CampaignServiceClient campaign-ref and keyword actions', () => {
       ['no platform campaign id', 'cncf', ''],
     ])('refuses a lookup with %s without calling the proxy', async (_label, slug, id) => {
       await expect(new CampaignServiceClient().resolveGoogleAdsCampaign(req, slug, id)).rejects.toThrow(
+        /requires both the project and the platform campaign id/
+      );
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resolveMicrosoftAdsCampaign', () => {
+    it('sends the id on the MICROSOFT campaign-ref path, with the caller budget', async () => {
+      proxyRequest.mockResolvedValue({ platform_campaign_id: '413296582', matches: [], match_count: 0 });
+
+      await new CampaignServiceClient().resolveMicrosoftAdsCampaign(req, 'cncf', '413296582', 1234);
+
+      expect(proxyRequest).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        '/projects/cncf/microsoft-ads/campaign-ref',
+        'GET',
+        { platform_campaign_id: '413296582' },
+        undefined,
+        undefined,
+        { timeoutMs: 1234 }
+      );
+    });
+
+    it('refuses a lookup with no platform campaign id without calling the proxy', async () => {
+      await expect(new CampaignServiceClient().resolveMicrosoftAdsCampaign(req, 'cncf', '')).rejects.toThrow(
         /requires both the project and the platform campaign id/
       );
 

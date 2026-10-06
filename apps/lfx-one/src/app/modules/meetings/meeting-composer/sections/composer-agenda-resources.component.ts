@@ -38,6 +38,12 @@ export class ComposerAgendaResourcesComponent {
   protected readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
+  /**
+   * Whether the documents and links lists are offered.
+   * @description Off for a single-occurrence edit: attachments belong to the series, and upstream's
+   * occurrence update carries only the agenda.
+   */
+  public readonly showResources = input(true);
 
   protected readonly maxFileSizeBytes = MAX_FILE_SIZE_BYTES;
   protected readonly acceptString = generateAcceptString();

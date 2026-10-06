@@ -245,13 +245,26 @@ describe('MeetingCardComponent — edit-access re-check', () => {
       expect(dialogOpen).toHaveBeenCalledTimes(1);
     });
 
-    it('opens the reschedule dialog for that occurrence when the organizer picks only this one', async () => {
+    it('opens the composer on the picked occurrence when the organizer picks a single one', async () => {
+      const later = { occurrence_id: '1893542400', start_time: '2030-01-02T00:00:00.000Z', duration: 30 };
+      const component = await mountRecurring();
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, occurrences: [OCCURRENCE, later] }));
+
+      component.onEditMeeting();
+      dialogResults[0].next({ proceed: true, scope: 'occurrence', occurrenceId: '1893542400' });
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1', occurrenceId: '1893542400' });
+    });
+
+    it('keeps the pre-v2 reschedule dialog for a single occurrence while the flag is off', async () => {
+      meetingsV2Enabled.set(false);
       const component = await mountRecurring();
       const refreshed = vi.fn();
       component.meetingDeleted.subscribe(refreshed);
 
       component.onEditMeeting();
-      dialogResults[0].next({ proceed: true, scope: 'occurrence' });
+      dialogResults[0].next({ proceed: true, scope: 'occurrence', occurrenceId: '1893456000' });
 
       expect(composerOpen).not.toHaveBeenCalled();
       expect(dialogOpen).toHaveBeenCalledTimes(2);
@@ -310,6 +323,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     });
 
     it('hands both dialogs the fresh meeting, so a changed series timezone is the one the form uses', async () => {
+      meetingsV2Enabled.set(false);
       const component = await mountRecurring();
       getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, timezone: 'America/New_York' }));
 

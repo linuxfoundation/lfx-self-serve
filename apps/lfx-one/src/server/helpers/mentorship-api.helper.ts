@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MentorshipUpstreamListResponse } from '@lfx-one/shared/interfaces';
+import { MentorshipUpstreamListResponse, MentorshipUpstreamUser } from '@lfx-one/shared/interfaces';
+import { isUuid } from '@lfx-one/shared/utils/string.utils';
 import { Request } from 'express';
 
 import { MENTORSHIP_BOOTSTRAP_PATH, MENTORSHIP_LIST_MAX_PAGES, MENTORSHIP_LIST_PAGE_SIZE, MENTORSHIP_NOT_PROVISIONED_ERROR } from '../constants';
@@ -50,6 +51,19 @@ export async function proxyMentorshipRequest<T>(
   // Upstream decodes a JSON body and rejects an empty one; it fills every field from the token.
   await proxy.proxyRequest<unknown>(req, 'LFX_V2_SERVICE', MENTORSHIP_BOOTSTRAP_PATH, 'PUT', undefined, {});
   return proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data);
+}
+
+/** The caller's local mentorship user id, read from `GET /me`. A missing or malformed id is a 502. */
+export async function readMentorshipLocalUserId(proxy: MicroserviceProxyService, req: Request, operation: string): Promise<string> {
+  const user = await proxyMentorshipRequest<MentorshipUpstreamUser>(proxy, req, MENTORSHIP_BOOTSTRAP_PATH);
+  const userId = typeof user?.id === 'string' ? user.id.trim() : '';
+  if (!isUuid(userId)) {
+    throw new MicroserviceError('The mentorship service returned a user without a valid id', 502, 'MENTORSHIP_INVALID_USER', {
+      operation,
+      service: 'mentorship',
+    });
+  }
+  return userId;
 }
 
 /**
