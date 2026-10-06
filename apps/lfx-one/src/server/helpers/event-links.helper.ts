@@ -4,77 +4,84 @@
 import { decodeHtmlEntities } from '@lfx-one/shared/utils/html-utils';
 import { Tokenizer } from 'htmlparser2';
 
-import { MAX_PAGE_LINKS } from '../constants/audience-builder.constants';
-
-/**
- * Elements whose content a browser never renders as live markup the operator could click.
- *
- * `script`, `style`, `title`, `textarea` and `xmp` need no entry: the tokenizer itself switches to
- * raw text for them, as the spec does. These are the rest. `template` content is an inert fragment
- * until script clones it; `noscript`, `iframe`, `noembed` and `noframes` are raw text in a
- * scripting browser; MathML `<a>` is not a hyperlink in Chromium. Counted rather than stacked, so
- * nesting costs nothing.
- */
-const INERT_CONTAINERS = new Set(['template', 'noscript', 'iframe', 'noembed', 'noframes', 'math']);
-
-/**
- * A raw-text closer followed by `/` -- `</script/>` -- which the tokenizer does not recognise.
- *
- * A browser ends script data at `</script` followed by whitespace, `/` or `>`; the tokenizer
- * accepts only the first and last, so `</script/>` left the rest of the document as script text
- * and every real link after it was dropped. The `/` is replaced with a space, which the spec treats
- * identically there and which keeps every offset -- the callbacks slice `html` by index.
- */
-const RAW_TEXT_CLOSER_SOLIDUS_RE = /<\/(script|style|title|textarea|xmp)\//gi;
+import { MAX_PAGE_LINKS, RAW_TEXT_CLOSER_SOLIDUS_RE, RAW_TEXT_CONTAINERS, TOKENIZER_RAW_TEXT_ELEMENTS } from '../constants/audience-builder.constants';
 
 /**
  * The FIRST `href` of every `<a>` a browser renders as a link, in document order, plus the first
- * `<base href>`.
+ * HTML `<base href>`.
  *
- * Built on htmlparser2's TOKENIZER, and deliberately on nothing above it. A hand-rolled scanner
- * kept being defeated one decoy at a time -- an `href` inside another attribute's value, anchor
- * markup inside an attribute, anchors inside raw-text elements, bogus comments (`<!x …>`,
- * `<? …>`), U+00A0 read as tag-name whitespace, entities beyond `&amp;` -- because each fix
- * taught it one more tokenizing rule. The tokenizer implements those rules, so none of them is a
- * special case here.
+ * What this protects against is a model INVENTING a URL, not a page planting one: the page is the
+ * authority on its own links, and its owner can publish any real link they like. So the rule is to
+ * fail SAFE -- where this tokenizer and a browser disagree, a real link may be dropped, but an
+ * inert one should not be accepted. Exotic spec corners that only ever drop a link (a raw-text
+ * closer hidden inside a comment, `--!>` comment endings, script double-escaping) are left as
+ * documented gaps rather than chased one decoy at a time.
  *
- * And not on a tree builder. parse5's and htmlparser2's `Parser` both keep an open-element stack
- * that hostile markup makes QUADRATIC: measured 400 KB of unclosed `<div>` at 20 s in parse5 and
- * 3 MB of `<b>` at 254 s in htmlparser2's Parser, against a 5 MiB fetch cap, on the synchronous
- * path of a single-threaded SSR process. Finding links needs no tree: a flat counter per inert
- * container is enough, so the whole pass is one linear walk of the input.
+ * Built on htmlparser2's TOKENIZER, which implements the tokenizing rules a hand-rolled scanner
+ * kept being defeated on -- an `href` inside another attribute's value, anchor markup inside an
+ * attribute, bogus comments (`<!x …>`, `<? …>`), U+00A0 read as tag-name whitespace, entities
+ * beyond `&amp;`. NOT on a tree builder: parse5's and htmlparser2's `Parser` keep an open-element
+ * stack that hostile markup makes quadratic (400 KB of unclosed `<div>` took 20 s in parse5)
+ * against a 5 MiB fetch cap on a synchronous, single-threaded SSR path. Flat counters stand in for
+ * the stack, so the pass is one linear walk.
  *
- * Attribute names are matched EXACTLY, so an SVG `xlink:href` is not read as the `href` an SVG2
- * browser follows, and the first `href` wins as it does in a browser.
+ * - The `/` on a non-void HTML start tag is IGNORED, as the spec ignores it: `<textarea/>` still
+ *   opens a textarea. The tokenizer leaves raw-text mode on a self-closing tag, so those elements
+ *   are counted here instead -- their content may then be read as markup, but anything found inside
+ *   is discarded.
+ * - Raw-text containers do not nest (`<iframe><iframe></iframe>` closes at the first closer), so
+ *   they are flags, not counts. `<template>` does nest; a declarative shadow root
+ *   (`<template shadowrootmode>`) is RENDERED and is not inert.
+ * - MathML is not treated as inert: an unclosed or broken-out `<math>` would otherwise drop every
+ *   later link on the page, which is the costlier failure.
+ * - Inside `<svg>` the self-closing slash is real and `<base>` is not an HTML base. Attribute names
+ *   match exactly, so `href` is read and `xlink:href` is not (when both exist, SVG2 follows `href`;
+ *   an anchor carrying ONLY `xlink:href` is dropped, the safe direction).
  */
 function scanDocument(html: string): { hrefs: string[]; baseHref: string | null } {
   const hrefs: string[] = [];
   let baseHref: string | null = null;
-  const inert = new Map<string, number>();
-  let inertTotal = 0;
+  const rawText = new Set<string>();
+  let templateDepth = 0;
+  let svgDepth = 0;
   let plaintext = false;
   let tag = '';
   let attrName = '';
   let attrValue = '';
   let href: string | null = null;
+  let shadowRoot = false;
 
-  const finishOpenTag = (selfClosing: boolean): void => {
-    if (plaintext) {
-      return;
-    }
-    if (href !== null && inertTotal === 0) {
+  const isInert = (): boolean => plaintext || rawText.size > 0 || templateDepth > 0;
+
+  const finishOpenTag = (selfClosingSyntax: boolean): void => {
+    // The `/` only means something in foreign content; on an HTML element it is ignored.
+    const selfClosing = selfClosingSyntax && svgDepth > 0;
+    if (href !== null && !isInert()) {
       if (tag === 'a') {
         hrefs.push(href);
-      } else if (tag === 'base' && baseHref === null) {
+      } else if (tag === 'base' && baseHref === null && svgDepth === 0) {
         baseHref = href;
       }
     }
+    if (selfClosing || isInert()) {
+      // Nothing inside an inert region opens anything that matters; only its own closer does.
+      if (!selfClosing && tag === 'template' && templateDepth > 0 && !shadowRoot) {
+        templateDepth++;
+      }
+      return;
+    }
     if (tag === 'plaintext') {
-      // Everything after `<plaintext>` is text to the end of the document.
       plaintext = true;
-    } else if (!selfClosing && INERT_CONTAINERS.has(tag)) {
-      inert.set(tag, (inert.get(tag) ?? 0) + 1);
-      inertTotal++;
+    } else if (tag === 'svg') {
+      svgDepth++;
+    } else if (tag === 'template') {
+      if (!shadowRoot) {
+        templateDepth++;
+      }
+    } else if (RAW_TEXT_CONTAINERS.has(tag) || (selfClosingSyntax && TOKENIZER_RAW_TEXT_ELEMENTS.has(tag))) {
+      // The second arm: a self-closed `<script/>` knocked the tokenizer out of raw-text mode, so
+      // its content is about to be tokenized as markup. Count it, and discard what is found.
+      rawText.add(tag);
     }
   };
 
@@ -84,6 +91,7 @@ function scanDocument(html: string): { hrefs: string[]; baseHref: string | null 
       onopentagname(start, end) {
         tag = html.slice(start, end).toLowerCase();
         href = null;
+        shadowRoot = false;
       },
       onattribname(start, end) {
         attrName = html.slice(start, end).toLowerCase();
@@ -98,6 +106,8 @@ function scanDocument(html: string): { hrefs: string[]; baseHref: string | null 
       onattribend() {
         if (attrName === 'href' && href === null) {
           href = attrValue;
+        } else if (attrName === 'shadowrootmode' && tag === 'template') {
+          shadowRoot = true;
         }
       },
       onopentagend() {
@@ -107,11 +117,15 @@ function scanDocument(html: string): { hrefs: string[]; baseHref: string | null 
         finishOpenTag(true);
       },
       onclosetag(start, end) {
+        // A closer written with a slash (`</iframe/>`) was normalised before tokenizing; see
+        // `RAW_TEXT_CLOSER_SOLIDUS_RE`.
         const name = html.slice(start, end).toLowerCase();
-        const open = inert.get(name) ?? 0;
-        if (open > 0) {
-          inert.set(name, open - 1);
-          inertTotal--;
+        if (rawText.has(name)) {
+          rawText.delete(name);
+        } else if (name === 'template' && templateDepth > 0 && rawText.size === 0) {
+          templateDepth--;
+        } else if (name === 'svg' && svgDepth > 0 && !isInert()) {
+          svgDepth--;
         }
       },
       oncdata() {},
@@ -328,7 +342,9 @@ export function resolveRegistrationUrl(candidate: unknown, pageLinks: Map<string
   if (typeof candidate !== 'string' || candidate.trim().length === 0) {
     return '';
   }
-  const value = decodeHtmlEntities(candidate.trim());
+  // `\/` unescaped too: JSON-LD `offers.url` is commonly written with escaped slashes (PHP and
+  // WordPress `json_encode` default), and copied verbatim it became `https://host//register`.
+  const value = decodeHtmlEntities(candidate.trim()).replace(/\\\//g, '/');
   let absolute: URL | null = null;
   try {
     absolute = new URL(value);

@@ -672,8 +672,7 @@ const LINK_EXTRACTION_RULE = `For agenda_url, cfp_url, venue_url and sponsorship
 an href attribute in the HTML above. Never construct, complete, guess or "correct" a URL, and never
 derive one from the site's URL pattern. If the page does not link to it, use null.
 For registration_url: give the page's primary registration or enrollment destination, copied exactly
-as it appears in the HTML above -- an href, an onclick or data-* attribute value, or a JSON-LD
-offers.url. Never construct, complete, guess or "correct" it, and never derive it from the site's
+as it appears in the HTML above -- an href, or a JSON-LD offers.url. Never construct, complete, guess or "correct" it, and never derive it from the site's
 URL pattern. If none of those carries one, use null.`;
 
 const EVENT_EXTRACTION_PROMPT = `Extract structured event details from this HTML. Return valid JSON:

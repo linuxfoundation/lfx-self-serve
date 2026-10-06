@@ -372,7 +372,7 @@ describe('extractPageLinks — malformed and hostile markup', () => {
   });
 });
 
-describe('extractPageLinks — links a browser does not render (parsed, not scanned)', () => {
+describe('extractPageLinks — links a browser does not render (tokenized, not scanned)', () => {
   const REAL = '<a href="https://events.linuxfoundation.org/real">Real</a>';
   const base = 'https://events.linuxfoundation.org/';
 
@@ -390,6 +390,12 @@ describe('extractPageLinks — links a browser does not render (parsed, not scan
     ['an anchor inside a <? bogus comment', `<? <a href="https://evil.example/pi"> ?>${REAL}`],
     ['an anchor inside a <!x bogus comment', `<!x <a href="https://evil.example/bang">>${REAL}`],
     ['a tag name joined by U+00A0, which is not HTML whitespace', `<a\u00a0href="https://evil.example/nbsp">x</a>${REAL}`],
+    // A self-closing slash is IGNORED on a non-void HTML element: `<textarea/>` still opens one.
+    ['a self-closed <textarea/>', `<textarea/><a href="https://evil.example/ta">x</a></textarea>${REAL}`],
+    ['a self-closed <script/>', `<script/><a href="https://evil.example/s">x</a></script>${REAL}`],
+    ['a self-closed <title/>', `<title/><a href="https://evil.example/t">x</a></title>${REAL}`],
+    ['a self-closed <iframe/>', `<iframe/><a href="https://evil.example/if">x</a></iframe>${REAL}`],
+    ['a self-closed <template/>', `<template/><a href="https://evil.example/tpl">x</a></template>${REAL}`],
   ])('ignores %s', (_label, html) => {
     expect([...extractPageLinks(html, base).values()]).toEqual(['https://events.linuxfoundation.org/real']);
   });
@@ -431,10 +437,27 @@ describe('extractPageLinks — links a browser does not render (parsed, not scan
 
   it.each([
     ['an iframe', `<iframe><a href="https://evil.example/if">x</a></iframe>${REAL}`],
-    ['MathML, where <a> is not a link', `<math><a href="https://evil.example/m">x</a></math>${REAL}`],
     ['everything after <plaintext>', `${REAL}<plaintext><a href="https://evil.example/pt">x</a>`],
   ])('ignores anchors inside %s', (_label, html) => {
     expect([...extractPageLinks(html, base).values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  // The fail-SAFE direction: these drop nothing a browser renders.
+  it.each([
+    ['an inert closer written with a slash', `<iframe>x</iframe/>${REAL}`],
+    ['a template closer written with a slash', `<template>x</template/>${REAL}`],
+    ['a nested iframe, which raw text does not nest', `<iframe><iframe></iframe>${REAL}`],
+    ['an unclosed <math>', `<math><mi>x</mi><p>${REAL}`],
+    ['a declarative shadow root, which IS rendered', `<div><template shadowrootmode="open">${REAL}</template></div>`],
+    ['a self-closed element inside <svg>, where the slash is real', `<svg><title/></svg>${REAL}`],
+  ])('keeps a real link after %s', (_label, html) => {
+    expect([...extractPageLinks(html, base).values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it('does not take a <base> inside <svg> as the document base', () => {
+    expect(documentBaseUrl('<svg><base href="https://evil.example/"/></svg><a href="agenda">x</a>', 'https://events.example.org/e/')).toBe(
+      'https://events.example.org/e/'
+    );
   });
 
   it('reads an SVG anchor by its plain href, not xlink:href, as an SVG2 browser follows it', () => {
@@ -536,6 +559,11 @@ describe('resolveRegistrationUrl', () => {
   it('keeps an absolute http(s) URL unverified, including off-site registration hosts', () => {
     // Scripted CTAs carry no `<a href>`, so verifying an absolute URL would strip working links.
     expect(resolveRegistrationUrl('https://cvent.example/kubecon?code=A&amp;b=2', new Map(), BASE_URL)).toBe('https://cvent.example/kubecon?code=A&b=2');
+  });
+
+  it('unescapes JSON-escaped slashes from a JSON-LD offers.url', () => {
+    // PHP/WordPress `json_encode` writes `https:\/\/…`; copied verbatim it became `https://host//register`.
+    expect(resolveRegistrationUrl('https:\\/\\/cvent.example\\/kubecon\\/register', page, BASE_URL)).toBe('https://cvent.example/kubecon/register');
   });
 
   it('drops a non-http(s) scheme and userinfo', () => {
