@@ -156,6 +156,25 @@ export enum ServerFeatureFlag {
   CampaignServiceDemandGen = 'LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN',
 
   /**
+   * Gates whether a Performance Max, Video or Display Google campaign may be requested at all.
+   *
+   * The same question `CampaignServiceDemandGen` asks, about a later set of channels: does the
+   * DEPLOYED campaign-service understand `googleAdsConfig.channel` values beyond `search` and
+   * `demand-gen`? Those three ship with linuxfoundation/lfx-v2-campaign-service#272.
+   *
+   * The failure it prevents is the same silent, expensive one. Go's JSON decoder does not reject
+   * an unknown channel value, so an older campaign-service falls through to its default SEARCH
+   * campaign: real budget, no keywords, and per its own `googleAdsConfig.Keywords` doc it "can
+   * never serve". The job reports success and the wrong campaign is found later in Google Ads.
+   *
+   * SEPARATE from the Demand Gen flag rather than widened into it. A deployment running
+   * LFXV2-3257 has had Demand Gen for months and its flag is on; folding these three into that
+   * same flag would turn them on everywhere Demand Gen already is, which is precisely the
+   * guess this mechanism exists to avoid. OFF by default.
+   */
+  CampaignServiceGoogleChannels = 'LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS',
+
+  /**
    * Serve `PATCH /api/campaigns/:campaignId/status` from lfx-v2-campaign-service instead of the
    * per-platform SDK calls in `campaign-proxy.service.ts`. OFF keeps the current behaviour
    * byte-for-byte.

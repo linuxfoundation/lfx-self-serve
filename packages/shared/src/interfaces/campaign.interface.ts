@@ -6,6 +6,7 @@ import type {
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
+  GOOGLE_CAMPAIGN_CHANNELS,
   MICROSOFT_KEYWORDS_WINDOWS,
 } from '../constants/campaign.constants';
 
@@ -41,7 +42,18 @@ export interface LinkedInTargetingProfileConfig {
 
 export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';
 
-export type CampaignType = 'search' | 'demand-gen' | 'sponsored' | 'social';
+/**
+ * The campaign shapes a brief can ask for.
+ *
+ * The first five are GOOGLE ADS channels and map one-to-one onto `googleAdsConfig.channel`
+ * upstream (`internal/dispatch/googleads.go`); `sponsored` and `social` name the LinkedIn and
+ * Meta/Reddit shapes and never reach that field. `performance-max`, `video` and `display` are
+ * servable only through campaign-service — the legacy in-process create path understands
+ * `search` and `demand-gen` alone and would build a Search campaign for any other value.
+ */
+export type CampaignType = 'search' | 'demand-gen' | 'performance-max' | 'video' | 'display' | 'sponsored' | 'social';
+
+export type GoogleCampaignChannel = (typeof GOOGLE_CAMPAIGN_CHANNELS)[number];
 
 export type DateRangeOption = 7 | 14 | 30;
 
@@ -503,6 +515,17 @@ export interface CampaignImplementationDraft {
   endDate: string;
   includeSearch: boolean;
   includeDemandGen: boolean;
+  /**
+   * The three channels gated behind `googleChannelsEnabled`.
+   *
+   * Persisted like `includeDemandGen` and restored by the same rule: cleared only when the
+   * deployment has explicitly answered that it cannot create them, never on an unanswered `null`.
+   * REQUIRED rather than optional so "not selected" and "not yet saved" stay distinguishable at
+   * the restore site, which is what `includeDemandGen` already relies on.
+   */
+  includePerformanceMax: boolean;
+  includeVideo: boolean;
+  includeDisplay: boolean;
   /**
    * The three LinkedIn controls the user picks rather than types (LFXV2-3230): the ad account,
    * the geo target list, and the targeting profile.
@@ -2610,6 +2633,16 @@ export interface CampaignListResult {
    * the capability is off.
    */
   demandGenEnabled: boolean;
+
+  /**
+   * Whether this deployment can create a Performance Max, Video or Display Google campaign.
+   *
+   * Read the same way as `demandGenEnabled` and modelled the same way on the client (`boolean |
+   * null`, `null` for unanswered), but derived by the opposite rule: these three channels exist
+   * only on the campaign-service create path, so this is `false` whenever the cutover is dark —
+   * where `demandGenEnabled` is `true`, because the legacy creator serves Demand Gen.
+   */
+  googleChannelsEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------

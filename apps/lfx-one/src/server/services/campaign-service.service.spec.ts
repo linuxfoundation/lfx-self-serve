@@ -45,7 +45,7 @@ import { readFileSync } from 'node:fs';
 
 import type { Request } from 'express';
 
-import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefOutput, CampaignType } from '@lfx-one/shared/interfaces';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
@@ -1742,6 +1742,17 @@ describe('CampaignServiceClient.createCampaigns', () => {
    */
   const demandGenUnsupported = () => isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceDemandGen);
 
+  /**
+   * The same state one release later: cutover flags ON, but the deployed campaign-service
+   * predates the three newer channels and does not understand `performance-max`, `video` or `display`.
+   *
+   * A SEPARATE helper from `demandGenUnsupported` rather than a parameter, because the two flags
+   * are independent in production: a deployment that has had Demand Gen since LFXV2-3257 is not
+   * thereby ready for the three newer channels.
+   */
+  const googleChannelsUnsupported = () =>
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceGoogleChannels);
+
   beforeEach(() => {
     vi.clearAllMocks();
     isServerFeatureEnabled.mockReturnValue(false);
@@ -2240,6 +2251,137 @@ describe('CampaignServiceClient.createCampaigns', () => {
     );
 
     expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-000000000010');
+  });
+
+  /**
+   * The three newer channels, pinned the same way Demand Gen's are — the hazard is identical and
+   * the guard is a copy, so the tests have to be a copy too or the next edit can break one half
+   * while every sibling stays green.
+   */
+  it.each([
+    ['performance-max', 'Performance Max', 'a3f1c2d4-0000-4000-8000-000000000021'],
+    ['video', 'Video', 'a3f1c2d4-0000-4000-8000-000000000022'],
+    ['display', 'Display', 'a3f1c2d4-0000-4000-8000-000000000023'],
+  ])('dispatches a %s-only create when the deployment reports the capability', async (channel, _label, jobId) => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: jobId } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600, channel } },
+      { campaignTypes: [channel as CampaignType] }
+    );
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(res.jobId).toBe(jobId);
+    expect(res.error).toBeNull();
+  });
+
+  it.each([
+    ['performance-max', 'Performance Max'],
+    ['video', 'Video'],
+    ['display', 'Display'],
+  ])('refuses a %s create when the deployed service cannot understand the channel', async (channel, label) => {
+    googleChannelsUnsupported();
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600, channel } },
+      { campaignTypes: [channel as CampaignType] }
+    );
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain(label);
+  });
+
+  /**
+   * The scoping half, and the one a careless widening breaks: the new flag must gate ONLY the
+   * three channels it names. Demand Gen has carried its own flag since LFXV2-3257, and a
+   * deployment that enabled it then must keep serving it when this newer flag is off.
+   */
+  it('still allows a demand-gen create when only the newer channels are unsupported', async () => {
+    googleChannelsUnsupported();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-000000000024' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600, channel: 'demand-gen' } },
+      { campaignTypes: ['demand-gen'] }
+    );
+
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-000000000024');
+    expect(res.error).toBeNull();
+  });
+
+  it('does not refuse a non-google create that happens to carry a flagged channel', async () => {
+    // Same retained-state path as the demand-gen case above: `campaignTypes` is a Google concept
+    // the Implementation tab sends unconditionally, so a LinkedIn-only create can arrive carrying
+    // `video` with no Google campaign in it at all.
+    googleChannelsUnsupported();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-000000000025' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['linkedin-ads'],
+      { linkedInConfig: { budgetUsd: 100 } },
+      { campaignTypes: ['video'] }
+    );
+
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-000000000025');
+  });
+
+  /**
+   * The one-config envelope refuses ANY pair, not just Search + Demand Gen — and names the
+   * channels the user actually ticked rather than a fixed pair, which is the whole reason the
+   * message is built from the selection.
+   */
+  it('refuses a search + video pair and names both channels', async () => {
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600 } },
+      { campaignTypes: ['search', 'video'] }
+    );
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('Search and Video');
+  });
+
+  /**
+   * Three channels, because the two-element case hides the list-joining bug: `join(' and ')`
+   * renders two correctly and three as "A and B and C".
+   */
+  it('lists three selected channels with commas and a trailing "and"', async () => {
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600 } },
+      { campaignTypes: ['search', 'performance-max', 'video'] }
+    );
+
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('Search, Performance Max and Video');
   });
 
   it('still creates a search-only google campaign', async () => {
@@ -3873,7 +4015,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
 
     const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
 
-    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true });
+    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false });
   });
 
   // The index stores `version`; a write needs `If-Match`. campaign-service's ETag is exactly
@@ -3958,6 +4100,47 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /**
+   * The INVERSE rule, and the reason this is a second signal rather than a widened one.
+   *
+   * Performance Max, Video and Display exist only on the campaign-service create path. While the
+   * cutover is dark the LEGACY creator owns creation, and it does not know them: its
+   * `normalizeBudgetSplit` maps `demand-gen` to `displayPct` and treats EVERY other type as
+   * Search, without rejecting the unknown one. So reporting these as available during the staged
+   * rollout offers a control whose only outcome is a Search campaign nobody asked for.
+   *
+   * Every row below is the exact opposite of the demand-gen row above it — which is the assertion
+   * that stops a later "simplification" from collapsing the two capabilities into one value.
+   */
+  it.each([
+    // cutover fully on + capability on  -> the only state that can serve these three
+    [{ create: true, briefs: true, jobs: true, googleChannels: true }, true],
+    // cutover fully on + capability off -> the deployed service predates the three newer channels
+    [{ create: true, briefs: true, jobs: true, googleChannels: false }, false],
+    // staged CREATE-off rollout: legacy owns creation and does NOT know these channels
+    [{ create: false, briefs: true, jobs: true, googleChannels: true }, false],
+    // a PARTIAL flag set is "cutover off" in createCampaigns and must read the same here
+    [{ create: true, briefs: false, jobs: true, googleChannels: true }, false],
+    [{ create: true, briefs: true, jobs: false, googleChannels: true }, false],
+  ])('reports the google-channels capability only when the cutover owns the create (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceGoogleChannels) return flags.googleChannels;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.googleChannelsEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   // A TRUNCATED list is worse than an error, which is what failOnPartial buys. The caller cannot
   // tell a short list from a complete one, and the campaigns missing from it are live and
   // spending — so a page-two failure must propagate rather than quietly return page one.
@@ -3980,7 +4163,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     expect(proxyRequest).not.toHaveBeenCalled();
     // possiblyStale TRUE on a refusal: nothing was queried, so the empty list must not assert
     // that the brief has no campaigns.
-    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true });
+    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false });
   });
 });
 

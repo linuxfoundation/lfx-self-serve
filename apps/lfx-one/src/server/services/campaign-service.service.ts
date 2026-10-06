@@ -10,6 +10,9 @@ import {
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
   CAMPAIGN_PLATFORMS,
   COUNTRIES,
+  GOOGLE_CAMPAIGN_CHANNELS,
+  GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
+  GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   JOB_LOST_MESSAGE,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
@@ -410,12 +413,35 @@ function fromMarketingEmail(email: CampaignServiceMarketingEmail): HubSpotMarket
  * mid-rollout.
  */
 function canCreateDemandGen(): boolean {
-  const cutoverOwnsCreate =
+  return !cutoverOwnsCreate() || isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceDemandGen);
+}
+
+/**
+ * Whether the campaign-service create path is the one that will serve a create.
+ *
+ * All THREE flags, because a partial set is equivalent to "cutover off" in `createCampaigns` and
+ * has to mean the same wherever a capability is derived, or the two disagree mid-rollout.
+ */
+function cutoverOwnsCreate(): boolean {
+  return (
     isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceCreate) &&
     isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs) &&
-    isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs);
+    isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceJobs)
+  );
+}
 
-  return !cutoverOwnsCreate || isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceDemandGen);
+/**
+ * Whether this deployment can create a Performance Max, Video or Display Google campaign.
+ *
+ * The INVERSE of the Demand Gen rule above, and deliberately so. Demand Gen is reported available
+ * while the cutover is dark because the legacy creator serves it; these three are reported
+ * UNavailable in exactly that state, because the legacy creator does not know them and would
+ * build a Search campaign for any of them without saying so (`normalizeBudgetSplit` in
+ * `campaign-proxy.service.ts` treats every type but `demand-gen` as Search). So the capability
+ * needs the cutover to own the create AND the channel flag to be on — both, not either.
+ */
+function canCreateGoogleChannels(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceGoogleChannels);
 }
 
 export class CampaignServiceClient {
@@ -481,6 +507,7 @@ export class CampaignServiceClient {
         possiblyStale: true,
         statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle),
         demandGenEnabled: canCreateDemandGen(),
+        googleChannelsEnabled: canCreateGoogleChannels(),
       };
     }
 
@@ -531,6 +558,7 @@ export class CampaignServiceClient {
       possiblyStale: campaigns.length === 0,
       statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle),
       demandGenEnabled: canCreateDemandGen(),
+      googleChannelsEnabled: canCreateGoogleChannels(),
     };
   }
 
@@ -1254,25 +1282,26 @@ export class CampaignServiceClient {
       };
     }
 
-    // Search + Demand Gen TOGETHER is refused. Demand Gen alone is not — that changed with
-    // LFXV2-3257, which ported the legacy `createDemandGenCampaign` into campaign-service and
-    // gave `googleAdsConfig` a `channel` field to select it.
+    // MORE THAN ONE Google channel together is refused. Any one of the five alone is not — Demand
+    // Gen stopped being refused with LFXV2-3257, which ported the legacy `createDemandGenCampaign`
+    // into campaign-service and gave `googleAdsConfig` a `channel` field to select it, and the
+    // added Performance Max, Video and Display through that same field.
     //
-    // What still cannot be served is BOTH in one create, and the reason is THIS SERVICE, not
-    // the schema. campaign-service #130 widened the slot key to
+    // What still cannot be served is TWO OR MORE in one create, and the reason is THIS SERVICE,
+    // not the schema. campaign-service #130 widened the slot key to
     // `(brief_id, platform, variant)`, so a brief CAN hold a Search row and a Demand Gen row
     // simultaneously — the database no longer forbids the pair.
     //
     // The limit is here: `buildGoogleAdsConfig` emits ONE `googleAdsConfig` with ONE `channel`,
-    // so a create carrying both types would dispatch a single campaign and silently drop the
-    // other. Stating the real constraint matters — someone reading the old rationale after the
+    // so a create carrying two of them would dispatch a single campaign and silently drop the
+    // rest. Stating the real constraint matters — someone reading the old rationale after the
     // migration landed would remove this guard as obsolete and reintroduce the silent partial
     // create. Serving the pair needs this BFF to send two configs, not a schema change.
     //
     // Letting the pair through is the dangerous option, because it LOOKS like success: the
     // config carries one channel, so the create would succeed having silently dropped half of
     // what the user asked for and half their budget. Refusing keeps them on a path that can
-    // actually serve the request until this BFF can send both channels in one envelope.
+    // actually serve the request until this BFF can send several channels in one envelope.
     //
     // Gated on google-ads being SELECTED, not on `campaignTypes` alone. `campaignTypes` is a
     // Google concept but the Implementation tab sends it unconditionally (implementation-tab
@@ -1282,7 +1311,12 @@ export class CampaignServiceClient {
     // the old default through `persistBrief`. Either way a LinkedIn-only create arrives carrying
     // `demand-gen`, and refusing on the type alone rejected creates that have no Google campaign
     // in them at all.
-    if (platforms.includes('google-ads') && campaignTypes?.includes('demand-gen') && campaignTypes.includes('search')) {
+    const selectedGoogleChannels = platforms.includes('google-ads') ? GOOGLE_CAMPAIGN_CHANNELS.filter((c) => campaignTypes?.includes(c)) : [];
+    if (selectedGoogleChannels.length > 1) {
+      const names = selectedGoogleChannels.map((c) => GOOGLE_CAMPAIGN_CHANNEL_LABELS[c]);
+      // "A and B" for two, "A, B and C" for more — one expression, because `slice(0, -1)` on a
+      // two-element list is a single name and needs no comma.
+      const listed = `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
       return {
         enabled: true,
         jobId: null,
@@ -1299,7 +1333,9 @@ export class CampaignServiceClient {
         // deployment the second create is refused by the narrower (brief_id, platform)
         // uniqueness AFTER the first has already spent budget. Telling a user to retry into
         // that is worse than telling them nothing.
-        error: 'Search and Demand Gen cannot be created together. Deselect one and create it; adding the second to the same brief may not be supported yet.',
+        // Names every channel the user actually ticked rather than a fixed pair, so the message
+        // identifies the controls in front of them.
+        error: `${listed} cannot be created together. Keep one and create it; adding another to the same brief may not be supported yet.`,
       };
     }
 
@@ -1321,6 +1357,26 @@ export class CampaignServiceClient {
         enabled: true,
         jobId: null,
         error: 'Demand Gen campaigns are not available yet. Select Search instead, or ask an administrator to enable Demand Gen support.',
+      };
+    }
+
+    // Performance Max, Video and Display reach campaign-service through the same
+    // `googleAdsConfig.channel` field, and carry exactly the same hazard against a deployment
+    // that predates them: Go's decoder drops an unknown channel value, the dispatcher builds its
+    // default SEARCH campaign, and a paid campaign is created under the wrong channel and
+    // reported as success. The rationale is the Demand Gen one above in full — a capability flag
+    // rather than a version probe, because the service exposes no version endpoint and a
+    // successful create proves nothing about which channel it created.
+    //
+    // A SEPARATE flag from Demand Gen's, deliberately: a deployment that has had Demand Gen since
+    // LFXV2-3257 is not thereby ready for the three newer channels, and reusing the flag would
+    // turn them on everywhere Demand Gen is already on.
+    const flaggedChannel = selectedGoogleChannels.find((c) => (GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG as readonly string[]).includes(c));
+    if (flaggedChannel && !isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceGoogleChannels)) {
+      return {
+        enabled: true,
+        jobId: null,
+        error: `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[flaggedChannel]} campaigns are not available yet. Select Search instead, or ask an administrator to enable Google channel support.`,
       };
     }
 
