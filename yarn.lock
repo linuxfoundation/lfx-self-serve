@@ -14512,6 +14512,7 @@ __metadata:
     google-ads-api: "npm:^23.0.0"
     gray-matter: "npm:^4.0.3"
     html-to-image: "npm:^1.11.13"
+    htmlparser2: "npm:^10.1.0"
     ioredis: "npm:^5.11.1"
     jiti: "npm:^1.21.7"
     jose: "npm:^2.0.7"

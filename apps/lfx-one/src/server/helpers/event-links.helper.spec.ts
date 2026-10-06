@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { extractPageLinks, resolveRegistrationUrl, verifyPageLink } from './event-links.helper';
+import { documentBaseUrl, extractPageLinks, resolveRegistrationUrl, verifyPageLink } from './event-links.helper';
 
 const BASE_URL = 'https://example.com/events/kubecon';
 
@@ -369,6 +369,95 @@ describe('extractPageLinks — malformed and hostile markup', () => {
     const html = Array.from({ length: 5_050 }, (_unused, i) => `<a href="https://events.linuxfoundation.org/p/${i}">x</a>`).join('');
 
     expect(extractPageLinks(html, 'https://events.linuxfoundation.org/').size).toBe(5_000);
+  });
+});
+
+describe('extractPageLinks — links a browser does not render (parsed, not scanned)', () => {
+  const REAL = '<a href="https://events.linuxfoundation.org/real">Real</a>';
+  const base = 'https://events.linuxfoundation.org/';
+
+  // Each of these was reproduced against the hand-rolled scanner after #3220 merged. The parser
+  // answers them by construction; the table pins that a regression back to scanning would fail.
+  it.each([
+    ['an href inside a framework attribute value', `<a @click="go href='https://evil.example/at'" href="https://events.linuxfoundation.org/real">Real</a>`],
+    ['an href inside a bound attribute value', `<a :title="' href=https://evil.example/t'" href="https://events.linuxfoundation.org/real">Real</a>`],
+    ["anchor markup inside another tag's attribute", `<div title="<a href='https://evil.example/attr'>">x</div>${REAL}`],
+    ['an anchor inside <textarea>', `<textarea><a href="https://evil.example/ta">x</a></textarea>${REAL}`],
+    ['an anchor inside <title>', `<title><a href="https://evil.example/title"></a></title>${REAL}`],
+    ['an anchor inside <noscript>', `<noscript><a href="https://evil.example/ns">x</a></noscript>${REAL}`],
+    ['an anchor inside <xmp>', `<xmp><a href="https://evil.example/xmp">x</a></xmp>${REAL}`],
+    ['an anchor inside <template>', `<template><a href="https://evil.example/tpl">x</a></template>${REAL}`],
+    ['an anchor inside a <? bogus comment', `<? <a href="https://evil.example/pi"> ?>${REAL}`],
+    ['an anchor inside a <!x bogus comment', `<!x <a href="https://evil.example/bang">>${REAL}`],
+    ['a tag name joined by U+00A0, which is not HTML whitespace', `<a\u00a0href="https://evil.example/nbsp">x</a>${REAL}`],
+  ])('ignores %s', (_label, html) => {
+    expect([...extractPageLinks(html, base).values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it.each([
+    ['a numeric entity', '<a href="&#47;agenda">Agenda</a>', 'https://events.linuxfoundation.org/agenda'],
+    ['an upper-case named entity', '<a href="/agenda?day=2&AMP;track=main">Agenda</a>', 'https://events.linuxfoundation.org/agenda?day=2&track=main'],
+  ])('decodes %s in a real href rather than keeping it literal', (_label, html, expected) => {
+    expect([...extractPageLinks(html, base).values()]).toEqual([expected]);
+  });
+
+  it("verifies a model candidate written with the page's entities against the decoded link", () => {
+    const links = extractPageLinks('<a href="/agenda?day=2&amp;track=main">Agenda</a>', base);
+
+    expect(verifyPageLink('/agenda?day=2&amp;track=main', links, base)).toBe('https://events.linuxfoundation.org/agenda?day=2&track=main');
+  });
+
+  // Sized at the 5 MiB fetch cap, and HOSTILE rather than well-formed: a tree builder's open-element
+  // stack made each of these quadratic (parse5: 400 KB of unclosed <div> took 20 s). This runs
+  // synchronously on the SSR process, so the bound is the property, not a nicety.
+  const CAP = 5 * 1024 * 1024;
+  const fill = (unit: string): string => unit.repeat(Math.floor(CAP / unit.length));
+  it.each([
+    ['unclosed nesting', () => fill('<div>')],
+    ['unclosed formatting elements', () => fill('<b>')],
+    ['unmatched end tags over a deep stack', () => `${'<span>'.repeat(CAP / 12)}${'</q>'.repeat(CAP / 8)}`],
+    ['one tag with a huge number of attributes', () => `<a href="/x" ${Array.from({ length: CAP / 8 }, (_unused, i) => `a${i}`).join(' ')}>`],
+    ['many closed comments', () => fill('<!---->')],
+    ['many unclosed openers', () => fill('<!--')],
+  ])('stays linear on %s at the fetch cap', (_label, build) => {
+    const html = `${build()}${REAL}`;
+
+    const started = performance.now();
+    extractPageLinks(html, base);
+    const elapsed = performance.now() - started;
+
+    expect(elapsed, `${html.length} chars in ${elapsed.toFixed(0)}ms`).toBeLessThan(3_000);
+  });
+
+  it.each([
+    ['an iframe', `<iframe><a href="https://evil.example/if">x</a></iframe>${REAL}`],
+    ['MathML, where <a> is not a link', `<math><a href="https://evil.example/m">x</a></math>${REAL}`],
+    ['everything after <plaintext>', `${REAL}<plaintext><a href="https://evil.example/pt">x</a>`],
+  ])('ignores anchors inside %s', (_label, html) => {
+    expect([...extractPageLinks(html, base).values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it('reads an SVG anchor by its plain href, not xlink:href, as an SVG2 browser follows it', () => {
+    const html = '<svg><a xlink:href="https://evil.example/x" href="https://events.linuxfoundation.org/real"><text>x</text></a></svg>';
+
+    expect([...extractPageLinks(html, base).values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it('resolves relative links against the document <base href>, as a browser does', () => {
+    // A sub-path deployment served without its trailing slash: resolving against the request URL
+    // turned `agenda` into `/agenda`, a 404 inside a sent email.
+    const html = '<head><base href="/kubecon-eu/"></head><a href="agenda">Agenda</a>';
+
+    expect([...extractPageLinks(html, 'https://events.example.org/kubecon-eu').values()]).toEqual(['https://events.example.org/kubecon-eu/agenda']);
+    expect(documentBaseUrl(html, 'https://events.example.org/kubecon-eu')).toBe('https://events.example.org/kubecon-eu/');
+  });
+
+  it.each([
+    ['no <base>', '<a href="agenda">x</a>'],
+    ['a non-http(s) <base>', '<base href="javascript:alert(1)"><a href="agenda">x</a>'],
+    ['a <base> inside <template>', '<template><base href="https://evil.example/"></template><a href="agenda">x</a>'],
+  ])('falls back to the request URL with %s', (_label, html) => {
+    expect(documentBaseUrl(html, 'https://events.example.org/e/')).toBe('https://events.example.org/e/');
   });
 });
 

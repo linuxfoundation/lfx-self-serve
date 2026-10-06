@@ -81,6 +81,7 @@
     "gaxios": "^6.1.1",
     "google-ads-api": "^23.0.0",
     "html-to-image": "^1.11.13",
+    "htmlparser2": "^10.1.0",
     "ioredis": "^5.11.1",
     "jose": "^2.0.7",
     "launchdarkly-js-client-sdk": "^3.9.0",

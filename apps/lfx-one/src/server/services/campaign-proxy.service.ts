@@ -34,7 +34,7 @@ import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
-import { extractPageLinks, resolveRegistrationUrl, verifyPageLink } from '../helpers/event-links.helper';
+import { documentBaseUrl, extractPageLinks, resolveRegistrationUrl, verifyPageLink } from '../helpers/event-links.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
@@ -662,10 +662,19 @@ function getLinkedInStrategySystemPrompt(programType?: CampaignProgramType): str
  * is worse than an absent one. The instruction is belt; `verifyPageLink` is braces, and it is the
  * part that actually holds: anything not present as an `href` in the fetched HTML is dropped
  * server-side no matter how the model justifies it.
+ *
+ * `registration_url` gets its OWN sentence, because it is the one URL that is not verified that
+ * way (see `resolveRegistrationUrl`): event pages commonly drive registration from a scripted
+ * button rather than an `<a href>`. Under the shared anchor-only rule the model was told to return
+ * null for exactly those pages, and the brief lost its primary call to action.
  */
-const LINK_EXTRACTION_RULE = `For every *_url field: copy the URL exactly as it appears in an href attribute in the HTML above.
-Never construct, complete, guess or "correct" a URL, and never derive one from the site's URL
-pattern. If the page does not link to it, use null.`;
+const LINK_EXTRACTION_RULE = `For agenda_url, cfp_url, venue_url and sponsorship_url: copy the URL exactly as it appears in
+an href attribute in the HTML above. Never construct, complete, guess or "correct" a URL, and never
+derive one from the site's URL pattern. If the page does not link to it, use null.
+For registration_url: give the page's primary registration or enrollment destination, copied exactly
+as it appears in the HTML above -- an href, an onclick or data-* attribute value, or a JSON-LD
+offers.url. Never construct, complete, guess or "correct" it, and never derive it from the site's
+URL pattern. If none of those carries one, use null.`;
 
 const EVENT_EXTRACTION_PROMPT = `Extract structured event details from this HTML. Return valid JSON:
 {
@@ -1487,7 +1496,9 @@ export class CampaignProxyService {
         // Same final-url reasoning as the hero above: a relative `href` on a redirected page
         // resolves against the URL that SERVED it, so verifying against the requested one would
         // reject links the page really does carry.
-        pageBaseUrl = finalUrl;
+        // And against the page's `<base href>` when it declares one, which is what its own relative
+        // links -- and so a model quoting them -- resolve against in a browser.
+        pageBaseUrl = documentBaseUrl(html, finalUrl);
         // Collected from the FULL page, not `extractableHtml(html)`: the extraction model sees a
         // 60k-char excerpt, but a link it reports is legitimate if the page carries it anywhere.
         pageLinks = extractPageLinks(html, finalUrl);
