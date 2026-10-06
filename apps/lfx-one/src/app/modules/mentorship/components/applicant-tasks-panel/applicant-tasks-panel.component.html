@@ -88,6 +88,7 @@
                 [ariaLabel]="editActionLabel + ': ' + task.name + ' for ' + applicantName()"
                 styleClass="whitespace-nowrap !py-2"
                 (onClick)="onEditTask(task)"
+                [disabled]="isBusy(task.id)"
                 [attr.data-testid]="'mentorship-applicant-task-edit-' + task.id" />
             }
           </td>

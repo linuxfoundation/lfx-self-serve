@@ -161,6 +161,22 @@ export const MENTORSHIP_ADMIN_TASK_CREATE_ERROR_MESSAGES: Readonly<Record<number
   404: 'This application no longer exists. Refresh the page and try again.',
 };
 
+/** Admin task edit and status-change toasts on Current Mentees: their copy and how long they stay up (ms). */
+export const MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_SUMMARY = 'Could not update the task';
+export const MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_FALLBACK = 'Something went wrong. The task was not changed. Please try again.';
+export const MENTORSHIP_ADMIN_TASK_UPDATE_SUCCESS_SUMMARY = 'Task updated';
+export const MENTORSHIP_ADMIN_TASK_UPDATE_TOAST_LIFE = 5000;
+
+/**
+ * Task update failures with their own copy, keyed by the BFF's status: a 400 is a submitted task that requires a file with none uploaded
+ * (upstream's guard), a 403 a lost reviewer role (or the task's own assignee), a 404 a task that is gone.
+ */
+export const MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'A task that requires a file can only be submitted once a file has been uploaded for it.',
+  403: 'You can no longer edit tasks on this program. Refresh the page and try again.',
+  404: 'This task no longer exists. Refresh the page and try again.',
+};
+
 /**
  * Toast `summary` shown by every mentorship register form when submit is blocked by
  * client-side validation. Shared so a copy change lands on both mentor and mentee forms

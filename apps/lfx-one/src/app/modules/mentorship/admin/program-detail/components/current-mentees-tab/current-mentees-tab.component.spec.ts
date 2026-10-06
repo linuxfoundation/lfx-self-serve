@@ -11,6 +11,7 @@ import {
   MentorshipAdminMenteesQuery,
   MentorshipAdminDeclinePendingResponse,
   MentorshipAdminMenteesResponse,
+  MentorshipAdminTaskUpdate,
   MentorshipAdminTermOption,
   MentorshipApplicantTask,
   MentorshipMentorTaskCreateRequest,
@@ -84,6 +85,8 @@ describe('CurrentMenteesTabComponent', () => {
 
   let fixture: ComponentFixture<CurrentMenteesTabComponent>;
   let openCreate: ReturnType<typeof vi.fn>;
+  let openEdit: ReturnType<typeof vi.fn>;
+  let updateTask: ReturnType<typeof vi.fn<(taskId: string, body: MentorshipAdminTaskUpdate) => Observable<MentorshipApplicantTask>>>;
   let getProgramMentees: ReturnType<typeof vi.fn<(programId: string, query: MentorshipAdminMenteesQuery) => Observable<MentorshipAdminMenteesResponse>>>;
   let getApplicationTasks: ReturnType<typeof vi.fn<(applicationId: string) => Observable<MentorshipApplicantTask[]>>>;
   let updateApplicationStatus: ReturnType<typeof vi.fn<(applicationId: string, body: MentorshipAdminApplicationStatusUpdate) => Observable<void>>>;
@@ -103,6 +106,8 @@ describe('CurrentMenteesTabComponent', () => {
 
   beforeEach(() => {
     openCreate = vi.fn().mockReturnValue(of(undefined) satisfies Observable<MentorshipTaskFormValue | undefined>);
+    openEdit = vi.fn().mockReturnValue(of(undefined) satisfies Observable<MentorshipTaskFormValue | undefined>);
+    updateTask = vi.fn();
     getProgramMentees = vi.fn().mockReturnValue(of(firstPage()));
     getApplicationTasks = vi.fn().mockReturnValue(of(tasks()));
     updateApplicationStatus = vi.fn().mockReturnValue(of(undefined));
@@ -130,12 +135,13 @@ describe('CurrentMenteesTabComponent', () => {
             declinePendingForTerm,
             updateApplicationNote,
             createTasks,
+            updateTask,
           },
         },
         { provide: DialogService, useValue: { open: dialogOpen } },
         // Stub the dialog service so the spec never touches PrimeNG's DialogService,
         // and so we can assert on the exact assignee payload the tab hands off.
-        { provide: MentorshipTaskDialogService, useValue: { openCreate, openEdit: vi.fn().mockReturnValue(of(undefined)) } },
+        { provide: MentorshipTaskDialogService, useValue: { openCreate, openEdit } },
       ],
     });
 
@@ -602,6 +608,108 @@ describe('CurrentMenteesTabComponent', () => {
       settle();
 
       expect(element().querySelector('[data-testid="mentorship-current-mentee-view-tasks-app_no_tasks"]')).toBeNull();
+    });
+  });
+
+  describe('Edit task', () => {
+    // tsk_1 is the only non-prerequisite task, so it is the one carrying the Edit button.
+    const editValue = (overrides: Partial<MentorshipTaskFormValue> = {}): MentorshipTaskFormValue => ({
+      taskId: 'tsk_1',
+      name: tasks()[0].name,
+      description: tasks()[0].description,
+      requiresFileSubmission: false,
+      assignedMenteeIds: [],
+      status: 'submitted',
+      ...overrides,
+    });
+    const savedTask = (overrides: Partial<MentorshipApplicantTask> = {}): MentorshipApplicantTask => ({ ...tasks()[0], ...overrides });
+    const clickEdit = (taskId: string): void => {
+      element().querySelector<HTMLElement>(`[data-testid="mentorship-applicant-task-edit-${taskId}"]`)?.querySelector<HTMLButtonElement>('button')?.click();
+      settle();
+    };
+    const cachedTasks = () => fixture.componentInstance['tasksByApplication']().get('app_1');
+    const submittedOf = (id: string): number | undefined => fixture.componentInstance['applications']().find((row) => row.id === id)?.tasksSubmitted;
+    const taskRowText = (taskId: string): string => element().querySelector(`[data-testid="mentorship-applicant-task-row-${taskId}"]`)?.textContent ?? '';
+
+    beforeEach(() => {
+      clickViewTasks('app_1');
+    });
+
+    it('saves through the BFF and writes the saved task into the row without reading the list again', () => {
+      openEdit.mockReturnValue(of(editValue({ name: 'Resume (final)' })));
+      updateTask.mockReturnValue(of(savedTask({ name: 'Resume (final)' })));
+
+      clickEdit('tsk_1');
+
+      expect(updateTask).toHaveBeenCalledWith('tsk_1', { name: 'Resume (final)' });
+      expect(getApplicationTasks).toHaveBeenCalledTimes(1);
+      expect(getProgramMentees).toHaveBeenCalledTimes(1);
+      expect(taskRowText('tsk_1')).toContain('Resume (final)');
+    });
+
+    it('keeps the list as it was when the save fails', () => {
+      openEdit.mockReturnValue(of(editValue({ name: 'Resume (final)' })));
+      updateTask.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400 })));
+
+      clickEdit('tsk_1');
+
+      expect(updateTask).toHaveBeenCalledTimes(1);
+      expect(cachedTasks()).toEqual({ status: 'loaded', tasks: tasks() });
+      expect(taskRowText('tsk_1')).not.toContain('Resume (final)');
+    });
+
+    it("moves the row's submitted count with a status change, which Graduate's warning reads", () => {
+      const patch = fixture.componentInstance['patchSavedTask'];
+      expect(submittedOf('app_1')).toBe(2);
+
+      patch('app_1', { ...tasks()[1], status: 'completed' });
+      expect(submittedOf('app_1')).toBe(3);
+
+      patch('app_1', { ...tasks()[1], status: 'in-progress' });
+      expect(submittedOf('app_1')).toBe(2);
+
+      patch('app_1', { ...tasks()[1], status: 'in-progress', name: 'Cover Letter v2' });
+      expect(submittedOf('app_1')).toBe(2);
+    });
+
+    it('never takes the submitted count below zero', () => {
+      const patch = fixture.componentInstance['patchSavedTask'];
+      getProgramMentees.mockReturnValue(of({ data: [mentee({ tasksSubmitted: 0 })], total: 1 }));
+      fixture.componentInstance['onLazyLoad']({ first: 10 });
+      settle();
+      clickViewTasks('app_1');
+
+      patch('app_1', { ...tasks()[0], status: 'pending' });
+
+      expect(submittedOf('app_1')).toBe(0);
+    });
+
+    it('drops a save that lands after the table reloaded, since the reload brought the newer tasks', () => {
+      const patch = fixture.componentInstance['patchSavedTask'];
+      fixture.componentInstance['onLazyLoad']({ first: 10 });
+      settle();
+      expect(cachedTasks()).toBeUndefined();
+
+      patch('app_1', savedTask({ status: 'completed' }));
+
+      expect(cachedTasks()).toBeUndefined();
+      expect(getApplicationTasks).toHaveBeenCalledTimes(1);
+    });
+
+    it('lands a save for a row that was collapsed mid-save', () => {
+      const response = new Subject<MentorshipApplicantTask>();
+      openEdit.mockReturnValue(of(editValue({ name: 'Resume (final)' })));
+      updateTask.mockReturnValue(response);
+      clickEdit('tsk_1');
+      clickViewTasks('app_1');
+      expect(element().querySelector('[data-testid="mentorship-current-mentee-tasks-expanded-app_1"]')).toBeNull();
+
+      response.next(savedTask({ name: 'Resume (final)' }));
+      response.complete();
+      clickViewTasks('app_1');
+
+      expect(taskRowText('tsk_1')).toContain('Resume (final)');
+      expect(getApplicationTasks).toHaveBeenCalledTimes(1);
     });
   });
 
