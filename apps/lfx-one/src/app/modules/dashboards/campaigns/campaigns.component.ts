@@ -71,7 +71,7 @@ import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { firstValueFrom, skip, Subscription, take } from 'rxjs';
+import { finalize, firstValueFrom, skip, Subscription, take } from 'rxjs';
 
 import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
 import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
@@ -1736,6 +1736,15 @@ export class CampaignsComponent {
    * audience. A cancel therefore turns a dispatched stage into an unresolved one for its scope.
    */
   private dispatchedStage: { projectSlug: string; briefId: string } | null = null;
+  /**
+   * Scopes whose create REQUEST is still awaiting its HTTP response. Separate from the unresolved
+   * hold: a reset can record a stage as unresolved while its create is still on the wire, and the
+   * acknowledgement must not be accepted until that request settles -- checking HubSpot before the
+   * draft can appear, then staging again, is how the duplicate is made.
+   */
+  private readonly createsOnWire = signal<ReadonlySet<string>>(new Set());
+  /** The scope on screen has a create request still awaiting its response. */
+  protected readonly emailStageCreateOnWire = computed(() => this.createsOnWire().has(this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId())));
   /** A stage is in flight OR unresolved: what every lock that protects a stage keys on. */
   protected readonly emailStagingHeld = computed(() => this.emailStaging() === 'staging' || this.emailStagingUnresolved());
 
@@ -2686,6 +2695,10 @@ export class CampaignsComponent {
 
   /** The operator checked HubSpot after a stage that ended without an answer; release ITS locks only. */
   protected onAcknowledgeStagingUnresolved(): void {
+    // Not while this scope's create is still on the wire: the draft may not have appeared YET.
+    if (this.emailStageCreateOnWire()) {
+      return;
+    }
     const key = this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId());
     this.unresolvedStages.update((keys) => new Set([...keys].filter((k) => k !== key)));
   }
@@ -3131,6 +3144,7 @@ export class CampaignsComponent {
     // Bumped BEFORE the await below; the reset bumps the same counter to invalidate it.
     const generation = ++this.emailStagingGeneration;
     const isCurrent = (): boolean => generation === this.emailStagingGeneration;
+    let dispatched: { projectSlug: string; briefId: string } | null = null;
 
     try {
       // Shared with the audience build via `ensureEmailBriefId`, so the two actions cannot write
@@ -3266,8 +3280,17 @@ export class CampaignsComponent {
       };
 
       // Recorded BEFORE the await: from here the create is on the wire and cannot be recalled.
-      this.dispatchedStage = { projectSlug, briefId };
-      const outcome = await firstValueFrom(this.campaignService.createCampaign(request, projectSlug, briefId));
+      // Kept as a LOCAL too, so a stale reply settles its own dispatch and never its successor's.
+      dispatched = { projectSlug, briefId };
+      this.dispatchedStage = dispatched;
+      const wireKey = this.stageScopeKey(projectSlug, briefId);
+      this.createsOnWire.update((keys) => new Set([...keys, wireKey]));
+      const outcome = await firstValueFrom(
+        this.campaignService
+          .createCampaign(request, projectSlug, briefId)
+          // Released when the REQUEST settles, success or failure, whatever context is on screen.
+          .pipe(finalize(() => this.createsOnWire.update((keys) => new Set([...keys].filter((key) => key !== wireKey)))))
+      );
       // Checked here TOO, not only after the persist above. A reset landing during THIS await
       // leaves the request already sent -- the draft may well exist upstream -- but everything
       // after it belongs to the previous brief: the poll would run under the new context and
@@ -3283,9 +3306,8 @@ export class CampaignsComponent {
         // with no job, or unconfirmed after it left) as indeterminate. Held, or a retry duplicates it.
         if (outcome.indeterminate) {
           this.markStageUnresolved(projectSlug, briefId);
-        } else {
-          this.dispatchedStage = null;
         }
+        this.settleDispatch(dispatched);
         this.emailStagingMessage.set(outcome.error);
         return;
       }
@@ -3300,6 +3322,7 @@ export class CampaignsComponent {
         // locks: the request WAS accepted, so a draft may still be created.
         this.emailStaging.set('error');
         this.markStageUnresolved(projectSlug, briefId);
+        this.settleDispatch(dispatched);
         this.emailStagingMessage.set('Staging was accepted but returned nothing to track. Check HubSpot before retrying.');
         return;
       }
@@ -3308,8 +3331,10 @@ export class CampaignsComponent {
     } catch {
       // A failure AFTER the create left is indeterminate: it may have reached the BFF and started.
       // Fail closed and hold its scope; a failure before dispatch (the persist) has nothing to hold.
-      if (this.dispatchedStage !== null) {
-        this.markStageUnresolved(this.dispatchedStage.projectSlug, this.dispatchedStage.briefId);
+      // ITS OWN dispatch, from the local: a stale rejection must not settle a newer stage's state.
+      if (dispatched !== null) {
+        this.markStageUnresolved(dispatched.projectSlug, dispatched.briefId);
+        this.settleDispatch(dispatched);
       }
       // Guarded like every other write in this method. A reset mid-stage would otherwise raise a
       // failure banner for a brief nobody is looking at -- and on the email tab that reads as
@@ -3663,6 +3688,7 @@ export class CampaignsComponent {
     // A dispatched create is abandoned by the UI, not by HubSpot: hold its scope until confirmed.
     if (this.dispatchedStage !== null) {
       this.markStageUnresolved(this.dispatchedStage.projectSlug, this.dispatchedStage.briefId);
+      this.dispatchedStage = null;
     }
     this.stagingJobSubscription?.unsubscribe();
     this.stagingJobSubscription = null;
@@ -3859,9 +3885,15 @@ export class CampaignsComponent {
     return `${projectSlug}|${briefId}`;
   }
 
+  /** Clears the dispatch marker only if it is still THIS dispatch, never a successor's. */
+  private settleDispatch(dispatched: { projectSlug: string; briefId: string } | null): void {
+    if (dispatched !== null && this.dispatchedStage === dispatched) {
+      this.dispatchedStage = null;
+    }
+  }
+
   /** Records a stage that ended without a terminal answer, for the project and brief it staged. */
   private markStageUnresolved(projectSlug: string, briefId: string): void {
-    this.dispatchedStage = null;
     const key = this.stageScopeKey(projectSlug, briefId);
     this.unresolvedStages.update((keys) => new Set([...keys, key]));
   }

@@ -1064,10 +1064,16 @@
                 <!-- The stage ended without an answer, so a draft may still appear. Everything that could
                      race it stays locked until the operator says they checked. -->
                 @if (emailStagingUnresolved()) {
+                  @if (emailStageCreateOnWire()) {
+                    <p class="text-xs text-gray-600" data-testid="campaigns-email-stage-unresolved-waiting">
+                      The create request is still running. Wait for it to finish before checking HubSpot.
+                    </p>
+                  }
                   <lfx-button
                     label="I have checked HubSpot"
                     severity="secondary"
                     size="small"
+                    [disabled]="emailStageCreateOnWire()"
                     (onClick)="onAcknowledgeStagingUnresolved()"
                     data-testid="campaigns-email-stage-unresolved-ack" />
                 }

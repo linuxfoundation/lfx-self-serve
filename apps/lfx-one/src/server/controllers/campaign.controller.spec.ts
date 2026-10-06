@@ -660,6 +660,16 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(res.json).toHaveBeenCalledWith({ jobId: '', error: 'Campaign creation could not be started. Please try again.' });
   });
 
+  it('passes an INDETERMINATE create through, so the client holds it rather than reading a refusal', async () => {
+    // The service and component specs mock opposite sides of this hop; without this, dropping the
+    // field here would leave both green while production released the stage hold.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: null, error: 'Campaign creation could not be confirmed.', indeterminate: true });
+
+    await controller.createCampaign(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ jobId: '', error: 'Campaign creation could not be confirmed.', indeterminate: true });
+  });
+
   it('allows a create when the same platform IS configured', async () => {
     // The contrast: identical platform, but Search selected, so `buildGoogleAdsConfig` builds a
     // config. Without this, the test above would pass on a controller that refused everything.

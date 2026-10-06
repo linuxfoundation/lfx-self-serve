@@ -3576,6 +3576,55 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingHeld()).toBe(held);
     });
 
+    it('refuses the unresolved acknowledgement while the abandoned create is still on the wire', async () => {
+      // A reset records the stage as unresolved but cannot cancel the create; checking HubSpot before
+      // the draft can appear, then staging again, is how a duplicate is made.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const create = new Subject<{ jobId: string }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(create as never);
+      const staging = (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      await fixture.whenStable();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      expect(internals().emailStagingHeld(), 'fixture precondition: held').toBe(true);
+
+      (internals() as unknown as { onAcknowledgeStagingUnresolved(): void }).onAcknowledgeStagingUnresolved();
+      expect(internals().emailStagingHeld(), 'acknowledged while the create was still on the wire').toBe(true);
+
+      create.error(new HttpErrorResponse({ status: 504 }));
+      await staging;
+      (internals() as unknown as { onAcknowledgeStagingUnresolved(): void }).onAcknowledgeStagingUnresolved();
+      expect(internals().emailStagingHeld(), 'the acknowledgement never became available').toBe(false);
+    });
+
+    it("lets a stale create's rejection settle only its own dispatch, not the newer stage's", async () => {
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const first = new Subject<{ jobId: string }>();
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValueOnce(first as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(NEVER as never);
+      const stageA = (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      await fixture.whenStable();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      (internals() as unknown as { onAcknowledgeStagingUnresolved(): void }).onAcknowledgeStagingUnresolved();
+
+      // Stage B starts on a different brief while A's request is still pending.
+      internals().emailBriefId.set('brief-other');
+      internals().onAudienceComposed({ ...composed, briefId: 'brief-other' });
+      create.mockReturnValueOnce(of({ jobId: 'job-b' }) as never);
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      first.error(new HttpErrorResponse({ status: 504 }));
+      await stageA;
+
+      expect(internals().emailStagingUnresolved(), "A's stale rejection marked brief B unresolved").toBe(false);
+      expect(
+        (internals() as unknown as { dispatchedStage: { briefId: string } | null }).dispatchedStage?.briefId,
+        "A's stale rejection cleared B's dispatch marker"
+      ).toBe('brief-other');
+    });
+
     it('holds the stage when the create request fails after it was sent', async () => {
       // The request may have reached the BFF and started; failing closed beats a duplicate draft.
       onImplementTab();
