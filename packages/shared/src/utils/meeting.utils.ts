@@ -1420,6 +1420,19 @@ export function isMeetingOrganizedByViewer(
 }
 
 /**
+ * Whether My Meetings hides this meeting by default as declined.
+ * @description A decline covering every date ({@link isMeetingDeclinedForAllOccurrences}) hides the
+ * meeting, except when the viewer organizes it: they still run the series and must be able to find
+ * it, and the "Organized by me" filter and count would otherwise silently drop it.
+ */
+export function isMeetingHiddenAsDeclined(
+  meeting: Pick<Meeting, 'my_rsvp' | 'created_by' | 'owner'> | null | undefined,
+  viewerUsername?: string | null
+): boolean {
+  return isMeetingDeclinedForAllOccurrences(meeting) && !isMeetingOrganizedByViewer(meeting, viewerUsername);
+}
+
+/**
  * Builds the "Organized by" chip view model from resolved organizers, the viewer's username, and
  * the meeting context needed to pre-fill a `mailto:` per organizer. Returns `null` when there are
  * no organizers so the caller omits the chip entirely.

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, Component, computed, inject, Injector, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, inject, Injector, linkedSignal, Signal, signal, viewChild, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -71,12 +71,17 @@ export class MyEventsDashboardComponent {
   protected readonly activeEventId: Signal<string | null> = this.initActiveEventId();
 
   protected readonly tabOptions: FilterPillOption[] = MY_EVENTS_TABS;
-  protected readonly selectedFoundation = signal<string | null>(null);
+  protected readonly selectedFoundation = this.initSelectedFoundation();
   protected readonly selectedRole = signal<string | null>(null);
   protected readonly selectedStatus = signal<string | null>(null);
   protected readonly selectedSearchQuery = signal('');
 
+  protected readonly upcomingRegisteredOnly = computed(() =>
+    this.activeTab() === 'upcoming' ? (this.eventsListRef()?.upcomingRegisteredOnly() ?? null) : false
+  );
   protected readonly isPast = computed(() => this.activeTab() === 'past');
+  /** Upcoming swaps the Status dropdown for its My Registrations / All Events pills. */
+  protected readonly showStatusFilter = computed(() => this.activeTab() !== 'upcoming');
 
   /** True when the active tab uses request-style filters (no role, no foundation, different statuses). */
   protected readonly isRequestTab = computed(() => MY_EVENTS_REQUEST_TAB_IDS.has(this.activeTab()));
@@ -181,6 +186,13 @@ export class MyEventsDashboardComponent {
     this.selectedRole.set(null);
     this.selectedStatus.set(null);
     this.selectedSearchQuery.set('');
+  }
+
+  private initSelectedFoundation(): WritableSignal<string | null> {
+    return linkedSignal({
+      source: () => ({ tab: this.activeTab(), registeredOnly: this.upcomingRegisteredOnly() }),
+      computation: () => null,
+    });
   }
 
   private initActiveTab(): Signal<EventTabId> {

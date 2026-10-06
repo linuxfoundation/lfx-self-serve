@@ -5,10 +5,16 @@ import { KEYWORD_ACTION_DEADLINE_MS } from '../services/campaign-keyword-actions
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MAX_BULK_KEYWORD_ACTIONS, MAX_SPONSORS } from '@lfx-one/shared/constants';
+import {
+  MAX_BULK_KEYWORD_ACTIONS,
+  MAX_HUBSPOT_BODY_HTML_LENGTH,
+  MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
+  MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+  MAX_SPONSORS,
+} from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
-import { ServiceValidationError } from '../errors';
+import { MicroserviceError, ServiceValidationError } from '../errors';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
@@ -22,10 +28,16 @@ const {
   legacyGetJobStatus,
   searchHubSpotEmails,
   toggleCampaignStatus,
+  updateCampaignBudget,
+  updateCampaignBid,
+  addNegativeKeywords,
+  svcGetMicrosoftKeywords,
   listBriefCampaigns,
   getBriefMetrics,
+  svcListAudiences,
   svcGetKeywords,
   svcResolveCampaign,
+  svcResolveMicrosoftCampaign,
   svcApplyKeywordActions,
   legacyKeywordActions,
   svcGetAudience,
@@ -49,10 +61,16 @@ const {
   legacyGetJobStatus: vi.fn(),
   searchHubSpotEmails: vi.fn(),
   toggleCampaignStatus: vi.fn(),
+  updateCampaignBudget: vi.fn(),
+  updateCampaignBid: vi.fn(),
+  addNegativeKeywords: vi.fn(),
+  svcGetMicrosoftKeywords: vi.fn(),
   listBriefCampaigns: vi.fn(),
   getBriefMetrics: vi.fn(),
+  svcListAudiences: vi.fn(),
   svcGetKeywords: vi.fn(),
   svcResolveCampaign: vi.fn(),
+  svcResolveMicrosoftCampaign: vi.fn(),
   svcApplyKeywordActions: vi.fn(),
   legacyKeywordActions: vi.fn(),
   svcGetAudience: vi.fn(),
@@ -83,10 +101,16 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public getJobStatus = svcGetJobStatus;
       public searchHubSpotEmails = searchHubSpotEmails;
       public toggleCampaignStatus = toggleCampaignStatus;
+      public updateCampaignBudget = updateCampaignBudget;
+      public updateCampaignBid = updateCampaignBid;
+      public addNegativeKeywords = addNegativeKeywords;
+      public getMicrosoftAdsKeywords = svcGetMicrosoftKeywords;
       public listBriefCampaigns = listBriefCampaigns;
       public getBriefMetrics = getBriefMetrics;
+      public listAudiences = svcListAudiences;
       public getGoogleAdsKeywords = svcGetKeywords;
       public resolveGoogleAdsCampaign = svcResolveCampaign;
+      public resolveMicrosoftAdsCampaign = svcResolveMicrosoftCampaign;
       public applyKeywordActions = svcApplyKeywordActions;
       public getGoogleAdsAudience = svcGetAudience;
       public searchHubSpotCampaigns = svcSearchHsCampaigns;
@@ -1404,6 +1428,42 @@ describe('CampaignController.createCampaign cutover', () => {
     }
   });
 
+  it.each(['bodyHtml', 'bodyHtmlB'])('refuses an oversized %s before sanitising or dispatching', async (field) => {
+    // The sanitiser runs in `createConfigEnvelope`, ahead of every other check, and the only
+    // other bound on its input is the 15 MB body-parser limit. The cap keeps its cost bounded.
+    const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', [field]: `<p>${'x'.repeat(MAX_HUBSPOT_BODY_HTML_LENGTH)}</p>` } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(createConfigEnvelope).not.toHaveBeenCalled();
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(loadBriefById).not.toHaveBeenCalled();
+  });
+
+  it('accepts a body exactly at the size cap', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000001', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', bodyHtml: `<p>${'x'.repeat(MAX_HUBSPOT_BODY_HTML_LENGTH - 7)}</p>` } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
   it('sanitizes a sponsor name from a DIRECT request, not just the scrape path', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
@@ -1703,7 +1763,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     // The whole selector is inert if this argument is dropped, and nothing else would say so:
     // generation still succeeds, just with default-stage copy under the operator's chosen label.
-    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', 'Post-Event', undefined);
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', 'Post-Event', undefined, undefined);
   });
 
   it('forwards the body variant to the campaign-service client', async () => {
@@ -1713,7 +1773,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     // Same inert-if-dropped hazard as `stage`: generation still succeeds, silently producing
     // variant-A copy for an operator who asked for B, and the A/B test compares A against A.
-    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, 'B');
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, 'B', undefined);
   });
 
   it.each([
@@ -1725,7 +1785,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     await controller.generateEmailCopy(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, undefined);
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, undefined, undefined);
   });
 
   it.each([
@@ -1739,7 +1799,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     // `undefined`, not '' -- upstream reads absence as "the caller did not say" and defaults,
     // while an empty string would fail its enum and 400 a request the operator did not make.
-    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, undefined);
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, undefined, undefined);
   });
 
   it('forwards the generated subject, body, and preheader to the dispatcher', async () => {
@@ -2747,6 +2807,512 @@ describe('CampaignController.updateCampaignStatus', () => {
 });
 
 /**
+ * The client spec pins what goes on the wire. What only this layer decides is which requests are
+ * refused before a round trip, and that an upstream refusal reaches `next` as the same error so
+ * `apiErrorHandler` renders its status and message unchanged.
+ */
+describe('CampaignController.updateCampaignBudget', () => {
+  const UUID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const validBody = { briefId: 'b-1', etag: '"1"', budget: 150.25, budgetType: 'daily' };
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  function budgetReq(campaignId: string, body: unknown, query: Record<string, unknown> = { project: 'tlf' }): Request {
+    return { params: { campaignId }, body, query, path: `/api/campaigns/${campaignId}/budget` } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    updateCampaignBudget.mockResolvedValue({ id: UUID, platform: 'google_ads', status: 'active', version: 2, etag: '"2"' });
+  });
+
+  it('sends the change to campaign-service and reports the row it answered with', async () => {
+    await controller.updateCampaignBudget(budgetReq(UUID, validBody), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(updateCampaignBudget).toHaveBeenCalledWith(expect.anything(), {
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: UUID,
+      budget: 150.25,
+      budgetType: 'daily',
+      etag: '"1"',
+    });
+    expect(res.json).toHaveBeenCalledWith({
+      platform: 'google_ads',
+      campaignId: UUID,
+      budget: 150.25,
+      budgetType: 'daily',
+      etag: '"2"',
+      serviceStatus: 'active',
+    });
+  });
+
+  // A budget change leaves the row's status as found, so a created_degraded campaign keeps its
+  // reconciliation marker. Reporting anything else would hide that.
+  it('reports the service status of a degraded campaign unchanged', async () => {
+    updateCampaignBudget.mockResolvedValue({ id: UUID, platform: 'meta', status: 'created_degraded', version: 5, etag: '"5"' });
+
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, budgetType: 'lifetime' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ serviceStatus: 'created_degraded', budgetType: 'lifetime', etag: '"5"' }));
+  });
+
+  it.each([
+    ['a numeric string', '150'],
+    ['zero', 0],
+    ['a negative amount', -5],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['a missing amount', undefined],
+  ])('refuses %s as the budget', async (_label, budget) => {
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, budget }), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it.each([['DAILY'], ['monthly'], [undefined]])('refuses budgetType %s', async (budgetType) => {
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, budgetType }), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it.each([
+    ['briefId', { ...validBody, briefId: '   ' }],
+    ['etag', { ...validBody, etag: undefined }],
+  ])('refuses a request with no %s', async (_field, body) => {
+    await controller.updateCampaignBudget(budgetReq(UUID, body), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  // fetch rejects such a header before any network I/O, and that rejection would otherwise be
+  // reported as an UNCONFIRMED write although nothing left the BFF.
+  it.each([
+    ['an embedded newline', '"1"\r\nX-Injected: 1'],
+    ['a character above U+00FF', '"1☃"'],
+    ['a non-ASCII latin-1 character', '"café"'],
+    ['an internal space', '"1" "2"'],
+  ])('refuses an etag with %s, which cannot be sent as If-Match', async (_label, etag) => {
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, etag }), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+  });
+
+  it.each([['"1"'], ['W/"1"'], ['abc-123']])('forwards the valid etag %s as given', async (etag) => {
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, etag }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(updateCampaignBudget).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ etag }));
+  });
+
+  it('refuses a request with no project', async () => {
+    await controller.updateCampaignBudget(budgetReq(UUID, validBody, {}), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // Only campaign-service can change a budget, and it keys campaigns by UUID. A platform's numeric
+  // id has no row to address.
+  it.each([['123456'], ['not-an-id']])('refuses campaign id %s, which is not a campaign-service UUID', async (campaignId) => {
+    await controller.updateCampaignBudget(budgetReq(campaignId, validBody), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('refuses a body that is not a JSON object', async () => {
+    await controller.updateCampaignBudget(budgetReq(UUID, [validBody]), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // The UI needs upstream's own status and words: the platform's minimum on a 400, the refusal on
+  // a 409, the precondition on a 412/428, and "verify upstream" on an unconfirmed 503.
+  it.each([
+    [400, 'LinkedIn requires a daily budget of at least 10.00'],
+    [409, "budget_type 'lifetime' does not match the campaign's current daily pacing"],
+    [412, 'ETag mismatch'],
+    [428, 'If-Match header required'],
+    [503, 'the budget change is unconfirmed: it may have been applied. Verify the campaign in Google Ads before retrying'],
+  ])('passes an upstream %s to the error handler unchanged', async (status, message) => {
+    const upstream = new MicroserviceError(message, status, 'UPSTREAM', { errorBody: { code: String(status), message } });
+    updateCampaignBudget.mockRejectedValue(upstream);
+
+    await controller.updateCampaignBudget(budgetReq(UUID, validBody), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(upstream);
+    expect(logger.success).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The bid lever mirrors the budget lever, so these pin the same refusals plus the one difference:
+ * `bidType` is optional and defaults to upstream's only value.
+ */
+describe('CampaignController.updateCampaignBid', () => {
+  const UUID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const validBody = { briefId: 'b-1', etag: '"1"', bid: 2.5, bidType: 'cpc' };
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  function bidReq(campaignId: string, body: unknown, query: Record<string, unknown> = { project: 'tlf' }): Request {
+    return { params: { campaignId }, body, query, path: `/api/campaigns/${campaignId}/bid` } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    updateCampaignBid.mockResolvedValue({ id: UUID, platform: 'microsoft-ads', status: 'active', version: 2, etag: '"2"' });
+  });
+
+  it('sends the change to campaign-service and reports the row it answered with', async () => {
+    await controller.updateCampaignBid(bidReq(UUID, validBody), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(updateCampaignBid).toHaveBeenCalledWith(expect.anything(), {
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: UUID,
+      bid: 2.5,
+      bidType: 'cpc',
+      etag: '"1"',
+    });
+    expect(res.json).toHaveBeenCalledWith({
+      platform: 'microsoft-ads',
+      campaignId: UUID,
+      bid: 2.5,
+      bidType: 'cpc',
+      etag: '"2"',
+      serviceStatus: 'active',
+    });
+  });
+
+  it('defaults an omitted bidType to cpc, upstream’s only value', async () => {
+    await controller.updateCampaignBid(bidReq(UUID, { ...validBody, bidType: undefined }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(updateCampaignBid).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ bidType: 'cpc' }));
+  });
+
+  it.each([
+    ['a numeric string', '2.5'],
+    ['zero', 0],
+    ['a negative amount', -1],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['a missing amount', undefined],
+  ])('refuses %s as the bid', async (_label, bid) => {
+    await controller.updateCampaignBid(bidReq(UUID, { ...validBody, bid }), res, next);
+
+    expect(updateCampaignBid).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it.each([['CPC'], ['cpm'], [''], [null]])('refuses bidType %s', async (bidType) => {
+    await controller.updateCampaignBid(bidReq(UUID, { ...validBody, bidType }), res, next);
+
+    expect(updateCampaignBid).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it.each([
+    ['briefId', { ...validBody, briefId: '   ' }],
+    ['etag', { ...validBody, etag: undefined }],
+  ])('refuses a request with no %s', async (_field, body) => {
+    await controller.updateCampaignBid(bidReq(UUID, body), res, next);
+
+    expect(updateCampaignBid).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it.each([
+    ['an embedded newline', '"1"\r\nX-Injected: 1'],
+    ['a character above U+00FF', '"1☃"'],
+    ['an internal space', '"1" "2"'],
+  ])('refuses an etag with %s, which cannot be sent as If-Match', async (_label, etag) => {
+    await controller.updateCampaignBid(bidReq(UUID, { ...validBody, etag }), res, next);
+
+    expect(updateCampaignBid).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+  });
+
+  it('refuses a request with no project', async () => {
+    await controller.updateCampaignBid(bidReq(UUID, validBody, {}), res, next);
+
+    expect(updateCampaignBid).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it.each([['123456'], ['not-an-id']])('refuses campaign id %s, which is not a campaign-service UUID', async (campaignId) => {
+    await controller.updateCampaignBid(bidReq(campaignId, validBody), res, next);
+
+    expect(updateCampaignBid).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('refuses a body that is not a JSON object', async () => {
+    await controller.updateCampaignBid(bidReq(UUID, [validBody]), res, next);
+
+    expect(updateCampaignBid).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [400, 'Microsoft Advertising refused the bid: below the minimum of 0.01'],
+    [409, 'the campaign bids under an automated strategy (MaxClicks); a manual bid would be ignored'],
+    [412, 'ETag mismatch'],
+    [428, 'If-Match header required'],
+    [503, 'the bid change is unconfirmed: verify the bid in the platform before retrying'],
+  ])('passes an upstream %s to the error handler unchanged', async (status, message) => {
+    const upstream = new MicroserviceError(message, status, 'UPSTREAM', { errorBody: { code: String(status), message } });
+    updateCampaignBid.mockRejectedValue(upstream);
+
+    await controller.updateCampaignBid(bidReq(UUID, validBody), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(upstream);
+    expect(logger.success).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignController.addNegativeKeywords', () => {
+  const UUID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const validBody = {
+    briefId: 'b-1',
+    negativeKeywords: [
+      { text: 'free download', matchType: 'Phrase' },
+      { text: 'crack', matchType: 'Exact' },
+    ],
+  };
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  function negReq(campaignId: string, body: unknown, query: Record<string, unknown> = { project: 'tlf' }): Request {
+    return { params: { campaignId }, body, query, path: `/api/campaigns/${campaignId}/negative-keywords` } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  // The order is the contract: the caller zips results[i] onto negativeKeywords[i]. Mixed
+  // outcomes, with the failure in the MIDDLE, so any filter or sort moves an entry.
+  it('sends the batch in request order and returns the results exactly as the client mapped them', async () => {
+    const mapped = {
+      campaignId: UUID,
+      results: [
+        { text: 'free download', matchType: 'Phrase', outcome: 'APPLIED', negativeKeywordId: '81' },
+        { text: 'crack', matchType: 'Exact', outcome: 'FAILED', errorCode: 'CampaignServiceNegativeKeywordMatchesKeyword' },
+        { text: 'torrent', matchType: 'Phrase', outcome: 'ALREADY_PRESENT' },
+      ],
+      appliedCount: 2,
+    };
+    addNegativeKeywords.mockResolvedValue(mapped);
+    const body = { ...validBody, negativeKeywords: [...validBody.negativeKeywords, { text: 'torrent', matchType: 'Phrase' }] };
+
+    await controller.addNegativeKeywords(negReq(UUID, body), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(addNegativeKeywords).toHaveBeenCalledWith(expect.anything(), {
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: UUID,
+      negativeKeywords: [
+        { text: 'free download', matchType: 'Phrase' },
+        { text: 'crack', matchType: 'Exact' },
+        { text: 'torrent', matchType: 'Phrase' },
+      ],
+    });
+    expect(res.json).toHaveBeenCalledWith(mapped);
+  });
+
+  it('accepts letters outside ASCII, which the upstream pattern admits', async () => {
+    addNegativeKeywords.mockResolvedValue({ campaignId: UUID, results: [], appliedCount: 0 });
+
+    await controller.addNegativeKeywords(negReq(UUID, { ...validBody, negativeKeywords: [{ text: 'café gratuit', matchType: 'Exact' }] }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['no array', undefined],
+    ['an empty array', []],
+    ['more than the maximum', Array.from({ length: MAX_NEGATIVE_KEYWORDS_PER_REQUEST + 1 }, (_, i) => ({ text: `term ${i}`, matchType: 'Exact' }))],
+    ['a null entry', [null]],
+    ['blank text', [{ text: '   ', matchType: 'Exact' }]],
+    ['text over the limit', [{ text: 'a'.repeat(MAX_NEGATIVE_KEYWORD_TEXT_LENGTH + 1), matchType: 'Exact' }]],
+    ['a disallowed symbol', [{ text: 'free @ download', matchType: 'Exact' }]],
+    ['quote syntax', [{ text: '"free"', matchType: 'Exact' }]],
+    ['Broad, which is not a negative match type', [{ text: 'free', matchType: 'Broad' }]],
+    ['a lower-case match type', [{ text: 'free', matchType: 'exact' }]],
+  ])('refuses %s', async (_label, negativeKeywords) => {
+    await controller.addNegativeKeywords(negReq(UUID, { ...validBody, negativeKeywords }), res, next);
+
+    expect(addNegativeKeywords).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('counts characters, not UTF-16 units, against the text limit', async () => {
+    addNegativeKeywords.mockResolvedValue({ campaignId: UUID, results: [], appliedCount: 0 });
+    // 100 astral-plane letters: 200 UTF-16 units but 100 characters.
+    const text = '𝐀'.repeat(MAX_NEGATIVE_KEYWORD_TEXT_LENGTH);
+
+    await controller.addNegativeKeywords(negReq(UUID, { ...validBody, negativeKeywords: [{ text, matchType: 'Exact' }] }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(addNegativeKeywords).toHaveBeenCalled();
+  });
+
+  it.each([
+    ['project', validBody, {}],
+    ['briefId', { ...validBody, briefId: '' }, { project: 'tlf' }],
+  ])('refuses a request with no %s', async (_field, body, query) => {
+    await controller.addNegativeKeywords(negReq(UUID, body, query), res, next);
+
+    expect(addNegativeKeywords).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('refuses a campaign id that is not a campaign-service UUID', async () => {
+    await controller.addNegativeKeywords(negReq('123456', validBody), res, next);
+
+    expect(addNegativeKeywords).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it.each([
+    [400, 'negative keyword "free  download" contains consecutive punctuation'],
+    [409, 'the campaign was created under a different ad account'],
+    [503, 'the negative keywords are unconfirmed: verify the campaign negative keywords before retrying'],
+  ])('passes an upstream %s to the error handler unchanged', async (status, message) => {
+    const upstream = new MicroserviceError(message, status, 'UPSTREAM', { errorBody: { code: String(status), message } });
+    addNegativeKeywords.mockRejectedValue(upstream);
+
+    await controller.addNegativeKeywords(negReq(UUID, validBody), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(upstream);
+  });
+});
+
+describe('CampaignController.getMicrosoftKeywords', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  function kwReq(query: Record<string, unknown>): Request {
+    return { query, path: '/api/campaigns/microsoft/keywords' } as unknown as Request;
+  }
+
+  const payload = {
+    window: 'last_7_days',
+    rows: [
+      {
+        criterion_id: '7001',
+        ad_group_id: '1301',
+        campaign_id: '5501',
+        ad_group_name: 'Registration',
+        campaign_name: 'KubeCon - Search',
+        text: 'kubernetes training',
+        match_type: 'PHRASE',
+        status: 'ENABLED',
+        impressions: 1000,
+        clicks: 50,
+        cost_micros: 25_000_000,
+        ctr: 0.05,
+        conversions: 0,
+      },
+    ],
+    row_count: 1,
+    truncated: false,
+    metrics_as_of: '2026-10-05T14:30:00Z',
+    metrics_pending: true,
+    conversions_complete: false,
+    data_incomplete: false,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    svcGetMicrosoftKeywords.mockResolvedValue(payload);
+  });
+
+  it('reads the project’s Microsoft keywords for the window asked and passes report freshness through', async () => {
+    await controller.getMicrosoftKeywords(kwReq({ project: 'tlf', window: 'last_7_days' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(svcGetMicrosoftKeywords).toHaveBeenCalledWith(expect.anything(), 'tlf', 'last_7_days');
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        window: 'last_7_days',
+        metricsAsOf: '2026-10-05T14:30:00Z',
+        metricsPending: true,
+        conversionsComplete: false,
+        totalKeywords: 1,
+        keywords: [expect.objectContaining({ criterionId: '7001', adGroupId: '1301', spend: 25, ctr: 5 })],
+      })
+    );
+  });
+
+  it('leaves the window to upstream when none is given', async () => {
+    await controller.getMicrosoftKeywords(kwReq({ project: 'tlf' }), res, next);
+
+    expect(svcGetMicrosoftKeywords).toHaveBeenCalledWith(expect.anything(), 'tlf', undefined);
+  });
+
+  // Microsoft has no 14-day or yesterday window; a value it cannot serve is refused here rather
+  // than forwarded to a 400, or silently snapped to a window the figures would then be mislabelled with.
+  it.each([['last_14_days'], ['yesterday'], ['30'], [['last_7_days']]])('refuses window %s', async (window) => {
+    await controller.getMicrosoftKeywords(kwReq({ project: 'tlf', window }), res, next);
+
+    expect(svcGetMicrosoftKeywords).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('refuses a read with no project', async () => {
+    await controller.getMicrosoftKeywords(kwReq({ project: '  ' }), res, next);
+
+    expect(svcGetMicrosoftKeywords).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('passes an upstream failure to the error handler', async () => {
+    const upstream = new MicroserviceError('Microsoft metrics are not supported', 400, 'BAD_REQUEST', { errorBody: { code: '400', message: 'x' } });
+    svcGetMicrosoftKeywords.mockRejectedValue(upstream);
+
+    await controller.getMicrosoftKeywords(kwReq({ project: 'tlf' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(upstream);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * The controller's job here is the scope refusal. Both `project` and `brief_id` are required and
  * neither is defaulted — `project` is the authorization boundary the platform checks FGA against,
  * and a guessed `brief_id` would widen the read past the brief the caller asked about.
@@ -2922,6 +3488,112 @@ describe('CampaignController.getBriefMetrics', () => {
     const next = vi.fn() as unknown as NextFunction;
 
     await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+/**
+ * The audience read-back behind `GET /api/campaigns/audiences`.
+ *
+ * What is only decidable HERE is the layer boundary. The mapping and the flag-off shape are the
+ * client's and have their own tests; this block covers the part a mapper test cannot see: that a
+ * request with no usable scope never reaches upstream, that the two query params arrive as the
+ * client's positional arguments in the right ORDER, and that a read failure reaches the error
+ * middleware rather than a 200 the restore path would read as "this brief has no audience".
+ *
+ * That last one matters more here than on most reads. The caller is the restore path, and an
+ * empty-looking answer there does not merely show less -- it offers a Build button, and a build
+ * mints a SECOND HubSpot contact list for a brief that already has one.
+ */
+describe('CampaignController.listAudiences', () => {
+  let controller: CampaignController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+  });
+
+  function audiencesReq(query: Record<string, unknown>): Request {
+    return { query, path: '/api/campaigns/audiences' } as unknown as Request;
+  }
+
+  it('passes both scope params through in the order the client reads them', async () => {
+    const payload = { enabled: true, audiences: [{ id: 'aud-1', briefId: 'b-1', platform: 'hubspot', status: 'built', version: 1 }] };
+    svcListAudiences.mockResolvedValue(payload);
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.listAudiences(audiencesReq({ project: 'cncf', brief_id: 'b-1' }), res, next);
+
+    expect(svcListAudiences).toHaveBeenCalledWith(expect.anything(), 'cncf', 'b-1');
+    expect(res.json).toHaveBeenCalledWith(payload);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Trimmed before forwarding, because both values become PATH segments upstream. A slug with
+   * surrounding whitespace percent-encodes into a different project than the one asked for, and
+   * that 404 is indistinguishable here from "this brief has no audience".
+   */
+  it('trims the scope params rather than encoding whitespace into the upstream path', async () => {
+    svcListAudiences.mockResolvedValue({ enabled: true, audiences: [] });
+
+    await controller.listAudiences(audiencesReq({ project: ' cncf ', brief_id: ' b-1 ' }), buildRes(), vi.fn() as unknown as NextFunction);
+
+    expect(svcListAudiences).toHaveBeenCalledWith(expect.anything(), 'cncf', 'b-1');
+  });
+
+  /**
+   * Both params are required and neither may default. `brief_id` scopes the read to one campaign;
+   * `project` is the authorisation boundary -- `/foundation/campaigns` is reachable by an ED of
+   * any foundation, so a defaulted project would read another foundation's audience on their
+   * behalf.
+   */
+  it.each([
+    ['no project', { brief_id: 'b-1' }],
+    ['no brief_id', { project: 'cncf' }],
+    ['a blank project', { project: '   ', brief_id: 'b-1' }],
+    ['a blank brief_id', { project: 'cncf', brief_id: '   ' }],
+    // Repeated params, which Express parses as arrays. Neither is a string, so both collapse to
+    // '' and are refused by the same guard -- asserted rather than assumed, because the guard
+    // reads `typeof === 'string'` and an array that stringified would slip past it.
+    ['a repeated project param, which Express parses as an array', { project: ['tlf', 'cncf'], brief_id: 'b-1' }],
+    ['a repeated brief_id param, which Express parses as an array', { project: 'cncf', brief_id: ['b-1', 'b-2'] }],
+  ])('refuses a request with %s without reading anything upstream', async (_label, query) => {
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.listAudiences(audiencesReq(query), res, next);
+
+    expect(svcListAudiences).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  /**
+   * The flag being off is NOT a failure and must reach the caller intact. `{ enabled: false }` is
+   * how the restore path knows to stay silent; turning it into an error would put a banner on
+   * every campaign in an environment where the feature simply is not on.
+   */
+  it('passes a flag-off result through untouched', async () => {
+    svcListAudiences.mockResolvedValue({ enabled: false });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.listAudiences(audiencesReq({ project: 'cncf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ enabled: false });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards a thrown read to next rather than answering with a body', async () => {
+    svcListAudiences.mockRejectedValue(new Error('upstream exploded'));
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.listAudiences(audiencesReq({ project: 'cncf', brief_id: 'b-1' }), res, next);
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.any(Error));
@@ -3547,6 +4219,59 @@ describe('CampaignController.executeKeywordActions via campaign-service', () => 
     const body = vi.mocked(res.json).mock.calls[0][0] as { total: number; results: { keyword: string }[] };
     expect(body.total).toBe(3);
     expect(body.results.map((r) => r.keyword).sort()).toEqual(['Criterion 1', 'Criterion 2', 'Criterion 3']);
+  });
+
+  // ─── Microsoft Advertising (LFXV2-2665) ───
+
+  const msKeyword = (campaignId: string, criterionId: string) => ({ ...keyword(campaignId, criterionId), platform: 'microsoft-ads' });
+
+  it('resolves a Microsoft keyword through the Microsoft campaign-ref, never the Google one', async () => {
+    svcResolveMicrosoftCampaign.mockResolvedValue(resolvedTo('c-ms', 'b-ms', '413296582'));
+    svcApplyKeywordActions.mockResolvedValue({
+      campaign_id: 'c-ms',
+      applied_count: 1,
+      results: [{ ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE', outcome: 'APPLIED' }],
+    });
+
+    await controller.executeKeywordActions(actionsReq([msKeyword('413296582', '1')]), res, next);
+
+    expect(svcResolveMicrosoftCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', '413296582', expect.any(Number));
+    expect(svcResolveCampaign, 'a Microsoft id was looked up as a Google one').not.toHaveBeenCalled();
+    expect(svcApplyKeywordActions).toHaveBeenCalledWith(
+      expect.anything(),
+      'tlf',
+      'b-ms',
+      'c-ms',
+      [{ ad_group_id: '176216228', criterion_id: '1', action: 'PAUSE' }],
+      expect.any(Number)
+    );
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true, succeeded: 1, failed: 0 }));
+  });
+
+  it('refuses an unknown platform before calling upstream', async () => {
+    await controller.executeKeywordActions(actionsReq([{ ...keyword('555', '1'), platform: 'meta-ads' }]), res, next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validationErrors: expect.arrayContaining([expect.objectContaining({ field: 'keywords', message: expect.stringContaining('platform') })]),
+      })
+    );
+    expect(svcResolveCampaign).not.toHaveBeenCalled();
+    expect(svcResolveMicrosoftCampaign).not.toHaveBeenCalled();
+  });
+
+  it('refuses a Microsoft keyword on the legacy path rather than sending it to Google', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await controller.executeKeywordActions(actionsReq([keyword('555', '1'), msKeyword('413296582', '2')]), res, next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validationErrors: expect.arrayContaining([expect.objectContaining({ field: 'keywords', message: expect.stringContaining('Microsoft') })]),
+      })
+    );
+    // The WHOLE request is refused: the Google row ahead of it is not half-applied.
+    expect(legacyKeywordActions).not.toHaveBeenCalled();
   });
 });
 

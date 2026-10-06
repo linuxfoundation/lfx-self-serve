@@ -13,7 +13,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
 import {
   DocumentFormMode,
   FilterPillOption,
@@ -28,7 +28,7 @@ import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { combineLatest, catchError, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap, take } from 'rxjs';
+import { combineLatest, catchError, debounceTime, distinctUntilChanged, finalize, map, merge, of, startWith, Subject, switchMap, take } from 'rxjs';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MyDocumentSourceTagPipe } from '@app/shared/pipes/my-document-source-tag.pipe';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -96,10 +96,15 @@ export class DocumentsDashboardComponent {
   protected readonly projectDocumentSourceOptions: { label: string; value: ProjectDocumentSource | null }[] = [
     { label: 'All Sources', value: null },
     { label: 'Project', value: 'project' },
-    { label: 'Committee', value: 'committee' },
+    { label: COMMITTEE_LABEL.singular, value: 'committee' },
     { label: 'Meeting', value: 'meeting' },
     { label: 'Mailing List', value: 'mailing_list' },
   ];
+
+  // === Subjects ===
+  /** Emits immediately when the search box is programmatically cleared (e.g. on folder open),
+   *  bypassing the 300 ms debounce so `searchQuery()` resets in the same tick. */
+  private readonly clearSearch$ = new Subject<string>();
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
@@ -188,6 +193,10 @@ export class DocumentsDashboardComponent {
   protected onFolderOpen(doc: MyDocumentItem): void {
     const folderUid = doc.id.startsWith('project_folder:') ? doc.id.slice('project_folder:'.length) : null;
     if (folderUid) {
+      // Update the form control visually without going through the debounce pipeline,
+      // then immediately emit '' via clearSearch$ so searchQuery() resets in the same tick.
+      this.filterForm.controls.search.setValue('', { emitEvent: false });
+      this.clearSearch$.next('');
       this.currentFolderUid.set(folderUid);
     }
   }
@@ -212,12 +221,13 @@ export class DocumentsDashboardComponent {
   // === Private Initializers ===
   private initSearchQuery(): Signal<string> {
     return toSignal(
-      this.filterForm.controls.search.valueChanges.pipe(
-        debounceTime(300),
-        distinctUntilChanged(),
-        map((v) => v ?? ''),
-        startWith('')
-      ),
+      merge(
+        this.filterForm.controls.search.valueChanges.pipe(
+          debounceTime(300),
+          map((v) => v ?? '')
+        ),
+        this.clearSearch$
+      ).pipe(distinctUntilChanged(), startWith('')),
       { initialValue: '' }
     );
   }
@@ -371,7 +381,7 @@ export class DocumentsDashboardComponent {
     } else if (docSource === 'summary') {
       mySource = 'summary';
     } else {
-      mySource = isFile ? 'file' : 'link';
+      mySource = 'project';
     }
 
     // Show entity name (committee name, meeting title) when available, otherwise project name.
@@ -432,10 +442,32 @@ export class DocumentsDashboardComponent {
 
   private initFilteredDocuments(): Signal<MyDocumentItem[]> {
     return computed(() => {
-      const docs = this.documents();
       const query = this.searchQuery().toLowerCase().trim();
       const projectMode = this.useProjectSource();
       const projectDocSource = this.projectDocumentSourceFilter();
+
+      // When in project mode with an active search query at root (no folder drilled into),
+      // search across ALL nested documents so users can find a document without knowing
+      // which folder it lives in. Inside a folder, the folder-scoped view is used instead.
+      let docs: MyDocumentItem[];
+      if (projectMode && query && !this.currentFolderUid()) {
+        const raw = this.rawProjectDocuments();
+        const project = this.project();
+        const folderUids = new Set(raw.filter((d) => d.type === 'folder').map((f) => f.uid));
+        const childCountByFolder = new Map<string, number>();
+        for (const item of raw) {
+          if (item.type !== 'folder' && item.parent_uid && folderUids.has(item.parent_uid)) {
+            childCountByFolder.set(item.parent_uid, (childCountByFolder.get(item.parent_uid) ?? 0) + 1);
+          }
+        }
+        docs = raw.map((d) => ({
+          ...this.toMyDocumentItem(d, project, false),
+          isFolder: d.type === 'folder',
+          ...(d.type === 'folder' ? { childCount: childCountByFolder.get(d.uid) ?? 0 } : {}),
+        }));
+      } else {
+        docs = this.documents();
+      }
       const foundation = this.foundationFilter();
       const group = this.groupFilter();
       const meeting = this.meetingFilter();
@@ -453,8 +485,7 @@ export class DocumentsDashboardComponent {
         }
 
         if (projectMode) {
-          // Folders are structural navigation — never filtered by source.
-          if (projectDocSource && !doc.isFolder) {
+          if (projectDocSource) {
             const docSource = doc.projectDocumentSource ?? 'project';
             // "Meeting" filter bucket covers attachments, recordings, transcripts, and summaries.
             const isMeetingBucket = projectDocSource === 'meeting' && ['meeting', 'recording', 'transcript', 'summary'].includes(docSource);

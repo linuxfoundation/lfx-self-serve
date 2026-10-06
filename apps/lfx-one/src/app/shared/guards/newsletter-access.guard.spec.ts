@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { signal } from '@angular/core';
+import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, convertToParamMap, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
 import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
@@ -32,13 +32,20 @@ describe('newsletterAccessGuard', () => {
   let projectsByKey: Record<string, Partial<Project> | null>;
 
   const route = (
-    options: { query?: Record<string, string>; params?: Record<string, string>; childParams?: Record<string, string>; lens?: 'foundation' | 'project' } = {}
+    options: {
+      query?: Record<string, string>;
+      params?: Record<string, string>;
+      childParams?: Record<string, string>;
+      lens?: 'foundation' | 'project';
+      mountPath?: string;
+    } = {}
   ): ActivatedRouteSnapshot =>
     ({
       queryParamMap: convertToParamMap(options.query ?? {}),
       paramMap: convertToParamMap(options.params ?? {}),
       firstChild: options.childParams ? ({ paramMap: convertToParamMap(options.childParams) } as unknown as ActivatedRouteSnapshot) : null,
       parent: options.lens ? ({ data: { lens: options.lens } } as unknown as ActivatedRouteSnapshot) : null,
+      routeConfig: options.mountPath ? { path: options.mountPath } : null,
       data: {},
     }) as unknown as ActivatedRouteSnapshot;
 
@@ -230,5 +237,27 @@ describe('newsletterAccessGuard', () => {
     const result = await runGuard(route({ params: { projectUid: 'uid-a', id: 'n1' }, lens: 'foundation' }));
 
     expect(result).toEqual({ denied: '/foundation/overview', opts: { queryParams: { project: 'route-project', _notice: 'access' } } });
+  });
+
+  it('defers to the browser during SSR on the gw embed mounts, without persona or project lookups (GH-3274)', async () => {
+    // On the server a transient lookup failure became a real HTTP 302 that bounced
+    // the Gatewaze embed's sign-in return to overview. On the gw mounts the guard
+    // must not evaluate anything during SSR; the client re-runs it after hydration.
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+    const result = await runGuard(route({ query: { project: 'agentic-ai-foundation' }, lens: 'foundation', mountPath: 'foundation/gw' }));
+    expect(result).toBe(true);
+    expect(getProject).not.toHaveBeenCalled();
+    expect(getProjectStrict).not.toHaveBeenCalled();
+  });
+
+  it('keeps full SSR enforcement on non-gw routes: analytics and recipient engagement fetch during SSR (GH-3274)', async () => {
+    // Writer-gated newsletter pages DO load data during SSR, and the page policy is
+    // stricter than some upstream read permissions — so the server must still deny
+    // non-writers there rather than defer to the browser.
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+    projectsByKey['aaif'] = { slug: 'aaif', writer: false };
+    const result = await runGuard(route({ query: { project: 'aaif' }, lens: 'foundation' }));
+    expect(result).toEqual({ denied: '/foundation/overview', opts: { queryParams: { project: 'aaif' } } });
+    expect(getProject).toHaveBeenCalledWith('aaif', false);
   });
 });

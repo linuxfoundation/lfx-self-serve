@@ -92,7 +92,7 @@
                 }
 
                 <!-- View Guests Button -->
-                @if (authenticated() && (meeting().organizer || meeting().invited)) {
+                @if (authenticated() && canViewGuests()) {
                   <lfx-button
                     label="Show Members"
                     icon="fa-light fa-users"
@@ -102,7 +102,7 @@
                     styleClass="py-[0.15rem] text-xs"
                     data-testid="view-members-button">
                   </lfx-button>
-                } @else if (meeting().show_meeting_attendees) {
+                } @else if (attendeeListShared()) {
                   <lfx-button
                     label="Show Members"
                     icon="fa-light fa-users"
@@ -231,10 +231,12 @@
                   <!-- Occurrence Navigation (recurring meetings; past pages key off the series timeline since ITX past payloads omit `recurrence`) -->
                   @if (occurrenceLabel()) {
                     <div class="flex items-center gap-3" data-testid="occurrence-navigation">
+                      <!-- data-dd-privacy="mask" on both links: their href carries the meeting passcode; keep it out of Session Replay. -->
                       @if (previousOccurrenceUrl(); as prevUrl) {
                         <a
                           [href]="prevUrl"
                           class="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                          data-dd-privacy="mask"
                           data-testid="occurrence-nav-prev">
                           <i class="fa-light fa-chevron-left text-xs"></i>
                           <span>Previous</span>
@@ -250,6 +252,7 @@
                         <a
                           [href]="nextUrl"
                           class="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                          data-dd-privacy="mask"
                           data-testid="occurrence-nav-next">
                           <span>Next</span>
                           <i class="fa-light fa-chevron-right text-xs"></i>
@@ -336,7 +339,7 @@
                   }
 
                   <!-- Total Invitees -->
-                  @if (registrants().length > 0 && !isPastMeeting()) {
+                  @if (totalInvitees() > 0 && !isPastMeeting()) {
                     <div class="inline-flex items-center gap-1 text-sm text-gray-500" data-testid="total-invitees">
                       <i class="fa-light fa-users"></i>
                       <span>{{ totalInvitees() }} invited</span>
@@ -787,9 +790,12 @@
                     </div>
                   </div>
 
+                  <!-- data-dd-privacy="mask": returnTo carries the meeting passcode, even when the address bar does not; keep it out of Session Replay. -->
                   <lfx-button
                     class="w-full md:w-auto"
                     styleClass="w-full md:w-auto"
+                    data-dd-privacy="mask"
+                    data-testid="meeting-join-sign-in"
                     size="small"
                     label="Sign In"
                     icon="fa-light fa-arrow-right-to-bracket"

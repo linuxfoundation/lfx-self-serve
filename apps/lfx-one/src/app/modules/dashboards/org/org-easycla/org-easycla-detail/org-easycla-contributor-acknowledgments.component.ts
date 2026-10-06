@@ -27,7 +27,7 @@ import type {
   OrgClaInvalidateAcknowledgmentDialogResult,
   OrgClaInvalidateAcknowledgmentRequest,
 } from '@lfx-one/shared/interfaces';
-import { formatClaSignedOnInstant, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
+import { formatClaSignedOnInstant, isMailtoSafeEmail, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -679,7 +679,11 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
         ariaLabel: `GitLab username @${ack.gitlabUsername}, opens on gitlab.com`,
       };
     }
-    if (ack.email) return { lfLogin: null, display: ack.email, href: `mailto:${ack.email}`, ariaLabel: `Email ${ack.email}` };
+    // Upstream data: only a plain single-recipient address becomes a mailto link; anything else
+    // (query fields, separators, percent escapes) renders as plain text.
+    if (ack.email) {
+      return { lfLogin: null, display: ack.email, href: isMailtoSafeEmail(ack.email) ? `mailto:${ack.email}` : null, ariaLabel: `Email ${ack.email}` };
+    }
     return { lfLogin: null, display: ORG_CLA_ACKNOWLEDGMENTS_EM_DASH, href: null, ariaLabel: 'No login recorded' };
   }
 

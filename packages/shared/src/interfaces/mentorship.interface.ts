@@ -260,6 +260,8 @@ export interface MentorshipApplicantOtherApplication extends MentorshipApplicati
 export interface MentorshipNoteRequest {
   personId: string;
   personName: string;
+  /** The note the row arrived with, for a tab whose rows the page does not hold. */
+  note?: string;
 }
 
 /**

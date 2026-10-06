@@ -64,7 +64,12 @@ describe('mentorship router — write endpoints removed (GH-2717)', () => {
 });
 
 describe('mentorship router — admin endpoints', () => {
-  it.each(['/admin/programs', '/admin/programs/mp_test'])('rejects unauthenticated GET /api/mentorship%s with 401', async (path) => {
+  it.each([
+    '/admin/programs',
+    '/admin/programs/mp_test',
+    '/admin/programs/3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b/mentees?type=current',
+    '/admin/applications/3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b/tasks',
+  ])('rejects unauthenticated GET /api/mentorship%s with 401', async (path) => {
     const res = await fetch(`${baseUrl}/api/mentorship${path}`);
 
     // The route exists — it returns 401 (auth required), not 404.
@@ -462,6 +467,31 @@ describe('mentorship router — LFX profile sync', () => {
     });
 
     // 403 rather than the controller's 401 shows the guard ran first.
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('mentorship router — admin decision writes', () => {
+  const base = '/api/mentorship/admin';
+  const writes = [
+    ['PATCH', '/applications/6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f/status'],
+    ['POST', '/applications/6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f/withdraw'],
+    ['POST', '/programs/3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b/terms/7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d/decline-pending'],
+  ] as const;
+
+  it.each(writes)('routes %s %s (auth required, not 404)', async (method, path) => {
+    const res = await fetch(`${baseUrl}${base}${path}`, { method, headers: { 'content-type': 'application/json' }, body: '{}' });
+
+    expect(res.status).toBe(401);
+  });
+
+  it.each(writes)('refuses %s %s while impersonating, before the controller runs', async (method, path) => {
+    const res = await fetch(`${baseUrl}${base}${path}`, {
+      method,
+      headers: { 'content-type': 'application/json', 'x-test-impersonating': 'true' },
+      body: '{}',
+    });
+
     expect(res.status).toBe(403);
   });
 });

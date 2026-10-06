@@ -556,7 +556,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     icon: 'fa-light fa-users-rectangle',
     title: 'Show Meeting Attendees',
     description:
-      "Let guests see who else is invited, and who has accepted, in their calendar app's invite. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board and restricted meetings never list other guests in their invites.",
+      "Let guests see who else is invited, and who has accepted, in LFX and in their calendar app's invite. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board and restricted meetings never list other guests in their invites.",
     color: lfxColors.blue[500],
   },
 ];
@@ -589,6 +589,17 @@ export const JOIN_MODE_LABELS: Record<JoinMode, string> = {
   invite_only: 'Invite Only',
   application: 'Apply to Join',
   closed: 'Closed',
+};
+
+/**
+ * Plain-language tooltip descriptions for each join mode, shown on the join-mode tag in group list/card views.
+ * Tells the viewer what they can actually do, not just what the mode is called.
+ */
+export const JOIN_MODE_TOOLTIPS: Record<JoinMode, string> = {
+  open: 'Anyone can join this group directly',
+  invite_only: 'You need an invitation from a member or admin to join',
+  application: 'You can apply to join; an admin will review your request',
+  closed: 'Only admins can add members to this group',
 };
 
 /**

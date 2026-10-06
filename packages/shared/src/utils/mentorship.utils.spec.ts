@@ -52,8 +52,8 @@ import type {
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskView,
 } from '../interfaces/mentorship-mentee.interface';
-import type { MentorshipProgramApplicant, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
-import type { MentorshipProgram, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
+import type { MentorshipProgramMentee } from '../interfaces/mentorship.interface';
+import type { MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
 import type { MentorshipMentorRegisterForm } from '../interfaces/mentorship-mentor.interface';
 import {
   buildMentorshipMenteeApplicationView,
@@ -64,7 +64,6 @@ import {
   buildMentorshipMentorProfileUpdate,
   buildMentorshipMentorRegisterRequest,
   buildMentorshipMenteeTaskView,
-  buildMentorshipProgramDetail,
   buildMentorshipProgramsUrl,
   countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
@@ -118,11 +117,11 @@ import {
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
   mentorshipRowActions,
-  mentorshipTermFilterOptions,
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
   toMentorshipDateOnly,
   toMentorshipUtcInstant,
+  buildMentorshipGraduateTaskWarning,
 } from './mentorship.utils';
 
 describe('getMentorshipEnrollStepErrors', () => {
@@ -464,17 +463,6 @@ describe('mentorship term dates', () => {
 });
 
 describe('program detail helpers', () => {
-  const detailProgram: MentorshipProgram = {
-    id: 'mp_test',
-    slug: 'test',
-    name: 'Test',
-    projectName: 'LF Energy',
-    term: 'Fall 2026',
-    status: 'open',
-    stats: { mentors: 0, mentees: 0, graduated: 0 },
-    createdOn: '2026-01-01T00:00:00.000Z',
-    updatedOn: '2026-01-01T00:00:00.000Z',
-  };
   const detailTerm = (name: string, status: MentorshipProgramTermRow['status'], id = name): MentorshipProgramTermRow => ({
     id,
     name,
@@ -488,72 +476,6 @@ describe('program detail helpers', () => {
     applicationStartDate: '2025-12-01',
     applicationEndDate: '2025-12-15',
   });
-  const detailApplication = (id: string, status: MentorshipProgramApplicant['status'], termName: string, termId = termName): MentorshipProgramApplicant => ({
-    id,
-    name: id,
-    email: `${id}@example.com`,
-    status,
-    termId,
-    termName,
-    createdOn: '2026-01-01',
-    updatedOn: '2026-01-01',
-  });
-
-  it('splits applications by term status, whatever their own status', () => {
-    const detail = buildMentorshipProgramDetail(detailProgram, {
-      applications: [
-        detailApplication('1', 'pending', 'Fall 2026'),
-        detailApplication('2', 'graduated', 'Spring 2026'),
-        detailApplication('3', 'accepted', 'Spring 2026'),
-        detailApplication('4', 'declined', 'Fall 2026'),
-        // A term the program does not list stays current rather than vanishing.
-        detailApplication('5', 'withdrawn', 'Winter 2027'),
-      ],
-      mentors: [{ id: 'm1', name: 'M', email: 'm@example.com', status: 'accepted' }],
-      terms: [detailTerm('Fall 2026', 'open'), detailTerm('Spring 2026', 'closed')],
-    });
-
-    expect(detail.currentMentees.map((person) => person.id)).toEqual(['1', '4', '5']);
-    expect(detail.pastMentees.map((person) => person.id)).toEqual(['2', '3']);
-    expect(detail.tabCounts).toEqual({ currentMentees: 3, pastMentees: 2, mentors: 1, terms: 2 });
-  });
-
-  it('splits by term id when an open and a closed term share a name', () => {
-    const detail = buildMentorshipProgramDetail(detailProgram, {
-      applications: [detailApplication('1', 'accepted', 'Winter 2026', 'winter-open'), detailApplication('2', 'graduated', 'Winter 2026', 'winter-closed')],
-      mentors: [],
-      terms: [detailTerm('Winter 2026', 'open', 'winter-open'), detailTerm('Winter 2026', 'closed', 'winter-closed')],
-    });
-
-    expect(detail.currentMentees.map((person) => person.id)).toEqual(['1']);
-    expect(detail.pastMentees.map((person) => person.id)).toEqual(['2']);
-  });
-
-  it('leaves Past Mentees empty when no term is closed', () => {
-    const detail = buildMentorshipProgramDetail(detailProgram, {
-      applications: [detailApplication('1', 'accepted', 'Fall 2026')],
-      mentors: [],
-      terms: [detailTerm('Fall 2026', 'open')],
-    });
-
-    expect(detail.pastMentees).toEqual([]);
-    expect(detail.tabCounts).toEqual({ currentMentees: 1, pastMentees: 0, mentors: 0, terms: 1 });
-  });
-
-  it('lists only the terms in the requested state as filter options', () => {
-    const terms = [detailTerm('Fall 2026', 'open'), detailTerm('Spring 2026', 'closed'), detailTerm('Spring 2027', 'open')];
-
-    expect(mentorshipTermFilterOptions(terms, 'open', 'All open terms')).toEqual([
-      { label: 'All open terms', value: null },
-      { label: 'Fall 2026', value: 'Fall 2026' },
-      { label: 'Spring 2027', value: 'Spring 2027' },
-    ]);
-    expect(mentorshipTermFilterOptions(terms, 'closed', 'All closed terms')).toEqual([
-      { label: 'All closed terms', value: null },
-      { label: 'Spring 2026', value: 'Spring 2026' },
-    ]);
-  });
-
   it('requires an introduction, skills, and both acknowledgements to become a mentor', () => {
     expect(getMentorshipMentorRegisterErrors(createEmptyMentorshipMentorForm())).toEqual({
       introduction: 'Introduction is required.',
@@ -2071,5 +1993,21 @@ describe('isMentorshipMentorInviteToken', () => {
 
   it.each(['', 'nodot', '.sig', 'payload.', 'a.b.c', 'a.b/c', 'a.b=', `${'a'.repeat(512)}.b`])('rejects %j', (value) => {
     expect(isMentorshipMentorInviteToken(value)).toBe(false);
+  });
+});
+
+describe('buildMentorshipGraduateTaskWarning', () => {
+  it('has no warning when every task is submitted', () => {
+    expect(buildMentorshipGraduateTaskWarning(3, 3)).toBeUndefined();
+    expect(buildMentorshipGraduateTaskWarning(0, 0)).toBeUndefined();
+  });
+
+  it('never goes negative when more are submitted than counted', () => {
+    expect(buildMentorshipGraduateTaskWarning(2, 5)).toBeUndefined();
+  });
+
+  it('counts the outstanding tasks, singular for one', () => {
+    expect(buildMentorshipGraduateTaskWarning(4, 1)).toBe("3 tasks aren't Submitted or Completed.");
+    expect(buildMentorshipGraduateTaskWarning(4, 3)).toBe("1 task isn't Submitted or Completed.");
   });
 });

@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { QUERY_SERVICE_FILTERS_OR_BATCH_SIZE } from '@lfx-one/shared/constants';
 import {
   CommitteeLinkQueryResult,
   GroupsIOArtifactQueryResult,
+  GroupsIOMailingList,
   MeetingAttachment,
   MyCommittee,
   MyDocumentItem,
@@ -93,7 +95,7 @@ export class DocumentService {
     // lookup needed — eliminates the previous two-step Stage 1.5 approach.
     const [committeeLinkItems, groupsioItems, rawMeetingAttachments, rawPastAttachments, rawPastRecordings, rawTranscripts, rawSummaries] = await Promise.all([
       this.getCommitteeDocuments(req, scopedCommittees),
-      this.getGroupsIOArtifacts(req, projectUid ?? scopedCommittees.find((c) => c.project_uid)?.project_uid, committeeUid, scopedCommittees),
+      this.getGroupsIOArtifacts(req, projectUid ?? scopedCommittees.find((c) => c.project_uid)?.project_uid, committeeUid),
       this.fetchRawMeetingAttachments(req, projectUid, committeeUid),
       this.fetchRawPastMeetingAttachments(req, occurrenceIds, projectUid, committeeUid),
       this.fetchRawPastMeetingRecordings(req, occurrenceIds, projectUid, committeeUid),
@@ -205,7 +207,7 @@ export class DocumentService {
 
   // ─── GroupsIO / Mailing List Artifacts ──────────────────────────────────────
 
-  private async getGroupsIOArtifacts(req: Request, projectUid?: string, committeeUid?: string, committees?: MyCommittee[]): Promise<MyDocumentItem[]> {
+  private async getGroupsIOArtifacts(req: Request, projectUid?: string, committeeUid?: string): Promise<MyDocumentItem[]> {
     let tags: string;
     if (committeeUid) {
       tags = `committee_uid:${committeeUid}`;
@@ -233,18 +235,18 @@ export class DocumentService {
 
     logger.info(req, 'get_my_documents', 'Fetched groupsio artifacts', { tags, artifact_count: artifacts.length });
 
-    const committeeMap = new Map(committees?.map((c) => [c.uid, c]) ?? []);
+    const mailingListNameMap = await this.fetchMailingListNames(req, artifacts);
 
     return artifacts.map((a): MyDocumentItem => {
       const url = a.type === 'link' ? a.link_url : (a.download_url ?? a.link_url);
-      const committee = a.committee_uid ? committeeMap.get(a.committee_uid) : undefined;
+      const mailingListName = a.group_id ? mailingListNameMap.get(a.group_id) : undefined;
       return {
         id: `groupsio_artifact:${a.artifact_id}`,
-        name: a.filename || a.link_url || a.artifact_id,
+        name: a.filename || a.link_url || mailingListName || a.artifact_id,
         source: 'mailing_list' as MyDocumentSource,
         foundationName: '',
         foundationUid: a.project_uid || undefined,
-        groupOrMeetingName: committee?.name || '',
+        groupOrMeetingName: mailingListName || '',
         groupOrMeetingUid: a.committee_uid || '',
         date: a.last_posted_at || a.created_at || '',
         url,
@@ -252,6 +254,55 @@ export class DocumentService {
         fileType: a.media_type,
       };
     });
+  }
+
+  /**
+   * Resolves mailing list display names for a set of groupsio artifacts by batching
+   * groupsio_mailing_list lookups using project_uid tags, then matching on the
+   * numeric group_id field. Returns a map of group_id (number) → mailing list title.
+   */
+  private async fetchMailingListNames(req: Request, artifacts: GroupsIOArtifactQueryResult[]): Promise<Map<number, string>> {
+    const projectUids = [...new Set(artifacts.map((a) => a.project_uid).filter(Boolean) as string[])];
+    if (projectUids.length === 0) return new Map();
+
+    logger.debug(req, 'get_my_documents', 'Resolving mailing list names', { project_uid_count: projectUids.length });
+
+    const batches: string[][] = [];
+    for (let i = 0; i < projectUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(projectUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
+
+    const batchResults = await Promise.allSettled(
+      batches.map((batch) =>
+        fetchAllQueryResources<GroupsIOMailingList>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'groupsio_mailing_list',
+              tags: batch.map((uid) => `project_uid:${uid}`),
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        )
+      )
+    );
+
+    const nameMap = new Map<number, string>();
+    for (const [i, result] of batchResults.entries()) {
+      if (result.status === 'fulfilled') {
+        for (const ml of result.value) {
+          if (ml.group_id != null && ml.title) {
+            nameMap.set(ml.group_id, ml.title);
+          }
+        }
+      } else {
+        logger.warning(req, 'get_my_documents', 'Failed to resolve mailing list names for batch, names will be omitted', {
+          batch_index: i,
+          error: result.reason instanceof Error ? result.reason.message : 'Unknown error',
+        });
+      }
+    }
+    return nameMap;
   }
 
   // ─── Foundation Name Resolution ─────────────────────────────────────────────

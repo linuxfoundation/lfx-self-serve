@@ -32,6 +32,13 @@ export const CONTRIBUTIONS_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50] a
 /** Server-accepted page-size ceiling (clamps the `size` query param; not exposed in the table footer). */
 export const CONTRIBUTIONS_MAX_PAGE_SIZE = 100;
 
+/**
+ * Most distinct values accepted per `projects` / `employees` filter.
+ * @description Each value becomes Snowflake bind variables (three per project, one per employee), so the
+ * server rejects a longer list with a 400 before building SQL, and the filter dropdowns stop selection here.
+ */
+export const CONTRIBUTIONS_MAX_FILTER_VALUES = 50;
+
 /** Default empty filter/pagination state — Repositories tab, Commits desc, page 1. */
 export const EMPTY_ORG_CONTRIBUTIONS_QUERY: OrgContributionsQuery = {
   view: 'repositories',

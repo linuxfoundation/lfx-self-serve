@@ -242,13 +242,14 @@ export class MeetingService {
     return request$;
   }
 
+  /**
+   * The password gates private/restricted meetings server-side; it travels in a request header so
+   * it never appears in the request URL (which Datadog RUM records with trackResources).
+   */
   public getPublicMeeting(id: string, password: string | null): Observable<{ meeting: Meeting; project: PublicMeetingProject }> {
-    let params = new HttpParams();
-    if (password) {
-      params = params.set('password', password);
-    }
+    const headers = password ? new HttpHeaders({ [MEETING_PASSWORD_HEADER]: password }) : undefined;
 
-    return this.http.get<{ meeting: Meeting; project: PublicMeetingProject }>(`/public/api/meetings/${id}`, { params }).pipe(
+    return this.http.get<{ meeting: Meeting; project: PublicMeetingProject }>(`/public/api/meetings/${id}`, { headers }).pipe(
       catchError((error) => {
         console.error(`Failed to load public meeting ${id}:`, error);
         return throwError(() => error);
@@ -289,13 +290,10 @@ export class MeetingService {
     password: string | null,
     body?: { email?: string; name?: string; organization?: string }
   ): Observable<MeetingJoinURL> {
-    let params = new HttpParams();
+    // Header, not query string — see getPublicMeeting.
+    const headers = password ? new HttpHeaders({ [MEETING_PASSWORD_HEADER]: password }) : undefined;
 
-    if (password) {
-      params = params.set('password', password);
-    }
-
-    return this.http.post<MeetingJoinURL>(`/public/api/meetings/${id}/join-url`, body, { params }).pipe(
+    return this.http.post<MeetingJoinURL>(`/public/api/meetings/${id}/join-url`, body, { headers }).pipe(
       catchError((error) => {
         console.error(`Failed to load public meeting join url ${id}:`, error);
         return throwError(() => error);
@@ -469,10 +467,18 @@ export class MeetingService {
 
   // Callers decide how to handle failures — the join page must distinguish a failed refetch from a
   // genuinely empty roster (see reconcileOptimisticPad), so this does not swallow errors to `[]`.
-  public getMyMeetingRegistrants(meetingUid: string, includeRsvp: boolean = false, occurrenceId?: string): Observable<MeetingRegistrant[]> {
+  public getMyMeetingRegistrants(
+    meetingUid: string,
+    includeRsvp: boolean = false,
+    occurrenceId?: string,
+    preview: boolean = false
+  ): Observable<MeetingRegistrant[]> {
     let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
     if (occurrenceId) {
       params = params.set('occurrence_id', occurrenceId);
+    }
+    if (preview) {
+      params = params.set('preview', 'true');
     }
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/my-meeting-registrants`, { params });
   }

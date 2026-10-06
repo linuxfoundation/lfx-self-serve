@@ -189,6 +189,17 @@ describe('MeetingsDashboardComponent', () => {
       expect(component.showDeclined()).toBe(false);
     });
 
+    it('keeps a declined meeting the viewer organizes, and counts it under Organized by me', () => {
+      const organizedDeclined = { ...declinedAll, id: 'organized-declined', created_by: { username: 'viewer', name: 'Viewer' } };
+      getUserMeetings.mockReturnValue(of([organizedDeclined, declinedAll, pending] as unknown as Meeting[]));
+      const component = createComponent();
+      flush();
+
+      expect(ids(component)).toEqual(['organized-declined', 'pending']);
+      expect(component['declinedCount']()).toBe(1);
+      expect(component['organizerCount']()).toBe(1);
+    });
+
     it('counts dates in the stats window and RSVPs still needed, excluding declined-for-all meetings', () => {
       const component = createComponent();
       flush();

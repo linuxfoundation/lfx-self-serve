@@ -665,7 +665,7 @@ export class AnalyticsController {
 ### Best Practices for Callers
 
 1. **Lazy Initialization**: Create `SnowflakeService` instances on-demand to avoid startup overhead
-2. **Parameterized Queries**: Always use `?` placeholders with bind parameters - never concatenate user input. `LIMIT`/`OFFSET` are the one exception — Snowflake cannot bind them — so interpolate only values bounded by `parseOffsetPagination` (HTTP layer) or `clampInteger` (service layer), capped at `MAX_SNOWFLAKE_PAGINATION_PAGE` (see Common Issues §5)
+2. **Parameterized Queries**: Always use `?` placeholders with bind parameters - never concatenate user input. `LIMIT`/`OFFSET` are the one exception — Snowflake cannot bind them — so interpolate only values bounded by `parseOffsetPagination` (HTTP layer) or `clampInteger` (service layer), capped at `MAX_SNOWFLAKE_PAGINATION_PAGE` (see Common Issues §5). Cap caller-supplied lists that expand into `IN (?, …)` at the HTTP layer too (400 above a small fixed count, e.g. `CONTRIBUTIONS_MAX_FILTER_VALUES`), since bind count grows with list length (see Common Issues §6)
 3. **Date Handling**: Pass `Date` objects directly as bind parameters - they're automatically converted to ISO strings
 4. **Type Safety**: Define TypeScript interfaces for query result rows
 5. **Error Handling**: Catch and handle Snowflake-specific errors appropriately. Errors from `SnowflakeService` already carry the generic `SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE` as `clientMessage`; replace it with a more specific one if needed, never with the SDK text or `message`
@@ -907,6 +907,19 @@ Every `SNOWFLAKE_QUERY_ERROR` / `SNOWFLAKE_CONNECTION_ERROR` that `SnowflakeServ
 `SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE` as its `clientMessage` (a caller may replace it with a more specific one); the
 SDK text stays in `message` (which callers such as `isMissingObjectError` match on) and in the logs, never in the
 response body.
+
+#### 6. Too Many Bind Variables
+
+```text
+Error: Snowflake statement has N bind variables (max 10000)   [400 SNOWFLAKE_TOO_MANY_BINDS]
+Cause: A caller-supplied list expanded into more than SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES `?` placeholders
+Solution:
+  1. Cap the list at the HTTP layer with a 400 (see Best Practices for Callers §2)
+```
+
+`SnowflakeService.execute` rejects such a statement before `checkCircuit`, so it never reaches Snowflake, never takes
+the HALF_OPEN probe slot, and never counts toward the circuit breaker — an oversized request cannot open the pod-wide
+breaker for every other Snowflake-backed route.
 
 ## 🎯 Best Practices
 

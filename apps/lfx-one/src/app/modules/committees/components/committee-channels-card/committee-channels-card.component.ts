@@ -42,8 +42,17 @@ export class CommitteeChannelsCardComponent {
   public repoPlatformLabel: Signal<string> = computed(() => getRepoPlatformLabel(this.committee()?.website));
   public repoPlatformIcon: Signal<string> = computed(() => getRepoPlatformIcon(this.committee()?.website));
 
-  public extraMailingLists: Signal<GroupsIOMailingList[]> = computed(() => this.associatedMailingLists().slice(1));
-  public extraMailingListCount: Signal<number> = computed(() => this.associatedMailingLists().length - 1);
+  /**
+   * Mailing lists visible to the current viewer.
+   * Visitors only see public lists — private lists are silently filtered out so
+   * a visitor on a private-only group sees no mailing list rows at all.
+   */
+  public visibleMailingLists: Signal<GroupsIOMailingList[]> = computed(() =>
+    this.isVisitor() ? this.associatedMailingLists().filter((ml) => ml.public) : this.associatedMailingLists()
+  );
+
+  public extraMailingLists: Signal<GroupsIOMailingList[]> = computed(() => this.visibleMailingLists().slice(1));
+  public extraMailingListCount: Signal<number> = computed(() => this.visibleMailingLists().length - 1);
 
   public onDocumentClick(): void {
     if (this.mlExpanded()) {

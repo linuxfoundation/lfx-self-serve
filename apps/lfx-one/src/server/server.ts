@@ -6,7 +6,7 @@ import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
 import { GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
 import { AuthContext, RuntimeConfig, ServerRequestContext, User } from '@lfx-one/shared/interfaces';
-import { redactInviteToken } from '@lfx-one/shared/utils/auth-fragment.utils';
+import { redactLoggedUrl } from '@lfx-one/shared/utils/auth-fragment.utils';
 import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
 import { randomBytes } from 'node:crypto';
@@ -23,6 +23,7 @@ import { resolvePublishableGwSupabaseKey } from './helpers/supabase-key.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
+import { clearIntercomCookies } from './middleware/clear-intercom-cookies.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middleware/rate-limit.middleware';
 import analyticsRouter from './routes/analytics.route';
@@ -344,6 +345,9 @@ if (sessionStoreEnabled) {
   });
 }
 
+// Also registered before auth(authConfig), for the same /logout reason as above.
+app.use('/logout', clearIntercomCookies(authConfig.baseURL as string));
+
 app.use(auth(authConfig));
 
 // Public pages are optional-auth; silent login picks up any existing SSO session.
@@ -603,7 +607,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       logger.error(req, 'ssr_render', ssrStartTime, error, {
         error_message: error.message,
         code: error.code,
-        url: redactInviteToken(req.url, 'http://localhost'),
+        url: redactLoggedUrl(req.url, 'http://localhost'),
         method: req.method,
         user_agent: req.get('User-Agent'),
       });

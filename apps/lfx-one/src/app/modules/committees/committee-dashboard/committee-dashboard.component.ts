@@ -9,13 +9,20 @@ import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
-import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL, GROUPS_VIEW_MODE_STORAGE_KEY, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
+import {
+  BEHAVIORAL_CLASS_CONFIG,
+  COMMITTEE_LABEL,
+  GROUPS_VIEW_MODE_STORAGE_KEY,
+  JOIN_MODE_LABELS,
+  WG_ENGAGEMENT_METRICS_FLAG,
+} from '@lfx-one/shared/constants';
 import {
   Committee,
   CommitteeFoundationGroup,
   GroupBehavioralClass,
   GroupsEngagementStats,
   GroupsViewMode,
+  JoinMode,
   MyCommittee,
   ProjectContext,
   StatCardGridColumns,
@@ -50,6 +57,7 @@ import {
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { CommitteeFilterBarComponent } from '../components/committee-filter-bar/committee-filter-bar.component';
 import { CommitteeInvitationsComponent } from '../components/committee-invitations/committee-invitations.component';
+import { CommitteePendingApplicationsComponent } from '../components/committee-pending-applications/committee-pending-applications.component';
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
 import { MyGroupsCardGridComponent } from '../components/my-groups-card-grid/my-groups-card-grid.component';
 
@@ -60,6 +68,7 @@ import { MyGroupsCardGridComponent } from '../components/my-groups-card-grid/my-
     CardComponent,
     CommitteeFilterBarComponent,
     CommitteeInvitationsComponent,
+    CommitteePendingApplicationsComponent,
     CommitteeTableComponent,
     MyGroupsCardGridComponent,
     SkeletonModule,
@@ -109,8 +118,10 @@ export class CommitteeDashboardComponent {
   public filteredMyCommittees: Signal<MyCommittee[]>;
   public myCommitteeUids: Signal<Set<string>>;
   public votingStatusOptions: Signal<{ label: string; value: string | null }[]>;
+  public joinModeOptions: Signal<{ label: string; value: string | null }[]>;
   public filteredCommittees: Signal<Committee[]>;
   public votingStatusFilter: Signal<string | null>;
+  public joinModeFilter: Signal<string | null>;
 
   // Foundation and project filter options (separate dropdowns)
   public foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initializeFoundationOptions();
@@ -178,9 +189,11 @@ export class CommitteeDashboardComponent {
     this.searchForm = this.initializeSearchForm();
     this.searchTerm = this.initializeSearchTerm();
     this.votingStatusFilter = this.initializeVotingStatusFilter();
+    this.joinModeFilter = this.initializeJoinModeFilter();
 
     // Initialize filters
     this.votingStatusOptions = this.initializeVotingStatusOptions();
+    this.joinModeOptions = this.initializeJoinModeOptions();
     this.filteredCommittees = this.initializeFilteredCommittees();
     this.filteredMyCommittees = this.initializeFilteredMyCommittees();
     this.foundationGroups = this.initializeFoundationGroups();
@@ -317,7 +330,7 @@ export class CommitteeDashboardComponent {
     // any row that still resolves no tier.
     this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], {
       queryParams: committee.project_slug ? { project: committee.project_slug } : undefined,
-      state: { backLabel: this.isMeLens() ? 'My Groups' : 'Groups' },
+      state: { backLabel: this.isMeLens() ? 'My Groups' : 'Groups', fromMeLens: this.isMeLens() },
     });
   }
 
@@ -333,7 +346,7 @@ export class CommitteeDashboardComponent {
    * the search term, voting status, foundation/project filters, and the behavioral-class chip.
    */
   public resetAllFilters(): void {
-    this.searchForm.patchValue({ search: '', votingStatus: null, foundationFilter: null, projectFilter: null });
+    this.searchForm.patchValue({ search: '', votingStatus: null, joinModeFilter: null, foundationFilter: null, projectFilter: null });
     this.foundationFilter.set(null);
     this.projectFilter.set(null);
     this.behavioralClassFilter.set(null);
@@ -365,6 +378,7 @@ export class CommitteeDashboardComponent {
     this.behavioralClassFilter.set(null);
     this.searchForm?.get('foundationFilter')?.setValue(null, { emitEvent: false });
     this.searchForm?.get('projectFilter')?.setValue(null, { emitEvent: false });
+    this.searchForm?.get('joinModeFilter')?.setValue(null);
   }
 
   private initializeMyCommittees(): Signal<MyCommittee[]> {
@@ -466,6 +480,7 @@ export class CommitteeDashboardComponent {
     return new FormGroup({
       search: new FormControl<string>(''),
       votingStatus: new FormControl<string | null>(null),
+      joinModeFilter: new FormControl<string | null>(null),
       foundationFilter: new FormControl<string | null>(null),
       projectFilter: new FormControl<string | null>(null),
     });
@@ -477,6 +492,10 @@ export class CommitteeDashboardComponent {
 
   private initializeVotingStatusFilter(): Signal<string | null> {
     return toSignal(this.searchForm.get('votingStatus')!.valueChanges.pipe(startWith(null), distinctUntilChanged()), { initialValue: null });
+  }
+
+  private initializeJoinModeFilter(): Signal<string | null> {
+    return toSignal(this.searchForm.get('joinModeFilter')!.valueChanges.pipe(startWith(null), distinctUntilChanged()), { initialValue: null });
   }
 
   private initializeCommittees(): Signal<Committee[]> {
@@ -519,6 +538,27 @@ export class CommitteeDashboardComponent {
         { label: `Voting Enabled (${votingEnabledCount})`, value: 'enabled' },
         { label: `Voting Disabled (${votingDisabledCount})`, value: 'disabled' },
       ];
+    });
+  }
+
+  private initializeJoinModeOptions(): Signal<{ label: string; value: string | null }[]> {
+    return computed(() => {
+      const data = this.committees();
+      const counts = new Map<JoinMode, number>();
+      for (const c of data) {
+        if (c.join_mode) {
+          counts.set(c.join_mode, (counts.get(c.join_mode) ?? 0) + 1);
+        }
+      }
+      // Preserve a consistent display order
+      const order: JoinMode[] = ['open', 'application', 'invite_only', 'closed'];
+      const opts: { label: string; value: string | null }[] = [{ label: 'All Join Modes', value: null }];
+      for (const mode of order) {
+        if (counts.has(mode)) {
+          opts.push({ label: `${JOIN_MODE_LABELS[mode]} (${counts.get(mode)})`, value: mode });
+        }
+      }
+      return opts;
     });
   }
 
@@ -610,6 +650,11 @@ export class CommitteeDashboardComponent {
         filtered = filtered.filter((committee) => committee.enable_voting === true);
       } else if (votingStatus === 'disabled') {
         filtered = filtered.filter((committee) => committee.enable_voting === false);
+      }
+
+      const joinMode = this.joinModeFilter();
+      if (joinMode) {
+        filtered = filtered.filter((committee) => committee.join_mode === joinMode);
       }
 
       return filtered;

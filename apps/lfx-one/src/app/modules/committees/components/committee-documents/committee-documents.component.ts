@@ -13,7 +13,7 @@ import { MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
 import { Committee, CommitteeDocument, MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, startWith, switchMap, take } from 'rxjs';
+import { combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, merge, startWith, Subject, switchMap, take } from 'rxjs';
 
 import { DocumentFormComponent } from '@components/document-form/document-form.component';
 
@@ -41,6 +41,11 @@ export class CommitteeDocumentsComponent {
     search: new FormControl<string>(''),
     source: new FormControl<MyDocumentSource | null>(null),
   });
+
+  // === Subjects ===
+  /** Emits immediately when the search box is programmatically cleared (e.g. on folder open),
+   *  bypassing the 300 ms debounce so `searchQuery()` resets in the same tick. */
+  private readonly clearSearch$ = new Subject<string>();
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
@@ -95,6 +100,10 @@ export class CommitteeDocumentsComponent {
   public onFolderOpen(doc: MyDocumentItem): void {
     const folderUid = doc.id.startsWith('committee_folder:') ? doc.id.slice('committee_folder:'.length) : null;
     if (folderUid) {
+      // Update the form control visually without going through the debounce pipeline,
+      // then immediately emit '' via clearSearch$ so searchQuery() resets in the same tick.
+      this.filterForm.controls.search.setValue('', { emitEvent: false });
+      this.clearSearch$.next('');
       this.currentFolderUid.set(folderUid);
     }
   }
@@ -157,12 +166,13 @@ export class CommitteeDocumentsComponent {
   // === Private Initializers ===
   private initSearchQuery(): Signal<string> {
     return toSignal(
-      this.filterForm.controls.search.valueChanges.pipe(
-        debounceTime(300),
-        distinctUntilChanged(),
-        map((v) => v ?? ''),
-        startWith('')
-      ),
+      merge(
+        this.filterForm.controls.search.valueChanges.pipe(
+          debounceTime(300),
+          map((v) => v ?? '')
+        ),
+        this.clearSearch$
+      ).pipe(distinctUntilChanged(), startWith('')),
       { initialValue: '' }
     );
   }
@@ -233,9 +243,34 @@ export class CommitteeDocumentsComponent {
 
   private initFilteredDocuments(): Signal<MyDocumentItem[]> {
     return computed(() => {
-      const docs = this.documents();
       const query = this.searchQuery().toLowerCase().trim();
       const source = this.sourceFilter();
+
+      // When a search query is active at root (no folder drilled into), flatten all
+      // documents so users can find items without knowing which folder they live in.
+      // Inside a folder the folder-scoped view is used, so the empty-state message
+      // and breadcrumb context stay accurate.
+      let docs: MyDocumentItem[];
+      if (query && !this.currentFolderUid()) {
+        const committee = this.committee();
+        const committeeUid = committee?.uid;
+        const groupName = committee?.name ?? '';
+        const allDocs = this.committeeDocuments();
+        const folderUids = new Set(allDocs.filter((d) => d.type === 'folder').map((f) => f.uid));
+        const childCountByFolder = new Map<string, number>();
+        for (const item of allDocs) {
+          if (item.type !== 'folder' && item.parent_uid && folderUids.has(item.parent_uid)) {
+            childCountByFolder.set(item.parent_uid, (childCountByFolder.get(item.parent_uid) ?? 0) + 1);
+          }
+        }
+        docs = allDocs.map((d) => ({
+          ...this.toDisplayItem(d, committeeUid, groupName, false),
+          isFolder: d.type === 'folder',
+          ...(d.type === 'folder' ? { childCount: childCountByFolder.get(d.uid) ?? 0 } : {}),
+        }));
+      } else {
+        docs = this.documents();
+      }
       return docs.filter((doc) => {
         if (query && !doc.name.toLowerCase().includes(query) && !(doc.groupOrMeetingName ?? '').toLowerCase().includes(query)) {
           return false;

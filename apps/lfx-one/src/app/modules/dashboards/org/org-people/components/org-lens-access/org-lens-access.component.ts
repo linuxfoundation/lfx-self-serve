@@ -78,6 +78,9 @@ export class OrgLensAccessComponent {
   protected readonly roleBadgeTooltip = ORG_ACCESS_ROLE_BADGE_TOOLTIP;
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4];
   protected readonly summarySkeletonCards: readonly number[] = [0, 1, 2];
+  // Routes the remove confirmation to this tab's own text-only dialog: ConfirmationService is root-provided,
+  // so a keyless confirm would also reach any other keyless <p-confirmdialog>, which renders `message` as HTML.
+  protected readonly removeConfirmKey = 'org-lens-access-remove';
 
   // Toolbar + pagination state.
   protected readonly searchTerm = signal<string>('');
@@ -273,6 +276,7 @@ export class OrgLensAccessComponent {
   protected confirmRemove(user: OrgAccessUser): void {
     if (!this.canManage() || this.isLastAdmin(user)) return;
     this.confirmationService.confirm({
+      key: this.removeConfirmKey,
       header: 'Remove access',
       message: `Remove Org Lens access for ${user.name}? This revokes their access to this organization.`,
       acceptLabel: 'Remove',

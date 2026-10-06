@@ -39,6 +39,7 @@ import {
   formatClaSignedOn,
   gerritSignUrl,
   heldClaKindsForIdentity,
+  isHttpsUrl,
   isMyClasEmpty,
   resolveGerritContractType,
   signedAsLine,
@@ -566,6 +567,11 @@ export class ProfileClasComponent {
           // and it is the reason the response carries the account at all.
           if (prepared.githubId !== account.githubId) {
             this.reportRecordedMismatch();
+            return;
+          }
+
+          if (!isHttpsUrl(prepared.signUrl)) {
+            this.reportPrepareFailure(undefined);
             return;
           }
 

@@ -1,17 +1,23 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
-import { MENTORSHIP_NOTE_DIALOG_HEADER } from '@lfx-one/shared/constants';
-import { MentorshipNoteRequest, MentorshipProgramDetail, MentorshipProgramDetailTab } from '@lfx-one/shared/interfaces';
+import {
+  MENTORSHIP_ADMIN_PROGRAM_LOAD_ERROR_MESSAGE,
+  MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_MESSAGE,
+  MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_TITLE,
+  MENTORSHIP_NOTE_DIALOG_HEADER,
+} from '@lfx-one/shared/constants';
+import { MentorshipAdminProgramPage, MentorshipNoteRequest, MentorshipProgramDetailTab } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { filter, map, switchMap, take, tap } from 'rxjs';
+import { catchError, map, of, switchMap, take, tap } from 'rxjs';
 
 import { CurrentMenteesTabComponent } from './components/current-mentees-tab/current-mentees-tab.component';
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
@@ -21,11 +27,14 @@ import { ProgramDetailHeaderComponent } from './components/program-detail-header
 import { TermsTabComponent } from './components/terms-tab/terms-tab.component';
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 
+/** Why the page could not be shown: the caller may not manage the program, it does not exist, or the read failed. */
+type ProgramPageError = 'no-access' | 'not-found' | 'failed';
+
 /**
- * Admin program-detail page. Loads a program by id (default) or slug and hosts
- * the four underline tabs (current mentees, past mentees, mentors, terms). The two
- * mentee tabs split the program's applications by their term's status: an open
- * term's rows are current, a closed term's are past.
+ * Admin program-detail page. Loads a program by id and hosts the four underline tabs (current mentees, past
+ * mentees, mentors, terms). The header, the four counts and the term options come from one BFF read; Current
+ * Mentees then reads its own pages. A failed read shows an inline error with Retry, or a no-access or not-found
+ * state for a 403 or a 404. Past Mentees, Mentors and Terms each read their own pages.
  *
  * Reviewer notes are owned here rather than in the tabs: the tab panel is an
  * `@switch`, so a tab component is destroyed the moment the admin looks at another
@@ -55,6 +64,11 @@ export class ProgramDetailComponent {
 
   protected readonly isLoading = signal(true);
   protected readonly activeTab = signal<MentorshipProgramDetailTab>('current-mentees');
+  protected readonly page = signal<MentorshipAdminProgramPage | null>(null);
+  protected readonly pageError = signal<ProgramPageError | null>(null);
+  protected readonly noAccessTitle = MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_TITLE;
+  protected readonly noAccessMessage = MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_MESSAGE;
+  protected readonly loadErrorMessage = MENTORSHIP_ADMIN_PROGRAM_LOAD_ERROR_MESSAGE;
 
   /**
    * Notes edited this session, keyed by person id. Local until a write endpoint
@@ -62,13 +76,19 @@ export class ProgramDetailComponent {
    */
   protected readonly noteDrafts = signal<Record<string, string>>({});
 
+  private readonly reloadCount = signal(0);
+  /** Bumped by every page read and silent refresh; only the latest one may write the page. */
+  private pageRequest = 0;
+
   protected readonly programId = toSignal(this.route.paramMap.pipe(map((params) => params.get('programId') ?? '')), { initialValue: '' });
-  protected readonly detail: Signal<MentorshipProgramDetail | null> = this.initDetail();
-  protected readonly terms = computed(() => this.detail()?.terms ?? []);
-  protected readonly currentMentees = computed(() => this.detail()?.currentMentees ?? []);
-  protected readonly pastMentees = computed(() => this.detail()?.pastMentees ?? []);
-  protected readonly mentors = computed(() => this.detail()?.mentors ?? []);
-  protected readonly tabCounts = computed(() => this.detail()?.tabCounts ?? { currentMentees: 0, pastMentees: 0, mentors: 0, terms: 0 });
+  protected readonly terms = computed(() => this.page()?.terms ?? []);
+  protected readonly tabCounts = computed(() => this.page()?.tabCounts ?? { currentMentees: null, pastMentees: null, mentors: null, terms: null });
+  /** Handed to Current Mentees, which may call it after it has been destroyed; once this page is gone it reads nothing. */
+  protected readonly countsRefresh: () => void = this.refreshCounts.bind(this);
+
+  public constructor() {
+    this.initPageReads();
+  }
 
   protected onTabChange(tab: MentorshipProgramDetailTab): void {
     this.activeTab.set(tab);
@@ -76,6 +96,31 @@ export class ProgramDetailComponent {
 
   protected onEditProgram(): void {
     this.comingSoon.notify('Edit program');
+  }
+
+  /** Reads the page again, keeping the tab the admin is on. */
+  protected onRetry(): void {
+    this.reloadCount.update((count) => count + 1);
+  }
+
+  /**
+   * Reads the header, counts and terms again without the loading state, so the open tab keeps its page, filters and
+   * toasts. A failed read keeps the numbers on screen; the next decision or Retry reads them again. An answer is
+   * dropped once a later refresh, a Retry or a route change to another program has started its own read.
+   */
+  protected refreshCounts(): void {
+    const programId = this.programId();
+    if (!programId) return;
+    const request = ++this.pageRequest;
+    this.mentorshipAdminService
+      .getProgram(programId)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (page) => {
+          if (request === this.pageRequest && programId === this.programId()) this.page.set(page);
+        },
+        error: () => undefined,
+      });
   }
 
   protected onNoteRequested(request: MentorshipNoteRequest): void {
@@ -88,7 +133,7 @@ export class ProgramDetailComponent {
       modal: true,
       closable: true,
       dismissableMask: true,
-      data: { personName: request.personName, note: this.noteFor(request.personId) },
+      data: { personName: request.personName, note: this.noteFor(request) },
     });
     if (!dialogRef) return;
 
@@ -102,24 +147,41 @@ export class ProgramDetailComponent {
     });
   }
 
-  private initDetail(): Signal<MentorshipProgramDetail | null> {
-    return toSignal(
-      toObservable(this.programId).pipe(
-        filter((programId) => !!programId),
-        tap(() => this.isLoading.set(true)),
-        switchMap((programId) => this.mentorshipAdminService.getProgram(programId).pipe(tap(() => this.isLoading.set(false))))
-      ),
-      { initialValue: null }
-    );
+  /** Reads the page for the route's program, again on a retry; a read still in flight is dropped. */
+  private initPageReads(): void {
+    const query = computed(() => ({ programId: this.programId(), reload: this.reloadCount() }));
+
+    toObservable(query)
+      .pipe(
+        tap(() => {
+          this.pageRequest++;
+          this.isLoading.set(true);
+          this.pageError.set(null);
+        }),
+        switchMap(({ programId }) => {
+          if (!programId) return of({ page: null, error: 'not-found' as ProgramPageError });
+          return this.mentorshipAdminService.getProgram(programId).pipe(
+            map((page) => ({ page, error: null })),
+            catchError((error: HttpErrorResponse) => of({ page: null, error: this.errorKind(error) }))
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ page, error }) => {
+        this.page.set(page);
+        this.pageError.set(error);
+        this.isLoading.set(false);
+      });
   }
 
-  /** The draft if this session edited one, otherwise whatever the row arrived with. */
-  private noteFor(personId: string): string {
-    const draft = this.noteDrafts()[personId];
-    if (draft !== undefined) return draft;
+  private errorKind(error: HttpErrorResponse): ProgramPageError {
+    if (error.status === 403) return 'no-access';
+    if (error.status === 404) return 'not-found';
+    return 'failed';
+  }
 
-    // Only the Current Mentees tab offers a note, so only its rows can be asked for one.
-    const person = this.currentMentees().find((candidate) => candidate.id === personId);
-    return person?.note ?? '';
+  /** The draft if this session edited one, otherwise the note the row arrived with. */
+  private noteFor(request: MentorshipNoteRequest): string {
+    return this.noteDrafts()[request.personId] ?? request.note ?? '';
   }
 }

@@ -1,19 +1,28 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
+import { MENTORSHIP_MENTEE_STATUS_LABELS, MENTORSHIP_MENTEE_STATUSES } from '@lfx-one/shared/constants';
 import {
+  MentorshipAdminApplicationStatusUpdate,
+  MentorshipAdminMenteesQuery,
+  MentorshipAdminDeclinePendingResponse,
+  MentorshipAdminMenteesResponse,
+  MentorshipAdminTermOption,
+  MentorshipApplicantTask,
   MentorshipNoteRequest,
   MentorshipProgramApplicant,
-  MentorshipProgramTermRow,
   MentorshipTaskDialogAssignee,
   MentorshipTaskFormValue,
 } from '@lfx-one/shared/interfaces';
-import { MessageService, ToastMessageOptions } from 'primeng/api';
-import { Observable, of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MentorshipAdminService } from '@services/mentorship-admin.service';
+import { ConfirmationService, MessageService, ToastMessageOptions } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
+import { Observable, of, Subject, throwError } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 import { CurrentMenteesTabComponent } from './current-mentees-tab.component';
@@ -30,65 +39,35 @@ describe('CurrentMenteesTabComponent', () => {
     updatedOn: '2026-07-02',
     tasksSubmitted: 2,
     tasksTotal: 5,
-    tasks: [
-      {
-        id: 'tsk_1',
-        name: 'Resume',
-        description: 'Upload the most recent version of your resume.',
-        status: 'submitted',
-        prerequisite: false,
-        createdOn: '2026-05-14',
-        updatedOn: '2026-09-01',
-        hasSubmission: true,
-      },
-      {
-        id: 'tsk_2',
-        name: 'Cover Letter',
-        description: 'A letter to the program covering the following topics:',
-        status: 'pending',
-        prerequisite: true,
-        createdOn: '2026-05-14',
-        updatedOn: '2026-06-20',
-      },
-    ],
     ...overrides,
   });
 
-  const term = (name: string, status: MentorshipProgramTermRow['status']): MentorshipProgramTermRow => ({
-    id: `trm_${name}`,
-    name,
-    status,
-    pending: 0,
-    declined: 0,
-    accepted: 0,
-    graduated: 0,
-    startDate: '2026-09-01',
-    endDate: '2026-12-01',
-    applicationStartDate: '2026-06-01',
-    applicationEndDate: '2026-08-01',
-  });
+  const tasks = (): MentorshipApplicantTask[] => [
+    {
+      id: 'tsk_1',
+      name: 'Resume',
+      description: 'Upload the most recent version of your resume.',
+      status: 'submitted',
+      prerequisite: false,
+      createdOn: '2026-05-14',
+      updatedOn: '2026-09-01',
+      hasSubmission: true,
+    },
+    {
+      id: 'tsk_2',
+      name: 'Cover Letter',
+      description: 'A letter to the program covering the following topics:',
+      status: 'pending',
+      prerequisite: true,
+      createdOn: '2026-05-14',
+      updatedOn: '2026-06-20',
+    },
+  ];
 
-  let fixture: ComponentFixture<CurrentMenteesTabComponent>;
-  let openCreate: ReturnType<typeof vi.fn>;
+  const term = (name: string, status: MentorshipAdminTermOption['status']): MentorshipAdminTermOption => ({ id: `trm_${name}`, name, status });
 
-  beforeEach(() => {
-    openCreate = vi.fn().mockReturnValue(of(undefined) satisfies Observable<MentorshipTaskFormValue | undefined>);
-
-    TestBed.resetTestingModule();
-    TestBed.configureTestingModule({
-      imports: [CurrentMenteesTabComponent],
-      providers: [
-        provideNoopAnimations(),
-        provideRouter([]),
-        MessageService,
-        // Stub the dialog service so the spec never touches PrimeNG's DialogService,
-        // and so we can assert on the exact assignee payload the tab hands off.
-        { provide: MentorshipTaskDialogService, useValue: { openCreate, openEdit: vi.fn().mockReturnValue(of(undefined)) } },
-      ],
-    });
-
-    fixture = TestBed.createComponent(CurrentMenteesTabComponent);
-    fixture.componentRef.setInput('mentees', [
+  const firstPage = (): MentorshipAdminMenteesResponse => ({
+    data: [
       mentee({
         otherApplications: [{ programId: 'mp_apicurio_winter26', programName: 'Apicurio Registry', status: 'pending', tasksSubmitted: 1, tasksTotal: 3 }],
       }),
@@ -97,9 +76,63 @@ describe('CurrentMenteesTabComponent', () => {
       mentee({ id: 'app_3', name: 'Samir Okafor', status: 'declined', termName: 'Winter 2027' }),
       mentee({ id: 'app_4', name: 'Alex Rivera', status: 'accepted' }),
       mentee({ id: 'app_5', name: 'Aiko Tanaka', status: 'graduated', tasksSubmitted: undefined, tasksTotal: undefined }),
-    ]);
-    fixture.componentRef.setInput('terms', [term('Fall 2026', 'open'), term('Winter 2027', 'open'), term('Spring 2026', 'closed')]);
+    ],
+    total: 25,
+  });
+
+  let fixture: ComponentFixture<CurrentMenteesTabComponent>;
+  let openCreate: ReturnType<typeof vi.fn>;
+  let getProgramMentees: ReturnType<typeof vi.fn<(programId: string, query: MentorshipAdminMenteesQuery) => Observable<MentorshipAdminMenteesResponse>>>;
+  let getApplicationTasks: ReturnType<typeof vi.fn<(applicationId: string) => Observable<MentorshipApplicantTask[]>>>;
+  let updateApplicationStatus: ReturnType<typeof vi.fn<(applicationId: string, body: MentorshipAdminApplicationStatusUpdate) => Observable<void>>>;
+  let withdrawApplication: ReturnType<typeof vi.fn<(applicationId: string) => Observable<void>>>;
+  let declinePendingForTerm: ReturnType<typeof vi.fn<(programId: string, termId: string) => Observable<MentorshipAdminDeclinePendingResponse>>>;
+  /** What the stubbed dialog service closes with: an attendance type for Accept, a term for Decline by Term. */
+  let dialogResult: unknown;
+  let dialogOpen: ReturnType<typeof vi.fn>;
+
+  /** Runs the effects that start a read, then renders what it wrote. */
+  const settle = (): void => {
     fixture.detectChanges();
+    fixture.detectChanges();
+  };
+
+  beforeEach(() => {
+    openCreate = vi.fn().mockReturnValue(of(undefined) satisfies Observable<MentorshipTaskFormValue | undefined>);
+    getProgramMentees = vi.fn().mockReturnValue(of(firstPage()));
+    getApplicationTasks = vi.fn().mockReturnValue(of(tasks()));
+    updateApplicationStatus = vi.fn().mockReturnValue(of(undefined));
+    withdrawApplication = vi.fn().mockReturnValue(of(undefined));
+    declinePendingForTerm = vi.fn().mockReturnValue(of({ declinedCount: 4 }));
+    dialogResult = undefined;
+    dialogOpen = vi.fn().mockImplementation(() => ({ onClose: of(dialogResult) }));
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [CurrentMenteesTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        MessageService,
+        {
+          provide: MentorshipAdminService,
+          useValue: { getProgramMentees, getApplicationTasks, updateApplicationStatus, withdrawApplication, declinePendingForTerm },
+        },
+        { provide: DialogService, useValue: { open: dialogOpen } },
+        // Stub the dialog service so the spec never touches PrimeNG's DialogService,
+        // and so we can assert on the exact assignee payload the tab hands off.
+        { provide: MentorshipTaskDialogService, useValue: { openCreate, openEdit: vi.fn().mockReturnValue(of(undefined)) } },
+      ],
+    });
+
+    fixture = TestBed.createComponent(CurrentMenteesTabComponent);
+    fixture.componentRef.setInput('programId', 'prog_1');
+    fixture.componentRef.setInput('terms', [term('Fall 2026', 'open'), term('Winter 2027', 'open'), term('Spring 2026', 'closed')]);
+    settle();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
@@ -107,6 +140,11 @@ describe('CurrentMenteesTabComponent', () => {
     (element().querySelector(`[data-testid="mentorship-current-mentee-row-${id}"]`)?.textContent ?? '').replace(/\s+/g, ' ');
   const rowFor = (id: string) => fixture.componentInstance['rows']().find((row) => row.id === id);
   const labelsFor = (id: string): string[] => rowFor(id)?.actions.map((action) => action.label) ?? [];
+  const lastQuery = (): MentorshipAdminMenteesQuery => getProgramMentees.mock.calls[getProgramMentees.mock.calls.length - 1][1];
+  const clickViewTasks = (id: string): void => {
+    element().querySelector<HTMLElement>(`[data-testid="mentorship-current-mentee-view-tasks-${id}"]`)?.querySelector<HTMLButtonElement>('button')?.click();
+    settle();
+  };
 
   it('renders the columns from the design', () => {
     const headers = Array.from(element().querySelectorAll('thead th')).map((th) => (th.textContent ?? '').trim());
@@ -116,6 +154,20 @@ describe('CurrentMenteesTabComponent', () => {
 
   it('names the real <table> element via aria-label', () => {
     expect(element().querySelector('table')?.getAttribute('aria-label')).toBe('Current Mentees');
+  });
+
+  it('reads the first page of the open-term applications for the program', () => {
+    expect(getProgramMentees).toHaveBeenCalledTimes(1);
+    expect(getProgramMentees).toHaveBeenCalledWith('prog_1', {
+      type: 'current',
+      search: undefined,
+      status: undefined,
+      termId: undefined,
+      offset: 0,
+      limit: 10,
+    });
+    expect(fixture.componentInstance['rows']().length).toBe(5);
+    expect(fixture.componentInstance['total']()).toBe(25);
   });
 
   it('splits the pending status into Applied and Tasks Completed', () => {
@@ -136,17 +188,23 @@ describe('CurrentMenteesTabComponent', () => {
   });
 
   it('lists only still-active other applications, dropping the rejections', () => {
-    fixture.componentRef.setInput('mentees', [
-      mentee({
-        otherApplications: [
-          { programId: 'mp_apicurio_winter26', programName: 'Apicurio Registry', status: 'pending', tasksSubmitted: 1, tasksTotal: 3 },
-          { programId: 'mp_thanos_summer26', programName: 'Thanos', status: 'graduated' },
-          { programId: 'mp_declined', programName: 'Declined Program', status: 'declined' },
-          { programId: 'mp_withdrawn', programName: 'Withdrawn Program', status: 'withdrawn' },
+    getProgramMentees.mockReturnValue(
+      of({
+        data: [
+          mentee({
+            otherApplications: [
+              { programId: 'mp_apicurio_winter26', programName: 'Apicurio Registry', status: 'pending', tasksSubmitted: 1, tasksTotal: 3 },
+              { programId: 'mp_thanos_summer26', programName: 'Thanos', status: 'graduated' },
+              { programId: 'mp_declined', programName: 'Declined Program', status: 'declined' },
+              { programId: 'mp_withdrawn', programName: 'Withdrawn Program', status: 'withdrawn' },
+            ],
+          }),
         ],
-      }),
-    ]);
-    fixture.detectChanges();
+        total: 1,
+      })
+    );
+    fixture.componentInstance['onRetry']();
+    settle();
 
     const shown = Array.from(element().querySelectorAll('[data-testid^="mentorship-current-mentee-other-application-"]')).map((link) =>
       (link.textContent ?? '').trim()
@@ -161,49 +219,95 @@ describe('CurrentMenteesTabComponent', () => {
     expect(note).toContain('Tasks Completed');
   });
 
-  it('offers the statuses the table badges in the status filter, and only the open terms in the term filter', () => {
+  it('offers every wire status in the status filter, and only the open terms in the term filter', () => {
     const component = fixture.componentInstance;
 
     expect(component['statusOptions'].map((option) => option.label)).toEqual([
       'All statuses',
-      'Applied',
-      'Tasks Completed',
-      'Accepted',
-      'Declined',
-      'Withdrawn',
-      'Graduated',
+      ...MENTORSHIP_MENTEE_STATUSES.map((status) => MENTORSHIP_MENTEE_STATUS_LABELS[status]),
     ]);
     expect(component['termOptions']().map((option) => option.label)).toEqual(['All open terms', 'Fall 2026', 'Winter 2027']);
   });
 
-  it('filters on the displayed status, so Applied and Tasks Completed split the pending rows', () => {
+  it('sends the chosen status upstream and returns to the first page', () => {
     const component = fixture.componentInstance;
-
-    component['form'].controls.status.setValue('applied');
-    fixture.detectChanges();
-    expect(component['rows']().map((row) => row.id)).toEqual(['app_1']);
-
-    component['form'].controls.status.setValue('tasks-completed');
-    fixture.detectChanges();
-    expect(component['rows']().map((row) => row.id)).toEqual(['app_2']);
+    component['onLazyLoad']({ first: 10 });
+    settle();
+    expect(lastQuery().offset).toBe(10);
 
     component['form'].controls.status.setValue('declined');
-    fixture.detectChanges();
-    expect(component['rows']().map((row) => row.id)).toEqual(['app_3']);
+    settle();
 
-    component['form'].controls.status.reset(null);
-    component['form'].controls.term.setValue('Winter 2027');
-    fixture.detectChanges();
-    expect(component['rows']().map((row) => row.id)).toEqual(['app_3']);
+    expect(lastQuery()).toMatchObject({ status: 'declined', offset: 0 });
   });
 
-  it('returns to the first page when a filter narrows the list', () => {
+  it('sends the chosen term id upstream, and drops the filter when it is cleared', () => {
     const component = fixture.componentInstance;
-    component['first'].set(10);
 
-    component['form'].controls.search.setValue('Diego');
+    component['form'].controls.term.setValue('trm_Winter 2027');
+    settle();
+    expect(lastQuery()).toMatchObject({ termId: 'trm_Winter 2027', offset: 0 });
 
-    expect(component['first']()).toBe(0);
+    component['form'].controls.term.setValue(null);
+    settle();
+    expect(lastQuery().termId).toBeUndefined();
+  });
+
+  it('waits for typing to pause before searching, sends it trimmed, and returns to the first page', () => {
+    vi.useFakeTimers();
+    const component = fixture.componentInstance;
+    component['onLazyLoad']({ first: 10 });
+    settle();
+    getProgramMentees.mockClear();
+
+    component['form'].controls.search.setValue('Di');
+    component['form'].controls.search.setValue('  Diego ');
+    vi.advanceTimersByTime(100);
+    settle();
+    expect(getProgramMentees).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(300);
+    settle();
+    expect(getProgramMentees).toHaveBeenCalledTimes(1);
+    expect(lastQuery()).toMatchObject({ search: 'Diego', offset: 0 });
+  });
+
+  it('reads the page the paginator asks for', () => {
+    fixture.componentInstance['onLazyLoad']({ first: 20 });
+    settle();
+
+    expect(lastQuery().offset).toBe(20);
+  });
+
+  it('shows an inline error with Retry when the read fails, and reads the same page again on Retry', () => {
+    getProgramMentees.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    fixture.componentInstance['onRetry']();
+    settle();
+
+    expect(element().querySelector('[data-testid="mentorship-admin-current-mentees-load-error"]')).not.toBeNull();
+    expect(element().querySelector('table')).toBeNull();
+
+    getProgramMentees.mockReturnValue(of(firstPage()));
+    element().querySelector<HTMLElement>('[data-testid="mentorship-admin-current-mentees-retry"]')?.querySelector<HTMLButtonElement>('button')?.click();
+    settle();
+
+    expect(element().querySelector('[data-testid="mentorship-admin-current-mentees-load-error"]')).toBeNull();
+    expect(fixture.componentInstance['rows']().length).toBe(5);
+  });
+
+  it('drops the answer of a read that a newer one has replaced', () => {
+    const stale = new Subject<MentorshipAdminMenteesResponse>();
+    getProgramMentees.mockReturnValueOnce(stale);
+    fixture.componentInstance['onRetry']();
+    settle();
+
+    getProgramMentees.mockReturnValue(of({ data: [mentee({ id: 'app_new', name: 'New Person' })], total: 1 }));
+    fixture.componentInstance['onRetry']();
+    settle();
+    stale.next(firstPage());
+    settle();
+
+    expect(fixture.componentInstance['rows']().map((row) => row.id)).toEqual(['app_new']);
   });
 
   it('offers the row actions each status allows', () => {
@@ -223,48 +327,132 @@ describe('CurrentMenteesTabComponent', () => {
 
     element().querySelector<HTMLButtonElement>('[data-testid="mentorship-current-mentee-note-app_2"]')?.click();
 
-    expect(requests).toEqual([{ personId: 'app_2', personName: 'Diego Souza' }]);
+    expect(requests).toEqual([{ personId: 'app_2', personName: 'Diego Souza', note: undefined }]);
+  });
+
+  it('hands the parent the note the row arrived with', () => {
+    getProgramMentees.mockReturnValue(of({ data: [mentee({ id: 'app_n', name: 'Nia Okoye', note: 'from the server' })], total: 1 }));
+    fixture.componentInstance['onRetry']();
+    settle();
+    const requests: MentorshipNoteRequest[] = [];
+    fixture.componentInstance.noteRequested.subscribe((request) => requests.push(request));
+
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-current-mentee-note-app_n"]')?.click();
+
+    expect(requests).toEqual([{ personId: 'app_n', personName: 'Nia Okoye', note: 'from the server' }]);
   });
 
   it('renders the parent note draft in place of the note the row arrived with', () => {
     fixture.componentRef.setInput('noteDrafts', { app_2: 'a saved note' });
-    fixture.detectChanges();
+    settle();
 
     expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_2"]')?.textContent?.trim()).toBe('a saved note');
     expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_1"]')?.textContent?.trim()).toBe('Add note');
   });
 
-  it('expands assigned tasks when View Tasks is clicked and hides prerequisite tasks by default', () => {
-    expect(element().querySelector('[data-testid="mentorship-current-mentee-tasks-expanded-app_1"]')).toBeNull();
+  describe('View Tasks', () => {
+    it('reads no tasks until a row is expanded', () => {
+      expect(getApplicationTasks).not.toHaveBeenCalled();
+      expect(element().querySelector('[data-testid="mentorship-current-mentee-tasks-expanded-app_1"]')).toBeNull();
+    });
 
-    element().querySelector<HTMLElement>('[data-testid="mentorship-current-mentee-view-tasks-app_1"]')?.querySelector<HTMLButtonElement>('button')?.click();
-    fixture.detectChanges();
+    it('reads the tasks of the expanded row only, and shows prerequisite tasks by default', () => {
+      clickViewTasks('app_1');
 
-    expect(element().querySelector('[data-testid="mentorship-current-mentee-tasks-expanded-app_1"]')).not.toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_1"]')?.textContent).toContain('Resume');
-    expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_2"]')).toBeNull();
+      expect(getApplicationTasks).toHaveBeenCalledTimes(1);
+      expect(getApplicationTasks).toHaveBeenCalledWith('app_1');
+      expect(element().querySelector('[data-testid="mentorship-current-mentee-tasks-expanded-app_1"]')).not.toBeNull();
+      expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_1"]')?.textContent).toContain('Resume');
+      expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_2"]')?.textContent).toContain('Cover Letter');
+    });
 
-    element().querySelector<HTMLElement>('[data-testid="mentorship-current-mentee-view-tasks-app_1"]')?.querySelector<HTMLButtonElement>('button')?.click();
-    fixture.detectChanges();
+    it('collapses and re-expands from the cache without a second request', () => {
+      clickViewTasks('app_1');
+      clickViewTasks('app_1');
+      expect(element().querySelector('[data-testid="mentorship-current-mentee-tasks-expanded-app_1"]')).toBeNull();
 
-    expect(element().querySelector('[data-testid="mentorship-current-mentee-tasks-expanded-app_1"]')).toBeNull();
-  });
+      clickViewTasks('app_1');
 
-  it('does not render View Tasks when the mentee has no assigned tasks', () => {
-    fixture.componentRef.setInput('mentees', [mentee({ id: 'app_no_tasks', tasks: undefined, tasksTotal: undefined })]);
-    fixture.detectChanges();
+      expect(getApplicationTasks).toHaveBeenCalledTimes(1);
+      expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_1"]')).not.toBeNull();
+    });
 
-    expect(element().querySelector('[data-testid="mentorship-current-mentee-view-tasks-app_no_tasks"]')).toBeNull();
-  });
+    it('shows a loading line while the read is in flight', () => {
+      getApplicationTasks.mockReturnValue(new Subject<MentorshipApplicantTask[]>());
 
-  it('routes a decision action to the coming-soon toast', () => {
-    const addSpy = vi.spyOn(TestBed.inject(MessageService), 'add');
-    const row = rowFor('app_1')!;
+      clickViewTasks('app_1');
 
-    fixture.componentInstance['onRowAction'](row, row.actions[0]);
+      expect(element().querySelector('[data-testid="mentorship-admin-current-mentees-tasks-loading"]')).not.toBeNull();
+    });
 
-    expect(openCreate).not.toHaveBeenCalled();
-    expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Accept Ifeoma Adeyemi');
+    it('shows an inline error with Retry when the read fails, and reads again on Retry', () => {
+      getApplicationTasks.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      clickViewTasks('app_1');
+      expect(element().querySelector('[data-testid="mentorship-admin-current-mentees-tasks-load-error"]')).not.toBeNull();
+
+      getApplicationTasks.mockReturnValue(of(tasks()));
+      element()
+        .querySelector<HTMLElement>('[data-testid="mentorship-admin-current-mentees-tasks-retry-app_1"]')
+        ?.querySelector<HTMLButtonElement>('button')
+        ?.click();
+      settle();
+
+      expect(getApplicationTasks).toHaveBeenCalledTimes(2);
+      expect(element().querySelector('[data-testid="mentorship-admin-current-mentees-tasks-load-error"]')).toBeNull();
+      expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_1"]')).not.toBeNull();
+    });
+
+    it('collapses every row and clears the cache when the table reloads', () => {
+      clickViewTasks('app_1');
+
+      fixture.componentInstance['onLazyLoad']({ first: 10 });
+      settle();
+      expect(element().querySelector('[data-testid="mentorship-current-mentee-tasks-expanded-app_1"]')).toBeNull();
+
+      clickViewTasks('app_1');
+      expect(getApplicationTasks).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops the answer of a read that finishes after the table reloaded', () => {
+      const late = new Subject<MentorshipApplicantTask[]>();
+      getApplicationTasks.mockReturnValue(late);
+      clickViewTasks('app_1');
+
+      fixture.componentInstance['onLazyLoad']({ first: 10 });
+      settle();
+      late.next(tasks());
+      settle();
+
+      expect(fixture.componentInstance['tasksByApplication']().has('app_1')).toBe(false);
+    });
+
+    it('keeps the newer read when an older one for the same row finishes late', () => {
+      const older = new Subject<MentorshipApplicantTask[]>();
+      const newer = new Subject<MentorshipApplicantTask[]>();
+      getApplicationTasks.mockReturnValueOnce(older).mockReturnValueOnce(newer);
+      clickViewTasks('app_1');
+
+      fixture.componentInstance['onLazyLoad']({ first: 10 });
+      settle();
+      clickViewTasks('app_1');
+      older.next([]);
+      settle();
+
+      expect(fixture.componentInstance['tasksByApplication']().get('app_1')?.status).toBe('loading');
+
+      newer.next(tasks());
+      settle();
+
+      expect(fixture.componentInstance['tasksByApplication']().get('app_1')).toEqual({ status: 'loaded', tasks: tasks() });
+    });
+
+    it('does not render View Tasks when the mentee has no assigned tasks', () => {
+      getProgramMentees.mockReturnValue(of({ data: [mentee({ id: 'app_no_tasks', tasksTotal: undefined, tasksSubmitted: undefined })], total: 1 }));
+      fixture.componentInstance['onRetry']();
+      settle();
+
+      expect(element().querySelector('[data-testid="mentorship-current-mentee-view-tasks-app_no_tasks"]')).toBeNull();
+    });
   });
 
   it("opens the task-form dialog with just the row's mentee when Create task is picked", () => {
@@ -304,5 +492,259 @@ describe('CurrentMenteesTabComponent', () => {
 
     expect(addSpy).toHaveBeenCalledTimes(1);
     expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Create task "Submit ingestion benchmark report" for Alex Rivera');
+  });
+
+  describe('application decisions', () => {
+    const actionFor = (id: string, value: string) => rowFor(id)!.actions.find((action) => action.value === value)!;
+    const confirmSpy = () => vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    const toasts = () => vi.spyOn(TestBed.inject(MessageService), 'add');
+    const detailOf = (spy: ReturnType<typeof toasts>, call = 0) => (spy.mock.calls[call][0] as ToastMessageOptions).detail;
+    /** Picks an action, then accepts the confirmation it raised. */
+    const confirmAction = (id: string, value: string, spy: ReturnType<typeof confirmSpy>): void => {
+      fixture.componentInstance['onRowAction'](rowFor(id)!, actionFor(id, value));
+      spy.mock.calls[spy.mock.calls.length - 1][0].accept?.();
+    };
+
+    it('opens the accept dialog and writes nothing when it is dismissed', () => {
+      fixture.componentInstance['onRowAction'](rowFor('app_1')!, actionFor('app_1', 'accept'));
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(updateApplicationStatus).not.toHaveBeenCalled();
+    });
+
+    it('accepts with the attendance type the dialog returns, then reloads and tells the parent', () => {
+      dialogResult = 'part_time';
+      const toast = toasts();
+      const emitted = vi.fn();
+      fixture.componentRef.setInput('countsRefresh', emitted);
+      const reads = getProgramMentees.mock.calls.length;
+
+      fixture.componentInstance['onRowAction'](rowFor('app_1')!, actionFor('app_1', 'accept'));
+      settle();
+
+      expect(updateApplicationStatus).toHaveBeenCalledWith('app_1', { status: 'accepted', attendanceType: 'part_time' });
+      expect(detailOf(toast)).toBe('Application accepted');
+      expect(emitted).toHaveBeenCalledTimes(1);
+      expect(getProgramMentees.mock.calls.length).toBe(reads + 1);
+    });
+
+    it('declines and withdraws only after the confirmation is accepted', () => {
+      const confirm = confirmSpy();
+
+      fixture.componentInstance['onRowAction'](rowFor('app_1')!, actionFor('app_1', 'decline'));
+      fixture.componentInstance['onRowAction'](rowFor('app_1')!, actionFor('app_1', 'withdraw'));
+      expect(confirm).toHaveBeenCalledTimes(2);
+      expect(updateApplicationStatus).not.toHaveBeenCalled();
+      expect(withdrawApplication).not.toHaveBeenCalled();
+
+      confirm.mock.calls[0][0].accept?.();
+      confirm.mock.calls[1][0].accept?.();
+
+      expect(updateApplicationStatus).toHaveBeenCalledWith('app_1', { status: 'declined' });
+      expect(withdrawApplication).toHaveBeenCalledWith('app_1');
+    });
+
+    it('warns with the outstanding task count on Graduate and never reads the tasks', () => {
+      const confirm = confirmSpy();
+      // The tasks were read for this row already; Graduate must ignore that cache and the row's own read.
+      clickViewTasks('app_4');
+      getApplicationTasks.mockClear();
+
+      fixture.componentInstance['onRowAction'](rowFor('app_4')!, actionFor('app_4', 'graduate'));
+
+      expect(confirm.mock.calls[0][0].message).toContain("3 tasks aren't Submitted or Completed.");
+      expect(getApplicationTasks).not.toHaveBeenCalled();
+
+      confirm.mock.calls[0][0].accept?.();
+      expect(updateApplicationStatus).toHaveBeenCalledWith('app_4', { status: 'graduated' });
+    });
+
+    it('confirms Graduate without a warning when every task is in, and still lets it go through', () => {
+      const confirm = confirmSpy();
+      getProgramMentees.mockReturnValue(of({ data: [mentee({ id: 'app_9', status: 'accepted', tasksSubmitted: 5, tasksTotal: 5 })], total: 1 }));
+      fixture.componentInstance['onRetry']();
+      settle();
+
+      fixture.componentInstance['onRowAction'](rowFor('app_9')!, actionFor('app_9', 'graduate'));
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(confirm.mock.calls[0][0].message).not.toContain('tasks');
+      confirm.mock.calls[0][0].accept?.();
+      expect(updateApplicationStatus).toHaveBeenCalledWith('app_9', { status: 'graduated' });
+    });
+
+    it('uses the singular warning for one outstanding task', () => {
+      const confirm = confirmSpy();
+      getProgramMentees.mockReturnValue(of({ data: [mentee({ id: 'app_9', status: 'accepted', tasksSubmitted: 4, tasksTotal: 5 })], total: 1 }));
+      fixture.componentInstance['onRetry']();
+      settle();
+
+      fixture.componentInstance['onRowAction'](rowFor('app_9')!, actionFor('app_9', 'graduate'));
+
+      expect(confirm.mock.calls[0][0].message).toContain("1 task isn't Submitted or Completed.");
+    });
+
+    it('collapses an expanded row and clears its loaded tasks when a decision reloads the page', () => {
+      const confirm = confirmSpy();
+      clickViewTasks('app_4');
+      expect(fixture.componentInstance['expandedTaskMenteeIds']()['app_4']).toBe(true);
+      expect(fixture.componentInstance['tasksByApplication']().has('app_4')).toBe(true);
+
+      confirmAction('app_4', 'decline', confirm);
+      settle();
+
+      expect(fixture.componentInstance['expandedTaskMenteeIds']()).toEqual({});
+      expect(fixture.componentInstance['tasksByApplication']().size).toBe(0);
+    });
+
+    it('reloads with the changed message on a 409', () => {
+      updateApplicationStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409 })));
+      const toast = toasts();
+      const confirm = confirmSpy();
+      const reads = getProgramMentees.mock.calls.length;
+
+      confirmAction('app_1', 'decline', confirm);
+      settle();
+
+      expect(detailOf(toast)).toBe('This application changed. The list has been refreshed.');
+      expect(getProgramMentees.mock.calls.length).toBe(reads + 1);
+    });
+
+    it('shows the term-closed message on a 422 without reloading', () => {
+      dialogResult = 'full_time';
+      updateApplicationStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422 })));
+      const toast = toasts();
+      const emitted = vi.fn();
+      fixture.componentRef.setInput('countsRefresh', emitted);
+      const reads = getProgramMentees.mock.calls.length;
+
+      fixture.componentInstance['onRowAction'](rowFor('app_1')!, actionFor('app_1', 'accept'));
+      settle();
+
+      expect(detailOf(toast)).toBe("This term is closed, so the application can't be accepted.");
+      expect(getProgramMentees.mock.calls.length).toBe(reads);
+      expect(emitted).not.toHaveBeenCalled();
+    });
+
+    it('shows the server read-only message on an impersonation 403', () => {
+      withdrawApplication.mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'IMPERSONATION_READ_ONLY', message: 'Read-only while impersonating.' } }))
+      );
+      const toast = toasts();
+      const confirm = confirmSpy();
+
+      confirmAction('app_1', 'withdraw', confirm);
+
+      expect(detailOf(toast)).toBe('Read-only while impersonating.');
+    });
+
+    it('declines a term after its dialog and a confirmation, toasting the count', () => {
+      dialogResult = term('Fall 2026', 'open');
+      const toast = toasts();
+      const confirm = confirmSpy();
+      const emitted = vi.fn();
+      fixture.componentRef.setInput('countsRefresh', emitted);
+
+      fixture.componentInstance['onDeclineByTerm']();
+      expect(declinePendingForTerm).not.toHaveBeenCalled();
+      expect(confirm.mock.calls[0][0].message).toContain('Fall 2026');
+      confirm.mock.calls[0][0].accept?.();
+
+      expect(declinePendingForTerm).toHaveBeenCalledWith('prog_1', 'trm_Fall 2026');
+      expect(detailOf(toast)).toBe('4 applications declined');
+      expect(emitted).toHaveBeenCalledTimes(1);
+    });
+
+    it('escapes the term name in the confirmation, which PrimeNG renders as HTML', () => {
+      dialogResult = { id: 'trm_x', name: '<b>Fall</b> & Co', status: 'open' } satisfies MentorshipAdminTermOption;
+      const confirm = confirmSpy();
+
+      fixture.componentInstance['onDeclineByTerm']();
+
+      expect(confirm.mock.calls[0][0].message).toContain('&lt;b&gt;Fall&lt;/b&gt; &amp; Co');
+    });
+
+    it('refuses a second decision while one is in flight, and disables Decline by Term', () => {
+      // The service observable is cold, so a request is sent per subscription, not per call.
+      const pending = new Subject<void>();
+      let sent = 0;
+      updateApplicationStatus.mockImplementation(
+        () =>
+          new Observable<void>((subscriber) => {
+            sent++;
+            return pending.subscribe(subscriber);
+          })
+      );
+      const toast = toasts();
+      const confirm = confirmSpy();
+      const declineByTerm = (): HTMLButtonElement | null =>
+        element().querySelector<HTMLElement>('[data-testid="mentorship-admin-current-mentees-decline-by-term"]')?.querySelector('button') ?? null;
+
+      confirmAction('app_1', 'decline', confirm);
+      confirmAction('app_2', 'decline', confirm);
+      settle();
+
+      expect(sent).toBe(1);
+      expect(detailOf(toast)).toBe('Another change is still being saved. Try again in a moment.');
+      expect(declineByTerm()?.disabled).toBe(true);
+
+      pending.next();
+      pending.complete();
+      settle();
+
+      expect(declineByTerm()?.disabled).toBe(false);
+    });
+
+    it('shows the generic failure, not the term-closed copy, on a 422 for a decision other than accept', () => {
+      updateApplicationStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422 })));
+      const toast = toasts();
+      const confirm = confirmSpy();
+
+      confirmAction('app_1', 'decline', confirm);
+
+      expect(detailOf(toast)).toBe("The change couldn't be saved. Please try again.");
+    });
+
+    it('keeps a confirmed write alive when the tab is destroyed, toasting it and refreshing the counts without reloading', () => {
+      const pending = new Subject<void>();
+      // Torn down before the answer arrives means the request was cancelled.
+      let answered = false;
+      let cancelled = false;
+      updateApplicationStatus.mockReturnValue(
+        new Observable<void>((subscriber) => {
+          const subscription = pending.subscribe(subscriber);
+          return () => {
+            cancelled = !answered;
+            subscription.unsubscribe();
+          };
+        })
+      );
+      const toast = toasts();
+      const confirm = confirmSpy();
+      const emitted = vi.fn();
+      fixture.componentRef.setInput('countsRefresh', emitted);
+
+      confirmAction('app_1', 'decline', confirm);
+      const reads = getProgramMentees.mock.calls.length;
+      fixture.destroy();
+      answered = true;
+      pending.next();
+      pending.complete();
+
+      expect(cancelled).toBe(false);
+      expect(detailOf(toast)).toBe('Application declined');
+      expect(emitted).toHaveBeenCalledTimes(1);
+      expect(getProgramMentees.mock.calls.length).toBe(reads);
+    });
+
+    it('offers only the open terms and does nothing when the term dialog is dismissed', () => {
+      const confirm = confirmSpy();
+
+      fixture.componentInstance['onDeclineByTerm']();
+
+      const data = dialogOpen.mock.calls[0][1].data as { terms: MentorshipAdminTermOption[] };
+      expect(data.terms.map((item) => item.name)).toEqual(['Fall 2026', 'Winter 2027']);
+      expect(confirm).not.toHaveBeenCalled();
+    });
   });
 });

@@ -2472,7 +2472,7 @@ describe('WeeklyBriefService', () => {
       });
     }
 
-    const nonImpersonatingReq = { oidc: { user: { email: 'Writer@Example.com' } }, bearerToken: 'writer-token' } as unknown as Request;
+    const nonImpersonatingReq = { oidc: { user: { email: 'Writer@Example.com', email_verified: true } }, bearerToken: 'writer-token' } as unknown as Request;
 
     /**
      * Impersonation session: `bearerToken` starts as the impersonation token (what
@@ -2494,7 +2494,7 @@ describe('WeeklyBriefService', () => {
           impersonationUser: { email: 'Target@Example.com', sub: 'auth0|target' },
         },
         oidc: {
-          user: { email: 'Staff@Example.com' },
+          user: { email: 'Staff@Example.com', email_verified: true },
           accessToken: {
             access_token: 'real-staff-token',
             isExpired: () => !!opts.realTokenExpired,

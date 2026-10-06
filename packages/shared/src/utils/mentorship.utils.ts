@@ -51,6 +51,8 @@ import {
   MENTORSHIP_MENTOR_TASK_REVIEW_DECISIONS,
 } from '../constants/mentorship-mentor.constants';
 import {
+  MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_SINGULAR_TEMPLATE,
+  MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_TEMPLATE,
   MENTORSHIP_APPLICANT_TASK_DUE_PREREQUISITE_LABEL,
   MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_TASK_STATUS_LABELS,
@@ -60,7 +62,6 @@ import {
   MENTORSHIP_REGISTER_ERROR_READ_ONLY,
   MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL,
 } from '../constants/mentorship.constants';
-import type { FilterOption } from '../interfaces/filter.interface';
 import type {
   MentorshipApplicantDisplayStatus,
   MentorshipApplicantTask,
@@ -77,14 +78,7 @@ import type {
   MentorshipRowAction,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
-import type {
-  MentorshipProgram,
-  MentorshipProgramDetail,
-  MentorshipProgramLists,
-  MentorshipProgramMentor,
-  MentorshipProgramTermRow,
-  MentorshipTermRowStatus,
-} from '../interfaces/mentorship-admin.interface';
+import type { MentorshipProgramMentor, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
 import type {
   MentorshipMentorProfileDetails,
   MentorshipMentorProfileFieldErrors,
@@ -830,34 +824,6 @@ export function toMentorshipDateOnly(value: Date): string {
 }
 
 /**
- * Splits a program's applications across the two mentee tabs by their term, not their
- * status: an application in a closed term is history, so it moves to Past Mentees
- * whatever state it was left in, and everything else — including a row whose term the
- * program does not list — stays on Current Mentees. The counts are taken from the split
- * lists, so a badge can never promise a row its tab does not show.
- */
-export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: MentorshipProgramLists): MentorshipProgramDetail {
-  // Keyed by id, not name: a program can hold an open and a closed term that share a name.
-  const closedTermIds = new Set(lists.terms.filter((term) => term.status === 'closed').map((term) => term.id));
-  const currentMentees = lists.applications.filter((application) => !closedTermIds.has(application.termId));
-  const pastMentees = lists.applications.filter((application) => closedTermIds.has(application.termId));
-
-  return {
-    program,
-    tabCounts: {
-      currentMentees: currentMentees.length,
-      pastMentees: pastMentees.length,
-      mentors: lists.mentors.length,
-      terms: lists.terms.length,
-    },
-    currentMentees,
-    pastMentees,
-    mentors: lists.mentors,
-    terms: lists.terms,
-  };
-}
-
-/**
  * Submitted tasks waiting on the mentor: those of `accepted` mentees, so a graduated mentee's leftover
  * submission is not counted, the same rule as the My Programs card's tasks to review.
  */
@@ -973,23 +939,9 @@ export function mentorshipApplicantDisplayStatus(application: MentorshipApplicat
 }
 
 /**
- * Term filter options for a mentee tab: the program's terms in the given state, in the
- * order the program lists them. Current Mentees passes `open` and Past Mentees `closed`,
- * so each tab's filter offers only the terms its rows can be in.
- */
-export function mentorshipTermFilterOptions(
-  terms: ReadonlyArray<Pick<MentorshipProgramTermRow, 'name' | 'status'>>,
-  status: MentorshipTermRowStatus,
-  allLabel: string
-): FilterOption[] {
-  const names = [...new Set(terms.filter((term) => term.status === status).map((term) => term.name))];
-  return [{ label: allLabel, value: null }, ...names.map((name) => ({ label: name, value: name }))];
-}
-
-/**
  * Progress the mentor Mentees tab shows as a bar plus percent. Counts
- * `status === 'completed'` on the embedded `tasks` list, excluding prerequisites
- * so the bar matches the default View Tasks panel (`hidePrerequisite`).
+ * `status === 'completed'` on the embedded `tasks` list, excluding prerequisites,
+ * which the View Tasks panel can hide with its `hidePrerequisite` toggle.
  * `tasksSubmitted` / `tasksTotal` are never used. Without measurable tasks,
  * `{ total: 0 }` means unavailable — callers should render a dash, not `0%`.
  */
@@ -1370,4 +1322,17 @@ function latestIsoInstant(values: readonly string[]): string {
 /** Whether a value has the shape of an upstream mentor invite token: two base64url parts joined by a dot. */
 export function isMentorshipMentorInviteToken(value: string): boolean {
   return value.length <= MENTORSHIP_MENTOR_INVITE_TOKEN_MAX_LENGTH && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value);
+}
+
+/**
+ * Graduate confirmation warning from a row's task counts, so no task read is needed. Counts the tasks that are
+ * neither Submitted nor Completed; `undefined` when none are outstanding.
+ */
+export function buildMentorshipGraduateTaskWarning(tasksTotal: number, tasksSubmitted: number): string | undefined {
+  const count = Math.max(tasksTotal - tasksSubmitted, 0);
+  if (count === 0) {
+    return undefined;
+  }
+  const template = count === 1 ? MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_SINGULAR_TEMPLATE : MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_TEMPLATE;
+  return template.replace('{count}', String(count));
 }

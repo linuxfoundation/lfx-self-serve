@@ -5,6 +5,7 @@ import { MENTORSHIP_LFX_PROFILE_LOGO_URL_MAX, MENTORSHIP_LFX_PROFILE_NAME_MAX } 
 import type { LfxProfileEmail, LfxProfileSummary, MentorshipLfxProfileFields } from '../interfaces/mentorship-lfx-profile-card.interface';
 import type { EnrichedIdentity } from '../interfaces/profile.interface';
 import type { CombinedProfile, EmailManagementData, UserMetadata } from '../interfaces/user-profile.interface';
+import { isHttpsUrl } from './url.utils';
 
 /**
  * The user's handle on `provider`, rendered verbatim as `identity.value`.
@@ -99,14 +100,6 @@ export function buildLfxProfileSummary(
     linkedin: resolveSocialHandleLabel(knownIdentities, 'linkedin'),
     identitiesAvailable: identities !== null,
   };
-}
-
-function isHttpsUrl(value: string): boolean {
-  try {
-    return new URL(value).protocol === 'https:';
-  } catch {
-    return false;
-  }
 }
 
 /**

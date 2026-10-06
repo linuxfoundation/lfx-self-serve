@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MEETING_INVITE_PRIMARY_SENTINEL } from '../constants/profile.constants';
-import { EMAIL_REGEX } from '../constants/regex.constants';
+import { EMAIL_REGEX, MAILTO_SAFE_EMAIL_REGEX } from '../constants/regex.constants';
 import type { EmailListParseResult } from '../interfaces';
 
 /** True when `value` is a syntactically valid email address. Trims before testing. */
@@ -11,6 +11,15 @@ export function isValidEmail(value: string | null | undefined): boolean {
     return false;
   }
   return EMAIL_REGEX.test(value.trim());
+}
+
+/**
+ * True when `value` is a plain single-recipient address that can be placed verbatim after `mailto:`
+ * without adding recipients or header fields. Does not trim: the exact tested string is the one a
+ * caller may interpolate. Use before building any `mailto:` href from upstream data.
+ */
+export function isMailtoSafeEmail(value: string | null | undefined): boolean {
+  return !!value && MAILTO_SAFE_EMAIL_REGEX.test(value);
 }
 
 /**

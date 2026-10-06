@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MAX_SNOWFLAKE_PAGINATION_PAGE } from '@lfx-one/shared/constants';
+import { CONTRIBUTIONS_MAX_FILTER_VALUES, MAX_SNOWFLAKE_PAGINATION_PAGE } from '@lfx-one/shared/constants';
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -20,6 +20,7 @@ vi.mock('../services/org-contributions.service', () => ({
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
 
+import { ServiceValidationError } from '../errors';
 import { OrgLensContributionsController } from './org-lens-contributions.controller';
 
 const ORG_UID = '001410000000000AAA';
@@ -52,5 +53,45 @@ describe('OrgLensContributionsController pagination', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(getContributions.mock.calls[0][1]).toMatchObject({ page: expected });
+  });
+});
+
+describe('OrgLensContributionsController filter lists', () => {
+  const controller = new OrgLensContributionsController();
+  const csv = (count: number) => Array.from({ length: count }, (_, i) => `value-${i}`).join(',');
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
+  });
+
+  it.each(['projects', 'employees'])('rejects more than the cap of %s values with a 400 before the service', async (field) => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ [field]: csv(CONTRIBUTIONS_MAX_FILTER_VALUES + 1) }), buildRes(), next);
+
+    expect(getContributions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+  });
+
+  it.each(['projects', 'employees'])('accepts exactly the cap of %s values', async (field) => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ [field]: csv(CONTRIBUTIONS_MAX_FILTER_VALUES) }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][1][field]).toHaveLength(CONTRIBUTIONS_MAX_FILTER_VALUES);
+  });
+
+  it('dedupes values before applying the cap', async () => {
+    const next = vi.fn();
+    const repeated = Array.from({ length: CONTRIBUTIONS_MAX_FILTER_VALUES * 2 }, () => 'same-project').join(',');
+
+    await controller.getContributions(buildReq({ projects: `${repeated}, other ,,` }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ projects: ['same-project', 'other'] });
   });
 });

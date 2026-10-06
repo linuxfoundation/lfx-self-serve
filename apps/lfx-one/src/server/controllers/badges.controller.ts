@@ -48,8 +48,9 @@ export class BadgesController {
   /**
    * Resolve email addresses for the authenticated user used to look up Credly badges.
    * Queries auth-service via NATS and returns the primary email plus any alternate
-   * emails flagged verified by auth-service (the primary has no separate verified flag,
-   * so it is always included). Falls back to the single effective session email
+   * emails flagged verified by auth-service. The primary has no separate verified flag
+   * and is the same root email as the session claim, so it is included only when the
+   * session email passed the `email_verified` check (`getEffectiveEmail` non-null). Falls back to the single effective session email
    * (impersonated target during impersonation, otherwise the OIDC user) if the
    * auth-service lookup fails or returns no usable addresses.
    */
@@ -82,7 +83,7 @@ export class BadgesController {
       }
     };
 
-    add(emailData.primary_email);
+    if (effectiveEmail) add(emailData.primary_email);
     for (const alt of emailData.alternate_emails) {
       if (alt.verified) add(alt.email);
     }

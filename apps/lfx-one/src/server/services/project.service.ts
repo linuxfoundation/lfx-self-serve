@@ -163,6 +163,7 @@ import {
   CommitteeDocumentQueryResult,
   CommitteeLinkQueryResult,
   GroupsIOArtifactQueryResult,
+  GroupsIOMailingList,
   MeetingAttachment,
   PastMeetingAttachment,
   PastMeetingRecordingQueryResult,
@@ -690,7 +691,8 @@ export class ProjectService {
     operation: 'add' | 'update' | 'remove',
     usernameOrEmail: string,
     role?: 'view' | 'manage',
-    manualUserInfo?: { name: string; email: string; username?: string; avatar?: string }
+    manualUserInfo?: { name: string; email: string; username?: string; avatar?: string },
+    duplicateIdentifiers?: string[]
   ): Promise<ProjectSettings> {
     // Step 0: Authorize before touching anything — the gate `updateProjectStaff` runs, for the same
     // reason. Upstream gates the settings PUT at writer, but the directory lookup below runs first
@@ -764,9 +766,25 @@ export class ProjectService {
       });
     }
 
+    // A client-side collapsed dual-role row (#3218) can carry one or more "duplicate"
+    // identifiers for the other backend entries representing the same person — a role
+    // change or removal on the merged row must clear those too, or they survive and the
+    // user reappears with a stale role after a refresh (#3245/#3244). These are matched
+    // directly against the settings already fetched above, with NO resolveEmailToUsername
+    // call: unlike `backendIdentifier`, a duplicate identifier is never looked up against
+    // the NATS directory, which is what let a stale/already-cleared email fallback resolve
+    // to and delete an unrelated, just-written real-username entry (Cursor Bugbot #3244
+    // review, GH-3276). Matching mirrors `matchesUser`: an identifier containing '@' matches
+    // a no-username entry's email case-insensitively (the backend lowercases email too);
+    // anything else is treated as a username and matched case-sensitively, since LFID
+    // username case-uniqueness isn't guaranteed.
+    const duplicateIdentifierList = (duplicateIdentifiers ?? []).map((id) => id.trim()).filter(Boolean);
+    const matchesAnyDuplicate = (u: { username?: string; email?: string }): boolean =>
+      duplicateIdentifierList.some((id) => (id.includes('@') ? !u.username && u.email?.toLowerCase() === id.toLowerCase() : u.username === id));
+
     // Remove user from both arrays first (for all operations)
-    updatedSettings.writers = updatedSettings.writers.filter((u) => !matchesUser(u));
-    updatedSettings.auditors = updatedSettings.auditors.filter((u) => !matchesUser(u));
+    updatedSettings.writers = updatedSettings.writers.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
+    updatedSettings.auditors = updatedSettings.auditors.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
 
     // For 'add' or 'update', we need to add the user back with full UserInfo
     if (operation === 'add' || operation === 'update') {
@@ -7787,17 +7805,48 @@ export class ProjectService {
       document_source: 'project' as const,
     }));
 
-    const groupsioDocs: ProjectDocument[] = (groupsioArtifacts || []).map((a) => ({
-      uid: `groupsio_artifact:${a.artifact_id}`,
-      type: 'link' as const,
-      name: a.filename || a.link_url || a.artifact_id,
-      url: a.type === 'link' ? a.link_url : (a.download_url ?? a.link_url),
-      mime_type: a.media_type,
-      created_at: a.last_posted_at || a.created_at,
-      project_uid: a.project_uid,
-      document_source: 'mailing_list' as const,
-      document_source_name: a.committee_uid ? (committeeNameByUid.get(a.committee_uid) ?? '') : '',
-    }));
+    // Resolve mailing list titles for groupsio artifacts. Query by project_uid, then
+    // match on the numeric group_id field (groupsio_mailing_list_uid tags hold the
+    // mailing list's UUID uid, not the numeric group_id).
+    const mailingListTitleByGroupId = new Map<number, string>();
+    if (groupsioArtifacts && groupsioArtifacts.length > 0) {
+      const mlResults = await fetchAllQueryResources<GroupsIOMailingList>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'groupsio_mailing_list',
+            tags: [`project_uid:${projectId}`],
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      ).catch((err) => {
+        logger.warning(req, 'get_project_documents', 'Failed to resolve mailing list names, names will be omitted', {
+          project_uid: projectId,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
+        return [] as GroupsIOMailingList[];
+      });
+      for (const ml of mlResults) {
+        if (ml.group_id != null && ml.title) {
+          mailingListTitleByGroupId.set(ml.group_id, ml.title);
+        }
+      }
+    }
+
+    const groupsioDocs: ProjectDocument[] = (groupsioArtifacts || []).map((a) => {
+      const mailingListTitle = a.group_id ? mailingListTitleByGroupId.get(a.group_id) : undefined;
+      return {
+        uid: `groupsio_artifact:${a.artifact_id}`,
+        type: 'link' as const,
+        name: a.filename || a.link_url || mailingListTitle || a.artifact_id,
+        url: a.type === 'link' ? a.link_url : (a.download_url ?? a.link_url),
+        mime_type: a.media_type,
+        created_at: a.last_posted_at || a.created_at,
+        project_uid: a.project_uid,
+        document_source: 'mailing_list' as const,
+        document_source_name: mailingListTitle ?? '',
+      };
+    });
 
     const committeeLinkDocs: ProjectDocument[] = (committeeLinks || [])
       .filter((l) => !!l.url)

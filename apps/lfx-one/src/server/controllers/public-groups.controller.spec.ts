@@ -8,10 +8,24 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 // Per-test-controllable service mocks. The controller constructs `new ProjectService()` and
 // `new CommitteeService()` as fields, so the mocked constructors must hand back these same
 // objects every time (same pattern as public-profile.controller.spec.ts).
-const { getFoundationProjectUidsMock, getProjectByIdMock, getCommitteesMock } = vi.hoisted(() => ({
+const {
+  getFoundationProjectUidsMock,
+  getProjectByIdMock,
+  getCommitteesMock,
+  resolveCommitteeUidMock,
+  getCommitteeByIdMock,
+  getCommitteeMembersMock,
+  getMeetingsMock,
+  proxyRequestMock,
+} = vi.hoisted(() => ({
   getFoundationProjectUidsMock: vi.fn(),
   getProjectByIdMock: vi.fn(),
   getCommitteesMock: vi.fn(),
+  resolveCommitteeUidMock: vi.fn(),
+  getCommitteeByIdMock: vi.fn(),
+  getCommitteeMembersMock: vi.fn(),
+  getMeetingsMock: vi.fn(),
+  proxyRequestMock: vi.fn(),
 }));
 
 vi.mock('../services/project.service', () => ({
@@ -26,19 +40,24 @@ vi.mock('../services/project.service', () => ({
 
 vi.mock('../services/committee.service', () => ({
   CommitteeService: vi.fn(function () {
-    return { getCommittees: getCommitteesMock };
+    return {
+      getCommittees: getCommitteesMock,
+      resolveCommitteeUid: resolveCommitteeUidMock,
+      getCommitteeById: getCommitteeByIdMock,
+      getCommitteeMembers: getCommitteeMembersMock,
+    };
   }),
 }));
 
 vi.mock('../services/meeting.service', () => ({
   MeetingService: vi.fn(function () {
-    return {};
+    return { getMeetings: getMeetingsMock };
   }),
 }));
 
 vi.mock('../services/microservice-proxy.service', () => ({
   MicroserviceProxyService: vi.fn(function () {
-    return {};
+    return { proxyRequest: proxyRequestMock };
   }),
 }));
 
@@ -145,5 +164,57 @@ describe('PublicGroupsController.getPublicGroupsByFoundation — fan-out cap', (
     const response = res.json.mock.calls[0][0];
     expect(response.groups).toHaveLength(1);
     expect(response.total).toBe(1);
+  });
+});
+
+describe('PublicGroupsController.getPublicGroupById — chairs and member_visibility', () => {
+  const GROUP_UID = 'c0000000-0000-0000-0000-000000000010';
+  const MEMBERS = [
+    { uid: 'm1', first_name: 'Ada', last_name: 'Example', role: { name: 'Chair' }, organization: { name: 'Vendor Corp' } },
+    { uid: 'm2', first_name: 'Bo', last_name: 'Example', role: { name: 'None' } },
+  ];
+  let controller: PublicGroupsController;
+
+  function buildGroupReqRes(): { req: Request; res: Response & { json: Mock }; next: NextFunction & Mock } {
+    const req = { params: { id: GROUP_UID }, path: `/public/api/groups/${GROUP_UID}`, log: {} } as unknown as Request;
+    const res = { json: vi.fn() } as unknown as Response & { json: Mock };
+    const next = vi.fn() as unknown as NextFunction & Mock;
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicGroupsController();
+    resolveCommitteeUidMock.mockResolvedValue(GROUP_UID);
+    getCommitteeMembersMock.mockResolvedValue(MEMBERS);
+    getProjectByIdMock.mockResolvedValue({ uid: 'p1', name: 'Project', slug: 'project' });
+    getMeetingsMock.mockResolvedValue({ data: [] });
+    proxyRequestMock.mockResolvedValue({ resources: [] });
+  });
+
+  it('lists chairs when visibility is basic_profile', async () => {
+    getCommitteeByIdMock.mockResolvedValue({ uid: GROUP_UID, name: 'TSC', public: true, project_uid: 'p1', member_visibility: 'basic_profile' });
+    const { req, res, next } = buildGroupReqRes();
+
+    await controller.getPublicGroupById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ member_visibility: 'basic_profile', chairs: [{ name: 'Ada Example', organization: 'Vendor Corp', role: 'Chair' }] })
+    );
+  });
+
+  it.each([
+    ['hidden', 'hidden'],
+    ['unset', undefined],
+    ['an unknown value', 'everyone'],
+  ])('withholds chairs and reports hidden when visibility is %s', async (_label, memberVisibility) => {
+    getCommitteeByIdMock.mockResolvedValue({ uid: GROUP_UID, name: 'TSC', public: true, project_uid: 'p1', member_visibility: memberVisibility });
+    const { req, res, next } = buildGroupReqRes();
+
+    await controller.getPublicGroupById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ member_visibility: 'hidden', chairs: [] }));
   });
 });

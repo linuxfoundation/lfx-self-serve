@@ -24,6 +24,7 @@ import { AuthorizationError, MicroserviceError, ResourceNotFoundError } from '..
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { drawPdfSignature, loadPdfFont, resolvePdfTemplateDir } from '../helpers/pdf-template.helper';
+import { isImpersonating } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { UserService } from './user.service';
 
@@ -39,7 +40,7 @@ export class VisaLetterService {
   }
 
   /**
-   * Generate the caller's issued visa support letter for an event. Status, ownership and the manual
+   * Generate the effective user's issued visa support letter for an event. Status, ownership and the manual
    * flag come from the letter system of record, never from the client.
    */
   public async generateVisaLetter(req: Request, eventId: string): Promise<VisaLetterResult> {
@@ -67,12 +68,31 @@ export class VisaLetterService {
 
     const pdf = await this.buildPdf(letter, entity);
     const fileName = buildVisaLetterFileName(letter.event?.name, letter.attendee?.nameAsPerPassport, eventId);
+
+    // Per-request impersonation logs are DEBUG; keep an INFO trail for passport-bearing exports.
+    if (isImpersonating(req)) {
+      logger.info(req, OPERATION, 'Visa letter generated for impersonated user', {
+        event_id: eventId,
+        impersonator_sub: req.appSession?.['impersonator']?.sub,
+        target_sub: req.appSession?.['impersonationUser']?.sub,
+      });
+    }
+
     return { pdf, fileName };
   }
 
-  /** The caller's own letter request for the event; the Salesforce ID is derived from their token. */
+  /** The effective user's letter request for the event; the Salesforce ID is derived from their token. */
   private async getLetterRequest(req: Request, eventId: string): Promise<VisaLetterRequest> {
-    const profile = await this.userService.getApiGatewayProfile(req);
+    // req.apiGatewayToken stays the impersonator's, so resolve as the target with their v2 token.
+    const impersonating = isImpersonating(req);
+    const targetToken = impersonating ? req.bearerToken : undefined;
+
+    // Fail closed: an unset target token would fall back to the impersonator's own letter.
+    if (impersonating && !targetToken) {
+      throw new AuthorizationError('Impersonation token unavailable for visa letter', { operation: OPERATION, service: SERVICE });
+    }
+
+    const profile = await this.userService.getApiGatewayProfile(req, targetToken);
 
     if (!profile.ID) {
       throw new MicroserviceError('Salesforce ID not found in API Gateway profile', 422, 'SALESFORCE_ID_NOT_FOUND', {
@@ -91,6 +111,7 @@ export class VisaLetterService {
       service: SERVICE,
       errorMessage: 'Failed to fetch visa letter requests',
       errorCode: 'VISA_LETTER_REQUESTS_FETCH_FAILED',
+      bearerToken: targetToken,
       // Letter requests carry passport and birth details; keep them out of logs and error metadata.
       redactResponseBody: true,
     });

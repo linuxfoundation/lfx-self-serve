@@ -5,14 +5,17 @@ import { MAX_EVENTS_PAGE_SIZE, MAX_SNOWFLAKE_PAGINATION_PAGE } from '@lfx-one/sh
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
-const { getMyEvents, getEvents, getVisaRequests, getTravelFundRequests, generateVisaLetter, logger } = vi.hoisted(() => ({
-  getMyEvents: vi.fn(),
-  getEvents: vi.fn(),
-  getVisaRequests: vi.fn(),
-  getTravelFundRequests: vi.fn(),
-  generateVisaLetter: vi.fn(),
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
-}));
+const { getMyEvents, getEvents, getVisaRequests, getTravelFundRequests, getEventOrganizations, getAffiliatedProjectSlugs, generateVisaLetter, logger } =
+  vi.hoisted(() => ({
+    getMyEvents: vi.fn(),
+    getEvents: vi.fn(),
+    getVisaRequests: vi.fn(),
+    getTravelFundRequests: vi.fn(),
+    getEventOrganizations: vi.fn(),
+    getAffiliatedProjectSlugs: vi.fn(),
+    generateVisaLetter: vi.fn(),
+    logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
+  }));
 
 // validation.helper imports `@lfx-one/shared/utils`, whose barrel pulls Angular; see validation.helper.spec.ts.
 // The real pagination parsing is what runs here.
@@ -23,6 +26,7 @@ vi.mock('../services/events.service', () => ({
     public getEvents = getEvents;
     public getVisaRequests = getVisaRequests;
     public getTravelFundRequests = getTravelFundRequests;
+    public getEventOrganizations = getEventOrganizations;
   },
 }));
 vi.mock('../services/certificate.service', () => ({ CertificateService: class {} }));
@@ -31,7 +35,11 @@ vi.mock('../services/visa-letter.service', () => ({
     public generateVisaLetter = generateVisaLetter;
   },
 }));
-vi.mock('../services/persona-detection.service', () => ({ PersonaDetectionService: class {} }));
+vi.mock('../services/persona-detection.service', () => ({
+  PersonaDetectionService: class {
+    public getAffiliatedProjectSlugs = getAffiliatedProjectSlugs;
+  },
+}));
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: () => 'user@example.com', getEffectiveName: () => 'User' }));
 
@@ -54,6 +62,109 @@ const endpoints: [string, Mock, number, Handler][] = [
   ['getVisaRequests', getVisaRequests, 2, (c, req, res, next) => c.getVisaRequests(req, res, next)],
   ['getTravelFundRequests', getTravelFundRequests, 2, (c, req, res, next) => c.getTravelFundRequests(req, res, next)],
 ];
+
+describe('EventsController Foundation scope', () => {
+  const controller = new EventsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getEventOrganizations.mockResolvedValue({ data: ['Example Foundation'] });
+    getAffiliatedProjectSlugs.mockResolvedValue(['alpha']);
+  });
+
+  it.each([
+    ['true', true],
+    ['false', false],
+    [undefined, false],
+    ['TRUE', false],
+    [['true'], false],
+    [true, false],
+  ])('parses registeredOnly=%j strictly', async (raw, expected) => {
+    const next = vi.fn();
+    const res = buildRes();
+    await controller.getEventOrganizations(buildReq({ isPast: 'false', registeredOnly: raw }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getEventOrganizations.mock.calls[0][2]).toMatchObject({ isPast: false, registeredOnly: expected });
+    expect(res.json).toHaveBeenCalledWith({ data: ['Example Foundation'] });
+    if (expected) expect(getAffiliatedProjectSlugs).not.toHaveBeenCalled();
+    else expect(getEventOrganizations.mock.calls[0][2].affiliatedProjectSlugs).toEqual(['alpha']);
+  });
+
+  it('does not look up affiliations for Past', async () => {
+    await controller.getEventOrganizations(buildReq({ isPast: 'true', registeredOnly: 'true', projectName: 'Example Foundation' }), buildRes(), vi.fn());
+
+    expect(getAffiliatedProjectSlugs).not.toHaveBeenCalled();
+    expect(getEventOrganizations.mock.calls[0][2]).toMatchObject({ isPast: true, projectName: 'Example Foundation' });
+  });
+});
+
+describe('EventsController My Events affiliation scope', () => {
+  const controller = new EventsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getMyEvents.mockResolvedValue({ data: [], total: 0 });
+    getAffiliatedProjectSlugs.mockReset().mockResolvedValue(['alpha']);
+  });
+
+  it('does not consult affiliations for registered-only Upcoming rows', async () => {
+    const req = buildReq({ isPast: 'false', registeredOnly: 'true', pageSize: '1' });
+    const res = buildRes();
+    const next = vi.fn();
+    getAffiliatedProjectSlugs.mockRejectedValueOnce(new Error('Affiliations unavailable'));
+
+    await controller.getMyEvents(req, res, next);
+
+    expect(getAffiliatedProjectSlugs).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(getMyEvents).toHaveBeenCalledWith(
+      req,
+      'user@example.com',
+      expect.objectContaining({
+        isPast: false,
+        registeredOnly: true,
+        affiliatedProjectSlugs: undefined,
+        pageSize: 1,
+      })
+    );
+    expect(res.json).toHaveBeenCalledWith({ data: [], total: 0 });
+  });
+
+  it('forwards registered-count service errors without sending a successful zero response', async () => {
+    const error = new Error('Snowflake unavailable');
+    getMyEvents.mockRejectedValueOnce(error);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMyEvents(buildReq({ isPast: 'false', registeredOnly: 'true', pageSize: '1' }), res, next);
+
+    expect(next).toHaveBeenCalledExactlyOnceWith(error);
+    expect(res.json).not.toHaveBeenCalled();
+    expect(logger.success).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 'false', 'TRUE', ['true'], true])('retains affiliation lookup for discovery when registeredOnly=%j', async (raw) => {
+    const req = buildReq({ isPast: 'false', registeredOnly: raw });
+    const next = vi.fn();
+
+    await controller.getMyEvents(req, buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getAffiliatedProjectSlugs).toHaveBeenCalledExactlyOnceWith(req);
+    expect(getMyEvents.mock.calls[0][2]).toMatchObject({ isPast: false, registeredOnly: false, affiliatedProjectSlugs: ['alpha'] });
+  });
+
+  it.each(['true', undefined])('does not consult affiliations when isPast=%j', async (isPast) => {
+    const next = vi.fn();
+
+    await controller.getMyEvents(buildReq({ isPast, registeredOnly: 'true' }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getAffiliatedProjectSlugs).not.toHaveBeenCalled();
+    expect(getMyEvents.mock.calls[0][2]).toMatchObject({ isPast: isPast === 'true' ? true : undefined, affiliatedProjectSlugs: undefined });
+  });
+});
 
 describe('EventsController pagination', () => {
   const controller = new EventsController();

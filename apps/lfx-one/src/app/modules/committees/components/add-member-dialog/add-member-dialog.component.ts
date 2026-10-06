@@ -233,7 +233,7 @@ export class AddMemberDialogComponent {
     { initialValue: '' }
   );
   public searchResults: Signal<DecoratedCommitteeSearchResult[]> = this.initSearchResults();
-  /** Meetings in the committee's project, for the import picker. Empty when none / no project. */
+  /** Meetings in the committee's project that the caller organizes, for the import picker. Empty when none / no project. */
   public readonly meetingOptions: Signal<MeetingSelectOption[]> = this.initMeetingOptions();
 
   public readonly roleOptions = MEMBER_ROLES;
@@ -454,8 +454,11 @@ export class AddMemberDialogComponent {
       .subscribe((results) => {
         this.submitting.set(false);
         this.summarizeDirectAdd(results);
-        if (results.some((r) => r.success)) {
-          this.dialogRef.close(true);
+        const succeeded = results.filter((r) => r.success).length;
+        if (succeeded > 0) {
+          // Close with the count of successfully added members so the caller's poller can
+          // wait until all of them are indexed, not just the first one.
+          this.dialogRef.close(succeeded);
         }
       });
   }
@@ -477,8 +480,11 @@ export class AddMemberDialogComponent {
       .subscribe((results) => {
         this.submitting.set(false);
         this.summarizeInvites(results);
-        if (results.some((r) => r.success)) {
-          this.dialogRef.close(true);
+        const succeeded = results.filter((r) => r.success).length;
+        if (succeeded > 0) {
+          // Close with the count of successfully sent invites so the caller's poller can
+          // wait until all of them are indexed, not just the first one.
+          this.dialogRef.close(succeeded);
         }
       });
   }
@@ -710,6 +716,8 @@ export class AddMemberDialogComponent {
         map((responses) =>
           responses
             .flatMap((response) => response.data)
+            // The BFF refuses imports from meetings the caller does not organize.
+            .filter((meeting) => meeting.organizer)
             .sort((a, b) => this.meetingStartMs(b.start_time) - this.meetingStartMs(a.start_time))
             .map((meeting) => ({ value: meeting.id, label: this.buildMeetingLabel(meeting.title, meeting.start_time), title: meeting.title }))
         ),

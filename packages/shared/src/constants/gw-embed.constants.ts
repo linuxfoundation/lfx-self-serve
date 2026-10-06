@@ -172,6 +172,15 @@ export const GW_EMBED_LOGIN_PATH = '/login';
 export const GW_EMBED_LANDING_PATH = '/newsletters';
 
 /**
+ * Query-param name carrying the tenant slug on embed routes. The route guards read the same
+ * literal (`?project=`); this constant makes the contract explicit where the embed WRITES the
+ * param — the sign-in return and recovery-reload URLs must carry it, or the guards fall back to
+ * a context service that has not rehydrated on a full page load and bounce the navigation
+ * (GH-3286).
+ */
+export const GW_EMBED_PROJECT_QUERY_PARAM = 'project';
+
+/**
  * Suffix passed as `GwHostContext.storageKeySuffix`, isolating the embedded session from a
  * standalone Gatewaze admin session on the same origin.
  *

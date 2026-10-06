@@ -6,7 +6,7 @@ import { Component, computed, DestroyRef, inject, input, signal } from '@angular
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
-import { distinctUntilChanged, skip } from 'rxjs';
+import { distinctUntilChanged, pairwise, skip, startWith } from 'rxjs';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 
 import type { AudienceQaCandidate, AudienceQaCheckRow, AudienceQaFinding, AudienceQaReport, AudienceQaResult } from '@lfx-one/shared/interfaces';
@@ -33,6 +33,12 @@ export class AudienceQaPanelComponent {
   // === Inputs ===
   public readonly projectSlug = input.required<string>();
   public readonly disabled = input(false);
+  /**
+   * The list the operator just composed, offered as the QA target so the step after compose does
+   * not start with an empty field. Only fills the field when it is empty or still holds the
+   * previous suggestion — a ref the operator typed is never overwritten.
+   */
+  public readonly suggestedListRef = input('');
 
   // === Forms ===
   protected readonly listRefControl = new FormControl('', { nonNullable: true });
@@ -119,6 +125,20 @@ export class AudienceQaPanelComponent {
         this.error.set(null);
         this.running.set(false);
         this.listRefControl.setValue('', { emitEvent: false });
+      });
+
+    toObservable(this.suggestedListRef)
+      .pipe(startWith(''), distinctUntilChanged(), pairwise(), takeUntilDestroyed(this.destroyRef))
+      .subscribe(([previous, next]) => {
+        // Follows the suggestion while the field still MIRRORS it -- including when it clears. A
+        // new discovery clears the compose result, so the suggestion goes 601 -> '' -> 602; ignoring
+        // the empty step left 601 in the field, the next step then compared it against '' and
+        // refused 602, and Run QA audited the previous master. A value the operator typed differs
+        // from the previous suggestion and is never touched.
+        const current = this.listRefControl.value.trim();
+        if (current === '' || current === previous.trim()) {
+          this.listRefControl.setValue(next.trim());
+        }
       });
 
     // Disabling a reactive control goes through the CONTROL, not a `[disabled]` binding on the
