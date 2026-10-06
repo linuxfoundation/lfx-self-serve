@@ -19,7 +19,7 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * The meeting details V2 header (E1-03, #1772): project context, title, badge row and copy link.
  * @description The badge row follows the prototype: recurrence, meeting type, committee chips, then
  * the feature badges (Recording, Transcripts, YouTube Upload, AI summary). E1-05's status pill and
- * E1-04's privacy chip take the front of the row; the privacy chip is here, the pill is E1-05.
+ * E1-04's privacy chip lead the row; the privacy chip is here, and the pill takes the front in E1-05.
  *
  * Feature badges read the `*_enabled` flags only, never artifact access: those flags survive on the
  * reduced past payload, so a viewer without access still sees what the meeting was configured to

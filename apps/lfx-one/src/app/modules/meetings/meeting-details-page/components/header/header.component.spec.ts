@@ -124,7 +124,9 @@ describe('MeetingHeaderComponent', () => {
     expect(chip.getAttribute('data-restricted')).toBe(state[1]);
     const glyph = chip.querySelector('i');
     expect(glyph?.classList).toContain(icon);
+    // The colour is asserted in both branches: green for a meeting anyone can join, muted otherwise.
     expect(glyph?.classList.contains('text-[var(--md-status-good)]')).toBe(open);
+    expect(glyph?.classList.contains('text-[var(--md-text-muted)]')).toBe(!open);
   });
 
   it('shows the meeting type with its configured label', () => {
