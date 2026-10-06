@@ -1402,7 +1402,9 @@ export class OptimizationTabComponent implements OnInit {
             ...map,
             [key]: outcome,
           }));
-          if (action === 'remove' && outcome.state === 'done') {
+          // `removedKeywords` derives from the outcome's own `action`, the one source of truth for
+          // what this response answered.
+          if (outcome.action === 'remove' && outcome.state === 'done') {
             const identity = keywordIdentityKey(platform, kw.campaignId, kw.adGroupId, kw.criterionId);
             this.removedKeywords.update((removed) => new Set(removed).add(identity));
           }

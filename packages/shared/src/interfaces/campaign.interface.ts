@@ -2137,7 +2137,8 @@ export interface KeywordActionOutcome {
   state: 'done' | 'unconfirmed' | 'failed';
   /**
    * The action this outcome answers, recorded when the response lands — not looked up from what was
-   * last asked, which a re-read or a newer click can change while the request is out.
+   * last asked, which a re-read or a newer click can change while the request is out. The Optimize
+   * tab's removed-keyword set is derived from this field, so it is the one record of a confirmed REMOVE.
    */
   action?: KeywordActionType;
 }
