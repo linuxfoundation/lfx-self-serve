@@ -437,16 +437,26 @@ export const CAMPAIGN_TOGGLE_LABELS: Readonly<Record<CampaignToggleAction, strin
 export const CAMPAIGN_FINDING_ALREADY_PAUSED_REASON = 'This campaign is already paused.';
 
 /**
- * Visible label of each keyword action outcome state, shared by the Google and Microsoft keyword
- * tables. An UNCONFIRMED action may already have applied, and a retried REMOVE is irreversible, so
- * it is never worded as a failure.
- */
-/**
  * Shown beside a Microsoft keyword's actions when the previous one is UNCONFIRMED. The actions stay
  * offered — pausing or removing a keyword only reduces spend — but the operator checks first.
  */
 export const MICROSOFT_KEYWORD_PREVIOUS_UNCONFIRMED_NOTE = 'Previous attempt not confirmed — verify in Microsoft Advertising before retrying.';
 
+/**
+ * campaign-service's exact sentences (lower case) for a Microsoft keyword read that is unavailable
+ * rather than failed, by HTTP status. Compared whole, never by pattern; see `isNotConnectedError`
+ * in the Microsoft keyword table for where each comes from upstream.
+ */
+export const MICROSOFT_KEYWORDS_NOT_CONNECTED_MESSAGES: Readonly<Record<404 | 400, readonly string[]>> = {
+  404: ['no microsoft ads connection configured for this project'],
+  400: ['keyword and audience insights are not supported for this platform', 'keyword insights is not supported for this platform'],
+};
+
+/**
+ * Visible label of each keyword action outcome state, shared by the Google and Microsoft keyword
+ * tables. An UNCONFIRMED action may already have applied, and a retried REMOVE is irreversible, so
+ * it is never worded as a failure.
+ */
 export const KEYWORD_ACTION_OUTCOME_LABELS: Readonly<Record<KeywordActionOutcome['state'], string>> = {
   done: 'Done',
   unconfirmed: 'Unconfirmed',

@@ -174,6 +174,14 @@ describe('MicrosoftKeywordsTableComponent', () => {
       httpError(400, { error: 'window refused: keyword insights is not supported for this platform; use last_30_days', code: 'BAD_REQUEST' }),
     ],
     [
+      'a reporting window refusal worded like the unsupported sentence',
+      httpError(400, { error: 'reporting window is not supported for this platform', code: 'BAD_REQUEST' }),
+    ],
+    [
+      'another provider named in the no-connection sentence',
+      httpError(404, { error: 'no google ads connection configured for this project', code: 'NOT_FOUND' }),
+    ],
+    [
       'a 404 that merely quotes the no-connection sentence',
       httpError(404, { error: 'route gone (no x connection configured for this project) retry', code: 'NOT_FOUND' }),
     ],
@@ -206,11 +214,14 @@ describe('MicrosoftKeywordsTableComponent', () => {
 
   // The outcome is shown beside the controls, not instead of them: the parent keeps it, so a
   // failed action could otherwise never be retried, nor a verified unconfirmed one acted on again.
-  // A confirmed REMOVE leaves nothing to act on: the controls go until the table is read again.
-  it('withdraws the controls after a confirmed remove, and offers them again after a re-read', async () => {
+  // A keyword a confirmed REMOVE deleted offers nothing to act on, even when a re-read's finished
+  // report still lists it. The parent owns the set; the table only reads it.
+  it('withdraws the controls of a removed keyword, and keeps them withdrawn across a re-read', async () => {
     await render(report());
-    q('microsoft-keyword-remove-microsoft-ads:111-222')!.click();
-    fixture.componentRef.setInput('actionResults', { 'microsoft-ads:111-222': { success: true, state: 'done', message: 'Removed' } });
+    fixture.componentRef.setInput('removedKeywords', new Set(['microsoft-ads:333:111:222']));
+    fixture.componentRef.setInput('actionResults', {
+      'microsoft-ads:111-222': { success: true, state: 'done', message: 'Removed', action: 'remove' },
+    });
     fixture.detectChanges();
 
     expect(q('microsoft-keyword-outcome-microsoft-ads:111-222')!.textContent).toContain('Done');
@@ -219,14 +230,14 @@ describe('MicrosoftKeywordsTableComponent', () => {
 
     fixture.componentRef.setInput('reloadToken', 1);
     fixture.detectChanges();
-    expect(q('microsoft-keyword-pause-microsoft-ads:111-222')).not.toBeNull();
-    expect(q('microsoft-keyword-remove-microsoft-ads:111-222')).not.toBeNull();
+    expect(getMicrosoftKeywords).toHaveBeenCalledTimes(2);
+    expect(q('microsoft-keyword-row-microsoft-ads:111-222')).not.toBeNull();
+    expect(q('microsoft-keyword-remove-microsoft-ads:111-222')).toBeNull();
   });
 
   it('keeps the controls after a confirmed pause', async () => {
     await render(report());
-    q('microsoft-keyword-pause-microsoft-ads:111-222')!.click();
-    fixture.componentRef.setInput('actionResults', { 'microsoft-ads:111-222': { success: true, state: 'done', message: 'Paused' } });
+    fixture.componentRef.setInput('actionResults', { 'microsoft-ads:111-222': { success: true, state: 'done', message: 'Paused', action: 'pause' } });
     fixture.detectChanges();
 
     expect(q('microsoft-keyword-remove-microsoft-ads:111-222')).not.toBeNull();
