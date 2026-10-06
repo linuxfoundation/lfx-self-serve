@@ -130,6 +130,14 @@ export class AudienceBuilderTabComponent {
    * brief-less event whose scope no longer matches.
    */
   public readonly audienceScope = input(0);
+  /**
+   * The parent is STAGING a send -- creating a HubSpot draft that resolves this brief's audience.
+   *
+   * The other half of `audienceWriteInFlight`. Stage waits for an audience write, and this makes the
+   * exclusion two-way: a compose or attach started while the create is on the wire could change
+   * which audience that draft resolves to, and the create carries only the brief id.
+   */
+  public readonly stagingInFlight = input(false);
 
   // === Outputs ===
   /**
@@ -545,7 +553,14 @@ export class AudienceBuilderTabComponent {
    * and the second write is a real HubSpot record either way.
    */
   protected readonly canAttach = computed(
-    () => this.briefId() !== '' && !this.degraded() && !this.audienceUnknown() && !this.composing() && !this.composeOnWire() && !this.attachInFlight()
+    () =>
+      this.briefId() !== '' &&
+      !this.degraded() &&
+      !this.audienceUnknown() &&
+      !this.stagingInFlight() &&
+      !this.composing() &&
+      !this.composeOnWire() &&
+      !this.attachInFlight()
   );
 
   /**
@@ -810,6 +825,8 @@ export class AudienceBuilderTabComponent {
       // Likewise a compose a reset abandoned is still being created upstream.
       !this.attachInFlight() &&
       !this.composeOnWire() &&
+      // Not while the parent is staging a send against this brief's audience.
+      !this.stagingInFlight() &&
       !this.suppressionFailed() &&
       !this.suppressionLoading() &&
       !this.composeAttempted() &&

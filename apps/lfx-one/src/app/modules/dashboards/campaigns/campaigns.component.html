@@ -326,6 +326,7 @@
           [audienceReadPending]="emailAudienceReadPending() || emailBriefResolving()"
           [audienceReadUnavailable]="emailAudienceReadUnavailable()"
           [audienceScope]="emailAudienceScope()"
+          [stagingInFlight]="emailStaging() === 'staging'"
           [existingAudience]="emailAudience()"
           (retryAudienceRead)="onRetryAudienceRead()"
           (audienceWriteInFlight)="emailAudienceWriteInFlight.set($event)"

@@ -852,6 +852,23 @@ describe('AudienceBuilderTabComponent', () => {
       expect(composeAudienceMaster, 'a second compose ran over the stranded one').toHaveBeenCalledTimes(1);
     });
 
+    it('pauses compose and attach while the parent is staging a send', async () => {
+      // The exclusion is two-way: a write started while the create is on the wire could change which
+      // audience that draft resolves to, and the create carries only the brief id.
+      await renderWithDiscovery({ briefId: 'brief-1' });
+      click('audience-card-grid-toggle-101');
+      fixture.componentRef.setInput('stagingInFlight', true);
+      fixture.detectChanges();
+
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled, 'compose ran during staging').toBe(true);
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-use-direct"]')?.disabled, 'attach ran during staging').toBe(true);
+      expect(host().querySelector('[data-testid="campaigns-audience-staging-pause"]')).not.toBeNull();
+
+      fixture.componentRef.setInput('stagingInFlight', false);
+      fixture.detectChanges();
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(false);
+    });
+
     it('keeps the write lock through a context switch until an in-flight attach SETTLES', async () => {
       // A reset discards the reply but the attach is still being recorded upstream. Releasing the
       // lock on the reset let A -> B -> A start a second write that the first could then overwrite.
