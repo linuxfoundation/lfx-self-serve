@@ -8,7 +8,7 @@ import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
-import { normaliseForMatch } from '@lfx-one/shared/utils';
+import { coerceCampaignEventDetails, normaliseForMatch } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, merge, of, skip, Subject, Subscription, switchMap, take } from 'rxjs';
@@ -20,7 +20,6 @@ import type {
   CampaignDeliveryType,
   CampaignEmailStage,
   CampaignEventDetails,
-  CampaignEventSponsor,
   CampaignGoal,
   CampaignKeyword,
   CampaignPlatform,
@@ -794,6 +793,10 @@ export class PlanningTabComponent implements OnInit {
     this.keywords.set([]);
     this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
+    // Audience and pitch described the brief just DISCARDED; leaving them pre-filled the next New
+    // Brief with the old event's copy (LFX-Campaigns-Email-QA-Report B5). The url stays -- see the
+    // restore-offer note below for why blanking it would strand that offer.
+    this.briefForm.patchValue({ targetAudience: '', valueProp: '' });
     // The restore offer is deliberately NOT cleared here, unlike everything above it.
     //
     // Cancel and New Brief discard the GENERATED brief. They say nothing about the STORED one,
@@ -1281,18 +1284,7 @@ export class PlanningTabComponent implements OnInit {
     //
     // Empty instead. `countryNameFor` maps an unknown code to '' rather than a raw code, so the
     // builder receives no country filter rather than the wrong one.
-    const details: CampaignEventDetails = this.eventDetails() ?? {
-      name: fallbackName,
-      dates: '',
-      city: '',
-      countryCode: '',
-      audience: '',
-      themes: [],
-      registrationUrl: url,
-      speakers: [],
-      slug: fallbackSlug,
-      formatNotes: '',
-    };
+    const details: CampaignEventDetails = this.eventDetails() ?? coerceCampaignEventDetails({ name: fallbackName, registrationUrl: url, slug: fallbackSlug });
     const budgetRaw2 = this.briefForm.controls.totalBudget.value;
     const budgetStr = typeof budgetRaw2 === 'string' ? budgetRaw2.trim() : String(budgetRaw2 ?? '');
     this.proceedToImplementation.emit({
@@ -2254,30 +2246,9 @@ export class PlanningTabComponent implements OnInit {
  * "undefined", which is the honest rendering of a field the scrape could not find.
  */
 function normalizeEventDetails(data: unknown): CampaignEventDetails {
-  const raw = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>;
-  const text = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string) : '');
-  const list = (key: string): string[] => (Array.isArray(raw[key]) ? (raw[key] as unknown[]).filter((v): v is string => typeof v === 'string') : []);
-  const sponsors: CampaignEventSponsor[] = Array.isArray(raw['sponsors'])
-    ? (raw['sponsors'] as unknown[])
-        .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
-        .map((entry) => ({
-          name: typeof entry['name'] === 'string' ? entry['name'] : '',
-          logoUrl: typeof entry['logoUrl'] === 'string' ? entry['logoUrl'] : '',
-        }))
-        .filter((sponsor) => sponsor.logoUrl)
-    : [];
-  return {
-    name: text('name'),
-    dates: text('dates'),
-    city: text('city'),
-    countryCode: text('countryCode'),
-    audience: text('audience'),
-    themes: list('themes'),
-    registrationUrl: text('registrationUrl'),
-    speakers: list('speakers'),
-    slug: text('slug'),
-    formatNotes: text('formatNotes'),
-    heroImageUrl: text('heroImageUrl'),
-    sponsors,
-  };
+  // The coercion itself now lives in `@lfx-one/shared`: the BFF needs the identical conversion
+  // when it reads a PERSISTED brief, and two hand-written copies of it is how one of them silently
+  // stopped carrying `heroImageUrl` and `sponsors`. This wrapper stays so the reasoning above sits
+  // next to the SSE call sites that depend on it.
+  return coerceCampaignEventDetails(data);
 }

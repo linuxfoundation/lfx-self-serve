@@ -6,6 +6,7 @@ import type {
   AudienceSpeakerScope,
   CampaignBudgetType,
   CampaignDeliveryTypeOption,
+  CampaignEmailSegment,
   CampaignEmailTypeOption,
   CampaignGoalOption,
   CampaignKeyword,
@@ -1321,6 +1322,21 @@ export const CAMPAIGN_EMAIL_STAGES = ['CFP Launch', 'Schedule Announcement', 'Re
 // ---------------------------------------------------------------------------
 
 /**
+ * How long the BFF waits on an audience-builder call to the campaign service.
+ *
+ * Far above the 30s default (`api-client.service.ts`) because these endpoints are not
+ * database reads — each one walks the HubSpot Marketing API. `last-sent` alone pages up to
+ * 2000 emails (20 sequential requests) to rule out a false absence, then fans out one GET per
+ * shortlisted send plus one per referenced list. Measured against the live TLF portal on
+ * 2026-09-24: 32s at `limit=3` (what the panel asks for) and 58s at the design's `limit=10`.
+ *
+ * At 30s the call was aborted mid-flight and "Recent sends for this event" rendered as a
+ * failure on every load, even though upstream went on to answer 200. The ceiling is a
+ * giving-up point, not a budget: raising it costs nothing on the calls that return quickly.
+ */
+export const AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS = 120_000;
+
+/**
  * The Audience Builder tab.
  *
  * Declared on its own rather than added to `CAMPAIGN_TABS` because it is email-only: the paid
@@ -1483,6 +1499,29 @@ export const AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS = 300;
  * wire validation.
  */
 export const CAMPAIGN_EMAIL_VARIANTS = ['urgency-fomo'] as const;
+
+/**
+ * Recognised `segment` values for `generate-email-copy`: narrows which content blocks appear for a
+ * named audience within the same stage's copy, orthogonal to `variant` (which restyles the whole
+ * draft). Both may be set together, either alone, or neither. Like `stage` and `variant`,
+ * campaign-service treats an unrecognised or absent value as "no segment requested" rather than an
+ * error, so this list is for the UI's own selector rather than wire validation.
+ */
+export const CAMPAIGN_EMAIL_SEGMENTS = ['developer', 'business-decision-maker', 'alumni', 'prospect'] as const;
+
+/**
+ * The selector's visible label per segment.
+ *
+ * Keyed on `CampaignEmailSegment` rather than on a re-spelled literal union so this map cannot
+ * drift from the type `CAMPAIGN_EMAIL_SEGMENTS` derives -- a member added to or renamed in the
+ * list fails to compile HERE.
+ */
+export const CAMPAIGN_EMAIL_SEGMENT_LABELS: Readonly<Record<CampaignEmailSegment, string>> = {
+  developer: 'Developer',
+  'business-decision-maker': 'Business Decision-Maker',
+  alumni: 'Alumni (Past Attendee)',
+  prospect: 'Prospect (First-Time)',
+};
 
 /**
  * Most sponsor logos carried on a brief.

@@ -824,29 +824,29 @@ export class CampaignController {
   }
 
   /**
-   * Build the brief's send audience — the prerequisite the email channel cannot dispatch without.
+   * Read back the audiences campaign-service already holds for this brief.
    *
-   * `project` and `brief_id` travel as query params: both are PATH segments upstream.
+   * `project` and `brief_id` are PATH segments upstream and travel here as query params.
    */
-  public async buildAudience(req: Request, res: Response, next: NextFunction): Promise<void> {
+  public async listAudiences(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
     const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
 
     if (projectSlug === '' || briefId === '') {
       next(
         ServiceValidationError.forField('project', 'project and brief_id are required', {
-          operation: 'build_audience',
+          operation: 'list_audiences',
           service: 'campaign_controller',
         })
       );
       return;
     }
 
-    const startTime = logger.startOperation(req, 'build_audience', { projectSlug });
+    const startTime = logger.startOperation(req, 'list_audiences', { projectSlug });
 
     try {
-      const result = await this.campaignServiceClient.buildAudience(req, projectSlug, briefId);
-      logger.success(req, 'build_audience', startTime, { enabled: result.enabled });
+      const result = await this.campaignServiceClient.listAudiences(req, projectSlug, briefId);
+      logger.success(req, 'list_audiences', startTime, { enabled: result.enabled, count: result.audiences?.length ?? 0 });
       res.json(result);
     } catch (error) {
       next(error);
@@ -889,7 +889,10 @@ export class CampaignController {
       // `variant` follows the same forward-without-validating shape as `stage` above.
       const rawVariant = (req.body as { variant?: unknown } | undefined)?.variant;
       const variant = typeof rawVariant === 'string' && rawVariant.trim() !== '' ? rawVariant.trim() : undefined;
-      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId, stage, variant);
+      // `segment` likewise. Independent of `variant` -- neither implies nor excludes the other.
+      const rawSegment = (req.body as { segment?: unknown } | undefined)?.segment;
+      const segment = typeof rawSegment === 'string' && rawSegment.trim() !== '' ? rawSegment.trim() : undefined;
+      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId, stage, variant, segment);
       logger.success(req, 'generate_email_copy', startTime, { enabled: result.enabled });
       res.json(result);
     } catch (error) {

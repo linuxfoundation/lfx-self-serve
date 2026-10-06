@@ -10,12 +10,12 @@ import {
   JOB_LOST_MESSAGE,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
+import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';
 import { escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
   BriefMetrics,
-  BuildAudienceResult,
-  CampaignAudienceStatus,
+  CampaignAudience,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
@@ -23,7 +23,6 @@ import type {
   CampaignDeliveryType,
   CampaignEmailStage,
   CampaignEventDetails,
-  CampaignEventSponsor,
   CampaignGoal,
   CampaignIndexDoc,
   CampaignJobStatus,
@@ -47,6 +46,7 @@ import type {
   HubSpotEmailSearchResult,
   HubSpotMarketingEmail,
   LinkedInBriefCopy,
+  ListAudiencesResult,
   LinkedInCreativeVariant,
   MetaAdVariant,
   MetaBriefCopy,
@@ -57,6 +57,7 @@ import type {
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { toAudienceStatus } from '../helpers/campaign-audience.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { upstreamAnswered } from './campaign-keyword-actions';
@@ -147,18 +148,6 @@ interface CampaignServiceEmailCopy {
 }
 
 /**
- * Narrow the upstream status string onto the closed union.
- *
- * Upstream declares `Enum("building", "built", "failed")`, but a wire string is only ever a claim.
- * Anything unrecognised becomes `failed` rather than being passed through: `canStageEmail` admits
- * only `built`, so an unknown value must not be able to masquerade as a usable audience, and
- * `failed` is the arm that offers the operator a rebuild.
- */
-function toAudienceStatus(status: string): CampaignAudienceStatus {
-  return status === 'built' || status === 'building' ? status : 'failed';
-}
-
-/**
  * The upstream audience shape, snake_case exactly as campaign-service returns it.
  *
  * Local to this file for the same reason the brief shapes are: it is a WIRE type, and exporting
@@ -177,6 +166,11 @@ interface CampaignServiceAudienceList {
   inclusion_summary?: string;
   status: string;
   version: number;
+}
+
+/** `list-audiences` body: the rows sit under `audiences`, per the Goa `ListAudiencesResponseBody`. */
+interface CampaignServiceAudienceListResponse {
+  audiences?: (CampaignServiceAudienceList | null)[];
 }
 
 interface CampaignServiceBrief {
@@ -866,7 +860,14 @@ export class CampaignServiceClient {
    * A 503 is a deployment state, not a bug: the AI model is optional upstream, and a service
    * without one configured refuses rather than inventing copy.
    */
-  public async generateEmailCopy(req: Request, projectSlug: string, briefId: string, stage?: string, variant?: string): Promise<GenerateEmailCopyResult> {
+  public async generateEmailCopy(
+    req: Request,
+    projectSlug: string,
+    briefId: string,
+    stage?: string,
+    variant?: string,
+    segment?: string
+  ): Promise<GenerateEmailCopyResult> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
       return { enabled: false };
     }
@@ -882,8 +883,10 @@ export class CampaignServiceClient {
       // copy.
       //
       // `variant` is also a query param upstream (same reasoning as `stage`), so it joins `stage`
-      // in the same query object rather than the sixth (body) argument.
-      const query = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}) };
+      // in the same query object rather than the sixth (body) argument. `segment` is the third of
+      // the same kind -- declared as `Param("segment")` in the service's Goa design, not a body
+      // attribute -- so all three ride the fifth argument together.
+      const query = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}), ...(segment ? { segment } : {}) };
       const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceEmailCopy>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
@@ -1083,61 +1086,53 @@ export class CampaignServiceClient {
   }
 
   /**
-   * Build a brief's send audience in campaign-service.
+   * Read back the audiences campaign-service already holds for a brief.
    *
-   * Takes NO body: the service derives the audience from the brief's own event details, so the
-   * only inputs are the two path segments. Sending a list from here would be the divergent second
-   * source of truth `hubspot.go:293` exists to avoid — it resolves the BUILT audience by brief id
-   * and never reads one off a request.
+   * This exists because `emailAudience` was in-memory only: a page reload lost a built audience
+   * and pushed the operator into a rebuild, which mints a DUPLICATE HubSpot contact list. The
+   * upstream list has always been there; nothing consumed it.
    *
-   * Answers 202, not 200: the build calls Snowflake and several HubSpot creates, so it is
-   * accepted-and-recorded rather than a promise that every platform-side list is confirmed.
+   * Returns rows newest-first, exactly as upstream orders them — the caller's "current audience"
+   * is the first row for the platform it cares about, and re-sorting here would hide a change in
+   * that upstream ordering behind a local one.
+   *
+   * No etag, on ANY row: `list-audiences` declares no `Header("etag:ETag")`, so there is no
+   * concurrency token to take. A caller that means to PATCH must re-read the single audience
+   * first. Leaving the field undefined is deliberate — a fabricated token would be rejected
+   * upstream at best, and at worst would make a stale write look safe.
    */
-  public async buildAudience(req: Request, projectSlug: string, briefId: string): Promise<BuildAudienceResult> {
+  public async listAudiences(req: Request, projectSlug: string, briefId: string): Promise<ListAudiencesResult> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
       // Same steady state as saveBrief: the flag being off is not a failure.
       return { enabled: false };
     }
 
-    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/audiences/build`;
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/audiences`;
     try {
-      // Fifth argument is `query`, sixth is `data` — this call has neither. Passing anything
-      // fifth would serialize it into the query string and send no body.
-      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudienceList>(
-        req,
-        'LFX_V2_CAMPAIGN_SERVICE',
-        path,
-        'POST',
-        undefined,
-        undefined
-      );
+      // Wrapped, not a bare array: Goa generates `ListAudiencesResponseBody { audiences: [...] }`
+      // for `list-audiences`, so reading `response.data` as the array would always see nothing.
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudienceListResponse>(req, 'LFX_V2_CAMPAIGN_SERVICE', path, 'GET');
 
-      const built = response.data;
-      if (!built?.id) {
-        return { enabled: true, error: 'The audience build was accepted but returned nothing to track.' };
+      // An absent array is MALFORMED, not empty. `design/audience.go` declares
+      // `Required("audiences")` on list-audiences and the implementation returns `[]` when a
+      // brief has no rows -- so the ordinary first-visit state arrives as an explicit empty
+      // array, and a missing field means the response is not the one this contract promises.
+      //
+      // Coercing it to `[]` reported an unreadable response as a successful empty read, which
+      // CLEARED the restore failure guard and re-permitted a non-idempotent HubSpot compose --
+      // the exact duplicate-master path that guard exists to close.
+      if (!Array.isArray(response.data?.audiences)) {
+        logger.warning(req, 'list_audiences', 'Audience read-back returned no audiences array', {});
+        return { enabled: true, error: 'The saved audience for this brief could not be read. Reload to try again.' };
       }
-
+      const rows = response.data.audiences;
       return {
         enabled: true,
-        audience: {
-          id: built.id,
-          projectId: built.project_id,
-          briefId: built.brief_id,
-          platform: built.platform,
-          platformMasterListId: built.platform_master_list_id,
-          suppressionListIds: built.suppression_list_ids,
-          inclusionSummary: built.inclusion_summary,
-          status: toAudienceStatus(built.status),
-          version: built.version,
-          // Off the HEADER, not the body: the design maps it as `Header("etag:ETag")` on the 202,
-          // so `built.etag` would read `undefined` forever -- the exact trap the brief wire-type
-          // comment above records. `readEtag` is the established way to take it.
-          etag: readEtag(response) ?? undefined,
-        },
+        audiences: rows.filter((row): row is CampaignServiceAudienceList => Boolean(row?.id)).map((row) => this.toCampaignAudience(row)),
       };
     } catch (error) {
-      logger.warning(req, 'build_audience', 'Audience build failed, returning an error result', { err: error });
-      return { enabled: true, error: upstreamMessageOr(error, 'The audience could not be built. Check the HubSpot connection and try again.') };
+      logger.warning(req, 'list_audiences', 'Audience read-back failed, returning an error result', { err: error });
+      return { enabled: true, error: upstreamMessageOr(error, 'The saved audience for this brief could not be read. Reload to try again.') };
     }
   }
 
@@ -1861,6 +1856,26 @@ export class CampaignServiceClient {
       'GET',
       window ? { window } : undefined
     );
+  }
+
+  /**
+   * Map one upstream audience row onto the shared shape.
+   *
+   * `etag` is NOT set here: `listAudiences` has none to take, and a mapper that guessed one would
+   * hand the caller a token that means nothing upstream.
+   */
+  private toCampaignAudience(row: CampaignServiceAudienceList): CampaignAudience {
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      briefId: row.brief_id,
+      platform: row.platform,
+      platformMasterListId: row.platform_master_list_id,
+      suppressionListIds: row.suppression_list_ids,
+      inclusionSummary: row.inclusion_summary,
+      status: toAudienceStatus(row.status),
+      version: row.version,
+    };
   }
 
   /**
@@ -2725,10 +2740,6 @@ function asText(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-function asTextList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
-}
-
 /**
  * `event_details` as a `CampaignEventDetails`, or `null` when there is nothing usable.
  *
@@ -2755,41 +2766,11 @@ function asEventDetails(value: unknown, topLevelSlug: string): CampaignEventDeta
     return null;
   }
 
-  return {
-    name,
-    slug,
-    dates: asText(details['dates']),
-    city: asText(details['city']),
-    countryCode: asText(details['countryCode']),
-    audience: asText(details['audience']),
-    themes: asTextList(details['themes']),
-    registrationUrl: asText(details['registrationUrl']),
-    speakers: asTextList(details['speakers']),
-    formatNotes: asText(details['formatNotes']),
-    // Scraped hero/sponsors are PERSISTED by toUpstreamEventDetails' `...details` spread but were
-    // not read back here, so a reload silently dropped them: the preview and onStageEmailSend then
-    // omitted the hero and logo modules in any session that restored the brief rather than
-    // scraping it fresh. A write path that spreads and a read path that allow-lists diverge by
-    // construction -- every field added to the former has to be added here too.
-    heroImageUrl: asText(details['heroImageUrl']),
-    // Filtered on logoUrl, mirroring planning-tab's own mapping: a sponsor with no logo renders
-    // as an empty image module rather than as nothing.
-    sponsors: asSponsorList(details['sponsors']),
-  };
-}
-
-/** Sponsor rows with a usable logo, dropping malformed entries rather than rendering blanks. */
-function asSponsorList(value: unknown): CampaignEventSponsor[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
-    .map((entry) => ({
-      name: typeof entry['name'] === 'string' ? entry['name'] : '',
-      logoUrl: typeof entry['logoUrl'] === 'string' ? entry['logoUrl'] : '',
-    }))
-    .filter((sponsor) => sponsor.logoUrl !== '');
+  // Coerced by the SHARED helper, not a second allow-list here. A write path that spreads and a
+  // read path that allow-lists diverge by construction: the previous local literal silently
+  // stopped carrying `heroImageUrl` and `sponsors`, so a reloaded brief lost the hero and logo
+  // modules. One conversion, used by both the client and this reader, cannot drift that way.
+  return coerceCampaignEventDetails(details);
 }
 
 /**

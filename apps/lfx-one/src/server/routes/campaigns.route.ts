@@ -45,9 +45,12 @@ router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMo
 router.get('/meta/accounts', (req, res) => campaignController.getMetaAccounts(req, res));
 router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonitor(req, res, next));
 router.get('/keywords', (req, res, next) => campaignController.getKeywords(req, res, next));
-router.post('/audience/build', (req, res, next) => campaignController.buildAudience(req, res, next));
 router.post('/email-copy', (req, res, next) => campaignController.generateEmailCopy(req, res, next));
 router.get('/audience', (req, res, next) => campaignController.getAudience(req, res, next));
+// PLURAL, and not by accident: `/audience` above is the paid-channel demographics read, which has
+// nothing to do with a brief's HubSpot audience rows. Reusing that path would have made the two
+// collide on method AND path.
+router.get('/audiences', (req, res, next) => campaignController.listAudiences(req, res, next));
 router.post('/keywords/actions', (req, res, next) => campaignController.executeKeywordActions(req, res, next));
 router.patch('/:campaignId/status', (req, res, next) => campaignController.updateCampaignStatus(req, res, next));
 // campaign-service only: the id must be a campaign-service UUID. Amount in the ad account's own currency.
@@ -69,6 +72,9 @@ router.get('/audience-builder/last-sent', (req, res, next) => audienceBuilderCon
 router.get('/audience-builder/existing-master-lists', (req, res, next) => audienceBuilderController.getExistingMasterLists(req, res, next));
 router.post('/audience-builder/preview-count', (req, res, next) => audienceBuilderController.previewCount(req, res, next));
 router.post('/audience-builder/compose-master', (req, res, next) => audienceBuilderController.composeMaster(req, res, next));
+// `attach-existing` creates nothing in HubSpot: it records lists that already exist (an earlier
+// send's selection, or a master built before) as the brief's send audience.
+router.post('/audience-builder/attach-existing', (req, res, next) => audienceBuilderController.attachExisting(req, res, next));
 router.post('/audience-builder/qa/run', (req, res, next) => audienceBuilderController.runQa(req, res, next));
 
 export default router;
