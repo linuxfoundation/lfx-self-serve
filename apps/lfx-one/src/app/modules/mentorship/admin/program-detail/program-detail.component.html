@@ -29,12 +29,7 @@
         [attr.aria-labelledby]="'mentorship-program-detail-tab-trigger-' + activeTab()">
         @switch (activeTab()) {
           @case ('current-mentees') {
-            <lfx-mentorship-current-mentees-tab
-              [programId]="programPage.program.id"
-              [terms]="terms()"
-              [noteDrafts]="noteDrafts()"
-              (noteRequested)="onNoteRequested($event)"
-              [countsRefresh]="countsRefresh" />
+            <lfx-mentorship-current-mentees-tab [programId]="programPage.program.id" [terms]="terms()" [countsRefresh]="countsRefresh" />
           }
           @case ('past-mentees') {
             <lfx-mentorship-past-mentees-tab [programId]="programPage.program.id" [terms]="terms()" />

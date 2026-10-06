@@ -332,7 +332,7 @@ export class MentorshipAdminService {
     );
   }
 
-  /** Saves, edits or clears (an empty `note`) the one reviewer note of an application. Upstream's 403 and 404 pass through. The note is never logged. */
+  /** Saves, edits or clears (an empty `note`) the one reviewer note of an application. Upstream's 403, 404 and 409 pass through. The note is never logged. */
   public async updateApplicationNote(req: Request, applicationId: string, note: string): Promise<void> {
     logger.debug(req, 'mentorship_admin_update_application_note', 'Saving application reviewer note', { applicationId, noteLength: note.length });
 

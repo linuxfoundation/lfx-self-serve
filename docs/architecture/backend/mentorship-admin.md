@@ -74,7 +74,7 @@ Three write routes, each behind `blockDuringImpersonation` (a 403 with code `IMP
 - The body is `{ note }`: a string, trimmed here, at most `MENTORSHIP_MENTEE_NOTE_MAX` (2000) characters. An empty note clears it. A missing body, a non-string `note`, an over-long note or a bad `applicationId` is a 400 before any upstream call.
 - The BFF sends `PUT /applications/{id}/note` with `{ reviewer_note }` and answers 204.
 - Upstream 403 and 404 (and 409) pass through unchanged. The page shows its own message for a 403 and a 404, the server's message for the impersonation 403, and a generic one otherwise, and leaves the row's note as it was.
-- The note dialog is the same one the mentor surface uses. The row shows the saved note straight away; a save of an unchanged note sends nothing, and one save per application is in flight at a time. A note changes no tab count, so the page does not reload its counts.
+- The note dialog is the same one the mentor surface uses, and the Current Mentees tab owns it. A saved note is written into its row, so the row shows it straight away; leaving the tab and coming back reads the rows again, saved note included. A save of an unchanged note sends nothing, and a row's dialog stays shut while its save is in flight. A note changes no tab count, so the page does not reload its counts.
 - Logs carry the application id and the note's length only, never its text.
 
 ## Program list sourcing

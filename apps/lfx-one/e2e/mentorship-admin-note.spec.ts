@@ -37,16 +37,20 @@ interface NoteRequest {
   body: Record<string, unknown>;
 }
 
+/** A saved note is kept, as upstream would, so the next mentees read carries it. */
 async function open(page: Page, requests: AdminProgramRequests, notes: NoteRequest[], noteStatus = 204): Promise<void> {
+  const saved: Record<string, string> = {};
   await enableMentorshipFlag(page);
   await stubAdminProgramPage(page);
-  await stubAdminMentees(page, requests);
+  await stubAdminMentees(page, requests, undefined, saved);
   await page.route('**/api/mentorship/admin/applications/*/note', (route) => {
     const request = route.request();
-    notes.push({ id: new URL(request.url()).pathname.split('/').slice(-2)[0], method: request.method(), body: request.postDataJSON() });
-    return noteStatus === 204
-      ? route.fulfill({ status: noteStatus })
-      : route.fulfill({ status: noteStatus, contentType: 'application/json', body: JSON.stringify({ error: 'stubbed' }) });
+    const id = new URL(request.url()).pathname.split('/').slice(-2)[0];
+    const body = request.postDataJSON();
+    notes.push({ id, method: request.method(), body });
+    if (noteStatus !== 204) return route.fulfill({ status: noteStatus, contentType: 'application/json', body: JSON.stringify({ error: 'stubbed' }) });
+    saved[id] = body.note;
+    return route.fulfill({ status: noteStatus });
   });
   await openMentorPage(page, ADMIN_PROGRAM_URL);
   await expect(page.getByTestId('mentorship-current-mentees-tab')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
@@ -78,14 +82,16 @@ test.describe('Admin Current Mentees — reviewer notes', () => {
     await expect(page.getByTestId(`mentorship-current-mentee-note-${APPLICATION_ID}`)).toContainText('Strong screening call.');
   });
 
-  test('keeps the note on the row after leaving the tab and coming back', async ({ page }) => {
+  test('shows the saved note again when the tab reads its rows after a switch', async ({ page }) => {
     await open(page, requests, notes);
     await writeNote(page, APPLICATION_ID, 'Strong screening call.');
     await expect(page.getByText('Note saved')).toBeVisible();
+    const readsBefore = requests.mentees.length;
 
     await page.getByTestId('mentorship-program-detail-tab-mentors').click();
     await page.getByTestId('mentorship-program-detail-tab-current-mentees').click();
 
+    await expect.poll(() => requests.mentees.length).toBeGreaterThan(readsBefore);
     await expect(page.getByTestId(`mentorship-current-mentee-note-${APPLICATION_ID}`)).toContainText('Strong screening call.');
   });
 

@@ -13,7 +13,6 @@ import {
   MentorshipAdminMenteesResponse,
   MentorshipAdminTermOption,
   MentorshipApplicantTask,
-  MentorshipNoteRequest,
   MentorshipProgramApplicant,
   MentorshipTaskDialogAssignee,
   MentorshipTaskFormValue,
@@ -24,6 +23,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MenteeNoteDialogComponent } from '../../../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 import { CurrentMenteesTabComponent } from './current-mentees-tab.component';
 
@@ -87,7 +87,8 @@ describe('CurrentMenteesTabComponent', () => {
   let updateApplicationStatus: ReturnType<typeof vi.fn<(applicationId: string, body: MentorshipAdminApplicationStatusUpdate) => Observable<void>>>;
   let withdrawApplication: ReturnType<typeof vi.fn<(applicationId: string) => Observable<void>>>;
   let declinePendingForTerm: ReturnType<typeof vi.fn<(programId: string, termId: string) => Observable<MentorshipAdminDeclinePendingResponse>>>;
-  /** What the stubbed dialog service closes with: an attendance type for Accept, a term for Decline by Term. */
+  let updateApplicationNote: ReturnType<typeof vi.fn<(applicationId: string, note: string) => Observable<void>>>;
+  /** What the stubbed dialog service closes with: an attendance type for Accept, a term for Decline by Term, a note. */
   let dialogResult: unknown;
   let dialogOpen: ReturnType<typeof vi.fn>;
 
@@ -104,6 +105,7 @@ describe('CurrentMenteesTabComponent', () => {
     updateApplicationStatus = vi.fn().mockReturnValue(of(undefined));
     withdrawApplication = vi.fn().mockReturnValue(of(undefined));
     declinePendingForTerm = vi.fn().mockReturnValue(of({ declinedCount: 4 }));
+    updateApplicationNote = vi.fn().mockReturnValue(of(undefined));
     dialogResult = undefined;
     dialogOpen = vi.fn().mockImplementation(() => ({ onClose: of(dialogResult) }));
 
@@ -116,7 +118,7 @@ describe('CurrentMenteesTabComponent', () => {
         MessageService,
         {
           provide: MentorshipAdminService,
-          useValue: { getProgramMentees, getApplicationTasks, updateApplicationStatus, withdrawApplication, declinePendingForTerm },
+          useValue: { getProgramMentees, getApplicationTasks, updateApplicationStatus, withdrawApplication, declinePendingForTerm, updateApplicationNote },
         },
         { provide: DialogService, useValue: { open: dialogOpen } },
         // Stub the dialog service so the spec never touches PrimeNG's DialogService,
@@ -321,33 +323,113 @@ describe('CurrentMenteesTabComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_5"]')).not.toBeNull();
   });
 
-  it('asks the parent to open the note rather than owning the dialog itself', () => {
-    const requests: MentorshipNoteRequest[] = [];
-    fixture.componentInstance.noteRequested.subscribe((request) => requests.push(request));
+  describe('reviewer note', () => {
+    const noteText = (id: string): string | undefined => element().querySelector(`[data-testid="mentorship-current-mentee-note-${id}"]`)?.textContent?.trim();
+    const clickNote = (id: string): void => {
+      element().querySelector<HTMLButtonElement>(`[data-testid="mentorship-current-mentee-note-${id}"]`)?.click();
+      settle();
+    };
+    const showNote = (note: string): void => {
+      getProgramMentees.mockReturnValue(of({ data: [mentee({ note })], total: 1 }));
+      fixture.componentInstance['onRetry']();
+      settle();
+    };
 
-    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-current-mentee-note-app_2"]')?.click();
+    it('opens the note dialog on the note the row arrived with', () => {
+      showNote('from the server');
 
-    expect(requests).toEqual([{ personId: 'app_2', personName: 'Diego Souza', note: undefined }]);
-  });
+      clickNote('app_1');
 
-  it('hands the parent the note the row arrived with', () => {
-    getProgramMentees.mockReturnValue(of({ data: [mentee({ id: 'app_n', name: 'Nia Okoye', note: 'from the server' })], total: 1 }));
-    fixture.componentInstance['onRetry']();
-    settle();
-    const requests: MentorshipNoteRequest[] = [];
-    fixture.componentInstance.noteRequested.subscribe((request) => requests.push(request));
+      expect(dialogOpen).toHaveBeenCalledWith(
+        MenteeNoteDialogComponent,
+        expect.objectContaining({ data: { personName: 'Ifeoma Adeyemi', note: 'from the server' } })
+      );
+    });
 
-    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-current-mentee-note-app_n"]')?.click();
+    it('sends the trimmed note for the application and writes it into the row', () => {
+      dialogResult = '  needs a second look  ';
 
-    expect(requests).toEqual([{ personId: 'app_n', personName: 'Nia Okoye', note: 'from the server' }]);
-  });
+      clickNote('app_2');
 
-  it('renders the parent note draft in place of the note the row arrived with', () => {
-    fixture.componentRef.setInput('noteDrafts', { app_2: 'a saved note' });
-    settle();
+      expect(updateApplicationNote).toHaveBeenCalledWith('app_2', 'needs a second look');
+      expect(noteText('app_2')).toBe('needs a second look');
+      expect(noteText('app_1')).toBe('Add note');
+    });
 
-    expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_2"]')?.textContent?.trim()).toBe('a saved note');
-    expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_1"]')?.textContent?.trim()).toBe('Add note');
+    it('opens the dialog on the saved note the next time', () => {
+      dialogResult = 'a saved note';
+      clickNote('app_1');
+
+      clickNote('app_1');
+
+      expect(dialogOpen).toHaveBeenLastCalledWith(
+        MenteeNoteDialogComponent,
+        expect.objectContaining({ data: { personName: 'Ifeoma Adeyemi', note: 'a saved note' } })
+      );
+    });
+
+    it('sends an empty note to clear the one the row arrived with', () => {
+      showNote('from the server');
+      dialogResult = '';
+
+      clickNote('app_1');
+
+      expect(updateApplicationNote).toHaveBeenCalledWith('app_1', '');
+      expect(noteText('app_1')).toBe('Add note');
+    });
+
+    it('does not send a note that did not change', () => {
+      showNote('from the server');
+      dialogResult = ' from the server ';
+
+      clickNote('app_1');
+
+      expect(updateApplicationNote).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing when the dialog is dismissed', () => {
+      clickNote('app_1');
+
+      expect(updateApplicationNote).not.toHaveBeenCalled();
+      expect(noteText('app_1')).toBe('Add note');
+    });
+
+    it('keeps the note the row had when the save fails', () => {
+      showNote('from the server');
+      dialogResult = 'a new note';
+      updateApplicationNote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+
+      clickNote('app_1');
+
+      expect(noteText('app_1')).toBe('from the server');
+    });
+
+    it('keeps the dialog shut while that row has a save in flight', () => {
+      const pending = new Subject<void>();
+      updateApplicationNote.mockReturnValue(pending);
+      dialogResult = 'first';
+
+      clickNote('app_1');
+      clickNote('app_1');
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+
+      pending.next();
+      pending.complete();
+      settle();
+      clickNote('app_1');
+
+      expect(noteText('app_1')).toBe('first');
+      expect(dialogOpen).toHaveBeenCalledTimes(2);
+    });
+
+    it('survives the dialog service declining to open a second dialog', () => {
+      // PrimeNG returns null when a dialog of the same component is still registered.
+      dialogOpen.mockReturnValue(null);
+
+      expect(() => clickNote('app_1')).not.toThrow();
+      expect(updateApplicationNote).not.toHaveBeenCalled();
+    });
   });
 
   describe('View Tasks', () => {
