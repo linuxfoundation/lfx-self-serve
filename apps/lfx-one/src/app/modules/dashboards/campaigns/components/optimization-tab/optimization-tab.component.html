@@ -161,7 +161,7 @@
                       {{ finding.item.priority }}
                     </span>
                     <div class="flex min-w-0 flex-col gap-0.5">
-                      <span class="whitespace-normal break-words text-sm font-medium text-gray-900 lg:truncate">{{ finding.campaignName }}</span>
+                      <span class="whitespace-normal break-words text-sm font-medium text-gray-900">{{ finding.campaignName }}</span>
                       <span class="text-xs text-gray-500">{{ finding.platformLabel }}</span>
                       <span class="text-xs text-gray-700">{{ finding.item.issue }}</span>
                       <span class="text-xs text-blue-600">→ {{ finding.item.action }}</span>
@@ -251,7 +251,7 @@
             <li class="flex flex-col gap-2 rounded-md border border-gray-100 px-3 py-2" [attr.data-testid]="'optimization-campaign-row-' + row.campaign.id">
               <div class="flex items-center justify-between gap-3">
                 <div class="flex min-w-0 flex-col gap-0.5">
-                  <span class="truncate text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
+                  <span class="whitespace-normal break-words text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
                   <span class="text-xs text-gray-500">{{ row.campaign.platform }} · {{ row.status }}</span>
                   <!--
                     NOT `role="alert"`. The failure is already announced by the toast, which is
@@ -311,6 +311,26 @@
                     <span class="text-xs text-amber-700" [attr.data-testid]="'optimization-campaign-bid-unconfirmed-note-' + row.campaign.id"
                       >Bid change not confirmed. It may have applied; verify it in the ad platform before retrying.</span
                     >
+                  }
+                  <!--
+                    Negative keywords the last request could not confirm stay stated on the row once
+                    the editor is closed: they may already be on the campaign. The editor lists which.
+                  -->
+                  @if (negativesUnconfirmed()[row.campaign.id] && !negativesEditorOpen()[row.campaign.id]) {
+                    <span class="flex flex-wrap items-baseline gap-x-2 text-xs text-amber-700">
+                      <span [attr.data-testid]="'optimization-campaign-negatives-unconfirmed-note-' + row.campaign.id"
+                        >Negative keywords not confirmed. They may have been added; verify them in the ad platform before retrying. Open Negative keywords to
+                        see which.</span
+                      >
+                      <button
+                        type="button"
+                        (click)="dismissNegativesResult(row.campaign.id)"
+                        class="font-medium underline hover:text-amber-900"
+                        [attr.aria-label]="'Dismiss the negative keywords note for ' + row.campaign.campaign_name"
+                        [attr.data-testid]="'optimization-campaign-negatives-unconfirmed-dismiss-' + row.campaign.id">
+                        Dismiss
+                      </button>
+                    </span>
                   }
                   <!-- Why there is no budget editor for this row; the disabled button points here. -->
                   @if (!row.budgetAvailable) {
@@ -378,7 +398,7 @@
                     <button
                       type="button"
                       (click)="toggleNegativesEditor(row)"
-                      [disabled]="!row.negativeKeywordsAvailable || negativesPending()[row.campaign.id]"
+                      [disabled]="!row.negativeKeywordsAvailable || (!!negativesPending()[row.campaign.id] && !!negativesEditorOpen()[row.campaign.id])"
                       [attr.aria-expanded]="row.negativeKeywordsAvailable ? !!negativesEditorOpen()[row.campaign.id] : null"
                       [attr.aria-controls]="negativesEditorOpen()[row.campaign.id] ? 'campaign-negatives-panel-' + row.campaign.id : null"
                       [attr.aria-describedby]="row.negativeKeywordsAvailable ? null : 'campaign-negatives-unavailable-' + row.campaign.id"
@@ -460,7 +480,6 @@
                   [briefId]="briefId()"
                   [campaignId]="row.campaign.id"
                   [campaignName]="row.campaign.campaign_name"
-                  (pendingChange)="setNegativesPending(row.campaign.id, $event)"
                   (cancelEdit)="closeNegativesEditor(row.campaign.id)" />
               }
             </li>
@@ -574,8 +593,15 @@
     }
 
     <!-- Wasted Keyword Spend -->
-    <!-- Focus target for a finding's keyword lever, hence the id and `tabindex="-1"`. -->
-    <div id="optimization-wasted-keywords" tabindex="-1" class="flex flex-col gap-3 focus:outline-none" data-testid="optimization-wasted-keywords">
+    <!--
+      Focus target for a finding's keyword lever, hence the id and `tabindex="-1"`. The ring replaces
+      the outline so the operator can see where the lever moved focus.
+    -->
+    <div
+      id="optimization-wasted-keywords"
+      tabindex="-1"
+      class="flex flex-col gap-3 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+      data-testid="optimization-wasted-keywords">
       <div class="flex items-center gap-2">
         <h4 class="text-sm font-semibold text-gray-900">Keywords Spending Without Conversions</h4>
         @if (hasWastedKeywords()) {

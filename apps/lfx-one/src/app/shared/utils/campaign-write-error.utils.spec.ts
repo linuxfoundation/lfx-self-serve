@@ -40,9 +40,25 @@ describe('classifyCampaignWriteFailure', () => {
     expect(classifyCampaignWriteFailure(httpError(400, { error: 'too low', code: 'BAD_REQUEST' }), messages)).toEqual({ state: 'failed', message: 'too low' });
   });
 
-  it('treats a definite 4xx as a refusal before reading its wording, even a proxy body', () => {
+  it('treats a BFF 4xx as a refusal before reading its wording', () => {
     expect(classifyCampaignWriteFailure(httpError(409, { error: 'could not be confirmed', code: 'CONFLICT' }), messages).state).toBe('failed');
-    expect(classifyCampaignWriteFailure(httpError(403, 'Forbidden'), messages)).toEqual({ state: 'failed', message: 'Forbidden' });
+    expect(classifyCampaignWriteFailure(httpError(403, { error: 'Forbidden', code: 'FORBIDDEN' }), messages)).toEqual({
+      state: 'failed',
+      message: 'Forbidden',
+    });
+  });
+
+  // A 4xx a proxy wrote did not come from the BFF, so nothing says the write was refused: the
+  // status alone is not proof, and claiming "not changed" could invite a duplicate write.
+  it.each([
+    ['a plain-text 403', 403, 'Forbidden'],
+    ['an HTML 400', 400, '<html><body>Bad Request</body></html>'],
+    ['a plain-text 409', 409, 'Conflict'],
+    ['a JSON 400 without the envelope code', 400, { error: 'bad request' }],
+    ['a plain-text 412', 412, 'Precondition Failed'],
+  ])('reports %s from a proxy as unconfirmed, never as a refusal or a conflict', (_label, status, body) => {
+    expect(classifyCampaignWriteFailure(httpError(status, body), messages)).toEqual({ state: 'unconfirmed', message: messages.unconfirmed });
+    expect(classifyCampaignWriteFailure(httpError(status, body), noValidator)).toEqual({ state: 'unconfirmed', message: messages.unconfirmed });
   });
 
   it('reports a 412 as a conflict only when the lever sends a validator', () => {

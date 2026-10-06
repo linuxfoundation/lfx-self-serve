@@ -54,7 +54,8 @@ export function negativeKeywordOutcomeRows(
  * per-keyword results, through the shared `classifyCampaignWriteFailure`. No validator is sent, so
  * there is no `conflict` state.
  *
- * - Any **4xx** except 408 was refused before anything was added, whatever its wording says.
+ * - Any **4xx** except 408 in the BFF's `{ error, code }` envelope was refused before anything was
+ *   added, whatever its wording says. A 4xx without the envelope came from a proxy: `unconfirmed`.
  * - **Unconfirmed**: a message saying so (the BFF's `CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED`
  *   for a confirmation it could not read, or campaign-service's "the negative keywords are
  *   unconfirmed ..."), or any response that is not the BFF's `{ error, code }` envelope (a lost
@@ -84,4 +85,13 @@ export function summarizeNegativeKeywordOutcomes(rows: readonly CampaignNegative
   }
   const summary = parts.join(', ') + '.';
   return rows.some((row) => row.outcome === 'UNCONFIRMED') ? `${summary} ${CAMPAIGN_NEGATIVE_KEYWORD_UNCONFIRMED_ADVICE}` : summary;
+}
+
+/**
+ * The key one campaign's negative-keyword request is held under: (project, brief, campaign), so a
+ * request can never render against another project's or brief's campaign. The separator cannot
+ * occur in a project slug, a brief id or a campaign id.
+ */
+export function campaignNegativeKeywordsKey(projectSlug: string, briefId: string, campaignId: string): string {
+  return `${projectSlug}|${briefId}|${campaignId}`;
 }

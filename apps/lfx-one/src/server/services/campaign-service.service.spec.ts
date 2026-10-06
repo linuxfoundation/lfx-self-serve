@@ -3259,12 +3259,12 @@ describe('CampaignServiceClient.updateCampaignBudget', () => {
 
   it('returns the row with the ETag header as its fresh validator', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(
-      apiResponse({ id: 'c-1', platform: 'google_ads', status: 'active', version: 4, etag: 'stale' }, { etag: '"4"' })
+      apiResponse({ id: 'c-1', platform: 'google-ads', status: 'active', version: 4, etag: 'stale' }, { etag: '"4"' })
     );
 
     const result = await new CampaignServiceClient().updateCampaignBudget(req, args);
 
-    expect(result).toEqual({ id: 'c-1', platform: 'google_ads', status: 'active', version: 4, etag: '"4"' });
+    expect(result).toEqual({ id: 'c-1', platform: 'google-ads', status: 'active', version: 4, etag: '"4"' });
   });
 
   it('passes a 400 through with the platform reason upstream gave', async () => {

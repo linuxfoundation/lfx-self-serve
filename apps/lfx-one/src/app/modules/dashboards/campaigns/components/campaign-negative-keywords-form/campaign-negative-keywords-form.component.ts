@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, output, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, Signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
@@ -11,25 +11,24 @@ import type {
   CampaignNegativeKeywordMatchType,
   CampaignNegativeKeywordOutcomeRow,
   CampaignNegativeKeywordsBatchOutcome,
+  CampaignNegativeKeywordsRequestState,
   NegativeKeywordInputProblem,
 } from '@lfx-one/shared/interfaces';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils';
 import { campaignNegativeKeywordsValidator } from '@lfx-one/shared/validators';
-import { CampaignService } from '@services/campaign.service';
-import {
-  campaignNegativeKeywordsFailureOutcome,
-  negativeKeywordOutcomeRows,
-  summarizeNegativeKeywordOutcomes,
-} from '@shared/utils/campaign-negative-keywords.utils';
+import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
+import { campaignNegativeKeywordsKey, summarizeNegativeKeywordOutcomes } from '@shared/utils/campaign-negative-keywords.utils';
 import { controlTouchedSignal, controlValueSignal, touchedErrorSignal, touchedInvalidSignal } from '@shared/utils/form-control-signals.util';
-import { MessageService } from 'primeng/api';
-import { take } from 'rxjs';
 
 /**
  * Adds campaign-level negative keywords to one Microsoft Advertising campaign from the Optimize tab.
  *
- * Unlike the budget and bid editors this one owns its request: the lever persists nothing on the
- * campaign row and takes no ETag, so there is no validator to share with the row's other writes.
+ * Unlike the budget and bid editors this one takes no ETag: the lever persists nothing on the
+ * campaign row, so there is no validator to share with the row's other writes.
+ *
+ * The request and its outcomes live in the root `CampaignNegativeKeywordsService`, not here: this
+ * form is destroyed by a tab switch or a campaign-list re-read while the request runs on, and a
+ * remounted form must show what that request answered (and that it is still running).
  *
  * The response is NOT atomic and is POSITIONAL: `results[i]` answers the i-th keyword sent, each
  * with its own outcome. The outcomes are therefore zipped onto the exact list that was sent and
@@ -43,9 +42,7 @@ import { take } from 'rxjs';
   styleUrl: './campaign-negative-keywords-form.component.scss',
 })
 export class CampaignNegativeKeywordsFormComponent {
-  private readonly campaignService = inject(CampaignService);
-  // App-root: the toast is what carries an outcome past this component's destruction.
-  private readonly messageService = inject(MessageService);
+  private readonly negativeKeywordsService = inject(CampaignNegativeKeywordsService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly projectSlug = input.required<string>();
@@ -54,11 +51,6 @@ export class CampaignNegativeKeywordsFormComponent {
   public readonly campaignName = input.required<string>();
 
   public readonly cancelEdit = output<void>();
-  /**
-   * Whether a request is in flight. The parent holds the editor open (and its disclosure disabled)
-   * while it is, because closing it would destroy the form and lose the per-keyword outcomes.
-   */
-  public readonly pendingChange = output<boolean>();
 
   public readonly form = new FormGroup({
     keywords: new FormControl<string>('', { nonNullable: true, validators: [campaignNegativeKeywordsValidator()] }),
@@ -69,14 +61,17 @@ export class CampaignNegativeKeywordsFormComponent {
   protected readonly matchTypeOptions = CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPE_OPTIONS;
   protected readonly maxKeywords = MAX_NEGATIVE_KEYWORDS_PER_REQUEST;
 
-  protected readonly pending = signal(false);
+  /** This campaign's latest request, which outlives this form. `null` before the first one. */
+  private readonly request: Signal<CampaignNegativeKeywordsRequestState | null> = computed(
+    () => this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId())] ?? null
+  );
+  protected readonly pending: Signal<boolean> = computed(() => this.request()?.pending ?? false);
   /** Per-keyword outcomes of the last request, in the order the keywords were SENT. */
-  protected readonly outcomeRows = signal<CampaignNegativeKeywordOutcomeRow[]>([]);
+  protected readonly outcomeRows: Signal<CampaignNegativeKeywordOutcomeRow[]> = computed(() => this.request()?.outcomeRows ?? []);
   /** The last request's outcome when it produced no per-keyword results at all. */
-  protected readonly batchOutcome = signal<CampaignNegativeKeywordsBatchOutcome | null>(null);
+  protected readonly batchOutcome: Signal<CampaignNegativeKeywordsBatchOutcome | null> = computed(() => this.request()?.batchOutcome ?? null);
   /** The keywords of the request the batch outcome is about, so an unconfirmed batch can name them. */
-  protected readonly batchKeywords = signal<string[]>([]);
-  protected readonly batchKeywordsText: Signal<string> = computed(() => this.batchKeywords().join(', '));
+  protected readonly batchKeywordsText: Signal<string> = computed(() => (this.request()?.batchKeywords ?? []).join(', '));
 
   protected readonly ids = computed(() => {
     const id = this.campaignId();
@@ -133,76 +128,25 @@ export class CampaignNegativeKeywordsFormComponent {
     }
     const { keywords: text, matchType } = this.form.getRawValue();
     // The SAME list the outcomes are zipped onto: parsed once, sent as-is, rendered by index.
-    const sent = parseNegativeKeywordInput(text).keywords;
-    const campaignName = this.campaignName();
+    const keywords = parseNegativeKeywordInput(text).keywords;
 
-    this.setPending(true);
-    this.outcomeRows.set([]);
-    this.batchOutcome.set(null);
-    this.batchKeywords.set([]);
-
-    // `take(1)`, not `takeUntilDestroyed`: the parent tab can be destroyed by a tab switch, and
-    // aborting the request would lose the outcome of keywords that may already have been added.
-    this.campaignService
-      .addNegativeKeywords(
-        this.projectSlug(),
-        this.briefId(),
-        this.campaignId(),
-        sent.map((kw) => ({ text: kw, matchType }))
-      )
-      .pipe(take(1))
-      .subscribe({
-        next: (result) => {
-          const rows = negativeKeywordOutcomeRows(sent, matchType, result);
-          this.setPending(false);
-          this.outcomeRows.set(rows);
-          if (!rows.some((row) => row.outcome === 'FAILED' || row.outcome === 'UNCONFIRMED')) {
-            this.form.controls.keywords.reset('');
-          }
-          this.announceResult(campaignName, rows);
-        },
-        error: (err: unknown) => {
-          const outcome = campaignNegativeKeywordsFailureOutcome(err);
-          this.setPending(false);
-          this.batchOutcome.set(outcome);
-          this.batchKeywords.set(sent);
-          this.messageService.add({
-            severity: outcome.state === 'unconfirmed' ? 'warn' : 'error',
-            summary: outcome.state === 'unconfirmed' ? `Negative keywords not confirmed for ${campaignName}` : `Negative keywords not added to ${campaignName}`,
-            detail: outcome.message,
-            sticky: true,
-          });
-        },
-      });
-  }
-
-  /**
-   * Sets `pending` and tells the parent. Not emitted once destroyed: the request outlives the form
-   * (`take(1)`), and an output must not emit after its component is gone.
-   */
-  private setPending(value: boolean): void {
-    this.pending.set(value);
-    if (!this.destroyRef.destroyed) {
-      this.pendingChange.emit(value);
-    }
-  }
-
-  /** One toast for the whole request; the per-keyword detail stays in the list. */
-  private announceResult(campaignName: string, rows: CampaignNegativeKeywordOutcomeRow[]): void {
-    const unsettled = rows.some((row) => row.outcome === 'FAILED' || row.outcome === 'UNCONFIRMED');
-    const unconfirmed = rows.some((row) => row.outcome === 'UNCONFIRMED');
-    let severity: 'success' | 'warn' | 'error' = 'success';
-    if (unconfirmed) {
-      severity = 'warn';
-    } else if (unsettled) {
-      severity = 'error';
-    }
-    this.messageService.add({
-      severity,
-      summary: `Negative keywords for ${campaignName}`,
-      detail: summarizeNegativeKeywordOutcomes(rows),
-      ...(unsettled ? { sticky: true } : { life: 5000 }),
-    });
+    this.negativeKeywordsService.submit(
+      {
+        projectSlug: this.projectSlug(),
+        briefId: this.briefId(),
+        campaignId: this.campaignId(),
+        campaignName: this.campaignName(),
+        keywords,
+        matchType,
+      },
+      // Every keyword added or already present: nothing left to resend. A form destroyed meanwhile
+      // has no input to clear.
+      () => {
+        if (!this.destroyRef.destroyed) {
+          this.form.controls.keywords.reset('');
+        }
+      }
+    );
   }
 
   /** "2 added, 1 already present, 1 not confirmed" — counts of keywords only, in outcome order. */

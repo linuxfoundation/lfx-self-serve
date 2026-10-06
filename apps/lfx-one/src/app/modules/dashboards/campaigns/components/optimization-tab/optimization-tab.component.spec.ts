@@ -15,6 +15,7 @@ import {
   CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON,
   CAMPAIGN_FINDING_ALREADY_PAUSED_REASON,
   CAMPAIGN_TOGGLE_FAILURE_MESSAGES,
+  CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES,
 } from '@lfx-one/shared/constants';
 import {
   BriefMetrics,
@@ -26,6 +27,7 @@ import {
   CampaignRow,
   CampaignStatusUpdateResult,
 } from '@lfx-one/shared/interfaces';
+import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
@@ -321,7 +323,9 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
   // The most expensive lie available to this component: reporting a pause that did not happen
   // would stop someone watching a campaign that is still spending.
   it('keeps the old status and says so when the toggle fails', () => {
-    updateCampaignStatus.mockReturnValue(throwError(() => new Error('upstream unavailable')));
+    updateCampaignStatus.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR' } }))
+    );
     render([doc({ status: 'created' })]);
 
     fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
@@ -335,7 +339,9 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
   // A failed RESUME leaves the campaign PAUSED. Saying "it has not been paused" there is the exact
   // inversion of the outcome — it describes a campaign that is spending when the campaign is dark.
   it('words a failed resume from what actually happened, not from the pause case', () => {
-    updateCampaignStatus.mockReturnValue(throwError(() => new Error('upstream unavailable')));
+    updateCampaignStatus.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR' } }))
+    );
     render([doc({ status: 'paused' })]);
 
     const button = (): HTMLElement => fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
@@ -365,7 +371,11 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
    * has its own tests above.
    */
   it('tells the user to refresh, not retry, when the toggle is refused with 412', () => {
-    updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed' })));
+    updateCampaignStatus.mockReturnValue(
+      throwError(
+        () => new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed', error: { error: 'etag mismatch', code: 'PRECONDITION_FAILED' } })
+      )
+    );
     render([doc({ status: 'created' })]);
 
     fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
@@ -384,7 +394,11 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
    * later. Wired to the EXISTING `retryCampaigns` output, which is the parent's re-read path.
    */
   it('offers the list re-read the 412 copy tells the user to perform', () => {
-    updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed' })));
+    updateCampaignStatus.mockReturnValue(
+      throwError(
+        () => new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed', error: { error: 'etag mismatch', code: 'PRECONDITION_FAILED' } })
+      )
+    );
     render([doc({ status: 'created' })]);
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
 
@@ -405,10 +419,10 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
    */
   it.each([
     [500, 'created', 'Could not pause this campaign. It is still running — try again.'],
-    [0, 'created', 'Could not pause this campaign. It is still running — try again.'],
+    [409, 'created', 'Could not pause this campaign. It is still running — try again.'],
     [500, 'paused', 'Could not resume this campaign. It is still paused — try again.'],
-  ])('keeps the per-direction copy for a %s failure on a %s campaign', (status, campaignStatus, expected) => {
-    updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status, statusText: 'nope' })));
+  ])('keeps the per-direction copy for a BFF %s failure on a %s campaign', (status, campaignStatus, expected) => {
+    updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status, statusText: 'nope', error: { error: 'refused', code: 'X' } })));
     render([doc({ status: campaignStatus })]);
 
     fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
@@ -430,8 +444,33 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent).toContain('still running');
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent).toContain(
+      CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES.pause
+    );
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+  });
+
+  // The toggle is classified like every other lever. Nothing the BFF wrote says these were refused,
+  // so the toggle may have reached the platform: never "it is still running", and a proxy's 412 is
+  // not proof of a concurrent edit either.
+  it.each([
+    ['no answer at all', 'created', 0, null, CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES.pause],
+    ["a proxy's plain-text 504", 'created', 504, 'upstream request timeout', CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES.pause],
+    ["a proxy's plain-text 412", 'created', 412, 'Precondition Failed', CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES.pause],
+    ["a proxy's HTML 403", 'paused', 403, '<html>Forbidden</html>', CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES.resume],
+  ])('reports %s on a %s campaign as unconfirmed, with a warning toast', (_label, campaignStatus, status, body, expected) => {
+    updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status, error: body })));
+    render([doc({ status: campaignStatus })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    const message = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent;
+    expect(message).toContain(expected);
+    expect(message).not.toContain('still running');
+    expect(message).not.toContain('still paused');
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', detail: expected, sticky: true }));
   });
 
   // The class this finding is about, not the instance. Every status campaign-service refuses with
@@ -636,7 +675,11 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
   }
 
   function conflict(): void {
-    updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed' })));
+    updateCampaignStatus.mockReturnValue(
+      throwError(
+        () => new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed', error: { error: 'etag mismatch', code: 'PRECONDITION_FAILED' } })
+      )
+    );
   }
 
   it('clears the conflict banner when the refresh it asked for delivers a new list', () => {
@@ -796,7 +839,7 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
 
     refreshFromParent([doc({ status: 'created', etag: '"20"' })]);
 
-    inFlight.error(new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed' }));
+    inFlight.error(new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed', error: { error: 'etag mismatch', code: 'PRECONDITION_FAILED' } }));
     fixture.detectChanges();
 
     const error = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]');
@@ -1161,7 +1204,7 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
       fixture.detectChanges();
 
       // Only now does the abandoned request fail with a conflict.
-      inFlight.error(new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed' }));
+      inFlight.error(new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed', error: { error: 'etag mismatch', code: 'PRECONDITION_FAILED' } }));
       fixture.detectChanges();
 
       // The new brief was never conflicted, and its row must stay usable.
@@ -1422,7 +1465,9 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     fixture.detectChanges();
     fixture.destroy();
 
-    inFlight.error(new HttpErrorResponse({ status: 500, statusText: 'Server Error' }));
+    inFlight.error(
+      new HttpErrorResponse({ status: 500, statusText: 'Server Error', error: { error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR' } })
+    );
 
     expect(messageAdd).toHaveBeenCalledTimes(1);
     const toast = messageAdd.mock.calls[0][0];
@@ -1677,7 +1722,11 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
    * makes the text still reachable is intact.
    */
   it('renders the inline failure as a description rather than a second live region', () => {
-    updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, statusText: 'Server Error' })));
+    updateCampaignStatus.mockReturnValue(
+      throwError(
+        () => new HttpErrorResponse({ status: 500, statusText: 'Server Error', error: { error: 'Internal server error', code: 'INTERNAL_SERVER_ERROR' } })
+      )
+    );
     render([doc({ status: 'created', etag: '"3"' })]);
     fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
     fixture.detectChanges();
@@ -2689,7 +2738,11 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
     updateCampaignBudget.mockReturnValue(
       throwError(
         () =>
-          new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed', error: { error: 'the supplied ETag does not match the current version' } })
+          new HttpErrorResponse({
+            status: 412,
+            statusText: 'Precondition Failed',
+            error: { error: 'the supplied ETag does not match the current version', code: 'PRECONDITION_FAILED' },
+          })
       )
     );
     render([doc()]);
@@ -2725,7 +2778,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
     fixture.detectChanges();
     render([doc({ etag: '"8"' })]);
 
-    inFlight.error(new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed' }));
+    inFlight.error(new HttpErrorResponse({ status: 412, statusText: 'Precondition Failed', error: { error: 'etag mismatch', code: 'PRECONDITION_FAILED' } }));
     fixture.detectChanges();
 
     expect(q('optimization-campaigns-conflict')).toBeNull();
@@ -2906,18 +2959,30 @@ describe('OptimizationTabComponent — monitor findings and their levers', () =>
 
     expect(updateCampaignStatus).toHaveBeenCalledTimes(1);
     expect(q('optimization-campaign-toggle-c-1')!.textContent).toContain('Resume');
-    expect(lever('c-1-zero_delivery')).toBeNull();
-    expect(q('optimization-finding-no-lever-c-1-zero_delivery')).not.toBeNull();
+    // Still the Pause lever, disabled with the already-paused reason: the row HAS a control, so
+    // "No control for this in LFX One" would be false.
+    const button = lever('c-1-zero_delivery')!;
+    expect(button.textContent).toContain('Pause');
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-describedby')).toBe('optimization-finding-blocked-c-1-zero_delivery');
+    expect(q('optimization-finding-no-lever-c-1-zero_delivery')).toBeNull();
     expect(q('optimization-finding-c-1-zero_delivery')!.textContent).not.toContain('Resume');
     expect(q('optimization-finding-blocked-c-1-zero_delivery')!.textContent).toContain(CAMPAIGN_FINDING_ALREADY_PAUSED_REASON);
+    button.click();
+    expect(updateCampaignStatus).toHaveBeenCalledTimes(1);
   });
 
   it('never offers Resume for a finding about a campaign that is already paused', async () => {
     await render([doc({ status: 'paused' })], [item({ rule: 'zero_delivery' })]);
 
     expect(q('optimization-campaign-toggle-c-1')!.textContent).toContain('Resume');
-    expect(lever('c-1-zero_delivery')).toBeNull();
+    const button = lever('c-1-zero_delivery')!;
+    expect(button.textContent).toContain('Pause');
+    expect(button.textContent).not.toContain('Resume');
+    expect(button.disabled).toBe(true);
+    expect(q('optimization-finding-no-lever-c-1-zero_delivery')).toBeNull();
     expect(q('optimization-finding-blocked-c-1-zero_delivery')!.textContent).toContain(CAMPAIGN_FINDING_ALREADY_PAUSED_REASON);
+    button.click();
     expect(updateCampaignStatus).not.toHaveBeenCalled();
   });
 
@@ -3187,7 +3252,7 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
   });
 
   it('marks the row conflicted on a 412, which blocks the budget editor too', () => {
-    updateCampaignBid.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412, error: { error: 'etag mismatch' } })));
+    updateCampaignBid.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412, error: { error: 'etag mismatch', code: 'PRECONDITION_FAILED' } })));
     render([doc()]);
     changeBid(1);
 
@@ -3250,6 +3315,130 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     form.cancelEdit.emit();
     fixture.detectChanges();
     expect(q('optimization-campaign-negatives-form-c-1')).toBeNull();
+  });
+
+  // A campaign-list re-read sets the list to null, which unmounts every row and the editor with
+  // it, while the request runs on. The pending flag used to be fed by the editor's output, which a
+  // destroyed editor cannot emit, so it stayed true: Close was dead and the disclosure disabled.
+  it('clears negative-keyword pending when the editor was unmounted mid-request, and keeps the outcome', () => {
+    const response = new Subject<CampaignNegativeKeywordsResult>();
+    (TestBed.inject(CampaignService).addNegativeKeywords as ReturnType<typeof vi.fn>).mockReturnValue(response);
+    render([doc()]);
+    (q('optimization-campaign-negatives-edit-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const form = fixture.debugElement.query(By.directive(CampaignNegativeKeywordsFormComponent)).componentInstance as CampaignNegativeKeywordsFormComponent;
+    form.form.setValue({ keywords: 'free\ncheap', matchType: 'Exact' });
+    q('optimization-campaign-negatives-form-c-1')!.dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+
+    // The re-read: the rows (and the editor) go away, then come back with the editor redrawn.
+    render(null);
+    expect(q('optimization-campaign-negatives-form-c-1')).toBeNull();
+    render([doc()]);
+    const remounted = () =>
+      fixture.debugElement.query(By.directive(CampaignNegativeKeywordsFormComponent)).componentInstance as CampaignNegativeKeywordsFormComponent;
+    expect(remounted()).not.toBe(form);
+    // Still in flight: the redrawn editor holds, and Close does nothing yet.
+    remounted().cancelEdit.emit();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-negatives-form-c-1')).not.toBeNull();
+
+    response.next({
+      campaignId: 'c-1',
+      appliedCount: 1,
+      results: [
+        { text: 'free', matchType: 'Exact', outcome: 'APPLIED' },
+        { text: 'cheap', matchType: 'Exact', outcome: 'UNCONFIRMED' },
+      ],
+    });
+    response.complete();
+    fixture.detectChanges();
+
+    // The redrawn editor shows which keywords the request answered, in the order they were sent.
+    const items = Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="optimization-campaign-negatives-result-"]')) as HTMLElement[];
+    expect(items.map((item) => item.querySelector('[data-outcome]')!.getAttribute('data-outcome'))).toEqual(['APPLIED', 'UNCONFIRMED']);
+    const disclosure = q('optimization-campaign-negatives-edit-c-1') as HTMLButtonElement;
+    expect(disclosure.disabled).toBe(false);
+
+    // Pending cleared, so Close works; the unconfirmed keyword then stays stated on the row.
+    remounted().cancelEdit.emit();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-negatives-form-c-1')).toBeNull();
+    expect(q('optimization-campaign-negatives-unconfirmed-note-c-1')!.textContent).toContain('may have been added');
+
+    // Reopening shows the same outcomes again.
+    disclosure.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="optimization-campaign-negatives-result-"]').length).toBe(2);
+    expect(q('optimization-campaign-negatives-unconfirmed-note-c-1')).toBeNull();
+  });
+
+  function submitNegatives(response: Subject<CampaignNegativeKeywordsResult>): void {
+    (TestBed.inject(CampaignService).addNegativeKeywords as ReturnType<typeof vi.fn>).mockReturnValue(response);
+    (q('optimization-campaign-negatives-edit-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const form = fixture.debugElement.query(By.directive(CampaignNegativeKeywordsFormComponent)).componentInstance as CampaignNegativeKeywordsFormComponent;
+    form.form.setValue({ keywords: 'free', matchType: 'Exact' });
+    q('optimization-campaign-negatives-form-c-1')!.dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+  }
+
+  function settleUnconfirmed(response: Subject<CampaignNegativeKeywordsResult>): void {
+    response.next({ campaignId: 'c-1', appliedCount: 0, results: [{ text: 'free', matchType: 'Exact', outcome: 'UNCONFIRMED' }] });
+    response.complete();
+    fixture.detectChanges();
+  }
+
+  function closeNegatives(): void {
+    (
+      fixture.debugElement.query(By.directive(CampaignNegativeKeywordsFormComponent)).componentInstance as CampaignNegativeKeywordsFormComponent
+    ).cancelEdit.emit();
+    fixture.detectChanges();
+  }
+
+  it("dismisses a row's unconfirmed negative-keywords note", () => {
+    render([doc()]);
+    const response = new Subject<CampaignNegativeKeywordsResult>();
+    submitNegatives(response);
+    settleUnconfirmed(response);
+    closeNegatives();
+    expect(q('optimization-campaign-negatives-unconfirmed-note-c-1')).not.toBeNull();
+
+    q('optimization-campaign-negatives-unconfirmed-dismiss-c-1')!.click();
+    fixture.detectChanges();
+
+    expect(q('optimization-campaign-negatives-unconfirmed-note-c-1')).toBeNull();
+  });
+
+  it('clears settled negative-keyword results on Refresh, but keeps one in flight', () => {
+    render([doc(), doc({ id: 'c-2', campaign_name: 'Other' })]);
+    const settled = new Subject<CampaignNegativeKeywordsResult>();
+    submitNegatives(settled);
+    settleUnconfirmed(settled);
+    closeNegatives();
+    const service = TestBed.inject(CampaignNegativeKeywordsService);
+    // A second campaign's request, still running.
+    (TestBed.inject(CampaignService).addNegativeKeywords as ReturnType<typeof vi.fn>).mockReturnValue(new Subject());
+    service.submit({ projectSlug: 'tlf', briefId: 'b-1', campaignId: 'c-2', campaignName: 'Other', keywords: ['x'], matchType: 'Exact' });
+
+    q('optimization-refresh')!.click();
+    fixture.detectChanges();
+
+    expect(q('optimization-campaign-negatives-unconfirmed-note-c-1')).toBeNull();
+    expect(service.requests()['tlf|b-1|c-1']).toBeUndefined();
+    expect(service.requests()['tlf|b-1|c-2'].pending).toBe(true);
+  });
+
+  it("clears the abandoned brief's settled negative-keyword results when the brief changes", () => {
+    render([doc()]);
+    const response = new Subject<CampaignNegativeKeywordsResult>();
+    submitNegatives(response);
+    settleUnconfirmed(response);
+
+    fixture.componentRef.setInput('briefId', 'b-2');
+    fixture.detectChanges();
+
+    expect(TestBed.inject(CampaignNegativeKeywordsService).requests()['tlf|b-1|c-1']).toBeUndefined();
   });
 
   it('disables negative keywords for a Microsoft campaign never created on the platform', () => {

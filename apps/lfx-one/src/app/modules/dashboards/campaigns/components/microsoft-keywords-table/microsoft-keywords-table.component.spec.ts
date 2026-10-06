@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MICROSOFT_KEYWORDS_WINDOWS } from '@lfx-one/shared/constants';
+import { MICROSOFT_KEYWORD_PREVIOUS_UNCONFIRMED_NOTE, MICROSOFT_KEYWORDS_WINDOWS } from '@lfx-one/shared/constants';
 import { MicrosoftKeywordActionRequest, MicrosoftKeywordMetrics, MicrosoftKeywordMetricsResponse } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { of, throwError } from 'rxjs';
@@ -47,8 +48,9 @@ describe('MicrosoftKeywordsTableComponent', () => {
   let fixture: ComponentFixture<MicrosoftKeywordsTableComponent>;
   let getMicrosoftKeywords: ReturnType<typeof vi.fn>;
 
-  async function render(response: MicrosoftKeywordMetricsResponse | Error): Promise<void> {
-    getMicrosoftKeywords = vi.fn().mockReturnValue(response instanceof Error ? throwError(() => response) : of(response));
+  async function render(response: MicrosoftKeywordMetricsResponse | Error | HttpErrorResponse): Promise<void> {
+    const failed = response instanceof Error || response instanceof HttpErrorResponse;
+    getMicrosoftKeywords = vi.fn().mockReturnValue(failed ? throwError(() => response) : of(response));
     await TestBed.configureTestingModule({
       imports: [MicrosoftKeywordsTableComponent],
       providers: [{ provide: CampaignService, useValue: { getMicrosoftKeywords } }],
@@ -147,11 +149,40 @@ describe('MicrosoftKeywordsTableComponent', () => {
     expect(q('microsoft-keywords-error')).toBeNull();
   });
 
-  it.each([404, 400])('states a foundation without Microsoft metrics plainly (status %i), with no error box', async (status) => {
-    await render(Object.assign(new Error('nope'), { status }));
+  const httpError = (status: number, error: unknown): HttpErrorResponse => new HttpErrorResponse({ status, statusText: 'x', error });
+
+  it.each([
+    ['no connection (404)', httpError(404, { error: 'no microsoft ads connection configured for this project', code: 'NOT_FOUND' })],
+    ['metrics switched off (400)', httpError(400, { error: 'keyword and audience insights are not supported for this platform', code: 'BAD_REQUEST' })],
+    ['the insights operation unsupported (400)', httpError(400, { error: 'keyword insights is not supported for this platform', code: 'BAD_REQUEST' })],
+  ])('states a foundation without Microsoft metrics plainly (%s), with no error box', async (_label, error) => {
+    await render(error);
 
     expect(q('microsoft-keywords-not-connected')!.textContent).toContain("aren't available for this foundation");
     expect(q('microsoft-keywords-error')).toBeNull();
+  });
+
+  // A status alone is not "not connected": a rejected read, or a deployment without the route,
+  // must stay a visible, retryable failure rather than be hidden as a missing connection.
+  it.each([
+    ['an unusable connection (400)', httpError(400, { error: 'the stored microsoft ads connection cannot be used as configured', code: 'BAD_REQUEST' })],
+    ['a route the deployment has not exposed (bare 404)', httpError(404, '404 page not found')],
+    ['a 404 envelope about something else', httpError(404, { error: 'Not Found', code: 'NOT_FOUND' })],
+    ['a 400 with no envelope', httpError(400, '<html>Bad Request</html>')],
+    [
+      'a longer refusal that merely quotes the unsupported sentence',
+      httpError(400, { error: 'window refused: keyword insights is not supported for this platform; use last_30_days', code: 'BAD_REQUEST' }),
+    ],
+    [
+      'a 404 that merely quotes the no-connection sentence',
+      httpError(404, { error: 'route gone (no x connection configured for this project) retry', code: 'NOT_FOUND' }),
+    ],
+  ])('reports %s as a read failure with Retry, not as a missing connection', async (_label, error) => {
+    await render(error);
+
+    expect(q('microsoft-keywords-not-connected')).toBeNull();
+    expect(q('microsoft-keywords-error')).not.toBeNull();
+    expect(q('microsoft-keywords-retry')).not.toBeNull();
   });
 
   it('asks the parent for an action and renders the outcome it hands back, keyed by platform', async () => {
@@ -171,5 +202,66 @@ describe('MicrosoftKeywordsTableComponent', () => {
     const outcome = q('microsoft-keyword-outcome-microsoft-ads:111-222')!;
     expect(outcome.textContent).toContain('Unconfirmed');
     expect(outcome.textContent).not.toContain('Done');
+  });
+
+  // The outcome is shown beside the controls, not instead of them: the parent keeps it, so a
+  // failed action could otherwise never be retried, nor a verified unconfirmed one acted on again.
+  // A confirmed REMOVE leaves nothing to act on: the controls go until the table is read again.
+  it('withdraws the controls after a confirmed remove, and offers them again after a re-read', async () => {
+    await render(report());
+    q('microsoft-keyword-remove-microsoft-ads:111-222')!.click();
+    fixture.componentRef.setInput('actionResults', { 'microsoft-ads:111-222': { success: true, state: 'done', message: 'Removed' } });
+    fixture.detectChanges();
+
+    expect(q('microsoft-keyword-outcome-microsoft-ads:111-222')!.textContent).toContain('Done');
+    expect(q('microsoft-keyword-pause-microsoft-ads:111-222')).toBeNull();
+    expect(q('microsoft-keyword-remove-microsoft-ads:111-222')).toBeNull();
+
+    fixture.componentRef.setInput('reloadToken', 1);
+    fixture.detectChanges();
+    expect(q('microsoft-keyword-pause-microsoft-ads:111-222')).not.toBeNull();
+    expect(q('microsoft-keyword-remove-microsoft-ads:111-222')).not.toBeNull();
+  });
+
+  it('keeps the controls after a confirmed pause', async () => {
+    await render(report());
+    q('microsoft-keyword-pause-microsoft-ads:111-222')!.click();
+    fixture.componentRef.setInput('actionResults', { 'microsoft-ads:111-222': { success: true, state: 'done', message: 'Paused' } });
+    fixture.detectChanges();
+
+    expect(q('microsoft-keyword-remove-microsoft-ads:111-222')).not.toBeNull();
+  });
+
+  // Both actions only reduce spend, so they stay enabled after an unconfirmed one, with the note.
+  it('notes an unconfirmed previous attempt beside controls that stay enabled', async () => {
+    await render(report());
+    q('microsoft-keyword-remove-microsoft-ads:111-222')!.click();
+    fixture.componentRef.setInput('actionResults', {
+      'microsoft-ads:111-222': { success: false, state: 'unconfirmed', message: 'The change was sent but could not be confirmed.' },
+    });
+    fixture.detectChanges();
+
+    expect(q('microsoft-keyword-previous-unconfirmed-microsoft-ads:111-222')!.textContent).toContain(MICROSOFT_KEYWORD_PREVIOUS_UNCONFIRMED_NOTE);
+    expect((q('microsoft-keyword-pause-microsoft-ads:111-222') as HTMLButtonElement).disabled).toBe(false);
+    expect((q('microsoft-keyword-remove-microsoft-ads:111-222') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('keeps the action controls available after an outcome, and hides them only while working', async () => {
+    await render(report());
+    const asked: MicrosoftKeywordActionRequest[] = [];
+    fixture.componentInstance.keywordAction.subscribe((r) => asked.push(r));
+
+    fixture.componentRef.setInput('actionResults', {
+      'microsoft-ads:111-222': { success: false, state: 'failed', message: 'The keyword was not changed.' },
+    });
+    fixture.detectChanges();
+    expect(q('microsoft-keyword-outcome-microsoft-ads:111-222')!.textContent).toContain('The keyword was not changed.');
+    q('microsoft-keyword-pause-microsoft-ads:111-222')!.click();
+    expect(asked).toEqual([{ keyword: keyword(), action: 'pause' }]);
+
+    fixture.componentRef.setInput('actionInProgress', { 'microsoft-ads:111-222': true });
+    fixture.detectChanges();
+    expect(q('microsoft-keyword-pause-microsoft-ads:111-222')).toBeNull();
+    expect(q('microsoft-keyword-remove-microsoft-ads:111-222')).toBeNull();
   });
 });

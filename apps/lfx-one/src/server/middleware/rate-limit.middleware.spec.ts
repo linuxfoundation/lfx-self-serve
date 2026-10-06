@@ -4,7 +4,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 
-import { aiRateLimiter } from './rate-limit.middleware';
+import { aiRateLimiter, apiRateLimiter } from './rate-limit.middleware';
 
 // `aiRateLimiter` counts in the default in-process MemoryStore, so the counter is shared across
 // every test in this file. express-rate-limit exposes no reset, so each test has to use its own key
@@ -83,7 +83,10 @@ function buildRes(): Response & { statusCode?: number; headers: Record<string, s
 }
 
 /** Drives the limiter once and reports whether the request was allowed through. */
-async function request(opts: { sub?: string; ip?: string } = {}): Promise<{
+async function request(
+  opts: { sub?: string; ip?: string } = {},
+  limiter: typeof aiRateLimiter = aiRateLimiter
+): Promise<{
   allowed: boolean;
   statusCode?: number;
   headers: Record<string, string>;
@@ -93,7 +96,7 @@ async function request(opts: { sub?: string; ip?: string } = {}): Promise<{
   const res = buildRes();
   const next = vi.fn() as unknown as NextFunction;
 
-  await aiRateLimiter(req, res, next);
+  await limiter(req, res, next);
 
   const sent = res.send as unknown as ReturnType<typeof vi.fn>;
 
@@ -171,5 +174,29 @@ describe('aiRateLimiter', () => {
     // A different /56 is a different caller and keeps its own budget. The fourth group's *high* byte
     // is what has to differ — `0100` and above leave the exhausted /56.
     expect((await request({ ip: `${prefix}:0100:0:0:0:1` })).allowed).toBe(true);
+  });
+});
+
+describe('apiRateLimiter', () => {
+  const API_LIMIT = 500;
+
+  // A throttled request never reached a handler, so it must read as a definite refusal. The campaign
+  // write levers treat a 4xx WITHOUT the app's `{ error, code }` envelope as a proxy's answer, i.e.
+  // "may have applied", so the 429 has to carry the envelope.
+  it("rejects the request over the limit with 429 in the app's JSON error envelope", async () => {
+    const ip = `${testIpv6Prefix()}:0001::1`;
+
+    for (let attempt = 1; attempt <= API_LIMIT; attempt++) {
+      const result = await request({ ip }, apiRateLimiter);
+      if (!result.allowed) {
+        throw new Error(`request ${attempt} should be allowed`);
+      }
+    }
+
+    const rejected = await request({ ip }, apiRateLimiter);
+
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect(rejected.body).toEqual({ error: 'Too many requests, please try again later.', code: 'RATE_LIMITED' });
   });
 });

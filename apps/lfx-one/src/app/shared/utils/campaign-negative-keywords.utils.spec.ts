@@ -109,7 +109,10 @@ describe('campaignNegativeKeywordsFailureOutcome', () => {
 
   it('passes a refusal through verbatim', () => {
     const message = 'negative keywords can be added to Microsoft Advertising campaigns only';
-    expect(campaignNegativeKeywordsFailureOutcome(httpError(400, { error: message }))).toEqual({ state: 'failed', message });
-    expect(campaignNegativeKeywordsFailureOutcome(httpError(400, null))).toEqual({ state: 'failed', message: CAMPAIGN_NEGATIVE_KEYWORDS_FAILURE_FALLBACK });
+    expect(campaignNegativeKeywordsFailureOutcome(httpError(400, { error: message, code: 'BAD_REQUEST' }))).toEqual({ state: 'failed', message });
+    expect(campaignNegativeKeywordsFailureOutcome(httpError(400, { error: '', code: 'BAD_REQUEST' }))).toEqual({
+      state: 'failed',
+      message: CAMPAIGN_NEGATIVE_KEYWORDS_FAILURE_FALLBACK,
+    });
   });
 });
