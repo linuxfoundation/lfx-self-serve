@@ -1554,6 +1554,9 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
       endDate: '2026-09-30',
       includeSearch: true,
       includeDemandGen: false,
+      includePerformanceMax: false,
+      includeVideo: false,
+      includeDisplay: false,
       eventSlug: slug,
     };
 
@@ -2491,6 +2494,9 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       endDate: '2026-09-30',
       includeSearch: true,
       includeDemandGen: true,
+      includePerformanceMax: false,
+      includeVideo: false,
+      includeDisplay: false,
       linkedInAccountId: accountId,
       linkedInGeoTargets: [],
       linkedInTargetingProfile: 'cloud-native',
@@ -3244,6 +3250,9 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
       endDate: '2026-09-30',
       includeSearch: false,
       includeDemandGen: true,
+      includePerformanceMax: false,
+      includeVideo: false,
+      includeDisplay: false,
     });
     fixture.detectChanges();
 
@@ -3327,6 +3336,9 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
       registrationUrl: 'https://example.com',
       includeSearch: true,
       includeDemandGen: true,
+      includePerformanceMax: false,
+      includeVideo: false,
+      includeDisplay: false,
       budgetUsd: 500,
       startDate: '2026-09-01',
       endDate: '2026-09-30',
@@ -3442,6 +3454,255 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
   it('preserves a restored draft Demand Gen selection where the deployment supports it', () => {
     restoreDraft(true, true);
     expect(demandGenValue()).toBe(true);
+  });
+});
+
+/**
+ * The SAME gate, one capability over, for Performance Max / Video / Display.
+ *
+ * A separate describe rather than extra rows in the one above, because the two capabilities are
+ * independent and derived by OPPOSITE rules upstream: `demandGenEnabled` is TRUE while the create
+ * cutover is dark (the legacy creator serves Demand Gen), `googleChannelsEnabled` is FALSE there
+ * (the legacy creator does not know these three and would build a funded Search campaign for them
+ * and report success). Every assertion below is written so that collapsing the two inputs into one
+ * would break it.
+ */
+describe('ImplementationTabComponent google channels capability gate', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  function checkbox(control: string): HTMLInputElement | null {
+    return fixture.nativeElement.querySelector(`input[formControlName="${control}"]`);
+  }
+
+  function value(control: string): boolean {
+    return (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].controls[control].value;
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it.each([['includePerformanceMax'], ['includeVideo'], ['includeDisplay']])('shows %s only on an explicit true', (control) => {
+    expect(checkbox(control)).toBeNull();
+
+    fixture.componentRef.setInput('googleChannelsEnabled', null);
+    fixture.detectChanges();
+    expect(checkbox(control)).toBeNull();
+
+    fixture.componentRef.setInput('googleChannelsEnabled', false);
+    fixture.detectChanges();
+    expect(checkbox(control)).toBeNull();
+
+    fixture.componentRef.setInput('googleChannelsEnabled', true);
+    fixture.detectChanges();
+    expect(checkbox(control)).not.toBeNull();
+  });
+
+  /**
+   * The two capabilities must not stand in for one another. With `demandGenEnabled` on and the
+   * newer capability unanswered, Demand Gen renders and the three do not — which is exactly the
+   * production state during the staged rollout.
+   */
+  it('does not let the demand-gen capability unlock the three newer channels', () => {
+    fixture.componentRef.setInput('demandGenEnabled', true);
+    fixture.detectChanges();
+
+    expect(checkbox('includeDemandGen')).not.toBeNull();
+    expect(checkbox('includePerformanceMax')).toBeNull();
+    expect(checkbox('includeVideo')).toBeNull();
+    expect(checkbox('includeDisplay')).toBeNull();
+  });
+
+  /**
+   * `restoreDraft` sets the draft BEFORE the brief, for the reason spelled out on the demand-gen
+   * sibling: the seeding effect depends on `briefData` and reads `draft` inside `untracked()`, so
+   * the other order silently leaves the controls at their `[false]` default and makes the negative
+   * assertions pass without any guard existing.
+   */
+  function restoreDraft(enabled: boolean | null, selected: boolean): void {
+    fixture.componentRef.setInput('googleChannelsEnabled', enabled);
+    fixture.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://example.com',
+      includeSearch: false,
+      includeDemandGen: false,
+      includePerformanceMax: selected,
+      includeVideo: selected,
+      includeDisplay: selected,
+      headlines: ['Join us at KubeCon'],
+      descriptions: ['Register today for KubeCon EU 2026.'],
+    } as unknown as CampaignImplementationDraft);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+  }
+
+  it('clears a restored selection when the deployment has answered that it cannot create these channels', () => {
+    restoreDraft(false, true);
+    expect(value('includePerformanceMax')).toBe(false);
+    expect(value('includeVideo')).toBe(false);
+    expect(value('includeDisplay')).toBe(false);
+  });
+
+  /**
+   * The tri-state's whole reason for existing. `null` is "unanswered", not "no" — collapsing the
+   * two would have `applyDraft` rewrite a user's saved selection from a value that was never a
+   * server fact, which is a destructive edit to persisted state rather than a hidden checkbox.
+   */
+  it('preserves a restored selection while the capability is still unknown', () => {
+    restoreDraft(null, true);
+    expect(value('includePerformanceMax')).toBe(true);
+    expect(value('includeVideo')).toBe(true);
+    expect(value('includeDisplay')).toBe(true);
+  });
+
+  /**
+   * The paired positive case: without it the clear above could be an unconditional `false` and
+   * still pass, so this is what proves the restore reads the capability.
+   */
+  it('preserves a restored selection where the deployment supports it', () => {
+    restoreDraft(true, true);
+    expect(value('includePerformanceMax')).toBe(true);
+  });
+
+  /**
+   * Seeds a GENUINELY VALID Google form, then applies the channel selection under test.
+   *
+   * The draft route rather than a bare `patchValue`, because `canSubmit` also returns false on
+   * `campaignForm.invalid` — a form missing budget, headlines or descriptions makes every negative
+   * assertion below pass without the channel guard existing at all. `allows a flagged channel on
+   * its own` is the control that proves this seed really is submittable.
+   */
+  function seedGoogleForm(patch: Record<string, unknown>, caps: { demandGen?: boolean | null; googleChannels?: boolean | null } = {}): Record<string, any> {
+    fixture.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://example.com',
+      includeSearch: false,
+      includeDemandGen: false,
+      includePerformanceMax: false,
+      includeVideo: false,
+      includeDisplay: false,
+      budgetUsd: 500,
+      startDate: '2026-09-01',
+      endDate: '2026-09-30',
+      headlines: ['Join us at KubeCon'],
+      descriptions: ['Register today for KubeCon EU 2026.'],
+    } as unknown as CampaignImplementationDraft);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    c['campaignForm'].patchValue({
+      includeSearch: false,
+      includeDemandGen: false,
+      includePerformanceMax: false,
+      includeVideo: false,
+      includeDisplay: false,
+      ...patch,
+    });
+    // The capability inputs are set LAST, after the form is in its final state.
+    //
+    // `canSubmit` is a `computed` that reads `campaignForm.controls.*.value` DIRECTLY — a plain
+    // property read, not a signal — so a `patchValue` does not invalidate it. Its only live
+    // dependencies are `selectedPlatforms()` and the two capability signals, which means a seed
+    // that set the capability first would leave `canSubmit` memoized against the pre-patch form
+    // and every assertion below would be reading a stale `false`. (That non-reactivity predates
+    // this change; the ordering here works with it rather than papering over it.)
+    if ('demandGen' in caps) fixture.componentRef.setInput('demandGenEnabled', caps.demandGen);
+    if ('googleChannels' in caps) fixture.componentRef.setInput('googleChannelsEnabled', caps.googleChannels);
+    fixture.detectChanges();
+    return c;
+  }
+
+  /**
+   * One config carries one channel, so a Performance Max / Video / Display selection paired with
+   * anything else would dispatch a single campaign and silently drop the rest — and their share of
+   * the budget. The server refuses the pair; refusing it here turns a terminal failure into a
+   * disabled button.
+   */
+  it('refuses a flagged channel combined with anything else', () => {
+    const c = seedGoogleForm({ includeSearch: true, includeVideo: true }, { googleChannels: true });
+
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The narrowness of that refusal, which is the point of it. Search + Demand Gen is served by the
+   * LEGACY creator for the whole of the staged rollout, so blocking it would break a working
+   * capability — the mistake the server guard's own comments record.
+   */
+  it('still allows search combined with demand gen', () => {
+    const c = seedGoogleForm({ includeSearch: true, includeDemandGen: true }, { demandGen: true, googleChannels: true });
+
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('allows a flagged channel on its own', () => {
+    const c = seedGoogleForm({ includeVideo: true }, { googleChannels: true });
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /**
+   * A hidden selection must not make the form submittable either. `applyDraft` can leave
+   * `includeVideo: true` on a tab that mounted while the capability was `null`; the control then
+   * disappears when it resolves `false`, but the FORM value stays true and `submit` builds
+   * `campaignTypes` from the form.
+   */
+  it('does not treat a hidden flagged selection as a submittable Google campaign', () => {
+    const c = seedGoogleForm({ includeVideo: true }, { googleChannels: false });
+
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The generated name goes into Google Ads and is what the marketing team filters reporting on,
+   * so it must describe the request that will actually be sent — not the raw checkbox state.
+   */
+  it.each([
+    ['includePerformanceMax', 'PMax'],
+    ['includeVideo', 'Video'],
+    ['includeDisplay', 'Display'],
+  ])('previews the %s name token', (control, token) => {
+    const c = seedGoogleForm({ [control]: true }, { googleChannels: true });
+
+    expect(c['campaignName']()).toContain(`| ${token} |`);
+  });
+
+  /**
+   * `demand-gen` keeps rendering as `DG Display`, not as its product label. The token predates the
+   * nicer name, and renaming it would split a campaign's reporting history in two.
+   */
+  it('keeps the legacy DG Display token for demand gen', () => {
+    const c = seedGoogleForm({ includeDemandGen: true }, { demandGen: true });
+
+    expect(c['campaignName']()).toContain('| DG Display |');
+  });
+
+  it('previews a Search-only name when a hidden flagged selection accompanies Search', () => {
+    const c = seedGoogleForm({ includeSearch: true, includeVideo: true }, { googleChannels: false });
+
+    expect(c['campaignName']()).toContain('| Search |');
+    expect(c['campaignName']()).not.toContain('| Multi |');
   });
 });
 

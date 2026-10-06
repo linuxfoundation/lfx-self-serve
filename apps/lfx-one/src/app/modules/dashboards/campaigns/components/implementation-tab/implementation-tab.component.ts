@@ -34,6 +34,7 @@ import {
   normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
   CAMPAIGN_PLATFORMS,
+  GOOGLE_CAMPAIGN_NAME_TOKENS,
   REDDIT_MAX_BUDGET_USD,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
@@ -52,6 +53,7 @@ import type {
   CampaignPlatform,
   CampaignPlatformResult,
   CampaignType,
+  GoogleCampaignChannel,
   LinkedInAccount,
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
@@ -170,6 +172,21 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly demandGenAvailable = computed<boolean>(() => this.demandGenEnabled() === true);
 
   /**
+   * Whether this deployment can create a Performance Max, Video or Display Google campaign —
+   * `null` while unknown.
+   *
+   * Three states for the same reason `demandGenEnabled` has three, and handled identically: the
+   * controls are withheld while `null`, and `applyDraft` clears a saved selection only on an
+   * explicit `false`. The capability itself is derived differently upstream — these three channels
+   * do not survive a dark cutover the way Demand Gen does — but nothing about that difference
+   * reaches this component, which only ever asks "may I offer this?".
+   */
+  public readonly googleChannelsEnabled = input<boolean | null>(null);
+
+  /** Render the three controls only on an explicit yes. `null` (unknown) withholds them. */
+  protected readonly googleChannelsAvailable = computed<boolean>(() => this.googleChannelsEnabled() === true);
+
+  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *
@@ -271,6 +288,12 @@ export class ImplementationTabComponent implements OnInit {
     // alone are each servable; only the pair is not. Defaulting to the one that works means the
     // untouched form submits successfully, and choosing Demand Gen stays one click away.
     includeDemandGen: [false],
+    // Performance Max, Video and Display. Off by default and one-at-a-time for the same
+    // reason Demand Gen is: the BFF emits ONE `googleAdsConfig` with ONE `channel`, so any pair is
+    // refused. These three are withheld entirely unless the deployment reports the capability.
+    includePerformanceMax: [false],
+    includeVideo: [false],
+    includeDisplay: [false],
     headlines: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)])]),
     descriptions: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)])]),
     // The LinkedIn ad account, geo targets and targeting profile, on the FORM rather than in
@@ -780,8 +803,21 @@ export class ImplementationTabComponent implements OnInit {
     const sharedFieldsValid = !!form.eventName.value?.trim() && !!form.registrationUrl.value?.trim() && !!form.startDate.value && !!form.endDate.value;
     if (!sharedFieldsValid) return false;
 
-    if (googleSelected && !this.campaignForm.controls.includeSearch.value && !(this.demandGenAvailable() && this.campaignForm.controls.includeDemandGen.value))
-      return false;
+    if (googleSelected) {
+      const channels = this.selectedGoogleChannels();
+      if (channels.length === 0) return false;
+      // A Performance Max, Video or Display selection may not be combined with anything else.
+      //
+      // Narrower than "at most one channel", and the narrowness is the point. Search + Demand Gen
+      // together is still allowed through to the server, because with the create cutover DARK the
+      // LEGACY creator serves that pair perfectly well — blocking it here would break a working
+      // capability for the whole of the staged rollout, which is the mistake the server-side
+      // guard's own comments record. The three channels below cannot be reached at all unless the
+      // cutover owns creation (`canCreateGoogleChannels` upstream requires it), so for them the
+      // create is certain to be refused and stopping here saves the user a terminal failure.
+      const flagged = channels.filter((c) => c !== 'search' && c !== 'demand-gen');
+      if (flagged.length > 0 && channels.length > 1) return false;
+    }
     if (googleSelected && this.campaignForm.invalid) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
@@ -1028,6 +1064,28 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   // === Protected Methods ===
+
+  /**
+   * The Google channels this form is actually asking for, in the catalogue's order.
+   *
+   * Capability-gated, not a raw read of the checkboxes. The form can carry a hidden `true` for a
+   * channel whose control is withheld — a draft restored before the capability answer arrived —
+   * and submitting that would ask for a channel the deployment has already said it cannot create.
+   * One function so the request builder, `canSubmit` and the campaign-name preview cannot drift
+   * apart; the preview in particular used to re-derive this and froze the capability at mount.
+   */
+  protected selectedGoogleChannels(): GoogleCampaignChannel[] {
+    const form = this.campaignForm.getRawValue();
+    const channels: GoogleCampaignChannel[] = [];
+    if (form.includeSearch) channels.push('search');
+    if (this.demandGenAvailable() && form.includeDemandGen) channels.push('demand-gen');
+    if (this.googleChannelsAvailable()) {
+      if (form.includePerformanceMax) channels.push('performance-max');
+      if (form.includeVideo) channels.push('video');
+      if (form.includeDisplay) channels.push('display');
+    }
+    return channels;
+  }
 
   protected addHeadline(): void {
     (this.campaignForm.controls.headlines as FormArray).push(
@@ -1343,9 +1401,7 @@ export class ImplementationTabComponent implements OnInit {
     this.errors.set([]);
 
     const form = this.campaignForm.getRawValue();
-    const campaignTypes: CampaignType[] = [];
-    if (form.includeSearch) campaignTypes.push('search');
-    if (this.demandGenAvailable() && form.includeDemandGen) campaignTypes.push('demand-gen');
+    const campaignTypes: CampaignType[] = this.selectedGoogleChannels();
     const slug = form.eventSlug || form.eventName.toLowerCase().replace(/\s+/g, '-');
 
     const request = {
@@ -1641,6 +1697,13 @@ export class ImplementationTabComponent implements OnInit {
       // back to the parent, so a later `true` reveals an unchecked box with the choice already
       // destroyed. Withholding the control while unknown is reversible; this is not.
       includeDemandGen: this.demandGenEnabled() === false ? false : draft.includeDemandGen,
+      // The three newer channels, restored by the SAME rule, keyed on their OWN capability.
+      // `googleChannelsEnabled` is a separate answer from `demandGenEnabled` and is derived by the
+      // opposite rule upstream, so neither may stand in for the other here; `null` leaves the
+      // saved selection alone for the reason spelled out above.
+      includePerformanceMax: this.googleChannelsEnabled() === false ? false : draft.includePerformanceMax,
+      includeVideo: this.googleChannelsEnabled() === false ? false : draft.includeVideo,
+      includeDisplay: this.googleChannelsEnabled() === false ? false : draft.includeDisplay,
       // The three LinkedIn controls (LFXV2-3230), restored in the SAME patch as everything else —
       // which is the entire benefit of having moved them onto the form: no extra signal writes and
       // no second emission. This runs AFTER `populateFromBrief`, so it deliberately overwrites the
@@ -1768,6 +1831,9 @@ export class ImplementationTabComponent implements OnInit {
       endDate: form.endDate,
       includeSearch: form.includeSearch,
       includeDemandGen: form.includeDemandGen,
+      includePerformanceMax: form.includePerformanceMax,
+      includeVideo: form.includeVideo,
+      includeDisplay: form.includeDisplay,
       // The three LinkedIn controls (LFXV2-3230). Listed EXPLICITLY, like every field above,
       // because this emit is an object literal rather than a spread of `getRawValue()` — a
       // control added to the form does not reach the draft until it is named here. That is the
@@ -2057,20 +2123,22 @@ export class ImplementationTabComponent implements OnInit {
       initialValue: this.campaignForm.getRawValue(),
     });
     return computed(() => {
-      const demandGenAvailable = this.demandGenAvailable();
       const form = formValue();
       const name = form.eventName;
       const region = form.countryCode || 'NA';
       const startDate = form.startDate || '';
-      const includeSearch = form.includeSearch;
-      // Capability-gated exactly as the request builder is. The form can carry a hidden
-      // `includeDemandGen: true` — a draft restored before the capability resolved — and reading
-      // it raw would preview `Multi` or `DG Display` for a request that sends only `search`,
-      // naming a campaign that will not be created.
-      const includeDemandGen = demandGenAvailable && form.includeDemandGen;
+      // The SAME derivation the request builder and `canSubmit` use, rather than a second read of
+      // the checkboxes — so the previewed name cannot name a channel the create will not ask for.
+      // It is capability-gated inside, which is what this preview needs: the form can carry a
+      // hidden `true` for a channel whose control is withheld (a draft restored before the
+      // capability answer arrived), and reading it raw would preview a campaign nobody creates.
+      // Calling it HERE, inside the computed, is also what keeps both capability signals real
+      // dependencies — the bug this preview carried before was exactly a capability frozen at
+      // mount because it was read outside.
+      const channels = this.selectedGoogleChannels();
       let channel = 'Search';
-      if (includeSearch && includeDemandGen) channel = 'Multi';
-      else if (includeDemandGen) channel = 'DG Display';
+      if (channels.length > 1) channel = 'Multi';
+      else if (channels.length === 1) channel = GOOGLE_CAMPAIGN_NAME_TOKENS[channels[0]];
       return name ? `Events | ${name} | ${region} | Conversions | Prospecting | ${channel} | Linux Foundation | BoFU | ${startDate}` : '';
     });
   }

@@ -137,7 +137,9 @@
           </div>
 
           <!-- Campaign Types -->
-          <div class="mt-4 flex items-center gap-4">
+          <!-- `flex-wrap`: the row can now hold five channel checkboxes, which do not fit on one
+               line at tablet width and below. -->
+          <div class="mt-4 flex flex-wrap items-center gap-4">
             <label class="flex items-center gap-2 text-sm text-gray-700">
               <input type="checkbox" formControlName="includeSearch" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
               Search Campaign
@@ -149,6 +151,37 @@
               <label class="flex items-center gap-2 text-sm text-gray-700">
                 <input type="checkbox" formControlName="includeDemandGen" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Demand Gen Campaign
+              </label>
+            }
+            <!-- Performance Max, Video and Display, hidden by the same rule and for the
+                 same reason as Demand Gen above — with one difference that matters: these three
+                 exist ONLY on the campaign-service create path, so `googleChannelsEnabled` is
+                 `false` whenever that cutover is dark, where `demandGenEnabled` is `true`. A
+                 `null` (unanswered) capability withholds them too; it does not show them. -->
+            @if (googleChannelsAvailable()) {
+              <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  formControlName="includePerformanceMax"
+                  data-testid="implementation-include-performance-max"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                Performance Max Campaign
+              </label>
+              <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  formControlName="includeVideo"
+                  data-testid="implementation-include-video"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                Video Campaign
+              </label>
+              <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  formControlName="includeDisplay"
+                  data-testid="implementation-include-display"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                Display Campaign
               </label>
             }
           </div>
