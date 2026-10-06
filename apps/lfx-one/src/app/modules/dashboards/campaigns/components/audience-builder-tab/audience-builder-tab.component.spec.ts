@@ -1014,6 +1014,35 @@ describe('AudienceBuilderTabComponent', () => {
       expect(unattached, "the abandoned compose's real list was never reported").toEqual([master]);
     });
 
+    it('starts over when the FIRST brief after exploratory work advertises no URL', async () => {
+      // A brief with no URL is no evidence the work was for its event.
+      await render({ briefId: '' });
+      typeEventUrl('https://events.example.org/event-a');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('eventKey', 'event-b');
+      fixture.componentRef.setInput('briefId', 'brief-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "A's lists survived into a URL-less brief B").toBeNull();
+    });
+
+    it("starts over when the same event's advertised URL is removed", async () => {
+      await render({ initialEventUrl: 'https://events.example.org/old', briefId: 'brief-a' });
+      fixture.componentRef.setInput('eventKey', 'event-a');
+      fixture.detectChanges();
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('initialEventUrl', '');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), 'lists from a removed URL survived').toBeNull();
+    });
+
     it('keeps exploratory work when the FIRST brief is for the URL the operator discovered', async () => {
       await render({ briefId: '' });
       typeEventUrl('https://events.example.org/event-b');

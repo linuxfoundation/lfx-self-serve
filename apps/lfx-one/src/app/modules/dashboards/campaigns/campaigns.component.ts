@@ -3180,12 +3180,14 @@ export class CampaignsComponent {
       // compose or attach started while the brief id was resolving would otherwise have the create
       // clone a draft against the list being replaced. Same gate `canStageEmail` holds, re-read.
       // The unresolved check is re-made against the RESOLVED brief id: the on-screen key is
-      // `emailBriefId()`, which can be '' before the persist above assigns it.
-      if (
-        this.emailAudienceWriteInFlight() ||
-        this.emailAudience()?.status !== 'built' ||
-        this.unresolvedStages().has(this.stageScopeKey(projectSlug, briefId))
-      ) {
+      // `emailBriefId()`, which can be '' before the persist above assigns it. Its recovery is the
+      // HubSpot check, not another stage, so it gets its own copy.
+      if (this.unresolvedStages().has(this.stageScopeKey(projectSlug, briefId))) {
+        this.emailStaging.set('error');
+        this.emailStagingMessage.set('The last stage for this email ended without an answer. Check HubSpot and confirm before staging again.');
+        return;
+      }
+      if (this.emailAudienceWriteInFlight() || this.emailAudience()?.status !== 'built') {
         this.emailStaging.set('error');
         this.emailStagingMessage.set('The send audience changed while staging. Stage again once it has finished updating.');
         return;

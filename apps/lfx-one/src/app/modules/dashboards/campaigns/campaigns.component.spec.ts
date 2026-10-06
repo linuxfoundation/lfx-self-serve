@@ -3528,6 +3528,22 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingHeld(), "A's hold was lost on the round trip").toBe(true);
     });
 
+    it('tells the operator to check HubSpot when the RESOLVED brief has an unresolved stage', async () => {
+      // The on-screen key can differ from the brief the persist resolves; the recovery is the HubSpot
+      // check, not "stage again".
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(internals() as unknown as { ensureEmailBriefId(): Promise<string> }, 'ensureEmailBriefId').mockResolvedValue('brief-held');
+      (internals() as unknown as { markStageUnresolved(p: string, b: string): void }).markStageUnresolved(internals().activeFoundationSlug(), 'brief-held');
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(create).not.toHaveBeenCalled();
+      expect(internals().emailStagingMessage()).toContain('Check HubSpot');
+    });
+
     it('holds a DISPATCHED stage when a brief reset cancels its poll', async () => {
       // The reset idles the display state, but the create cannot be recalled and its job may still
       // resolve the brief's audience -- releasing let A -> B -> A replace it underneath the job.

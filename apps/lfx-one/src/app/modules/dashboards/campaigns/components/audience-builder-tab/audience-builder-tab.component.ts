@@ -1715,7 +1715,9 @@ export class AudienceBuilderTabComponent {
     const edited = this.eventUrlControl.dirty;
     // The work's URL: what was discovered, or -- before any discovery -- what the operator typed.
     const workUrl = this.discoveredEventUrl() || this.eventUrlControl.value.trim();
-    const discoveredElsewhere = advertised !== '' && workUrl !== advertised;
+    // An EMPTY advertised URL is a mismatch too, unless the work has no URL either: a brief with no
+    // URL is no evidence the work was for its event.
+    const discoveredElsewhere = workUrl !== advertised;
     if (previousKey === '') {
       // First brief after exploratory work: kept only if it was discovered for this brief's URL.
       return edited && discoveredElsewhere;
@@ -1726,8 +1728,9 @@ export class AudienceBuilderTabComponent {
     if (edited) {
       return discoveredElsewhere;
     }
-    // Same event, untouched field: a CORRECTED advertised URL means the lists came from the old one.
-    return previousUrl !== '' && advertised !== '' && previousUrl !== advertised;
+    // Same event, untouched field: a CORRECTED or REMOVED advertised URL means the lists came from
+    // the old one.
+    return previousUrl !== '' && previousUrl !== advertised;
   }
 
   /**
