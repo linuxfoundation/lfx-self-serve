@@ -290,6 +290,20 @@ describe('MentorshipService LF project search', () => {
     );
   });
 
+  it('cuts an overlong search without splitting an emoji at the boundary', async () => {
+    proxyRequest.mockResolvedValue(page([]));
+
+    await service.getLfProjects(buildReq(), { search: `${'a'.repeat(MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH - 1)}😀tail` });
+
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      expect.objectContaining({ name: 'a'.repeat(MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH - 1) })
+    );
+  });
+
   it('maps a logo when present and omits an empty one', async () => {
     proxyRequest.mockResolvedValue(page([project('uid-1', 'Alpha', 'https://cdn.example/alpha.png'), project('uid-2', 'Beta')]));
 

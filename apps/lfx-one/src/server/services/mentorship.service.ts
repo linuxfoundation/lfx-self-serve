@@ -24,7 +24,7 @@ import {
   Project,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
-import { isMentorshipCiiProjectId } from '@lfx-one/shared/utils';
+import { isMentorshipCiiProjectId, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import {
@@ -110,7 +110,7 @@ export class MentorshipService {
    * `MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH`.
    */
   public async getLfProjects(req: Request, options: { search?: string; pageToken?: string; limit?: number } = {}): Promise<MentorshipLfProjectsResponse> {
-    const search = (options.search?.trim() ?? '').slice(0, MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH);
+    const search = truncateToUtf16Units(options.search?.trim() ?? '', MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH);
     const limit = Math.min(MENTORSHIP_LF_PROJECT_MAX_LIMIT, Math.max(1, options.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
     let pageToken = options.pageToken || undefined;
     logger.debug(req, 'mentorship_get_lf_projects', 'Listing LF projects', { has_search: search.length > 0, has_page_token: !!pageToken, limit });

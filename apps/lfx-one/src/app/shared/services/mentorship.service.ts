@@ -16,6 +16,8 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, take, throwError } from 'rxjs';
 
+import { strictHttpParams } from '../utils/http-params.utils';
+
 /**
  * Talks to the LFX One BFF's `/api/mentorship/*` endpoints.
  *
@@ -30,12 +32,13 @@ export class MentorshipService {
   private readonly http = inject(HttpClient);
 
   public isProgramNameAvailable(name: string): Observable<MentorshipNameAvailability> {
-    return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params: new HttpParams().set('name', name) }).pipe(take(1));
+    return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params: strictHttpParams().set('name', name) }).pipe(take(1));
   }
 
   /** One lazy-load page of LF projects; pass the previous page's `nextPageToken` as `pageToken` for the next one. Errors propagate. */
   public getLfProjects(params?: { search?: string; pageToken?: string | null; limit?: number }): Observable<MentorshipLfProjectsResponse> {
-    let httpParams = new HttpParams();
+    // Strict codec: a `+` in a typed search (`C++`) or in the opaque cursor would otherwise reach Express as a space.
+    let httpParams = strictHttpParams();
     if (params?.search) httpParams = httpParams.set('search', params.search);
     if (params?.pageToken) httpParams = httpParams.set('pageToken', params.pageToken);
     httpParams = httpParams.set('limit', String(params?.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
