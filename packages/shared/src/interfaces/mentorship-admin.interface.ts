@@ -103,6 +103,15 @@ export interface MentorshipProgramTermRow {
   applicationEndDate: string;
 }
 
+/** Body of `POST /api/mentorship/admin/programs/:programId/terms` and `PATCH …/terms/:termId`. All dates are ISO `YYYY-MM-DD`. */
+export interface MentorshipAdminTermInput {
+  name: string;
+  startDate: string;
+  endDate: string;
+  applicationStartDate: string;
+  applicationEndDate: string;
+}
+
 /**
  * One row of upstream `GET /mentorship/v1/me/programs`: a program the caller administers, with the term and counts its card shows.
  * `admin_status` stays a plain string: the BFF maps it to `MentorshipProgramStatus` and logs a value it does not know.

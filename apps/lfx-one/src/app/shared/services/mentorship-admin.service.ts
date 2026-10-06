@@ -12,6 +12,7 @@ import {
   MentorshipAdminMentorsQuery,
   MentorshipAdminMentorsResponse,
   MentorshipAdminProgramPage,
+  MentorshipAdminTermInput,
   MentorshipAdminTermsQuery,
   MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
@@ -19,6 +20,7 @@ import {
   MentorshipMentorTaskCreateResponse,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
+  MentorshipProgramTermRow,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, take, throwError } from 'rxjs';
 
@@ -136,6 +138,37 @@ export class MentorshipAdminService {
         {}
       )
       .pipe(take(1), this.logFailure('declinePendingForTerm'));
+  }
+
+  /** Creates an open term; the BFF refuses it with a 409 when the program already has four open terms. */
+  public createTerm(programId: string, body: MentorshipAdminTermInput): Observable<MentorshipProgramTermRow> {
+    return this.http
+      .post<MentorshipProgramTermRow>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/terms`, body)
+      .pipe(take(1), this.logFailure('createTerm'));
+  }
+
+  /** Edits a term's name and dates. */
+  public updateTerm(programId: string, termId: string, body: MentorshipAdminTermInput): Observable<MentorshipProgramTermRow> {
+    return this.http.patch<MentorshipProgramTermRow>(this.termUrl(programId, termId), body).pipe(take(1), this.logFailure('updateTerm'));
+  }
+
+  /** Closes a term. Resolves on 204. */
+  public closeTerm(programId: string, termId: string): Observable<void> {
+    return this.http.post<void>(`${this.termUrl(programId, termId)}/close`, {}).pipe(take(1), this.logFailure('closeTerm'));
+  }
+
+  /** Re-opens a closed term. Resolves on 204. */
+  public reopenTerm(programId: string, termId: string): Observable<void> {
+    return this.http.post<void>(`${this.termUrl(programId, termId)}/reopen`, {}).pipe(take(1), this.logFailure('reopenTerm'));
+  }
+
+  /** Deletes a term that has no applications. Resolves on 204. */
+  public deleteTerm(programId: string, termId: string): Observable<void> {
+    return this.http.delete<void>(this.termUrl(programId, termId)).pipe(take(1), this.logFailure('deleteTerm'));
+  }
+
+  private termUrl(programId: string, termId: string): string {
+    return `/api/mentorship/admin/programs/${encodeURIComponent(programId)}/terms/${encodeURIComponent(termId)}`;
   }
 
   /** Logs the status only, since the error's URL carries the search text, then passes the error on. */

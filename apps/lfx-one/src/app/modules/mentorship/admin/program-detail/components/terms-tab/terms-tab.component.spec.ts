@@ -4,10 +4,14 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MENTORSHIP_ADMIN_TERMS_MAX_PAGES } from '@lfx-one/shared/constants';
+import {
+  MENTORSHIP_ADMIN_TERM_WRITE_FAILED_MESSAGE,
+  MENTORSHIP_ADMIN_TERM_WRITE_IN_FLIGHT_MESSAGE,
+  MENTORSHIP_ADMIN_TERMS_MAX_PAGES,
+} from '@lfx-one/shared/constants';
 import { MentorshipAdminTermsQuery, MentorshipAdminTermsResponse, MentorshipProgramTermRow } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,6 +40,11 @@ describe('TermsTabComponent', () => {
   });
 
   let fixture: ComponentFixture<TermsTabComponent>;
+  let createTerm: ReturnType<typeof vi.fn>;
+  let updateTerm: ReturnType<typeof vi.fn>;
+  let closeTerm: ReturnType<typeof vi.fn>;
+  let reopenTerm: ReturnType<typeof vi.fn>;
+  let deleteTerm: ReturnType<typeof vi.fn>;
   let getProgramTerms: ReturnType<typeof vi.fn<(programId: string, query: MentorshipAdminTermsQuery) => Observable<MentorshipAdminTermsResponse>>>;
 
   /** Runs the effects that start a read, then renders what it wrote. */
@@ -46,6 +55,11 @@ describe('TermsTabComponent', () => {
 
   beforeEach(() => {
     getProgramTerms = vi.fn().mockReturnValue(of(page()));
+    createTerm = vi.fn().mockReturnValue(of(term()));
+    updateTerm = vi.fn().mockReturnValue(of(term()));
+    closeTerm = vi.fn().mockReturnValue(of(undefined));
+    reopenTerm = vi.fn().mockReturnValue(of(undefined));
+    deleteTerm = vi.fn().mockReturnValue(of(undefined));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -54,7 +68,7 @@ describe('TermsTabComponent', () => {
         provideNoopAnimations(),
         MessageService,
         { provide: DialogService, useValue: { open: vi.fn() } },
-        { provide: MentorshipAdminService, useValue: { getProgramTerms } },
+        { provide: MentorshipAdminService, useValue: { getProgramTerms, createTerm, updateTerm, closeTerm, reopenTerm, deleteTerm } },
       ],
     });
 
@@ -155,5 +169,102 @@ describe('TermsTabComponent', () => {
 
     expect(fixture.componentInstance['canAddTerm']()).toBe(false);
     expect(fixture.componentInstance['atMaxOpenTerms']()).toBe(false);
+  });
+
+  describe('term writes', () => {
+    const countsRefresh = vi.fn();
+    let toasts: ReturnType<typeof vi.spyOn>;
+
+    /** Confirms the dialog the action opens, as the user pressing the accept button would. */
+    const confirmAction = (action: string, id: string): void => {
+      const confirmation = fixture.debugElement.injector.get(ConfirmationService);
+      vi.spyOn(confirmation, 'confirm').mockImplementation((options) => {
+        options.accept?.();
+        return confirmation;
+      });
+      fixture.componentInstance[action as 'onCloseTerm'](id);
+      settle();
+    };
+
+    beforeEach(() => {
+      getProgramTerms.mockReturnValue(of({ data: [term({ accepted: 0 })], total: 1 }));
+      countsRefresh.mockClear();
+      fixture.componentRef.setInput('countsRefresh', countsRefresh);
+      fixture.componentInstance['onRetry']();
+      toasts = vi.spyOn(TestBed.inject(MessageService), 'add');
+      settle();
+    });
+
+    it('closes a term, toasts, refreshes the counts and reads the terms again', () => {
+      getProgramTerms.mockClear();
+
+      confirmAction('onCloseTerm', 'trm_1');
+
+      expect(closeTerm).toHaveBeenCalledWith('prog_1', 'trm_1');
+      expect(toasts).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Term closed.' }));
+      expect(countsRefresh).toHaveBeenCalledTimes(1);
+      expect(getProgramTerms).toHaveBeenCalled();
+    });
+
+    it('re-opens a closed term that has not ended', () => {
+      getProgramTerms.mockReturnValue(of({ data: [term({ id: 'trm_c', status: 'closed' })], total: 1 }));
+      fixture.componentInstance['onRetry']();
+      settle();
+
+      confirmAction('onReopenTerm', 'trm_c');
+
+      expect(reopenTerm).toHaveBeenCalledWith('prog_1', 'trm_c');
+    });
+
+    it('deletes a term that has no applications', () => {
+      getProgramTerms.mockReturnValue(of({ data: [term({ id: 'trm_e', pending: 0, declined: 0, accepted: 0 })], total: 1 }));
+      fixture.componentInstance['onRetry']();
+      settle();
+
+      confirmAction('onDeleteTerm', 'trm_e');
+
+      expect(deleteTerm).toHaveBeenCalledWith('prog_1', 'trm_e');
+    });
+
+    it('does not offer a delete for a term that has applications', () => {
+      confirmAction('onDeleteTerm', 'trm_1');
+
+      expect(deleteTerm).not.toHaveBeenCalled();
+    });
+
+    it('shows the server reason, reads the terms again and refreshes the counts on a 409', () => {
+      closeTerm.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { message: 'Accepted applications remain.' } })));
+      getProgramTerms.mockClear();
+
+      confirmAction('onCloseTerm', 'trm_1');
+
+      expect(toasts).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Accepted applications remain.' }));
+      expect(getProgramTerms).toHaveBeenCalled();
+      expect(countsRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows a generic message and does not refresh on a 500', () => {
+      closeTerm.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { message: 'secret detail' } })));
+
+      confirmAction('onCloseTerm', 'trm_1');
+
+      expect(toasts).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: MENTORSHIP_ADMIN_TERM_WRITE_FAILED_MESSAGE }));
+      expect(countsRefresh).not.toHaveBeenCalled();
+    });
+
+    it('sends a second write only after the first one ends', () => {
+      let sent = 0;
+      closeTerm.mockReturnValue(
+        new Observable(() => {
+          sent++;
+        })
+      );
+
+      confirmAction('onCloseTerm', 'trm_1');
+      confirmAction('onCloseTerm', 'trm_1');
+
+      expect(sent).toBe(1);
+      expect(toasts).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', detail: MENTORSHIP_ADMIN_TERM_WRITE_IN_FLIGHT_MESSAGE }));
+    });
   });
 });

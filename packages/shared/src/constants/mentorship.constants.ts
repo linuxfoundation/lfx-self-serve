@@ -194,6 +194,13 @@ export const MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE = 10;
 
 export const MENTORSHIP_ADMIN_MENTORS_LOAD_ERROR_MESSAGE = 'We could not load the mentors. Try again.';
 export const MENTORSHIP_ADMIN_TERMS_LOAD_ERROR_MESSAGE = 'We could not load the terms. Try again.';
+export const MENTORSHIP_ADMIN_TERM_CREATED_MESSAGE = 'Term created.';
+export const MENTORSHIP_ADMIN_TERM_UPDATED_MESSAGE = 'Term updated.';
+export const MENTORSHIP_ADMIN_TERM_CLOSED_MESSAGE = 'Term closed.';
+export const MENTORSHIP_ADMIN_TERM_REOPENED_MESSAGE = 'Term re-opened.';
+export const MENTORSHIP_ADMIN_TERM_DELETED_MESSAGE = 'Term deleted.';
+export const MENTORSHIP_ADMIN_TERM_WRITE_FAILED_MESSAGE = "The term couldn't be saved. Please try again.";
+export const MENTORSHIP_ADMIN_TERM_WRITE_IN_FLIGHT_MESSAGE = 'Another term change is still being saved.';
 
 /**
  * Underline tabs on `/mentorship/admin/:programId`. Order matches the admin screenshot;
