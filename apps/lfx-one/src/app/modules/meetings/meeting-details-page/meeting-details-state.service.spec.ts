@@ -425,6 +425,16 @@ describe('MeetingDetailsStateService', () => {
       expect(state.meetingStatus()).toBe('starting-soon');
     });
 
+    it('reads the join window after the scheduled start as live', async () => {
+      const started = new Date(Date.now() - 5 * 60 * 1000);
+      getPublicMeeting.mockReturnValue(of({ meeting: { ...buildMeeting(), start_time: started.toISOString(), duration: 60, occurrences: [] }, project }));
+      const state = create();
+      await settle();
+
+      expect(state.timeState()).toBe('live');
+      expect(state.meetingStatus()).toBe('live');
+    });
+
     it('has no time state before the meeting loads', () => {
       getPublicMeeting.mockReturnValue(new Subject());
       const state = create();
