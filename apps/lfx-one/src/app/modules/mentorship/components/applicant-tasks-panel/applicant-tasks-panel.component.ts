@@ -77,6 +77,9 @@ export class ApplicantTasksPanelComponent {
 
   protected readonly visibleTaskRows = this.initVisibleTaskRows();
 
+  /** Per visible task, whether a change to it is being saved, here or by a panel collapsed mid-save; Edit is disabled meanwhile. */
+  protected readonly busyTaskIds = this.initBusyTaskIds();
+
   protected readonly panelTitle = computed(() => `Tasks Assigned to ${this.applicantName()}`);
 
   protected onViewTask(task: MentorshipApplicantTaskRow): void {
@@ -115,7 +118,7 @@ export class ApplicantTasksPanelComponent {
   }
 
   /** Whether a change to the task is being saved, here or by a panel that was collapsed mid-save. */
-  protected isBusy(taskId: string): boolean {
+  private isBusy(taskId: string): boolean {
     return this.savingTaskIds().has(taskId) || this.taskUpdate.isUpdating(taskId);
   }
 
@@ -167,6 +170,11 @@ export class ApplicantTasksPanelComponent {
         statusForm: this.statusFormFor(task.id, task.status),
       }))
     );
+  }
+
+  /** Kept apart from the rows: a save settling must not rebuild them, since that can move a select's value mid-computed. */
+  private initBusyTaskIds() {
+    return computed<Readonly<Record<string, boolean>>>(() => Object.fromEntries(this.visibleTasks().map((task) => [task.id, this.isBusy(task.id)])));
   }
 
   private statusFormFor(taskId: string, status: MentorshipApplicantTaskStatus): TaskStatusForm {

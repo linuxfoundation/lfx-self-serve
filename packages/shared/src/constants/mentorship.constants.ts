@@ -169,7 +169,8 @@ export const MENTORSHIP_ADMIN_TASK_UPDATE_TOAST_LIFE = 5000;
 
 /**
  * Task update failures with their own copy, keyed by the BFF's status: a 400 is a submitted task that requires a file with none uploaded
- * (upstream's guard), a 403 a lost reviewer role (or the task's own assignee), a 404 a task that is gone.
+ * (upstream's guard; shown only for a change that can trip it), a 403 a lost reviewer role (or the task's own assignee), a 404 a task
+ * that is gone.
  */
 export const MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
   400: 'A task that requires a file can only be submitted once a file has been uploaded for it.',

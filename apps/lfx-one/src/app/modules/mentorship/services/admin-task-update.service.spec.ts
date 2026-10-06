@@ -69,7 +69,7 @@ describe('AdminTaskUpdateService', () => {
   it.each([400, 403, 404])('shows the %i copy and emits null', async (status) => {
     updateTask.mockReturnValueOnce(throwError(() => httpError(status, { error: 'upstream text' })));
 
-    await expect(firstValueFrom(service.update(TASK_ID, body, false))).resolves.toBeNull();
+    await expect(firstValueFrom(service.update(TASK_ID, { status: 'submitted' }, false))).resolves.toBeNull();
 
     expect(add).toHaveBeenCalledTimes(1);
     expect(add).toHaveBeenCalledWith(
@@ -80,6 +80,25 @@ describe('AdminTaskUpdateService', () => {
       })
     );
   });
+
+  it('shows the file copy for a 400 on a change to the file requirement', async () => {
+    updateTask.mockReturnValueOnce(throwError(() => httpError(400)));
+
+    await firstValueFrom(service.update(TASK_ID, { requiresFileSubmission: true }, true));
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_MESSAGES[400] }));
+  });
+
+  it.each<MentorshipAdminTaskUpdate>([{ status: 'completed' }, { name: 'Read the new guide' }])(
+    'shows the generic copy for a 400 on a change that cannot trip the file guard (%o)',
+    async (change) => {
+      updateTask.mockReturnValueOnce(throwError(() => httpError(400)));
+
+      await firstValueFrom(service.update(TASK_ID, change, false));
+
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_FALLBACK }));
+    }
+  );
 
   it.each([409, 502])('shows the generic copy for a %i, which has none of its own', async (status) => {
     updateTask.mockReturnValueOnce(throwError(() => httpError(status)));

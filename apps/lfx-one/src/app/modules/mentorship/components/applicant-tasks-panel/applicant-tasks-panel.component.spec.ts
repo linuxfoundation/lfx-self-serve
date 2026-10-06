@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MentorshipApplicantTask, MentorshipApplicantTaskRow, MentorshipApplicantTaskStatus, MentorshipTaskFormValue } from '@lfx-one/shared/interfaces';
@@ -45,11 +46,14 @@ describe('ApplicantTasksPanelComponent', () => {
   let addSpy: ReturnType<typeof vi.spyOn>;
   let update: ReturnType<typeof vi.fn<(taskId: string, body: unknown, toastOnSuccess: boolean) => Observable<MentorshipApplicantTask | null>>>;
   let taskSaved: ReturnType<typeof vi.fn>;
+  /** The service's in-flight ids, as a signal like the real one, so a save from a collapsed panel can settle mid-test. */
+  let updatingIds: WritableSignal<ReadonlySet<string>>;
 
   const build = (editable = false): void => {
     openEdit = vi.fn().mockReturnValue(of(undefined));
     update = vi.fn(() => of(null));
     taskSaved = vi.fn();
+    updatingIds = signal<ReadonlySet<string>>(new Set());
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -58,7 +62,7 @@ describe('ApplicantTasksPanelComponent', () => {
         provideNoopAnimations(),
         MessageService,
         { provide: MentorshipTaskDialogService, useValue: { openCreate: vi.fn(), openEdit } },
-        { provide: AdminTaskUpdateService, useValue: { update, isUpdating: () => false } },
+        { provide: AdminTaskUpdateService, useValue: { update, isUpdating: (taskId: string) => updatingIds().has(taskId) } },
       ],
     });
 
@@ -217,6 +221,16 @@ describe('ApplicantTasksPanelComponent', () => {
 
       response.next({ ...savedTask, status: 'completed' });
       response.complete();
+      fixture.detectChanges();
+      expect(editButton().disabled).toBe(false);
+    });
+
+    it('re-enables Edit when a save started by a collapsed panel settles, even when it failed', () => {
+      updatingIds.set(new Set(['tsk_editable']));
+      fixture.detectChanges();
+      expect(editButton().disabled).toBe(true);
+
+      updatingIds.set(new Set());
       fixture.detectChanges();
       expect(editButton().disabled).toBe(false);
     });
