@@ -2,8 +2,8 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities). -->
-@if (timeState(); as timeState) {
-  <section class="flex flex-col gap-[14px]" data-testid="meeting-time-banner" [attr.data-state]="timeState" aria-label="Meeting time">
+@if (timeState(); as phase) {
+  <section class="flex flex-col gap-[14px]" data-testid="meeting-time-banner" [attr.data-state]="phase" aria-label="Meeting time">
     @if (zonedDay(); as day) {
       <div class="flex items-start gap-[14px]">
         <span
@@ -33,14 +33,18 @@
 
     <!-- One line for the phase; exactly one renders. -->
     <p class="m-0 flex items-start gap-[8px] text-[12.5px] leading-[1.4]" data-testid="meeting-time-banner-message">
-      @switch (timeState) {
+      @switch (phase) {
         @case ('ended') {
           <i class="fa-light fa-clock-rotate-left mt-[2px] text-[var(--md-text-muted)]" aria-hidden="true"></i>
           <span class="text-[var(--md-text-body)]">This meeting has ended.</span>
         }
         @case ('live') {
           <i class="fa-solid fa-circle mt-[4px] text-[8px] text-[var(--md-status-live)]" aria-hidden="true"></i>
-          <span class="font-semibold text-[var(--md-status-live)]">The meeting is in progress.</span>
+          @if (startingSoon()) {
+            <span class="font-semibold text-[var(--md-status-live)]">The meeting is starting soon. You can join now.</span>
+          } @else {
+            <span class="font-semibold text-[var(--md-status-live)]">The meeting is in progress.</span>
+          }
         }
         @default {
           <i class="fa-light fa-clock mt-[2px] text-[var(--md-text-muted)]" aria-hidden="true"></i>

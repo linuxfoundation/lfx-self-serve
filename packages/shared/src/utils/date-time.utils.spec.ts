@@ -355,10 +355,6 @@ describe('tryParseLocalDateString', () => {
   });
 });
 
-// The DST-gap cases pin a process timezone because the bug lives in the HOST zone, not the target
-// zone: 2027-03-13T17:30Z is 2:30 AM on 2027-03-14 in Tokyo, a wall time that does not exist in
-// America/New_York (spring forward at 2:00 AM that day). toZonedTime's host-local carrier
-// normalized it to 3:30 — Intl DateTimeFormat parts with an explicit timeZone read it exactly.
 describe('formatDisplayTimeInTimezone', () => {
   it('formats an unpadded 12-hour time in the given zone', () => {
     const instant = new Date('2026-07-23T16:05:00Z');
@@ -371,6 +367,10 @@ describe('formatDisplayTimeInTimezone', () => {
   });
 });
 
+// The DST-gap cases pin a process timezone because the bug lives in the HOST zone, not the target
+// zone: 2027-03-13T17:30Z is 2:30 AM on 2027-03-14 in Tokyo, a wall time that does not exist in
+// America/New_York (spring forward at 2:00 AM that day). toZonedTime's host-local carrier
+// normalized it to 3:30 — Intl DateTimeFormat parts with an explicit timeZone read it exactly.
 describe('formatTo12HourInTimezone', () => {
   it('formats the wall time in the target zone, host-TZ independent', () => {
     // 2025-06-01T06:59Z is 2:59 AM in New York (EDT, UTC-4).

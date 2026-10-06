@@ -3,8 +3,8 @@
 
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Meeting, PublicMeetingProject } from '@lfx-one/shared/interfaces';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Meeting, MeetingOccurrence, MeetingStatusKind, MeetingTimeState, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingTimeBannerComponent } from './time-banner.component';
@@ -13,12 +13,16 @@ type LoadedMeeting = Meeting & { project: PublicMeetingProject };
 
 const DAY = 24 * 60 * 60 * 1000;
 
+// The banner renders the page's shared state; selecting the occurrence and resolving its time state
+// and status are the state service's, and tested there.
 describe('MeetingTimeBannerComponent', () => {
   let fixture: ComponentFixture<MeetingTimeBannerComponent>;
   let meeting: WritableSignal<LoadedMeeting | undefined>;
   let now: WritableSignal<Date>;
-  // Three days and an hour out: the before state whatever day the suite runs, and "in 3 days" even
-  // after the relative-time helper rounds the remaining time down.
+  let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
+  let timeState: WritableSignal<MeetingTimeState | null>;
+  let meetingStatus: WritableSignal<MeetingStatusKind | null>;
+  // Three days and an hour out: "in 3 days" even after the relative-time helper rounds down.
   const start = Date.now() + 3 * DAY + 60 * 60 * 1000;
 
   const build = (overrides: Partial<Meeting> = {}): LoadedMeeting =>
@@ -37,10 +41,13 @@ describe('MeetingTimeBannerComponent', () => {
   beforeEach(async () => {
     meeting = signal<LoadedMeeting | undefined>(build());
     now = signal(new Date());
+    selectedOccurrence = signal<MeetingOccurrence | null>(null);
+    timeState = signal<MeetingTimeState | null>('before');
+    meetingStatus = signal<MeetingStatusKind | null>('upcoming');
 
     await TestBed.configureTestingModule({
       imports: [MeetingTimeBannerComponent],
-      providers: [{ provide: MeetingDetailsStateService, useValue: { meeting, now } }],
+      providers: [{ provide: MeetingDetailsStateService, useValue: { meeting, now, selectedOccurrence, timeState, meetingStatus } }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(MeetingTimeBannerComponent);
@@ -49,8 +56,9 @@ describe('MeetingTimeBannerComponent', () => {
 
   const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
 
-  function tick(at: number): void {
-    now.set(new Date(at));
+  function phase(state: MeetingTimeState, status: MeetingStatusKind): void {
+    timeState.set(state);
+    meetingStatus.set(status);
     fixture.detectChanges();
   }
 
@@ -64,66 +72,43 @@ describe('MeetingTimeBannerComponent', () => {
     expect(query('meeting-time-banner-timezone')?.textContent?.trim()).not.toBe('');
   });
 
+  it("dates the banner from the page's selected occurrence", async () => {
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const first = query('meeting-time-banner-date')?.textContent?.trim();
+
+    selectedOccurrence.set({ occurrence_id: '2', start_time: new Date(start + 7 * DAY).toISOString(), duration: 60 } as MeetingOccurrence);
+    fixture.detectChanges();
+
+    expect(query('meeting-time-banner-date')?.textContent?.trim()).not.toBe(first);
+  });
+
   it('shows the relative start and the meeting own early-join rule before the meeting', () => {
-    const banner = query('meeting-time-banner');
-    expect(banner?.getAttribute('data-state')).toBe('before');
+    expect(query('meeting-time-banner')?.getAttribute('data-state')).toBe('before');
     expect(query('meeting-time-banner-message')?.textContent?.trim()).toBe('Starts in 3 days. You may only join up to 15 minutes before the start time.');
   });
 
-  it('falls back to a 10-minute early-join rule when the meeting sets none', () => {
+  it('falls back to the default early-join rule when the meeting sets none', () => {
     meeting.set(build({ early_join_time_minutes: undefined } as Partial<Meeting>));
     fixture.detectChanges();
 
     expect(query('meeting-time-banner-message')?.textContent).toContain('up to 10 minutes');
   });
 
-  // The page stays open across the meeting: the banner follows the state service's clock.
-  it('moves to in progress and then ended as the clock passes the meeting, one message at a time', () => {
-    tick(start + 10 * 60 * 1000);
-    expect(query('meeting-time-banner')?.getAttribute('data-state')).toBe('live');
-    expect(query('meeting-time-banner-message')?.textContent?.trim()).toBe('The meeting is in progress.');
+  it.each([
+    ['live', 'starting-soon', 'The meeting is starting soon. You can join now.'],
+    ['live', 'live', 'The meeting is in progress.'],
+    ['ended', 'ended', 'This meeting has ended.'],
+  ] as [MeetingTimeState, MeetingStatusKind, string][])('shows one %s message for status %s', (state, status, message) => {
+    phase(state, status);
 
-    tick(start + 2 * DAY);
-    expect(query('meeting-time-banner')?.getAttribute('data-state')).toBe('ended');
-    expect(query('meeting-time-banner-message')?.textContent?.trim()).toBe('This meeting has ended.');
+    expect(query('meeting-time-banner')?.getAttribute('data-state')).toBe(state);
+    expect(query('meeting-time-banner-message')?.textContent?.trim()).toBe(message);
     expect(fixture.nativeElement.querySelectorAll('[data-testid="meeting-time-banner-message"]').length).toBe(1);
   });
 
-  describe('a recurring series left open', () => {
-    afterEach(() => vi.useRealTimers());
-
-    // The occurrence selector reads the wall clock, so the test moves it along with the state clock.
-    it('moves the date and the phase line to the next occurrence together once one ends', async () => {
-      const first = Date.now() + 60 * 60 * 1000;
-      const second = first + 7 * DAY;
-      meeting.set(
-        build({
-          start_time: new Date(first).toISOString(),
-          recurrence: { type: 2 } as Meeting['recurrence'],
-          occurrences: [
-            { occurrence_id: '1', start_time: new Date(first).toISOString(), duration: 60 },
-            { occurrence_id: '2', start_time: new Date(second).toISOString(), duration: 60 },
-          ] as Meeting['occurrences'],
-        })
-      );
-      await fixture.whenStable();
-      fixture.detectChanges();
-      const firstDay = query('meeting-time-banner-date')?.textContent?.trim();
-
-      // Past the first occurrence's end and its 40-minute buffer.
-      const later = first + 2 * 60 * 60 * 1000;
-      vi.useFakeTimers({ toFake: ['Date'] });
-      vi.setSystemTime(later);
-      tick(later);
-
-      expect(query('meeting-time-banner')?.getAttribute('data-state')).toBe('before');
-      expect(query('meeting-time-banner-date')?.textContent?.trim()).not.toBe(firstDay);
-      expect(query('meeting-time-banner-message')?.textContent).toContain('Starts in 6 days');
-    });
-  });
-
   it('renders nothing before the meeting has loaded', () => {
-    meeting.set(undefined);
+    timeState.set(null);
     fixture.detectChanges();
 
     expect(query('meeting-time-banner')).toBeNull();

@@ -63,7 +63,7 @@ own namespace; the two never share a value.
 | `meeting-time-banner-time`              | Its start – end time                                                                                              |
 | `meeting-time-banner-timezone`          | Its timezone name                                                                                                 |
 | `meeting-time-banner-skeleton`          | Its placeholder until the viewer's timezone resolves                                                              |
-| `meeting-time-banner-message`           | Its one phase line (ended / in progress / starts …)                                                               |
+| `meeting-time-banner-message`           | Its one phase line (starts … / starting soon / in progress / ended)                                               |
 | `meeting-action-slot`                   | The action slot inside the rail (see below)                                                                       |
 | `meeting-error-state`                   | Terminal error state                                                                                              |
 | `meeting-error-retry-button`            | The error state's "Try again" control                                                                             |

@@ -4,16 +4,8 @@
 import { DatePipe } from '@angular/common';
 import { afterNextRender, Component, computed, inject, Signal, signal } from '@angular/core';
 import { DEFAULT_EARLY_JOIN_TIME } from '@lfx-one/shared/constants';
-import { Meeting, MeetingOccurrence, MeetingTimeState, MeetingTimeWindow, PublicMeetingProject } from '@lfx-one/shared/interfaces';
-import {
-  formatDisplayTimeInTimezone,
-  formatFutureRelativeTime,
-  getCurrentOrNextOccurrence,
-  getLongTimezoneName,
-  getUserTimezone,
-  resolveTimeState,
-  toZonedDateCarrier,
-} from '@lfx-one/shared/utils';
+import { Meeting, MeetingTimeState, MeetingTimeWindow, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { formatDisplayTimeInTimezone, formatFutureRelativeTime, getLongTimezoneName, getUserTimezone, toZonedDateCarrier } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
@@ -42,13 +34,13 @@ export class MeetingTimeBannerComponent {
 
   protected readonly meeting: Signal<(Meeting & { project: PublicMeetingProject }) | undefined> = this.state.meeting;
   /**
-   * The occurrence the page is about: the current or next one. Re-selected on every clock tick, so on
-   * a recurring series left open the date and the phase line move to the next occurrence together.
+   * Start and end of the page's selected occurrence (`?occurrence=` first, else current or next; the
+   * state service re-selects it on each clock tick), else of the meeting itself.
    */
-  private readonly occurrence: Signal<MeetingOccurrence | null> = this.initOccurrence();
-  /** Start and end of that occurrence, else of the meeting itself. */
   protected readonly window: Signal<MeetingTimeWindow | null> = this.initWindow();
-  protected readonly timeState: Signal<MeetingTimeState | null> = this.initTimeState();
+  protected readonly timeState: Signal<MeetingTimeState | null> = this.state.timeState;
+  /** True inside the join window before the scheduled start: the pill's "Starting soon". */
+  protected readonly startingSoon = computed(() => this.state.meetingStatus() === 'starting-soon');
   /** The occurrence's calendar day in the viewer's zone, as a local-noon carrier for DatePipe. */
   protected readonly zonedDay: Signal<Date | null> = this.initZonedDay();
   protected readonly timeRange: Signal<string> = this.initTimeRange();
@@ -60,35 +52,19 @@ export class MeetingTimeBannerComponent {
     afterNextRender(() => this.userTimezone.set(getUserTimezone()));
   }
 
-  private initOccurrence(): Signal<MeetingOccurrence | null> {
-    return computed(() => {
-      // `getCurrentOrNextOccurrence` reads the wall clock; reading `now` makes this re-select per tick.
-      this.state.now();
-      const meeting = this.meeting();
-      return meeting ? getCurrentOrNextOccurrence(meeting) : null;
-    });
-  }
-
   private initWindow(): Signal<MeetingTimeWindow | null> {
     return computed(() => {
       const meeting = this.meeting();
       if (!meeting) {
         return null;
       }
-      const occurrence = this.occurrence();
+      const occurrence = this.state.selectedOccurrence();
       const start = new Date(occurrence?.start_time ?? meeting.start_time);
       if (Number.isNaN(start.getTime())) {
         return null;
       }
       const durationMinutes = occurrence?.duration ?? meeting.duration ?? 0;
       return { start, end: new Date(start.getTime() + durationMinutes * 60_000) };
-    });
-  }
-
-  private initTimeState(): Signal<MeetingTimeState | null> {
-    return computed(() => {
-      const meeting = this.meeting();
-      return meeting ? resolveTimeState(meeting, this.occurrence(), this.state.now()) : null;
     });
   }
 
