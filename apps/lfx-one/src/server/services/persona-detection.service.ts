@@ -256,10 +256,10 @@ export class PersonaDetectionService {
   }
 
   /**
-   * Checks whether the current user holds `auditor_guard` on the tenant ROOT project. Surfaced as
-   * `isAuditor`, a navigation signal for the Formations queue; the queue itself is not gated on it,
-   * since its data is access-filtered per formation upstream. Mirrors {@link checkRootWriter}:
-   * request-cached, resolves the ROOT uid via NATS, and fails closed to `false`.
+   * Checks whether the current user holds `auditor_guard` on the tenant ROOT project — the Formations
+   * queue's (`foundation/formations`, GH-1958) authorization boundary, enforced by `requireAuditor`.
+   * Mirrors {@link checkRootWriter}: request-cached, resolves the ROOT uid via NATS, and fails closed
+   * to `false` so transient errors never widen access.
    */
   public async checkRootAuditor(req: Request): Promise<boolean> {
     return this.checkRootAccess(req, this.rootAuditorRequestCache, 'auditor_guard', 'check_root_auditor');

@@ -459,9 +459,10 @@ export class FormationChecklistSectionComponent {
               this.responseLoaded.emit(null);
             }
           }
-          // Explicit-slug mode is the queue drill-down, which reads through the queue's checklist
-          // route; context mode stays on the plain project-page read that serves
-          // `/project/formation`. Both are access-checked per project upstream. Reading `projectSlug()` here (not in slug$) is safe: any change
+          // Explicit-slug mode is the auditor drill-down, which must use the requireAuditor-gated
+          // read so the queue's root-auditor contract holds server-side too (#2690 review); context
+          // mode stays on the plain project-page read that serves `/project/formation`'s
+          // per-project audience. Reading `projectSlug()` here (not in slug$) is safe: any change
           // to it re-emits slug$, so the mode can never be stale for the slug being fetched.
           const checklist$ = this.projectSlug() ? this.formationService.getQueueFormationChecklist(slug) : this.formationService.getProjectFormation(slug);
           return checklist$.pipe(

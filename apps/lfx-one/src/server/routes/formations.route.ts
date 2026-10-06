@@ -12,6 +12,7 @@ import {
   updateFormationItemAssignment,
   updateFormationItemStatus,
 } from '../controllers/formation.controller';
+import { requireAuditor } from '../middleware/require-auditor.middleware';
 import { requireLiveFormation } from '../middleware/require-live-formation.middleware';
 
 const router = Router();
@@ -26,6 +27,8 @@ router.get('/projects/:slug/formation', getProjectFormation);
 // settings roles. Same ungated per-project audience as the checklist read above: the service's own
 // masking checklist read is the access gate, and the settings read behind it degrades to an
 // `unavailable` state for a caller upstream 403s (global-grant staff) instead of failing the card.
+// The foundation drill-down only mounts the card after its auditor-gated checklist call succeeded,
+// so this path needs no `requireAuditor` twin.
 router.get('/projects/:slug/formation/people', getFormationPeople);
 
 // Shared fail-closed gate (GH-2328): every item mutation below is denied (409 CHECKLIST_READ_ONLY)
@@ -47,20 +50,20 @@ router.post('/formations/:projectUid/items/:itemKey/assignment', updateFormation
 router.post('/formations/:projectUid/items/:itemKey/status', updateFormationItemStatus);
 router.patch('/formations/:projectUid/items/:itemKey', updateFormationItem);
 
-// Formations queue (GH-1958). Not gated on a ROOT relation (#2812): the query runs with the
-// caller's token and upstream returns only the formations the caller holds `auditor_guard` on,
-// so a per-project grant — including a per-project `global_auditor` — sees exactly its own rows.
-// Root-scoped by default (every readable formation); an optional
+// Formations queue (GH-1958), auditor-only. Root-scoped by default (every formation); an optional
 // `?foundation_uid=` narrows to that foundation's formations (GH-2367 — the whole subtree at any
 // depth since GH-2368's upstream ancestry chain). The `tlf` LF umbrella foundation's uid — where
 // LF staff land by default — narrows to LF's own formations instead: parentless rows plus tlf's
 // direct children (GH-2699, superseding GH-2378's treat-tlf-as-everything behaviour).
-router.get('/formations', getFormationsQueue);
+router.get('/formations', requireAuditor, getFormationsQueue);
 
-// Queue drill-down checklist read (LFXV2-3386): the same controller and response as
-// `GET /projects/:slug/formation` above, and the same per-project audience — the service's
-// masking checklist read is the access gate, so a caller without upstream access to that
-// project gets a 404 whether it renders on the server or in the browser (#2812).
-router.get('/formations/:slug/checklist', getProjectFormation);
+// Queue drill-down checklist read (LFXV2-3386, #2690 review): the same controller and response as
+// `GET /projects/:slug/formation` above, but auditor-gated like the queue itself. The drill-down
+// route's `formationsQueueAuditorGuard` defers to a post-hydration client check by design, so
+// without this gate the checklist would render into the SSR response for a non-root-auditor who
+// still has per-project upstream access. The plain project-page read above stays ungated — it
+// serves `/project/formation`'s per-project audience; this alias enforces the queue's root-auditor
+// contract server-side for the foundation drill-down only.
+router.get('/formations/:slug/checklist', requireAuditor, getProjectFormation);
 
 export default router;

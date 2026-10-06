@@ -57,9 +57,9 @@ vi.mock('../helpers/validation.helper', () => ({
   validateFoundationUidParameter: vi.fn(() => true),
 }));
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth: vi.fn() }));
-const checkRootAuditor = vi.fn(async () => false);
-const checkRootWriter = vi.fn(async () => false);
-vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { checkRootAuditor, checkRootWriter } }));
+vi.mock('../utils/persona-helper', () => ({
+  personaDetectionService: { checkRootAuditor: vi.fn(async () => true), checkRootWriter: vi.fn(async () => false) },
+}));
 vi.mock('../services/logger.service', () => ({
   logger: {
     info: vi.fn(),
@@ -155,32 +155,5 @@ describe('formations router — requireLiveFormation gate (GH-2328)', () => {
     expect(res.status).not.toBe(409);
     expect(assertFormationMutable).not.toHaveBeenCalled();
     expect(getFormationItemDetail).toHaveBeenCalled();
-  });
-});
-
-// The queue and its drill-down are access-filtered upstream per formation (#2812), so a caller with
-// no ROOT relation — e.g. staff holding only per-project `global_*` grants — must reach the
-// controller rather than be turned away by a ROOT check here.
-describe('formations router — queue reads are not ROOT-gated (#2812)', () => {
-  it('admits the queue for a caller with no ROOT auditor or writer relation', async () => {
-    getFormationsQueue.mockResolvedValue({ rows: [] });
-
-    const res = await fetch(`${baseUrl}/api/formations`);
-
-    expect(res.status).toBe(200);
-    expect(getFormationsQueue).toHaveBeenCalled();
-    expect(checkRootAuditor).not.toHaveBeenCalled();
-    expect(checkRootWriter).not.toHaveBeenCalled();
-  });
-
-  it('admits the drill-down checklist for a caller with no ROOT auditor or writer relation', async () => {
-    getProjectFormation.mockResolvedValue({ items: [] });
-
-    const res = await fetch(`${baseUrl}/api/formations/forming-project/checklist`);
-
-    expect(res.status).toBe(200);
-    expect(getProjectFormation).toHaveBeenCalledWith(expect.anything(), 'forming-project');
-    expect(checkRootAuditor).not.toHaveBeenCalled();
-    expect(checkRootWriter).not.toHaveBeenCalled();
   });
 });
