@@ -10,12 +10,16 @@ import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Router-level coverage for the impersonation gate on the admin reviewer-note write and the task create. The
+ * Router-level coverage for the impersonation gate on the admin reviewer-note write, the task create and the mentor status change. The
  * middleware has its own unit tests, but those call it directly and would keep passing if it were dropped from these
  * routes.
  */
 
 const noteHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.status(204).end();
+});
+
+const mentorHandler = vi.fn((_req: express.Request, res: express.Response) => {
   res.status(204).end();
 });
 
@@ -27,6 +31,7 @@ vi.mock('../controllers/mentorship-admin.controller', () => ({
   MentorshipAdminController: class {
     public updateApplicationNote = noteHandler;
     public createTasks = tasksHandler;
+    public updateProgramMentor = mentorHandler;
   },
 }));
 let impersonatingStub = false;
@@ -48,6 +53,15 @@ const APPLICATION_ID = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
 
 let server: Server;
 let baseUrl: string;
+
+const PROGRAM_ID = '3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b';
+
+const patchMentor = (): Promise<Response> =>
+  fetch(`${baseUrl}/api/mentorship/admin/programs/${PROGRAM_ID}/mentors/${APPLICATION_ID}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'active' }),
+  });
 
 const putNote = (): Promise<Response> =>
   fetch(`${baseUrl}/api/mentorship/admin/applications/${APPLICATION_ID}/note`, {
@@ -117,5 +131,23 @@ describe('mentorship admin router — task create impersonation gate', () => {
 
     expect(res.status).toBe(200);
     expect(tasksHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mentorship admin router — mentor status change impersonation gate', () => {
+  it('refuses the mentor change with 403 while impersonating and never reaches the controller', async () => {
+    const res = await patchMentor();
+
+    expect(res.status).toBe(403);
+    expect(mentorHandler).not.toHaveBeenCalled();
+  });
+
+  it('admits the mentor change when not impersonating', async () => {
+    impersonatingStub = false;
+
+    const res = await patchMentor();
+
+    expect(res.status).toBe(204);
+    expect(mentorHandler).toHaveBeenCalledTimes(1);
   });
 });

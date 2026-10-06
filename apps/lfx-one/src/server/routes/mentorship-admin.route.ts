@@ -19,6 +19,7 @@ router.patch('/applications/:applicationId/status', blockDuringImpersonation, (r
 router.put('/applications/:applicationId/note', blockDuringImpersonation, (req, res, next) => adminController.updateApplicationNote(req, res, next));
 router.post('/applications/:applicationId/withdraw', blockDuringImpersonation, (req, res, next) => adminController.withdrawApplication(req, res, next));
 router.post('/tasks', blockDuringImpersonation, (req, res, next) => adminController.createTasks(req, res, next));
+router.patch('/programs/:programId/mentors/:memberId', blockDuringImpersonation, (req, res, next) => adminController.updateProgramMentor(req, res, next));
 router.post('/programs/:programId/terms/:termId/decline-pending', blockDuringImpersonation, (req, res, next) =>
   adminController.declinePendingForTerm(req, res, next)
 );

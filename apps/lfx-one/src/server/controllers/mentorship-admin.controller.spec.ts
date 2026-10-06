@@ -532,6 +532,58 @@ describe('MentorshipAdminController', () => {
     });
   });
 
+  describe('updateProgramMentor', () => {
+    const MEMBER_ID = '4e5f6a7b-8c9d-4e0f-9a1b-3c4d5e6f7a8b';
+    const writeRes = () => ({ json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() }) as unknown as Response;
+    const mentorReq = (body: unknown, params: Record<string, unknown> = { programId: PROGRAM_ID, memberId: MEMBER_ID }): Request =>
+      ({ ...buildReq({}, params), body }) as Request;
+
+    it('passes the validated status on and answers 204', async () => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'updateProgramMentor').mockResolvedValue();
+      const out = writeRes();
+
+      await controller.updateProgramMentor(mentorReq({ status: 'active', extra: 1 }), out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, MEMBER_ID, { status: 'active' });
+      expect(out.status).toHaveBeenCalledWith(204);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a program id that is not a UUID', { status: 'active' }, { programId: '12', memberId: MEMBER_ID }],
+      ['a member id that is not a UUID', { status: 'active' }, { programId: PROGRAM_ID, memberId: 'abc' }],
+      ['a status the admin cannot set', { status: 'requested' }, undefined],
+      ['a status that is not a string', { status: 1 }, undefined],
+      ['no body', undefined, undefined],
+    ])('rejects %s with a 400 and no upstream call', async (_label, body, params) => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'updateProgramMentor');
+
+      await controller.updateProgramMentor(mentorReq(body, params), writeRes(), next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it('passes an upstream 409 on', async () => {
+      vi.spyOn(MentorshipAdminService.prototype, 'updateProgramMentor').mockRejectedValue(Object.assign(new Error('changed'), { statusCode: 409 }));
+
+      await controller.updateProgramMentor(mentorReq({ status: 'declined' }), writeRes(), next);
+
+      expect(statusCodes()).toEqual([409]);
+    });
+
+    it('logs ids and the status only', async () => {
+      vi.spyOn(MentorshipAdminService.prototype, 'updateProgramMentor').mockResolvedValue();
+
+      await controller.updateProgramMentor(mentorReq({ status: 'withdrawn', name: 'private-mentor-name' }), writeRes(), next);
+
+      const logged = JSON.stringify([...vi.mocked(logger.startOperation).mock.calls, ...vi.mocked(logger.success).mock.calls].map((call) => call.slice(1)));
+      expect(logged).toContain(MEMBER_ID);
+      expect(logged).toContain('withdrawn');
+      expect(logged).not.toContain('private-mentor-name');
+    });
+  });
+
   describe('with no signed-in user', () => {
     it.each([
       ['getProgram', 'getProgramPage', { programId: PROGRAM_ID }, {}],
@@ -541,6 +593,7 @@ describe('MentorshipAdminController', () => {
       ['getApplicationTasks', 'getApplicationTasks', { applicationId: PROGRAM_ID }, {}],
       ['updateApplicationNote', 'updateApplicationNote', { applicationId: PROGRAM_ID }, {}],
       ['createTasks', 'createTasks', {}, {}],
+      ['updateProgramMentor', 'updateProgramMentor', { programId: PROGRAM_ID, memberId: PROGRAM_ID }, {}],
     ] as const)('%s passes an AuthenticationError to next without reading upstream', async (method, serviceMethod, params, query) => {
       vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
       const read = vi.spyOn(MentorshipAdminService.prototype, serviceMethod);

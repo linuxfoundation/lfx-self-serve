@@ -12,6 +12,7 @@ import type {
   MentorshipUpstreamProgramStatus,
 } from '../interfaces/mentorship.interface';
 import type {
+  MentorshipAdminMentorAction,
   MentorshipAdminMentorStatus,
   MentorshipAdminProgramTabCounts,
   MentorshipProgram,
@@ -248,6 +249,50 @@ export const MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipAdmi
   active: 'bg-emerald-100 text-emerald-700',
   declined: 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
+};
+
+/** Statuses an admin may set through `PATCH …/mentors/:memberId`. Upstream allows no move out of `declined` or `withdrawn`. */
+export const MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES = ['active', 'declined', 'withdrawn'] as const;
+
+/** Shown when a mentor change hits a 409: the mentor's status moved on, so the list reloads. */
+export const MENTORSHIP_ADMIN_MENTOR_CHANGED_MESSAGE = 'This mentor changed. The list has been refreshed.';
+
+/** Mentors tab row actions by the mentor's status, in display order. Upstream's DELETE only withdraws an active mentor, so Remove covers it. */
+export const MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS: Record<MentorshipAdminMentorStatus, readonly MentorshipAdminMentorAction[]> = {
+  requested: [
+    { key: 'accept', label: 'Accept', status: 'active' },
+    { key: 'decline', label: 'Decline', status: 'declined' },
+  ],
+  pending: [
+    { key: 'accept', label: 'Accept', status: 'active' },
+    { key: 'decline', label: 'Decline', status: 'declined' },
+  ],
+  invited: [{ key: 'revoke', label: 'Revoke invite', status: 'declined' }],
+  active: [{ key: 'remove', label: 'Remove', status: 'withdrawn' }],
+  declined: [],
+  withdrawn: [],
+};
+
+export const MENTORSHIP_ADMIN_MENTOR_ACTION_CONFIRM_MESSAGES: Record<MentorshipAdminMentorAction['key'], string> = {
+  accept: 'Accept this mentor into the program?',
+  decline: 'Decline this mentor for the program?',
+  revoke: 'Revoke this invite? The mentor can no longer accept it.',
+  remove: 'Remove this mentor from the program? They can request to join again later.',
+};
+
+export const MENTORSHIP_ADMIN_MENTOR_ACTION_SUCCESS_MESSAGES: Record<MentorshipAdminMentorAction['key'], string> = {
+  accept: 'Mentor accepted.',
+  decline: 'Mentor declined.',
+  revoke: 'Invite revoked.',
+  remove: 'Mentor removed.',
+};
+
+/** Icon and colour of each Mentors tab row action. */
+export const MENTORSHIP_ADMIN_MENTOR_ACTION_APPEARANCE: Record<MentorshipAdminMentorAction['key'], { icon: string; styleClass: string }> = {
+  accept: { icon: 'fa-light fa-circle-check', styleClass: 'text-emerald-600 hover:text-emerald-700' },
+  decline: { icon: 'fa-light fa-circle-xmark', styleClass: 'text-amber-600 hover:text-amber-700' },
+  revoke: { icon: 'fa-light fa-ban', styleClass: 'text-amber-600 hover:text-amber-700' },
+  remove: { icon: 'fa-light fa-user-minus', styleClass: 'text-red-600 hover:text-red-700' },
 };
 
 export const MENTORSHIP_MENTEE_STATUS_LABELS: Record<MentorshipMenteeStatus, string> = {

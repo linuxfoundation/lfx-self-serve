@@ -15,6 +15,7 @@ import {
   MentorshipAdminMenteesResponse,
   MentorshipAdminMentorsQuery,
   MentorshipAdminMentorsResponse,
+  MentorshipAdminMentorStatusUpdate,
   MentorshipAdminProgramPage,
   MentorshipAdminProgramTabCounts,
   MentorshipAdminTermOption,
@@ -373,6 +374,23 @@ export class MentorshipAdminService {
    */
   public async createTasks(req: Request, request: MentorshipMentorTaskCreateRequest): Promise<MentorshipMentorTaskCreateResponse> {
     return createMentorshipMenteeTasks(this.microserviceProxy, req, request, 'create_mentorship_admin_tasks');
+  }
+
+  /**
+   * Moves one mentor member to `active`, `declined` or `withdrawn`. Upstream checks the caller administers the program
+   * and that the move is allowed from the mentor's current status; its 403, 404 and 409 pass through.
+   */
+  public async updateProgramMentor(req: Request, programId: string, memberId: string, body: MentorshipAdminMentorStatusUpdate): Promise<void> {
+    logger.debug(req, 'mentorship_admin_update_program_mentor', 'Updating program mentor status', { programId, memberId, status: body.status });
+
+    await proxyMentorshipRequest<unknown>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/members/${encodeURIComponent(memberId)}`,
+      'PATCH',
+      undefined,
+      { status: body.status }
+    );
   }
 
   /** Declines every pending application of one term. */

@@ -5,6 +5,7 @@ import type {
   MENTORSHIP_ADMIN_DECISION_STATUSES,
   MENTORSHIP_ADMIN_MENTEE_TABS,
   MENTORSHIP_ADMIN_MENTOR_STATUSES,
+  MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES,
   MENTORSHIP_ATTENDANCE_TYPES,
   MENTORSHIP_PROGRAM_DETAIL_TABS,
   MENTORSHIP_PROGRAM_STATUSES,
@@ -60,6 +61,21 @@ export type MentorshipProgramDetailTab = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)
 
 /** Mentor lifecycle on the admin Mentors tab; upstream's `active` mentor shows as Accepted. */
 export type MentorshipAdminMentorStatus = (typeof MENTORSHIP_ADMIN_MENTOR_STATUSES)[number];
+
+/** A status an admin may set on a mentor member. */
+export type MentorshipAdminMentorUpdateStatus = (typeof MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES)[number];
+
+/** Body of `PATCH /api/mentorship/admin/programs/:programId/mentors/:memberId`. */
+export interface MentorshipAdminMentorStatusUpdate {
+  status: MentorshipAdminMentorUpdateStatus;
+}
+
+/** One action on a Mentors tab row: `key` names its copy, `status` is what it sets. */
+export interface MentorshipAdminMentorAction {
+  key: 'accept' | 'decline' | 'revoke' | 'remove';
+  label: string;
+  status: MentorshipAdminMentorUpdateStatus;
+}
 
 /** Mentor row on the Mentors tab. */
 export interface MentorshipProgramMentor extends MentorshipProgramPersonBase {
