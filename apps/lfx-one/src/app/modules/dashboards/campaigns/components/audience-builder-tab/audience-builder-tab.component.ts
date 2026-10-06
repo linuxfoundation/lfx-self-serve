@@ -1566,13 +1566,6 @@ export class AudienceBuilderTabComponent {
   }
 
   /**
-   * Compose is NOT idempotent and a reset does not cancel it — the HubSpot lists are already
-   * being created by the time a reply lands. Discarding a stale reply is right for every other
-   * request here, but for compose it would leave real lists with no confirmation and no orphan
-   * link, and a retry would duplicate them. Discover is therefore disabled while `composing`, so
-   * a reset cannot be reached from the one control that would otherwise strand a compose.
-   */
-  /**
    * Starts the panel over for a new project or event, keeping the one fact the reset must not lose.
    *
    * A compose in flight is not cancelled by the reset -- the HubSpot lists are already being
@@ -1590,6 +1583,16 @@ export class AudienceBuilderTabComponent {
     }
   }
 
+  /**
+   * Compose is NOT idempotent and a reset does not cancel it — the HubSpot lists are already
+   * being created by the time a reply lands. Discarding a stale reply is right for every other
+   * request here, but for compose it would leave real lists with no confirmation and no orphan
+   * link, and a retry would duplicate them.
+   *
+   * So Discover is disabled while `composing`, and the two resets that CAN arrive during a compose
+   * -- a project switch and a different event's brief -- go through `resetForNewContext`, which
+   * records the create as stranded instead of losing it.
+   */
   private resetRunState(): void {
     // Invalidate every in-flight reply from the previous run BEFORE clearing the state they
     // would otherwise repopulate.
