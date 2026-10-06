@@ -21,10 +21,11 @@ import { strictHttpParams } from '../utils/http-params.utils';
 /**
  * Talks to the LFX One BFF's `/api/mentorship/*` endpoints.
  *
- * Shape mirrors `CrowdfundingService` deliberately: lookups degrade to an empty
- * response on error so the enroll flow never blocks on upstream faults. The project picker's
- * pages are the exception: they propagate errors so the picker can offer Retry rather than
- * show a failure as no projects, or a truncated list as complete.
+ * Errors propagate to the caller, which owns the unavailable or retry state: the name check (the
+ * wizard holds Next while it cannot confirm the name), the project picker's pages (Retry rather than
+ * a failure shown as no projects, or a truncated list as complete), the CII badge (a 404 is `null`)
+ * and the review and profile calls.
+ * The invitable-user lookup is the exception: it degrades to an empty response, as in `CrowdfundingService`.
  * The admin pages' reads live in `MentorshipAdminService` and the mentor pages' in `MentorshipMentorService`.
  */
 @Injectable({ providedIn: 'root' })
