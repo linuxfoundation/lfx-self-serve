@@ -225,7 +225,55 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
     const items = Array.from(root.querySelectorAll('[data-testid^="optimization-campaign-negatives-result-"]'));
     expect(items.map((item) => item.querySelector('[data-outcome]')!.getAttribute('data-outcome'))).toEqual(['APPLIED', 'UNCONFIRMED']);
     expect(items.map((item) => item.querySelector('.font-medium')!.textContent!.trim())).toEqual(['alpha', 'beta']);
+    // Remounted mid-flight with an empty field: the unconfirmed keyword comes back once it settles.
+    expect(remounted.componentInstance.form.controls.keywords.value).toBe('beta');
     expect(messageAdd).toHaveBeenCalledTimes(1);
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', sticky: true, detail: expect.stringContaining('to see which') }));
+  });
+
+  // The remounted editor gets back what its predecessor held: the keywords NOT confirmed added, in
+  // the order sent, and the match type, so the operator can resend them without retyping.
+  it('restores the keywords not confirmed added, and the match type, into a remounted editor', () => {
+    addNegativeKeywords.mockReturnValue(
+      of({
+        campaignId: 'c-1',
+        appliedCount: 1,
+        results: [
+          { text: 'alpha', matchType: 'Phrase', outcome: 'FAILED' },
+          { text: 'beta', matchType: 'Phrase', outcome: 'APPLIED' },
+          { text: 'gamma', matchType: 'Phrase', outcome: 'UNCONFIRMED' },
+        ],
+      })
+    );
+    typeKeywords('alpha\nbeta\ngamma');
+    (el().querySelector('#campaign-negatives-type-c-1-Phrase') as HTMLInputElement).click();
+    fixture.detectChanges();
+    submit();
+    fixture.destroy();
+
+    const remounted = TestBed.createComponent(CampaignNegativeKeywordsFormComponent);
+    remounted.componentRef.setInput('projectSlug', 'tlf');
+    remounted.componentRef.setInput('briefId', 'b-1');
+    remounted.componentRef.setInput('campaignId', 'c-1');
+    remounted.componentRef.setInput('campaignName', 'KubeCon EU');
+    remounted.detectChanges();
+
+    expect(remounted.componentInstance.form.getRawValue()).toEqual({ keywords: 'alpha\ngamma', matchType: 'Phrase' });
+  });
+
+  it('restores nothing into a remounted editor after every keyword was added', () => {
+    addNegativeKeywords.mockReturnValue(of({ campaignId: 'c-1', appliedCount: 1, results: [{ text: 'alpha', matchType: 'Exact', outcome: 'APPLIED' }] }));
+    typeKeywords('alpha');
+    submit();
+    fixture.destroy();
+
+    const remounted = TestBed.createComponent(CampaignNegativeKeywordsFormComponent);
+    remounted.componentRef.setInput('projectSlug', 'tlf');
+    remounted.componentRef.setInput('briefId', 'b-1');
+    remounted.componentRef.setInput('campaignId', 'c-1');
+    remounted.componentRef.setInput('campaignName', 'KubeCon EU');
+    remounted.detectChanges();
+
+    expect(remounted.componentInstance.form.controls.keywords.value).toBe('');
   });
 });

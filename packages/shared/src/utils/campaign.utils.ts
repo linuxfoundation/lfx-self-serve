@@ -138,3 +138,11 @@ export function keywordActionKey(platform: KeywordActionPlatform, adGroupId: str
   const base = `${adGroupId}-${criterionId}`;
   return platform === 'google-ads' ? base : `${platform}:${base}`;
 }
+
+/**
+ * A keyword's stable identity across reads — (platform, campaign, ad group, criterion) — for state
+ * that must outlive the table it was asked from, such as a keyword a confirmed REMOVE deleted.
+ */
+export function keywordIdentityKey(platform: KeywordActionPlatform, campaignId: string, adGroupId: string, criterionId: string): string {
+  return `${platform}:${campaignId}:${adGroupId}:${criterionId}`;
+}

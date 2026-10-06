@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, DestroyRef, inject, input, output, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
@@ -19,6 +20,7 @@ import { campaignNegativeKeywordsValidator } from '@lfx-one/shared/validators';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { campaignNegativeKeywordsKey, summarizeNegativeKeywordOutcomes } from '@shared/utils/campaign-negative-keywords.utils';
 import { controlTouchedSignal, controlValueSignal, touchedErrorSignal, touchedInvalidSignal } from '@shared/utils/form-control-signals.util';
+import { filter, take } from 'rxjs';
 
 /**
  * Adds campaign-level negative keywords to one Microsoft Advertising campaign from the Optimize tab.
@@ -118,6 +120,10 @@ export class CampaignNegativeKeywordsFormComponent {
   protected readonly pendingAnnouncement = computed(() => (this.pending() ? `Adding negative keywords to ${this.campaignName()}` : ''));
   protected readonly submitLabel = computed(() => `Add negative keywords to ${this.campaignName()}`);
 
+  public constructor() {
+    this.initRestoreUnsettledInput();
+  }
+
   protected submit(): void {
     if (this.pending()) {
       return;
@@ -147,6 +153,39 @@ export class CampaignNegativeKeywordsFormComponent {
         }
       }
     );
+  }
+
+  /**
+   * A remounted editor gets back what it lost with its predecessor: the keywords of the last request
+   * that were NOT confirmed added (refused or unconfirmed, in the order sent — the whole list when
+   * the request produced no per-keyword results) and its match type, so the operator can resend
+   * them after verifying instead of retyping.
+   *
+   * Once, at the first SETTLED state this form sees, and only into an empty field: the form that sent
+   * the request still holds its own text, and an operator's new typing is never overwritten.
+   */
+  private initRestoreUnsettledInput(): void {
+    toObservable(this.request)
+      .pipe(
+        filter((request): request is CampaignNegativeKeywordsRequestState => request !== null && !request.pending),
+        take(1),
+        takeUntilDestroyed()
+      )
+      .subscribe((request) => {
+        const keywords = this.form.controls.keywords;
+        if (keywords.value.trim() !== '') {
+          return;
+        }
+        const unsettled =
+          request.batchOutcome !== null
+            ? request.sent
+            : request.outcomeRows.filter((row) => row.outcome === 'FAILED' || row.outcome === 'UNCONFIRMED').map((row) => row.text);
+        if (unsettled.length === 0) {
+          return;
+        }
+        keywords.setValue(unsettled.join('\n'));
+        this.form.controls.matchType.setValue(request.matchType);
+      });
   }
 
   /** "2 added, 1 already present, 1 not confirmed" — counts of keywords only, in outcome order. */

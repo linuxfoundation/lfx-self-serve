@@ -67,6 +67,8 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { EmailBodyPreviewComponent } from '@components/email-body-preview/email-body-preview.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
+import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
+import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
@@ -152,6 +154,11 @@ export class CampaignsComponent {
   private readonly personaService = inject(PersonaService);
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly destroyRef = inject(DestroyRef);
+  // Root-provided because a negative-keyword request outlives the Optimize tab; this page, which
+  // stays mounted across tabs, is what scopes its settled results (see `setScope`).
+  private readonly negativeKeywordsService = inject(CampaignNegativeKeywordsService);
+  // Same scoping for the keywords a confirmed REMOVE deleted (see `CampaignRemovedKeywordsService`).
+  private readonly removedKeywordsService = inject(CampaignRemovedKeywordsService);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — see LFXV2-2235/LFXV2-2236. */
   private readonly marketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
 
@@ -2054,6 +2061,24 @@ export class CampaignsComponent {
   });
 
   public constructor() {
+    // The Optimize tab's negative-keyword results belong to this page's (project, brief): the same
+    // address the tab is given. Reported from here, not from the tab, because the tab is destroyed
+    // whenever another tab is open, and a switch made there would otherwise never clear anything.
+    // The brief id goes empty while a Proceed save runs (and stays empty after a failed one); the
+    // service treats an empty brief as the same project's, so that is never read as a brief switch.
+    // Removed keywords are project-level, so they are scoped by the project alone.
+    toObservable(computed(() => `${this.activeFoundationSlug()}\u0000${this.briefPersistence().briefId ?? ''}`))
+      .pipe(takeUntilDestroyed())
+      .subscribe((scope) => {
+        const [projectSlug, briefId] = scope.split('\u0000');
+        this.negativeKeywordsService.setScope(projectSlug, briefId);
+        this.removedKeywordsService.setScope(projectSlug);
+      });
+    this.destroyRef.onDestroy(() => {
+      this.negativeKeywordsService.releaseScope();
+      this.removedKeywordsService.releaseScope();
+    });
+
     // Discard the persistence state when the selected foundation changes — see
     // `activeFoundationSlug`. The generation bump is what stops a save already in flight for the
     // previous foundation from writing its outcome under the new one; clearing the signal is what

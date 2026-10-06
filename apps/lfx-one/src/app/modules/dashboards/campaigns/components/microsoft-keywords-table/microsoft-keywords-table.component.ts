@@ -10,6 +10,7 @@ import {
   KEYWORD_ACTION_OUTCOME_CLASSES,
   KEYWORD_ACTION_OUTCOME_LABELS,
   MICROSOFT_KEYWORD_PREVIOUS_UNCONFIRMED_NOTE,
+  MICROSOFT_KEYWORDS_NOT_CONNECTED_MESSAGES,
   MICROSOFT_KEYWORDS_WINDOW_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -21,7 +22,7 @@ import type {
   MicrosoftKeywordMetricsResponse,
   MicrosoftKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
-import { keywordActionKey } from '@lfx-one/shared/utils';
+import { keywordActionKey, keywordIdentityKey } from '@lfx-one/shared/utils';
 import { AdsPctPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
 import { ButtonComponent } from '@components/button/button.component';
@@ -64,6 +65,11 @@ export class MicrosoftKeywordsTableComponent {
   public readonly actionInProgress = input<Record<string, boolean>>({});
   /** The parent's keyword action outcomes, keyed by `keywordActionKey`. */
   public readonly actionResults = input<Record<string, KeywordActionOutcome>>({});
+  /**
+   * Keywords a confirmed REMOVE deleted on this page, by `keywordIdentityKey`. Kept by the parent
+   * across re-reads, because a finished report can still list a removed keyword.
+   */
+  public readonly removedKeywords = input<ReadonlySet<string>>(new Set<string>());
 
   public readonly keywordAction = output<MicrosoftKeywordActionRequest>();
 
@@ -74,12 +80,6 @@ export class MicrosoftKeywordsTableComponent {
   protected readonly retryToken = signal(0);
   protected readonly data = signal<MicrosoftKeywordMetricsResponse | null>(null);
   protected readonly errorMessage = signal('');
-  /**
-   * The action last asked for per row since the table was last read, keyed by `keywordActionKey`.
-   * The parent's outcome does not say which action it answers, and a confirmed REMOVE must withdraw
-   * the row's controls. Reset by every read, so Refresh offers them again.
-   */
-  private readonly requestedAction = signal<Record<string, KeywordActionType>>({});
 
   protected readonly OUTCOME_LABEL = KEYWORD_ACTION_OUTCOME_LABELS;
   protected readonly OUTCOME_CLASS = KEYWORD_ACTION_OUTCOME_CLASSES;
@@ -107,8 +107,6 @@ export class MicrosoftKeywordsTableComponent {
   }
 
   protected act(keyword: MicrosoftKeywordMetrics, action: KeywordActionType): void {
-    const key = keywordActionKey('microsoft-ads', keyword.adGroupId, keyword.criterionId);
-    this.requestedAction.update((requested) => ({ ...requested, [key]: action }));
     this.keywordAction.emit({ keyword, action });
   }
 
@@ -122,7 +120,6 @@ export class MicrosoftKeywordsTableComponent {
       .pipe(
         switchMap(({ projectSlug, window }) => {
           this.data.set(null);
-          this.requestedAction.set({});
           this.errorMessage.set('');
           if (projectSlug === '') {
             this.state.set('idle');
@@ -167,7 +164,7 @@ export class MicrosoftKeywordsTableComponent {
       }
       const inProgress = this.actionInProgress();
       const results = this.actionResults();
-      const requested = this.requestedAction();
+      const removed = this.removedKeywords();
       return (data.keywords ?? []).map((keyword) => {
         const key = keywordActionKey('microsoft-ads', keyword.adGroupId, keyword.criterionId);
         return {
@@ -175,7 +172,7 @@ export class MicrosoftKeywordsTableComponent {
           keyword,
           inProgress: !!inProgress[key],
           result: results[key] ?? null,
-          removed: requested[key] === 'remove' && results[key]?.state === 'done',
+          removed: removed.has(keywordIdentityKey('microsoft-ads', keyword.campaignId, keyword.adGroupId, keyword.criterionId)),
           conversionsMeasured: data.conversionsComplete || keyword.conversions !== 0,
         };
       });
@@ -194,18 +191,17 @@ export class MicrosoftKeywordsTableComponent {
  * "Not Found") is a read failure, shown with its message and a Retry — never as a missing
  * connection, which would hide it.
  *
- * CONTRACT — these are campaign-service's sentences, matched verbatim:
+ * CONTRACT — campaign-service's sentences (`MICROSOFT_KEYWORDS_NOT_CONNECTED_MESSAGES`), compared EXACTLY (case-insensitive, trimmed), never by
+ * pattern: a pattern would also accept "no <anything> connection …" or "<anything> is not supported
+ * …", i.e. some other refusal (a reporting window, another operation) hidden as "not connected".
  * - 404 `no microsoft ads connection configured for this project` — `classifyDiscoveryError`'s
  *   `domain.ErrNotFound` arm, `internal/service/connection.go`, with the `microsoftAdsKeywordInsights`
- *   descriptor of `internal/service/connection_keyword_report.go`.
+ *   descriptor (`displayName: "microsoft ads"`) of `internal/service/connection_keyword_report.go`.
  * - 400 `keyword and audience insights are not supported for this platform` —
  *   `classifyInsightsErrorFor`'s `domain.ErrKeywordInsightsUnsupported` arm,
- *   `internal/service/connection_keywords.go` (raised while `MICROSOFT_METRICS_ENABLED` is off) —
- *   and its sibling `keyword insights is not supported for this platform` (`classifyDiscoveryError`).
- *
- * Both patterns are ANCHORED to the whole message, deliberately the same way: a message is one of
- * these sentences or it is not. A `\b`-bounded substring would also match a longer, different
- * refusal that merely quotes one of them, and hide that refusal as "not connected".
+ *   `internal/service/connection_keywords.go` (raised while `MICROSOFT_METRICS_ENABLED` is off).
+ * - 400 `keyword insights is not supported for this platform` — `classifyDiscoveryError`'s
+ *   unsupported arm, `d.label()` being the descriptor's `operation: "keyword insights"`.
  */
 function isNotConnectedError(err: unknown): boolean {
   const status = err instanceof HttpErrorResponse ? err.status : undefined;
@@ -213,9 +209,6 @@ function isNotConnectedError(err: unknown): boolean {
   if ((status !== 404 && status !== 400) || !isBffErrorEnvelope(body)) {
     return false;
   }
-  const message = (body as { error: string }).error.trim();
-  if (status === 404) {
-    return /^no .+ connection configured for this project$/i.test(message);
-  }
-  return /^.+ (?:is|are) not supported for this platform$/i.test(message);
+  const message = (body as { error: string }).error.trim().toLowerCase();
+  return MICROSOFT_KEYWORDS_NOT_CONNECTED_MESSAGES[status].includes(message);
 }
