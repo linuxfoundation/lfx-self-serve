@@ -28,61 +28,61 @@ own namespace; the two never share a value.
 
 ## Page shell and header
 
-| `data-testid`                           | Element                                                                                                           |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `meeting-page-shell`                    | The V2 page container, present in every branch                                                                    |
-| `meeting-skeleton`                      | Loading state (`role="status"`)                                                                                   |
-| `meeting-content-column`                | The content column                                                                                                |
-| `meeting-rail`                          | The right-hand column (stacks below at ≤ 920px)                                                                   |
-| `meeting-identity-bar`                  | The sticky identity bar (see below)                                                                               |
-| `meeting-identity-bar-home`             | Its LFX mark, linking home                                                                                        |
-| `meeting-identity-bar-meeting`          | Its meeting identity: date tile, title, subtitle                                                                  |
-| `meeting-identity-bar-title`            | The truncated meeting title                                                                                       |
-| `meeting-identity-bar-subtitle`         | `{group} · {status}`                                                                                              |
-| `meeting-identity-bar-my-meetings`      | Signed in: My Meetings                                                                                            |
-| `meeting-identity-bar-account`          | Signed in: the account menu button                                                                                |
-| `meeting-identity-bar-visitor-prompt`   | Visitor: the sign-in prompt                                                                                       |
-| `meeting-identity-bar-create-account`   | Visitor: Create LFX account                                                                                       |
-| `meeting-identity-bar-sign-in`          | Visitor: Sign in                                                                                                  |
-| `meeting-header-section`                | The header region as a whole                                                                                      |
-| `meeting-header-project`                | Project context: logo, name, foundation (a button opening the foundation, or plain when the parent is unresolved) |
-| `meeting-header-foundation`             | The foundation name under the project                                                                             |
-| `meeting-header-badges`                 | The badge row                                                                                                     |
-| `meeting-header-badge-recurring`        | Recurring                                                                                                         |
-| `meeting-header-badge-type`             | Meeting type                                                                                                      |
-| `meeting-header-badge-committee-${uid}` | One committee chip, linking to `/groups/${uid}` in a new tab                                                      |
-| `meeting-header-badge-recording`        | Recording enabled                                                                                                 |
-| `meeting-header-badge-transcripts`      | Transcripts enabled                                                                                               |
-| `meeting-header-badge-youtube`          | YouTube upload enabled                                                                                            |
-| `meeting-header-badge-ai-summary`       | AI summary enabled                                                                                                |
-| `meeting-header-copy-link`              | Copy meeting link                                                                                                 |
-| `meeting-status-pill`                   | Status pill: time state, or the viewer's RSVP (see `data-status`)                                                 |
-| `meeting-privacy-chip`                  | The single privacy chip (see below)                                                                               |
-| `meeting-time-banner`                   | The time banner at the top of the rail card (see below)                                                           |
-| `meeting-time-banner-date`              | Its weekday and date, in the viewer's timezone                                                                    |
-| `meeting-time-banner-time`              | Its start – end time                                                                                              |
-| `meeting-time-banner-timezone`          | Its timezone name                                                                                                 |
-| `meeting-time-banner-skeleton`          | Its placeholder until the viewer's timezone resolves                                                              |
-| `meeting-time-banner-message`           | Its one phase line (starts … / starting soon / in progress / ended)                                               |
-| `meeting-time-banner-relative`          | Before the meeting, the ticking relative start (not announced)                                                    |
-| `meeting-time-banner-phase`             | The phase sentence, a polite atomic live region that stays mounted                                                |
-| `meeting-action-slot`                   | The action slot inside the rail (see below)                                                                       |
-| `meeting-action-join-button`            | The Join control in the `join` kind (see below)                                                                   |
-| `meeting-action-join-error`             | Its error message (`role="alert"`)                                                                                |
-| `meeting-action-join-retry`             | Its error's "Try again" control                                                                                   |
-| `meeting-action-join-explainer`         | "Public meeting. Anyone with this link can join." under Join                                                      |
-| `meeting-action-join-hint`              | Before the window, the early-join rule for a viewer who will be able to join                                      |
-| `meeting-action-sign-in`                | The slot's sign-in control (`guest-join`, and `register` / `tools` for a visitor)                                 |
-| `meeting-action-message`                | The slot's one line of copy, for a kind whose full design is still to come                                        |
-| `meeting-organizer`                     | "Organized by" in the rail card                                                                                   |
-| `meeting-organizer-name`                | The organizer's display name                                                                                      |
-| `meeting-error-state`                   | Terminal error state                                                                                              |
-| `meeting-error-retry-button`            | The error state's "Try again" control                                                                             |
-| `meeting-invitation-required-state`     | The signed-in-outsider / invitation-required state                                                                |
-| `meeting-invitation-required-contact`   | Its "Contact the organizer" `mailto:` control                                                                     |
-| `meeting-invitation-required-support`   | Its "Contact support" control, when the organizer has no usable email                                             |
-| `meeting-occurrence-edit-button`        | Organizer's "Edit this occurrence" control                                                                        |
-| `meeting-occurrence-cancel-button`      | Organizer's "Cancel this occurrence" control                                                                      |
+| `data-testid`                           | Element                                                                                                               |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `meeting-page-shell`                    | The V2 page container, present in every branch                                                                        |
+| `meeting-skeleton`                      | Loading state (`role="status"`)                                                                                       |
+| `meeting-content-column`                | The content column                                                                                                    |
+| `meeting-rail`                          | The right-hand column (stacks below at ≤ 920px)                                                                       |
+| `meeting-identity-bar`                  | The sticky identity bar (see below)                                                                                   |
+| `meeting-identity-bar-home`             | Its LFX mark, linking home                                                                                            |
+| `meeting-identity-bar-meeting`          | Its meeting identity: date tile, title, subtitle                                                                      |
+| `meeting-identity-bar-title`            | The truncated meeting title                                                                                           |
+| `meeting-identity-bar-subtitle`         | `{group} · {status}`                                                                                                  |
+| `meeting-identity-bar-my-meetings`      | Signed in: My Meetings                                                                                                |
+| `meeting-identity-bar-account`          | Signed in: the account menu button                                                                                    |
+| `meeting-identity-bar-visitor-prompt`   | Visitor: the sign-in prompt                                                                                           |
+| `meeting-identity-bar-create-account`   | Visitor: Create LFX account                                                                                           |
+| `meeting-identity-bar-sign-in`          | Visitor: Sign in                                                                                                      |
+| `meeting-header-section`                | The header region as a whole                                                                                          |
+| `meeting-header-project`                | Project context: logo, name, foundation (a button opening the foundation, or plain when the parent is unresolved)     |
+| `meeting-header-foundation`             | The foundation name under the project                                                                                 |
+| `meeting-header-badges`                 | The badge row                                                                                                         |
+| `meeting-header-badge-recurring`        | Recurring                                                                                                             |
+| `meeting-header-badge-type`             | Meeting type                                                                                                          |
+| `meeting-header-badge-committee-${uid}` | One committee chip, linking to `/groups/${uid}` in a new tab                                                          |
+| `meeting-header-badge-recording`        | Recording enabled                                                                                                     |
+| `meeting-header-badge-transcripts`      | Transcripts enabled                                                                                                   |
+| `meeting-header-badge-youtube`          | YouTube upload enabled                                                                                                |
+| `meeting-header-badge-ai-summary`       | AI summary enabled                                                                                                    |
+| `meeting-header-copy-link`              | Copy meeting link                                                                                                     |
+| `meeting-status-pill`                   | Status pill: time state, or the viewer's RSVP (see `data-status`)                                                     |
+| `meeting-privacy-chip`                  | The single privacy chip (see below)                                                                                   |
+| `meeting-time-banner`                   | The time banner at the top of the rail card (see below)                                                               |
+| `meeting-time-banner-date`              | Its weekday and date, in the viewer's timezone                                                                        |
+| `meeting-time-banner-time`              | Its start – end time                                                                                                  |
+| `meeting-time-banner-timezone`          | Its timezone name                                                                                                     |
+| `meeting-time-banner-skeleton`          | Its placeholder until the viewer's timezone resolves                                                                  |
+| `meeting-time-banner-message`           | Its one phase line (starts … / starting soon / in progress / ended)                                                   |
+| `meeting-time-banner-relative`          | Before the meeting, the ticking relative start (not announced)                                                        |
+| `meeting-time-banner-phase`             | The phase sentence, a polite atomic live region that stays mounted                                                    |
+| `meeting-action-slot`                   | The action slot inside the rail (see below)                                                                           |
+| `meeting-action-join-button`            | The Join control in the `join` kind (see below)                                                                       |
+| `meeting-action-join-error`             | Its error message (`role="alert"`)                                                                                    |
+| `meeting-action-join-retry`             | Its error's "Try again" control                                                                                       |
+| `meeting-action-join-explainer`         | "Public meeting. Anyone with this link can join." under Join                                                          |
+| `meeting-action-join-hint`              | Before the window, the early-join rule for a viewer who will be able to join                                          |
+| `meeting-action-sign-in`                | The slot's sign-in control (`guest-join`, and `register` / `tools` for a visitor)                                     |
+| `meeting-action-message`                | The slot's line of copy: a finished kind's explanation, or the one line for a kind whose full design is still to come |
+| `meeting-organizer`                     | "Organized by" in the rail card                                                                                       |
+| `meeting-organizer-name`                | The organizer's display name                                                                                          |
+| `meeting-error-state`                   | Terminal error state                                                                                                  |
+| `meeting-error-retry-button`            | The error state's "Try again" control                                                                                 |
+| `meeting-invitation-required-state`     | The signed-in-outsider / invitation-required state                                                                    |
+| `meeting-invitation-required-contact`   | Its "Contact the organizer" `mailto:` control                                                                         |
+| `meeting-invitation-required-support`   | Its "Contact support" control, when the organizer has no usable email                                                 |
+| `meeting-occurrence-edit-button`        | Organizer's "Edit this occurrence" control                                                                            |
+| `meeting-occurrence-cancel-button`      | Organizer's "Cancel this occurrence" control                                                                          |
 
 `meeting-section-placeholder-${section}` (`occurrences`, `agenda`, `materials`, `discover`) marks
 the shell's stand-in for a section not built yet (E1-01). Each is temporary: the PR that builds the

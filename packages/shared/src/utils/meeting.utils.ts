@@ -1338,6 +1338,20 @@ export function collectMeetingOrganizers(
 }
 
 /**
+ * The meeting date for an organizer `mailto:` subject (`buildMeetingOrganizerMailto`'s
+ * `meetingDate`): a medium `en-US` date, e.g. `Oct 9, 2026`. Returns an empty string for a
+ * missing or unparseable timestamp and for Go's zero date (`0001-01-01…`), which past records can
+ * carry, so the subject never reads "Jan 1, 1".
+ */
+export function formatMeetingMailtoDate(iso: string | null | undefined): string {
+  if (!iso || iso.startsWith('0001-01-01')) {
+    return '';
+  }
+  const ms = new Date(iso).getTime();
+  return Number.isNaN(ms) ? '' : new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(new Date(ms));
+}
+
+/**
  * Builds a `mailto:` URL that pre-fills an email to a meeting organizer. Returns `null` when the
  * organizer has no email (caller renders the name as plain text). Subject and body are
  * percent-encoded; the address is left as a bare addr-spec.

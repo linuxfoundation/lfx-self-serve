@@ -4,7 +4,7 @@
 import { Component, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
-import { ActionSlotKind, Meeting, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole } from '@lfx-one/shared/interfaces';
+import { ActionSlotKind, Meeting, MeetingOccurrence, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole } from '@lfx-one/shared/interfaces';
 import { IntercomService } from '@services/intercom.service';
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,6 +32,7 @@ describe('MeetingActionSlotComponent', () => {
   let meeting: WritableSignal<Meeting | undefined>;
   let pastAccessKnown: WritableSignal<boolean>;
   let add: ReturnType<typeof vi.fn>;
+  let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
 
   const open: MeetingPrivacyState = { icon: '', label: 'Public', openToPublic: true, restricted: false, visibility: MeetingVisibility.PUBLIC };
   const restricted: MeetingPrivacyState = {
@@ -51,6 +52,7 @@ describe('MeetingActionSlotComponent', () => {
     meeting = signal<Meeting | undefined>({ id: 'meeting-1', early_join_time_minutes: 15 } as Meeting);
     pastAccessKnown = signal(true);
     add = vi.fn();
+    selectedOccurrence = signal<MeetingOccurrence | null>(null);
 
     await TestBed.configureTestingModule({
       imports: [MeetingActionSlotComponent],
@@ -65,7 +67,7 @@ describe('MeetingActionSlotComponent', () => {
             joinsInWindow,
             meeting,
             pastAccessKnown,
-            selectedOccurrence: signal(null),
+            selectedOccurrence,
             signInHref: signal(SIGN_IN_HREF),
           },
         },
@@ -206,7 +208,17 @@ describe('MeetingActionSlotComponent', () => {
       expect(href.startsWith('mailto:ada@acme-motors.example?')).toBe(true);
       expect(decodeURIComponent(href)).toContain('Acme Weekly Sync');
       expect(decodeURIComponent(href)).toContain('/meetings/meeting-1');
+      expect(decodeURIComponent(href)).toContain('Oct 9, 2026');
       expect(query('meeting-invitation-required-support')).toBeNull();
+    });
+
+    it("names the selected occurrence's date, not the series start", () => {
+      selectedOccurrence.set({ occurrence_id: '2', start_time: '2026-10-16T17:00:00Z', duration: 60 } as MeetingOccurrence);
+      fixture.detectChanges();
+
+      const href = decodeURIComponent(query('meeting-invitation-required-contact')?.querySelector('a')?.getAttribute('href') ?? '');
+      expect(href).toContain('Oct 16, 2026');
+      expect(href).not.toContain('Oct 9, 2026');
     });
 
     it('offers the support chat when the organizer has no usable email', () => {

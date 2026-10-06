@@ -40,6 +40,7 @@ import {
   getMeetingSeriesUid,
   buildMeetingOrganizerChip,
   buildMeetingOrganizerMailto,
+  formatMeetingMailtoDate,
   buildImportSummary,
   buildRecurrenceNeverEndDate,
   buildRecurrenceSummary,
@@ -882,6 +883,16 @@ describe('collectMeetingOrganizers', () => {
     });
 
     expect(collectMeetingOrganizers(meetingFixture)).toEqual([{ name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' }]);
+  });
+});
+
+describe('formatMeetingMailtoDate', () => {
+  it('formats a timestamp as a medium en-US date', () => {
+    expect(formatMeetingMailtoDate('2026-10-09T12:00:00Z')).toBe('Oct 9, 2026');
+  });
+
+  it.each([[undefined], [null], [''], ['not a date'], ['0001-01-01T00:00:00Z']])('returns an empty string for %s', (value) => {
+    expect(formatMeetingMailtoDate(value)).toBe('');
   });
 });
 
