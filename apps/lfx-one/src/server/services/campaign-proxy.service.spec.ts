@@ -570,7 +570,15 @@ describe('CampaignProxyService model JSON fences', () => {
     );
 
     const fetchMock = globalThis.fetch as unknown as { mock: { calls: [string, { body?: string }][] } };
-    const prompts = fetchMock.mock.calls.filter(([url]) => String(url).startsWith('https://ai.example.test')).map(([, init]) => String(init?.body ?? ''));
+    // Matched on the parsed HOST, not a string prefix (which also matches `ai.example.test.evil`).
+    const isAiCall = (url: string): boolean => {
+      try {
+        return new URL(url).host === 'ai.example.test';
+      } catch {
+        return false;
+      }
+    };
+    const prompts = fetchMock.mock.calls.filter(([url]) => isAiCall(String(url))).map(([, init]) => String(init?.body ?? ''));
     const extraction = prompts.find((body) => body.includes('registration_url'));
 
     expect(extraction, 'no extraction prompt was sent').toBeDefined();

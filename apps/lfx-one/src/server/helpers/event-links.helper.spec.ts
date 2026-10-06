@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { documentBaseUrl, extractPageLinks, resolveRegistrationUrl, verifyPageLink } from './event-links.helper';
+import { documentBaseUrl, extractPageLinks, resolveRegistrationUrl, scanPageLinks, verifyPageLink } from './event-links.helper';
 
 const BASE_URL = 'https://example.com/events/kubecon';
 
@@ -430,6 +430,28 @@ describe('extractPageLinks — links a browser does not render (tokenized, not s
     ['an upper-case named entity', '<a href="/agenda?day=2&AMP;track=main">Agenda</a>', 'https://events.linuxfoundation.org/agenda?day=2&track=main'],
   ])('decodes %s in a real href rather than keeping it literal', (_label, html, expected) => {
     expect([...extractPageLinks(html, base).values()]).toEqual([expected]);
+  });
+
+  it.each([
+    [
+      'a named entity outside the old six',
+      '<a href="https&colon;//events.linuxfoundation.org/agenda">A</a>',
+      'https&colon;//events.linuxfoundation.org/agenda',
+    ],
+    ['a legacy entity with no semicolon', '<a href="/agenda?a=1&copy=2">A</a>', '/agenda?a=1&copy=2'],
+  ])("decodes a candidate with the tokenizer's own decoder: %s", (_label, html, candidate) => {
+    // A narrower decoder on the candidate side rejected genuine page links the parser had decoded.
+    const links = extractPageLinks(html, base);
+
+    expect(verifyPageLink(candidate, links, base), 'a real page link was rejected').not.toBe('');
+  });
+
+  it('returns links and base from one pass, matching the separate helpers', () => {
+    const html = '<base href="/kubecon-eu/"><a href="agenda">Agenda</a>';
+    const both = scanPageLinks(html, 'https://events.example.org/kubecon-eu');
+
+    expect([...both.links.values()]).toEqual([...extractPageLinks(html, 'https://events.example.org/kubecon-eu').values()]);
+    expect(both.baseUrl).toBe(documentBaseUrl(html, 'https://events.example.org/kubecon-eu'));
   });
 
   it("verifies a model candidate written with the page's entities against the decoded link", () => {

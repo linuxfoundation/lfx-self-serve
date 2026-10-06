@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { decodeHtmlEntities } from '@lfx-one/shared/utils/html-utils';
+import { decodeHTMLAttribute } from 'entities';
 import { Tokenizer } from 'htmlparser2';
 
 import { MAX_PAGE_LINKS, RAW_TEXT_CLOSER_SOLIDUS_RE, RAW_TEXT_CONTAINERS, TOKENIZER_RAW_TEXT_ELEMENTS } from '../constants/audience-builder.constants';
@@ -186,10 +186,23 @@ function enteredDoubleEscape(scriptData: string): boolean {
  * honoured; anything else falls back.
  */
 export function documentBaseUrl(html: string, fallback: string): string {
+  return scanPageLinks(html, fallback).baseUrl;
+}
+
+/**
+ * `extractPageLinks` and `documentBaseUrl` from ONE tokenizer pass.
+ *
+ * The scrape path needs both, and calling them separately tokenized a page of up to the 5 MiB fetch
+ * cap twice on the synchronous SSR thread. Best-effort and never throws: a page this cannot scan
+ * yields no links and the fallback base, the safe direction.
+ */
+export function scanPageLinks(html: string, fallback: string): { links: Map<string, string>; baseUrl: string } {
   try {
-    return resolveBase(scanDocument(html).baseHref, fallback);
+    const { hrefs, baseHref } = scanDocument(html);
+    const baseUrl = resolveBase(baseHref, fallback);
+    return { links: collectLinks(hrefs, baseUrl), baseUrl };
   } catch {
-    return fallback;
+    return { links: new Map<string, string>(), baseUrl: fallback };
   }
 }
 
@@ -268,24 +281,22 @@ function pageHref(resolved: URL): string {
  * the safe direction — a brief with no agenda link is correct, a brief with a wrong one is not.
  */
 export function extractPageLinks(html: string, baseUrl: string): Map<string, string> {
+  return scanPageLinks(html, baseUrl).links;
+}
+
+/** The comparison-key -> page-href map for `hrefs`, resolved against the document base. */
+function collectLinks(hrefs: string[], base: string): Map<string, string> {
   const links = new Map<string, string>();
-  try {
-    const { hrefs, baseHref } = scanDocument(html);
-    // Resolved against the DOCUMENT base, as a browser does; see `documentBaseUrl`.
-    const base = resolveBase(baseHref, baseUrl);
-    // Each distinct raw href is parsed once: a page of a million identical anchors otherwise paid
-    // a `new URL` per anchor without ever growing the map toward `MAX_PAGE_LINKS`.
-    const seen = new Set<string>();
-    for (const raw of hrefs) {
-      if (links.size >= MAX_PAGE_LINKS) break;
-      if (raw.trim() === '' || seen.has(raw)) continue;
-      seen.add(raw);
-      const normalized = normalizeForCompare(raw, base);
-      if (!normalized || links.has(normalized)) continue;
-      links.set(normalized, pageHref(new URL(raw, base)));
-    }
-  } catch {
-    return new Map<string, string>();
+  // Each distinct raw href is parsed once: a page of a million identical anchors otherwise paid
+  // a `new URL` per anchor without ever growing the map toward `MAX_PAGE_LINKS`.
+  const seen = new Set<string>();
+  for (const raw of hrefs) {
+    if (links.size >= MAX_PAGE_LINKS) break;
+    if (raw.trim() === '' || seen.has(raw)) continue;
+    seen.add(raw);
+    const normalized = normalizeForCompare(raw, base);
+    if (!normalized || links.has(normalized)) continue;
+    links.set(normalized, pageHref(new URL(raw, base)));
   }
   return links;
 }
@@ -326,9 +337,11 @@ export function verifyPageLink(candidate: unknown, pageLinks: Map<string, string
   if (typeof candidate !== 'string' || candidate.trim().length === 0) {
     return '';
   }
-  // Decoded like the page side is: the extraction prompt asks for the href AS WRITTEN, so a model
-  // can return `?a=1&amp;b=2` for a link the parser read as `?a=1&b=2`, and the two never matched.
-  const normalized = normalizeForCompare(decodeHtmlEntities(candidate.trim()), baseUrl);
+  // Decoded with the SAME decoder the tokenizer applies to the page's own hrefs (htmlparser2 decodes
+  // attribute values with `entities`), so both sides normalize identically. The extraction prompt
+  // asks for the href AS WRITTEN, so a model returns `&amp;` or `&colon;` where the page side holds
+  // the decoded character; a narrower decoder here rejected genuine page links.
+  const normalized = normalizeForCompare(decodeHTMLAttribute(candidate.trim()), baseUrl);
   if (!normalized) {
     return '';
   }
@@ -374,7 +387,7 @@ export function verifyPageLink(candidate: unknown, pageLinks: Map<string, string
  * into same-site URLs that passed coercion and shipped as the email's primary call to action. A
  * relative value can only have come from an href, so it is checkable against the page's anchors.
  *
- * Entities are decoded on both paths, as the parser does for the page's own hrefs: the extraction
+ * Entities are decoded on both paths with the tokenizer's own attribute decoder: the extraction
  * prompt asks for the href as written, and a literal `&amp;` or `&#47;` breaks the URL.
  */
 export function resolveRegistrationUrl(candidate: unknown, pageLinks: Map<string, string>, baseUrl: string): string {
@@ -383,7 +396,7 @@ export function resolveRegistrationUrl(candidate: unknown, pageLinks: Map<string
   }
   // `\/` unescaped too: JSON-LD `offers.url` is commonly written with escaped slashes (PHP and
   // WordPress `json_encode` default), and copied verbatim it became `https://host//register`.
-  const value = decodeHtmlEntities(candidate.trim()).replace(/\\\//g, '/');
+  const value = decodeHTMLAttribute(candidate.trim()).replace(/\\\//g, '/');
   let absolute: URL | null = null;
   try {
     absolute = new URL(value);

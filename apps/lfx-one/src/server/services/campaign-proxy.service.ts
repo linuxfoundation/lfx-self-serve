@@ -34,7 +34,7 @@ import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
-import { documentBaseUrl, extractPageLinks, resolveRegistrationUrl, verifyPageLink } from '../helpers/event-links.helper';
+import { resolveRegistrationUrl, scanPageLinks, verifyPageLink } from '../helpers/event-links.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
@@ -1497,10 +1497,10 @@ export class CampaignProxyService {
         // reject links the page really does carry.
         // And against the page's `<base href>` when it declares one, which is what its own relative
         // links -- and so a model quoting them -- resolve against in a browser.
-        pageBaseUrl = documentBaseUrl(html, finalUrl);
         // Collected from the FULL page, not `extractableHtml(html)`: the extraction model sees a
         // 60k-char excerpt, but a link it reports is legitimate if the page carries it anywhere.
-        pageLinks = extractPageLinks(html, finalUrl);
+        // One tokenizer pass yields both the links and the base.
+        ({ links: pageLinks, baseUrl: pageBaseUrl } = scanPageLinks(html, finalUrl));
       } catch (error) {
         yield { type: 'error', data: `Failed to fetch ${pageLabel}: ${error instanceof Error ? error.message : 'Unknown error'}` };
         return;
