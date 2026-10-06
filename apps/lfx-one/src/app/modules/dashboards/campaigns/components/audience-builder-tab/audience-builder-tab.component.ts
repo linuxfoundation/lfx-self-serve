@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { outputFromObservable, takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
@@ -157,6 +157,16 @@ export class AudienceBuilderTabComponent {
   public readonly continueToEmail = output<void>();
   /** Re-read the brief's saved audience after a read that failed or could not run. */
   public readonly retryAudienceRead = output<void>();
+  /**
+   * Whether a write to the brief's send audience (compose or attach) is on the wire.
+   *
+   * The parent gates staging on it. `canStageEmail` read only the recorded audience, so during a
+   * re-attach or a replacement compose Stage stayed enabled on the OLD audience -- and the draft it
+   * cloned pointed at a list the operator was in the middle of replacing.
+   */
+  public readonly audienceWriteInFlight = outputFromObservable(
+    toObservable(computed(() => this.composing() || this.attachInFlight())).pipe(distinctUntilChanged())
+  );
 
   // === Forms ===
   protected readonly eventUrlControl = new FormControl('', { nonNullable: true });
@@ -307,7 +317,7 @@ export class AudienceBuilderTabComponent {
    * reply landed first the older one then overwrote the record with the earlier selection. Writes
    * are serialized on this instead, so there is never a second reply to arrive out of order.
    */
-  private readonly attachInFlight = signal(false);
+  protected readonly attachInFlight = signal(false);
   protected readonly composeBriefId = signal('');
   /** The parent's `audienceScope` at the last compose's dispatch -- which SEND it belonged to. */
   private readonly composeScope = signal(0);
@@ -809,17 +819,7 @@ export class AudienceBuilderTabComponent {
     toObservable(this.projectSlug)
       .pipe(distinctUntilChanged(), pairwise(), takeUntilDestroyed(this.destroyRef))
       .subscribe(([previousProject]) => {
-        // A compose in flight is not cancelled by the reset — the HubSpot lists are already
-        // being created — and its reply is about to be discarded by the run-generation guard.
-        // The reset itself is still correct: showing project A's discovery under project B is
-        // its own defect. So reset, and tell the operator the create was left unconfirmed,
-        // because losing that silently is how a duplicate gets composed later.
-        const wasComposing = this.composing();
-        this.resetRunState();
-        if (wasComposing) {
-          this.composeStranded.set(true);
-          this.strandedProject.set(previousProject);
-        }
+        this.resetForNewContext(previousProject);
         this.capabilitiesFailed.set(false);
         // reset(), not setValue(''): the dirty flag is project-scoped state too. setValue leaves
         // the control dirty, and the `initialEventUrl` seed below only fires while it is pristine
@@ -848,6 +848,24 @@ export class AudienceBuilderTabComponent {
         }
       });
 
+    // A DIFFERENT event's brief arriving under this mounted panel starts it over, as a project
+    // switch does. The parent hands Plan's next event to the same component, and the `briefId`
+    // reset above clears only the attach state -- so event A's discovery, ticks and identity
+    // survived, and a compose then sent A's lists (and A's event name into the list names) with
+    // B's brief id. Keyed on the advertised event URL, which is what names the event here: the
+    // same event re-proceeded, or another email stage for it, keeps the operator's selection.
+    // From an EMPTY previous URL is not a change of event -- a brief arriving for an exploratory
+    // session the operator started by hand is the same work.
+    toObservable(this.initialEventUrl)
+      .pipe(distinctUntilChanged(), pairwise(), takeUntilDestroyed(this.destroyRef))
+      .subscribe(([previous, next]) => {
+        if (previous === '' || !this.hasDiscovered()) {
+          return;
+        }
+        this.resetForNewContext(this.projectSlug());
+        this.eventUrlControl.reset(next, { emitEvent: false });
+      });
+
     // Disabling a reactive control has to go through the control, not a `[disabled]` binding on the
     // input: the binding fights the directive and Angular warns it can produce a
     // changed-after-checked error. Every other action here is a plain button, so this is the only
@@ -872,7 +890,10 @@ export class AudienceBuilderTabComponent {
 
   protected onDiscover(): void {
     const eventUrl = this.eventUrlControl.value.trim();
-    if (this.degraded() || this.discovering() || eventUrl.length === 0) {
+    // Not while an attach is on the wire, either. Discovery resets the run, which releases
+    // `attachInFlight` and discards that attach's reply -- so a second write could start while the
+    // first was still being recorded, and its outcome was never shown.
+    if (this.degraded() || this.discovering() || this.attachInFlight() || eventUrl.length === 0) {
       return;
     }
     // Refused HERE rather than re-locking after the reset. `composeAttempted` is the
@@ -1551,6 +1572,24 @@ export class AudienceBuilderTabComponent {
    * link, and a retry would duplicate them. Discover is therefore disabled while `composing`, so
    * a reset cannot be reached from the one control that would otherwise strand a compose.
    */
+  /**
+   * Starts the panel over for a new project or event, keeping the one fact the reset must not lose.
+   *
+   * A compose in flight is not cancelled by the reset -- the HubSpot lists are already being
+   * created -- and its reply is about to be discarded by the run-generation guard. The reset itself
+   * is still correct: showing the previous context's discovery is its own defect. So reset, and
+   * record the create as unconfirmed in the context it was made in, because losing that silently
+   * is how a duplicate gets composed later.
+   */
+  private resetForNewContext(strandedIn: string): void {
+    const wasComposing = this.composing();
+    this.resetRunState();
+    if (wasComposing) {
+      this.composeStranded.set(true);
+      this.strandedProject.set(strandedIn);
+    }
+  }
+
   private resetRunState(): void {
     // Invalidate every in-flight reply from the previous run BEFORE clearing the state they
     // would otherwise repopulate.

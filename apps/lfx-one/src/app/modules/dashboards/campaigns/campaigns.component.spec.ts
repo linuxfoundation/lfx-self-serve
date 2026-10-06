@@ -1936,8 +1936,11 @@ describe('CampaignsComponent — email delivery channel', () => {
       controls: {
         deliveryType: { setValue(v: CampaignDeliveryType): void };
         programType: { setValue(v: CampaignProgramType): void };
+        emailType: { disabled: boolean };
+        emailSegment: { disabled: boolean };
       };
     };
+    emailAudienceWriteInFlight: WritableSignal<boolean>;
   }
 
   const internals = (): Internals => fixture.componentInstance as unknown as Internals;
@@ -3444,6 +3447,72 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().selectedEmailTemplateId.set('hs-1');
       fixture.detectChanges();
     }
+
+    it('holds Stage while the Audience tab is replacing the recorded audience', () => {
+      // A re-attach or a replacement compose leaves the old row `built` until its reply lands, so
+      // Stage stayed enabled and cloned a draft against the list being replaced.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      expect(internals().canStageEmail(), 'fixture precondition: stageable on a built audience').toBe(true);
+
+      internals().emailAudienceWriteInFlight.set(true);
+      expect(internals().canStageEmail(), 'Stage stayed open during an audience write').toBe(false);
+
+      internals().emailAudienceWriteInFlight.set(false);
+      expect(internals().canStageEmail()).toBe(true);
+    });
+
+    it('locks the type and segment pickers while a stage is in flight', () => {
+      // `onStageEmailSend` snapshots the copy before its awaits, so switching mid-stage cloned a
+      // HubSpot draft with the PREVIOUS selection's copy -- a create on the wire cannot be recalled.
+      selectEmail();
+      internals().emailStaging.set('staging');
+      fixture.detectChanges();
+      expect(internals().selectorForm.controls.emailSegment.disabled, 'segment could change mid-stage').toBe(true);
+      expect(internals().selectorForm.controls.emailType.disabled, 'type could change mid-stage').toBe(true);
+
+      internals().emailStaging.set('done');
+      fixture.detectChanges();
+      expect(internals().selectorForm.controls.emailSegment.disabled).toBe(false);
+      expect(internals().selectorForm.controls.emailType.disabled).toBe(false);
+    });
+
+    it('abandons an in-flight stage when the segment changes, as a type change does', () => {
+      // Left running, the poll went on to report "Draft created" for copy the new segment no longer
+      // shows. Invalidated and cleaned up together, like `onSelectEmailType`.
+      selectEmail();
+      internals().emailStaging.set('staging');
+      const priv = internals() as unknown as { emailStagingGeneration: number; onSelectEmailSegment(id: string): void };
+      const before = priv.emailStagingGeneration;
+
+      priv.onSelectEmailSegment('alumni');
+
+      expect(priv.emailStagingGeneration, 'the in-flight stage was not invalidated').toBe(before + 1);
+      expect(internals().emailStaging(), 'the abandoned stage kept spinning').toBe('idle');
+    });
+
+    it("keeps a finished stage's confirmation across a segment change", () => {
+      selectEmail();
+      internals().emailStaging.set('done');
+
+      (internals() as unknown as { onSelectEmailSegment(id: string): void }).onSelectEmailSegment('alumni');
+
+      expect(internals().emailStaging(), 'a finished stage\'s "Draft created" was erased').toBe('done');
+    });
+
+    it('says a restored audience is attached instead of asking for one', () => {
+      // Only `composed` was special-cased, so a restored, attached audience still read "Needed
+      // before the draft can be staged" directly above the card announcing it attached.
+      onImplementTab();
+      internals().emailAudience.set({ ...composed, status: 'built' });
+      internals().emailAudienceOrigin.set('restored');
+      fixture.detectChanges();
+
+      const block = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-send-audience"]');
+      expect(block?.querySelector('[data-testid="campaigns-email-audience-restored-note"]')).not.toBeNull();
+      expect(block?.textContent, 'a restored audience was described as still needed').not.toContain('Needed before the draft can be staged');
+    });
 
     it('unblocks staging on a composed audience', () => {
       onImplementTab();

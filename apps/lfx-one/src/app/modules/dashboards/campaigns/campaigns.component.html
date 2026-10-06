@@ -328,6 +328,7 @@
           [audienceScope]="emailAudienceScope()"
           [existingAudience]="emailAudience()"
           (retryAudienceRead)="onRetryAudienceRead()"
+          (audienceWriteInFlight)="emailAudienceWriteInFlight.set($event)"
           (audienceAttached)="onAudienceComposed($event)"
           (audienceComposeUnattached)="onAudienceComposeUnattached($event)"
           (continueToEmail)="onContinueToEmailStep()" />
@@ -618,8 +619,15 @@
                        resolves the newest, and so a build silently superseded a list the operator
                        had assembled by hand. Every audience now comes from the Audience tab, which
                        is the only surface that shows what is in the list before it is sent to. -->
+                  <!-- Every origin that HAS an audience says so. Only `composed` was special-cased, so a
+                       restored, attached audience still read "Needed before the draft can be
+                       staged" directly above the card announcing it attached. -->
                   @if (emailAudienceOrigin() === 'composed') {
                     <p class="text-sm text-gray-500">Composed on the Audience tab and attached to this campaign.</p>
+                  } @else if (emailAudienceOrigin() === 'restored') {
+                    <p class="text-sm text-gray-500" data-testid="campaigns-email-audience-restored-note">
+                      Restored from this campaign's saved plan. Replace it from the Audience tab if it should change.
+                    </p>
                   } @else {
                     <p class="text-sm text-gray-500">
                       Composed on the Audience tab. Needed before the draft can be staged in HubSpot, not before the email is written.

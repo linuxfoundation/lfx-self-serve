@@ -1126,10 +1126,16 @@ export class CampaignServiceClient {
         return { enabled: true, error: 'The saved audience for this brief could not be read. Reload to try again.' };
       }
       const rows = response.data.audiences;
-      return {
-        enabled: true,
-        audiences: rows.filter((row): row is CampaignServiceAudienceList => Boolean(row?.id)).map((row) => this.toCampaignAudience(row)),
-      };
+      const usable = rows.filter((row): row is CampaignServiceAudienceList => Boolean(row?.id));
+      // A row that is not a row is malformed too, for the same reason as the missing array above.
+      // Filtering `[null]` or `[{ id: '' }]` down to `[]` reported a response that DID carry an
+      // audience -- just not a readable one -- as a verified absence, and that re-opened compose.
+      // Partial loss counts: the newest row is the one dispatch uses, and it may be the dropped one.
+      if (usable.length !== rows.length) {
+        logger.warning(req, 'list_audiences', 'Audience read-back returned unreadable rows', { total: rows.length, usable: usable.length });
+        return { enabled: true, error: 'The saved audience for this brief could not be read. Reload to try again.' };
+      }
+      return { enabled: true, audiences: usable.map((row) => this.toCampaignAudience(row)) };
     } catch (error) {
       logger.warning(req, 'list_audiences', 'Audience read-back failed, returning an error result', { err: error });
       return { enabled: true, error: upstreamMessageOr(error, 'The saved audience for this brief could not be read. Reload to try again.') };

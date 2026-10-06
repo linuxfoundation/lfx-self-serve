@@ -2410,12 +2410,19 @@ describe('CampaignServiceClient.listAudiences', () => {
     expect(result).toEqual({ enabled: true, audiences: [] });
   });
 
-  it('drops rows with no id', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences: [{ ...audience, id: '' }, null, audience] }));
+  // A row that is not a row is malformed, like a missing array. Filtering these down to `[]`
+  // reported a response that DID carry an audience as a verified absence, which re-opened compose.
+  it.each([
+    ['a null row', [null]],
+    ['a row with no id', [{ ...audience, id: '' }]],
+    ['a readable row beside an unreadable one', [{ ...audience, id: '' }, audience]],
+  ])('reports %s as an unreadable read, not as an empty or partial one', async (_label, audiences) => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences }));
 
     const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
 
-    expect(result.audiences?.map((row) => row.id)).toEqual(['aud-1']);
+    expect(result.audiences, 'an unreadable row was read as a verified result').toBeUndefined();
+    expect(result.error).toBeTruthy();
   });
 
   it('does not let an unrecognised status masquerade as usable', async () => {

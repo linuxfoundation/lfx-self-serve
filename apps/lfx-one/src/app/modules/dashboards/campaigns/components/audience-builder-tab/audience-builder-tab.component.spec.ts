@@ -752,6 +752,70 @@ describe('AudienceBuilderTabComponent', () => {
       expect(btn?.disabled, 'a verified-absent audience must not block compose').toBe(false);
     });
 
+    it("starts over when a DIFFERENT event's brief arrives under the mounted panel", async () => {
+      // The parent hands Plan's next event to the same component. Event A's discovery and ticks
+      // survived, and a compose then sent A's lists with B's brief id.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), 'fixture precondition: a list is selected').not.toBeNull();
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.componentRef.setInput('briefId', 'brief-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "event A's selection survived into event B").toBeNull();
+      expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value).toBe('https://events.example.org/event-b');
+    });
+
+    it('keeps the selection when the SAME event is handed back (another stage, or a re-proceed)', async () => {
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('briefId', 'brief-a-cfp');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "the operator's selection was discarded for the same event").not.toBeNull();
+    });
+
+    it('does not rediscover while an attach is on the wire', async () => {
+      // Discovery resets the run, which released the write guard and discarded the attach's reply.
+      await renderWithDiscovery({ briefId: 'brief-1' });
+      click('audience-card-grid-toggle-101');
+      attachExistingAudience.mockReturnValue(new Subject());
+      click('campaigns-audience-use-direct');
+
+      const discover = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-discover"]');
+      expect(discover?.disabled, 'Discover stayed live during an attach').toBe(true);
+      discoverAudience.mockClear();
+      (fixture.componentInstance as unknown as { onDiscover(): void }).onDiscover();
+      expect(discoverAudience, 'a rediscovery started during an attach').not.toHaveBeenCalled();
+    });
+
+    it('reports an audience write in flight to the parent, and its end', async () => {
+      await renderWithDiscovery({ briefId: 'brief-1' });
+      const seen: boolean[] = [];
+      fixture.componentInstance.audienceWriteInFlight.subscribe((busy) => seen.push(busy));
+      click('audience-card-grid-toggle-101');
+      const reply = new Subject<AudienceAttachExistingResult>();
+      attachExistingAudience.mockReturnValue(reply);
+      click('campaigns-audience-use-direct');
+      fixture.detectChanges();
+      expect(seen.at(-1), 'the parent was not told a write started').toBe(true);
+
+      reply.next({
+        master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' },
+        suppressionListIds: [],
+        audience: { id: 'a', briefId: 'brief-1', platform: 'hubspot', status: 'built', version: 1 },
+      } as AudienceAttachExistingResult);
+      reply.complete();
+      fixture.detectChanges();
+      expect(seen.at(-1), 'the parent was not told the write ended').toBe(false);
+    });
+
     it('blocks compose and direct attach while the audience read is still in flight', async () => {
       // The restore opens this tab BEFORE its audience read returns. On a slow read the failure
       // flag is still false, so gating on it alone let the operator compose a second master on

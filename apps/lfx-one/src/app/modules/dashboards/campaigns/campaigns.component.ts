@@ -1129,6 +1129,8 @@ export class CampaignsComponent {
    * replaced. The Audience tab sees it as part of `audienceReadPending`.
    */
   protected readonly emailBriefResolving = signal(false);
+  /** The Audience tab is writing this brief's send audience. See its `audienceWriteInFlight`. */
+  protected readonly emailAudienceWriteInFlight = signal(false);
   /**
    * The brief id the last audience read was for, so the Audience tab's retry re-reads THAT brief.
    *
@@ -1735,6 +1737,10 @@ export class CampaignsComponent {
       // and `failed`, and a build that ends in `failed` still yields an audience object. Gating
       // on existence alone would re-admit the exact refusal this guard exists to prevent.
       this.emailAudience()?.status === 'built' &&
+      // Not while that audience is being REPLACED. A re-attach or a replacement compose leaves the
+      // old row `built` until its reply lands, so staging then cloned a draft against the list the
+      // operator was in the middle of replacing.
+      !this.emailAudienceWriteInFlight() &&
       this.emailStaging() !== 'staging' &&
       // A generation IN FLIGHT, not just a staging one. `onStageEmailSend` reads `emailCopy()`
       // unconditionally, and a regeneration clears it only when the response lands -- so staging
@@ -2220,6 +2226,23 @@ export class CampaignsComponent {
       this.onSelectEmailSegment(value);
     });
 
+    // Both pickers that change what a stage SENDS are locked while one is in flight. Invalidating
+    // the generation (as both handlers do) stops the UI from reporting the abandoned stage, but it
+    // cannot recall a create already on the wire: `onStageEmailSend` snapshots the copy before its
+    // awaits, so switching mid-stage cloned a HubSpot draft with the PREVIOUS selection's copy.
+    // Disabled through the CONTROLS, not a `[disabled]` binding, which fights ReactiveForms.
+    toObservable(this.emailStaging)
+      .pipe(takeUntilDestroyed())
+      .subscribe((state) => {
+        for (const control of [this.selectorForm.controls.emailType, this.selectorForm.controls.emailSegment]) {
+          if (state === 'staging') {
+            control.disable({ emitEvent: false });
+          } else {
+            control.enable({ emitEvent: false });
+          }
+        }
+      });
+
     // Clearing lives on the control's own stream rather than in a template handler: the
     // checkbox is form-driven now, so a `setValue(false)` from the reset paths must clear the
     // draft exactly like an operator un-ticking the box. A (change) handler would only fire
@@ -2671,15 +2694,27 @@ export class CampaignsComponent {
    * prospect stays stageable under an "Alumni" selector.
    *
    * Deliberately a SUBSET of what a type change clears. A segment is not part of a brief's
-   * identity: one brief serves every segment and only the framing differs, so the brief id, the
-   * template suggestion and the staging poll are all left alone. A type change touches those
-   * because it moves the STAGE, and the stage is what names the brief.
+   * identity: one brief serves every segment and only the framing differs, so the brief id and the
+   * template suggestion are left alone. A type change touches those because it moves the STAGE,
+   * and the stage is what names the brief.
+   *
+   * The in-flight STAGE is not left alone, though. It was staging the previous segment's copy, so
+   * it is invalidated exactly as a type change does it -- and the picker is locked while one runs
+   * (see the constructor), since a create already on the wire cannot be recalled.
    */
   protected onSelectEmailSegment(segmentId: string): void {
     if (segmentId === this.selectedEmailSegmentId()) {
       return;
     }
     this.selectedEmailSegmentId.set(segmentId);
+
+    // Same pair as `onSelectEmailType`: invalidate the stage and clean up the state it owns, or the
+    // poll goes on to report "Draft created" for copy this segment no longer shows. Only an
+    // IN-FLIGHT poll -- a finished stage's confirmation is not erased by a later segment change.
+    this.emailStagingGeneration++;
+    if (this.emailStaging() === 'staging') {
+      this.cancelStagingPoll();
+    }
 
     this.emailCopyGeneration++;
     this.emailCopy.set(null);
