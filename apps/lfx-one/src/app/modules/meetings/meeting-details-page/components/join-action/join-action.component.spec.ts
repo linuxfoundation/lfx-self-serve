@@ -22,6 +22,7 @@ describe('MeetingJoinActionComponent', () => {
   let add: ReturnType<typeof vi.fn>;
   let user: WritableSignal<User | null>;
   let meeting: WritableSignal<Meeting>;
+  let autoJoined: Set<string>;
   let open: MockInstance<typeof window.open>;
 
   function create(options: { platform?: 'browser' | 'server'; response?: unknown; zoomRedirect?: string } = {}): void {
@@ -29,13 +30,17 @@ describe('MeetingJoinActionComponent', () => {
     add = vi.fn();
     user = signal<User | null>({ name: 'Ada Example', email: 'ada@acme-motors.example' } as User);
     meeting = signal({ id: '99152950841', password: 'secret' } as Meeting);
+    autoJoined = new Set<string>();
     open = vi.spyOn(window, 'open').mockReturnValue(null);
 
     TestBed.configureTestingModule({
       imports: [MeetingJoinActionComponent],
       providers: [
         { provide: PLATFORM_ID, useValue: options.platform ?? 'browser' },
-        { provide: MeetingDetailsStateService, useValue: { meeting } },
+        {
+          provide: MeetingDetailsStateService,
+          useValue: { meeting, claimAutoJoin: (id: string) => !autoJoined.has(id) && !!autoJoined.add(id) },
+        },
         { provide: MeetingService, useValue: { getPublicMeetingJoinUrl } },
         { provide: UserService, useValue: { user, authenticated: signal(true) } },
         { provide: MessageService, useValue: { add } },
@@ -97,6 +102,19 @@ describe('MeetingJoinActionComponent', () => {
       expect(open).toHaveBeenCalledTimes(1);
       expect(open.mock.calls[0][0]).toContain(ZOOM_LINK);
       expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'Opening the meeting' }));
+    });
+
+    // The attempt is the page's: a remounted Join control does not open the meeting again.
+    it('does not open the meeting again when the slot remounts', () => {
+      create();
+      fixture.detectChanges();
+      fixture.destroy();
+
+      const remounted = TestBed.createComponent(MeetingJoinActionComponent);
+      remounted.detectChanges();
+      remounted.detectChanges();
+
+      expect(open).toHaveBeenCalledTimes(1);
     });
 
     it('stays off with ?zoom_redirect=false', () => {

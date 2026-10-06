@@ -186,9 +186,9 @@ One element in three states, rather than V1's three testids
 data-state: loading | ready | error
 ```
 
-`loading` is also the server render, since the join URL is fetched in the browser only. Issue
-#1775's criterion to keep V1's testids predates this contract; the rule above that V2 never shares a
-V1 value wins.
+`loading` is also the server render, since the join URL is fetched in the browser only. The
+criterion in issue #1775 to keep V1's testids predates this contract; the rule above that V2 never
+shares a V1 value wins.
 
 ## Occurrences
 

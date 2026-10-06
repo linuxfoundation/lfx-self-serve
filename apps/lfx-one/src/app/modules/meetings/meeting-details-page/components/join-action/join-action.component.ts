@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MeetingJoinUrlState } from '@lfx-one/shared/interfaces';
-import { buildJoinUrlWithParams } from '@lfx-one/shared/utils';
+import { buildJoinUrlWithParams, isHttpUrl } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -91,7 +91,7 @@ export class MeetingJoinActionComponent {
     return this.meetingService.getPublicMeetingJoinUrl(meetingId, password, { email }).pipe(
       map((res): MeetingJoinUrlState => {
         // The link is bound to an anchor and passed to window.open, so only http(s) gets that far.
-        if (!res.link || !isHttpUrl(res.link)) {
+        if (!res.link || !isHttpUrl(res.link, true)) {
           return { status: 'error', error: 'Failed to load meeting join URL. Please try again.' };
         }
         return { status: 'ready', url: buildJoinUrlWithParams(res.link, this.userService.user()) };
@@ -111,6 +111,11 @@ export class MeetingJoinActionComponent {
    * `?zoom_redirect=false` is on the URL. With `noopener`, `window.open` always returns null, so a
    * blocked popup cannot be told from an opened one; V1's "Popup Blocked" branch never ran. One
    * toast covers both, pointing at the Join button.
+   *
+   * The attempt is the page's, not this instance's (`claimAutoJoin`), so a remounted slot does not
+   * open the meeting again. Known limitation until V1 is retired: on a full page load V1 mounts
+   * first, and if its join URL resolves before the feature flag, V1 auto-joins too, so the viewer can
+   * get a second tab of the same link. V1 cannot be edited to coordinate (R01).
    */
   private initAutoJoin(): void {
     if (!isPlatformBrowser(this.platformId)) {
@@ -121,6 +126,7 @@ export class MeetingJoinActionComponent {
         filter((joinState) => joinState.status === 'ready' && !!joinState.url),
         take(1),
         filter(() => this.activatedRoute.snapshot.queryParamMap.get('zoom_redirect')?.toLowerCase() !== 'false'),
+        filter(() => this.state.claimAutoJoin(this.state.meeting()?.id ?? '')),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((joinState) => {
@@ -132,15 +138,5 @@ export class MeetingJoinActionComponent {
           life: 5000,
         });
       });
-  }
-}
-
-/** Whether a link is an absolute http(s) URL, so no other scheme reaches an anchor or `window.open`. */
-function isHttpUrl(link: string): boolean {
-  try {
-    const { protocol } = new URL(link);
-    return protocol === 'https:' || protocol === 'http:';
-  } catch {
-    return false;
   }
 }

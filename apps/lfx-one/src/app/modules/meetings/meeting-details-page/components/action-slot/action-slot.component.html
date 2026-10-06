@@ -70,16 +70,22 @@
         }
       }
       @case ('no-access') {
-        <div class="flex items-start gap-[10px]">
-          <i class="fa-light fa-lock mt-[2px] text-[var(--md-text-muted)]" aria-hidden="true"></i>
-          <div class="flex flex-col gap-[2px] text-[13px] leading-[1.45]">
-            <span class="font-semibold text-[var(--md-text-heading)]">This meeting's details are private</span>
-            <span class="text-[var(--md-text-body)]" data-testid="meeting-action-message">
-              Recordings and summaries are only available to meeting participants and committee members. If you believe you should have access, please contact
-              the meeting organizer.
-            </span>
+        @if (!state.pastAccessKnown()) {
+          <!-- Access was never asked (the meeting ended while open, or the upcoming endpoint served it),
+               so the slot does not claim it is private. -->
+          <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">This meeting has ended.</p>
+        } @else {
+          <div class="flex items-start gap-[10px]">
+            <i class="fa-light fa-lock mt-[2px] text-[var(--md-text-muted)]" aria-hidden="true"></i>
+            <div class="flex flex-col gap-[2px] text-[13px] leading-[1.45]">
+              <span class="font-semibold text-[var(--md-text-heading)]">This meeting's details are private</span>
+              <span class="text-[var(--md-text-body)]" data-testid="meeting-action-message">
+                Recordings and summaries are only available to meeting participants and committee members. If you believe you should have access, please contact
+                the meeting organizer.
+              </span>
+            </div>
           </div>
-        </div>
+        }
       }
       @case ('none') {
         <!-- Deliberately nothing to offer (the resolver's decision); the hint below may still apply. -->

@@ -560,6 +560,42 @@ describe('MeetingDetailsStateService', () => {
       expect(state.joinsInWindow()).toBe(true);
     });
 
+    // A past record inside the 40-minute end buffer still reads live on the clock alone.
+    it.each([
+      ['a composite past id', '99152950841-1700000000000'],
+      ['the numeric-id fallback', MEETING_ID],
+    ])('treats %s as ended inside the end buffer, so Join is never offered', async (_label, id) => {
+      paramMap$.next(convertToParamMap({ id }));
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 404 })));
+      getPublicPastMeeting.mockReturnValue(
+        of({ meeting: live({ start_time: new Date(Date.now() - 70 * 60 * 1000).toISOString() }), project, full_access: true })
+      );
+      const state = create();
+      await settle();
+
+      expect(state.timeState()).toBe('ended');
+      expect(state.actionSlot()).toBe('tools');
+      expect(state.pastAccessKnown()).toBe(true);
+    });
+
+    it('does not know past access for a meeting the upcoming endpoint loaded', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: live({ start_time: '2023-11-14T22:13:20Z' }), project }));
+      const state = create();
+      await settle();
+
+      expect(state.actionSlot()).toBe('no-access');
+      expect(state.pastAccessKnown()).toBe(false);
+    });
+
+    it('lets a page auto-join a meeting once', () => {
+      getPublicMeeting.mockReturnValue(new Subject());
+      const state = create();
+
+      expect(state.claimAutoJoin(MEETING_ID)).toBe(true);
+      expect(state.claimAutoJoin(MEETING_ID)).toBe(false);
+      expect(state.claimAutoJoin('another-meeting')).toBe(true);
+    });
+
     it('has no slot before the meeting loads', () => {
       getPublicMeeting.mockReturnValue(new Subject());
       const state = create();

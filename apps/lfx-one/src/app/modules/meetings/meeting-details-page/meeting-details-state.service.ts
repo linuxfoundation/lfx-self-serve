@@ -70,6 +70,14 @@ export class MeetingDetailsStateService {
   public readonly loadedViaPastMeetingId = signal(false);
   /** The past endpoint's `full_access`; false for an upcoming meeting. */
   public readonly pastMeetingFullAccess = signal(false);
+  /**
+   * Whether `pastMeetingFullAccess` is an answer rather than a default: true only for a page the past
+   * endpoint loaded. A meeting loaded as upcoming that ends while open, or a recently ended one-off
+   * the upcoming endpoint still serves, has never been asked, so the slot must not call it private.
+   */
+  public readonly pastAccessKnown = computed(() => this.loadedViaPastMeetingId());
+  /** Meetings this page has auto-joined, so a remounted Join control does not open them again. */
+  private readonly autoJoinedMeetingIds = new Set<string>();
   /** The meeting password for lookups: `?password=`, or else the composer's navigation state. */
   public readonly password = signal<string | null>(null);
   /**
@@ -156,6 +164,18 @@ export class MeetingDetailsStateService {
     this.meeting = this.initMeeting(seed);
   }
 
+  /**
+   * Claims this page's one auto-join for a meeting (FR-027): true the first time, false after, so the
+   * Join control opens a meeting once however often the slot remounts.
+   */
+  public claimAutoJoin(meetingId: string): boolean {
+    if (this.autoJoinedMeetingIds.has(meetingId)) {
+      return false;
+    }
+    this.autoJoinedMeetingIds.add(meetingId);
+    return true;
+  }
+
   /** Re-runs the lookup for the current route, e.g. from the error state's retry. */
   public refresh(): void {
     this.retrying.set(true);
@@ -189,7 +209,12 @@ export class MeetingDetailsStateService {
   private initTimeState(): Signal<MeetingTimeState | null> {
     return computed(() => {
       const meeting = this.meeting();
-      return meeting ? resolveTimeState(meeting, this.selectedOccurrence(), this.now()) : null;
+      if (!meeting) {
+        return null;
+      }
+      // A past-endpoint load is a past occurrence whatever the clock says, as V1 trusts it: inside the
+      // 40-minute end buffer the clock alone would still read live and offer Join for a past record.
+      return this.loadedViaPastMeetingId() ? 'ended' : resolveTimeState(meeting, this.selectedOccurrence(), this.now());
     });
   }
 

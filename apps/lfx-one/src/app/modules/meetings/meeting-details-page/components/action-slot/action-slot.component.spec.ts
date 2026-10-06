@@ -28,6 +28,7 @@ describe('MeetingActionSlotComponent', () => {
   let timeState: WritableSignal<MeetingTimeState | null>;
   let joinsInWindow: WritableSignal<boolean>;
   let meeting: WritableSignal<Meeting | undefined>;
+  let pastAccessKnown: WritableSignal<boolean>;
 
   const open: MeetingPrivacyState = { icon: '', label: 'Public', openToPublic: true, restricted: false, visibility: MeetingVisibility.PUBLIC };
   const restricted: MeetingPrivacyState = {
@@ -45,13 +46,14 @@ describe('MeetingActionSlotComponent', () => {
     timeState = signal<MeetingTimeState | null>('live');
     joinsInWindow = signal(true);
     meeting = signal<Meeting | undefined>({ id: 'meeting-1', early_join_time_minutes: 15 } as Meeting);
+    pastAccessKnown = signal(true);
 
     await TestBed.configureTestingModule({
       imports: [MeetingActionSlotComponent],
       providers: [
         {
           provide: MeetingDetailsStateService,
-          useValue: { actionSlot, viewerRole, privacy, timeState, joinsInWindow, meeting, signInHref: signal(SIGN_IN_HREF) },
+          useValue: { actionSlot, viewerRole, privacy, timeState, joinsInWindow, meeting, pastAccessKnown, signInHref: signal(SIGN_IN_HREF) },
         },
       ],
     })
@@ -144,6 +146,23 @@ describe('MeetingActionSlotComponent', () => {
       render(kind, role);
 
       expect(query('meeting-action-sign-in')).toBeNull();
+    });
+  });
+
+  describe('no-access', () => {
+    it('says the details are private once the past endpoint has said so', () => {
+      render('no-access', 'outsider');
+
+      expect(query('meeting-action-slot')?.textContent).toContain("This meeting's details are private");
+    });
+
+    // An upcoming load that ended on the clock was never asked about access.
+    it('only says the meeting has ended when access was never asked', () => {
+      pastAccessKnown.set(false);
+      render('no-access', 'outsider');
+
+      expect(text('meeting-action-message')).toBe('This meeting has ended.');
+      expect(query('meeting-action-slot')?.textContent).not.toContain('private');
     });
   });
 
