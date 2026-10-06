@@ -63,6 +63,8 @@
         optionValue="value"
         placeholder="Select Linux Foundation Open Source Project..."
         [filter]="true"
+        [filterBy]="lfRemoteFilterField"
+        filterMatchMode="notEquals"
         [lazy]="true"
         [virtualScroll]="true"
         [virtualScrollItemSize]="lfProjectItemSize"

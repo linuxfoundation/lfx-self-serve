@@ -120,7 +120,7 @@ export type MentorshipInvitableUsersResponse = {
   total: number;
 };
 
-/** Result of the mock unique-name check. */
+/** Result of the program-name availability lookup. */
 export interface MentorshipNameAvailability {
   available: boolean;
 }

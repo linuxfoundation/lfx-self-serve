@@ -5,11 +5,15 @@ import { Component, CUSTOM_ELEMENTS_SCHEMA, input, output } from '@angular/core'
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { By } from '@angular/platform-browser';
+import { FilterService } from 'primeng/api';
 import {
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE,
+  MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE,
   MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
+  MENTORSHIP_LF_PROJECT_REMOTE_FILTER_FIELD,
   MENTORSHIP_RICH_TEXT_RAW_MAX,
 } from '@lfx-one/shared/constants';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
@@ -28,6 +32,8 @@ class StubSelectComponent {
   public readonly emptyFilterMessage = input<unknown>();
   public readonly emptyMessage = input<unknown>();
   public readonly filter = input<unknown>();
+  public readonly filterBy = input<unknown>();
+  public readonly filterMatchMode = input<unknown>();
   public readonly inputId = input<unknown>();
   public readonly lazy = input<unknown>();
   public readonly loading = input<unknown>();
@@ -184,10 +190,11 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
   const setUp = async (
     firstPage: { id: string; name: string; slug: string }[],
     secondPage: { data: { id: string; name: string; slug: string }[]; page_token?: string } = { data: [beta] },
-    respond?: (params: { pageToken?: string }) => Observable<unknown> | undefined
+    respond?: (params: { pageToken?: string; search?: string }) => Observable<unknown> | undefined
   ): Promise<void> => {
     getLfProjects = vi.fn(
-      (params: { pageToken?: string }) => respond?.(params) ?? of(params.pageToken === 'page-2' ? secondPage : { data: firstPage, page_token: 'page-2' })
+      (params: { pageToken?: string; search?: string }) =>
+        respond?.(params) ?? of(params.pageToken === 'page-2' ? secondPage : { data: firstPage, page_token: 'page-2' })
     );
     TestBed.overrideComponent(EnrollDetailsStepComponent, { set: { imports: [ReactiveFormsModule, StubSelectComponent], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
 
@@ -217,6 +224,34 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
 
     expect(getLfProjects).toHaveBeenLastCalledWith(expect.objectContaining({ pageToken: 'page-2' }));
     expect(optionIds()).toEqual([...fullPage.map((project) => project.id), 'uid-beta']);
+  });
+
+  it('leaves the list to the server: the select filters on a field no option has, so an alias match is not hidden', async () => {
+    await setUp([lfProject('alpha')]);
+
+    expect(projectSelect().filterBy()).toBe(MENTORSHIP_LF_PROJECT_REMOTE_FILTER_FIELD);
+    expect(projectSelect().filterMatchMode()).toBe('notEquals');
+    // The select hands these to PrimeNG's filter service, which must keep every option whatever the box holds.
+    const options = projectSelect().options() as { value: string }[];
+    expect(new FilterService().filter(options, [MENTORSHIP_LF_PROJECT_REMOTE_FILTER_FIELD], 'a typed alias', 'notEquals')).toEqual(options);
+  });
+
+  it('says it is searching from the keystroke through the debounce, not "no results"', async () => {
+    await setUp([], { data: [] }, (params) => (params.search === 'zzz' ? of({ data: [] }) : undefined));
+    vi.useFakeTimers();
+    try {
+      projectSelect().onFilter.emit({ filter: 'zzz' });
+      fixture.detectChanges();
+      expect(projectSelect().emptyMessage()).toBe(MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE);
+      expect(getLfProjects).not.toHaveBeenCalledWith(expect.objectContaining({ search: 'zzz' }));
+
+      vi.advanceTimersByTime(300);
+      fixture.detectChanges();
+      expect(getLfProjects).toHaveBeenCalledWith(expect.objectContaining({ search: 'zzz' }));
+      expect(projectSelect().emptyMessage()).toBe(MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('follows a short page cursor without waiting for a scroll', async () => {

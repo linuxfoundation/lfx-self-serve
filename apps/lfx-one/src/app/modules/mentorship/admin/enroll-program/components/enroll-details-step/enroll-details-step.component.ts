@@ -36,6 +36,7 @@ import {
   MENTORSHIP_ENROLL_PROJECTS_UNAVAILABLE,
   MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
+  MENTORSHIP_LF_PROJECT_REMOTE_FILTER_FIELD,
   MENTORSHIP_MENTOR_PICKER_LIST_PADDING,
   MENTORSHIP_MENTOR_PICKER_MAX_HEIGHT,
   MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS,
@@ -87,6 +88,7 @@ export class EnrollDetailsStepComponent {
   private readonly lfLoadMore$ = new Subject<void>();
   private readonly lfFirstPageRetry$ = new Subject<void>();
   protected readonly lfProjectItemSize = 40;
+  protected readonly lfRemoteFilterField = MENTORSHIP_LF_PROJECT_REMOTE_FILTER_FIELD;
   protected readonly lfScrollerOptions = MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS;
   /** On close the select clears its filter box (`resetFilterOnHide`); this clears the search behind it. */
   protected readonly lfOverlayOptions: OverlayOptions = { onBeforeHide: () => this.onLfFilter({ filter: '' }) };
@@ -103,6 +105,8 @@ export class EnrollDetailsStepComponent {
   protected readonly lfProjectsFailed = signal(false);
   private readonly nameLookupRetry = signal(0);
   private readonly ciiLookupRetry = signal(0);
+  /** True from a keystroke that changes the search until its read starts, so the debounce never looks like "no results". */
+  private readonly lfSearchPending = signal(false);
   private lfSearch = '';
   /** Short-page cursors followed without a scroll since the current search's first page. */
   private lfAutoFollows = 0;
@@ -148,7 +152,7 @@ export class EnrollDetailsStepComponent {
   protected readonly logoFileName = computed(() => String(this.formSnapshot()['logoFileName'] ?? this.form().controls['logoFileName']?.value ?? ''));
   protected readonly logoPreviewUrl = computed(() => String(this.formSnapshot()['logoPreviewUrl'] ?? this.form().controls['logoPreviewUrl']?.value ?? ''));
   protected readonly lfEmptyMessage = computed(() =>
-    this.lfProjectsLoading() ? MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE : MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE
+    this.lfSearchPending() || this.lfProjectsLoading() ? MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE : MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE
   );
   /** Sized from the rows so a short list does not scroll and a list that grew after an empty one is not left a few px tall. */
   protected readonly lfScrollHeight = computed(() => {
@@ -256,6 +260,7 @@ export class EnrollDetailsStepComponent {
     const firstPage$ = merge(search$, this.lfFirstPageRetry$.pipe(map(() => this.lfSearch))).pipe(
       tap((search) => {
         this.lfSearch = search;
+        this.lfSearchPending.set(false);
         this.lfAutoFollows = 0;
         this.lfProjectsLoading.set(true);
         this.lfProjectsFailed.set(false);
@@ -339,7 +344,9 @@ export class EnrollDetailsStepComponent {
   }
 
   protected onLfFilter(event: { filter?: string }): void {
-    this.lfFilter$.next((event.filter ?? '').trim());
+    const search = (event.filter ?? '').trim();
+    this.lfSearchPending.set(search !== this.lfSearch);
+    this.lfFilter$.next(search);
   }
 
   /** The virtual scroller's lazy-load: fetches the next page once the rendered window nears the end of what is loaded. */

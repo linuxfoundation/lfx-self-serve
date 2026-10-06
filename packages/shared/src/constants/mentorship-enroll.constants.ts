@@ -35,6 +35,12 @@ export const MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX = 500;
 export const MENTORSHIP_CUSTOM_PREREQ_FILE_LABEL = 'Check if completion of this task requires that the mentee submits a file.';
 export const MENTORSHIP_LF_PROJECT_PAGE_SIZE = 12;
 /**
+ * `filterBy` for the project picker: a field no option has. The query service already matched the projects (by name or alias, on
+ * name tokens), and PrimeNG filters the loaded options by label whenever the box holds text, even when `lazy` is on, which would
+ * hide an alias match. With `notEquals`, a missing field matches every option, so the list is the server's answer unfiltered.
+ */
+export const MENTORSHIP_LF_PROJECT_REMOTE_FILTER_FIELD = 'serverSearchOnly';
+/**
  * How many more pages the enroll project picker reads on its own after a search's first page, while it still holds less than a
  * page of projects. Each read can cost up to `MENTORSHIP_LF_PROJECT_MAX_READS` query-service reads, so this keeps a caller who
  * can see only a few projects from walking the whole catalog when the picker opens; past it, typing a search narrows the list.
