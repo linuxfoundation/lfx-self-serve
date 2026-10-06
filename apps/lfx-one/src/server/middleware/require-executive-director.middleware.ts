@@ -73,6 +73,7 @@ export async function requireExecutiveDirector(req: Request, res: Response, next
 
     // No slug on the request means there is nothing to scope against — the handler is responsible
     // for rejecting a missing required parameter, and unscoped ED endpoints stay allowed.
+    // LF staff bypass foundation scoping regardless of withheld grants; tracked under #2812.
     if (!requestedSlug || result.isLFStaff) {
       next();
       return;
