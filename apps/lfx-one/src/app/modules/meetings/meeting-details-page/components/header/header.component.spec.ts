@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
+import { computed, PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Meeting, MeetingStatusKind, MeetingTimeState, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { environment } from '@environments/environment';
+import { resolvePrivacy } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -52,7 +53,19 @@ describe('MeetingHeaderComponent', () => {
       imports: [MeetingHeaderComponent],
       providers: [
         { provide: PLATFORM_ID, useValue: platform },
-        { provide: MeetingDetailsStateService, useValue: { meeting, timeState, meetingStatus, selectedOccurrence: signal(null) } },
+        {
+          provide: MeetingDetailsStateService,
+          useValue: {
+            meeting,
+            timeState,
+            meetingStatus,
+            selectedOccurrence: signal(null),
+            privacy: computed(() => {
+              const current = meeting();
+              return current ? resolvePrivacy(current.visibility, current.restricted) : null;
+            }),
+          },
+        },
         { provide: ProjectContextService, useValue: { setFoundation } },
         { provide: ClipboardShareService, useValue: { copyLink } },
       ],

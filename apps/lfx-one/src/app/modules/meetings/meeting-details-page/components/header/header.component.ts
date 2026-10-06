@@ -18,7 +18,7 @@ import {
   ProjectContext,
   PublicMeetingProject,
 } from '@lfx-one/shared/interfaces';
-import { resolveOccurrenceRecurrence, resolvePrivacy } from '@lfx-one/shared/utils';
+import { resolveOccurrenceRecurrence } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -73,7 +73,7 @@ export class MeetingHeaderComponent {
    * The one privacy chip (E1-04, FR-010), from `resolvePrivacy`: it reads an absent `visibility` as
    * private, so the label and icon helpers it calls always agree with each other and with the rail.
    */
-  protected readonly privacy: Signal<MeetingPrivacyState | null> = this.initPrivacy();
+  protected readonly privacy: Signal<MeetingPrivacyState | null> = this.state.privacy;
   /** The chip's icon: the prototype's green globe for a meeting anyone can join, muted otherwise. */
   protected readonly privacyIcon = computed(() => {
     const privacy = this.privacy();
@@ -163,13 +163,6 @@ export class MeetingHeaderComponent {
         return { uid: project.parent.uid, name: project.parent.name, slug: project.parent.slug };
       }
       return project.parent_uid ? null : { uid: project.uid, name: project.name, slug: project.slug };
-    });
-  }
-
-  private initPrivacy(): Signal<MeetingPrivacyState | null> {
-    return computed(() => {
-      const meeting = this.meeting();
-      return meeting ? resolvePrivacy(meeting.visibility, meeting.restricted) : null;
     });
   }
 

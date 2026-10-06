@@ -11,7 +11,7 @@ import { buildJoinUrlWithParams } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, catchError, combineLatest, filter, map, Observable, of, startWith, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, startWith, switchMap, take } from 'rxjs';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 
@@ -66,14 +66,21 @@ export class MeetingJoinActionComponent {
     if (!isPlatformBrowser(this.platformId)) {
       return computed(() => loading);
     }
+    // Keyed on what the request is made of, not on the meeting object: the state service hands out a
+    // new object on every lookup emission (a `?occurrence=` change, a refresh), and refetching then
+    // would drop a working Join link back to loading, as V1 never does.
+    const meetingKey = toObservable(computed(() => ({ id: this.state.meeting()?.id, password: this.state.meeting()?.password ?? null }))).pipe(
+      distinctUntilChanged((a, b) => a.id === b.id && a.password === b.password)
+    );
+    const email = toObservable(computed(() => this.userService.user()?.email)).pipe(distinctUntilChanged());
     return toSignal(
-      combineLatest([toObservable(this.state.meeting), toObservable(this.userService.user), this.retry$]).pipe(
-        switchMap(([meeting, user]) => {
+      combineLatest([meetingKey, email, this.retry$]).pipe(
+        switchMap(([meeting, viewerEmail]) => {
           // No email, no link: V1 waits on the same condition, so the button stays loading.
-          if (!meeting?.id || !user?.email) {
+          if (!meeting.id || !viewerEmail) {
             return of(loading);
           }
-          return this.fetchJoinUrl(meeting.id, meeting.password ?? null, user.email).pipe(startWith(loading));
+          return this.fetchJoinUrl(meeting.id, meeting.password, viewerEmail).pipe(startWith(loading));
         })
       ),
       { initialValue: loading }
@@ -83,7 +90,8 @@ export class MeetingJoinActionComponent {
   private fetchJoinUrl(meetingId: string, password: string | null, email: string): Observable<MeetingJoinUrlState> {
     return this.meetingService.getPublicMeetingJoinUrl(meetingId, password, { email }).pipe(
       map((res): MeetingJoinUrlState => {
-        if (!res.link) {
+        // The link is bound to an anchor and passed to window.open, so only http(s) gets that far.
+        if (!res.link || !isHttpUrl(res.link)) {
           return { status: 'error', error: 'Failed to load meeting join URL. Please try again.' };
         }
         return { status: 'ready', url: buildJoinUrlWithParams(res.link, this.userService.user()) };
@@ -100,8 +108,9 @@ export class MeetingJoinActionComponent {
 
   /**
    * V1's auto-join (FR-027): the first time the URL resolves, open the meeting in a new tab, unless
-   * `?zoom_redirect=false` is on the URL. With `noopener`, `window.open` may return null even when
-   * the tab opened, so only a window that reports itself closed counts as blocked.
+   * `?zoom_redirect=false` is on the URL. With `noopener`, `window.open` always returns null, so a
+   * blocked popup cannot be told from an opened one; V1's "Popup Blocked" branch never ran. One
+   * toast covers both, pointing at the Join button.
    */
   private initAutoJoin(): void {
     if (!isPlatformBrowser(this.platformId)) {
@@ -115,22 +124,23 @@ export class MeetingJoinActionComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((joinState) => {
-        const opened = window.open(joinState.url, '_blank', 'noopener,noreferrer');
-        if (opened !== null && opened.closed) {
-          this.messageService.add({
-            severity: 'warn',
-            summary: 'Popup Blocked',
-            detail: 'Your browser blocked the meeting window. Please click the "Join now" button to open it manually.',
-            life: 5000,
-          });
-          return;
-        }
+        window.open(joinState.url, '_blank', 'noopener,noreferrer');
         this.messageService.add({
-          severity: 'success',
-          summary: 'Meeting Opened',
-          detail: "The meeting has been opened in a new tab. If you don't see it, check if popups are blocked.",
-          life: 3000,
+          severity: 'info',
+          summary: 'Opening the meeting',
+          detail: 'The meeting is opening in a new tab. If it does not open, your browser may have blocked it: use the "Join now" button.',
+          life: 5000,
         });
       });
+  }
+}
+
+/** Whether a link is an absolute http(s) URL, so no other scheme reaches an anchor or `window.open`. */
+function isHttpUrl(link: string): boolean {
+  try {
+    const { protocol } = new URL(link);
+    return protocol === 'https:' || protocol === 'http:';
+  } catch {
+    return false;
   }
 }

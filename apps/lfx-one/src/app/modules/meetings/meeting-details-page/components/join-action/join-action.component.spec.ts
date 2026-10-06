@@ -21,19 +21,21 @@ describe('MeetingJoinActionComponent', () => {
   let getPublicMeetingJoinUrl: ReturnType<typeof vi.fn>;
   let add: ReturnType<typeof vi.fn>;
   let user: WritableSignal<User | null>;
+  let meeting: WritableSignal<Meeting>;
   let open: MockInstance<typeof window.open>;
 
   function create(options: { platform?: 'browser' | 'server'; response?: unknown; zoomRedirect?: string } = {}): void {
     getPublicMeetingJoinUrl = vi.fn().mockReturnValue(options.response ?? of({ link: ZOOM_LINK }));
     add = vi.fn();
     user = signal<User | null>({ name: 'Ada Example', email: 'ada@acme-motors.example' } as User);
+    meeting = signal({ id: '99152950841', password: 'secret' } as Meeting);
     open = vi.spyOn(window, 'open').mockReturnValue(null);
 
     TestBed.configureTestingModule({
       imports: [MeetingJoinActionComponent],
       providers: [
         { provide: PLATFORM_ID, useValue: options.platform ?? 'browser' },
-        { provide: MeetingDetailsStateService, useValue: { meeting: signal({ id: '99152950841', password: 'secret' } as Meeting) } },
+        { provide: MeetingDetailsStateService, useValue: { meeting } },
         { provide: MeetingService, useValue: { getPublicMeetingJoinUrl } },
         { provide: UserService, useValue: { user, authenticated: signal(true) } },
         { provide: MessageService, useValue: { add } },
@@ -77,29 +79,33 @@ describe('MeetingJoinActionComponent', () => {
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
+  // A new meeting object for the same meeting (a `?occurrence=` change, a refresh) keeps the link.
+  it('does not refetch when the meeting object changes but the meeting does not', () => {
+    create();
+    meeting.set({ id: '99152950841', password: 'secret', title: 'Renamed' } as Meeting);
+    fixture.detectChanges();
+
+    expect(getPublicMeetingJoinUrl).toHaveBeenCalledTimes(1);
+    expect(button()?.getAttribute('data-state')).toBe('ready');
+  });
+
   describe('auto-join', () => {
-    it('opens the meeting once, as V1 does', () => {
+    it('opens the meeting once, as V1 does, and points at the Join button in case it was blocked', () => {
       create();
       fixture.detectChanges();
 
       expect(open).toHaveBeenCalledTimes(1);
       expect(open.mock.calls[0][0]).toContain(ZOOM_LINK);
-      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Meeting Opened' }));
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'Opening the meeting' }));
     });
 
     it('stays off with ?zoom_redirect=false', () => {
       create({ zoomRedirect: 'FALSE' });
-
-      expect(open).not.toHaveBeenCalled();
-    });
-
-    it('reports a blocked popup', () => {
-      create({ response: new Subject() });
-      open.mockReturnValue({ closed: true } as Window);
-      (getPublicMeetingJoinUrl.mock.results[0].value as Subject<unknown>).next({ link: ZOOM_LINK });
       fixture.detectChanges();
 
-      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Popup Blocked' }));
+      // Same flushes as the positive case, so only the zoom_redirect check keeps the tab closed.
+      expect(button()?.getAttribute('data-state')).toBe('ready');
+      expect(open).not.toHaveBeenCalled();
     });
   });
 
@@ -130,6 +136,15 @@ describe('MeetingJoinActionComponent', () => {
 
       expect(button()?.getAttribute('data-state')).toBe('error');
       expect(query('meeting-action-join-error')?.textContent).toContain('Failed to load meeting join URL. Please try again.');
+    });
+
+    it('refuses a link that is not http(s)', () => {
+      create({ response: of({ link: 'javascript:alert(1)' }) });
+      fixture.detectChanges();
+
+      expect(button()?.getAttribute('data-state')).toBe('error');
+      expect(fixture.nativeElement.querySelector('a[href^="javascript"]')).toBeNull();
+      expect(open).not.toHaveBeenCalled();
     });
 
     it('falls back to a generic message', () => {
