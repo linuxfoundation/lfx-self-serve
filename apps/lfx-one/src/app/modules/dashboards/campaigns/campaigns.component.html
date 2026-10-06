@@ -1031,6 +1031,10 @@
                         Choose a template to clone.
                       } @else if (activeFoundationSlug() === '') {
                         Select a foundation to stage this send under.
+                      } @else if (emailStagingUnresolved()) {
+                        <!-- Must not depend on `emailStagingMessage`: `cancelStagingPoll` clears that
+                             while the unresolved hold stays, which left Stage disabled with no reason. -->
+                        The last stage ended without an answer — check HubSpot, then confirm below.
                       } @else if (emailAudienceWriteInFlight()) {
                         <!-- Before the audience-state branches: on a first compose the audience is still
                              null, and "compose it first" told the operator to do what was running. -->

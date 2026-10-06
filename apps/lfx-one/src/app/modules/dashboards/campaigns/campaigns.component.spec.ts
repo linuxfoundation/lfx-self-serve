@@ -3492,6 +3492,21 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().selectorForm.controls.emailSegment.disabled).toBe(false);
     });
 
+    it('explains a Stage held by an unresolved stage even after the poll is cancelled', () => {
+      // `cancelStagingPoll` resets the state to idle and clears the message while the hold stays,
+      // so a hint keyed on the message left a disabled Stage with no reason.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      internals().emailStagingUnresolved.set(true);
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      fixture.detectChanges();
+
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent ?? '';
+      expect(internals().canStageEmail()).toBe(false);
+      expect(hint, 'Stage was held with no reason given').toContain('ended without an answer');
+    });
+
     it('locks the type and segment pickers while a stage is in flight', () => {
       // `onStageEmailSend` snapshots the copy before its awaits, so switching mid-stage cloned a
       // HubSpot draft with the PREVIOUS selection's copy -- a create on the wire cannot be recalled.
