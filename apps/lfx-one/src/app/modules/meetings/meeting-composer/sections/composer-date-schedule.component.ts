@@ -167,6 +167,9 @@ export class ComposerDateScheduleComponent implements OnInit {
   private readonly startTimeTouched = controlTouchedSignal(this.form, 'startTime');
   private readonly futureDateTimeGroupError = formErrorSignal(this.form, 'futureDateTime');
   protected readonly futureDateTimeError = computed(() => this.futureDateTimeGroupError() && (this.startDateTouched() || this.startTimeTouched()));
+  // Only an occurrence edit carries this validator — see `MeetingComposerFormService.occurrenceWallTimeValidator`.
+  private readonly nonexistentWallTimeGroupError = formErrorSignal(this.form, 'nonexistentWallTime');
+  protected readonly nonexistentWallTimeError = computed(() => this.nonexistentWallTimeGroupError() && (this.startDateTouched() || this.startTimeTouched()));
 
   /**
    * Ids of the custom-duration errors on screen, for the input's `aria-describedby`.

@@ -103,4 +103,10 @@ describe('RecurringMeetingEditOptionsComponent', () => {
 
     expect(close).toHaveBeenCalledWith({ scope: 'occurrence', proceed: true, occurrenceId: ended.occurrence_id });
   });
+
+  it('preselects the occurrence it was opened on even when its id is in milliseconds', async () => {
+    const component = await mount({ ...SECOND, occurrence_id: `${SECOND.occurrence_id}000` });
+
+    expect(component.editForm.get('occurrenceId')?.value).toBe(SECOND.occurrence_id);
+  });
 });

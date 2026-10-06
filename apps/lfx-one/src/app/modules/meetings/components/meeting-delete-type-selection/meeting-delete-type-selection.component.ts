@@ -10,7 +10,7 @@ import { RadioButtonComponent } from '@components/radio-button/radio-button.comp
 import { SelectComponent } from '@components/select/select.component';
 import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Meeting, MeetingDeleteType, MeetingDeleteTypeResult, MeetingOccurrence, MeetingOccurrenceOption } from '@lfx-one/shared/interfaces';
-import { buildMeetingOccurrenceOptions } from '@lfx-one/shared/utils';
+import { buildMeetingOccurrenceOptions, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
@@ -76,7 +76,9 @@ export class MeetingDeleteTypeSelectionComponent {
   private initializeDeleteForm(): FormGroup {
     // Only preselect an occurrence the picker actually lists, so the select never shows a value it has no row for.
     const preselected =
-      this.occurrenceOptions.find((option) => option.value === this.occurrence?.occurrence_id)?.value ?? this.occurrenceOptions[0]?.value ?? null;
+      this.occurrenceOptions.find((option) => isSameOccurrenceId(option.value, this.occurrence?.occurrence_id))?.value ??
+      this.occurrenceOptions[0]?.value ??
+      null;
     // No occurrence left to cancel on its own — deleting the series is the only option that can proceed.
     const v2InitialType: MeetingDeleteType = preselected ? 'occurrence' : 'series';
     // Pre-v2 opens with nothing selected, so the organizer has to choose before Continue enables.

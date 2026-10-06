@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, linkedSignal, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormArray, FormControl, FormGroup, Validators } from '@angular/forms';
+import { AbstractControl, FormArray, FormControl, FormGroup, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import {
   DEFAULT_ARTIFACT_VISIBILITY,
   DEFAULT_DURATION,
@@ -68,6 +68,8 @@ import {
   resolveMeetingOwner,
   sanitizeMeetingCommittees,
   syncShowMeetingAttendeesLock,
+  toZonedDateCarrier,
+  wallTimeExistsInTimezone,
 } from '@lfx-one/shared/utils';
 import { editModeDateTimeValidator, futureDateTimeValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
@@ -1644,7 +1646,8 @@ export class MeetingComposerFormService {
           form.get('startTime')?.valid &&
           form.get('duration')?.valid &&
           form.get('customDuration')?.valid &&
-          !form.errors?.['futureDateTime']
+          !form.errors?.['futureDateTime'] &&
+          !form.errors?.['nonexistentWallTime']
         );
 
       case 'agenda-resources':
@@ -1682,7 +1685,9 @@ export class MeetingComposerFormService {
     form.patchValue({
       title: occurrence.title || meeting.title,
       description,
-      startDate: toZonedTime(start, timezone),
+      // A carrier, not `toZonedTime`: the latter can normalize the wall time when it falls in the browser
+      // zone's own DST gap, reopening the untouched form on the wrong calendar day.
+      startDate: toZonedDateCarrier(start, timezone),
       startTime: formatTo12HourInTimezone(start, timezone),
     });
     this.setDuration(occurrence.duration || meeting.duration || DEFAULT_DURATION);
@@ -2017,7 +2022,32 @@ export class MeetingComposerFormService {
       form.setValidators(futureDateTimeValidator());
     }
 
+    if (this.isOccurrenceEdit()) {
+      form.addValidators(this.occurrenceWallTimeValidator());
+    }
+
     form.updateValueAndValidity();
+  }
+
+  /**
+   * Rejects an occurrence start that falls in the series zone's spring-forward gap.
+   * @description `combineDateTime` silently normalizes such a time (2:30 AM on a spring-forward day becomes
+   * 3:30 AM), so it would pass the future check and move the occurrence to an instant the organizer never
+   * picked. The same guard the pre-v2 reschedule dialog applies; occurrence mode only, since the occurrence
+   * endpoint always reads the time in the series zone.
+   */
+  private occurrenceWallTimeValidator(): ValidatorFn {
+    return (group: AbstractControl): ValidationErrors | null => {
+      const startDate: Date | null = group.get('startDate')?.value;
+      const startTime: string | null = group.get('startTime')?.value;
+      const timezone = this.meeting()?.timezone || group.get('timezone')?.value || getUserTimezone();
+
+      if (!startDate || !startTime || group.get('startTime')?.invalid) {
+        return null;
+      }
+
+      return wallTimeExistsInTimezone(startDate, startTime, timezone) ? null : { nonexistentWallTime: true };
+    };
   }
 
   private processRegistrantOperations(meetingId: string): Observable<MeetingRegistrantOperationResult[]> {

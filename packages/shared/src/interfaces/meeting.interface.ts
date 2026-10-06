@@ -1442,7 +1442,11 @@ export type MeetingDeleteType = 'occurrence' | 'series';
 /** Result of the recurring meeting delete scope dialog. */
 export interface MeetingDeleteTypeResult {
   deleteType: MeetingDeleteType;
-  /** The occurrence picked in the dialog — set whenever `deleteType` is `'occurrence'`. */
+  /**
+   * The occurrence picked in the dialog's picker.
+   * @description Set for `'occurrence'` while `meeting-v2-enabled` is on. The pre-v2 dialog has no picker and
+   * omits it, so the caller cancels the occurrence it opened the dialog on — never assume it is populated.
+   */
   occurrenceId?: string;
 }
 

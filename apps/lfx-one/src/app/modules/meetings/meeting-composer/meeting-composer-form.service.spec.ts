@@ -2300,6 +2300,20 @@ describe('MeetingComposerFormService — single-occurrence edit', () => {
     expect(service.isOccurrenceEdit()).toBe(false);
     expect(service.visibleSections()).toBe(MEETING_COMPOSER_SECTIONS);
   });
+
+  it("rejects an occurrence start inside the series timezone's spring-forward gap", () => {
+    const service = openOccurrence(FIRST.occurrence_id, { ...SERIES, timezone: 'America/New_York' });
+
+    // 2:30 AM on 10 Mar 2030 does not exist in New York — clocks jump from 2:00 to 3:00.
+    service.form().patchValue({ startDate: new Date(2030, 2, 10), startTime: '02:30 AM' });
+
+    expect(service.form().hasError('nonexistentWallTime')).toBe(true);
+    expect(service.isSectionValid('date-schedule')).toBe(false);
+
+    service.form().patchValue({ startTime: '03:30 AM' });
+
+    expect(service.form().hasError('nonexistentWallTime')).toBe(false);
+  });
 });
 
 describe('MeetingComposerFormService — series edit save gate', () => {

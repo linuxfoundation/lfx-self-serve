@@ -9,7 +9,7 @@ import { RadioButtonComponent } from '@components/radio-button/radio-button.comp
 import { SelectComponent } from '@components/select/select.component';
 import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Meeting, MeetingOccurrence, MeetingOccurrenceOption, RecurringMeetingEditScope, RecurringMeetingEditScopeResult } from '@lfx-one/shared/interfaces';
-import { buildMeetingOccurrenceOptions } from '@lfx-one/shared/utils';
+import { buildMeetingOccurrenceOptions, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -74,7 +74,9 @@ export class RecurringMeetingEditOptionsComponent {
 
     // Only preselect an occurrence the picker actually lists, so the select never shows a value it has no row for.
     const preselected =
-      this.occurrenceOptions.find((option) => option.value === this.occurrence?.occurrence_id)?.value ?? this.occurrenceOptions[0]?.value ?? null;
+      this.occurrenceOptions.find((option) => isSameOccurrenceId(option.value, this.occurrence?.occurrence_id))?.value ??
+      this.occurrenceOptions[0]?.value ??
+      null;
     // No occurrence left to edit on its own — the series is the only scope that can proceed.
     const initialScope: RecurringMeetingEditScope = preselected ? 'occurrence' : 'series';
 

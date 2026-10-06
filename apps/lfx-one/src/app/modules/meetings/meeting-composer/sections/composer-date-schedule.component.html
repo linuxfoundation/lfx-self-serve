@@ -46,6 +46,11 @@
   @if (futureDateTimeError()) {
     <p class="text-sm text-red-600" data-testid="composer-future-date-error">Meeting must be scheduled in the future</p>
   }
+  @if (nonexistentWallTimeError()) {
+    <p class="text-sm text-red-600" data-testid="composer-nonexistent-time-error">
+      This time doesn't exist in the series timezone on that date (clocks move forward). Pick another time.
+    </p>
+  }
 
   <!-- Duration -->
   <div class="flex flex-col gap-1.5">

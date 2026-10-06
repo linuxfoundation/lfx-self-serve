@@ -105,4 +105,10 @@ describe('MeetingDeleteTypeSelectionComponent', () => {
       expect(close).toHaveBeenCalledWith({ deleteType: 'occurrence' });
     });
   });
+
+  it('preselects the occurrence it was opened on even when its id is in milliseconds', async () => {
+    const component = await mount([FIRST, SECOND], { ...SECOND, occurrence_id: `${SECOND.occurrence_id}000` });
+
+    expect(component.deleteForm.get('occurrenceId')?.value).toBe(SECOND.occurrence_id);
+  });
 });
