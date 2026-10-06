@@ -90,14 +90,14 @@ test.describe('Event Selection — Robust Structural Tests', () => {
       await expect(page.getByTestId('event-selection-empty-description')).toContainText('visa letter');
     });
 
-    test('travel-funding dialog shows "No registered events" title', async ({ page }) => {
+    test('travel-funding dialog shows "Travel funding not available" title', async ({ page }) => {
       await openDialogWithEmptyEvents(page, 'travel-funding');
-      await expect(page.getByTestId('event-selection-empty-title')).toHaveText('No registered events');
+      await expect(page.getByTestId('event-selection-empty-title')).toHaveText('Travel funding not available');
     });
 
-    test('travel-funding dialog description mentions travel funding', async ({ page }) => {
+    test('travel-funding dialog description mentions travel fund applications', async ({ page }) => {
       await openDialogWithEmptyEvents(page, 'travel-funding');
-      await expect(page.getByTestId('event-selection-empty-description')).toContainText('travel funding');
+      await expect(page.getByTestId('event-selection-empty-description')).toContainText('travel fund applications');
     });
 
     test('event grid cards are not rendered when empty', async ({ page }) => {
