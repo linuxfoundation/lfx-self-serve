@@ -1711,6 +1711,18 @@ export class CampaignsComponent {
    * ("connect HubSpot", "pick a template") and the one they cannot are both surfaced here.
    */
   protected readonly emailStaging = signal<'idle' | 'staging' | 'done' | 'error'>('idle');
+  /**
+   * A stage ended WITHOUT a terminal answer -- the poll lost track of the job, or timed out -- so a
+   * HubSpot draft may still be created against this brief's audience.
+   *
+   * `emailStaging` becomes `'error'` on those paths, which released every lock keyed on it while the
+   * background dispatcher could still resolve the audience. So this holds them -- audience writes,
+   * the type and segment pickers, and Stage itself (a retry could duplicate the draft) -- until the
+   * operator confirms they checked HubSpot (`onAcknowledgeStagingUnresolved`).
+   */
+  protected readonly emailStagingUnresolved = signal(false);
+  /** A stage is in flight OR unresolved: what every lock that protects a stage keys on. */
+  protected readonly emailStagingHeld = computed(() => this.emailStaging() === 'staging' || this.emailStagingUnresolved());
 
   /** Terminal message for the staging attempt — empty while idle or in flight. */
   protected readonly emailStagingMessage = signal<string>('');
@@ -1742,6 +1754,8 @@ export class CampaignsComponent {
       // operator was in the middle of replacing.
       !this.emailAudienceWriteInFlight() &&
       this.emailStaging() !== 'staging' &&
+      // Not over an UNRESOLVED stage: its draft may still be created, so a retry could duplicate it.
+      !this.emailStagingUnresolved() &&
       // A generation IN FLIGHT, not just a staging one. `onStageEmailSend` reads `emailCopy()`
       // unconditionally, and a regeneration clears it only when the response lands -- so staging
       // during one sends the PREVIOUS copy while the operator watches new copy being written.
@@ -2231,11 +2245,11 @@ export class CampaignsComponent {
     // cannot recall a create already on the wire: `onStageEmailSend` snapshots the copy before its
     // awaits, so switching mid-stage cloned a HubSpot draft with the PREVIOUS selection's copy.
     // Disabled through the CONTROLS, not a `[disabled]` binding, which fights ReactiveForms.
-    toObservable(this.emailStaging)
+    toObservable(this.emailStagingHeld)
       .pipe(takeUntilDestroyed())
-      .subscribe((state) => {
+      .subscribe((held) => {
         for (const control of [this.selectorForm.controls.emailType, this.selectorForm.controls.emailSegment]) {
-          if (state === 'staging') {
+          if (held) {
             control.disable({ emitEvent: false });
           } else {
             control.enable({ emitEvent: false });
@@ -2653,6 +2667,11 @@ export class CampaignsComponent {
     // Skipping is a decision about an audience that does not exist. One does now, so the note
     // saying the step was skipped would sit directly above the card proving otherwise.
     this.emailAudienceSkipped.set(false);
+  }
+
+  /** The operator checked HubSpot after a stage that ended without an answer; release its locks. */
+  protected onAcknowledgeStagingUnresolved(): void {
+    this.emailStagingUnresolved.set(false);
   }
 
   /** The Audience tab asked to re-read the saved audience it could not verify. */
@@ -4047,6 +4066,7 @@ export class CampaignsComponent {
         },
         error: () => {
           this.emailStaging.set('error');
+          this.emailStagingUnresolved.set(true);
           this.emailStagingMessage.set('Lost track of the staging job. Check HubSpot before retrying.');
         },
         complete: () => {
@@ -4054,6 +4074,7 @@ export class CampaignsComponent {
           // leaving the panel spinning or claiming a success nothing confirmed.
           if (this.emailStaging() === 'staging') {
             this.emailStaging.set('error');
+            this.emailStagingUnresolved.set(true);
             this.emailStagingMessage.set('Staging is taking longer than expected. Check HubSpot to see whether the draft was created.');
           }
         },

@@ -326,7 +326,7 @@
           [audienceReadPending]="emailAudienceReadPending() || emailBriefResolving()"
           [audienceReadUnavailable]="emailAudienceReadUnavailable()"
           [audienceScope]="emailAudienceScope()"
-          [stagingInFlight]="emailStaging() === 'staging'"
+          [stagingInFlight]="emailStagingHeld()"
           [existingAudience]="emailAudience()"
           (retryAudienceRead)="onRetryAudienceRead()"
           (audienceWriteInFlight)="emailAudienceWriteInFlight.set($event)"
@@ -1056,6 +1056,16 @@
                     data-testid="campaigns-email-stage-message">
                     {{ message }}
                   </p>
+                }
+                <!-- The stage ended without an answer, so a draft may still appear. Everything that could
+                     race it stays locked until the operator says they checked. -->
+                @if (emailStagingUnresolved()) {
+                  <lfx-button
+                    label="I have checked HubSpot"
+                    severity="secondary"
+                    size="small"
+                    (onClick)="onAcknowledgeStagingUnresolved()"
+                    data-testid="campaigns-email-stage-unresolved-ack" />
                 }
               </div>
             </div>

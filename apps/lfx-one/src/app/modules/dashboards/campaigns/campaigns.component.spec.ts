@@ -1941,6 +1941,8 @@ describe('CampaignsComponent — email delivery channel', () => {
       };
     };
     emailAudienceWriteInFlight: WritableSignal<boolean>;
+    emailStagingUnresolved: WritableSignal<boolean>;
+    emailStagingHeld: Signal<boolean>;
   }
 
   const internals = (): Internals => fixture.componentInstance as unknown as Internals;
@@ -3466,6 +3468,28 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       internals().emailAudienceWriteInFlight.set(false);
       expect(internals().canStageEmail()).toBe(true);
+    });
+
+    it.each([
+      ['the poll lost track of the job', () => throwError(() => new Error('network'))],
+      ['the poll timed out with no answer', () => of(null)],
+    ])('holds every stage lock when %s, until the operator confirms', (_label, poll) => {
+      // A draft may still be created, so releasing on `'error'` let a replacement write race it and
+      // a retry duplicate it.
+      onImplementTab();
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(poll() as never);
+      internals().emailStaging.set('staging');
+      (internals() as unknown as { pollStagingJob(job: string, slug: string): void }).pollStagingJob('job-1', 'tlf');
+      fixture.detectChanges();
+
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingHeld(), 'the locks were released on an unresolved stage').toBe(true);
+      expect(internals().selectorForm.controls.emailSegment.disabled).toBe(true);
+
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="campaigns-email-stage-unresolved-ack"] button')?.click();
+      fixture.detectChanges();
+      expect(internals().emailStagingHeld(), 'confirming did not release the locks').toBe(false);
+      expect(internals().selectorForm.controls.emailSegment.disabled).toBe(false);
     });
 
     it('locks the type and segment pickers while a stage is in flight', () => {

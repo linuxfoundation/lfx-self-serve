@@ -900,6 +900,58 @@ describe('AudienceBuilderTabComponent', () => {
       expect(seen.at(-1), 'the lock never released after the attach settled').toBe(false);
     });
 
+    it('reports an abandoned attach that succeeds, so the parent shows what upstream recorded', async () => {
+      // The lock releases when the attach settles; without the report the parent kept showing the
+      // OLD audience after A -> B -> A, while upstream now resolved the newly attached one.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      const reply = new Subject<AudienceAttachExistingResult>();
+      attachExistingAudience.mockReturnValue(reply);
+      click('campaigns-audience-use-direct');
+      const attached: CampaignAudience[] = [];
+      fixture.componentInstance.audienceAttached.subscribe((row) => attached.push(row));
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+      const row = { id: 'aud-a', briefId: 'brief-a', platform: 'hubspot', status: 'built', version: 2 } as CampaignAudience;
+      reply.next({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: [], audience: row } as AudienceAttachExistingResult);
+      reply.complete();
+
+      expect(attached, 'the recorded row was swallowed by the generation guard').toEqual([row]);
+    });
+
+    it('resets hand-edited work for event B when event A is handed back', async () => {
+      // Comparing advertised URLs saw "A -> A" and kept B's lists, which compose then sent with A's brief.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      typeEventUrl('https://events.example.org/event-b');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('initialEventUrl', '');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-a');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "B's hand-built selection survived under A").toBeNull();
+    });
+
+    it('keeps hand-started work when the incoming brief is for the event the operator discovered', async () => {
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      typeEventUrl('https://events.example.org/event-b');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.componentRef.setInput('briefId', 'brief-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "B's own brief wiped the B work").not.toBeNull();
+    });
+
     it('holds Stage while a compose a reset abandoned is still being created', async () => {
       // `composing` is cleared by the reset so the new context is not stuck on a spinner, but the
       // HubSpot lists are still being created -- Stage must not unlock on the old audience.

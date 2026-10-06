@@ -191,6 +191,8 @@ export class AudienceBuilderTabComponent {
   protected readonly discoveredLists = signal<readonly AudienceDiscoveredList[]>([]);
   protected readonly missingSignals = signal<readonly AudienceSignal[]>([]);
   protected readonly hasDiscovered = signal(false);
+  /** The URL the current discovery ran for, so an edited field is compared by what it discovered. */
+  private readonly discoveredEventUrl = signal('');
 
   // === State: reuse ===
   protected readonly reuseLoading = signal(false);
@@ -902,6 +904,11 @@ export class AudienceBuilderTabComponent {
     // A discovery still STREAMING counts as work too: `hasDiscovered` turns true only on the final
     // frame, while `identity` and the lists land earlier, so B's brief arriving mid-stream let A's
     // frames finish under it.
+    //
+    // The work's event is the URL it was DISCOVERED for when the operator edited the field, and the
+    // advertised URL only while it is pristine. Comparing advertised URLs alone missed an edit:
+    // advertised A, discovered B by hand, A handed back -- "A -> A" -- and B's lists were composed
+    // with A's brief.
     toObservable(this.initialEventUrl)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((next) => {
@@ -910,7 +917,8 @@ export class AudienceBuilderTabComponent {
         }
         const previous = lastEventUrl;
         lastEventUrl = next;
-        if (previous === '' || previous === next || !(this.hasDiscovered() || this.discovering())) {
+        const workUrl = this.eventUrlControl.dirty ? this.discoveredEventUrl() : previous;
+        if (workUrl === '' || workUrl === next || !(this.hasDiscovered() || this.discovering())) {
           return;
         }
         this.resetForNewContext(this.projectSlug());
@@ -971,6 +979,7 @@ export class AudienceBuilderTabComponent {
     // appeared and the Discover button stayed live, letting a second click launch an
     // overlapping SSE request against the same panel.
     this.resetRunState();
+    this.discoveredEventUrl.set(eventUrl);
     this.discovering.set(true);
     this.discoveryError.set(null);
     this.progressMessage.set('Starting discovery...');
@@ -1254,7 +1263,12 @@ export class AudienceBuilderTabComponent {
       )
       .subscribe({
         next: (result) => {
+          // A RECORDED audience is reported past the generation guard when the project is unchanged,
+          // for the reason the attach reply gives. A project switch still swallows it.
           if (run !== this.runGeneration) {
+            if (result.recorded && result.audience && dispatchProject === this.projectSlug()) {
+              this.audienceAttached.emit(result.audience);
+            }
             return;
           }
           this.composeResult.set(result);
@@ -1499,6 +1513,7 @@ export class AudienceBuilderTabComponent {
       return;
     }
     const run = this.runGeneration;
+    const dispatchProject = this.projectSlug();
     const sentExclusions = [...new Set(suppressionListIds)].filter((id) => id !== masterListId);
     this.attachInFlight.set(true);
     this.attachingId.set(busyId);
@@ -1518,14 +1533,21 @@ export class AudienceBuilderTabComponent {
       )
       .subscribe({
         next: (result) => {
+          // Reported past the generation guard when the PROJECT is unchanged. The attach is recorded
+          // upstream whatever the panel did meanwhile, and the parent accepts the row only for the
+          // brief it is addressing now -- so after an event round trip A -> B -> A the row lands on
+          // A, where otherwise the lock released at `finalize` while the parent still showed the old
+          // audience upstream no longer resolves. A project switch still swallows it: that is a
+          // different portal's send entirely.
+          if (run === this.runGeneration || dispatchProject === this.projectSlug()) {
+            this.audienceAttached.emit(result.audience);
+          }
           if (run !== this.runGeneration) {
             return;
           }
           // Settled, so the next write may start -- released here rather than on a brief switch.
           this.attachInFlight.set(false);
-          // The parent guards the emission on its own brief id, so it is safe to emit after a
-          // brief switch; the local banner is not, because it would describe the previous brief.
-          this.audienceAttached.emit(result.audience);
+          // The local banner IS guarded: it would describe the previous brief.
           if (briefId !== this.briefId()) {
             return;
           }
@@ -1684,6 +1706,7 @@ export class AudienceBuilderTabComponent {
     this.mastersLoading.set(false);
     this.suppressionLoading.set(false);
     this.hasDiscovered.set(false);
+    this.discoveredEventUrl.set('');
     this.identity.set(null);
     this.discoveredLists.set([]);
     this.missingSignals.set([]);
