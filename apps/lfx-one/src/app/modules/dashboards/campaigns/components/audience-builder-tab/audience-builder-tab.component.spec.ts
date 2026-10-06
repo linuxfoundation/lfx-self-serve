@@ -840,6 +840,7 @@ describe('AudienceBuilderTabComponent', () => {
       const dismiss = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose-stranded-dismiss"]');
       expect(dismiss?.disabled, 'the stranded marker could be cleared mid-request').toBe(true);
       (fixture.componentInstance as unknown as { onDismissStranded(): void }).onDismissStranded();
+      fixture.detectChanges();
       expect(host().querySelector('[data-testid="campaigns-audience-compose-stranded"]'), 'the handler cleared it anyway').not.toBeNull();
 
       // And composing again in that project is blocked until the operator reconciles it.
