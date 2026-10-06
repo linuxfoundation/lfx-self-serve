@@ -3,12 +3,7 @@
 
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import {
-  EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE,
-  EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE,
-  MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
-  MENTORSHIP_LF_PROJECT_PAGE_SIZE,
-} from '@lfx-one/shared/constants';
+import { EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE, MENTORSHIP_INVITABLE_USER_PAGE_SIZE, MENTORSHIP_LF_PROJECT_PAGE_SIZE } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiBadge,
   MentorshipInvitableUsersResponse,
@@ -25,7 +20,9 @@ import { catchError, Observable, of, take, throwError } from 'rxjs';
  * Talks to the LFX One BFF's `/api/mentorship/*` endpoints.
  *
  * Shape mirrors `CrowdfundingService` deliberately: lookups degrade to an empty
- * response on error so the enroll flow never blocks on upstream faults.
+ * response on error so the enroll flow never blocks on upstream faults. The project picker's
+ * pages are the exception: they propagate errors so the picker can offer Retry rather than
+ * show a failure as no projects, or a truncated list as complete.
  * The admin pages' reads live in `MentorshipAdminService` and the mentor pages' in `MentorshipMentorService`.
  */
 @Injectable({ providedIn: 'root' })
@@ -36,7 +33,7 @@ export class MentorshipService {
     return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params: new HttpParams().set('name', name) }).pipe(take(1));
   }
 
-  /** One lazy-load page of LF projects; pass the previous page's `nextPageToken` as `pageToken` for the next one. */
+  /** One lazy-load page of LF projects; pass the previous page's `nextPageToken` as `pageToken` for the next one. Errors propagate. */
   public getLfProjects(params?: { search?: string; pageToken?: string | null; limit?: number }): Observable<MentorshipLfProjectsResponse> {
     let httpParams = new HttpParams();
     if (params?.search) httpParams = httpParams.set('search', params.search);
@@ -45,7 +42,7 @@ export class MentorshipService {
 
     return this.http
       .get<MentorshipLfProjectsResponse>('/api/mentorship/lf-projects', { params: httpParams })
-      .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE, 'getLfProjects')));
+      .pipe(take(1), catchError(this.rethrowError('getLfProjects')));
   }
 
   /** LFX users that can be invited as mentors. Not program-scoped. */

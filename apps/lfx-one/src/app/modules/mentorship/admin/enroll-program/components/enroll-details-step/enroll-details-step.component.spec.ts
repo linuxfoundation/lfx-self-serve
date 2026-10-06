@@ -13,7 +13,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
-import { of } from 'rxjs';
+import { Observable, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EnrollDetailsStepComponent } from './enroll-details-step.component';
@@ -170,11 +170,24 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
 
   const optionIds = (): string[] => (projectSelect().options() as { value: string }[]).map((option) => option.value);
 
+  const failedAlert = (): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="mentorship-enroll-project-failed"]');
+  const clickRetry = (): void => {
+    (fixture.nativeElement as HTMLElement).querySelector('[data-testid="mentorship-enroll-project-retry"]')?.dispatchEvent(new CustomEvent('onClick'));
+    fixture.detectChanges();
+  };
+  const scrollToEnd = (): void => {
+    projectSelect().onLazyLoad.emit({ first: 0, last: optionIds().length - 1 });
+    fixture.detectChanges();
+  };
+
   const setUp = async (
     firstPage: { id: string; name: string; slug: string }[],
-    secondPage: { data: { id: string; name: string; slug: string }[]; nextPageToken: string | null } = { data: [beta], nextPageToken: null }
+    secondPage: { data: { id: string; name: string; slug: string }[]; nextPageToken: string | null } = { data: [beta], nextPageToken: null },
+    respond?: (params: { pageToken?: string }) => Observable<unknown> | undefined
   ): Promise<void> => {
-    getLfProjects = vi.fn((params: { pageToken?: string }) => of(params.pageToken === 'page-2' ? secondPage : { data: firstPage, nextPageToken: 'page-2' }));
+    getLfProjects = vi.fn(
+      (params: { pageToken?: string }) => respond?.(params) ?? of(params.pageToken === 'page-2' ? secondPage : { data: firstPage, nextPageToken: 'page-2' })
+    );
     TestBed.overrideComponent(EnrollDetailsStepComponent, { set: { imports: [ReactiveFormsModule, StubSelectComponent], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
 
     await TestBed.configureTestingModule({
@@ -212,11 +225,56 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
     expect(optionIds()).toEqual(['uid-alpha', 'uid-beta']);
   });
 
-  it('does not follow a short page whose cursor came back unchanged', async () => {
+  it('treats a cursor that came back unchanged as the end, neither following it nor loading it on scroll', async () => {
     await setUp([lfProject('alpha')], { data: [], nextPageToken: 'page-2' });
 
     expect(getLfProjects).toHaveBeenCalledTimes(2);
     expect(optionIds()).toEqual(['uid-alpha']);
+
+    scrollToEnd();
+
+    expect(getLfProjects).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows a failed first page with Try again instead of an empty list, and rereads it on retry', async () => {
+    let failFirst = true;
+    await setUp(fullPage, undefined, (params) => {
+      if (params.pageToken || !failFirst) return undefined;
+      failFirst = false;
+      return throwError(() => new Error('upstream down'));
+    });
+    expect(failedAlert()).not.toBeNull();
+    expect(optionIds()).toEqual([]);
+
+    clickRetry();
+
+    expect(getLfProjects).toHaveBeenCalledTimes(2);
+    expect(getLfProjects).toHaveBeenLastCalledWith(expect.not.objectContaining({ pageToken: expect.anything() }));
+    expect(failedAlert()).toBeNull();
+    expect(optionIds()).toHaveLength(MENTORSHIP_LF_PROJECT_PAGE_SIZE);
+  });
+
+  it('keeps the loaded list and the cursor when a later page fails, and retries that page', async () => {
+    let failNext = true;
+    await setUp(fullPage, undefined, (params) => {
+      if (params.pageToken !== 'page-2' || !failNext) return undefined;
+      failNext = false;
+      return throwError(() => new Error('upstream down'));
+    });
+
+    scrollToEnd();
+    expect(failedAlert()).not.toBeNull();
+    expect(optionIds()).toHaveLength(MENTORSHIP_LF_PROJECT_PAGE_SIZE);
+
+    scrollToEnd();
+    expect(getLfProjects).toHaveBeenCalledTimes(2);
+
+    clickRetry();
+
+    expect(getLfProjects).toHaveBeenCalledTimes(3);
+    expect(getLfProjects).toHaveBeenLastCalledWith(expect.objectContaining({ pageToken: 'page-2' }));
+    expect(failedAlert()).toBeNull();
+    expect(optionIds()).toEqual([...fullPage.map((project) => project.id), 'uid-beta']);
   });
 
   it('stops requesting once the cursor runs out', async () => {

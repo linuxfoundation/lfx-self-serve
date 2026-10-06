@@ -213,12 +213,28 @@ describe('MentorshipService LF project search', () => {
   });
 
   it('stops after MENTORSHIP_LF_PROJECT_MAX_READS reads and hands the cursor back', async () => {
-    proxyRequest.mockResolvedValue(page([], 'cursor-n'));
+    let reads = 0;
+    proxyRequest.mockImplementation(async () => page([], `cursor-${++reads}`));
 
     const result = await service.getLfProjects(buildReq(), { limit: 10 });
 
     expect(proxyRequest).toHaveBeenCalledTimes(MENTORSHIP_LF_PROJECT_MAX_READS);
-    expect(result).toEqual({ data: [], nextPageToken: 'cursor-n' });
+    expect(result).toEqual({ data: [], nextPageToken: `cursor-${MENTORSHIP_LF_PROJECT_MAX_READS}` });
+  });
+
+  it('ends the list instead of replaying a page whose cursor comes back unchanged', async () => {
+    proxyRequest.mockResolvedValueOnce(page([project('uid-1', 'Alpha')], 'cursor-x')).mockResolvedValueOnce(page([project('uid-2', 'Beta')], 'cursor-x'));
+
+    const result = await service.getLfProjects(buildReq(), { limit: 10 });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      data: [
+        { id: 'uid-1', name: 'Alpha', slug: 'alpha-slug' },
+        { id: 'uid-2', name: 'Beta', slug: 'beta-slug' },
+      ],
+      nextPageToken: null,
+    });
   });
 
   it.each([

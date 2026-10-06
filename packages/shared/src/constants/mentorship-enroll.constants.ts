@@ -4,7 +4,6 @@
 import type {
   MentorshipEnrollForm,
   MentorshipEnrollStep,
-  MentorshipLfProjectsResponse,
   MentorshipPrerequisite,
   MentorshipProgramTerm,
 } from '../interfaces/mentorship.interface';
@@ -122,7 +121,8 @@ export const MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE = 'Searching projectsâ
 /** Shown in the project picker's list once a read answers with no projects. */
 export const MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE = 'No results found';
 
-export const EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE: MentorshipLfProjectsResponse = { data: [], nextPageToken: null };
+/** Shown under the project picker when a page of projects could not be read, beside a Try again button. */
+export const MENTORSHIP_ENROLL_PROJECTS_UNAVAILABLE = 'Could not load projects. Please try again.';
 
 /**
  * Canonical skill / technology catalog used by the enroll wizard.

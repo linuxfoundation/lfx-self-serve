@@ -33,6 +33,7 @@ import {
   MENTORSHIP_ENROLL_WEBSITE_HELPER,
   MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE,
   MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE,
+  MENTORSHIP_ENROLL_PROJECTS_UNAVAILABLE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
   MENTORSHIP_MENTOR_PICKER_LIST_PADDING,
   MENTORSHIP_MENTOR_PICKER_MAX_HEIGHT,
@@ -83,6 +84,7 @@ export class EnrollDetailsStepComponent {
   private readonly mentorshipAdminService = inject(MentorshipAdminService);
   private readonly lfFilter$ = new Subject<string>();
   private readonly lfLoadMore$ = new Subject<void>();
+  private readonly lfFirstPageRetry$ = new Subject<void>();
   protected readonly lfProjectItemSize = 40;
   protected readonly lfScrollerOptions = MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS;
   /** On close the select clears its filter box (`resetFilterOnHide`); this clears the search behind it. */
@@ -96,6 +98,8 @@ export class EnrollDetailsStepComponent {
   protected readonly lfProjectsLoading = signal(false);
   /** Cursor for the next lazy-load page; null once every project has been loaded. */
   protected readonly lfNextPageToken = signal<string | null>(null);
+  /** A page read failed; Retry rereads whichever page failed. */
+  protected readonly lfProjectsFailed = signal(false);
   private readonly nameLookupRetry = signal(0);
   private readonly ciiLookupRetry = signal(0);
   private lfSearch = '';
@@ -120,6 +124,7 @@ export class EnrollDetailsStepComponent {
   protected readonly nameChecking = MENTORSHIP_ENROLL_NAME_CHECKING;
   protected readonly nameTaken = MENTORSHIP_ENROLL_NAME_TAKEN;
   protected readonly nameUnavailable = MENTORSHIP_ENROLL_NAME_UNAVAILABLE;
+  protected readonly projectsUnavailable = MENTORSHIP_ENROLL_PROJECTS_UNAVAILABLE;
   protected readonly codeOfConductTemplateUrl = MENTORSHIP_CODE_OF_CONDUCT_TEMPLATE_URL;
 
   protected readonly draftTechnology = toSignal(this.draftTechForm.controls.technology.valueChanges, { initialValue: '' });
@@ -244,16 +249,21 @@ export class EnrollDetailsStepComponent {
 
     const search$ = this.lfFilter$.pipe(debounceTime(300), startWith(''), distinctUntilChanged(), share());
 
-    const firstPage$ = search$.pipe(
+    // Retry rereads the current search; search$ alone would not, since distinctUntilChanged drops a repeat of it.
+    const firstPage$ = merge(search$, this.lfFirstPageRetry$.pipe(map(() => this.lfSearch))).pipe(
       tap((search) => {
         this.lfSearch = search;
         this.lfProjectsLoading.set(true);
+        this.lfProjectsFailed.set(false);
       }),
       switchMap((search) =>
         this.mentorshipService.getLfProjects({ search, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
           map((response) => ({ ...response, append: false as const, requestedToken: null })),
           catchError(() => {
-            this.lfProjectsLoading.set(false);
+            // Empty the list so the picker does not keep the previous search's projects under the failure.
+            this.lfProjects.set([]);
+            this.lfNextPageToken.set(null);
+            this.failLfPage();
             return EMPTY;
           })
         )
@@ -267,11 +277,13 @@ export class EnrollDetailsStepComponent {
         const pageToken = this.lfNextPageToken();
         if (this.lfProjectsLoading() || !pageToken) return EMPTY;
         this.lfProjectsLoading.set(true);
+        this.lfProjectsFailed.set(false);
         return this.mentorshipService.getLfProjects({ search: this.lfSearch, pageToken, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
           takeUntil(search$),
           map((response) => ({ ...response, append: true as const, requestedToken: pageToken })),
+          // The cursor stays, so Retry asks for the same page again.
           catchError(() => {
-            this.lfProjectsLoading.set(false);
+            this.failLfPage();
             return EMPTY;
           })
         );
@@ -283,12 +295,12 @@ export class EnrollDetailsStepComponent {
       .pipe(takeUntilDestroyed())
       .subscribe((page) => {
         this.lfProjects.set(page.append ? [...this.lfProjects(), ...page.data] : page.data);
-        this.lfNextPageToken.set(page.nextPageToken);
+        // A cursor that came back unchanged would only replay the same page, by scroll or by the follow below, so treat it as the end.
+        const nextPageToken = page.nextPageToken === page.requestedToken ? null : page.nextPageToken;
+        this.lfNextPageToken.set(nextPageToken);
         this.lfProjectsLoading.set(false);
-        // A page that access filtering left short may not fill the scroller enough to fire onLazyLoad, so follow its cursor here,
-        // but only when it moved: following a cursor that came back unchanged would request the same page forever.
-        const cursorAdvanced = page.nextPageToken !== page.requestedToken;
-        if (page.nextPageToken && cursorAdvanced && page.data.length < MENTORSHIP_LF_PROJECT_PAGE_SIZE) this.lfLoadMore$.next();
+        // A page that access filtering left short may not fill the scroller enough to fire onLazyLoad, so follow its cursor here.
+        if (nextPageToken && page.data.length < MENTORSHIP_LF_PROJECT_PAGE_SIZE) this.lfLoadMore$.next();
       });
   }
 
@@ -298,6 +310,15 @@ export class EnrollDetailsStepComponent {
 
   protected retryCiiLookup(): void {
     this.ciiLookupRetry.update((count) => count + 1);
+  }
+
+  protected retryLfProjects(): void {
+    // A failed first page cleared the cursor; a failed later page kept it.
+    if (!this.lfNextPageToken()) {
+      this.lfFirstPageRetry$.next();
+      return;
+    }
+    this.lfLoadMore$.next();
   }
 
   protected onImportProgram(): void {
@@ -315,7 +336,8 @@ export class EnrollDetailsStepComponent {
 
   /** The virtual scroller's lazy-load: fetches the next page once the rendered window nears the end of what is loaded. */
   protected onLfLazyLoad(event?: { last?: number }): void {
-    if (this.lfProjectsLoading() || !this.lfNextPageToken()) return;
+    // After a failure only Retry reads again, so scrolling cannot hammer a failing upstream.
+    if (this.lfProjectsLoading() || this.lfProjectsFailed() || !this.lfNextPageToken()) return;
     if (event?.last !== undefined && event.last < this.lfProjects().length - 1) return;
     this.lfLoadMore$.next();
   }
@@ -382,6 +404,11 @@ export class EnrollDetailsStepComponent {
     if (fromLoaded) return fromLoaded;
     const cached = this.project();
     return cached?.id === projectId ? cached : undefined;
+  }
+
+  private failLfPage(): void {
+    this.lfProjectsLoading.set(false);
+    this.lfProjectsFailed.set(true);
   }
 
   private clearLogo(): void {
