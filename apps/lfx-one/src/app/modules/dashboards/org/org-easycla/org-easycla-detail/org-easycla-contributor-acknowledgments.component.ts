@@ -556,7 +556,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
           console.warn(
             'Failed to refresh the loaded acknowledgments after an invalidate:',
             (error as HttpErrorResponse)?.status,
-            (error as HttpErrorResponse)?.message
+            (error as HttpErrorResponse)?.statusText
           );
           if (
             afterInvalidate &&

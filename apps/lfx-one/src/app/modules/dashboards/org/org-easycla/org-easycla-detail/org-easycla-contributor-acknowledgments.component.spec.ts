@@ -1230,7 +1230,12 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       fixture.detectChanges();
 
       invalidateAcknowledgment.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: { message: 'conflict' } })));
-      getContributorAcknowledgments.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502 })));
+      getContributorAcknowledgments.mockReturnValueOnce(
+        throwError(
+          () =>
+            new HttpErrorResponse({ status: 502, statusText: 'Bad Gateway', url: '/api/orgs/org-1/lens/cla/acknowledgments?search=contributor%40example.org' })
+        )
+      );
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       const buttons = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-acknowledgment-invalidate"] button');
       (buttons[1] as HTMLButtonElement).click();
@@ -1241,7 +1246,8 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
 
       expect(addMessage).toHaveBeenCalledTimes(1);
       expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'conflict' }));
-      expect(warn).toHaveBeenCalledWith('Failed to refresh the loaded acknowledgments after an invalidate:', 502, expect.any(String));
+      expect(warn).toHaveBeenCalledWith('Failed to refresh the loaded acknowledgments after an invalidate:', 502, 'Bad Gateway');
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('search=');
       warn.mockRestore();
     });
 
