@@ -51,7 +51,7 @@ export type AccessCheckAccessType =
   | 'writer_guard'
   | 'viewer'
   | 'auditor'
-  /** `project` only: `auditor or global_auditor`. `global_writer` does not compose into it, so pair it with `writer_guard` where writers must also pass. */
+  /** `project` only: `auditor or global_writer or global_auditor`. Every `writer_guard` holder also holds it. */
   | 'auditor_guard'
   | 'organizer'
   | 'meeting_coordinator'

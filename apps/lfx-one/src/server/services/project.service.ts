@@ -383,10 +383,10 @@ export class ProjectService {
     if (access) {
       const writerProject = await this.accessCheckService.addProjectWriterToResource(req, project);
       // Skip the meeting_coordinator/auditor checks when already a writer. The `writer` field is
-      // resolved from `writer_guard`, and `global_writer` does not compose into `auditor_guard`, so
-      // at the FGA level a writer here need not be an auditor — but the only consumer of `auditor`
-      // (FormationCardComponent) reads `writer === true || auditor === true`, so the round trip
-      // can't change its outcome. `meeting_coordinator: [user]` is a direct-only grant — writer does NOT
+      // resolved from `writer_guard`, and every `writer_guard` holder also holds `auditor_guard`
+      // (bare `writer` composes into `auditor`, `global_writer` into `auditor_guard`). Independently,
+      // the only consumer of `auditor` (FormationCardComponent) reads `writer === true || auditor === true`,
+      // so the round trip can't change its outcome. `meeting_coordinator: [user]` is a direct-only grant — writer does NOT
       // imply it at the FGA level — but every consumer of this field (e.g. writer.guard.ts) already
       // treats `writer === true` as sufficient on its own before ever reading meetingCoordinator,
       // and upstream `meetings_creator: writer_guard or meeting_coordinator` makes the same true one level
