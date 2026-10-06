@@ -1168,6 +1168,80 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       );
     });
 
+    it('refetches the stale row when the invalidate is refused as already invalidated or changed', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { canEdit: true })));
+      const fixture = await render();
+      const fetchesBefore = getContributorAcknowledgments.mock.calls.length;
+      invalidateAcknowledgment.mockReturnValueOnce(
+        throwError(
+          () => new HttpErrorResponse({ status: 409, error: { message: 'This acknowledgment was already invalidated, or changed since the list loaded.' } })
+        )
+      );
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace', approved: false })], { canEdit: true })));
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({});
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(addMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', detail: 'This acknowledgment was already invalidated, or changed since the list loaded.' })
+      );
+      expect(getContributorAcknowledgments.mock.calls.length).toBe(fetchesBefore + 1);
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeTruthy();
+    });
+
+    it('does not mark a refused row Invalidated in place while a loaded span refetches after a 409', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { totalCount: 2, nextKey: 'cursor-2', canEdit: true }))
+      );
+      const fixture = await render();
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-2', name: 'Grace Hopper' })], { totalCount: 2, nextKey: null, canEdit: true }))
+      );
+      click(fixture, 'org-easycla-acknowledgments-load-more');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const refetch = new Subject<OrgClaContributorAcknowledgmentList>();
+      getContributorAcknowledgments.mockReturnValueOnce(refetch.asObservable());
+      invalidateAcknowledgment.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: { message: 'conflict' } })));
+      const buttons = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-acknowledgment-invalidate"] button');
+      (buttons[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      dialogClosed.next({});
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', { search: '' });
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeNull();
+    });
+
+    it('adds no second toast when the refetch after a 409 fails', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { totalCount: 2, nextKey: 'cursor-2', canEdit: true }))
+      );
+      const fixture = await render();
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-2', name: 'Grace Hopper' })], { totalCount: 2, nextKey: null, canEdit: true }))
+      );
+      click(fixture, 'org-easycla-acknowledgments-load-more');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      invalidateAcknowledgment.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: { message: 'conflict' } })));
+      getContributorAcknowledgments.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502 })));
+      const buttons = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-acknowledgment-invalidate"] button');
+      (buttons[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      dialogClosed.next({});
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(addMessage).toHaveBeenCalledTimes(1);
+      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'conflict' }));
+    });
+
     it('reports the proxy error sentence when the BFF puts it on error rather than message', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
       const fixture = await render();
