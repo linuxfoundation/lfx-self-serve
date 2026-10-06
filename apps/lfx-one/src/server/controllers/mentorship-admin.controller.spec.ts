@@ -642,6 +642,17 @@ describe('MentorshipAdminController', () => {
       expect(out.status).toHaveBeenCalledWith(201);
     });
 
+    it('accepts a term that starts and ends in one month', async () => {
+      const oneMonth = { ...termBody, endDate: termBody.startDate };
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'createTerm').mockResolvedValue(row as never);
+      const out = writeRes();
+
+      await controller.createTerm(termReq(oneMonth, { programId: PROGRAM_ID }), out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, oneMonth);
+      expect(out.status).toHaveBeenCalledWith(201);
+    });
+
     it.each([
       ['closeTerm', 'closeTerm'],
       ['reopenTerm', 'reopenTerm'],
@@ -663,7 +674,7 @@ describe('MentorshipAdminController', () => {
       ['a date that is not on the calendar', { ...termBody, startDate: '2026-02-30' }],
       ['an application end before its start', { ...termBody, applicationEndDate: '2026-06-30' }],
       ['a start on the application end', { ...termBody, startDate: '2026-08-15' }],
-      ['an end on the start', { ...termBody, endDate: '2026-09-01' }],
+      ['an end before the start', { ...termBody, endDate: '2026-08-01' }],
       ['no body', undefined],
     ])('rejects %s with a 400 and no upstream call', async (_label, body) => {
       const create = vi.spyOn(MentorshipAdminService.prototype, 'createTerm');
