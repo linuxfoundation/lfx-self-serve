@@ -26,10 +26,7 @@ import {
   MeetingDeleteConfirmationComponent,
   MeetingDeleteResult,
 } from '@app/modules/meetings/components/meeting-delete-confirmation/meeting-delete-confirmation.component';
-import {
-  MeetingDeleteTypeResult,
-  MeetingDeleteTypeSelectionComponent,
-} from '@app/modules/meetings/components/meeting-delete-type-selection/meeting-delete-type-selection.component';
+import { MeetingDeleteTypeSelectionComponent } from '@app/modules/meetings/components/meeting-delete-type-selection/meeting-delete-type-selection.component';
 import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
 import { HostKeyPopoverComponent } from '@app/modules/meetings/components/host-key-popover/host-key-popover.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
@@ -58,6 +55,7 @@ import {
   Meeting,
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
+  MeetingDeleteTypeResult,
   MeetingOccurrence,
   MeetingRecurrence,
   MeetingRescheduleOccurrenceResult,
@@ -581,7 +579,8 @@ export class MeetingCardComponent implements OnInit {
     const isRecurring = !!meeting.recurrence;
 
     if (isRecurring) {
-      // For recurring meetings, first show the delete type selection modal
+      // For recurring meetings, first show the delete type selection modal. Its occurrence picker opens on
+      // the occurrence this card shows, falling back to the next active one like the cancel step below.
       const dialogRef = this.dialogService.open(MeetingDeleteTypeSelectionComponent, {
         header: 'Delete Recurring Meeting',
         width: '500px',
@@ -590,14 +589,15 @@ export class MeetingCardComponent implements OnInit {
         dismissableMask: true,
         data: {
           meeting: meeting,
+          occurrence: this.occurrence() ?? getCurrentOrNextOccurrence(meeting),
         },
       }) as DynamicDialogRef;
 
-      dialogRef.onClose.pipe(take(1)).subscribe((typeResult: MeetingDeleteTypeResult) => {
+      dialogRef.onClose.pipe(take(1)).subscribe((typeResult: MeetingDeleteTypeResult | undefined) => {
         if (typeResult) {
           if (typeResult.deleteType === 'occurrence') {
-            // User wants to cancel just this occurrence
-            this.showCancelOccurrenceModal(meeting);
+            // User wants to cancel the occurrence they picked
+            this.showCancelOccurrenceModal(meeting, typeResult.occurrenceId);
           } else {
             // User wants to delete the entire series
             this.showDeleteMeetingModal(meeting);
@@ -626,9 +626,9 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  private showCancelOccurrenceModal(meeting: Meeting): void {
-    // Prefer the explicitly selected/current occurrence; fallback to next active
-    const occurrenceToCancel = this.occurrence() ?? getCurrentOrNextOccurrence(meeting);
+  private showCancelOccurrenceModal(meeting: Meeting, occurrenceId?: string): void {
+    // Prefer the occurrence picked in the delete dialog, then the one this card shows; fallback to next active
+    const occurrenceToCancel = (occurrenceId ? this.findOccurrence(meeting, occurrenceId) : null) ?? this.occurrence() ?? getCurrentOrNextOccurrence(meeting);
 
     if (!occurrenceToCancel) {
       this.messageService.add({
@@ -735,7 +735,28 @@ export class MeetingCardComponent implements OnInit {
         return;
       }
 
+      // The dialog lists only occurrences read off `meeting`, so the lookup can only miss when it returned no id.
+      const picked = (result.occurrenceId ? this.findOccurrence(meeting, result.occurrenceId) : null) ?? occurrence;
+      this.openOccurrenceEditor(meeting, picked);
+    });
+  }
+
+  /**
+   * Opens the editor for one occurrence of a recurring meeting.
+   * @description Same `MEETING_V2_ENABLED_FLAG` split as {@link openSeriesEditor}: flag on opens the
+   * composer drawer narrowed to that occurrence, flag off keeps the pre-v2 reschedule dialog.
+   */
+  private openOccurrenceEditor(meeting: Meeting, occurrence: MeetingOccurrence): void {
+    if (!this.meetingsV2Enabled()) {
       this.showRescheduleOccurrenceModal(meeting, occurrence);
+      return;
+    }
+
+    this.composer.open({
+      mode: 'edit',
+      meetingUid: meeting.id,
+      projectUid: meeting.project_uid,
+      occurrenceId: occurrence.occurrence_id,
     });
   }
 

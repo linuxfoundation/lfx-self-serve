@@ -1432,6 +1432,27 @@ export type RecurringMeetingEditScope = 'occurrence' | 'series';
 export interface RecurringMeetingEditScopeResult {
   proceed: boolean;
   scope: RecurringMeetingEditScope;
+  /** The occurrence picked in the dialog — set whenever `scope` is `'occurrence'` and `proceed` is true. */
+  occurrenceId?: string;
+}
+
+/** Which part of a recurring meeting a delete applies to. */
+export type MeetingDeleteType = 'occurrence' | 'series';
+
+/** Result of the recurring meeting delete scope dialog. */
+export interface MeetingDeleteTypeResult {
+  deleteType: MeetingDeleteType;
+  /** The occurrence picked in the dialog — set whenever `deleteType` is `'occurrence'`. */
+  occurrenceId?: string;
+}
+
+/**
+ * One row of the occurrence picker shared by the edit and delete scope dialogs.
+ * @description `value` is the occurrence id; `label` is its start in the series' own timezone.
+ */
+export interface MeetingOccurrenceOption {
+  label: string;
+  value: string;
 }
 
 /**
@@ -2089,6 +2110,12 @@ export interface MeetingComposerContext {
   variant?: MeetingComposerVariant;
   /** Meeting type the quick create dialog opens pre-selected with, so its template prefill runs immediately. */
   meetingType?: MeetingType;
+  /**
+   * Edit mode only: the single occurrence of a recurring meeting to edit, instead of the whole series.
+   * @description Narrows the drawer to what upstream's occurrence update accepts — title, date and time,
+   * duration and agenda — and saves through `PUT /meetings/:uid/occurrences/:occurrenceId`.
+   */
+  occurrenceId?: string;
 }
 
 /** Composer surface: the full sectioned drawer, or the condensed quick create dialog. */

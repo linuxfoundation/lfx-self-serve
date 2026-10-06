@@ -59,10 +59,15 @@ export class ComposerDateScheduleComponent implements OnInit {
   private readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
-  /** Quick create renders these fields under its own dialog header, where a section heading only repeats it. */
-  public readonly showHeading = input(true);
   /** Early join is an advanced setting the quick create dialog leaves at its default. */
   public readonly showEarlyJoin = input(true);
+  /**
+   * Whether the timezone select and the recurrence toggle are offered.
+   * @description Off for a single-occurrence edit. Both belong to the series: the occurrence endpoint
+   * takes no timezone — the new time is always read in the series' own zone, which is shown as text
+   * instead — and an occurrence cannot change how its series repeats.
+   */
+  public readonly showSeriesSchedule = input(true);
   /**
    * Narrow-column layout for the quick create dialog's right-hand rail.
    * @description Not a media query: the section is the same width on a phone and in the dialog's 2/5

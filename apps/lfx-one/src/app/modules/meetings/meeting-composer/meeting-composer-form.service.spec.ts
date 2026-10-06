@@ -2171,3 +2171,207 @@ describe('MeetingComposerFormService \u2014 group context and member resolution 
     expect(service.isSectionValid('guests')).toBe(true);
   });
 });
+
+describe('MeetingComposerFormService — single-occurrence edit', () => {
+  const FIRST = { occurrence_id: '1893456000', start_time: '2030-01-01T17:00:00.000Z', duration: 30 };
+  const SECOND = { occurrence_id: '1894060800', start_time: '2030-01-08T17:00:00.000Z', duration: 30, title: 'Kickoff', description: 'Week two agenda' };
+  const SERIES: Partial<Meeting> = {
+    id: 'meeting-1',
+    title: 'Weekly sync',
+    description: 'Series agenda',
+    organizer: true,
+    project_uid: 'project-1',
+    timezone: 'UTC',
+    start_time: FIRST.start_time,
+    duration: 60,
+    // A legacy type the series form rejects — hidden in this mode, so it must not hold Save hostage.
+    meeting_type: MeetingType.NONE,
+    recurrence: { type: 2, repeat_interval: 1 } as Meeting['recurrence'],
+    occurrences: [FIRST, SECOND],
+  };
+
+  let updateOccurrence: ReturnType<typeof vi.fn>;
+  let getMeetingRegistrants: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
+  let composerClose: ReturnType<typeof vi.fn>;
+
+  function openOccurrence(occurrenceId: string, meeting: Partial<Meeting> = SERIES): MeetingComposerFormService {
+    updateOccurrence = vi.fn().mockReturnValue(of(undefined));
+    getMeetingRegistrants = vi.fn().mockReturnValue(of([]));
+    messageAdd = vi.fn();
+    composerClose = vi.fn();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: messageAdd } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        { provide: MeetingComposerService, useValue: { context: () => null, close: composerClose } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting: vi.fn().mockReturnValue(of(meeting as Meeting)),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants,
+            updateMeeting: vi.fn(),
+            updateOccurrence,
+          },
+        },
+      ],
+    });
+
+    const service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1', occurrenceId });
+
+    return service;
+  }
+
+  it('opens on the picked occurrence, not the series values', () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+
+    expect(service.isOccurrenceEdit()).toBe(true);
+    expect(service.occurrence()?.occurrence_id).toBe(SECOND.occurrence_id);
+    expect(service.form().get('title')?.value).toBe('Kickoff');
+    expect(service.form().get('description')?.value).toBe('Week two agenda');
+    expect(service.form().get('startTime')?.value).toBe('05:00 PM');
+    expect(service.effectiveDuration()).toBe(30);
+  });
+
+  it('falls back to the series title and agenda when the occurrence has no override', () => {
+    const service = openOccurrence(FIRST.occurrence_id);
+
+    expect(service.form().get('title')?.value).toBe('Weekly sync');
+    expect(service.form().get('description')?.value).toBe('Series agenda');
+  });
+
+  it('shows only the sections an occurrence can change, and skips the guest fetch', () => {
+    const service = openOccurrence(FIRST.occurrence_id);
+
+    expect(service.visibleSections().map((section) => section.id)).toEqual(['details-access', 'date-schedule', 'agenda-resources']);
+    expect(getMeetingRegistrants).not.toHaveBeenCalled();
+  });
+
+  it('keeps Save closed until something changes, then ignores the hidden series controls', () => {
+    const service = openOccurrence(FIRST.occurrence_id);
+
+    // The legacy `None` type left the whole form invalid, which only a series save cares about.
+    expect(service.form().valid).toBe(false);
+    expect(service.isSavable()).toBe(false);
+
+    service.form().get('title')?.setValue('Planning special');
+
+    expect(service.isSavable()).toBe(true);
+  });
+
+  it('saves through the occurrence endpoint with only the fields that changed', () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+    service.setDuration(45);
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    expect(updateOccurrence).toHaveBeenCalledWith('meeting-1', SECOND.occurrence_id, { start_time: SECOND.start_time, duration: 45 });
+    expect(emissions).toEqual([null]);
+    expect(service.submitting()).toBe(false);
+  });
+
+  it('refuses to clear an agenda the occurrence already has', () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+
+    service.form().get('description')?.setValue('   ');
+
+    expect(service.isSectionValid('agenda-resources')).toBe(false);
+  });
+
+  it('closes with a warning when the occurrence is gone by the time the meeting loads', () => {
+    const service = openOccurrence('1999999999');
+
+    expect(composerClose).toHaveBeenCalled();
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Occurrence changed' }));
+    expect(service.isHydrated()).toBe(false);
+  });
+
+  it('ignores an occurrence id on a create', () => {
+    const service = openOccurrence(FIRST.occurrence_id);
+
+    service.initialize({ mode: 'create', projectUid: 'project-1', occurrenceId: FIRST.occurrence_id });
+
+    expect(service.isOccurrenceEdit()).toBe(false);
+    expect(service.visibleSections()).toBe(MEETING_COMPOSER_SECTIONS);
+  });
+});
+
+describe('MeetingComposerFormService — series edit save gate', () => {
+  const SAVED: Partial<Meeting> = {
+    id: 'meeting-1',
+    title: 'Weekly sync',
+    description: 'Agenda',
+    organizer: true,
+    project_uid: 'project-1',
+    meeting_type: MeetingType.TECHNICAL,
+    timezone: 'UTC',
+    start_time: '2030-01-08T15:00:00.000Z',
+    duration: 60,
+  };
+
+  function openEdit(): MeetingComposerFormService {
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting: vi.fn().mockReturnValue(of(SAVED as Meeting)),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({ meeting_id: meetingUid, email: guest.email }),
+            getChangedFields: (guest: MeetingRegistrantWithState) => ({ email: guest.email }),
+          },
+        },
+      ],
+    });
+
+    const service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    return service;
+  }
+
+  it('keeps Save closed on an untouched meeting', () => {
+    const service = openEdit();
+
+    expect(service.form().valid).toBe(true);
+    expect(service.hasSeriesChanges()).toBe(false);
+    expect(service.isSavable()).toBe(false);
+  });
+
+  it('opens Save once a field changes, and closes it again when the change is undone', () => {
+    const service = openEdit();
+
+    service.form().get('title')?.setValue('Weekly sync — renamed');
+    expect(service.isSavable()).toBe(true);
+
+    service.form().get('title')?.setValue('Weekly sync');
+    expect(service.isSavable()).toBe(false);
+  });
+
+  it('counts a pending guest change as a change', () => {
+    const service = openEdit();
+
+    service.setGuests([{ ...service.newGuestDefaults(), email: 'new@example.com', state: 'new' } as MeetingRegistrantWithState]);
+
+    expect(service.isSavable()).toBe(true);
+  });
+
+  it('leaves a create gated on validity alone', () => {
+    const service = openEdit();
+
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    expect(service.hasSeriesChanges()).toBe(false);
+  });
+});

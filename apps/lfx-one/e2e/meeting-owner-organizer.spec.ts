@@ -422,7 +422,8 @@ async function openDetailsSection(page: Page): Promise<void> {
 /**
  * Saves from wherever the composer is — "Save changes" fires the PUT.
  * @description Edit mode has no Next control and no last-section gate: the footer offers Cancel and
- * Save, and Save is enabled on whole-form validity rather than on having visited every section.
+ * Save, and Save is enabled on whole-form validity plus an actual change, rather than on having visited
+ * every section.
  */
 async function saveFromComposer(page: Page): Promise<void> {
   // The disabled state lives on the wrapper's inner native button, not the lfx-button host the

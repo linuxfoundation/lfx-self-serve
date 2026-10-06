@@ -85,7 +85,6 @@
            describes and can be wired to it with `aria-describedby` -->
       <lfx-composer-details-access
         [form]="formService.form()"
-        [showHeading]="false"
         [showTypeSelect]="false"
         [showOrganizer]="false"
         [titleHint]="prefilledTitle() ? 'Pre-filled for this meeting type — edit freely.' : null" />
@@ -114,7 +113,6 @@
            either one stops only that hint -->
       <lfx-composer-date-schedule
         [form]="formService.form()"
-        [showHeading]="false"
         [showEarlyJoin]="false"
         [compact]="true"
         [durationHint]="prefilledDuration() ? 'Pre-filled for this meeting type — edit freely.' : null" />

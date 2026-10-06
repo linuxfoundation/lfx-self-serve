@@ -6,8 +6,10 @@ import { Component, computed, DestroyRef, inject, type Signal } from '@angular/c
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { MEETING_COMPOSER_SECTIONS, MEETING_COMPOSER_TOAST_KEY, MEETING_COMPOSER_TOAST_POSITION } from '@lfx-one/shared/constants';
+import { MessageComponent } from '@components/message/message.component';
+import { MEETING_COMPOSER_TOAST_KEY, MEETING_COMPOSER_TOAST_POSITION } from '@lfx-one/shared/constants';
 import type { EntityWithProject, Meeting, MeetingComposerSection, MeetingComposerToastData } from '@lfx-one/shared/interfaces';
+import { formatMeetingOccurrenceLabel } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -46,6 +48,7 @@ import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-
     MeetingComposerRailComponent,
     MeetingComposerPreviewComponent,
     ButtonComponent,
+    MessageComponent,
     ComposerDetailsAccessComponent,
     ComposerDateScheduleComponent,
     ComposerPlatformFeaturesComponent,
@@ -70,7 +73,8 @@ export class MeetingComposerHostComponent {
   protected readonly composer = inject(MeetingComposerService);
   protected readonly formService = inject(MeetingComposerFormService);
 
-  protected readonly sections: readonly MeetingComposerSection[] = MEETING_COMPOSER_SECTIONS;
+  /** Narrower for a single-occurrence edit, which drops the series-only sections. */
+  protected readonly sections: Signal<readonly MeetingComposerSection[]> = this.formService.visibleSections;
   protected readonly toastKey = MEETING_COMPOSER_TOAST_KEY;
   /**
    * Annotated rather than inferred, so the shared literal is checked against PrimeNG's own union.
@@ -93,9 +97,30 @@ export class MeetingComposerHostComponent {
    * deriving `mode` from the context rather than writing it in `initialize()`.
    */
   protected readonly isEditMode: Signal<boolean> = this.formService.isEditMode;
+  protected readonly isOccurrenceEdit: Signal<boolean> = this.formService.isOccurrenceEdit;
+  /**
+   * What the edit-scope banner says this open changes, or `null` when there is no scope to state.
+   * @description Only a recurring meeting has two scopes, so a one-off edit and a create show no banner.
+   * `occurrence` names the occurrence by its *saved* start in the series timezone — the form's start is
+   * the thing being edited and would make the banner move as the organizer types.
+   */
+  protected readonly editScope: Signal<{ kind: 'occurrence'; label: string } | { kind: 'series' } | null> = computed(() => {
+    const meeting = this.formService.meeting();
 
-  protected readonly activeIndex: Signal<number> = computed(() => this.sections.findIndex((section) => section.id === this.composer.activeSection()));
-  protected readonly isLastSection: Signal<boolean> = computed(() => this.activeIndex() === this.sections.length - 1);
+    if (!this.isEditMode() || !meeting) {
+      return null;
+    }
+
+    const occurrence = this.formService.occurrence();
+    if (this.isOccurrenceEdit() && occurrence) {
+      return { kind: 'occurrence', label: formatMeetingOccurrenceLabel(occurrence, meeting.timezone) };
+    }
+
+    return meeting.recurrence ? { kind: 'series' } : null;
+  });
+
+  protected readonly activeIndex: Signal<number> = computed(() => this.sections().findIndex((section) => section.id === this.composer.activeSection()));
+  protected readonly isLastSection: Signal<boolean> = computed(() => this.activeIndex() === this.sections().length - 1);
   /**
    * Whether the footer's Next may advance from the section on screen.
    * @description Two conditions, not one. The section in front of the organizer has to be valid,
@@ -132,21 +157,22 @@ export class MeetingComposerHostComponent {
     // until the saved guest list arrives, so the save would store the group and invite nobody. The
     // context gate covers the mirror case: a create opened from a group whose lookup has not landed,
     // where the committees control is empty for a reason no validator can see.
+    // `isSavable` is whole-form validity everywhere but an occurrence edit, which saves only its own fields.
     return (
       this.formService.isHydrated() &&
-      this.formService.form().valid &&
+      this.formService.isSavable() &&
       !this.formService.hasUnreconciledGroupSelection() &&
       !this.formService.committeeContextUnresolved()
     );
   });
-  protected readonly activeSectionLabel: Signal<string> = computed(() => this.sections[this.activeIndex()]?.label ?? '');
+  protected readonly activeSectionLabel: Signal<string> = computed(() => this.sections()[this.activeIndex()]?.label ?? '');
   /** Whether any required section is flagged as blocking save, on the same rule as the rail's dots. */
   protected readonly hasAttention: Signal<boolean> = computed(() => {
     this.formService.revision();
 
     const visited = this.composer.visitedSections();
 
-    return this.sections.some((section) => this.formService.sectionNeedsAttention(section, visited));
+    return this.sections().some((section) => this.formService.sectionNeedsAttention(section, visited));
   });
   /**
    * Why the toast's Edit action can't act, or `null` when it can.
@@ -277,7 +303,7 @@ export class MeetingComposerHostComponent {
       return;
     }
 
-    const next = this.sections[this.activeIndex() + 1];
+    const next = this.sections()[this.activeIndex() + 1];
     if (next) {
       this.composer.setSection(next.id);
     }
@@ -291,10 +317,26 @@ export class MeetingComposerHostComponent {
       return;
     }
 
-    const previous = this.sections[this.activeIndex() - 1];
+    const previous = this.sections()[this.activeIndex() - 1];
     if (previous) {
       this.composer.setSection(previous.id);
     }
+  }
+
+  /**
+   * Swaps an occurrence edit for an edit of the whole series.
+   * @description Reopens rather than widening in place: the series edit hydrates guests, resources and
+   * every series setting the occurrence form never loaded, so an in-place switch would save defaults
+   * over them. Anything typed into the occurrence form is discarded, which the banner's copy says.
+   */
+  protected onEditSeriesInstead(): void {
+    const context = this.composer.context();
+
+    if (this.formService.submitting() || !context?.meetingUid) {
+      return;
+    }
+
+    this.composer.open({ mode: 'edit', meetingUid: context.meetingUid, projectUid: context.projectUid });
   }
 
   /** Jumps to the section that owns the title field. */
@@ -308,6 +350,7 @@ export class MeetingComposerHostComponent {
     }
 
     const wasEditMode = this.formService.isEditMode();
+    const wasOccurrenceEdit = this.formService.isOccurrenceEdit();
 
     // `submit()` completes without emitting when the save outlived its open, so reaching here always
     // means the current open is the one that was saved. `take(1)` because the stream is single-shot and
@@ -316,7 +359,13 @@ export class MeetingComposerHostComponent {
       .submit()
       .pipe(take(1))
       .subscribe((meeting) => {
-        if (wasEditMode) {
+        if (wasOccurrenceEdit) {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Occurrence updated',
+            detail: 'Only this occurrence was changed. The rest of the series is unchanged.',
+          });
+        } else if (wasEditMode) {
           this.messageService.add({ severity: 'success', summary: 'Meeting updated', detail: 'Your changes have been saved.' });
         } else {
           this.announceCreatedMeeting(meeting);
