@@ -2701,6 +2701,9 @@ export class CampaignsComponent {
     }
     const key = this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId());
     this.unresolvedStages.update((keys) => new Set([...keys].filter((k) => k !== key)));
+    // And its dispatch marker, if any is left for this scope: a reconciled stage must not be re-held
+    // by the next reset's `cancelStagingPoll`.
+    this.settleDispatchFor(this.activeFoundationSlug(), this.emailBriefId());
   }
 
   /** The Audience tab asked to re-read the saved audience it could not verify. */
