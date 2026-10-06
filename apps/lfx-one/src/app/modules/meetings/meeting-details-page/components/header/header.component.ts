@@ -8,8 +8,8 @@ import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
 import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
-import { Meeting, MeetingCommitteeLink, MeetingTypeConfig, ProjectContext, PublicMeetingProject } from '@lfx-one/shared/interfaces';
-import { resolveOccurrenceRecurrence } from '@lfx-one/shared/utils';
+import { Meeting, MeetingCommitteeLink, MeetingPrivacyState, MeetingTypeConfig, ProjectContext, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { resolveOccurrenceRecurrence, resolvePrivacy } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -19,7 +19,7 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * The meeting details V2 header (E1-03, #1772): project context, title, badge row and copy link.
  * @description The badge row follows the prototype: recurrence, meeting type, committee chips, then
  * the feature badges (Recording, Transcripts, YouTube Upload, AI summary). E1-05's status pill and
- * E1-04's privacy chip take the front of the row when they land.
+ * E1-04's privacy chip lead the row; the privacy chip is here, and the pill takes the front in E1-05.
  *
  * Feature badges read the `*_enabled` flags only, never artifact access: those flags survive on the
  * reduced past payload, so a viewer without access still sees what the meeting was configured to
@@ -48,6 +48,19 @@ export class MeetingHeaderComponent {
 
   protected readonly meeting: Signal<(Meeting & { project: PublicMeetingProject }) | undefined> = this.state.meeting;
   protected readonly project = computed(() => this.meeting()?.project);
+  /**
+   * The one privacy chip (E1-04, FR-010), from `resolvePrivacy`: it reads an absent `visibility` as
+   * private, so the label and icon helpers it calls always agree with each other and with the rail.
+   */
+  protected readonly privacy: Signal<MeetingPrivacyState | null> = this.initPrivacy();
+  /** The chip's icon: the prototype's green globe for a meeting anyone can join, muted otherwise. */
+  protected readonly privacyIcon = computed(() => {
+    const privacy = this.privacy();
+    if (!privacy) {
+      return '';
+    }
+    return `${privacy.icon} ${privacy.openToPublic ? 'text-[var(--md-status-good)]' : 'text-[var(--md-text-muted)]'}`;
+  });
   protected readonly meetingType: Signal<MeetingTypeConfig | null> = this.initMeetingType();
   /**
    * Recurring when the selected occurrence or the meeting carries a recurrence rule, as v1's badge
@@ -120,6 +133,13 @@ export class MeetingHeaderComponent {
         return { uid: project.parent.uid, name: project.parent.name, slug: project.parent.slug };
       }
       return project.parent_uid ? null : { uid: project.uid, name: project.name, slug: project.slug };
+    });
+  }
+
+  private initPrivacy(): Signal<MeetingPrivacyState | null> {
+    return computed(() => {
+      const meeting = this.meeting();
+      return meeting ? resolvePrivacy(meeting.visibility, meeting.restricted) : null;
     });
   }
 

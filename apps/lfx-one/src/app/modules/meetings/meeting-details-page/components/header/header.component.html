@@ -28,9 +28,21 @@
         {{ meeting.title }}
       </h1>
 
-      <!-- E1-05's status pill and E1-04's privacy chip take the front of this row. The prototype keeps
+      <!-- E1-05's status pill takes the front of this row, before the privacy chip. The prototype keeps
          the row on one line; it wraps here, so a narrow screen never scrolls sideways. -->
       <div class="flex flex-wrap items-center gap-[8px]" data-testid="meeting-header-badges">
+        @if (privacy(); as privacy) {
+          <!-- One chip, four values (FR-010): state goes in data-* attributes, not separate elements. -->
+          <lfx-tag
+            [value]="privacy.label"
+            [icon]="privacyIcon()"
+            [outlined]="true"
+            [rounded]="true"
+            [styleClass]="chipClass"
+            data-testid="meeting-privacy-chip"
+            [attr.data-visibility]="privacy.visibility"
+            [attr.data-restricted]="privacy.restricted" />
+        }
         @if (recurring()) {
           <lfx-tag
             value="Recurring"
