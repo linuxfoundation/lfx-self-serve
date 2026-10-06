@@ -49,6 +49,9 @@ import {
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MICROS_PER_UNIT,
+  GOOGLE_CAMPAIGN_CHANNELS,
+  GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
+  GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   ISO_CALENDAR_DATE_PATTERN,
   KEYWORD_ACTION_PLATFORMS,
   LINKEDIN_MIN_DAILY_BUDGET_USD,
@@ -750,6 +753,32 @@ export class CampaignController {
         res.json({
           jobId: '',
           error: 'Email campaigns require the campaign-service cutover to be enabled. The legacy creation path cannot stage email.',
+        });
+        return;
+      }
+
+      // Performance Max, Video and Display exist ONLY on the cutover path, for the same reason
+      // HubSpot does — but with a worse failure mode, so this guard is not optional.
+      //
+      // The legacy in-process path understands two campaign types: `normalizeBudgetSplit`
+      // (`campaign-proxy.service.ts`) maps `demand-gen` to `displayPct` and treats everything
+      // else as Search. It does not reject an unknown type; it BUILDS A SEARCH CAMPAIGN for it,
+      // with real budget, and reports success. A user who ticked Performance Max while the
+      // cutover was dark would get a Search campaign they never asked for and no error saying so
+      // — the same silent-Search outcome `CampaignServiceGoogleChannels` guards upstream, reached
+      // by the other road.
+      //
+      // `demand-gen` and `search` are deliberately NOT refused here: the legacy path serves both.
+      const legacyUnsupported = GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG.find((c) => body?.campaignTypes?.includes(c));
+      if (platforms.includes('google-ads') && legacyUnsupported) {
+        logger.warning(req, 'campaign_create', 'google channel requested while the campaign-service cutover is dark', {
+          briefId,
+          projectSlug,
+          channel: legacyUnsupported,
+        });
+        res.json({
+          jobId: '',
+          error: `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[legacyUnsupported]} campaigns require the campaign-service cutover to be enabled. The legacy creation path can only create Search and Demand Gen.`,
         });
         return;
       }
@@ -2758,17 +2787,18 @@ export class CampaignController {
    * dispatcher creates exactly one Search campaign, so handing it the combined figure would
    * spend the demand-gen half on Search.
    *
-   * For a DEMAND-GEN-ONLY selection this returns a config carrying the FULL budget and
-   * `channel: "demand-gen"` — not null. Since LFXV2-3257 ported `createDemandGenCampaign` into
-   * campaign-service there is no Search campaign to split the budget with, so the whole amount
-   * funds the one campaign being created.
+   * For a SINGLE NON-SEARCH selection — demand-gen, performance-max, video or display — this
+   * returns a config carrying the FULL budget and that `channel` — not null. Since LFXV2-3257
+   * ported `createDemandGenCampaign` into campaign-service there is no Search campaign to split
+   * the budget with, so the whole amount funds the one campaign being created; the same holds
+   * for the three channels added alongside Demand Gen.
    *
-   * A MIXED selection is refused DOWNSTREAM, not before this point: the controller builds the
-   * envelope (line ~304) and only then calls `createCampaigns` (line ~346), where the
-   * Search+Demand-Gen guard lives. So a mixed selection DOES reach this builder and produces a
-   * search-shaped config, which `createCampaigns` then refuses — see the inline comment below
-   * for why one-config-one-channel is a limit of this builder rather than of campaign-service's
-   * schema.
+   * A MULTI-CHANNEL selection is refused DOWNSTREAM, not before this point: the controller builds
+   * the envelope (line ~304) and only then calls `createCampaigns` (line ~346), where the
+   * one-Google-channel guard lives. So a multi-channel selection DOES reach this builder and
+   * produces a config for whichever channel it picks, which `createCampaigns` then refuses — see
+   * the inline comment below for why one-config-one-channel is a limit of this builder rather
+   * than of campaign-service's schema.
    *
    * Null means UNCONFIGURED, and `createCampaign` refuses the whole create when a selected
    * platform lands here — see `hasPlatformConfig`. The refusal must happen HERE: the caller
@@ -2779,13 +2809,18 @@ export class CampaignController {
     if (!body?.platforms?.includes('google-ads')) return null;
 
     const types = body.campaignTypes ?? [];
-    const includesSearch = types.includes('search');
-    const includesDemandGen = types.includes('demand-gen');
+    // The Google channels the operator selected, in the catalogue's own order so the choice of
+    // which one to build is stable rather than a function of how the form happened to emit them.
+    // `sponsored` and `social` name the LinkedIn and Meta shapes and are filtered out here: they
+    // are not values `googleAdsConfig.channel` accepts, and a brief that carries them alongside a
+    // Google selection is ordinary.
+    const selectedChannels = GOOGLE_CAMPAIGN_CHANNELS.filter((c) => types.includes(c));
+    const includesSearch = selectedChannels.includes('search');
 
-    // Neither type selected: nothing to build. Returning null marks the platform
+    // No Google channel selected: nothing to build. Returning null marks the platform
     // UNCONFIGURED, and `hasPlatformConfig` refuses the create rather than dispatching
     // a zero-value config.
-    if (!includesSearch && !includesDemandGen) return null;
+    if (selectedChannels.length === 0) return null;
 
     // The operator's geo selection, which this builder used to DROP on the floor.
     //
@@ -2838,14 +2873,12 @@ export class CampaignController {
     // wrong-market defect, reached by a different road.
     if (!cleanGeoTargets.every((g) => META_GEO_CODE_PATTERN.test(g))) return null;
 
-    // DEMAND-GEN-ONLY is the one mixed-type case the cutover can serve today, and it
-    // gets the WHOLE budget: there is no Search campaign to fund, so the split does not
-    // apply. campaign-service creates a Demand Gen campaign with no ad and no keywords
-    // (LFXV2-3257), which is why headlines/keywords below are harmless to send — the
-    // Demand Gen path ignores them.
+    // A SINGLE NON-SEARCH channel gets the WHOLE budget: there is no Search campaign to fund, so
+    // the split does not apply. campaign-service creates the campaign with no ad and no keywords
+    // (LFXV2-3257 for Demand Gen; the same shell shape for Performance Max, Video and Display).
     //
-    // Search + Demand Gen together is refused DOWNSTREAM in `createCampaigns`, not before this
-    // builder runs, deliberately — and the
+    // TWO OR MORE Google channels together are refused DOWNSTREAM in `createCampaigns`, not before
+    // this builder runs, deliberately — and the
     // reason is THIS function, not campaign-service's schema. #130 widened the slot key to
     // (brief_id, platform, variant), so a brief can now hold a Search row and a Demand Gen row
     // at once; the database does not forbid the pair.
@@ -2854,11 +2887,29 @@ export class CampaignController {
     // would dispatch a single campaign and silently drop the other half — and half the budget.
     // Serving the pair means emitting two configs, which is a change here rather than a schema
     // decision. Until then a loud refusal beats a silent partial create.
-    if (!includesSearch && includesDemandGen) {
-      return { budget: body.budgetUsd ?? 0, channel: 'demand-gen', ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}) };
+    if (!includesSearch) {
+      // A NON-SEARCH channel on its own: Demand Gen, Performance Max, Video or Display. All four
+      // take the same shape and the WHOLE budget, for the same reason — there is no Search
+      // campaign beside them to fund, so the split does not apply.
+      //
+      // Headlines, descriptions and keywords are deliberately ABSENT, not empty. Upstream
+      // REFUSES `keywords` and `audienceSegments` on every channel but Search rather than
+      // dropping them (`validateCampaignKind`, `internal/platform/googleads`), so forwarding the
+      // Implementation tab's keyword list here would turn a servable create into a refusal. The
+      // creative each of these channels needs — `performanceMaxCreative`, `videoCreative`,
+      // `displayCreative`, `demandGenCreative` — has no source on this request yet; the
+      // dispatcher creates the campaign shell without it, which is the same thing the Demand Gen
+      // path has done since LFXV2-3257.
+      return {
+        budget: body.budgetUsd ?? 0,
+        channel: selectedChannels[0],
+        ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}),
+      };
     }
 
-    const pct = includesDemandGen ? (body.searchBudgetPct ?? 100) : 100;
+    // The Search SHARE applies only when a second channel is funded alongside it. One channel
+    // selected means `pct` is 100 whichever channel it is.
+    const pct = selectedChannels.length > 1 ? (body.searchBudgetPct ?? 100) : 100;
     // KNOWN GAP (LFXV2-3251) — read before enabling this cutover on a non-USD account.
     //
     // `budget` is whole units of the AD ACCOUNT'S currency, not USD: "Budget is in whole units of

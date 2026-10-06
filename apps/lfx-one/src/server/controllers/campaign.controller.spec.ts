@@ -950,6 +950,119 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['budget']).toBe(350);
   });
 
+  /**
+   * The three newer channels take the SAME shape as the demand-gen branch above, and the
+   * tests are pinned the same way — `toEqual`, not a field check.
+   *
+   * What the exact-shape assertion is actually guarding is upstream refusal, not tidiness:
+   * campaign-service REFUSES `keywords` and `audienceSegments` on every channel but Search rather
+   * than dropping them, so a builder that leaked the Implementation tab's keyword list onto one of
+   * these channels would turn a servable create into a refusal. `headlines`/`descriptions` are
+   * absent for the matching reason — these channels take their own creative objects, which this
+   * request has no source for yet.
+   */
+  it.each([['performance-max' as const], ['video' as const], ['display' as const]])(
+    'gives a %s-only create the whole budget and no search-shaped fields',
+    async (channel) => {
+      createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+      legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: [channel], budgetUsd: 500, searchBudgetPct: 70 }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
+        budget: 500,
+        channel,
+      });
+    }
+  );
+
+  /**
+   * The split arm, for a channel that is not demand-gen. The two demand-gen tests above cannot
+   * cover this: `normalizeBudgetSplit` has always known `demand-gen`, so a builder that special-cased
+   * that one type and treated the rest as single-channel would still pass them and would then
+   * overfund Search here by the newer channel's whole share.
+   */
+  it('funds Google with the SEARCH share when performance max is also selected', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['search', 'performance-max'], budgetUsd: 500, searchBudgetPct: 70 }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['channel']).toBe('search');
+    expect(sent['budget']).toBe(350);
+  });
+
+  /**
+   * The legacy fall-through refusal.
+   *
+   * With the cutover dark the legacy in-process path owns creation, and it does not reject an
+   * unknown campaign type — `normalizeBudgetSplit` maps `demand-gen` to `displayPct` and treats
+   * EVERYTHING else as Search. So an unrefused Performance Max request does not fail; it creates a
+   * funded Search campaign and reports success. Refusing is the only outcome that tells the truth.
+   */
+  it.each([
+    ['performance-max' as const, 'Performance Max'],
+    ['video' as const, 'Video'],
+    ['display' as const, 'Display'],
+  ])('refuses a %s create outright while the cutover is dark', async (channel, label) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: [channel] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const body = vi.mocked(res.json).mock.calls[0][0] as { jobId: string; error: string };
+    expect(body.jobId).toBe('');
+    expect(body.error).toContain(label);
+  });
+
+  /**
+   * The other half of the refusal, and the half that keeps it from being over-broad: the legacy
+   * path serves Search and Demand Gen perfectly well, and refusing either would break creates that
+   * work in production today.
+   */
+  it.each([['search' as const], ['demand-gen' as const]])('still runs the legacy path for a %s create while the cutover is dark', async (channel) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_legacy_ok' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: [channel] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ jobId: 'job_legacy_ok' });
+  });
+
+  /**
+   * The refusal is keyed on the GOOGLE channel list, not on the request carrying the string
+   * anywhere. A LinkedIn-only create whose brief happens to name `video` must still reach the
+   * legacy path — `platforms` is what decides whether a Google channel is being asked for.
+   */
+  it('does not refuse a non-google create that happens to carry a flagged campaign type', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_li_1' });
+
+    const linkedInBody = {
+      platforms: ['linkedin-ads'],
+      campaignTypes: ['video'],
+      linkedInConfig: { budgetUsd: 100, targetingProfile: { id: 'cloud-native' } },
+    };
+    await controller.createCampaign(buildReq(linkedInBody, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ jobId: 'job_li_1' });
+  });
+
   it('renames Meta budgetUsd to the budget key the dispatcher reads', async () => {
     // Passing metaConfig through unchanged leaves `budget` at zero, and the Meta client rejects
     // every such dispatch with "invalid budget: must be a positive number".

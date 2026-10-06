@@ -1630,3 +1630,59 @@ export const MAX_SPONSOR_NAME_LENGTH = 100;
  * to spare.
  */
 export const MAX_HUBSPOT_BODY_HTML_LENGTH = 128 * 1024;
+
+/**
+ * The Google channels this application can ask campaign-service to create, in the order the
+ * Implementation tab offers them. Each maps one-to-one onto `googleAdsConfig.channel` upstream
+ * (`internal/dispatch/googleads.go`).
+ *
+ * Exactly ONE may be selected per create today. The BFF emits a single `googleAdsConfig`
+ * carrying a single `channel`, so a second selection would be dispatched as one campaign with
+ * the other silently dropped — along with its share of the budget. `createCampaigns` refuses the
+ * pair rather than letting that look like success.
+ */
+export const GOOGLE_CAMPAIGN_CHANNELS = ['search', 'demand-gen', 'performance-max', 'video', 'display'] as const;
+
+/**
+ * Display names for the Google channels, for error messages and form controls.
+ *
+ * Google's own product names, not the wire values: a user who reads "performance-max cannot be
+ * created together with video" has to work out that those are the two boxes they ticked. The
+ * refusal in `createCampaigns` and the Implementation tab's labels both read from here so the
+ * two never drift apart.
+ */
+export const GOOGLE_CAMPAIGN_CHANNEL_LABELS = {
+  search: 'Search',
+  'demand-gen': 'Demand Gen',
+  'performance-max': 'Performance Max',
+  video: 'Video',
+  display: 'Display',
+} as const;
+
+/**
+ * The Google channels gated behind `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS`.
+ *
+ * `search` needs no flag — it is the dispatcher's default. `demand-gen` has carried its own flag
+ * since LFXV2-3257 and keeps it, so enabling the three newer channels cannot silently enable
+ * Demand Gen on a deployment that was not ready for it.
+ */
+export const GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG = ['performance-max', 'video', 'display'] as const;
+
+/**
+ * The channel token the generated campaign NAME carries, per Google channel.
+ *
+ * Deliberately not `GOOGLE_CAMPAIGN_CHANNEL_LABELS`. These strings go into the pipe-delimited
+ * campaign name the marketing team reads and filters on in Google Ads, where `demand-gen` has
+ * always appeared as `DG Display` — a convention that predates this map and must not drift just
+ * because a nicer product name exists. A name is also written once and then lives in reporting
+ * for the life of the campaign, so renaming a token later splits a campaign's history in two.
+ *
+ * A selection of two or more channels is named `Multi` by the caller and has no entry here.
+ */
+export const GOOGLE_CAMPAIGN_NAME_TOKENS = {
+  search: 'Search',
+  'demand-gen': 'DG Display',
+  'performance-max': 'PMax',
+  video: 'Video',
+  display: 'Display',
+} as const;
