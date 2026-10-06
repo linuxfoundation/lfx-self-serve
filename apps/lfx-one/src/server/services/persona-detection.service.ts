@@ -274,13 +274,15 @@ export class PersonaDetectionService {
   /**
    * `campaign_manager` on `projectSlug` when given — that relation already folds in the cascading
    * `marketing_ops`, the per-project `global_marketing_ops`, and a project-scoped
-   * `executive_director`, so the ROOT grant must not short-circuit it: a ROOT-only
-   * `global_marketing_ops` grant does not cascade and would otherwise answer for every project.
-   * Without a slug, the ROOT grant from {@link checkRootCampaignManager}. Mirrors
-   * `requireMarketingAccess`.
+   * `executive_director`, so a ROOT-only `global_marketing_ops` grant must not short-circuit it:
+   * it does not cascade and would otherwise answer for every project. ROOT `marketing_ops` does
+   * cascade, so it answers first and the result never depends on the slug lookup succeeding.
+   * Without a slug, the ROOT grant from {@link checkRootCampaignManager}. This is a client hint;
+   * `requireMarketingAccess` enforces against the named project's own relation.
    */
   private async checkCampaignManagerAccess(req: Request, projectSlug?: string): Promise<boolean> {
     if (!projectSlug) return this.checkRootCampaignManager(req);
+    if (await this.checkRootCampaignManagerCascade(req)) return true;
     return this.checkProjectAccess(req, projectSlug, 'campaign_manager', 'check_project_campaign_manager');
   }
 
