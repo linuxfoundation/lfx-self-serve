@@ -102,10 +102,13 @@ export class MeetupsService {
     try {
       if (scoped) {
         const communitySql = isPast
-          ? `SELECT DISTINCT COMMUNITY FROM ${this.table('OCG_PAST_MEETUPS')} WHERE EMAIL = ? ORDER BY COMMUNITY`
+          ? `SELECT DISTINCT COMMUNITY FROM ${this.table('OCG_PAST_MEETUPS')}
+             WHERE EMAIL = ? AND NULLIF(TRIM(COMMUNITY), '') IS NOT NULL
+             ORDER BY COMMUNITY`
           : `SELECT DISTINCT m.COMMUNITY
              FROM ${this.table('OCG_UPCOMING_MEETUPS')} m
              JOIN ${this.table('OCG_UPCOMING_MEETUPS_ROLES')} r ON r.EMAIL = ? AND r.EVENT_ID = m.EVENT_ID
+             WHERE NULLIF(TRIM(m.COMMUNITY), '') IS NOT NULL
              ORDER BY m.COMMUNITY`;
         const [communityResult, roleResult] = await Promise.all([
           this.snowflakeService.execute<Pick<MeetupRow, 'COMMUNITY'>>(communitySql, [userEmail]),

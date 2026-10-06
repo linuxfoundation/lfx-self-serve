@@ -145,7 +145,7 @@ export class MeetupsListComponent {
   }
 
   private initShowUpcomingViewPills(): Signal<boolean> {
-    return computed(() => !this.statsUpcomingRegisteredLoading() && ((this.statsUpcomingRegistered()?.total ?? 0) > 0 || this.upcomingMeetups().total > 0));
+    return computed(() => !this.statsUpcomingRegisteredLoading());
   }
 
   private initializeStatsUpcomingRegistered(): Signal<MyMeetupsResponse | null> {

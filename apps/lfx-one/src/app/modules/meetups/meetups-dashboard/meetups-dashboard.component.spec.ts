@@ -89,6 +89,8 @@ describe('MeetupsDashboardComponent registration-delay hint', () => {
     const fixture = TestBed.createComponent(MeetupsDashboardComponent);
     await fixture.whenStable();
     const hint = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="meetups-registration-delay-hint"]')!;
+    expect(hint.getAttribute('role')).toBe('note');
+    expect(hint.getAttribute('aria-label')).toBe("Can't see your meetup? Just RSVP'd on ocgroups.dev? It can take a while to show up here.");
     if (event === 'focus') {
       hint.focus();
     } else {

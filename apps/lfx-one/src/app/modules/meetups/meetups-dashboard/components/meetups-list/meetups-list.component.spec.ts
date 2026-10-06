@@ -112,6 +112,32 @@ describe('MeetupsListComponent registration views', () => {
     expect(messages.add).not.toHaveBeenCalled();
   });
 
+  it.each(['zero', 'unavailable'])('keeps view switching available on filtered empty registrations with a %s count', async (countState) => {
+    const { fixture, root, service, calls, pill, resolveCount, failCount } = await render();
+    if (countState === 'zero') {
+      await resolveCount(0);
+    } else {
+      await failCount();
+      pill('all').click();
+      await fixture.whenStable();
+    }
+    fixture.componentRef.setInput('searchQuery', 'Example');
+    fixture.componentRef.setInput('role', 'Attendee');
+    await fixture.whenStable();
+    await vi.waitFor(() => expect(calls().at(-1)).toMatchObject({ status: undefined, searchQuery: 'Example', role: 'Attendee' }));
+
+    service.getMyMeetups.mockImplementationOnce((params) => of({ data: [], total: 0, offset: params.offset ?? 0, pageSize: params.pageSize ?? 10 }));
+    pill('registered').click();
+    await fixture.whenStable();
+    await vi.waitFor(() => expect(root.querySelector('[data-testid="meetups-upcoming-empty-state"]')?.textContent).toContain('Reset filters'));
+    expect(pill('all')).not.toBeNull();
+    pill('all').click();
+    await fixture.whenStable();
+    await vi.waitFor(() => expect(calls().at(-1)).toMatchObject({ status: undefined, searchQuery: 'Example', role: 'Attendee', offset: 0 }));
+    expect(pill('all').getAttribute('aria-pressed')).toBe('true');
+    expect(root.textContent).toContain('Example Meetup');
+  });
+
   it('keeps registrations and notifies the user after a count failure without a list-error panel', async () => {
     const { calls, root, messages, failCount } = await render();
     await failCount();
