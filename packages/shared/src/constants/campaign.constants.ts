@@ -405,6 +405,17 @@ export const CAMPAIGN_TOGGLE_FAILURE_MESSAGES: Readonly<Record<Exclude<CampaignT
 };
 
 /**
+ * Why a toggle's outcome is UNKNOWN — worded per direction. Used when nothing the BFF wrote says the
+ * toggle was refused: no answer at all, a proxy's or gateway's own response, or campaign-service's
+ * "unconfirmed" wording. The change may have reached the ad platform, so this never says the
+ * campaign "is still" anything; the operator checks the platform before trying again.
+ */
+export const CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES: Readonly<Record<Exclude<CampaignToggleAction, 'unavailable'>, string>> = {
+  pause: 'The pause could not be confirmed. The campaign may already be paused — verify its status in the ad platform before trying again.',
+  resume: 'The resume could not be confirmed. The campaign may already be running and spending — verify its status in the ad platform before trying again.',
+};
+
+/**
  * The button's visible word per action. `unavailable` still names an action — the button is
  * disabled, not blank.
  *
@@ -430,6 +441,12 @@ export const CAMPAIGN_FINDING_ALREADY_PAUSED_REASON = 'This campaign is already 
  * tables. An UNCONFIRMED action may already have applied, and a retried REMOVE is irreversible, so
  * it is never worded as a failure.
  */
+/**
+ * Shown beside a Microsoft keyword's actions when the previous one is UNCONFIRMED. The actions stay
+ * offered — pausing or removing a keyword only reduces spend — but the operator checks first.
+ */
+export const MICROSOFT_KEYWORD_PREVIOUS_UNCONFIRMED_NOTE = 'Previous attempt not confirmed — verify in Microsoft Advertising before retrying.';
+
 export const KEYWORD_ACTION_OUTCOME_LABELS: Readonly<Record<KeywordActionOutcome['state'], string>> = {
   done: 'Done',
   unconfirmed: 'Unconfirmed',

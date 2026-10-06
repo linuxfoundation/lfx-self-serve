@@ -317,10 +317,20 @@
                     the editor is closed: they may already be on the campaign. The editor lists which.
                   -->
                   @if (negativesUnconfirmed()[row.campaign.id] && !negativesEditorOpen()[row.campaign.id]) {
-                    <span class="text-xs text-amber-700" [attr.data-testid]="'optimization-campaign-negatives-unconfirmed-note-' + row.campaign.id"
-                      >Negative keywords not confirmed. They may have been added; verify them in the ad platform before retrying. Open Negative keywords to see
-                      which.</span
-                    >
+                    <span class="flex flex-wrap items-baseline gap-x-2 text-xs text-amber-700">
+                      <span [attr.data-testid]="'optimization-campaign-negatives-unconfirmed-note-' + row.campaign.id"
+                        >Negative keywords not confirmed. They may have been added; verify them in the ad platform before retrying. Open Negative keywords to
+                        see which.</span
+                      >
+                      <button
+                        type="button"
+                        (click)="dismissNegativesResult(row.campaign.id)"
+                        class="font-medium underline hover:text-amber-900"
+                        [attr.aria-label]="'Dismiss the negative keywords note for ' + row.campaign.campaign_name"
+                        [attr.data-testid]="'optimization-campaign-negatives-unconfirmed-dismiss-' + row.campaign.id">
+                        Dismiss
+                      </button>
+                    </span>
                   }
                   <!-- Why there is no budget editor for this row; the disabled button points here. -->
                   @if (!row.budgetAvailable) {

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe, DOCUMENT } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, OnInit, output, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import type {
@@ -13,6 +12,7 @@ import type {
   CampaignBudgetOutcome,
   CampaignIndexDoc,
   CampaignMonitorResponse,
+  CampaignNegativeKeywordsRequestState,
   CampaignOptimizeFinding,
   CampaignOptimizeLever,
   CampaignPlatform,
@@ -57,6 +57,7 @@ import {
   CAMPAIGN_TOGGLE_CONFLICT_MESSAGE,
   CAMPAIGN_TOGGLE_DONE_VERBS,
   CAMPAIGN_TOGGLE_FAILURE_MESSAGES,
+  CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES,
   CAMPAIGN_TOGGLE_LABELS,
   CAMPAIGN_TOGGLE_PENDING_VERBS,
   CAMPAIGN_UNAVAILABLE_DEFAULT_REASON,
@@ -76,11 +77,13 @@ import { campaignActionItemLever, keywordActionKey } from '@lfx-one/shared/utils
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
 import { campaignBudgetFailureOutcome } from '@shared/utils/campaign-budget-error.utils';
+import { classifyCampaignWriteFailure } from '@shared/utils/campaign-write-error.utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
+import { campaignNegativeKeywordsKey } from '@shared/utils/campaign-negative-keywords.utils';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
-import { catchError, EMPTY, map, of, skip, switchMap, take, type Subscription } from 'rxjs';
+import { catchError, EMPTY, filter, map, of, pairwise, skip, switchMap, take, type Subscription } from 'rxjs';
 
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
@@ -228,12 +231,14 @@ export class OptimizationTabComponent implements OnInit {
    * a campaign-list re-read or a tab switch destroys the editor mid-flight, and a flag fed by its
    * output then stayed `true` forever, leaving Close dead and the disclosure disabled.
    */
-  protected readonly negativesPending: Signal<Record<string, boolean>> = this.negativeKeywordsService.pendingByCampaign;
+  protected readonly negativesPending: Signal<Record<string, boolean>> = this.initNegativesFlag((request) => request.pending);
   /**
    * Rows whose last negative-keyword request has keywords not confirmed, stated on the row while
    * the editor is closed: they may already have been added, and the sticky toast can be dismissed.
    */
-  protected readonly negativesUnconfirmed: Signal<Record<string, boolean>> = this.initNegativesUnconfirmed();
+  protected readonly negativesUnconfirmed: Signal<Record<string, boolean>> = this.initNegativesFlag(
+    (request) => !request.pending && (request.batchOutcome?.state === 'unconfirmed' || request.outcomeRows.some((row) => row.outcome === 'UNCONFIRMED'))
+  );
 
   /** Bumped by Refresh to re-read the Microsoft keyword table, which owns its own read. */
   protected readonly microsoftKeywordsReload = signal(0);
@@ -811,9 +816,24 @@ export class OptimizationTabComponent implements OnInit {
           // Computed ABOVE the context guard because the toast below needs it. A failure the
           // operator caused is still theirs to hear about after they switch tabs — otherwise the
           // pause they think they submitted fails in silence, which is the whole defect.
-          const conflict = err instanceof HttpErrorResponse && err.status === 412;
-          const message = conflict ? CAMPAIGN_TOGGLE_CONFLICT_MESSAGE : CAMPAIGN_TOGGLE_FAILURE_MESSAGES[direction];
-          this.announceToggleFailure(campaignName, message);
+          //
+          // Classified by the SAME `classifyCampaignWriteFailure` the budget, bid and negative-keyword
+          // levers use, so all four agree: a 412 is a conflict, and any 4xx a definite refusal, only
+          // in the BFF's `{ error, code }` envelope; anything else (no answer, a proxy's own 4xx or
+          // 5xx, campaign-service's "unconfirmed") may have reached the platform and is never
+          // reported as "it is still running".
+          const outcome = classifyCampaignWriteFailure(err, {
+            conflict: CAMPAIGN_TOGGLE_CONFLICT_MESSAGE,
+            unconfirmed: CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES[direction],
+            failureFallback: CAMPAIGN_TOGGLE_FAILURE_MESSAGES[direction],
+          });
+          const conflict = outcome.state === 'conflict';
+          // A definite failure keeps the per-direction copy, which states which way it left the row.
+          let message = CAMPAIGN_TOGGLE_FAILURE_MESSAGES[direction];
+          if (outcome.state !== 'failed') {
+            message = outcome.message;
+          }
+          this.announceToggleFailure(campaignName, message, outcome.state === 'unconfirmed' ? 'warn' : 'error');
           // Same guard as the success arm, and it matters more here: a 412 landing after a switch
           // would re-arm the conflict banner for a brief that was never conflicted, and add an id
           // that is not in the new list — so no delivery could ever clear it, because the per-row
@@ -1065,6 +1085,11 @@ export class OptimizationTabComponent implements OnInit {
     this.negativesEditorOpen.update((open) => this.omitKeys(open, [campaignId]));
   }
 
+  /** The row note's Dismiss: forgets one campaign's settled negative-keyword result. */
+  protected dismissNegativesResult(campaignId: string): void {
+    this.negativeKeywordsService.dismiss(this.projectSlug(), this.briefId(), campaignId);
+  }
+
   /**
    * Change one campaign's manual max CPC bid on its ad platform.
    *
@@ -1166,6 +1191,9 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   protected refresh(): void {
+    // A refresh re-reads the platform, so settled negative-keyword results are stale; one still in
+    // flight is kept by the service.
+    this.negativeKeywordsService.clearSettled(this.projectSlug(), this.briefId());
     this.reloadFindings();
     this.microsoftKeywordsReload.update((n) => n + 1);
     this.fetchData();
@@ -1709,15 +1737,20 @@ export class OptimizationTabComponent implements OnInit {
       });
   }
 
-  private initNegativesUnconfirmed(): Signal<Record<string, boolean>> {
+  /**
+   * Per campaign id of THIS (project, brief), whether its negative-keyword request matches `test`.
+   * The root service holds every scope's requests; only this tab's are read back.
+   */
+  private initNegativesFlag(test: (request: CampaignNegativeKeywordsRequestState) => boolean): Signal<Record<string, boolean>> {
     return computed(() => {
-      const unconfirmed: Record<string, boolean> = {};
-      for (const [campaignId, request] of Object.entries(this.negativeKeywordsService.requests())) {
-        if (request.batchOutcome?.state === 'unconfirmed' || request.outcomeRows.some((row) => row.outcome === 'UNCONFIRMED')) {
-          unconfirmed[campaignId] = true;
+      const prefix = campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), '');
+      const flags: Record<string, boolean> = {};
+      for (const [key, request] of Object.entries(this.negativeKeywordsService.requests())) {
+        if (key.startsWith(prefix) && test(request)) {
+          flags[key.slice(prefix.length)] = true;
         }
       }
-      return unconfirmed;
+      return flags;
     });
   }
 
@@ -1843,9 +1876,13 @@ export class OptimizationTabComponent implements OnInit {
     // brief within one project. The etag bookkeeping is reset with it — those validators and the
     // baseline they are compared against belong to the abandoned list, and judging the next
     // context's first delivery against them would compare ids across two different briefs.
-    toObservable(computed(() => `${this.projectSlug()}\u0000${this.briefId()}`))
-      .pipe(skip(1), takeUntilDestroyed())
-      .subscribe(() => {
+    toObservable(computed(() => ({ projectSlug: this.projectSlug(), briefId: this.briefId() })))
+      .pipe(
+        pairwise(),
+        filter(([prev, next]) => prev.projectSlug !== next.projectSlug || prev.briefId !== next.briefId),
+        takeUntilDestroyed()
+      )
+      .subscribe(([abandoned]) => {
         // Anything still in flight belongs to the context being abandoned.
         this.contextGeneration++;
         // Cleared HERE rather than left to the late response arms, which now return early: a row
@@ -1868,7 +1905,9 @@ export class OptimizationTabComponent implements OnInit {
         this.bidPending.set({});
         this.bidOutcome.set({});
         this.confirmedBid.set({});
-        // Negative-keyword requests are keyed by campaign id in the root service and finish there.
+        // Negative-keyword requests are keyed by (project, brief, campaign) in the root service:
+        // the abandoned scope's settled results go, and one still in flight finishes there.
+        this.negativeKeywordsService.clearSettled(abandoned.projectSlug, abandoned.briefId);
         this.negativesEditorOpen.set({});
         this.lastDeliveredEtags = {};
         this.hasDeliveredList = false;
@@ -2028,11 +2067,11 @@ export class OptimizationTabComponent implements OnInit {
    * that is still spending money. A message that disappears on its own is the wrong affordance
    * for that — the operator has to dismiss it, which is the acknowledgement the failure warrants.
    */
-  private announceToggleFailure(campaignName: string, message: string): void {
+  private announceToggleFailure(campaignName: string, message: string, severity: 'warn' | 'error' = 'error'): void {
     // Same single-surface rule. The row's inline failure text is now a plain `aria-describedby`
     // target rather than a `role="alert"`, so this failure is announced exactly once — by the
     // toast — and the inline copy remains readable on demand as the button's description.
-    this.messageService.add({ severity: 'error', summary: campaignName, detail: message, sticky: true });
+    this.messageService.add({ severity, summary: campaignName, detail: message, sticky: true });
   }
 
   /**

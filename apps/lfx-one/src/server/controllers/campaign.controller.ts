@@ -2205,7 +2205,7 @@ export class CampaignController {
       // amount requested, which the platform accepted; the platform may hold it rounded to its
       // smallest settable unit.
       const result: CampaignBudgetUpdateResult = {
-        platform: campaign.platform as CampaignPlatform,
+        platform: this.knownCampaignPlatform(req, 'campaign_budget_update', campaign.platform),
         campaignId,
         budget: body.budget,
         budgetType,
@@ -2336,7 +2336,7 @@ export class CampaignController {
       // `platform`, `etag` and `serviceStatus` come from the ROW; `bid` and `bidType` echo the
       // request, which the platform accepted.
       const result: CampaignBidUpdateResult = {
-        platform: campaign.platform as CampaignPlatform,
+        platform: this.knownCampaignPlatform(req, 'campaign_bid_update', campaign.platform),
         campaignId,
         bid: body.bid,
         bidType,
@@ -2517,6 +2517,22 @@ export class CampaignController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * The row's platform as one of `CampaignPlatform`, checked against `CAMPAIGN_PLATFORMS` rather
+   * than cast. campaign-service's own vocabulary is that list; a value outside it (a contract change
+   * upstream, a malformed row) is logged and reported as `null`, never passed off as a known one.
+   */
+  private knownCampaignPlatform(req: Request, operation: string, platform: unknown): CampaignPlatform | null {
+    const known = CAMPAIGN_PLATFORMS.find((p) => p.id === platform);
+    if (known) {
+      return known.id;
+    }
+    logger.warning(req, operation, 'campaign-service reported a platform outside CampaignPlatform; returning null', {
+      platform: typeof platform === 'string' ? platform : typeof platform,
+    });
+    return null;
   }
 
   private async closeAllStreams(): Promise<void> {

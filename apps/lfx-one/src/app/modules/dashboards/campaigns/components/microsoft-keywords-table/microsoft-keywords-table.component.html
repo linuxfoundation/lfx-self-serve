@@ -141,7 +141,9 @@
                             <!--
                               The outcome is shown WITH the controls, never instead of them: the parent keeps
                               it (Refresh included), so replacing the buttons left no way to retry a failed
-                              action, or to act again once an unconfirmed one had been verified.
+                              action, or to act again once an unconfirmed one had been verified. The one
+                              exception is a CONFIRMED remove: the keyword no longer exists, so its controls
+                              are withdrawn until the table is read again.
                             -->
                             <div class="flex flex-col items-center gap-1">
                               @if (row.result; as result) {
@@ -153,7 +155,17 @@
                                   }
                                 </span>
                               }
-                              <div class="flex items-center justify-center gap-1">
+                              @if (row.result?.state === 'unconfirmed' && !row.removed) {
+                                <!-- Beside the controls, which stay enabled: both actions only reduce spend. -->
+                                <span
+                                  class="max-w-64 text-xs leading-tight text-amber-700"
+                                  [attr.data-testid]="'microsoft-keyword-previous-unconfirmed-' + row.key"
+                                  >{{ PREVIOUS_UNCONFIRMED_NOTE }}</span
+                                >
+                              }
+                            </div>
+                            @if (!row.removed) {
+                              <div class="mt-1 flex items-center justify-center gap-1">
                                 <button
                                   type="button"
                                   (click)="act(row.keyword, 'pause')"
@@ -171,7 +183,7 @@
                                   <i class="fa-light fa-trash" aria-hidden="true"></i>
                                 </button>
                               </div>
-                            </div>
+                            }
                           }
                         </td>
                       </tr>

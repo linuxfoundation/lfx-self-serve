@@ -17,7 +17,7 @@ import type {
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils';
 import { campaignNegativeKeywordsValidator } from '@lfx-one/shared/validators';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
-import { summarizeNegativeKeywordOutcomes } from '@shared/utils/campaign-negative-keywords.utils';
+import { campaignNegativeKeywordsKey, summarizeNegativeKeywordOutcomes } from '@shared/utils/campaign-negative-keywords.utils';
 import { controlTouchedSignal, controlValueSignal, touchedErrorSignal, touchedInvalidSignal } from '@shared/utils/form-control-signals.util';
 
 /**
@@ -63,7 +63,7 @@ export class CampaignNegativeKeywordsFormComponent {
 
   /** This campaign's latest request, which outlives this form. `null` before the first one. */
   private readonly request: Signal<CampaignNegativeKeywordsRequestState | null> = computed(
-    () => this.negativeKeywordsService.requests()[this.campaignId()] ?? null
+    () => this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId())] ?? null
   );
   protected readonly pending: Signal<boolean> = computed(() => this.request()?.pending ?? false);
   /** Per-keyword outcomes of the last request, in the order the keywords were SENT. */

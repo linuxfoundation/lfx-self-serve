@@ -181,11 +181,11 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
     typeKeywords('alpha');
     submit();
 
-    expect(TestBed.inject(CampaignNegativeKeywordsService).pendingByCampaign()).toEqual({ 'c-1': true });
+    expect(TestBed.inject(CampaignNegativeKeywordsService).requests()['tlf|b-1|c-1'].pending).toBe(true);
     response.error(new HttpErrorResponse({ status: 504, error: 'upstream request timeout' }));
     fixture.detectChanges();
 
-    expect(TestBed.inject(CampaignNegativeKeywordsService).pendingByCampaign()).toEqual({});
+    expect(TestBed.inject(CampaignNegativeKeywordsService).requests()['tlf|b-1|c-1'].pending).toBe(false);
     // A proxy's plain-text timeout is not the BFF's envelope: the keywords may have been added.
     expect(q('optimization-campaign-negatives-unconfirmed-c-1')!.textContent).toContain('alpha');
   });
@@ -221,7 +221,7 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
     response.complete();
     remounted.detectChanges();
 
-    expect(TestBed.inject(CampaignNegativeKeywordsService).pendingByCampaign()).toEqual({});
+    expect(TestBed.inject(CampaignNegativeKeywordsService).requests()['tlf|b-1|c-1'].pending).toBe(false);
     const items = Array.from(root.querySelectorAll('[data-testid^="optimization-campaign-negatives-result-"]'));
     expect(items.map((item) => item.querySelector('[data-outcome]')!.getAttribute('data-outcome'))).toEqual(['APPLIED', 'UNCONFIRMED']);
     expect(items.map((item) => item.querySelector('.font-medium')!.textContent!.trim())).toEqual(['alpha', 'beta']);

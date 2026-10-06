@@ -2852,6 +2852,23 @@ describe('CampaignController.updateCampaignBudget', () => {
     });
   });
 
+  // The row's platform is checked against CAMPAIGN_PLATFORMS, never cast: an unknown value is
+  // logged and reported as null rather than passed off as a CampaignPlatform.
+  it.each([['google_ads'], ['hubspot'], [undefined]])('reports an unknown row platform %s as null, with a warning', async (platform) => {
+    updateCampaignBudget.mockResolvedValue({ id: UUID, platform, status: 'active', version: 2, etag: '"2"' });
+
+    await controller.updateCampaignBudget(budgetReq(UUID, validBody), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: null }));
+    expect(logger.warning).toHaveBeenCalledWith(
+      expect.anything(),
+      'campaign_budget_update',
+      expect.stringContaining('outside CampaignPlatform'),
+      expect.anything()
+    );
+  });
+
   // A budget change leaves the row's status as found, so a created_degraded campaign keeps its
   // reconciliation marker. Reporting anything else would hide that.
   it('reports the service status of a degraded campaign unchanged', async () => {
@@ -3001,6 +3018,19 @@ describe('CampaignController.updateCampaignBid', () => {
       bidType: 'cpc',
       etag: '"2"',
       serviceStatus: 'active',
+    });
+  });
+
+  it('reports an unknown row platform as null, with a warning, and never logs one for a known platform', async () => {
+    await controller.updateCampaignBid(bidReq(UUID, validBody), res, next);
+    expect(logger.warning).not.toHaveBeenCalled();
+
+    updateCampaignBid.mockResolvedValue({ id: UUID, platform: 'microsoft', status: 'active', version: 2, etag: '"2"' });
+    await controller.updateCampaignBid(bidReq(UUID, validBody), res, next);
+
+    expect(res.json).toHaveBeenLastCalledWith(expect.objectContaining({ platform: null }));
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'campaign_bid_update', expect.stringContaining('outside CampaignPlatform'), {
+      platform: 'microsoft',
     });
   });
 

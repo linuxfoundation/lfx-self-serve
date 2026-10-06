@@ -2454,6 +2454,11 @@ export interface MicrosoftKeywordDisplayRow {
   inProgress: boolean;
   result: KeywordActionOutcome | null;
   /**
+   * True once a REMOVE asked from this table since its last read was confirmed: the keyword no
+   * longer exists, so no action is offered on it until the table is read again.
+   */
+  removed: boolean;
+  /**
    * False when this row's `0` conversions may not be a measurement: the report left some rows'
    * conversions blank (`conversionsComplete: false`) and Microsoft reports a blank as `0`.
    */
@@ -2737,8 +2742,10 @@ export interface CampaignBudgetUpdateResult {
   /**
    * The ROW's platform as campaign-service reports it, in the hyphenated paid-platform vocabulary
    * (`google-ads`, …). The request does not name one, and upstream refuses unsupported platforms.
+   * `null` when the row carried a value outside `CampaignPlatform`: checked at runtime by the BFF,
+   * never cast, so an unknown value is not passed off as a known platform.
    */
-  platform: CampaignPlatform;
+  platform: CampaignPlatform | null;
   campaignId: string;
   /**
    * The amount requested, which the platform accepted; the platform may hold it rounded to its
@@ -2805,8 +2812,10 @@ export interface CampaignBidUpdateResult {
   /**
    * The ROW's platform as campaign-service reports it, in the hyphenated paid-platform vocabulary
    * (`google-ads`, …). The request does not name one, and upstream refuses unsupported platforms.
+   * `null` when the row carried a value outside `CampaignPlatform`: checked at runtime by the BFF,
+   * never cast, so an unknown value is not passed off as a known platform.
    */
-  platform: CampaignPlatform;
+  platform: CampaignPlatform | null;
   campaignId: string;
   /**
    * The bid requested, which the platform accepted. An echo of the request, like

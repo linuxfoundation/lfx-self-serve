@@ -9,6 +9,7 @@ import {
   DEFAULT_MICROSOFT_KEYWORDS_WINDOW,
   KEYWORD_ACTION_OUTCOME_CLASSES,
   KEYWORD_ACTION_OUTCOME_LABELS,
+  MICROSOFT_KEYWORD_PREVIOUS_UNCONFIRMED_NOTE,
   MICROSOFT_KEYWORDS_WINDOW_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -73,9 +74,16 @@ export class MicrosoftKeywordsTableComponent {
   protected readonly retryToken = signal(0);
   protected readonly data = signal<MicrosoftKeywordMetricsResponse | null>(null);
   protected readonly errorMessage = signal('');
+  /**
+   * The action last asked for per row since the table was last read, keyed by `keywordActionKey`.
+   * The parent's outcome does not say which action it answers, and a confirmed REMOVE must withdraw
+   * the row's controls. Reset by every read, so Refresh offers them again.
+   */
+  private readonly requestedAction = signal<Record<string, KeywordActionType>>({});
 
   protected readonly OUTCOME_LABEL = KEYWORD_ACTION_OUTCOME_LABELS;
   protected readonly OUTCOME_CLASS = KEYWORD_ACTION_OUTCOME_CLASSES;
+  protected readonly PREVIOUS_UNCONFIRMED_NOTE = MICROSOFT_KEYWORD_PREVIOUS_UNCONFIRMED_NOTE;
 
   /** True when no finished report covers the project yet: the rows are empty because it is building. */
   protected readonly reportBuilding: Signal<boolean> = computed(() => {
@@ -99,6 +107,8 @@ export class MicrosoftKeywordsTableComponent {
   }
 
   protected act(keyword: MicrosoftKeywordMetrics, action: KeywordActionType): void {
+    const key = keywordActionKey('microsoft-ads', keyword.adGroupId, keyword.criterionId);
+    this.requestedAction.update((requested) => ({ ...requested, [key]: action }));
     this.keywordAction.emit({ keyword, action });
   }
 
@@ -112,6 +122,7 @@ export class MicrosoftKeywordsTableComponent {
       .pipe(
         switchMap(({ projectSlug, window }) => {
           this.data.set(null);
+          this.requestedAction.set({});
           this.errorMessage.set('');
           if (projectSlug === '') {
             this.state.set('idle');
@@ -156,6 +167,7 @@ export class MicrosoftKeywordsTableComponent {
       }
       const inProgress = this.actionInProgress();
       const results = this.actionResults();
+      const requested = this.requestedAction();
       return (data.keywords ?? []).map((keyword) => {
         const key = keywordActionKey('microsoft-ads', keyword.adGroupId, keyword.criterionId);
         return {
@@ -163,6 +175,7 @@ export class MicrosoftKeywordsTableComponent {
           keyword,
           inProgress: !!inProgress[key],
           result: results[key] ?? null,
+          removed: requested[key] === 'remove' && results[key]?.state === 'done',
           conversionsMeasured: data.conversionsComplete || keyword.conversions !== 0,
         };
       });
@@ -180,6 +193,19 @@ export class MicrosoftKeywordsTableComponent {
  * window) and every other 404 (a deployment that has not exposed the route answers a bare
  * "Not Found") is a read failure, shown with its message and a Retry — never as a missing
  * connection, which would hide it.
+ *
+ * CONTRACT — these are campaign-service's sentences, matched verbatim:
+ * - 404 `no microsoft ads connection configured for this project` — `classifyDiscoveryError`'s
+ *   `domain.ErrNotFound` arm, `internal/service/connection.go`, with the `microsoftAdsKeywordInsights`
+ *   descriptor of `internal/service/connection_keyword_report.go`.
+ * - 400 `keyword and audience insights are not supported for this platform` —
+ *   `classifyInsightsErrorFor`'s `domain.ErrKeywordInsightsUnsupported` arm,
+ *   `internal/service/connection_keywords.go` (raised while `MICROSOFT_METRICS_ENABLED` is off) —
+ *   and its sibling `keyword insights is not supported for this platform` (`classifyDiscoveryError`).
+ *
+ * Both patterns are ANCHORED to the whole message, deliberately the same way: a message is one of
+ * these sentences or it is not. A `\b`-bounded substring would also match a longer, different
+ * refusal that merely quotes one of them, and hide that refusal as "not connected".
  */
 function isNotConnectedError(err: unknown): boolean {
   const status = err instanceof HttpErrorResponse ? err.status : undefined;
@@ -187,9 +213,9 @@ function isNotConnectedError(err: unknown): boolean {
   if ((status !== 404 && status !== 400) || !isBffErrorEnvelope(body)) {
     return false;
   }
-  const message = (body as { error: string }).error;
+  const message = (body as { error: string }).error.trim();
   if (status === 404) {
-    return /^no .+ connection configured for this project$/i.test(message.trim());
+    return /^no .+ connection configured for this project$/i.test(message);
   }
-  return /\bnot supported for this platform\b/i.test(message);
+  return /^.+ (?:is|are) not supported for this platform$/i.test(message);
 }
