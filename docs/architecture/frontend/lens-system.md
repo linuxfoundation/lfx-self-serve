@@ -53,6 +53,8 @@ Feature routes (`/meetings`, `/votes`, `/surveys`, etc.) typically don't declare
 
 Me-only pages are the exception: `/profile`, `/crowdfunding`, `/mentorship` and `/formations` (the My Formations page, #2753) declare `data: { lens: 'me' }` so a deep link or hard refresh switches to the Me lens (`MainLayoutComponent.syncLensFromRoute`), and they deliberately skip `lensRedirectGuard` — they have no foundation/project twin to redirect to. `/formations` is the instructive case: its foundation-prefixed sibling, `/foundation/formations`, is the auditor-only Formations queue, a different page for a different audience, so a lens-driven rewrite would have sent a Me-lens visitor somewhere they may not be allowed.
 
+My Meetups (`/meetups`, including the legacy `/me/meetups` redirect) uses a conditional exception: `meetupsLensGuard` selects Me before page activation when entering from Foundation or Project, but preserves Org. It calls the non-navigating `setLens('me')` for every effective lens except Org, including Me: delayed writer grants can temporarily clamp a stored Foundation/Project selection to Me, so reasserting Me corrects the persisted selection before grants arrive. An already-selected Me lens does not rewrite its cookie. The flat meetup URL, query parameters, and fragment remain intact; no Foundation/Project meetup destination is constructed.
+
 ## Persona
 
 ### `PersonaType` (`packages/shared/src/interfaces/persona.interface.ts`)
