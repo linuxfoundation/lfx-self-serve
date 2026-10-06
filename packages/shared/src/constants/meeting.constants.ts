@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ArtifactVisibility, MeetingType, MeetingVisibility, CancelOnCommitteeRemoval } from '../enums';
-import type { AttachmentCategory, CardSelectorOption, MeetingComposerPreviewFeature, MeetingTimeState, MeetingTypeConfig } from '../interfaces';
+import type { AttachmentCategory, CardSelectorOption, MeetingComposerPreviewFeature, MeetingStatusKind, MeetingTypeConfig } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
 /**
@@ -991,15 +991,22 @@ export const RECONCILIATION_BOT_NAME_PATTERN =
 export const NOTES_ATTACHMENT_CATEGORY: AttachmentCategory = 'Notes';
 
 /**
- * Display label for each meeting time state on the meeting details V2 page
- * @description Shared by the sticky identity bar's subtitle (E1-02) and the status pill (E1-05), so
- * the two never disagree about what a meeting is called.
+ * Display label for each meeting status on the meeting details V2 page
+ * @description Shared by the status pill (E1-05) and the sticky identity bar's subtitle (E1-02), so
+ * the two never disagree about what a meeting is called. Resolve the status with
+ * `resolveMeetingStatus`. The join window (`canJoinMeeting`) opens a few minutes before the scheduled
+ * start: that part reads "Starting soon", and from the start through the end buffer "In progress".
  */
-export const MEETING_TIME_STATE_LABELS = {
-  before: 'Upcoming',
-  live: 'Live',
+export const MEETING_STATUS_LABELS = {
+  upcoming: 'Upcoming',
+  'starting-soon': 'Starting soon',
+  live: 'In progress',
   ended: 'Ended',
-} as const satisfies Record<MeetingTimeState, string>;
+  'awaiting-rsvp': 'Awaiting your RSVP',
+  going: "You're going",
+  maybe: 'Maybe',
+  'cant-attend': "Can't attend",
+} as const satisfies Record<MeetingStatusKind, string>;
 
 /**
  * TransferState key for the public meeting page's SSR-resolved `MeetingJoinPageState`

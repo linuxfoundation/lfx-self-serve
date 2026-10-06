@@ -6,9 +6,18 @@ import { Component, computed, inject, PLATFORM_ID, Signal } from '@angular/core'
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
-import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
+import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_STATUS_LABELS, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
-import { Meeting, MeetingCommitteeLink, MeetingPrivacyState, MeetingTypeConfig, ProjectContext, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import {
+  Meeting,
+  MeetingCommitteeLink,
+  MeetingPrivacyState,
+  MeetingStatusKind,
+  MeetingTimeState,
+  MeetingTypeConfig,
+  ProjectContext,
+  PublicMeetingProject,
+} from '@lfx-one/shared/interfaces';
 import { resolveOccurrenceRecurrence, resolvePrivacy } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -19,7 +28,7 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * The meeting details V2 header (E1-03, #1772): project context, title, badge row and copy link.
  * @description The badge row follows the prototype: recurrence, meeting type, committee chips, then
  * the feature badges (Recording, Transcripts, YouTube Upload, AI summary). E1-05's status pill and
- * E1-04's privacy chip lead the row; the privacy chip is here, and the pill takes the front in E1-05.
+ * E1-04's privacy chip lead the row.
  *
  * Feature badges read the `*_enabled` flags only, never artifact access: those flags survive on the
  * reduced past payload, so a viewer without access still sees what the meeting was configured to
@@ -45,6 +54,18 @@ export class MeetingHeaderComponent {
    */
   protected readonly chipClass =
     '!gap-[6px] !border-[var(--md-border)] !bg-[var(--md-surface-card)] !px-[11px] !py-[4px] !text-[12.5px] !font-semibold !leading-[15px] !text-[var(--md-text-body)]';
+
+  /** The prototype's pill colours per status, all V2 tokens; RSVP answers swap the dot for a glyph. */
+  protected readonly statusClasses: Record<MeetingStatusKind, { pill: string; dot?: string; glyph?: string }> = {
+    upcoming: { pill: 'bg-[var(--md-accent-bg)] text-[var(--md-accent-ink)]', dot: 'bg-[var(--md-accent)]' },
+    live: { pill: 'bg-[var(--md-status-live-bg)] text-[var(--md-status-live)]', dot: 'bg-[var(--md-status-live)]' },
+    ended: { pill: 'bg-[var(--md-border)] text-[var(--md-text-body)]', dot: 'bg-[var(--md-glyph-faint)]' },
+    'starting-soon': { pill: 'bg-[var(--md-status-live-bg)] text-[var(--md-status-live)]', dot: 'bg-[var(--md-status-live)]' },
+    'awaiting-rsvp': { pill: 'bg-[var(--md-status-warn-bg)] text-[var(--md-status-warn)]', dot: 'bg-[var(--md-status-warn)]' },
+    going: { pill: 'bg-[var(--md-status-good-bg)] text-[var(--md-status-good)]', glyph: 'fa-solid fa-check' },
+    maybe: { pill: 'bg-[var(--md-status-warn-bg)] text-[var(--md-status-warn)]', glyph: 'fa-solid fa-question' },
+    'cant-attend': { pill: 'bg-[var(--md-status-live-bg)] text-[var(--md-status-live)]', glyph: 'fa-solid fa-xmark' },
+  };
 
   protected readonly meeting: Signal<(Meeting & { project: PublicMeetingProject }) | undefined> = this.state.meeting;
   protected readonly project = computed(() => this.meeting()?.project);
@@ -82,6 +103,15 @@ export class MeetingHeaderComponent {
    * on inconsistent context, so the project then shows without a link.
    */
   protected readonly foundation: Signal<ProjectContext | null> = this.initFoundation();
+  /** The page's time state and meeting status, from the state service so the bar shows the same. */
+  protected readonly timeState: Signal<MeetingTimeState | null> = this.state.timeState;
+  protected readonly status: Signal<MeetingStatusKind | null> = this.state.meetingStatus;
+  protected readonly statusLabel = computed(() => {
+    const status = this.status();
+    return status ? MEETING_STATUS_LABELS[status] : '';
+  });
+  /** The viewer's own RSVP for `data-my-rsvp`; not loaded until E2-04, so the attribute is absent. */
+  protected readonly myRsvpAttr: Signal<string | null> = computed(() => null);
 
   /**
    * Opens the meeting's foundation overview in a new tab, as v1's context chips do: sets the
