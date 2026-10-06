@@ -13,6 +13,9 @@ import { NextFunction, Request, Response } from 'express';
 
 import type {
   BulkKeywordActionRequest,
+  CampaignBidType,
+  CampaignBidUpdateRequest,
+  CampaignBidUpdateResult,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
@@ -23,6 +26,9 @@ import type {
   CampaignCreateRequest,
   CampaignDeliveryType,
   CampaignMetricsWindow,
+  CampaignNegativeKeywordInput,
+  CampaignNegativeKeywordMatchType,
+  CampaignNegativeKeywordsRequest,
   CampaignPlatform,
   CampaignSSEEventType,
   CampaignStatusUpdateRequest,
@@ -31,6 +37,7 @@ import type {
   FlushableResponse,
   MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
+  MicrosoftKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import {
   CAMPAIGN_DELIVERY_TYPES,
@@ -38,23 +45,31 @@ import {
   CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
+  DEFAULT_CAMPAIGN_BID_TYPE,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MICROS_PER_UNIT,
   ISO_CALENDAR_DATE_PATTERN,
+  KEYWORD_ACTION_PLATFORMS,
   LINKEDIN_MIN_DAILY_BUDGET_USD,
   LINKEDIN_MIN_LIFETIME_BUDGET_USD,
   MAX_BULK_KEYWORD_ACTIONS,
   MAX_HUBSPOT_BODY_HTML_LENGTH,
+  MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
+  MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_GEO_CODE_PATTERN,
   MICROSOFT_CONTROL_CHAR_RE,
+  MICROSOFT_KEYWORDS_WINDOWS,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
   MICROSOFT_MAX_GEO_TARGETS,
   MICROSOFT_MAX_KEYWORDS,
   MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
   MICROSOFT_MIN_CPC_BID,
+  NEGATIVE_KEYWORD_TEXT_PATTERN,
+  VALID_CAMPAIGN_BID_TYPES,
   VALID_CAMPAIGN_BUDGET_TYPES,
+  VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES,
   VALID_CAMPAIGN_TOGGLE_STATUSES,
   isCanonicalGoogleAdsResourceId,
   isMicrosoftMatchType,
@@ -67,7 +82,7 @@ import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
-import { toAudienceDemographics, toKeywordMetricsResponse, windowForDays } from '../services/campaign-insights-mapper';
+import { toAudienceDemographics, toKeywordMetricsResponse, toMicrosoftKeywordMetricsResponse, windowForDays } from '../services/campaign-insights-mapper';
 import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
 import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-mapper';
 import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
@@ -1716,9 +1731,36 @@ export class CampaignController {
         );
         return;
       }
+      // OPTIONAL, defaulting to Google Ads, so a body that names no platform means what it always
+      // meant. A value that is present must be one campaign-service's keyword lever serves: an
+      // unknown one silently treated as Google would resolve and mutate the wrong platform's campaign.
+      // Microsoft ids are positive int64s too, so the format check above holds for both.
+      if (kw.platform !== undefined && !KEYWORD_ACTION_PLATFORMS.has(kw.platform)) {
+        next(
+          ServiceValidationError.forField('keywords', `platform must be one of: ${[...KEYWORD_ACTION_PLATFORMS].join(', ')} when given`, {
+            operation: 'keyword_actions',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
     }
 
     const viaCampaignService = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceKeywordActions);
+
+    // Microsoft keyword actions exist ONLY through campaign-service. The legacy path talks to Google
+    // Ads directly and would read a Microsoft id as a Google one, so the whole request is refused —
+    // before anything is sent — rather than half-applied.
+    if (!viaCampaignService && body.keywords.some((kw) => kw.platform === 'microsoft-ads')) {
+      next(
+        ServiceValidationError.forField('keywords', 'Microsoft Advertising keyword actions are not available', {
+          operation: 'keyword_actions',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
     const startTime = logger.startOperation(req, 'keyword_actions', { action: body.action, count: body.keywords.length, viaCampaignService });
 
     try {
@@ -2172,6 +2214,306 @@ export class CampaignController {
       };
       logger.success(req, 'campaign_budget_update', startTime, { campaignId, budgetType, platform: result.platform });
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Change a campaign's manual max cost-per-click bid through campaign-service's
+   * `update-campaign-bid`, for the Optimize tab.
+   *
+   * The budget change's sibling, validated the same way. Only campaign-service can do this, so a
+   * campaign is addressed by its campaign-service UUID alone. Everything that depends on the
+   * campaign (platform support, the bid strategy, a recorded ad group, the platform's own floor and
+   * ceiling) is decided upstream, and its status and message reach the caller unchanged through
+   * `apiErrorHandler`.
+   */
+  public async updateCampaignBid(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const campaignId = req.params['campaignId'];
+
+    if (!campaignId || !isCampaignServiceJobId(campaignId)) {
+      next(
+        ServiceValidationError.forField('campaignId', 'campaignId must be a campaign UUID', {
+          operation: 'campaign_bid_update',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      next(
+        ServiceValidationError.forField('body', 'request body must be a JSON object', {
+          operation: 'campaign_bid_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const body = req.body as Partial<CampaignBidUpdateRequest>;
+
+    // A real JSON number only, never coerced or rounded: it is in the ad account's own currency
+    // and goes upstream exactly as sent. Upstream enforces the range and each platform's own
+    // floor and ceiling, and names the reason.
+    if (typeof body.bid !== 'number' || !Number.isFinite(body.bid) || body.bid <= 0) {
+      next(
+        ServiceValidationError.forField('bid', 'bid must be a finite number greater than zero', {
+          operation: 'campaign_bid_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    // Optional, unlike budgetType: upstream defaults it to its only value. A value that IS sent
+    // must be that value, so a typo is refused rather than silently replaced.
+    if (body.bidType !== undefined && (typeof body.bidType !== 'string' || !VALID_CAMPAIGN_BID_TYPES.has(body.bidType as CampaignBidType))) {
+      next(
+        ServiceValidationError.forField('bidType', `bidType must be one of: ${[...VALID_CAMPAIGN_BID_TYPES].join(', ')}`, {
+          operation: 'campaign_bid_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    const briefId = typeof body.briefId === 'string' ? body.briefId.trim() : '';
+    const etag = typeof body.etag === 'string' ? body.etag.trim() : '';
+    if (!projectSlug) {
+      next(
+        ServiceValidationError.forField('project', 'project is required', {
+          operation: 'campaign_bid_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    if (!briefId) {
+      next(
+        ServiceValidationError.forField('briefId', 'briefId is required to change a campaign bid', {
+          operation: 'campaign_bid_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    if (!etag) {
+      next(
+        ServiceValidationError.forField('etag', 'etag is required so a concurrent edit cannot be overwritten', {
+          operation: 'campaign_bid_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    // Same reason as the budget change: an etag fetch cannot send as a header would surface as an
+    // UNCONFIRMED bid write although nothing left the BFF.
+    if (!CAMPAIGN_ETAG_HEADER_PATTERN.test(etag)) {
+      next(
+        ServiceValidationError.forField('etag', 'etag must be a valid HTTP header value', {
+          operation: 'campaign_bid_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const bidType: CampaignBidType = (body.bidType as CampaignBidType | undefined) ?? DEFAULT_CAMPAIGN_BID_TYPE;
+    const startTime = logger.startOperation(req, 'campaign_bid_update', { campaignId, briefId, bidType });
+
+    try {
+      const campaign = await this.campaignServiceClient.updateCampaignBid(req, {
+        projectSlug,
+        briefId,
+        campaignId,
+        bid: body.bid,
+        bidType,
+        etag,
+      });
+      // `platform`, `etag` and `serviceStatus` come from the ROW; `bid` and `bidType` echo the
+      // request, which the platform accepted.
+      const result: CampaignBidUpdateResult = {
+        platform: campaign.platform,
+        campaignId,
+        bid: body.bid,
+        bidType,
+        etag: campaign.etag,
+        serviceStatus: campaign.status,
+      };
+      logger.success(req, 'campaign_bid_update', startTime, { campaignId, bidType, platform: result.platform });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Add campaign-level negative keywords through campaign-service's `add-negative-keywords`.
+   *
+   * The checks below mirror the upstream payload's own rules (1-60 entries, text 1-100 characters
+   * in the allowed set, Exact or Phrase), so a malformed batch is refused before a round trip.
+   * Upstream re-validates and adds what a pattern states badly (adjacent punctuation, duplicates).
+   *
+   * The response is POSITIONAL: `results[i]` answers `negativeKeywords[i]`, and is passed on
+   * index for index. Nothing here filters, sorts or de-duplicates it.
+   */
+  public async addNegativeKeywords(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const campaignId = req.params['campaignId'];
+
+    if (!campaignId || !isCampaignServiceJobId(campaignId)) {
+      next(
+        ServiceValidationError.forField('campaignId', 'campaignId must be a campaign UUID', {
+          operation: 'campaign_negative_keywords_add',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      next(
+        ServiceValidationError.forField('body', 'request body must be a JSON object', {
+          operation: 'campaign_negative_keywords_add',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const body = req.body as Partial<CampaignNegativeKeywordsRequest>;
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    const briefId = typeof body.briefId === 'string' ? body.briefId.trim() : '';
+    if (!projectSlug) {
+      next(
+        ServiceValidationError.forField('project', 'project is required', {
+          operation: 'campaign_negative_keywords_add',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    if (!briefId) {
+      next(
+        ServiceValidationError.forField('briefId', 'briefId is required to add negative keywords', {
+          operation: 'campaign_negative_keywords_add',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const entries: unknown = body.negativeKeywords;
+    if (!Array.isArray(entries) || entries.length === 0 || entries.length > MAX_NEGATIVE_KEYWORDS_PER_REQUEST) {
+      next(
+        ServiceValidationError.forField('negativeKeywords', `negativeKeywords must be an array of 1 to ${MAX_NEGATIVE_KEYWORDS_PER_REQUEST} entries`, {
+          operation: 'campaign_negative_keywords_add',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const negativeKeywords: CampaignNegativeKeywordInput[] = [];
+    for (const [i, entry] of entries.entries()) {
+      const field = `negativeKeywords[${i}]`;
+      const candidate = entry as Partial<CampaignNegativeKeywordInput> | null;
+      const text = typeof candidate?.text === 'string' ? candidate.text : '';
+      // Characters, not UTF-16 units: Microsoft counts characters, and upstream counts runes.
+      if (text.trim() === '' || [...text].length > MAX_NEGATIVE_KEYWORD_TEXT_LENGTH || !NEGATIVE_KEYWORD_TEXT_PATTERN.test(text)) {
+        next(
+          ServiceValidationError.forField(
+            `${field}.text`,
+            `text must be 1 to ${MAX_NEGATIVE_KEYWORD_TEXT_LENGTH} characters of letters, digits, spaces and & ' - . only`,
+            { operation: 'campaign_negative_keywords_add', service: 'campaign_controller' }
+          )
+        );
+        return;
+      }
+      const matchType = candidate?.matchType;
+      if (typeof matchType !== 'string' || !VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES.has(matchType as CampaignNegativeKeywordMatchType)) {
+        next(
+          ServiceValidationError.forField(`${field}.matchType`, `matchType must be one of: ${[...VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES].join(', ')}`, {
+            operation: 'campaign_negative_keywords_add',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+      // Sent as given. Upstream trims and collapses whitespace, and echoes the text it sent.
+      negativeKeywords.push({ text, matchType: matchType as CampaignNegativeKeywordMatchType });
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_negative_keywords_add', { campaignId, briefId, count: negativeKeywords.length });
+
+    try {
+      const result = await this.campaignServiceClient.addNegativeKeywords(req, { projectSlug, briefId, campaignId, negativeKeywords });
+      logger.success(req, 'campaign_negative_keywords_add', startTime, {
+        campaignId,
+        requested: negativeKeywords.length,
+        appliedCount: result.appliedCount,
+      });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Microsoft Advertising keyword performance for the campaigns table, from campaign-service.
+   *
+   * The Google read's sibling (`getKeywords`), with two differences. It has no legacy arm, so no
+   * cutover flag: upstream answers 400 itself while its Microsoft metrics are off. And it takes
+   * `?window=` rather than `?days=`, because Microsoft offers no 14-day window, so snapping a day
+   * count would label one window's figures as another's. Omitted, upstream applies `last_30_days`.
+   *
+   * The project is REQUIRED and not defaulted, for the reason `getKeywords` gives.
+   */
+  public async getMicrosoftKeywords(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(
+        ServiceValidationError.forField('project', 'A project is required to read keywords', {
+          operation: 'campaign_microsoft_keywords',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const rawWindow = req.query['window'];
+    let window: MicrosoftKeywordsWindow | undefined;
+    if (rawWindow !== undefined) {
+      if (typeof rawWindow !== 'string' || !(MICROSOFT_KEYWORDS_WINDOWS as readonly string[]).includes(rawWindow)) {
+        next(
+          ServiceValidationError.forField('window', `window must be one of: ${MICROSOFT_KEYWORDS_WINDOWS.join(', ')}`, {
+            operation: 'campaign_microsoft_keywords',
+            service: 'campaign_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+      window = rawWindow as MicrosoftKeywordsWindow;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_microsoft_keywords', { window });
+
+    try {
+      const payload = await this.campaignServiceClient.getMicrosoftAdsKeywords(req, projectSlug, window);
+      const data = toMicrosoftKeywordMetricsResponse(payload, new Date().toISOString());
+      logger.success(req, 'campaign_microsoft_keywords', startTime, {
+        keywords: data.totalKeywords,
+        rowCount: payload.row_count,
+        truncated: payload.truncated,
+        metricsAsOf: data.metricsAsOf,
+        metricsPending: data.metricsPending,
+      });
+      res.json(data);
     } catch (error) {
       next(error);
     }

@@ -45,6 +45,8 @@ router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMo
 router.get('/meta/accounts', (req, res) => campaignController.getMetaAccounts(req, res));
 router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonitor(req, res, next));
 router.get('/keywords', (req, res, next) => campaignController.getKeywords(req, res, next));
+// campaign-service only, from its saved Microsoft keyword reports: takes `?window=`, not `?days=`.
+router.get('/microsoft/keywords', (req, res, next) => campaignController.getMicrosoftKeywords(req, res, next));
 router.post('/email-copy', (req, res, next) => campaignController.generateEmailCopy(req, res, next));
 router.get('/audience', (req, res, next) => campaignController.getAudience(req, res, next));
 // PLURAL, and not by accident: `/audience` above is the paid-channel demographics read, which has
@@ -55,6 +57,10 @@ router.post('/keywords/actions', (req, res, next) => campaignController.executeK
 router.patch('/:campaignId/status', (req, res, next) => campaignController.updateCampaignStatus(req, res, next));
 // campaign-service only: the id must be a campaign-service UUID. Amount in the ad account's own currency.
 router.patch('/:campaignId/budget', (req, res, next) => campaignController.updateCampaignBudget(req, res, next));
+// campaign-service only, like the budget change. Manual max CPC bid, in the ad account's own currency.
+router.patch('/:campaignId/bid', (req, res, next) => campaignController.updateCampaignBid(req, res, next));
+// campaign-service only. Positional response: results[i] answers negativeKeywords[i].
+router.post('/:campaignId/negative-keywords', (req, res, next) => campaignController.addNegativeKeywords(req, res, next));
 
 // --- Audience Builder ------------------------------------------------------
 //
