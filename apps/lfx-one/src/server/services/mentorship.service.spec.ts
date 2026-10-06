@@ -185,7 +185,7 @@ describe('MentorshipService LF project search', () => {
       sort: 'name_asc',
       page_size: MENTORSHIP_LF_PROJECT_PAGE_SIZE,
     });
-    expect(result).toEqual({ data: [{ id: 'uid-1', name: 'Alpha', slug: 'alpha-slug' }], nextPageToken: null });
+    expect(result).toEqual({ data: [{ id: 'uid-1', name: 'Alpha', slug: 'alpha-slug' }] });
   });
 
   it('searches by relevance when a term is typed', async () => {
@@ -231,7 +231,7 @@ describe('MentorshipService LF project search', () => {
         { id: 'uid-1', name: 'Alpha', slug: 'alpha-slug' },
         { id: 'uid-2', name: 'Beta', slug: 'beta-slug' },
       ],
-      nextPageToken: 'cursor-3',
+      page_token: 'cursor-3',
     });
   });
 
@@ -242,7 +242,7 @@ describe('MentorshipService LF project search', () => {
     const result = await service.getLfProjects(buildReq(), { limit: 10 });
 
     expect(proxyRequest).toHaveBeenCalledTimes(MENTORSHIP_LF_PROJECT_MAX_READS);
-    expect(result).toEqual({ data: [], nextPageToken: `cursor-${MENTORSHIP_LF_PROJECT_MAX_READS}` });
+    expect(result).toEqual({ data: [], page_token: `cursor-${MENTORSHIP_LF_PROJECT_MAX_READS}` });
   });
 
   it('ends the list instead of replaying a page whose cursor comes back unchanged', async () => {
@@ -256,7 +256,6 @@ describe('MentorshipService LF project search', () => {
         { id: 'uid-1', name: 'Alpha', slug: 'alpha-slug' },
         { id: 'uid-2', name: 'Beta', slug: 'beta-slug' },
       ],
-      nextPageToken: null,
     });
   });
 

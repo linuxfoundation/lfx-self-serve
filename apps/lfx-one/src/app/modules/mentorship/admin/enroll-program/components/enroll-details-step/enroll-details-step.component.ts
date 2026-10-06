@@ -300,7 +300,7 @@ export class EnrollDetailsStepComponent {
       .subscribe((page) => {
         this.lfProjects.set(page.append ? [...this.lfProjects(), ...page.data] : page.data);
         // A cursor that came back unchanged would only replay the same page, by scroll or by the follow below, so treat it as the end.
-        const nextPageToken = page.nextPageToken === page.requestedToken ? null : page.nextPageToken;
+        const nextPageToken = !page.page_token || page.page_token === page.requestedToken ? null : page.page_token;
         this.lfNextPageToken.set(nextPageToken);
         this.lfProjectsLoading.set(false);
         // Pages that access filtering left short may not fill the scroller enough to fire onLazyLoad, so follow the cursor here

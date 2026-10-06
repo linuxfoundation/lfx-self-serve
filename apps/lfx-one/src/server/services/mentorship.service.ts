@@ -104,7 +104,7 @@ export class MentorshipService {
    * One lazy-load page of LF projects for the enroll picker (ROOT excluded): by name when `search` is blank, by relevance otherwise.
    * The query service can trim a page after cutting it (access filtering) and still return a `page_token`, so this follows the
    * token until `limit` projects are in hand or `MENTORSHIP_LF_PROJECT_MAX_READS` reads are spent, and hands back the token it
-   * stopped at, so a short page can still carry a cursor. A cursor that comes back unchanged ends the list (null): following it
+   * stopped at, so a short page can still carry a cursor. A cursor that comes back unchanged ends the list (no `page_token`): following it
    * would only replay the page just read and duplicate its projects. The page may hold a little more than `limit`, since a project is never
    * dropped between two cursors. `limit` is held to 1–`MENTORSHIP_LF_PROJECT_MAX_LIMIT` and `search` is cut to
    * `MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH`.
@@ -138,7 +138,7 @@ export class MentorshipService {
     }));
 
     logger.debug(req, 'mentorship_get_lf_projects', 'LF projects page built', { count: data.length, reads, has_more: !!pageToken });
-    return { data, nextPageToken: pageToken ?? null };
+    return { data, ...(pageToken && { page_token: pageToken }) };
   }
 
   /**

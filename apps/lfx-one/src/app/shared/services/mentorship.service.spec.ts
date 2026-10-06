@@ -44,7 +44,7 @@ describe('MentorshipService — lookup error mapping', () => {
     expect(http.expectOne((req) => req.url === '/api/mentorship/programs/name-available').request.urlWithParams).toContain('name=C%2B%2B%20Mentorship');
     const projects = http.expectOne((req) => req.url === '/api/mentorship/lf-projects').request.urlWithParams;
     expect(projects).toContain('search=C%2B%2B');
-    expect(projects).toContain('pageToken=ab%2Bcd%2Fef%3D');
+    expect(projects).toContain('page_token=ab%2Bcd%2Fef%3D');
   });
 
   it('maps a missing CII project to null and lets other CII failures propagate', () => {

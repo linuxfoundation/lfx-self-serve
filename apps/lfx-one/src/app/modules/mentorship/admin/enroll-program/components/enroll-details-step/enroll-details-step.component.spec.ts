@@ -71,7 +71,7 @@ describe('EnrollDetailsStepComponent — description counter', () => {
         {
           provide: MentorshipService,
           useValue: {
-            getLfProjects: () => of({ data: [], nextPageToken: null }),
+            getLfProjects: () => of({ data: [] }),
             getCiiBadge: () => of(null),
             isProgramNameAvailable: () => of({ available: true }),
           },
@@ -118,7 +118,7 @@ describe('EnrollDetailsStepComponent — selected project', () => {
         {
           provide: MentorshipService,
           useValue: {
-            getLfProjects: () => of({ data: [alpha], nextPageToken: null }),
+            getLfProjects: () => of({ data: [alpha] }),
             getCiiBadge: () => of(null),
             isProgramNameAvailable: () => of({ available: true }),
           },
@@ -183,11 +183,11 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
 
   const setUp = async (
     firstPage: { id: string; name: string; slug: string }[],
-    secondPage: { data: { id: string; name: string; slug: string }[]; nextPageToken: string | null } = { data: [beta], nextPageToken: null },
+    secondPage: { data: { id: string; name: string; slug: string }[]; page_token?: string } = { data: [beta] },
     respond?: (params: { pageToken?: string }) => Observable<unknown> | undefined
   ): Promise<void> => {
     getLfProjects = vi.fn(
-      (params: { pageToken?: string }) => respond?.(params) ?? of(params.pageToken === 'page-2' ? secondPage : { data: firstPage, nextPageToken: 'page-2' })
+      (params: { pageToken?: string }) => respond?.(params) ?? of(params.pageToken === 'page-2' ? secondPage : { data: firstPage, page_token: 'page-2' })
     );
     TestBed.overrideComponent(EnrollDetailsStepComponent, { set: { imports: [ReactiveFormsModule, StubSelectComponent], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
 
@@ -230,7 +230,7 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
     let reads = 0;
     await setUp([], undefined, () => {
       reads++;
-      return of({ data: [lfProject(`short-${reads}`)], nextPageToken: `cursor-${reads}` });
+      return of({ data: [lfProject(`short-${reads}`)], page_token: `cursor-${reads}` });
     });
 
     expect(getLfProjects).toHaveBeenCalledTimes(1 + MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS);
@@ -239,14 +239,14 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
 
   it('leaves a short page to the scroller once a page worth of projects is loaded', async () => {
     const rest = fullPage.slice(1);
-    await setUp([lfProject('alpha')], { data: rest, nextPageToken: 'page-3' });
+    await setUp([lfProject('alpha')], { data: rest, page_token: 'page-3' });
 
     expect(getLfProjects).toHaveBeenCalledTimes(2);
     expect(optionIds()).toHaveLength(MENTORSHIP_LF_PROJECT_PAGE_SIZE);
   });
 
   it('treats a cursor that came back unchanged as the end, neither following it nor loading it on scroll', async () => {
-    await setUp([lfProject('alpha')], { data: [], nextPageToken: 'page-2' });
+    await setUp([lfProject('alpha')], { data: [], page_token: 'page-2' });
 
     expect(getLfProjects).toHaveBeenCalledTimes(2);
     expect(optionIds()).toEqual(['uid-alpha']);

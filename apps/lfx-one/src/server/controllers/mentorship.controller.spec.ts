@@ -173,11 +173,11 @@ describe('MentorshipController enroll lookups', () => {
     expect(res.json).not.toHaveBeenCalled();
   });
 
-  it('parses the project search, page token and limit and returns the page', async () => {
-    const page = { data: [{ id: 'uid-1', name: 'Alpha', slug: 'alpha' }], nextPageToken: 'cursor-3' };
+  it('parses the project search, page_token and page_size and returns the page', async () => {
+    const page = { data: [{ id: 'uid-1', name: 'Alpha', slug: 'alpha' }], page_token: 'cursor-3' };
     const getLfProjects = vi.spyOn(MentorshipService.prototype, 'getLfProjects').mockResolvedValue(page);
 
-    await controller.getLfProjects(buildReq({ search: ' alp ', pageToken: ' cursor-2 ', limit: '5' }), res, next);
+    await controller.getLfProjects(buildReq({ search: ' alp ', page_token: ' cursor-2 ', page_size: '5' }), res, next);
 
     expect(getLfProjects).toHaveBeenCalledWith(expect.anything(), { search: 'alp', pageToken: 'cursor-2', limit: 5 });
     expect(res.json).toHaveBeenCalledWith(page);

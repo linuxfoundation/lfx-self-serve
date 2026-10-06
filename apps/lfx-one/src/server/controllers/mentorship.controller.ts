@@ -53,8 +53,8 @@ export class MentorshipController {
 
       const projects = await this.mentorshipService.getLfProjects(req, {
         search: parseTrimmedString(req.query['search']),
-        pageToken: parseTrimmedString(req.query['pageToken']),
-        limit: parseIntQuery(req.query['limit']),
+        pageToken: parseTrimmedString(req.query['page_token']),
+        limit: parseIntQuery(req.query['page_size']),
       });
 
       logger.success(req, 'get_mentorship_lf_projects', startTime, { result_count: projects.data.length });

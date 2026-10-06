@@ -35,13 +35,13 @@ export class MentorshipService {
     return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params: strictHttpParams().set('name', name) }).pipe(take(1));
   }
 
-  /** One lazy-load page of LF projects; pass the previous page's `nextPageToken` as `pageToken` for the next one. Errors propagate. */
+  /** One lazy-load page of LF projects; pass the previous page's `page_token` as `pageToken` for the next one. Errors propagate. */
   public getLfProjects(params?: { search?: string; pageToken?: string | null; limit?: number }): Observable<MentorshipLfProjectsResponse> {
     // Strict codec: a `+` in a typed search (`C++`) or in the opaque cursor would otherwise reach Express as a space.
     let httpParams = strictHttpParams();
     if (params?.search) httpParams = httpParams.set('search', params.search);
-    if (params?.pageToken) httpParams = httpParams.set('pageToken', params.pageToken);
-    httpParams = httpParams.set('limit', String(params?.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
+    if (params?.pageToken) httpParams = httpParams.set('page_token', params.pageToken);
+    httpParams = httpParams.set('page_size', String(params?.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
 
     return this.http
       .get<MentorshipLfProjectsResponse>('/api/mentorship/lf-projects', { params: httpParams })
