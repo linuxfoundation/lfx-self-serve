@@ -808,6 +808,11 @@ export class AudienceBuilderTabComponent {
   );
 
   public constructor() {
+    // The last NON-empty advertised event URL; see the `initialEventUrl` reset below. Declared here
+    // because a project switch must clear it too: carried over, project A's last event made a
+    // brief for project B's event read as a CHANGE, wiping work the operator started by hand in B.
+    let lastEventUrl = '';
+
     // A project switch must drop the previous portal's audience state, not just refetch
     // capabilities. The campaigns component stays mounted across `activeFoundationSlug`
     // changes, so discovered lists, ticks, preview counts and compose banners all survived —
@@ -816,10 +821,6 @@ export class AudienceBuilderTabComponent {
     //
     // `resetRunState` already invalidates in-flight replies via the run generation, so a
     // request issued for the old project cannot write after this either.
-    // The last NON-empty advertised event URL; see the `initialEventUrl` reset below. Declared here
-    // because a project switch must clear it too: carried over, project A's last event made a
-    // brief for project B's event read as a CHANGE, wiping work the operator started by hand in B.
-    let lastEventUrl = '';
     toObservable(this.projectSlug)
       .pipe(distinctUntilChanged(), pairwise(), takeUntilDestroyed(this.destroyRef))
       .subscribe(([previousProject]) => {

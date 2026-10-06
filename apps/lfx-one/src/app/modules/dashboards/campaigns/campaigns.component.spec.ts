@@ -3462,7 +3462,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(
         (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent,
         'Stage was disabled with no reason given'
-      ).toContain('being replaced');
+      ).toContain('being written');
 
       internals().emailAudienceWriteInFlight.set(false);
       expect(internals().canStageEmail()).toBe(true);
@@ -3504,6 +3504,18 @@ describe('CampaignsComponent — email delivery channel', () => {
       (internals() as unknown as { onSelectEmailSegment(id: string): void }).onSelectEmailSegment('alumni');
 
       expect(internals().emailStaging(), 'a finished stage\'s "Draft created" was erased').toBe('done');
+    });
+
+    it('explains a Stage blocked by a FIRST compose, not "compose it first"', () => {
+      // The audience is still null while the first compose runs, so a hint keyed on the audience
+      // told the operator to do exactly what was already in progress.
+      onImplementTab();
+      internals().emailAudienceWriteInFlight.set(true);
+      fixture.detectChanges();
+
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent ?? '';
+      expect(hint).toContain('being written');
+      expect(hint, 'the hint asked for the compose that was running').not.toContain('Compose the send audience');
     });
 
     it('says a restored audience is attached instead of asking for one', () => {

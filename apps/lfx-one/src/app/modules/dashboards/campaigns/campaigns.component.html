@@ -1028,14 +1028,18 @@
                         {{ briefRequiredHint }}
                       } @else if (selectedEmailTemplateId() === '') {
                         Choose a template to clone.
+                      } @else if (activeFoundationSlug() === '') {
+                        Select a foundation to stage this send under.
+                      } @else if (emailAudienceWriteInFlight()) {
+                        <!-- Before the audience-state branches: on a first compose the audience is still
+                             null, and "compose it first" told the operator to do what was running. -->
+                        The audience is being written on the Audience tab — wait for it to finish before staging.
                       } @else if (emailAudience() === null) {
                         Compose the send audience on the Audience tab first.
                       } @else if (emailAudience()?.status === 'building') {
                         The audience is unconfirmed — reconcile the lists it created before staging.
                       } @else if (emailAudience()?.status !== 'built') {
                         The audience failed — compose it again on the Audience tab before staging.
-                      } @else if (emailAudienceWriteInFlight()) {
-                        The audience is being replaced on the Audience tab — wait for it to finish before staging.
                       } @else if (emailCopyState() === 'generating' || abTestCopyState() === 'generating') {
                         Wait for the copy to finish generating before staging.
                       }

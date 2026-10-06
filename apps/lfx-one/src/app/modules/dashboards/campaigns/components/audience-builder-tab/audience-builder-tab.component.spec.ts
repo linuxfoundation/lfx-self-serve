@@ -835,6 +835,14 @@ describe('AudienceBuilderTabComponent', () => {
       fixture.detectChanges();
 
       expect(host().querySelector('[data-testid="campaigns-audience-compose-stranded"]'), 'the abandoned create was not reported').not.toBeNull();
+
+      // And composing again in that project is blocked until the operator reconciles it.
+      typeEventUrl('https://events.example.org/event-b');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      click('campaigns-audience-compose');
+      expect(composeAudienceMaster, 'a second compose ran over the stranded one').toHaveBeenCalledTimes(1);
     });
 
     it("drops a discovery still streaming when a different event's brief arrives", async () => {
