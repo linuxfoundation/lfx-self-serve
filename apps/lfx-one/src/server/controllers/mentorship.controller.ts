@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MENTORSHIP_ENROLL_NAME_MAX } from '@lfx-one/shared/constants';
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -26,6 +27,11 @@ export class MentorshipController {
       const name = parseTrimmedString(req.query['name']) ?? '';
       if (!name) {
         throw ServiceValidationError.forField('name', 'Program name is required.', { operation: 'get_mentorship_name_available' });
+      }
+      if (name.length > MENTORSHIP_ENROLL_NAME_MAX) {
+        throw ServiceValidationError.forField('name', `Program name must be at most ${MENTORSHIP_ENROLL_NAME_MAX} characters.`, {
+          operation: 'get_mentorship_name_available',
+        });
       }
 
       const result = await this.mentorshipService.isProgramNameAvailable(req, name);

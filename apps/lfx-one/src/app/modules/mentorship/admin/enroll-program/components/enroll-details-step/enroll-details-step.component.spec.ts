@@ -170,10 +170,11 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
 
   const optionIds = (): string[] => (projectSelect().options() as { value: string }[]).map((option) => option.value);
 
-  const setUp = async (firstPage: { id: string; name: string; slug: string }[]): Promise<void> => {
-    getLfProjects = vi.fn((params: { pageToken?: string }) =>
-      of(params.pageToken === 'page-2' ? { data: [beta], nextPageToken: null } : { data: firstPage, nextPageToken: 'page-2' })
-    );
+  const setUp = async (
+    firstPage: { id: string; name: string; slug: string }[],
+    secondPage: { data: { id: string; name: string; slug: string }[]; nextPageToken: string | null } = { data: [beta], nextPageToken: null }
+  ): Promise<void> => {
+    getLfProjects = vi.fn((params: { pageToken?: string }) => of(params.pageToken === 'page-2' ? secondPage : { data: firstPage, nextPageToken: 'page-2' }));
     TestBed.overrideComponent(EnrollDetailsStepComponent, { set: { imports: [ReactiveFormsModule, StubSelectComponent], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
 
     await TestBed.configureTestingModule({
@@ -209,6 +210,13 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
 
     expect(getLfProjects).toHaveBeenCalledTimes(2);
     expect(optionIds()).toEqual(['uid-alpha', 'uid-beta']);
+  });
+
+  it('does not follow a short page whose cursor came back unchanged', async () => {
+    await setUp([lfProject('alpha')], { data: [], nextPageToken: 'page-2' });
+
+    expect(getLfProjects).toHaveBeenCalledTimes(2);
+    expect(optionIds()).toEqual(['uid-alpha']);
   });
 
   it('stops requesting once the cursor runs out', async () => {

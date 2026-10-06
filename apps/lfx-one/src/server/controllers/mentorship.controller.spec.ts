@@ -5,6 +5,7 @@
 // which needs the JIT compiler under vitest.
 import '@angular/compiler';
 
+import { MENTORSHIP_ENROLL_NAME_MAX } from '@lfx-one/shared/constants';
 import type { NextFunction, Request, Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -148,6 +149,15 @@ describe('MentorshipController enroll lookups', () => {
     const isAvailable = vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable');
 
     await controller.isProgramNameAvailable(buildReq({ name: '   ' }), res, next);
+
+    expect(isAvailable).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  it('rejects a name longer than the form allows before calling upstream', async () => {
+    const isAvailable = vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable');
+
+    await controller.isProgramNameAvailable(buildReq({ name: 'a'.repeat(MENTORSHIP_ENROLL_NAME_MAX + 1) }), res, next);
 
     expect(isAvailable).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));

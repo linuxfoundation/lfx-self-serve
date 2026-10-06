@@ -251,7 +251,7 @@ export class EnrollDetailsStepComponent {
       }),
       switchMap((search) =>
         this.mentorshipService.getLfProjects({ search, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
-          map((response) => ({ ...response, append: false as const })),
+          map((response) => ({ ...response, append: false as const, requestedToken: null })),
           catchError(() => {
             this.lfProjectsLoading.set(false);
             return EMPTY;
@@ -269,7 +269,7 @@ export class EnrollDetailsStepComponent {
         this.lfProjectsLoading.set(true);
         return this.mentorshipService.getLfProjects({ search: this.lfSearch, pageToken, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
           takeUntil(search$),
-          map((response) => ({ ...response, append: true as const })),
+          map((response) => ({ ...response, append: true as const, requestedToken: pageToken })),
           catchError(() => {
             this.lfProjectsLoading.set(false);
             return EMPTY;
@@ -285,8 +285,10 @@ export class EnrollDetailsStepComponent {
         this.lfProjects.set(page.append ? [...this.lfProjects(), ...page.data] : page.data);
         this.lfNextPageToken.set(page.nextPageToken);
         this.lfProjectsLoading.set(false);
-        // A page that access filtering left short may not fill the scroller enough to fire onLazyLoad, so follow its cursor here.
-        if (page.nextPageToken && page.data.length < MENTORSHIP_LF_PROJECT_PAGE_SIZE) this.lfLoadMore$.next();
+        // A page that access filtering left short may not fill the scroller enough to fire onLazyLoad, so follow its cursor here,
+        // but only when it moved: following a cursor that came back unchanged would request the same page forever.
+        const cursorAdvanced = page.nextPageToken !== page.requestedToken;
+        if (page.nextPageToken && cursorAdvanced && page.data.length < MENTORSHIP_LF_PROJECT_PAGE_SIZE) this.lfLoadMore$.next();
       });
   }
 
