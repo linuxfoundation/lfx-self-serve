@@ -628,6 +628,93 @@ describe('MentorshipAdminService application decisions', () => {
     expect(spy.mock.calls.every((call) => call[3] === 'GET')).toBe(true);
   });
 
+  describe('createTasks', () => {
+    const USER_ID = '1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e';
+    const MENTEE_USER_ID = '2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f';
+    const upstreamTermId = '3d4e5f6a-7b8c-4d9e-8f0a-2b3c4d5e6f7a';
+    const applicationIds = Array.from({ length: 7 }, (_, index) => `6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4${index}`);
+    const request = { applicationIds, name: 'Read the guide', description: 'private-task-text', dueDate: '2030-01-31', requiresFileSubmission: true };
+    const acceptedApplication = { id: 'x', role: 'mentee', status: 'accepted', user_id: MENTEE_USER_ID, program_term_id: upstreamTermId };
+
+    it('posts the task to the one application upstream, owned and authored by the caller, and lists it as created', async () => {
+      const id = applicationIds[0];
+      const spy = stubProgramReads({
+        '/mentorship/v1/me': { id: USER_ID },
+        [`/mentorship/v1/applications/${id}`]: acceptedApplication,
+        [`/mentorship/v1/applications/${id}/tasks`]: { id: 'task' },
+      });
+
+      const result = await service.createTasks(buildReq(), { ...request, applicationIds: [id] });
+
+      expect(result).toEqual({ created: [id], failed: [] });
+      const post = spy.mock.calls.find((call) => call[3] === 'POST');
+      expect(post?.[2]).toBe(`/mentorship/v1/applications/${id}/tasks`);
+      expect(post?.[5]).toMatchObject({
+        assignee_id: MENTEE_USER_ID,
+        program_term_id: upstreamTermId,
+        owner_id: USER_ID,
+        created_by: USER_ID,
+        name: 'Read the guide',
+        due_date: '2030-01-31',
+        submit_file: 'required',
+      });
+    });
+
+    it.each([403, 404, 409])('passes an upstream %i on when the one application fails', async (status) => {
+      const id = applicationIds[0];
+      stubProgramReads({
+        '/mentorship/v1/me': { id: USER_ID },
+        [`/mentorship/v1/applications/${id}`]: acceptedApplication,
+        [`/mentorship/v1/applications/${id}/tasks`]: new MicroserviceError('upstream', status, 'UPSTREAM'),
+      });
+
+      await expect(service.createTasks(buildReq(), { ...request, applicationIds: [id] })).rejects.toMatchObject({ statusCode: status });
+    });
+
+    it('answers 400 without posting when the application is not an accepted mentee', async () => {
+      const id = applicationIds[0];
+      const spy = stubProgramReads({
+        '/mentorship/v1/me': { id: USER_ID },
+        [`/mentorship/v1/applications/${id}`]: { ...acceptedApplication, status: 'graduated' },
+      });
+
+      await expect(service.createTasks(buildReq(), { ...request, applicationIds: [id] })).rejects.toMatchObject({ statusCode: 400 });
+      expect(spy.mock.calls.every((call) => call[3] !== 'POST')).toBe(true);
+    });
+
+    it('creates at most three tasks at once and lists the ones that failed, without logging the task text', async () => {
+      let inFlight = 0;
+      let peak = 0;
+      const failing = applicationIds[4];
+      vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockImplementation(async (_req, _service, path: string, method?: string) => {
+        if (path === '/mentorship/v1/me') return { id: USER_ID } as never;
+        if (method === 'POST') {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          inFlight -= 1;
+          if (path.includes(failing)) throw new MicroserviceError('upstream', 409, 'UPSTREAM');
+          return { id: 'task' } as never;
+        }
+        return acceptedApplication as never;
+      });
+
+      const result = await service.createTasks(buildReq(), request);
+
+      expect(result.failed).toEqual([failing]);
+      expect(result.created).toEqual(applicationIds.filter((id) => id !== failing));
+      expect(peak).toBeLessThanOrEqual(3);
+      expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'create_mentorship_admin_tasks', expect.any(String), {
+        applicationId: failing,
+        status: 409,
+        code: 'UPSTREAM',
+      });
+      const logged = JSON.stringify([...vi.mocked(logger.debug).mock.calls, ...vi.mocked(logger.warning).mock.calls].map((call) => call.slice(1)));
+      expect(logged).not.toContain('private-task-text');
+      expect(logged).not.toContain('Read the guide');
+    });
+  });
+
   it('declines the term pending applications and maps the count', async () => {
     const spy = stubProgramReads({
       [`/mentorship/v1/programs/${PROGRAM_ID}/terms/${TERM_ID}/applications/bulk-decline`]: { declined_count: 4 },

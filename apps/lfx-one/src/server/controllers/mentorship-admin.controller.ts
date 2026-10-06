@@ -27,6 +27,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { parseMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
+import { parseMentorshipMentorTaskCreateRequest } from '../helpers/mentorship-mentor-task.helper';
 import { parseMentorshipAdminPaging, parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
 import { isMentorshipProgramStatus, MentorshipAdminService } from '../services/mentorship-admin.service';
@@ -275,6 +276,33 @@ export class MentorshipAdminController {
 
       logger.success(req, operation, startTime, { applicationId });
       res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/admin/tasks  { applicationIds, name, description, dueDate?, requiresFileSubmission? } -> { created, failed }
+  // Auth: logged-in user required (401 otherwise). The body is validated with the task dialog's rules (400), the same
+  // as the mentor route. With one application upstream's status passes through; with several, the ones not created
+  // are listed in `failed`. Only ids and counts are logged, never the task's text.
+  public async createTasks(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'create_mentorship_admin_tasks';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const request = parseMentorshipMentorTaskCreateRequest(req.body, operation);
+      const result = await this.mentorshipAdminService.createTasks(req, request);
+
+      logger.success(req, operation, startTime, {
+        application_count: request.applicationIds.length,
+        created_count: result.created.length,
+        failed_count: result.failed.length,
+      });
+      res.json(result);
     } catch (error) {
       next(error);
     }

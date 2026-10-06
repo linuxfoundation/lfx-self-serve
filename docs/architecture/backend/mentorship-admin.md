@@ -5,7 +5,7 @@
 
 The admin pages under `/mentorship/admin/*` read their data from the LFX One BFF's `/api/mentorship/admin/*` routes. The admin code has its own router, controller and services, separate from the mentor and mentee code, so each admin screen can move to the mentorship service without touching the other two (linuxfoundation/lfx-mentorship#229).
 
-The program list and the program page (header, tab counts and all four tabs) read the mentorship service (see [Program list sourcing](#program-list-sourcing) and [Program page sourcing](#program-page-sourcing)). The program page reads no mock data; the Enroll form's lookups and the Mentors tab's invite picker still do (see [Program list sourcing](#program-list-sourcing)). Application decisions on Current Mentees (accept, decline, withdraw, graduate, decline by term) and the reviewer note write through the mentorship service (see [Application decisions](#application-decisions) and [Reviewer note](#reviewer-note)). The other write actions (invite, remove, term create, edit, close, re-open, delete) stay "coming soon" stubs until their PRs.
+The program list and the program page (header, tab counts and all four tabs) read the mentorship service (see [Program list sourcing](#program-list-sourcing) and [Program page sourcing](#program-page-sourcing)). The program page reads no mock data; the Enroll form's lookups and the Mentors tab's invite picker still do (see [Program list sourcing](#program-list-sourcing)). Application decisions on Current Mentees (accept, decline, withdraw, graduate, decline by term), the reviewer note and Create task write through the mentorship service (see [Application decisions](#application-decisions), [Reviewer note](#reviewer-note) and [Create task](#create-task)). The other write actions (invite, remove, term create, edit, close, re-open, delete) stay "coming soon" stubs until their PRs.
 
 ## Routes
 
@@ -21,6 +21,7 @@ The program list and the program page (header, tab counts and all four tabs) rea
 | POST   | `/api/mentorship/admin/applications/:applicationId/withdraw`              | `withdrawApplication`     | Withdraw on a Current Mentees row                     |
 | POST   | `/api/mentorship/admin/programs/:programId/terms/:termId/decline-pending` | `declinePendingForTerm`   | Decline by Term on the Current Mentees toolbar        |
 | PUT    | `/api/mentorship/admin/applications/:applicationId/note`                  | `updateApplicationNote`   | Note on a Current Mentees row                         |
+| POST   | `/api/mentorship/admin/tasks`                                             | `createTasks`             | Create task on an accepted Current Mentees row        |
 
 `programId`, `applicationId` and `termId` must be UUIDs; anything else is a 400. The list accepts `search`, `status`, `offset` and `limit` (1–50, default 12). A malformed, blank, repeated or out-of-range `offset` or `limit` is a 400, and so is a repeated `search` or `status`. The mentees route requires `type` (`current` for open terms, `past` for closed ones), and accepts `status`, `termId`, `search`, `offset` and `limit` (1–50); a bad value is a 400. The mentors route accepts `status` (`requested`, `pending`, `invited`, `active`, `declined`, `withdrawn`), `search`, `offset` and `limit` (1–50, default 10). The terms route accepts `offset` and `limit` (1–50, default 10).
 
@@ -78,6 +79,17 @@ Three write routes, each behind `blockDuringImpersonation` (a 403 with code `IMP
 - The note dialog is the same one the mentor surface uses, and the Current Mentees tab owns it. A save of an unchanged note sends nothing. A note changes no tab count, so the page does not reload its counts.
 - The save's state lives in `AdminNoteSaveService`, not the tab, because switching tabs destroys the tab. The save is not tied to the tab, so it and its toast finish if the admin leaves first. While it is in flight `isSaving(id)` keeps that row's dialog shut, in a tab rebuilt by a switch too. When it succeeds `saved$` announces it, and whichever Current Mentees tab is on screen writes the note into its row; a tab built later reads the rows again, saved note included. Each save also bumps a version, and a page read takes the version as it starts (`currentVersion()`) and lays `notesSavedSince(version)` over its answer, so a read that started before the save cannot replace the saved note with the older one.
 - Logs carry the application id and the note's length only, never its text.
+
+## Create task
+
+`POST …/tasks` gives accepted mentees a task, behind `blockDuringImpersonation`, with the caller's bearer token so upstream decides who may create.
+
+- The contract is the mentor task create's: the body is `{ applicationIds, name, description, dueDate?, requiresFileSubmission? }` and the answer is 200 `{ created, failed }`. The body check is `parseMentorshipMentorTaskCreateRequest` and the upstream work is `createMentorshipMenteeTasks`, both in `mentorship-mentor-task.helper.ts` and shared with the mentor route (see [Mentorship mentor](./mentorship-mentor.md)), so the two routes cannot drift apart. Each route passes its own operation, so the admin create logs as `create_mentorship_admin_tasks`. The admin is the task's owner and author, and `requiresFileSubmission` maps to `submit_file`.
+- Upstream does the admin check, and the application must be an accepted mentee: a non-accepted application is a 400 before any task is written. With one application the upstream error passes through (403, 404, 409); with several, at most `MENTORSHIP_MENTOR_TASK_CREATE_CONCURRENCY` (3) are created at once and the ones that failed are listed in `failed`. The Current Mentees tab sends one application per create.
+- Upstream's create is not idempotent. A failure with no status of its own (a timeout, a 5xx) may still have created the task, so the page's message tells the admin to check the mentee's row rather than to retry. A 400, a 403 and a 404 get their own message, and the impersonation 403 shows the server's.
+- A create that settles, created or not, reloads the current page and has the program page read its tab counts again, as every decision does: a failure may still have created the task, and its message sends the admin to the mentee's row. The tasks cache is cleared with the reload, so a row that was collapsed reads no tasks. A row that was expanded stays expanded and reads its tasks once, after the reload lands; every other row collapses.
+- The create runs in `AdminTaskCreateService` and is not cancelled by the tab going away. While another write is in flight the tab shows "Please wait", opens no form and sends nothing. The service also tracks the mentees getting a task (`isCreating(id)`), so a tab rebuilt by a switch while a create is still running keeps that mentee's form shut and sends nothing for them.
+- Logs carry the application count and the created and failed counts only, never the task's name or description.
 
 ## Program list sourcing
 

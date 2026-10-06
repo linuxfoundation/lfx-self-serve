@@ -53,8 +53,10 @@ import {
   MentorshipCurrentMenteeAction,
   MentorshipAttendanceType,
   MentorshipMenteeStatus,
+  MentorshipMentorTaskCreateRequest,
   MentorshipProgramApplicant,
   MentorshipRowAction,
+  MentorshipTaskFormValue,
 } from '@lfx-one/shared/interfaces';
 import {
   buildMentorshipGraduateTaskWarning,
@@ -77,6 +79,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, distinctUntilChanged, map, Observable, of, switchMap, take, tap } from 'rxjs';
 
 import { AdminNoteSaveService } from '../../../../services/admin-note-save.service';
+import { AdminTaskCreateService } from '../../../../services/admin-task-create.service';
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 import { ApplicantTasksPanelComponent } from '../../../../components/applicant-tasks-panel/applicant-tasks-panel.component';
@@ -94,9 +97,13 @@ import { RowActionsComponent } from '../../../../components/row-actions/row-acti
  * (with an attendance type), Decline, Withdraw, Graduate and Decline by Term write through the BFF; each
  * reloads the page and tells the parent to refresh the tab counts, and a 409 or 422 answers with its own
  * message. Graduate always confirms, warning from the row's task counts without reading any task. Create task
- * opens the task form first and the status export still stubs to coming soon. The reviewer note saves through the
- * BFF too and is written into its row, so the table shows it without a read; a later read brings the saved note back,
- * and a read that was already in flight when the save landed keeps the saved note over its older answer.
+ * opens the task form and then creates through the BFF like the other writes, reloading even on a failure, which may
+ * still have created the task; an expanded row stays expanded across the reload and re-reads its tasks once, a
+ * collapsed row reads none. The form stays shut while another write is in flight, or while a create is still running
+ * for the mentee, even one a tab switch outlived. The status export still stubs to coming
+ * soon. The reviewer note saves through the BFF too and is written into its row, so the table shows it without a
+ * read; a later read brings the saved note back, and a read that was already in flight when the save landed keeps
+ * the saved note over its older answer.
  */
 @Component({
   selector: 'lfx-mentorship-current-mentees-tab',
@@ -125,6 +132,7 @@ export class CurrentMenteesTabComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly noteSave = inject(AdminNoteSaveService);
+  private readonly taskCreate = inject(AdminTaskCreateService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly programId = input.required<string>();
@@ -176,6 +184,8 @@ export class CurrentMenteesTabComponent {
   protected readonly decisionInFlight = signal(false);
   /** Set when the tab is destroyed, so a decision that lands afterwards does not reload the gone table. */
   private destroyed = false;
+  /** The one row a settled Create task left expanded; its tasks are read again when the reloaded page lands. */
+  private rereadTasksForId: string | null = null;
 
   protected readonly termOptions = this.initTermOptions();
   protected readonly rows = this.initRows();
@@ -393,7 +403,7 @@ export class CurrentMenteesTabComponent {
    */
   private runWrite<T>(write: Observable<T>, onDone: (result: T) => void, termClosedMessage?: string): void {
     if (this.decisionInFlight()) {
-      this.messageService.add({ severity: 'info', summary: 'Please wait', detail: MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE, life: 3000 });
+      this.showPleaseWait();
       return;
     }
     this.decisionInFlight.set(true);
@@ -441,13 +451,57 @@ export class CurrentMenteesTabComponent {
     this.messageService.add({ severity: 'error', summary: 'Error', detail, life: 5000 });
   }
 
+  private showPleaseWait(): void {
+    this.messageService.add({ severity: 'info', summary: 'Please wait', detail: MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE, life: 3000 });
+  }
+
+  /**
+   * Opens the task form, unless another write of this tab is in flight or a task is still being created for the mentee
+   * by a tab a tab switch destroyed: the form would only be dropped on submit.
+   */
   private onCreateTask(mentee: MentorshipProgramApplicant): void {
+    if (this.decisionInFlight() || this.taskCreate.isCreating(mentee.id)) {
+      this.showPleaseWait();
+      return;
+    }
     this.taskDialog
       .openCreate({ id: mentee.id, name: mentee.name, email: mentee.email, avatarUrl: mentee.avatarUrl })
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((value) => {
         if (!value) return;
-        this.comingSoon.notify(`Create task "${value.name}" for ${mentee.name}`);
+        this.createTask(mentee, value);
+      });
+  }
+
+  /**
+   * Creates the task, which toasts its own outcome. Like every write it is never cancelled by the tab going away. Once
+   * it settles the parent refreshes the counts and the page reloads, whatever the outcome: a failure may still have
+   * created the task, and its toast sends the admin to the mentee's row. A row whose tasks were expanded stays
+   * expanded and re-reads its tasks once after that reload (R4a), while a collapsed row's tasks are not read. While
+   * another write of this tab, or a create for the mentee that outlived an earlier tab, is in flight, nothing is sent.
+   */
+  private createTask(mentee: MentorshipProgramApplicant, value: MentorshipTaskFormValue): void {
+    if (this.decisionInFlight() || this.taskCreate.isCreating(mentee.id)) {
+      this.showPleaseWait();
+      return;
+    }
+    this.decisionInFlight.set(true);
+    const request: MentorshipMentorTaskCreateRequest = {
+      applicationIds: [mentee.id],
+      name: value.name,
+      description: value.description,
+      dueDate: value.dueOn,
+      requiresFileSubmission: value.requiresFileSubmission,
+    };
+    this.taskCreate
+      .create(request)
+      .pipe(take(1))
+      .subscribe(() => {
+        this.decisionInFlight.set(false);
+        this.countsRefresh()();
+        if (this.destroyed) return;
+        if (this.expandedTaskMenteeIds()[mentee.id]) this.rereadTasksForId = mentee.id;
+        this.reloadCount.update((count) => count + 1);
       });
   }
 
@@ -484,8 +538,9 @@ export class CurrentMenteesTabComponent {
 
   /**
    * Reads the page whenever the program, a filter, the offset or the retry count changes; a read still in flight
-   * is dropped. Each read clears the tasks cache and collapses every row. A failed read keeps nothing on screen
-   * but the error, so Retry reads the same page again.
+   * is dropped. Each read clears the tasks cache and collapses every row, except the one row a successful Create
+   * task left expanded: it stays expanded and re-reads its tasks once the page lands. A failed read keeps nothing
+   * on screen but the error, so Retry reads the same page again.
    */
   private initPageReads(): void {
     const query = computed(() => ({
@@ -503,7 +558,7 @@ export class CurrentMenteesTabComponent {
           this.loading.set(true);
           this.loadFailed.set(false);
           this.tasksByApplication.set(new Map());
-          this.expandedTaskMenteeIds.set({});
+          this.expandedTaskMenteeIds.set(this.rereadTasksForId ? { [this.rereadTasksForId]: true } : {});
         }),
         switchMap(({ programId, search, status, termId, offset }) => {
           // A note saved while this read is in flight may be missing from its answer, so the read keeps it.
@@ -526,6 +581,8 @@ export class CurrentMenteesTabComponent {
       )
       .subscribe(({ page }) => {
         this.loading.set(false);
+        const rereadId = this.rereadTasksForId;
+        this.rereadTasksForId = null;
         if (!page) {
           this.applications.set([]);
           this.total.set(0);
@@ -534,6 +591,9 @@ export class CurrentMenteesTabComponent {
         }
         this.applications.set(page.data);
         this.total.set(page.total);
+        // A row re-expanded while this read was in flight has already started its own tasks read.
+        if (!rereadId || this.tasksByApplication().has(rereadId)) return;
+        if (this.expandedTaskMenteeIds()[rereadId] && page.data.some((row) => row.id === rereadId)) this.loadTasks(rereadId);
       });
   }
 

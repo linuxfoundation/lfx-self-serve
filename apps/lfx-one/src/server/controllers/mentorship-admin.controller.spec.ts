@@ -431,6 +431,66 @@ describe('MentorshipAdminController', () => {
       });
     });
 
+    describe('createTasks', () => {
+      const taskReq = (body: unknown): Request => ({ ...buildReq({}, {}), body }) as Request;
+      const validBody = { applicationIds: [APPLICATION_ID], name: ' Read the guide ', description: 'private-task-text', dueDate: '2030-01-31' };
+
+      it('passes the validated request on and answers with the created and failed ids', async () => {
+        const write = vi.spyOn(MentorshipAdminService.prototype, 'createTasks').mockResolvedValue({ created: [APPLICATION_ID], failed: [] });
+        const out = writeRes();
+
+        await controller.createTasks(taskReq({ ...validBody, requiresFileSubmission: true }), out, next);
+
+        expect(write).toHaveBeenCalledWith(expect.anything(), {
+          applicationIds: [APPLICATION_ID],
+          name: 'Read the guide',
+          description: 'private-task-text',
+          dueDate: '2030-01-31',
+          requiresFileSubmission: true,
+        });
+        expect(out.json).toHaveBeenCalledWith({ created: [APPLICATION_ID], failed: [] });
+        expect(next).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['no body', undefined],
+        ['no applications', { ...validBody, applicationIds: [] }],
+        ['an application id that is not a UUID', { ...validBody, applicationIds: ['12'] }],
+        ['a blank name', { ...validBody, name: '   ' }],
+        ['no description', { ...validBody, description: undefined }],
+        ['a due date that is not a calendar date', { ...validBody, dueDate: '2030-02-31' }],
+        ['a file requirement that is not a boolean', { ...validBody, requiresFileSubmission: 'yes' }],
+      ])('rejects %s with a 400 and no upstream call', async (_label, body) => {
+        const write = vi.spyOn(MentorshipAdminService.prototype, 'createTasks');
+
+        await controller.createTasks(taskReq(body), writeRes(), next);
+
+        expect(statusCodes()).toEqual([400]);
+        expect(write).not.toHaveBeenCalled();
+      });
+
+      it.each([403, 404, 409])('passes an upstream %i on to next', async (statusCode) => {
+        vi.spyOn(MentorshipAdminService.prototype, 'createTasks').mockRejectedValue(Object.assign(new Error('upstream'), { statusCode }));
+
+        await controller.createTasks(taskReq(validBody), writeRes(), next);
+
+        expect(statusCodes()).toEqual([statusCode]);
+      });
+
+      it('logs the application count and the outcome counts, never the task text', async () => {
+        vi.spyOn(MentorshipAdminService.prototype, 'createTasks').mockResolvedValue({ created: [APPLICATION_ID], failed: [] });
+
+        await controller.createTasks(taskReq(validBody), writeRes(), next);
+
+        const logged = JSON.stringify([...vi.mocked(logger.startOperation).mock.calls, ...vi.mocked(logger.success).mock.calls].map((call) => call.slice(1)));
+        expect(logged).toContain('"application_count":1');
+        expect(logged).toContain('"created_count":1');
+        expect(logged).toContain('"failed_count":0');
+        expect(logged).not.toContain('private-task-text');
+        expect(logged).not.toContain('Read the guide');
+      });
+    });
+
     it('withdrawApplication answers 204', async () => {
       const write = vi.spyOn(MentorshipAdminService.prototype, 'withdrawApplication').mockResolvedValue();
       const out = writeRes();
@@ -480,6 +540,7 @@ describe('MentorshipAdminController', () => {
       ['getProgramTerms', 'getProgramTerms', { programId: PROGRAM_ID }, {}],
       ['getApplicationTasks', 'getApplicationTasks', { applicationId: PROGRAM_ID }, {}],
       ['updateApplicationNote', 'updateApplicationNote', { applicationId: PROGRAM_ID }, {}],
+      ['createTasks', 'createTasks', {}, {}],
     ] as const)('%s passes an AuthenticationError to next without reading upstream', async (method, serviceMethod, params, query) => {
       vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
       const read = vi.spyOn(MentorshipAdminService.prototype, serviceMethod);

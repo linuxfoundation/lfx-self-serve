@@ -21,6 +21,8 @@ import {
   MentorshipAdminTermsQuery,
   MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
+  MentorshipMentorTaskCreateRequest,
+  MentorshipMentorTaskCreateResponse,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipTermRowStatus,
@@ -55,6 +57,7 @@ import {
 } from '../helpers/mentorship-admin-program.helper';
 import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { saveMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
+import { createMentorshipMenteeTasks } from '../helpers/mentorship-mentor-task.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
 import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask } from '../helpers/mentorship-program-application.helper';
 
@@ -361,6 +364,15 @@ export class MentorshipAdminService {
     }
 
     await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, `${path}/withdraw-for-mentee`, 'POST');
+  }
+
+  /**
+   * Gives accepted mentees a task, through the shared create the mentor route uses too, logged under the admin
+   * operation: the caller's local user id owns and authors each task, and with one application upstream's status
+   * passes through. Upstream checks the caller administers the program. The task's text is never logged.
+   */
+  public async createTasks(req: Request, request: MentorshipMentorTaskCreateRequest): Promise<MentorshipMentorTaskCreateResponse> {
+    return createMentorshipMenteeTasks(this.microserviceProxy, req, request, 'create_mentorship_admin_tasks');
   }
 
   /** Declines every pending application of one term. */
