@@ -77,9 +77,11 @@ export class MeetingDetailsStateService {
    */
   public readonly pastAccessKnown = computed(() => this.loadedViaPastMeetingId());
   /**
-   * Set once the viewer registers from the page (E2-02), until the lookup reflects it or the route
-   * changes: the slot moves to the registrant's state at once, as V1's optimistic flip does, rather
-   * than waiting on the indexer.
+   * Set once the viewer registers from the page (E2-02), until the route moves to another meeting:
+   * the slot moves to the registrant's state at once, as V1's optimistic flip does, rather than
+   * waiting on the indexer. It is ORed with the payload's `invited`, so it never needs clearing when
+   * the lookup catches up. Unlike V1 (keyed on the series uid) it resets on any route id change, so
+   * opening a past occurrence of the same series drops it and reads the server's `invited` instead.
    */
   private readonly optimisticInvited = signal(false);
   /** Meetings this page has auto-joined, so a remounted Join control does not open them again. */

@@ -196,7 +196,11 @@ describe('MeetingActionSlotComponent', () => {
         PublicRegistrationModalComponent,
         expect.objectContaining({
           header: 'Register for Meeting',
-          data: expect.objectContaining({ meetingId: 'meeting-1', meetingTitle: 'Acme Weekly Sync' }),
+          data: expect.objectContaining({
+            meetingId: 'meeting-1',
+            meetingTitle: 'Acme Weekly Sync',
+            user: expect.objectContaining({ email: 'ada@acme-motors.example' }),
+          }),
         })
       );
     });
