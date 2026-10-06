@@ -446,6 +446,39 @@ describe('CurrentMenteesTabComponent', () => {
       expect(noteText('app_1')).toBe('saved across the switch');
     });
 
+    it('keeps a save over the older answer of a read in flight when it landed', () => {
+      const pending = new Subject<void>();
+      updateApplicationNote.mockReturnValue(pending);
+      dialogResult = 'saved mid-read';
+      clickNote('app_1');
+
+      // Back on the tab while the save is pending: the rebuilt tab's read answers only after the save lands.
+      fixture.destroy();
+      const staleRead = new Subject<MentorshipAdminMenteesResponse>();
+      getProgramMentees.mockReturnValue(staleRead);
+      fixture = TestBed.createComponent(CurrentMenteesTabComponent);
+      fixture.componentRef.setInput('programId', 'prog_1');
+      settle();
+
+      pending.next();
+      pending.complete();
+      settle();
+      staleRead.next({ data: [mentee({ note: 'before the save' })], total: 1 });
+      staleRead.complete();
+      settle();
+
+      expect(noteText('app_1')).toBe('saved mid-read');
+    });
+
+    it('trusts a read that started after the save', () => {
+      dialogResult = 'saved earlier';
+      clickNote('app_1');
+
+      showNote('changed since');
+
+      expect(noteText('app_1')).toBe('changed since');
+    });
+
     it('survives the dialog service declining to open a second dialog', () => {
       // PrimeNG returns null when a dialog of the same component is still registered.
       dialogOpen.mockReturnValue(null);

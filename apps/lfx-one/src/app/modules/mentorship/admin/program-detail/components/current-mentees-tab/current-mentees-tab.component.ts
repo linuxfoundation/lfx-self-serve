@@ -95,7 +95,8 @@ import { RowActionsComponent } from '../../../../components/row-actions/row-acti
  * reloads the page and tells the parent to refresh the tab counts, and a 409 or 422 answers with its own
  * message. Graduate always confirms, warning from the row's task counts without reading any task. Create task
  * opens the task form first and the status export still stubs to coming soon. The reviewer note saves through the
- * BFF too and is written into its row, so the table shows it without a read; a later read brings the saved note back.
+ * BFF too and is written into its row, so the table shows it without a read; a later read brings the saved note back,
+ * and a read that was already in flight when the save landed keeps the saved note over its older answer.
  */
 @Component({
   selector: 'lfx-mentorship-current-mentees-tab',
@@ -504,8 +505,10 @@ export class CurrentMenteesTabComponent {
           this.tasksByApplication.set(new Map());
           this.expandedTaskMenteeIds.set({});
         }),
-        switchMap(({ programId, search, status, termId, offset }) =>
-          this.mentorshipAdminService
+        switchMap(({ programId, search, status, termId, offset }) => {
+          // A note saved while this read is in flight may be missing from its answer, so the read keeps it.
+          const notesVersion = this.noteSave.currentVersion();
+          return this.mentorshipAdminService
             .getProgramMentees(programId, {
               type: 'current',
               search: search || undefined,
@@ -515,10 +518,10 @@ export class CurrentMenteesTabComponent {
               limit: MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
             })
             .pipe(
-              map((page) => ({ page })),
+              map((page) => ({ page: { ...page, data: this.withNotesSavedSince(page.data, notesVersion) } })),
               catchError(() => of({ page: null }))
-            )
-        ),
+            );
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(({ page }) => {
@@ -536,11 +539,22 @@ export class CurrentMenteesTabComponent {
 
   /**
    * Writes each saved note into its row, so the table shows it without a read. The saves come from the service, so a
-   * save started before a tab switch still lands in this tab; a failed save leaves the row as it was.
+   * save started before a tab switch still lands in this tab; a failed save leaves the row as it was. A page read in
+   * flight when a save lands keeps that note too (see `withNotesSavedSince`).
    */
   private initSavedNotes(): void {
     this.noteSave.saved$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ applicationId, note }) => {
       this.applications.update((applications) => applications.map((row) => (row.id === applicationId ? { ...row, note } : row)));
+    });
+  }
+
+  /** Lays the notes saved since a read started over its rows, so an answer older than a save cannot undo it. */
+  private withNotesSavedSince(applications: MentorshipProgramApplicant[], notesVersion: number): MentorshipProgramApplicant[] {
+    const saved = this.noteSave.notesSavedSince(notesVersion);
+    if (!saved.size) return applications;
+    return applications.map((row) => {
+      const note = saved.get(row.id);
+      return note === undefined ? row : { ...row, note };
     });
   }
 

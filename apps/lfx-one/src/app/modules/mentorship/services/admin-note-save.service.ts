@@ -13,7 +13,7 @@ import {
   MENTORSHIP_ADMIN_NOTE_TOAST_LIFE,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
 } from '@lfx-one/shared/constants';
-import { MentorshipAdminSavedNote } from '@lfx-one/shared/interfaces';
+import { MentorshipAdminSavedNote, MentorshipAdminVersionedNote } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MessageService } from 'primeng/api';
 import { catchError, defer, finalize, map, Observable, of, Subject } from 'rxjs';
@@ -25,7 +25,8 @@ import { catchError, defer, finalize, map, Observable, of, Subject } from 'rxjs'
  * their own copy; the impersonation guard's 403 shows the server's message.
  *
  * Which notes are saving, and each note saved, live here rather than in the tab: switching tabs destroys
- * the Current Mentees tab, so a save can outlive the tab that started it and settle in a new one.
+ * the Current Mentees tab, so a save can outlive the tab that started it and settle in a new one. Each
+ * saved note is kept with a version, so a page read that started before a save can lay it over its answer.
  */
 @Injectable({ providedIn: 'root' })
 export class AdminNoteSaveService {
@@ -34,6 +35,9 @@ export class AdminNoteSaveService {
 
   private readonly savingIds = new Set<string>();
   private readonly savedNotes = new Subject<MentorshipAdminSavedNote>();
+  /** The last note saved for each application, with the version it was saved at. */
+  private readonly latestSaved = new Map<string, MentorshipAdminVersionedNote>();
+  private savedVersion = 0;
 
   /** Each note once saved, for the tab on screen to write into its row, whichever tab started the save. */
   public readonly saved$: Observable<MentorshipAdminSavedNote> = this.savedNotes.asObservable();
@@ -41,6 +45,23 @@ export class AdminNoteSaveService {
   /** Whether the application's note is being saved; its dialog stays shut meanwhile, so it never opens on a stale note. */
   public isSaving(applicationId: string): boolean {
     return this.savingIds.has(applicationId);
+  }
+
+  /** The version of the last save; a page read takes it as it starts and hands it to `notesSavedSince` once answered. */
+  public currentVersion(): number {
+    return this.savedVersion;
+  }
+
+  /**
+   * The notes saved after `version`, by application id. A page read that started before such a save may answer with
+   * the note from before it, so these notes win over what the read returned.
+   */
+  public notesSavedSince(version: number): ReadonlyMap<string, string> {
+    const notes = new Map<string, string>();
+    this.latestSaved.forEach((saved, applicationId) => {
+      if (saved.version > version) notes.set(applicationId, saved.note);
+    });
+    return notes;
   }
 
   /** Saves the note, already trimmed; an empty note clears it. */
@@ -55,6 +76,8 @@ export class AdminNoteSaveService {
           summary: note ? MENTORSHIP_ADMIN_NOTE_SAVE_SUCCESS_SUMMARY : MENTORSHIP_ADMIN_NOTE_CLEAR_SUCCESS_SUMMARY,
           life: MENTORSHIP_ADMIN_NOTE_TOAST_LIFE,
         });
+        this.savedVersion += 1;
+        this.latestSaved.set(applicationId, { note, version: this.savedVersion });
         this.savedNotes.next({ applicationId, note });
         return true;
       }),

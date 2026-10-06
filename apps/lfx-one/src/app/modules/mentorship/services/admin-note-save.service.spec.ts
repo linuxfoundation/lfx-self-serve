@@ -111,6 +111,27 @@ describe('AdminNoteSaveService', () => {
     expect(saved).toEqual([]);
   });
 
+  it('hands a read the notes saved since it started, the last save of each winning', async () => {
+    const OTHER_ID = '6e2d9f3a-4b5c-4d7e-9f0a-1b2c3d4e5f6a';
+    await firstValueFrom(service.save(OTHER_ID, 'before the read'));
+    const readStarted = service.currentVersion();
+
+    await firstValueFrom(service.save(APPLICATION_ID, 'first'));
+    await firstValueFrom(service.save(APPLICATION_ID, ''));
+
+    expect(service.notesSavedSince(readStarted)).toEqual(new Map([[APPLICATION_ID, '']]));
+    expect(service.notesSavedSince(service.currentVersion()).size).toBe(0);
+  });
+
+  it('hands a read no note from a failed save', async () => {
+    const readStarted = service.currentVersion();
+    updateApplicationNote.mockReturnValueOnce(throwError(() => httpError(500)));
+
+    await firstValueFrom(service.save(APPLICATION_ID, 'Note'));
+
+    expect(service.notesSavedSince(readStarted).size).toBe(0);
+  });
+
   it('shows the fallback for any other failure', async () => {
     updateApplicationNote.mockReturnValueOnce(throwError(() => httpError(503)));
 

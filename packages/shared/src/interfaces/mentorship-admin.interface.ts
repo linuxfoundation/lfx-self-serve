@@ -127,6 +127,12 @@ export interface MentorshipAdminSavedNote {
   note: string;
 }
 
+/** A saved reviewer note with the version of its save, so a page read that started before the save knows to keep it. */
+export interface MentorshipAdminVersionedNote {
+  note: string;
+  version: number;
+}
+
 /** Response of `POST /api/mentorship/admin/programs/:programId/terms/:termId/decline-pending`. */
 export interface MentorshipAdminDeclinePendingResponse {
   declinedCount: number;
