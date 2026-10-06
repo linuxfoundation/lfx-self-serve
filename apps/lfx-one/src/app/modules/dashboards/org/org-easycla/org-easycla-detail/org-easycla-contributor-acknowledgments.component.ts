@@ -552,7 +552,12 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
           return this.claService.getContributorAcknowledgments(orgUid, claSignatureId, { search, nextKey: list.nextKey });
         }),
         reduce((acc, list) => this.mergeAcknowledgmentPage(acc, list), null as OrgClaContributorAcknowledgmentList | null),
-        catchError(() => {
+        catchError((error: unknown) => {
+          console.warn(
+            'Failed to refresh the loaded acknowledgments after an invalidate:',
+            (error as HttpErrorResponse)?.status,
+            (error as HttpErrorResponse)?.message
+          );
           if (
             afterInvalidate &&
             !this.destroyed &&

@@ -1231,6 +1231,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
 
       invalidateAcknowledgment.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: { message: 'conflict' } })));
       getContributorAcknowledgments.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502 })));
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       const buttons = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-acknowledgment-invalidate"] button');
       (buttons[1] as HTMLButtonElement).click();
       fixture.detectChanges();
@@ -1240,6 +1241,8 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
 
       expect(addMessage).toHaveBeenCalledTimes(1);
       expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'conflict' }));
+      expect(warn).toHaveBeenCalledWith('Failed to refresh the loaded acknowledgments after an invalidate:', 502, expect.any(String));
+      warn.mockRestore();
     });
 
     it('reports the proxy error sentence when the BFF puts it on error rather than message', async () => {
