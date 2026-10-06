@@ -1,11 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HEALTH_METRICS_TABS } from '@lfx-one/shared/constants';
 import { Component, inject, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
+import { HEALTH_METRICS_TABS } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
 import { describe, expect, it, vi } from 'vitest';
 
