@@ -38,7 +38,8 @@ import { MeetingDetailsSeedService } from '../meeting-details-gate/meeting-detai
  * - **Seed.** On the browser it starts from the snapshot the gate took
  *   ({@link MeetingDetailsSeedService}), including the terminal-error branch, so a seeded page
  *   never flashes the skeleton. On the server it writes the same `MeetingJoinPageState` V1 writes,
- *   for when #2920 lets V2 render there.
+ *   for when V2 renders there (anonymous visitors from rollout stage 5, everyone once the gate is
+ *   removed).
  * - **Reachability.** V2 cannot rely on V1 to reject a bad id: on an in-app navigation V1 is torn
  *   down before its lookup settles. A 400 / 403 / 404 goes to `/meetings/not-found`; any other
  *   failure is the `error` branch.

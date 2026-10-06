@@ -132,26 +132,27 @@ Phase 0 is the foundation.
 
 ### Phase 0 — foundation
 
-| Plan ID | Issue | Item                                   |
-| ------- | ----- | -------------------------------------- |
-| V2-01   | #2873 | Feature-flag gate (shim component)     |
-| V2-02   | #2874 | V2 scaffold + V1 rename                |
-| V2-03   | #2875 | Rollout / retirement doc               |
-| —       | #2920 | SSR flag decision (V2-01 follow-up)    |
-| E0-01   | #1766 | This spec                              |
-| E0-02   | #2876 | View-model + `ActionSlotKind` resolver |
-| E0-03   | #1767 | ADR: public / admin surface boundary   |
-| E0-04   | #1768 | Testid contract                        |
-| E0-05   | #1769 | Design tokens                          |
+| Plan ID | Issue | Item                                           |
+| ------- | ----- | ---------------------------------------------- |
+| V2-01   | #2873 | Feature-flag gate (shim component)             |
+| V2-02   | #2874 | V2 scaffold + V1 rename                        |
+| V2-03   | #2875 | Rollout / retirement doc                       |
+| —       | #2920 | SSR flag decision (declined, see `rollout.md`) |
+| E0-01   | #1766 | This spec                                      |
+| E0-02   | #2876 | View-model + `ActionSlotKind` resolver         |
+| E0-03   | #1767 | ADR: public / admin surface boundary           |
+| E0-04   | #1768 | Testid contract                                |
+| E0-05   | #1769 | Design tokens                                  |
 
 Open/closed state lives on GitHub, not here. The one fact that does belong in this document is the
 dependency: **Phase 1 cannot start until V2-02 (#2874) lands**, because it is the scaffold every
 Phase 1 component hangs off.
 
-The second ordering constraint is on rollout, not on building. Until #2920 gives SSR the flag
-decision, a targeted viewer's first paint is V1 and V2 replaces it after hydration. So **the flag
-stays on a named tester list until #2920 lands**: no percentage rollout and no V1 retirement before
-it. Phase 1 work does not wait for it.
+The second ordering constraint is on rollout, not on building. SSR never gets the flag decision
+(#2920 was declined; `rollout.md` § No server-side flag decision), so a targeted viewer's first
+paint is V1 and V2 replaces it after hydration. So **the flag stays on named tester lists until V2
+goes to every signed-in viewer in one step**: there is no percentage rollout. Phase 1 work does not
+wait for it.
 
 ### Phase 1 — shell, header, action slot, content
 

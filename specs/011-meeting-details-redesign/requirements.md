@@ -14,12 +14,14 @@ axis values and `ActionSlotKind` members defined in the state matrix.
 
 ### Rollout and page lifecycle
 
-- **FR-001**: V2 MUST render only for a viewer for whom `MEETING_V2_ENABLED_FLAG` evaluates true;
-  everyone else MUST get V1, and the V1 component MUST stay byte-identical (R01). Until stage 5 of
-  `rollout.md`, every anonymous visitor MUST get V1 (R05). Until #2920 gives SSR the flag decision,
-  the decision MUST be made after hydration, so SSR always renders V1. The visitor cells elsewhere in
-  this document describe V2 once anonymous traffic moves to it; until then they are verified by the
-  resolver's table test, not in the browser.
+- **FR-001**: Until stage 7 of `rollout.md` removes the gate, a **signed-in** viewer MUST get V2 only
+  when `MEETING_V2_ENABLED_FLAG` evaluates true for them, and V1 otherwise; the V1 component MUST
+  stay byte-identical (R01). The decision MUST be made after hydration, so SSR renders V1 for them:
+  the server has no flag source (#2920 was declined, see `rollout.md`). **Anonymous** visitors are
+  outside the flag: they MUST get V1 until stage 5 (R05), and from stage 5 they get V2 by a code
+  change, not targeting. The visitor cells elsewhere in this document describe V2 once anonymous
+  traffic moves to it; until then they are verified by the resolver's table test, not in the
+  browser.
 - **FR-002**: The flag MUST gate UI only. No BFF route, response shape or authorization decision may
   depend on it (R02).
 - **FR-003**: A flag provider that is not ready, errors or times out before it first becomes ready

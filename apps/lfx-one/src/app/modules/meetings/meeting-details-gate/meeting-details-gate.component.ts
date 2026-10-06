@@ -34,8 +34,9 @@ import { MeetingDetailsSeedService } from './meeting-details-seed.service';
  * post-hydration. That is a content swap, not a hydration mismatch — the `hydrated` latch means
  * Angular never reconciles two different trees. Making v2's *first* paint v2 requires giving SSR a
  * flag source (a LaunchDarkly server SDK, or the BFF stamping the decision into a cookie /
- * `runtimeConfig`); that is #2920, the prerequisite for ramping this flag past a tester list, so do
- * that rather than widening targeting through this gate.
+ * `runtimeConfig`). That was #2920, and it was declined (`rollout.md` § No server-side flag
+ * decision): signed-in viewers move from tester lists to everyone in one step, and the swap ends
+ * when V1 retirement removes this gate.
  *
  * Two consequences of that server-side `false` which #2874 should not have to rediscover. First,
  * the pre-v2 page is what SSR renders and what runs the public meeting lookup, including for a
@@ -48,8 +49,8 @@ import { MeetingDetailsSeedService } from './meeting-details-seed.service';
  * and the ~100% of visitors on it never download the v2 tree. This route is public, SSR-first and
  * anonymous-reachable, unlike the authenticated in-shell route that sets the static-import
  * precedent. The cost lands on targeted viewers only: v1 is torn down when the flag flips, so the
- * region is empty until the v2 chunk arrives. That gap is part of the same post-hydration swap #2920
- * removes, and it is why the deferred block triggers `on immediate` rather than waiting for idle.
+ * region is empty until the v2 chunk arrives. That gap is part of the same post-hydration swap,
+ * and it is why the deferred block triggers `on immediate` rather than waiting for idle.
  * If the chunk never arrives, the block's `@error` branch renders v1 again rather than nothing.
  *
  * Anonymous viewers always get v1, enforced here rather than through targeting: this route is
