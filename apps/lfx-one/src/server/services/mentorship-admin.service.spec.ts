@@ -793,7 +793,7 @@ describe('MentorshipAdminService term writes', () => {
     vi.restoreAllMocks();
   });
 
-  it('creates an open term, sending midnight UTC timestamps, and returns its row with zero counts', async () => {
+  it('creates an open term, sending UTC timestamps with the application end at the end of its day, and returns its row with zero counts', async () => {
     const spy = stubTerms(3, upstreamTerm);
 
     const row = await service.createTerm(buildReq(), PROGRAM_ID, input);
@@ -808,7 +808,7 @@ describe('MentorshipAdminService term writes', () => {
           start_date_time: '2026-09-01T00:00:00Z',
           end_date_time: '2026-12-01T00:00:00Z',
           application_start_date: '2026-07-01T00:00:00Z',
-          application_end_date: '2026-08-15T00:00:00Z',
+          application_end_date: '2026-08-15T23:59:59Z',
         },
       ],
     ]);
@@ -827,7 +827,19 @@ describe('MentorshipAdminService term writes', () => {
 
     const row = await service.updateTerm(buildReq(), PROGRAM_ID, TERM_ID, { ...input, name: 'Fall 2026 (edited)' });
 
-    expect(writes(spy).map((call) => [call[2], call[3]])).toEqual([[TERM_PATH, 'PATCH']]);
+    expect(writes(spy).map((call) => [call[2], call[3], call[5]])).toEqual([
+      [
+        TERM_PATH,
+        'PATCH',
+        {
+          name: 'Fall 2026 (edited)',
+          start_date_time: '2026-09-01T00:00:00Z',
+          end_date_time: '2026-12-01T00:00:00Z',
+          application_start_date: '2026-07-01T00:00:00Z',
+          application_end_date: '2026-08-15T23:59:59Z',
+        },
+      ],
+    ]);
     expect(row.name).toBe('Fall 2026 (edited)');
   });
 

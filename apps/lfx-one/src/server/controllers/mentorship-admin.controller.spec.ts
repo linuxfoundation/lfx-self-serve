@@ -631,6 +631,17 @@ describe('MentorshipAdminController', () => {
       expect(out.json).toHaveBeenCalledWith(row);
     });
 
+    it('accepts an application window that opens and closes on one date', async () => {
+      const oneDay = { ...termBody, applicationEndDate: termBody.applicationStartDate };
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'createTerm').mockResolvedValue(row as never);
+      const out = writeRes();
+
+      await controller.createTerm(termReq(oneDay, { programId: PROGRAM_ID }), out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, oneDay);
+      expect(out.status).toHaveBeenCalledWith(201);
+    });
+
     it.each([
       ['closeTerm', 'closeTerm'],
       ['reopenTerm', 'reopenTerm'],
@@ -650,7 +661,7 @@ describe('MentorshipAdminController', () => {
       ['a name over the limit', { ...termBody, name: 'x'.repeat(51) }],
       ['a date that is not ISO', { ...termBody, startDate: '09/01/2026' }],
       ['a date that is not on the calendar', { ...termBody, startDate: '2026-02-30' }],
-      ['an application end on its start', { ...termBody, applicationEndDate: '2026-07-01' }],
+      ['an application end before its start', { ...termBody, applicationEndDate: '2026-06-30' }],
       ['a start on the application end', { ...termBody, startDate: '2026-08-15' }],
       ['an end on the start', { ...termBody, endDate: '2026-09-01' }],
       ['no body', undefined],

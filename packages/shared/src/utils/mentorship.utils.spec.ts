@@ -120,6 +120,7 @@ import {
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
   toMentorshipDateOnly,
+  toMentorshipUtcEndOfDayInstant,
   toMentorshipUtcInstant,
   buildMentorshipGraduateTaskWarning,
 } from './mentorship.utils';
@@ -1709,6 +1710,16 @@ describe('toMentorshipUtcInstant', () => {
 
   it('leaves a full timestamp unchanged', () => {
     expect(toMentorshipUtcInstant('2026-07-15T10:30:00Z')).toBe('2026-07-15T10:30:00Z');
+  });
+});
+
+describe('toMentorshipUtcEndOfDayInstant', () => {
+  it('turns a date-only value into the last second of its UTC day', () => {
+    expect(toMentorshipUtcEndOfDayInstant('2026-07-15')).toBe('2026-07-15T23:59:59Z');
+  });
+
+  it('leaves a full timestamp unchanged', () => {
+    expect(toMentorshipUtcEndOfDayInstant('2026-07-15T10:30:00Z')).toBe('2026-07-15T10:30:00Z');
   });
 });
 

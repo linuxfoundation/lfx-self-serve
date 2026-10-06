@@ -18,8 +18,9 @@ const parseIsoDate = (value: unknown, field: string, operation: string): string 
 
 /**
  * Validates the body of a term create or edit: a name of 1 to `MENTORSHIP_TERM_NAME_MAX` characters once trimmed and four
- * ISO dates in upstream's strict order (application start < application end < start < end). Upstream checks the same
- * order; failing here keeps the bad request off the wire. The name is never logged.
+ * ISO dates in upstream's order (application start <= application end < start < end). The application window runs from
+ * the start of its first UTC day to the end of its last, so it may open and close on one date. Upstream checks the same
+ * order on the timestamps the BFF sends; failing here keeps the bad request off the wire. The name is never logged.
  */
 export const parseMentorshipAdminTermInput = (body: unknown, operation: string): MentorshipAdminTermInput => {
   const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
@@ -35,8 +36,8 @@ export const parseMentorshipAdminTermInput = (body: unknown, operation: string):
   const endDate = parseIsoDate(raw['endDate'], 'endDate', operation);
 
   // ISO dates compare as text.
-  if (applicationEndDate <= applicationStartDate) {
-    throw ServiceValidationError.forField('applicationEndDate', 'applicationEndDate must be after applicationStartDate.', { operation });
+  if (applicationEndDate < applicationStartDate) {
+    throw ServiceValidationError.forField('applicationEndDate', 'applicationEndDate must be on or after applicationStartDate.', { operation });
   }
   if (startDate <= applicationEndDate) {
     throw ServiceValidationError.forField('startDate', 'startDate must be after applicationEndDate.', { operation });

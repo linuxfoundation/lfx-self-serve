@@ -42,6 +42,7 @@ import {
   MentorshipUpstreamTask,
   MentorshipUpstreamTermManagementRow,
 } from '@lfx-one/shared/interfaces';
+import { toMentorshipUtcEndOfDayInstant, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import {
@@ -486,14 +487,17 @@ export class MentorshipAdminService {
     }
   }
 
-  /** Upstream takes RFC 3339 timestamps; a date goes as midnight UTC. */
+  /**
+   * Upstream takes RFC 3339 timestamps, sent in UTC. Each date goes as the start of its day, except the application end,
+   * which goes as the end of its day so the term takes applications through that whole date.
+   */
   private toUpstreamTermBody(input: MentorshipAdminTermInput): Record<string, string> {
     return {
       name: input.name,
-      start_date_time: `${input.startDate}T00:00:00Z`,
-      end_date_time: `${input.endDate}T00:00:00Z`,
-      application_start_date: `${input.applicationStartDate}T00:00:00Z`,
-      application_end_date: `${input.applicationEndDate}T00:00:00Z`,
+      start_date_time: toMentorshipUtcInstant(input.startDate),
+      end_date_time: toMentorshipUtcInstant(input.endDate),
+      application_start_date: toMentorshipUtcInstant(input.applicationStartDate),
+      application_end_date: toMentorshipUtcEndOfDayInstant(input.applicationEndDate),
     };
   }
 
