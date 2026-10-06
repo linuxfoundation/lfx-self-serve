@@ -3528,6 +3528,37 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingHeld(), "A's hold was lost on the round trip").toBe(true);
     });
 
+    it('holds a DISPATCHED stage when a brief reset cancels its poll', async () => {
+      // The reset idles the display state, but the create cannot be recalled and its job may still
+      // resolve the brief's audience -- releasing let A -> B -> A replace it underneath the job.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ enabled: true, jobId: 'job-1', error: null }) as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(NEVER as never);
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      expect(internals().emailStaging(), 'fixture precondition: polling').toBe('staging');
+
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      expect(internals().emailStaging()).toBe('idle');
+      expect(internals().emailStagingHeld(), 'a dispatched stage was released by a UI reset').toBe(true);
+    });
+
+    it('releases nothing extra once the job reached a terminal answer', async () => {
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ enabled: true, jobId: 'job-1', error: null }) as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({ errors: [], platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'd-1' }] }) as never
+      );
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      expect(internals().emailStaging()).toBe('done');
+
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      expect(internals().emailStagingHeld(), 'a finished stage was held as unresolved').toBe(false);
+    });
+
     it('holds the locks when staging is accepted but returns no job to follow', async () => {
       // The request WAS accepted, so a draft may still be created; releasing let a retry duplicate it.
       onImplementTab();

@@ -1728,6 +1728,14 @@ export class CampaignsComponent {
   protected readonly emailStagingUnresolved = computed(() => this.unresolvedStages().has(this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId())));
   /** Every project/brief with an unresolved stage. See `emailStagingUnresolved`. */
   private readonly unresolvedStages = signal<ReadonlySet<string>>(new Set());
+  /**
+   * The project/brief of a create that has been DISPATCHED and has not reached a terminal answer.
+   *
+   * Held apart from `emailStaging`, which is display state: a brief reset calls `cancelStagingPoll`
+   * and idles it, yet the create cannot be recalled and its job may still resolve that brief's
+   * audience. A cancel therefore turns a dispatched stage into an unresolved one for its scope.
+   */
+  private dispatchedStage: { projectSlug: string; briefId: string } | null = null;
   /** A stage is in flight OR unresolved: what every lock that protects a stage keys on. */
   protected readonly emailStagingHeld = computed(() => this.emailStaging() === 'staging' || this.emailStagingUnresolved());
 
@@ -3257,6 +3265,8 @@ export class CampaignsComponent {
         },
       };
 
+      // Recorded BEFORE the await: from here the create is on the wire and cannot be recalled.
+      this.dispatchedStage = { projectSlug, briefId };
       const outcome = await firstValueFrom(this.campaignService.createCampaign(request, projectSlug, briefId));
       // Checked here TOO, not only after the persist above. A reset landing during THIS await
       // leaves the request already sent -- the draft may well exist upstream -- but everything
@@ -3638,6 +3648,10 @@ export class CampaignsComponent {
    * are one operation.
    */
   private cancelStagingPoll(): void {
+    // A dispatched create is abandoned by the UI, not by HubSpot: hold its scope until confirmed.
+    if (this.dispatchedStage !== null) {
+      this.markStageUnresolved(this.dispatchedStage.projectSlug, this.dispatchedStage.briefId);
+    }
     this.stagingJobSubscription?.unsubscribe();
     this.stagingJobSubscription = null;
     this.emailStaging.set('idle');
@@ -3835,6 +3849,7 @@ export class CampaignsComponent {
 
   /** Records a stage that ended without a terminal answer, for the project and brief it staged. */
   private markStageUnresolved(projectSlug: string, briefId: string): void {
+    this.dispatchedStage = null;
     const key = this.stageScopeKey(projectSlug, briefId);
     this.unresolvedStages.update((keys) => new Set([...keys, key]));
   }
@@ -4047,6 +4062,8 @@ export class CampaignsComponent {
           if (!outcome) {
             return;
           }
+          // A terminal answer: the job is no longer one a cancel could leave unresolved.
+          this.dispatchedStage = null;
           if (outcome.errors.length > 0) {
             this.emailStaging.set('error');
             this.emailStagingMessage.set(outcome.errors[0]);
