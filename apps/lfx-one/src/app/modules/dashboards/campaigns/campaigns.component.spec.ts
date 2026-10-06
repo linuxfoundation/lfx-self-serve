@@ -1941,7 +1941,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       };
     };
     emailAudienceWriteInFlight: WritableSignal<boolean>;
-    emailStagingUnresolved: WritableSignal<boolean>;
+    emailStagingUnresolved: Signal<boolean>;
     emailStagingHeld: Signal<boolean>;
   }
 
@@ -3479,7 +3479,11 @@ describe('CampaignsComponent — email delivery channel', () => {
       onImplementTab();
       vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(poll() as never);
       internals().emailStaging.set('staging');
-      (internals() as unknown as { pollStagingJob(job: string, slug: string): void }).pollStagingJob('job-1', 'tlf');
+      (internals() as unknown as { pollStagingJob(job: string, slug: string, brief: string): void }).pollStagingJob(
+        'job-1',
+        internals().activeFoundationSlug(),
+        internals().emailBriefId()
+      );
       fixture.detectChanges();
 
       expect(internals().emailStaging()).toBe('error');
@@ -3498,13 +3502,43 @@ describe('CampaignsComponent — email delivery channel', () => {
       onImplementTab();
       internals().emailBriefId.set(composed.briefId);
       internals().onAudienceComposed(composed);
-      internals().emailStagingUnresolved.set(true);
+      (internals() as unknown as { markStageUnresolved(p: string, b: string): void }).markStageUnresolved(
+        internals().activeFoundationSlug(),
+        internals().emailBriefId()
+      );
       (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
       fixture.detectChanges();
 
       const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent ?? '';
       expect(internals().canStageEmail()).toBe(false);
       expect(hint, 'Stage was held with no reason given').toContain('ended without an answer');
+    });
+
+    it('scopes an unresolved stage to its brief: another brief is not locked, and the hold returns with it', () => {
+      // A single global flag locked brief B on A's stage, and B's acknowledgement cleared A's.
+      onImplementTab();
+      internals().emailBriefId.set('brief-a');
+      (internals() as unknown as { markStageUnresolved(p: string, b: string): void }).markStageUnresolved(internals().activeFoundationSlug(), 'brief-a');
+      expect(internals().emailStagingHeld(), 'fixture precondition: A is held').toBe(true);
+
+      internals().emailBriefId.set('brief-b');
+      expect(internals().emailStagingHeld(), "brief B was locked by brief A's stage").toBe(false);
+
+      internals().emailBriefId.set('brief-a');
+      expect(internals().emailStagingHeld(), "A's hold was lost on the round trip").toBe(true);
+    });
+
+    it('holds the locks when staging is accepted but returns no job to follow', async () => {
+      // The request WAS accepted, so a draft may still be created; releasing let a retry duplicate it.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ enabled: true, jobId: null, error: null }) as never);
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingHeld(), 'an accepted stage with nothing to track released the locks').toBe(true);
     });
 
     it('locks the type and segment pickers while a stage is in flight', () => {

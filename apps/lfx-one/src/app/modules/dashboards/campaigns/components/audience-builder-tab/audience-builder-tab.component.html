@@ -8,7 +8,10 @@
   @if (stagingInFlight()) {
     <div class="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3" role="status" data-testid="campaigns-audience-staging-pause">
       <i class="fa-light fa-spinner-third fa-spin text-gray-500" aria-hidden="true"></i>
-      <p class="text-xs text-gray-700">A send is being staged in HubSpot. Composing and attaching are paused until it finishes.</p>
+      <p class="text-xs text-gray-700">
+        A send is being staged in HubSpot, or its last stage ended without an answer. Composing and attaching are paused until the stage finishes or is
+        confirmed on the Implement tab.
+      </p>
     </div>
   }
   @if (audienceReadPending()) {

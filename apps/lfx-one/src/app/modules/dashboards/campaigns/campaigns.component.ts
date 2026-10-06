@@ -1719,8 +1719,15 @@ export class CampaignsComponent {
    * background dispatcher could still resolve the audience. So this holds them -- audience writes,
    * the type and segment pickers, and Stage itself (a retry could duplicate the draft) -- until the
    * operator confirms they checked HubSpot (`onAcknowledgeStagingUnresolved`).
+   *
+   * SCOPED to the project and brief the stage was for, and kept per scope. The component survives
+   * foundation switches and brief resets, so a single flag locked foundation B on A's stage -- and
+   * let B's acknowledgement clear A's protection without anyone checking A's portal. Now it holds
+   * only the matching context, and A's warning is still there on return to A.
    */
-  protected readonly emailStagingUnresolved = signal(false);
+  protected readonly emailStagingUnresolved = computed(() => this.unresolvedStages().has(this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId())));
+  /** Every project/brief with an unresolved stage. See `emailStagingUnresolved`. */
+  private readonly unresolvedStages = signal<ReadonlySet<string>>(new Set());
   /** A stage is in flight OR unresolved: what every lock that protects a stage keys on. */
   protected readonly emailStagingHeld = computed(() => this.emailStaging() === 'staging' || this.emailStagingUnresolved());
 
@@ -2669,9 +2676,10 @@ export class CampaignsComponent {
     this.emailAudienceSkipped.set(false);
   }
 
-  /** The operator checked HubSpot after a stage that ended without an answer; release its locks. */
+  /** The operator checked HubSpot after a stage that ended without an answer; release ITS locks only. */
   protected onAcknowledgeStagingUnresolved(): void {
-    this.emailStagingUnresolved.set(false);
+    const key = this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId());
+    this.unresolvedStages.update((keys) => new Set([...keys].filter((k) => k !== key)));
   }
 
   /** The Audience tab asked to re-read the saved audience it could not verify. */
@@ -3271,13 +3279,15 @@ export class CampaignsComponent {
       // a dispatcher failure read as a created draft. The paid path already polls
       // (`implementation-tab`'s `pollJob`); this is the same contract for email.
       if (!outcome.jobId) {
-        // No id to follow. Report the ack honestly rather than inventing an outcome.
+        // No id to follow. Report the ack honestly rather than inventing an outcome -- and hold the
+        // locks: the request WAS accepted, so a draft may still be created.
         this.emailStaging.set('error');
+        this.markStageUnresolved(projectSlug, briefId);
         this.emailStagingMessage.set('Staging was accepted but returned nothing to track. Check HubSpot before retrying.');
         return;
       }
 
-      this.pollStagingJob(outcome.jobId, projectSlug);
+      this.pollStagingJob(outcome.jobId, projectSlug, briefId);
     } catch {
       // Guarded like every other write in this method. A reset mid-stage would otherwise raise a
       // failure banner for a brief nobody is looking at -- and on the email tab that reads as
@@ -3818,6 +3828,17 @@ export class CampaignsComponent {
     this.unattachedByScope.update((map) => new Map([...map].filter(([key]) => !drop.has(key))));
   }
 
+  /** The `unresolvedStages` key for a project and brief. */
+  private stageScopeKey(projectSlug: string, briefId: string): string {
+    return `${projectSlug}|${briefId}`;
+  }
+
+  /** Records a stage that ended without a terminal answer, for the project and brief it staged. */
+  private markStageUnresolved(projectSlug: string, briefId: string): void {
+    const key = this.stageScopeKey(projectSlug, briefId);
+    this.unresolvedStages.update((keys) => new Set([...keys, key]));
+  }
+
   /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
   private rememberBriefId(key: string, value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }): void {
     this.knownBriefIds.set(key, value);
@@ -4014,7 +4035,7 @@ export class CampaignsComponent {
    * a job that never settles reports that rather than spinning forever, because a HubSpot draft
    * may exist either way and the operator needs to be told to go look.
    */
-  private pollStagingJob(jobId: string, projectSlug: string): void {
+  private pollStagingJob(jobId: string, projectSlug: string, briefId: string): void {
     const MAX_POLLS = Math.ceil(300_000 / CAMPAIGN_JOB_POLL_INTERVAL_MS);
     this.stagingJobSubscription?.unsubscribe();
     this.stagingJobSubscription = this.campaignService
@@ -4066,7 +4087,7 @@ export class CampaignsComponent {
         },
         error: () => {
           this.emailStaging.set('error');
-          this.emailStagingUnresolved.set(true);
+          this.markStageUnresolved(projectSlug, briefId);
           this.emailStagingMessage.set('Lost track of the staging job. Check HubSpot before retrying.');
         },
         complete: () => {
@@ -4074,7 +4095,7 @@ export class CampaignsComponent {
           // leaving the panel spinning or claiming a success nothing confirmed.
           if (this.emailStaging() === 'staging') {
             this.emailStaging.set('error');
-            this.emailStagingUnresolved.set(true);
+            this.markStageUnresolved(projectSlug, briefId);
             this.emailStagingMessage.set('Staging is taking longer than expected. Check HubSpot to see whether the draft was created.');
           }
         },
