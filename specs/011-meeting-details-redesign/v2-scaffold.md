@@ -47,8 +47,10 @@ modules/meetings/
 - **Shared app wrappers** (`app/shared/components/`: `button`, `card`, `tag`, `avatar`, `select`,
   `table`, `empty-state` and the rest listed in `spec.md` § Reuse before you create) are used by both
   trees. V1 already imports `button`, `card`, `tag`, `expandable-text`, `header` and
-  `impersonation-banner`. The E1-01 shell uses `button`, `header` and `impersonation-banner`, plus
-  PrimeNG's `p-skeleton` (as V1 does; there is no wrapper) pointed at the V2 tokens.
+  `impersonation-banner`. The V2 page uses `button`, `avatar`, `menu` and `impersonation-banner`, plus
+  PrimeNG's `p-skeleton` (as V1 does; there is no wrapper) pointed at the V2 tokens. It does not use
+  `header`: the sticky identity bar (E1-02, `components/identity-bar/`) replaces the app header on
+  this page, as the prototype does.
 - **Meetings-module components** (`modules/meetings/components/`) that V1 imports, such as
   `meeting-organizer`, `meeting-registrants-display`, `rsvp-button-group`, `guest-form`,
   `meeting-summary-modal` and `transcript-modal`, are available to V2 as they are. A V2 need they
@@ -63,9 +65,12 @@ modules/meetings/
   `MeetingDetailsSeedService`, which snapshots the key (without removing it) before V1 is created,
   and V2's `MeetingDetailsStateService` takes that snapshot once, for the same route id only (E1-01).
   That service owns V2's lookup, reachability (400 / 403 / 404 to not-found) and the
-  error / page / skeleton branch; every Phase 1 section injects it rather than fetching. It holds
-  load state only. Presentation state (time state, viewer role, action slot, visible sections) is
-  derived by the Phase 1 sections through `@lfx-one/shared/utils/meeting-view-model.utils` (E0-02),
+  error / page / skeleton branch; every Phase 1 section injects it rather than fetching. It also
+  owns the view-scoped selected occurrence (`?occurrence=` first, else current or next, on the
+  clock) and its time state, so no section picks an occurrence of its own. It holds
+  the page's shared state: load state, the selected occurrence and its time state. The remaining
+  presentation state (viewer role, action slot, visible sections) is derived by the Phase 1 sections
+  through `@lfx-one/shared/utils/meeting-view-model.utils` (E0-02),
   not by copying V1's inline `computed` signals. V1's orchestration lives inside its component and
   cannot be extracted without editing V1, so V2 composes the services and resolvers itself. It
   does not duplicate a fetch path.

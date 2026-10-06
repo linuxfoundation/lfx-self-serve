@@ -368,6 +368,60 @@ describe('MeetingDetailsStateService', () => {
     });
   });
 
+  describe('selected occurrence', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const first = new Date(Date.now() + 2 * DAY);
+    const second = new Date(Date.now() + 9 * DAY);
+    const series = (cancelled: string[] = []) =>
+      ({
+        ...buildMeeting(),
+        start_time: first.toISOString(),
+        duration: 60,
+        recurrence: { type: 2 },
+        occurrences: [
+          { occurrence_id: '1', start_time: first.toISOString(), duration: 60 },
+          { occurrence_id: '2', start_time: second.toISOString(), duration: 60 },
+        ],
+        cancelled_occurrences: cancelled,
+      }) as unknown as Meeting;
+
+    it('takes the ?occurrence= start time from the URL', async () => {
+      queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
+      getPublicMeeting.mockReturnValue(of({ meeting: series(), project }));
+      const state = create();
+      await settle();
+
+      expect(state.selectedOccurrence()?.occurrence_id).toBe('2');
+      expect(state.timeState()).toBe('before');
+    });
+
+    it('falls back to the current or next occurrence without one, or for a cancelled one', async () => {
+      queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
+      getPublicMeeting.mockReturnValue(of({ meeting: series(['2']), project }));
+      const state = create();
+      await settle();
+
+      expect(state.selectedOccurrence()?.occurrence_id).toBe('1');
+    });
+
+    it('is null for a past occurrence opened by its composite id, which is the occurrence itself', async () => {
+      const pastId = '99152950841-1700000000000';
+      paramMap$.next(convertToParamMap({ id: pastId }));
+      getPublicPastMeeting.mockReturnValue(of({ meeting: series(), project, full_access: true }));
+      const state = create();
+      await settle();
+
+      expect(state.selectedOccurrence()).toBeNull();
+    });
+
+    it('has no time state before the meeting loads', () => {
+      getPublicMeeting.mockReturnValue(new Subject());
+      const state = create();
+
+      expect(state.timeState()).toBeNull();
+    });
+  });
+
   describe('on the server', () => {
     it('writes the resolved meeting to TransferState in the shape V1 writes', async () => {
       create('server');

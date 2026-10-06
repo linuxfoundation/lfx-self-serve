@@ -1,0 +1,123 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities). The bar spans the
+     viewport for its background; its content and bottom rule sit in the page's 1120px column, as in
+     the prototype. The prototype defines no narrow layout, so at 640px and below the bar drops the
+     secondary copy (sign-in prompt, Create LFX account, account name and email, My Meetings label). -->
+<!-- Sticks below the impersonation banner when it is showing (it is fixed, `min-h-12`). -->
+<header
+  #bar
+  class="sticky z-50 bg-[var(--md-surface-page)]"
+  [class.top-0]="!userService.impersonating()"
+  [class.top-12]="userService.impersonating()"
+  data-testid="meeting-identity-bar"
+  [attr.data-condensed]="condensed()">
+  <div class="mx-auto max-w-[1120px] px-[16px] min-[641px]:px-[40px]">
+    <div class="flex items-center justify-between gap-[16px] border-b border-[var(--md-border)] px-[2px] py-[18px]">
+      <div class="flex min-h-[40px] min-w-0 items-center gap-[14px]">
+        <a
+          routerLink="/"
+          class="flex h-[40px] w-[40px] flex-none items-center justify-center overflow-hidden rounded-[var(--md-radius-lg)] border border-[var(--md-border)] bg-[var(--md-surface-card)] hover:border-[var(--md-border-strong)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+          aria-label="LFX home"
+          data-testid="meeting-identity-bar-home">
+          <img src="/images/logo_lf_icon.png" alt="" class="h-full w-full object-contain" />
+        </a>
+
+        <!-- The meeting's identity, faded in once the page header has scrolled away. Hidden from
+             assistive tech until then: it repeats the page's own heading. -->
+        @if (meeting(); as meeting) {
+          <div
+            class="flex min-w-0 items-center gap-[14px] transition-opacity duration-200"
+            [class.opacity-0]="!condensed()"
+            [class.pointer-events-none]="!condensed()"
+            [attr.aria-hidden]="!condensed()"
+            data-testid="meeting-identity-bar-meeting">
+            <span class="h-[26px] w-px flex-none bg-[var(--md-border)]" aria-hidden="true"></span>
+            @if (startTime(); as startTime) {
+              <span
+                class="flex h-[40px] w-[40px] flex-none flex-col overflow-hidden rounded-[var(--md-radius-lg)] border border-[var(--md-border)] bg-[var(--md-surface-card)] text-center"
+                aria-hidden="true">
+                <span class="block bg-[var(--md-accent)] py-[1.5px] text-[8px] font-bold uppercase tracking-[0.05em] text-[var(--md-surface-card)]">{{
+                  startTime | date: 'MMM'
+                }}</span>
+                <span class="flex flex-1 items-center justify-center text-[16px] font-bold text-[var(--md-text-heading)]">{{ startTime | date: 'd' }}</span>
+              </span>
+            }
+            <div class="flex min-w-0 flex-col gap-[2px] leading-[1.15]">
+              <!-- Single line, as the prototype; the native title shows the full text when it is cut. -->
+              <span
+                class="max-w-[44vw] truncate text-[14.5px] font-bold text-[var(--md-text-heading)]"
+                [attr.title]="meeting.title"
+                data-testid="meeting-identity-bar-title"
+                >{{ meeting.title }}</span
+              >
+              <span class="truncate text-[11.5px] text-[var(--md-text-muted)]" [attr.title]="subtitle()" data-testid="meeting-identity-bar-subtitle">{{
+                subtitle()
+              }}</span>
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="flex flex-none items-center gap-[12px]">
+        @if (userService.authenticated()) {
+          <button
+            type="button"
+            (click)="navigateToMyMeetings()"
+            class="inline-flex h-[34px] flex-none items-center gap-[7px] rounded-full px-[15px] text-[13px] font-semibold text-[var(--md-text-body)] hover:bg-[var(--md-surface-hover)] hover:text-[var(--md-text-heading)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+            data-testid="meeting-identity-bar-my-meetings">
+            <i class="fa-light fa-calendar" aria-hidden="true"></i>
+            <span class="sr-only min-[641px]:not-sr-only">My Meetings</span>
+          </button>
+          <button
+            type="button"
+            (click)="userMenu.toggle($event)"
+            class="flex max-w-[260px] flex-none items-center gap-[11px] rounded-full border border-[var(--md-border)] bg-[var(--md-surface-card)] py-[5px] pl-[6px] pr-[6px] text-left hover:border-[var(--md-border-strong)] hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none min-[641px]:pr-[14px]"
+            aria-haspopup="menu"
+            [attr.aria-expanded]="accountMenuOpen()"
+            [attr.aria-label]="'Account menu for ' + (userService.user()?.name || 'your account')"
+            [attr.title]="userService.user()?.email"
+            data-testid="meeting-identity-bar-account">
+            <lfx-avatar [image]="userService.effectiveAvatarUrl()" icon="fa-light fa-user" [label]="userService.user()?.name" shape="circle" />
+            <span class="hidden min-w-0 flex-col leading-[1.2] min-[641px]:flex">
+              <span class="truncate text-[13px] font-bold text-[var(--md-text-heading)]">{{ userService.user()?.name }}</span>
+              <span class="truncate text-[11.5px] text-[var(--md-text-muted)]">{{ userService.user()?.email }}</span>
+            </span>
+            <i class="fa-light fa-chevron-down ml-[2px] text-[12px] text-[var(--md-text-muted)]" aria-hidden="true"></i>
+          </button>
+          <!-- Appended inside the bar, so the overlay stays within the V2 token scope (styling-system.md). -->
+          <lfx-menu
+            #userMenu
+            [model]="userMenuItems"
+            [popup]="true"
+            [appendTo]="bar"
+            ariaLabel="Account"
+            (onShow)="accountMenuOpen.set(true)"
+            (onHide)="accountMenuOpen.set(false)" />
+        } @else {
+          <span
+            class="mr-[4px] hidden whitespace-nowrap text-[12px] text-[var(--md-text-muted)] transition-opacity duration-200 min-[641px]:inline"
+            [class.opacity-0]="condensed()"
+            [attr.aria-hidden]="condensed()"
+            data-testid="meeting-identity-bar-visitor-prompt">
+            Sign in with your LFX account to join meetings
+          </span>
+          <!-- No sign-up URL is configured for the app; the login page offers account creation. -->
+          <a
+            [href]="signInHref()"
+            class="hidden h-[34px] flex-none items-center whitespace-nowrap rounded-full border border-[var(--md-border-strong)] px-[15px] text-[13px] font-semibold text-[var(--md-text-heading)] hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none min-[641px]:inline-flex"
+            data-testid="meeting-identity-bar-create-account">
+            Create LFX account
+          </a>
+          <a
+            [href]="signInHref()"
+            class="inline-flex h-[34px] flex-none items-center whitespace-nowrap rounded-full border border-[var(--md-accent)] px-[15px] text-[13px] font-semibold text-[var(--md-accent)] hover:border-[var(--md-accent-ink)] hover:bg-[var(--md-accent-bg)] hover:text-[var(--md-accent-ink)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+            data-testid="meeting-identity-bar-sign-in">
+            Sign in
+          </a>
+        }
+      </div>
+    </div>
+  </div>
+</header>

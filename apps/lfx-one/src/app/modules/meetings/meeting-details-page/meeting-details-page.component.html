@@ -4,10 +4,11 @@
 <lfx-impersonation-banner />
 
 <div [ngClass]="{ 'pt-12': userService.impersonating() }">
-  <lfx-header />
-
   <!-- The token layer's scope class sits on a wrapper inside this template; see the tokens file. -->
   <div class="meeting-details-v2 min-h-screen bg-[var(--md-surface-page)] text-[var(--md-text-body)]">
+    <!-- Replaces the app header on this page (E1-02). -->
+    <lfx-meeting-identity-bar #identityBar [condensed]="headerOutOfView()" />
+
     <!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities): 1120px
          max width, 40px gutters (16px at 640px and below), 56px above the header, 96px below. -->
     <main class="mx-auto max-w-[1120px] px-[16px] pb-[96px] pt-[56px] min-[641px]:px-[40px]" data-testid="meeting-page-shell">
@@ -38,7 +39,7 @@
         @case ('ready') {
           @if (state.meeting(); as meeting) {
             <!-- E1-03 replaces this region's body with the full header and badge row. -->
-            <section class="flex flex-col gap-3" data-testid="meeting-header-section">
+            <section #header class="flex flex-col gap-3" data-testid="meeting-header-section">
               <h1 class="text-[34px] font-bold leading-[1.15] tracking-[-0.022em] text-[var(--md-text-heading)]">{{ meeting.title }}</h1>
             </section>
             <ng-container [ngTemplateOutlet]="columns" />
@@ -62,8 +63,8 @@
 
 <!-- The two columns. Each placeholder stands in for a section a later Phase 1 issue builds; the
      section replaces its placeholder, keeping this order and these gaps. Stacked at 920px and below
-     (32px apart); side by side above that (44px apart), the rail 344px wide and sticky at 115px,
-     the height of E1-02's identity bar plus 32px. -->
+     (32px apart); side by side above that (44px apart), the rail 344px wide and sticky 32px below the
+     identity bar: 115px (an 83px bar), or 157px under the 42px impersonation banner. -->
 <ng-template #columns>
   <div class="mt-[56px] flex flex-col gap-[32px] min-[921px]:flex-row min-[921px]:items-start min-[921px]:gap-[44px]">
     <div class="flex min-w-0 flex-col gap-[64px] min-[921px]:flex-[1.7_1_0%]" data-testid="meeting-content-column">
@@ -73,7 +74,8 @@
       <p-skeleton height="280px" aria-hidden="true" data-testid="meeting-section-placeholder-discover" />
     </div>
     <aside
-      class="flex w-full flex-col gap-[20px] min-[921px]:sticky min-[921px]:top-[115px] min-[921px]:w-[344px] min-[921px]:flex-none"
+      class="flex w-full flex-col gap-[20px] min-[921px]:sticky min-[921px]:w-[344px] min-[921px]:flex-none"
+      [ngClass]="railTopClass()"
       aria-label="Meeting actions"
       data-testid="meeting-rail">
       <p-skeleton height="320px" aria-hidden="true" data-testid="meeting-section-placeholder-rail" />

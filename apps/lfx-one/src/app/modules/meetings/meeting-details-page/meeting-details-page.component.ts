@@ -1,14 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, inject } from '@angular/core';
+import { isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { afterRenderEffect, Component, computed, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
-import { HeaderComponent } from '@components/header/header.component';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 import { UserService } from '@services/user.service';
 import { SkeletonModule } from 'primeng/skeleton';
 
+import { MeetingIdentityBarComponent } from './components/identity-bar/identity-bar.component';
 import { MeetingDetailsStateService } from './meeting-details-state.service';
 
 /**
@@ -24,7 +24,7 @@ import { MeetingDetailsStateService } from './meeting-details-state.service';
  */
 @Component({
   selector: 'lfx-meeting-details-page',
-  imports: [NgClass, NgTemplateOutlet, ButtonComponent, HeaderComponent, ImpersonationBannerComponent, SkeletonModule],
+  imports: [NgClass, NgTemplateOutlet, ButtonComponent, ImpersonationBannerComponent, MeetingIdentityBarComponent, SkeletonModule],
   providers: [MeetingDetailsStateService],
   templateUrl: './meeting-details-page.component.html',
   styleUrl: './meeting-details-page.component.scss',
@@ -32,4 +32,39 @@ import { MeetingDetailsStateService } from './meeting-details-state.service';
 export class MeetingDetailsPageComponent {
   protected readonly state = inject(MeetingDetailsStateService);
   protected readonly userService = inject(UserService);
+
+  /** The rail's sticky offset: 32px below the identity bar, which itself drops below the impersonation banner. */
+  protected readonly railTopClass = computed(() => (this.userService.impersonating() ? 'min-[921px]:top-[157px]' : 'min-[921px]:top-[115px]'));
+
+  /** True once the page header has scrolled behind the sticky identity bar. */
+  protected readonly headerOutOfView = signal(false);
+  private readonly header = viewChild<ElementRef<HTMLElement>>('header');
+  private readonly bar = viewChild('identityBar', { read: ElementRef });
+  private readonly platformId = inject(PLATFORM_ID);
+
+  public constructor() {
+    // An IntersectionObserver rather than a scroll listener, re-attached whenever the header element
+    // changes (it exists only in the `ready` branch). `afterRenderEffect` never runs on the server.
+    afterRenderEffect((onCleanup) => {
+      const header = this.header()?.nativeElement;
+      // Read so the observer is rebuilt when the impersonation banner moves the bar down.
+      this.userService.impersonating();
+      // The feature check covers runtimes without the API (old browsers, jsdom).
+      if (!header || !isPlatformBrowser(this.platformId) || typeof IntersectionObserver === 'undefined') {
+        this.headerOutOfView.set(false);
+        return;
+      }
+
+      // The header counts as gone once it is behind the sticky bar, not once it leaves the viewport,
+      // so the top margin is where the bar ends: measured, because it moves with the impersonation
+      // banner and with the bar's own content.
+      const barBottom = Math.round((this.bar()?.nativeElement as HTMLElement | undefined)?.querySelector('header')?.getBoundingClientRect().bottom ?? 0);
+      // A fast scroll can deliver several entries in one batch; the last is the current state.
+      const observer = new IntersectionObserver((entries) => this.headerOutOfView.set(!entries[entries.length - 1].isIntersecting), {
+        rootMargin: `-${barBottom}px 0px 0px 0px`,
+      });
+      observer.observe(header);
+      onCleanup(() => observer.disconnect());
+    });
+  }
 }
