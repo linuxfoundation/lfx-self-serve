@@ -82,15 +82,16 @@ modules/meetings/
 The gate imports V2 statically but renders it inside `@defer (on immediate)`, so V2 is its own lazy
 chunk (`meeting-details-page-component`). The ~100% of visitors on V1, including every anonymous
 visitor, never download it. The gate's doc comment records the trade-off this creates for targeted
-viewers and the follow-up that removes it (#2920).
+viewers; it ends when V1 retirement removes the gate (`rollout.md` § No server-side flag decision).
 
 ## Definition of done for deleting V1
 
 This feeds the rollout / retirement doc (V2-03, #2875). V1 can be deleted when all of these hold:
 
 1. `MEETING_V2_ENABLED_FLAG` has served V2 to **100%** of signed-in traffic with no rollback for the
-   agreed soak period. That requires #2920 first: SSR must make the same flag decision, or a
-   percentage rollout ships the post-hydration swap to everyone.
+   agreed soak period. There is no percentage ramp and no server-side flag decision (#2920 was
+   declined), so signed-in viewers get the post-hydration swap throughout; `rollout.md` explains why
+   that is accepted.
 2. Anonymous visitors are moved to V2 as a deliberate step. The gate hard-codes them to V1 today
    (R05), so this is a code change, not a targeting change.
 3. Every state V1 renders has a V2 equivalent, checked against the state matrix #1766 defers,
