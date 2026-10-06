@@ -138,7 +138,13 @@ export class MicrosoftKeywordsTableComponent {
       .subscribe(({ data, error, notConnected }) => {
         this.data.set(data);
         this.errorMessage.set(error);
-        this.state.set(data !== null ? 'loaded' : notConnected ? 'not-connected' : 'error');
+        if (data !== null) {
+          this.state.set('loaded');
+        } else if (notConnected) {
+          this.state.set('not-connected');
+        } else {
+          this.state.set('error');
+        }
       });
   }
 
