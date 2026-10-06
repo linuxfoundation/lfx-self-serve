@@ -1714,8 +1714,8 @@ describe('toMentorshipUtcInstant', () => {
 });
 
 describe('toMentorshipUtcEndOfDayInstant', () => {
-  it('turns a date-only value into the last second of its UTC day', () => {
-    expect(toMentorshipUtcEndOfDayInstant('2026-07-15')).toBe('2026-07-15T23:59:59Z');
+  it('turns a date-only value into the last millisecond of its UTC day', () => {
+    expect(toMentorshipUtcEndOfDayInstant('2026-07-15')).toBe('2026-07-15T23:59:59.999Z');
   });
 
   it('leaves a full timestamp unchanged', () => {

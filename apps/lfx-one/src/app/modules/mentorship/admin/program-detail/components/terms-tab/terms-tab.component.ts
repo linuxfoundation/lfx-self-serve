@@ -81,7 +81,7 @@ export class TermsTabComponent {
   protected readonly loadFailed = signal(false);
   private readonly termRows = signal<MentorshipProgramTermRow[]>([]);
   private readonly reloadCount = signal(0);
-  private readonly writeInFlight = signal(false);
+  protected readonly writeInFlight = signal(false);
 
   /** The open-term count is only known once a read has landed, so neither flag holds while loading or after a failed read. */
   private readonly termsLoaded = computed(() => !this.loading() && !this.loadFailed());
@@ -120,11 +120,12 @@ export class TermsTabComponent {
   }
 
   protected onCreateTerm(): void {
-    if (!this.canAddTerm()) return;
+    if (!this.canAddTerm() || this.isWriteBlocked()) return;
     this.openTermDialog({ mode: 'add' });
   }
 
   protected onEditTerm(id: string): void {
+    if (this.isWriteBlocked()) return;
     const term = this.termRows().find((item) => item.id === id);
     if (!term || !this.canEditTerm(term, isMentorshipTermEnded(term.endDate))) return;
     this.openTermDialog({ mode: 'edit', term: this.toFormTerm(term) });
@@ -249,10 +250,7 @@ export class TermsTabComponent {
    * untoasted. A write that lands after the tab is gone still toasts and refreshes the parent, but skips the table reload.
    */
   private writeTerm(write: Observable<unknown>, successMessage: string): void {
-    if (this.writeInFlight()) {
-      this.showToast('info', 'Please wait', MENTORSHIP_ADMIN_TERM_WRITE_IN_FLIGHT_MESSAGE);
-      return;
-    }
+    if (this.isWriteBlocked()) return;
     this.writeInFlight.set(true);
     write.pipe(take(1)).subscribe({
       next: () => {
@@ -266,6 +264,13 @@ export class TermsTabComponent {
         this.onWriteError(err);
       },
     });
+  }
+
+  /** While a term write runs, shows the wait toast and answers true, so no dialog opens to a save that would be dropped. */
+  private isWriteBlocked(): boolean {
+    if (!this.writeInFlight()) return false;
+    this.showToast('info', 'Please wait', MENTORSHIP_ADMIN_TERM_WRITE_IN_FLIGHT_MESSAGE);
+    return true;
   }
 
   /** A 400 or 409 shows upstream's reason and a 409 reads the terms again; an impersonation 403 shows the server's text. */

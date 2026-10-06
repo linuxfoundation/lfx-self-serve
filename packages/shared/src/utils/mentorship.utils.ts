@@ -137,11 +137,12 @@ export function toMentorshipUtcInstant(value: string): string {
 }
 
 /**
- * A date-only value (`YYYY-MM-DD`) as the last second of its UTC day, the instant a term's application window closes,
- * so applications stay open through the whole end date. Any other value comes back unchanged.
+ * A date-only value (`YYYY-MM-DD`) as the last millisecond of its UTC day, the instant a term's application window closes,
+ * so applications stay open through the whole end date. Milliseconds are the finest precision `Date` reads. Any other
+ * value comes back unchanged.
  */
 export function toMentorshipUtcEndOfDayInstant(value: string): string {
-  return MENTORSHIP_ISO_DATE.test(value) ? `${value}T23:59:59Z` : value;
+  return MENTORSHIP_ISO_DATE.test(value) ? `${value}T23:59:59.999Z` : value;
 }
 
 /**

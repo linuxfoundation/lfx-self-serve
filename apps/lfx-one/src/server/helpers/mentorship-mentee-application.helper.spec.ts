@@ -48,7 +48,7 @@ describe('resolveMentorshipMenteeTaskDueDate', () => {
   });
 
   it("falls back to the term's application close, as the end of its UTC day, for a prerequisite with no due date", () => {
-    expect(resolveMentorshipMenteeTaskDueDate(baseTask, '2026-08-01')).toBe('2026-08-01T23:59:59Z');
+    expect(resolveMentorshipMenteeTaskDueDate(baseTask, '2026-08-01')).toBe('2026-08-01T23:59:59.999Z');
     expect(resolveMentorshipMenteeTaskDueDate(baseTask, '2026-08-01T23:59:59Z')).toBe('2026-08-01T23:59:59Z');
   });
 
@@ -69,7 +69,7 @@ describe('mapMentorshipMenteeApplicationTask', () => {
       status: 'incomplete',
       submitFile: null,
       fileUrl: undefined,
-      dueDate: '2026-08-01T23:59:59Z',
+      dueDate: '2026-08-01T23:59:59.999Z',
       submittedOn: undefined,
       updatedOn: '2026-06-05T10:00:00Z',
     });
@@ -121,7 +121,7 @@ describe('mapMentorshipMenteeApplication', () => {
       upstreamStatus: 'pending',
       createdOn: '2026-06-28T10:00:00Z',
       updatedOn: '2026-06-29T10:00:00Z',
-      decisionExpectedDate: '2026-08-01T23:59:59Z',
+      decisionExpectedDate: '2026-08-01T23:59:59.999Z',
       tasks: [mapMentorshipMenteeApplicationTask(baseTask, '2026-08-01')],
     });
   });
@@ -210,7 +210,7 @@ describe('mapMentorshipMenteeApplyTarget', () => {
 
   it('reads a bare window start as the start of its UTC day and a bare window end as the end of its UTC day', () => {
     expect(mapMentorshipMenteeApplyTarget(program, term, new Date('2026-06-01T00:00:00Z')).acceptingApplications).toBe(true);
-    expect(mapMentorshipMenteeApplyTarget(program, term, new Date('2026-08-01T23:59:59Z')).acceptingApplications).toBe(true);
+    expect(mapMentorshipMenteeApplyTarget(program, term, new Date('2026-08-01T23:59:59.999Z')).acceptingApplications).toBe(true);
   });
 
   it('compares the instants upstream returns as they are, as upstream does', () => {

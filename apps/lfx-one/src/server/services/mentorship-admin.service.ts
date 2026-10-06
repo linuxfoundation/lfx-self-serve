@@ -445,7 +445,7 @@ export class MentorshipAdminService {
       undefined,
       this.toUpstreamTermBody(input)
     );
-    return this.toTermRow(updated, input, updated.status);
+    return this.toTermRow(updated, input, updated.status === 'closed' ? 'closed' : 'open');
   }
 
   /** Closes a term; upstream declines its pending applications and answers 409 while accepted ones remain. */
@@ -471,7 +471,10 @@ export class MentorshipAdminService {
     return `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/terms/${encodeURIComponent(termId)}`;
   }
 
-  /** Throws a 409 with the limit's message when the program already has `MENTORSHIP_MAX_OPEN_TERMS` open terms. */
+  /**
+   * Throws a 409 with the limit's message when the program already has `MENTORSHIP_MAX_OPEN_TERMS` open terms. The count
+   * and the write are two calls, so two writes at once can both pass it: upstream's own limit stays the source of truth.
+   */
   private async assertOpenTermSlot(req: Request, programId: string, operation: string): Promise<void> {
     const open = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamProgramTerm>>(
       this.microserviceProxy,
@@ -502,7 +505,8 @@ export class MentorshipAdminService {
     };
   }
 
-  private toTermRow(term: MentorshipUpstreamProgramTerm, input: MentorshipAdminTermInput, fallbackStatus: string): MentorshipProgramTermRow {
+  /** Maps upstream's answer to a write; a status missing or one the table can't show falls back to `fallbackStatus`, the rest to the input. */
+  private toTermRow(term: MentorshipUpstreamProgramTerm, input: MentorshipAdminTermInput, fallbackStatus: MentorshipTermRowStatus): MentorshipProgramTermRow {
     const row = mapMentorshipAdminTermRow({
       ...term,
       status: term.status ?? fallbackStatus,
@@ -515,7 +519,7 @@ export class MentorshipAdminService {
       row ?? {
         id: term.id,
         name: input.name,
-        status: 'open',
+        status: fallbackStatus,
         pending: 0,
         declined: 0,
         accepted: 0,

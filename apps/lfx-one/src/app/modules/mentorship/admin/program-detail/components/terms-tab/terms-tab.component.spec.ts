@@ -325,5 +325,18 @@ describe('TermsTabComponent', () => {
       expect(sent).toBe(1);
       expect(toasts).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', detail: MENTORSHIP_ADMIN_TERM_WRITE_IN_FLIGHT_MESSAGE }));
     });
+
+    it('opens no term dialog for Create Term or Edit while another write runs, and disables Create Term', () => {
+      closeTerm.mockReturnValue(new Observable());
+      confirmAction('onCloseTerm', 'trm_1');
+
+      fixture.componentInstance['onCreateTerm']();
+      fixture.componentInstance['onEditTerm']('trm_1');
+
+      expect(openDialog).not.toHaveBeenCalled();
+      expect(toasts).toHaveBeenCalledTimes(2);
+      expect(toasts).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', detail: MENTORSHIP_ADMIN_TERM_WRITE_IN_FLIGHT_MESSAGE }));
+      expect(element().querySelector('[data-testid="mentorship-terms-create"] button')?.hasAttribute('disabled')).toBe(true);
+    });
   });
 });

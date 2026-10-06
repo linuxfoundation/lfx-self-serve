@@ -806,9 +806,9 @@ describe('MentorshipAdminService term writes', () => {
           name: 'Fall 2026',
           status: 'open',
           start_date_time: '2026-09-01T00:00:00Z',
-          end_date_time: '2026-12-31T23:59:59Z',
+          end_date_time: '2026-12-31T23:59:59.999Z',
           application_start_date: '2026-07-01T00:00:00Z',
-          application_end_date: '2026-08-15T23:59:59Z',
+          application_end_date: '2026-08-15T23:59:59.999Z',
         },
       ],
     ]);
@@ -834,13 +834,44 @@ describe('MentorshipAdminService term writes', () => {
         {
           name: 'Fall 2026 (edited)',
           start_date_time: '2026-09-01T00:00:00Z',
-          end_date_time: '2026-12-31T23:59:59Z',
+          end_date_time: '2026-12-31T23:59:59.999Z',
           application_start_date: '2026-07-01T00:00:00Z',
-          application_end_date: '2026-08-15T23:59:59Z',
+          application_end_date: '2026-08-15T23:59:59.999Z',
         },
       ],
     ]);
     expect(row.name).toBe('Fall 2026 (edited)');
+  });
+
+  it.each([
+    ['closed', 'closed'],
+    [undefined, 'open'],
+  ])('reads an edited term answered with status %s as %s', async (upstreamStatus, rowStatus) => {
+    stubTerms(0, { ...upstreamTerm, status: upstreamStatus });
+
+    const row = await service.updateTerm(buildReq(), PROGRAM_ID, TERM_ID, input);
+
+    expect(row).toMatchObject({ id: TERM_ID, status: rowStatus });
+  });
+
+  it('builds the row from the input, with the given status, when upstream answers with a status the table cannot show', async () => {
+    stubTerms(0, { id: TERM_ID, status: 'archived' });
+
+    const row = await service.createTerm(buildReq(), PROGRAM_ID, input);
+
+    expect(row).toEqual({
+      id: TERM_ID,
+      name: 'Fall 2026',
+      status: 'open',
+      pending: 0,
+      declined: 0,
+      accepted: 0,
+      graduated: 0,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      applicationStartDate: input.applicationStartDate,
+      applicationEndDate: input.applicationEndDate,
+    });
   });
 
   it('closes a term without counting open terms', async () => {
