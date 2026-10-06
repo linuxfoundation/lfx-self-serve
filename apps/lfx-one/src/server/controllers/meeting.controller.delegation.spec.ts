@@ -1,50 +1,57 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// meeting-privacy.utils (deep-imported into the shared-utils mock below) transitively imports
+// @angular/common/http — the JIT facade must be present in this plain-Node environment.
+import '@angular/compiler';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const MEETING_UID = 'a0000000-0000-0000-0000-000000000001';
 const COMMITTEE_UID = 'b0000000-0000-0000-0000-000000000002';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { meetingSvc, getEffectiveEmailMock, generateM2MTokenMock, addInvitedStatusToMeetingMock, enrichMeetingsWithCreatedByMock } = vi.hoisted(() => ({
-  meetingSvc: {
-    getMeetingRegistrants: vi.fn(),
-    getAuthorizedRegistrantsForImport: vi.fn(),
-    getAuthorizedCompleteRegistrants: vi.fn(),
-    getMeetingById: vi.fn(),
-    getMeetingHostKey: vi.fn(),
-    getMeetingRegistrantsByEmail: vi.fn(),
-  },
-  getEffectiveEmailMock: vi.fn(),
-  generateM2MTokenMock: vi.fn(),
-  addInvitedStatusToMeetingMock: vi.fn(),
-  enrichMeetingsWithCreatedByMock: vi.fn(),
-}));
+const { meetingSvc, getEffectiveEmailMock, getUsernameFromAuthMock, generateM2MTokenMock, addInvitedStatusToMeetingMock, enrichMeetingsWithCreatedByMock } =
+  vi.hoisted(() => ({
+    meetingSvc: {
+      getMeetingRegistrants: vi.fn(),
+      getAuthorizedRegistrantsForImport: vi.fn(),
+      getAuthorizedCompleteRegistrants: vi.fn(),
+      getMeetingById: vi.fn(),
+      getMeetingHostKey: vi.fn(),
+      getMeetingRegistrantsForUser: vi.fn(),
+      canViewMeetingRoster: vi.fn(),
+      getMeetingRegistrantCount: vi.fn(),
+    },
+    getEffectiveEmailMock: vi.fn(),
+    getUsernameFromAuthMock: vi.fn(),
+    generateM2MTokenMock: vi.fn(),
+    addInvitedStatusToMeetingMock: vi.fn(),
+    enrichMeetingsWithCreatedByMock: vi.fn(),
+  }));
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
 vi.mock('@lfx-one/shared/constants', async (importOriginal) => importOriginal());
 vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
 vi.mock('@lfx-one/shared/interfaces', async (importOriginal) => importOriginal());
-// The real module transitively needs @angular/compiler outside an Angular bootstrap (see
-// meeting.utils.spec.ts); validation.helper only needs resolvePeriodRange from it, and
-// meeting.helper (kept real below, for isWithinHostKeyWindow/applyOrganizerAndHostKeyResult)
-// needs resolveMeetingOrganizer/resolveMeetingOwner — stub all three.
-vi.mock('@lfx-one/shared/utils', () => ({
+// The real barrel needs @angular/compiler outside an Angular bootstrap (loaded top-of-file);
+// stub the helpers the kept-real modules use, but keep isWithinHostKeyWindow real via deep import.
+vi.mock('@lfx-one/shared/utils', async () => ({
   resolvePeriodRange: vi.fn(),
   resolveMeetingOrganizer: vi.fn(() => null),
   resolveMeetingOwner: vi.fn(() => null),
+  isWithinHostKeyWindow: (await import('@lfx-one/shared/utils/meeting-privacy.utils')).isWithinHostKeyWindow,
 }));
 
 vi.mock('../utils/auth-helper', () => ({
   getEffectiveEmail: getEffectiveEmailMock,
   getEffectiveUsername: vi.fn(),
-  getUsernameFromAuth: vi.fn(),
+  getUsernameFromAuth: getUsernameFromAuthMock,
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 vi.mock('../helpers/committee-v1-mapping.helper', () => ({ resolveCommitteeV2UidsToV1Ids: vi.fn() }));
-// Keep the real host-key gate (isWithinHostKeyWindow + applyOrganizerAndHostKeyResult); stub
-// only the registrant-lookup/enrichment helpers so the controller tests don't need M2M plumbing.
+// Keep the real applyOrganizerAndHostKeyResult (isWithinHostKeyWindow stays real via the
+// shared-utils mock above); stub only the registrant-lookup/enrichment helpers — no M2M plumbing.
 vi.mock('../helpers/meeting.helper', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../helpers/meeting.helper')>();
   return { ...actual, addInvitedStatusToMeeting: addInvitedStatusToMeetingMock, enrichMeetingsWithCreatedBy: enrichMeetingsWithCreatedByMock };
@@ -104,6 +111,7 @@ describe('MeetingController.getMeetingRegistrants — delegation', () => {
     vi.clearAllMocks();
     controller = new MeetingController();
     meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
+    meetingSvc.canViewMeetingRoster.mockResolvedValue(true);
   });
 
   it('calls the partial-tolerant getMeetingRegistrants for the 3 pre-existing callers (no fail_on_partial)', async () => {
@@ -198,8 +206,8 @@ function buildMeeting(overrides: Record<string, unknown> = {}): any {
   };
 }
 
-// isWithinHostKeyWindow / applyOrganizerAndHostKeyResult are kept real (see the meeting.helper
-// mock above) so these tests exercise the actual host-key gate, not a stub standing in for it.
+// The host-key gate is kept real — isWithinHostKeyWindow via the shared-utils mock above and
+// applyOrganizerAndHostKeyResult via the meeting.helper mock — not a stub standing in for it.
 describe('MeetingController.getMeetingById host-key gating', () => {
   let controller: MeetingController;
 
@@ -274,7 +282,7 @@ describe('MeetingController.getMeetingById host-key gating', () => {
   });
 });
 
-// getMyMeetingRegistrants: the gate check (getMeetingRegistrantsByEmail) and the meeting fetch
+// getMyMeetingRegistrants: the gate check (getMeetingRegistrantsForUser) and the meeting fetch
 // (getMeetingById) fan out under Promise.all, and the M2M token is threaded via
 // ApiRequestOptions.bearerToken rather than a req.bearerToken mutation (see meeting.controller.ts).
 describe('MeetingController.getMyMeetingRegistrants', () => {
@@ -287,7 +295,8 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     controller = new MeetingController();
     generateM2MTokenMock.mockResolvedValue(M2M_TOKEN);
     getEffectiveEmailMock.mockReturnValue('user@example.com');
-    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    getUsernameFromAuthMock.mockResolvedValue(null);
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
     meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
   });
 
@@ -297,7 +306,7 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
 
   it('grants access to an organizer who is not a registrant', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: true, committees: [] }));
-    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
     meetingSvc.getMeetingRegistrants.mockResolvedValue([{ uid: 'r1' }]);
     const res = buildRes();
     const next = vi.fn();
@@ -315,7 +324,7 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
 
   it('returns an empty list for a non-registrant, non-organizer caller without fetching the roster', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: false, committees: [] }));
-    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
     const res = buildRes();
     const next = vi.fn();
 
@@ -326,7 +335,18 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('returns an empty list without any upstream fetch when caller has no email', async () => {
+  it('matches a caller with a username but no email, the rule the invited flag uses', async () => {
+    getEffectiveEmailMock.mockReturnValue(undefined);
+    getUsernameFromAuthMock.mockResolvedValue('ada');
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: true, committees: [] }));
+    const res = buildRes();
+
+    await controller.getMyMeetingRegistrants(buildRegistrantsReq(), res, vi.fn());
+
+    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(expect.anything(), MEETING_UID, undefined, 'ada', M2M_TOKEN);
+  });
+
+  it('returns an empty list without any upstream fetch when caller has no email or username', async () => {
     getEffectiveEmailMock.mockReturnValue(undefined);
     const res = buildRes();
     const next = vi.fn();
@@ -334,13 +354,13 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     await controller.getMyMeetingRegistrants(buildRegistrantsReq(), res, next);
 
     expect(meetingSvc.getMeetingById).not.toHaveBeenCalled();
-    expect(meetingSvc.getMeetingRegistrantsByEmail).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsForUser).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith([]);
   });
 
   it('short-circuits with an empty list when the meeting is not found', async () => {
     meetingSvc.getMeetingById.mockResolvedValue(null);
-    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
     const res = buildRes();
     const next = vi.fn();
 
@@ -355,7 +375,7 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     // off it) resolves on a later microtask — out-of-order settlement relative to the fetch above.
     meetingSvc.getMeetingById.mockImplementation(async () => buildMeeting({ organizer: true, committees: [] }));
     generateM2MTokenMock.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(M2M_TOKEN), 5)));
-    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
     meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
     const req = buildRegistrantsReq();
     const res = buildRes();
@@ -364,7 +384,7 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     await controller.getMyMeetingRegistrants(req, res, next);
 
     // The gate check ran under the M2M token, never the caller's own token.
-    expect(meetingSvc.getMeetingRegistrantsByEmail).toHaveBeenCalledWith(expect.anything(), MEETING_UID, 'user@example.com', M2M_TOKEN);
+    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(expect.anything(), MEETING_UID, 'user@example.com', undefined, M2M_TOKEN);
     // The roster fetch carried the M2M token via options, not by mutating req.bearerToken.
     expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, true, undefined, {
       bearerToken: M2M_TOKEN,

@@ -10,11 +10,12 @@ import {
   PastMeeting,
   PublicCalendarMeeting,
   PublicProjectMeetingsResponse,
+  RemoveUserFromProjectRequest,
   UpdateProjectStaffRequest,
   UpdateUserRoleRequest,
   UploadProjectDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, isFileTypeAllowed, isUuid, maskIdentifierForLogs } from '@lfx-one/shared/utils';
+import { computeIsFoundation, isFileTypeAllowed, isSafeUploadFileName, isUuid, maskIdentifierForLogs } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -23,7 +24,7 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
-import { getStringQueryParam, validateUidParameter } from '../helpers/validation.helper';
+import { getStringQueryParam, getValidatedDuplicateIdentifiers, validateUidParameter } from '../helpers/validation.helper';
 import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
@@ -401,7 +402,9 @@ export class ProjectController {
         return;
       }
 
-      const result = await this.projectService.updateProjectPermissions(req, uid, 'update', username, roleData.role);
+      const duplicateIdentifiers = getValidatedDuplicateIdentifiers(roleData.duplicateIdentifiers, 'update_user_role_project_permissions');
+
+      const result = await this.projectService.updateProjectPermissions(req, uid, 'update', username, roleData.role, undefined, duplicateIdentifiers);
 
       logger.success(req, 'update_user_role_project_permissions', startTime, {
         uid,
@@ -526,7 +529,9 @@ export class ProjectController {
         return;
       }
 
-      await this.projectService.updateProjectPermissions(req, uid, 'remove', username);
+      const removeData: RemoveUserFromProjectRequest = req.body ?? {};
+      const duplicateIdentifiers = getValidatedDuplicateIdentifiers(removeData.duplicateIdentifiers, 'remove_user_project_permissions');
+      await this.projectService.updateProjectPermissions(req, uid, 'remove', username, undefined, undefined, duplicateIdentifiers);
 
       logger.success(req, 'remove_user_project_permissions', startTime, {
         uid,
@@ -814,8 +819,9 @@ export class ProjectController {
       }
 
       // Reject path-traversal patterns in the filename so upstream can't be tricked into
-      // writing or referencing files outside the project scope.
-      if (/[/\\\0]/.test(trimmedFileName!) || trimmedFileName!.includes('..')) {
+      // writing or referencing files outside the project scope, and control characters / quotes
+      // that would break out of the multipart part's Content-Disposition filename parameter.
+      if (!isSafeUploadFileName(trimmedFileName!)) {
         next(
           ServiceValidationError.forField('file_name', 'File name contains invalid characters', {
             operation: 'upload_project_document',

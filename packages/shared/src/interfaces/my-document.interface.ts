@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { AuditUserProfile, ProjectDocumentSource } from './project.interface';
+
 /** Source type for My Documents page */
-export type MyDocumentSource = 'link' | 'meeting' | 'file' | 'recording' | 'transcript' | 'summary' | 'mailing_list';
+export type MyDocumentSource = 'link' | 'meeting' | 'file' | 'recording' | 'transcript' | 'summary' | 'mailing_list' | 'committee' | 'project';
 
 // ─── Query Result Shapes ─────────────────────────────────────────────────────
 
@@ -13,6 +15,23 @@ export interface CommitteeLinkQueryResult {
   url?: string;
   created_at?: string;
   committee_uid?: string;
+}
+
+/** Raw shape returned by query service for `committee_document` resource type — indexed by committee_uid only */
+export interface CommitteeDocumentQueryResult {
+  uid: string;
+  name: string;
+  file_name?: string;
+  file_size?: number;
+  content_type?: string;
+  description?: string;
+  committee_uid?: string;
+  folder_uid?: string;
+  created_at?: string;
+  updated_at?: string;
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional indexer records. */
+  uploaded_by_username?: string;
 }
 
 /** Raw shape returned by query service for `groupsio_artifact` resource type */
@@ -135,4 +154,9 @@ export interface MyDocumentItem {
   downloadUrl?: string;
   /** Display name of the user who shared/uploaded the document, when available. */
   uploadedBy?: string;
+  /**
+   * Source subsystem for project-lens documents — used by the project-source
+   * filter dropdown. Undefined for Me-lens documents.
+   */
+  projectDocumentSource?: ProjectDocumentSource;
 }

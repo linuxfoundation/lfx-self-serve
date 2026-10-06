@@ -142,9 +142,11 @@
               <th>
                 <span class="text-sm font-inter text-gray-500">Name</span>
               </th>
-              <th>
-                <span class="text-sm font-inter text-gray-500">Email</span>
-              </th>
+              @if (!isVisitor()) {
+                <th>
+                  <span class="text-sm font-inter text-gray-500">Email</span>
+                </th>
+              }
               <th>
                 <span class="text-sm font-inter text-gray-500">Organization</span>
               </th>
@@ -181,7 +183,7 @@
               <td>
                 @if (row.rowType === 'member') {
                   <span class="text-sm font-inter text-gray-900 font-medium">
-                    {{ row.data | fullName | titlecase }}
+                    {{ row.data.first_name || row.data.last_name ? (row.data | fullName | titlecase) : '-' }}
                   </span>
                 } @else {
                   <div class="flex flex-wrap items-center gap-2">
@@ -189,14 +191,16 @@
                   </div>
                 }
               </td>
-              <!-- Email -->
-              <td>
-                @if (row.rowType === 'member') {
-                  <span class="text-sm font-inter text-gray-500">{{ row.data.email || '-' }}</span>
-                } @else {
-                  <span class="text-sm font-inter text-gray-500">{{ row.data.invitee_email }}</span>
-                }
-              </td>
+              <!-- Email (hidden for visitors — BASIC_PROFILE exposes name/org/role only) -->
+              @if (!isVisitor()) {
+                <td>
+                  @if (row.rowType === 'member') {
+                    <span class="text-sm font-inter text-gray-500">{{ row.data.email || '-' }}</span>
+                  } @else {
+                    <span class="text-sm font-inter text-gray-500">{{ row.data.invitee_email }}</span>
+                  }
+                </td>
+              }
               <!-- Organization -->
               <td>
                 @if (row.rowType === 'member') {
@@ -296,7 +300,7 @@
                       severity="secondary"
                       (onClick)="toggleMemberActionMenu($event, row.data, memberActionMenu)">
                     </lfx-button>
-                  } @else {
+                  } @else if (!isVisitor()) {
                     <lfx-button
                       icon="fa-light fa-envelope"
                       [text]="true"

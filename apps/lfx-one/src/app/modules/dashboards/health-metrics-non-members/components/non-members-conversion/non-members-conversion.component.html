@@ -1,0 +1,73 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="non-members-conversion">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Conversion opportunity unavailable"
+      subtitle="We could not load the conversion opportunity for this foundation. Refresh the page to try again."
+      data-testid="non-members-conversion-error" />
+  } @else if (loading()) {
+    <p-skeleton height="18rem" borderRadius="0.5rem" data-testid="non-members-conversion-loading" aria-hidden="true" />
+  } @else if (!view().measured) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-question"
+      title="No conversion opportunity yet"
+      subtitle="Once this foundation's non-member organizations are scored for fit, the pipeline and warmest organizations appear here."
+      data-testid="non-members-conversion-unmeasured" />
+  } @else {
+    <span class="self-end rounded-full bg-blue-50 px-2.5 py-0.5 text-[12px] text-blue-700" data-testid="non-members-conversion-summary">{{
+      view().summary
+    }}</span>
+
+    <div
+      class="flex flex-col gap-4 rounded-lg border border-blue-100 bg-blue-50/40 p-4 md:flex-row md:items-start md:gap-9"
+      data-testid="non-members-conversion-hero">
+      <div class="flex flex-col gap-2" data-testid="non-members-conversion-pipeline">
+        <span class="text-3xl font-semibold tabular-nums text-blue-700" data-testid="non-members-conversion-pipeline-value">{{ view().pipelineValue }}</span>
+        <span class="text-[12.5px] text-gray-500" data-testid="non-members-conversion-pipeline-label">{{ view().pipelineLabel }}</span>
+      </div>
+
+      <dl class="flex flex-wrap gap-7 pt-1" data-testid="non-members-conversion-side">
+        @for (stat of view().side; track stat.key) {
+          <div class="flex flex-col gap-0.5" [attr.data-testid]="'non-members-conversion-side-' + stat.key">
+            <dt class="text-[11.5px] text-gray-400">{{ stat.label }}</dt>
+            <dd class="text-[17px] font-semibold tabular-nums text-gray-900" [attr.data-testid]="'non-members-conversion-side-' + stat.key + '-value'">
+              {{ stat.value }}
+            </dd>
+          </div>
+        }
+      </dl>
+    </div>
+
+    <div class="flex flex-col gap-3" data-testid="non-members-conversion-warmest">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Warmest organizations</h4>
+        <span class="text-[12px] text-gray-400">attend meetings and contribute</span>
+      </div>
+      @if (view().warmest.length === 0) {
+        <p class="text-sm text-gray-500" data-testid="non-members-conversion-warmest-empty">No high-fit organization in the selected period.</p>
+      } @else {
+        <ul class="flex flex-col gap-2.5">
+          @for (bar of view().warmest; track bar.accountId; let index = $index) {
+            <li class="flex flex-col gap-1" [attr.data-testid]="'non-members-conversion-warm-' + index">
+              <div class="flex items-baseline justify-between gap-2 text-[13px]">
+                <span class="min-w-0 break-words text-gray-700">{{ bar.label }}</span>
+                <span class="shrink-0 tabular-nums text-gray-900" [attr.data-testid]="'non-members-conversion-warm-' + index + '-value'">{{
+                  bar.valueLabel
+                }}</span>
+              </div>
+              <div class="h-1.5 w-full rounded-full bg-gray-100" aria-hidden="true">
+                <div class="h-full rounded-full" [class]="barClass" [style.width.%]="bar.widthPct"></div>
+              </div>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+
+    <p class="text-[12px] text-gray-500" data-testid="non-members-conversion-footnote">{{ view().footnote }}</p>
+  }
+</div>

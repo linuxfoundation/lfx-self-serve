@@ -50,3 +50,39 @@ describe('OrgRoleGrantsService.readCheck', () => {
     expect(await bare).toBe(true);
   });
 });
+
+// #3136 — the inverse posture of readCheck: the edit answer only shows or hides controls, so anything but
+// an explicit `canEdit: true` (including an unverifiable check) must hide them.
+describe('OrgRoleGrantsService.editCheck', () => {
+  const EDIT_URL = `/api/orgs/${UID}/lens/edit-check`;
+  let service: OrgRoleGrantsService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    service = TestBed.inject(OrgRoleGrantsService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('answers the server decision', async () => {
+    const yes = firstValueFrom(service.editCheck(UID));
+    http.expectOne(EDIT_URL).flush({ canEdit: true });
+    expect(await yes).toBe(true);
+
+    const no = firstValueFrom(service.editCheck(UID));
+    http.expectOne(EDIT_URL).flush({ canEdit: false });
+    expect(await no).toBe(false);
+  });
+
+  it('fails closed on any error, unlike the read check', async () => {
+    const refused = firstValueFrom(service.editCheck(UID));
+    http.expectOne(EDIT_URL).flush({ code: 'FORBIDDEN' }, { status: 403, statusText: 'Forbidden' });
+    expect(await refused).toBe(false);
+
+    const unavailable = firstValueFrom(service.editCheck(UID));
+    http.expectOne(EDIT_URL).flush({ code: 'ROLE_GRANTS_UNAVAILABLE' }, { status: 503, statusText: 'Service Unavailable' });
+    expect(await unavailable).toBe(false);
+  });
+});

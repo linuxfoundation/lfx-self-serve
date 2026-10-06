@@ -3,8 +3,10 @@
 
 import { NgClass } from '@angular/common';
 import { Component, input, output } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { HEALTH_METRICS_BASE_PATH } from '@lfx-one/shared/constants';
 
-import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsL2CrossReference, HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
  * Sticky left rail for a Health Metrics Level 2 tab (the design's `.subnav2`). Purely presentational —
@@ -12,7 +14,7 @@ import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
  */
 @Component({
   selector: 'lfx-health-metrics-l2-sub-nav',
-  imports: [NgClass],
+  imports: [NgClass, RouterLink],
   templateUrl: './health-metrics-l2-sub-nav.component.html',
 })
 export class HealthMetricsL2SubNavComponent {
@@ -23,8 +25,10 @@ export class HealthMetricsL2SubNavComponent {
   public readonly ariaLabel = input.required<string>();
   /** Prefixes every `data-testid`, so each tab keeps its own test ids. */
   public readonly testIdPrefix = input.required<string>();
-  /** Static note under the items; omitted when empty. */
-  public readonly crossReferenceNote = input('');
+  /** Note under the items linking to another tab; omitted when `null`. */
+  public readonly crossReference = input<HealthMetricsL2CrossReference | null>(null);
+
+  protected readonly basePath = HEALTH_METRICS_BASE_PATH;
 
   public readonly sectionPicked = output<string>();
 }

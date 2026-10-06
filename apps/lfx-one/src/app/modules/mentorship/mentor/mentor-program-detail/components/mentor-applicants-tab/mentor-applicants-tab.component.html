@@ -87,16 +87,31 @@
           <td class="px-4 py-3">
             @if (row.otherApplications.length > 0) {
               <div class="flex flex-col gap-0.5 w-full">
-                @for (application of row.otherApplications; track application.programId) {
-                  <div class="text-sm w-full flex items-center flex-wrap">
-                    <a
-                      class="max-w-full block truncate text-blue-600 transition-colors hover:text-blue-700 hover:underline"
-                      [routerLink]="['/mentorship/mentor/programs', application.programId]"
-                      [title]="application.programName + ' — ' + application.statusLabel"
-                      [attr.data-testid]="'mentorship-mentor-applicant-other-application-' + application.programId">
-                      {{ application.programName }}
-                    </a>
-                    <span class="text-gray-500"> — {{ application.statusLabel }}</span>
+                @for (application of row.otherApplications; track $index) {
+                  <!-- The name wraps on narrow viewports, like the term column, and only clamps to
+                       one line on `lg+`; the full name then sits in the link's focusable `[title]`. -->
+                  <div class="text-sm w-full flex items-center flex-wrap gap-x-2 gap-y-0.5" data-testid="mentorship-mentor-applicant-other-application">
+                    @if (application.programUrl) {
+                      <a
+                        class="min-w-0 max-w-full block whitespace-normal break-words text-blue-600 transition-colors hover:text-blue-700 hover:underline lg:truncate"
+                        [href]="application.programUrl"
+                        [title]="application.programName"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-testid="mentorship-mentor-applicant-other-application-link">
+                        {{ application.programName }}
+                      </a>
+                    } @else {
+                      <span class="min-w-0 max-w-full block whitespace-normal break-words text-gray-900 lg:truncate" [title]="application.programName">{{
+                        application.programName
+                      }}</span>
+                    }
+                    <span
+                      class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-lg"
+                      [class]="application.statusBadgeClass"
+                      data-testid="mentorship-mentor-applicant-other-application-status">
+                      {{ application.statusLabel }}
+                    </span>
                   </div>
                 }
               </div>

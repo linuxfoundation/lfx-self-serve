@@ -118,10 +118,17 @@ test.describe('Propose a project — submitter (#3037)', () => {
     await page.getByTestId('my-formations-page-tabs-proposals').click();
     await page.getByTestId(`project-applications-open-${PROPOSAL_UID}`).click({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('project-application-drawer-withdraw').click();
+    // An open proposal keeps withdraw and delete in the footer's More menu; Revise is the submitter's primary action.
+    await expect(page.getByTestId('project-application-drawer-delete')).toHaveCount(0);
+    const more = page.getByTestId('project-application-drawer-actions').getByRole('button', { name: 'More actions' });
+    await expect(more).toHaveAttribute('aria-expanded', 'false');
+    await more.click();
+    await expect(more).toHaveAttribute('aria-expanded', 'true');
+    await page.getByRole('menuitem', { name: 'Withdraw' }).click();
     await confirmDialog(page, 'Withdraw');
     await expect(page.getByTestId('project-application-drawer-state')).toContainText('Withdrawn', { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('project-application-drawer-revise')).toHaveCount(0);
+    await expect(page.getByTestId('project-application-drawer-more')).toHaveCount(0);
     expect(state.requests.find((request) => request.path.endsWith('/withdraw'))?.ifMatch).toBe('2');
 
     await page.getByTestId('project-application-drawer-delete').click();
@@ -203,6 +210,9 @@ test.describe('Project proposals — formation team queue (#3037)', () => {
     await expect(page.getByTestId('formations-queue-page-tabs-proposals')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId(`project-applications-submitter-${PROPOSAL_UID}`)).toContainText('casey@example.org', { timeout: DATA_LOAD_TIMEOUT });
     await page.getByTestId(`project-applications-open-${PROPOSAL_UID}`).click();
+    // The formation team sees who submitted, with a mailto link, on the header meta line.
+    await expect(page.getByTestId('project-application-drawer-submitter')).toContainText('Casey Example');
+    await expect(page.getByTestId('project-application-drawer-submitter-email')).toHaveAttribute('href', 'mailto:casey@example.org');
 
     await page.getByTestId('project-application-drawer-accept').click();
     await expect(page.getByTestId('project-application-accept-confirm').locator('button')).toBeDisabled();

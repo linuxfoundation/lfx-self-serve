@@ -3,6 +3,7 @@
 
 import { inject, Injectable } from '@angular/core';
 import { IntercomBootOptions, IntercomFunction } from '@lfx-one/shared/interfaces';
+import { redactInviteToken } from '@lfx-one/shared/utils';
 
 import { DataDogRumService } from './datadog-rum.service';
 
@@ -46,6 +47,13 @@ export class IntercomService {
       return;
     }
 
+    // Intercom records the page URL. On an invite page that carries the signed token, so swap in the
+    // redacted URL first; the page already holds the token, and replaceState does not re-route.
+    const redactedUrl = redactInviteToken(window.location.href);
+    if (redactedUrl !== window.location.href) {
+      window.history.replaceState(window.history.state, '', redactedUrl);
+    }
+
     this.loadIntercomScript(options.app_id, options.api_base);
     window.Intercom!('boot', options);
     this.isBootRequested = true;
@@ -57,6 +65,16 @@ export class IntercomService {
       return;
     }
     window.Intercom('show');
+  }
+
+  // Re-scan the DOM so the widget (re)binds custom launchers that entered the page after boot —
+  // e.g. the profile help link, which is router-mounted on client-side navigation into /profile/*.
+  // Fire-and-forget: pre-load, the stub queues the calls and replays them once the script boots.
+  public update(): void {
+    if (typeof window === 'undefined' || !window.Intercom || !this.isBootRequested) {
+      return;
+    }
+    this.reattachAndUpdate(window.Intercom);
   }
 
   // Records who a later on-demand boot should identify as, without loading the widget.
@@ -81,7 +99,8 @@ export class IntercomService {
     this.show();
   }
 
-  // Call before re-booting with a different user (impersonation identity reset).
+  // Call on logout, before the page navigates away (LogoutLinkDirective), and before re-booting
+  // with a different user (impersonation identity reset).
   public shutdown(): void {
     // Dropped unconditionally: the stale identity must not survive into the next boot even when
     // there is no widget to shut down.
@@ -148,6 +167,14 @@ export class IntercomService {
     }
   }
 
+  // `reattach_activator` is the (re)bind command — `update` alone only refreshes user/page data —
+  // and the pair order mirrors the official Intercom snippet. Shared by the boot-time rebind in
+  // initializeIntercomFunction() and the post-boot rebind in update() so the two can never desync.
+  private reattachAndUpdate(ic: IntercomFunction): void {
+    ic('reattach_activator');
+    ic('update', window.intercomSettings!);
+  }
+
   private initializeIntercomFunction(): void {
     if (typeof window === 'undefined') {
       return;
@@ -156,8 +183,7 @@ export class IntercomService {
     const ic = window.Intercom;
 
     if (typeof ic === 'function') {
-      ic('reattach_activator');
-      ic('update', window.intercomSettings!);
+      this.reattachAndUpdate(ic);
     } else {
       const stub: IntercomFunction = Object.assign(
         (...args: unknown[]) => {

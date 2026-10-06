@@ -7,7 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE } from '@lfx-one/shared/constants';
 import { MentorshipMentorProgram, MentorshipMentorProgramsResponse } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -45,7 +45,7 @@ describe('MentorProgramsComponent', () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MentorProgramsComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: MentorshipService, useValue: { getMentorPrograms } }],
+      providers: [provideNoopAnimations(), provideRouter([]), { provide: MentorshipMentorService, useValue: { getMentorPrograms } }],
     });
 
     fixture = TestBed.createComponent(MentorProgramsComponent);
@@ -61,7 +61,7 @@ describe('MentorProgramsComponent', () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MentorProgramsComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: MentorshipService, useValue: { getMentorPrograms: () => NEVER } }],
+      providers: [provideNoopAnimations(), provideRouter([]), { provide: MentorshipMentorService, useValue: { getMentorPrograms: () => NEVER } }],
     });
 
     fixture = TestBed.createComponent(MentorProgramsComponent);
@@ -86,7 +86,7 @@ describe('MentorProgramsComponent', () => {
       providers: [
         provideNoopAnimations(),
         provideRouter([]),
-        { provide: MentorshipService, useValue: { getMentorPrograms: () => of(EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE) } },
+        { provide: MentorshipMentorService, useValue: { getMentorPrograms: () => of(EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE) } },
       ],
     });
 

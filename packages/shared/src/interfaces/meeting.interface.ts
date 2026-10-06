@@ -299,8 +299,12 @@ export interface Meeting {
    * Share the guest list in calendar invites: when on, each guest's ICS lists the other
    * attendees and their last known RSVP instead of the recipient alone. Board and restricted
    * meetings can never opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF
-   * forces the field off on write. This does not currently change what the LFX meeting page or
-   * the BFF roster endpoints return; that gating is tracked separately.
+   * forces the field off on write. In LFX it also decides whether an invitee who is not an
+   * organizer can see the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]`
+   * to them when it is off, and the meeting card and meeting page hide their guest lists to match.
+   * `GET /api/meetings/:uid/registrants` (tolerant listing) and `GET /api/meetings/:uid/rsvp`
+   * apply the same rule. Past-meeting participants ignore it and go to organizers and the people on
+   * them instead, so meetings already held keep their attendance (#2827).
    */
   show_meeting_attendees?: boolean | null;
   /**
@@ -348,7 +352,10 @@ export interface Meeting {
   // Fields NOT in API - likely response-only
   /** Invited to meeting (response only) */
   invited: boolean;
-  /** Total registrant count from API */
+  /**
+   * Total registrant count. `GET /public/api/meetings/:id` sets it for an invitee who is not an
+   * organizer, so they see how many are invited even when the guest list is hidden from them.
+   */
   registrant_count?: number;
   /** Count fields (response only) — omitted when list endpoints skip per-meeting enrichment; callers must handle undefined. */
   individual_registrants_count?: number;
@@ -619,8 +626,9 @@ export interface MeetingRegistrant {
   /**
    * Committee this registrant was added from (present when `type` is `committee`).
    * Upstream returns the v1 committee SFID; the BFF normalizes it back to the **v2** UID on enriched
-   * reads (`include_committee=true`, and every `/my` registrant response) so the field means the same
-   * thing in both directions. Treat the normalization as best-effort rather than guaranteed — an
+   * reads (`include_committee=true`, and every `/my` registrant response except `preview=true`, which
+   * skips enrichment and always returns the raw SFID) so the field means the same thing in both
+   * directions. Treat the normalization as best-effort rather than guaranteed — an
    * enriched response still returns the raw SFID when the meeting has no committees, when the whole
    * v1↔v2 mapping comes back empty, when this particular SFID has no v2 counterpart, or when
    * enrichment throws (the BFF logs a warning and serves the unenriched rows with a 200 rather than
@@ -658,6 +666,9 @@ export interface MeetingRegistrant {
  * "upstream stored nothing" are different answers, and only omission preserves the distinction.
  */
 export type PublicMeetingRegistrationResponse = Partial<Pick<MeetingRegistrant, (typeof PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS)[number]>>;
+
+/** Which dates a guest added from a recurring meeting's guest list is invited to */
+export type GuestInviteScope = 'all' | 'occurrence';
 
 /**
  * Request payload for creating a meeting registrant
@@ -1377,6 +1388,52 @@ export interface MeetingCancelOccurrenceResult {
   error?: string;
 }
 
+/** Request body for canceling a single occurrence of a recurring meeting */
+export interface CancelMeetingOccurrenceRequest {
+  /** Note included in the cancellation emails sent to guests */
+  note?: string;
+}
+
+/**
+ * Request body for editing a single occurrence of a recurring meeting
+ * @description Carries no `recurrence`: upstream rejects one unless `all_following_occurrences` is set,
+ * which would widen the change from this occurrence to every later one. `title` and `description`
+ * are sent only when changed, so an untouched field keeps following the series.
+ */
+export interface UpdateMeetingOccurrenceRequest {
+  /** New start time of the occurrence in RFC3339 format */
+  start_time: string;
+  /** New duration of the occurrence in minutes */
+  duration: number;
+  /** Title for this occurrence only (upstream `topic`) */
+  title?: string;
+  /** Agenda for this occurrence only (upstream `agenda`). Upstream drops an empty value, so it can't be cleared. */
+  description?: string;
+}
+
+/**
+ * Result of rescheduling a meeting occurrence
+ * @description `start_time` is the occurrence's new start, which is also its new occurrence id
+ */
+export interface MeetingRescheduleOccurrenceResult {
+  confirmed: boolean;
+  start_time?: string;
+  error?: string;
+}
+
+/**
+ * Which part of a recurring meeting an edit applies to
+ */
+export type RecurringMeetingEditScope = 'occurrence' | 'series';
+
+/**
+ * Result of the recurring meeting edit scope dialog
+ */
+export interface RecurringMeetingEditScopeResult {
+  proceed: boolean;
+  scope: RecurringMeetingEditScope;
+}
+
 /**
  * Recording session information
  * @description Individual session within a past meeting recording
@@ -1852,6 +1909,21 @@ export interface MeLensMeetingFilters {
   organizerOnly: boolean;
   /** Viewer username/LFID used by the `organizerOnly` predicate; null disables matching. */
   viewerUsername: string | null;
+  /** Keep meetings the viewer declined for every occurrence; when false they are hidden. */
+  showDeclined: boolean;
+}
+
+/**
+ * One face in the fixed-height attendee preview on a meeting card.
+ * @description Built from either a registrant or an RSVP row, so only display fields are carried.
+ */
+export interface MeetingAttendeePreviewPerson {
+  /** Stable key for `@for` tracking (registrant uid, RSVP id, or email). */
+  key: string;
+  /** Display name shown in the tooltip; falls back to the email. */
+  name: string;
+  /** Profile picture URL; the avatar falls back to the first initial when absent. */
+  avatarUrl: string | null;
 }
 
 /**

@@ -38,7 +38,6 @@ import {
   PD_DRAWER_QUERY_PARAM,
   HEALTH_SCORE_BADGE,
   HEALTH_SCORE_LABELS,
-  HEALTH_SCORE_PARTIAL_SUFFIX,
   PD_HEALTH_TAG,
   PD_NON_LF_MARKER,
   PD_VALID_DRAWER_CARD_KEYS,
@@ -68,7 +67,7 @@ import type {
   OrgLensProjectLeaderboardRow,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
-import { buildHealthAriaLabel, isPartialHealthScore, parseLocalDateString } from '@lfx-one/shared/utils';
+import { buildHealthAriaLabel, formatHealthLabel, isPartialHealthScore, parseLocalDateString } from '@lfx-one/shared/utils';
 import type { MenuItem } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
@@ -242,9 +241,8 @@ export class OrgProjectDetailComponent {
       return { label: HEALTH_SCORE_LABELS.unavailable, ...HEALTH_SCORE_BADGE.unavailable };
     }
     const tag = PD_HEALTH_TAG[health];
-    // Bare-band bg/text stay unsuffixed for color lookup; only the rendered label gets " - Partial",
-    // sourced straight from the BFF's healthCoveredCategoryCount — never recomputed locally.
-    return isPartialHealthScore(hero?.healthCoveredCategoryCount ?? null) ? { ...tag, label: `${tag.label}${HEALTH_SCORE_PARTIAL_SUFFIX}` } : tag;
+    // Colors stay on the bare band; only the label gets the partial marker, from the BFF's covered count.
+    return { ...tag, label: formatHealthLabel(tag.label, isPartialHealthScore(hero?.healthCoveredCategoryCount ?? null)) };
   });
   protected readonly heroHealthAriaLabel = computed(() =>
     buildHealthAriaLabel({

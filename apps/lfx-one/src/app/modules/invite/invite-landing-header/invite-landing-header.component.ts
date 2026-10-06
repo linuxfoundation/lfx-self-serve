@@ -3,6 +3,7 @@
 
 import { Component, inject } from '@angular/core';
 import { UserService } from '@services/user.service';
+import { LogoutLinkDirective } from '@shared/directives/logout-link.directive';
 
 /**
  * Logo + logout only. The product header pulls search, menus, and a profile fetch that
@@ -11,6 +12,7 @@ import { UserService } from '@services/user.service';
  */
 @Component({
   selector: 'lfx-invite-landing-header',
+  imports: [LogoutLinkDirective],
   templateUrl: './invite-landing-header.component.html',
 })
 export class InviteLandingHeaderComponent {

@@ -5,10 +5,10 @@
  * Mentee Profile page — empty/error states plus the populated edit-drawer golden path
  * (KB: `code-truthiness/missing-e2e-for-empty-state`).
  *
- * The mentorship module is still mock-backed (`MOCK_MENTORSHIP_MENTEE_PROFILE`), so the profile
- * page renders through distinct empty-state branches: profile error, about-me empty, skills empty,
- * areas-to-improve empty, additional-notes empty, resume empty, application-history empty. This
- * suite locks each empty-state independently of the mock's default payload, and drives the
+ * The profile page renders through distinct empty-state branches: profile error, about-me empty,
+ * skills empty, areas-to-improve empty, additional-notes empty, application-history
+ * empty. This suite stubs `/api/mentorship/mentee/profile` via `page.route` so it locks each
+ * empty-state independently of whatever the signed-in user has stored upstream, and drives the
  * Edit Mentee Profile drawer through its seeded cancel/save workflow.
  *
  * Prerequisites:
@@ -16,7 +16,7 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
  */
 
-import { MENTORSHIP_COMING_SOON_DETAIL, MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL } from '@lfx-one/shared/constants';
 import { expect, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
@@ -34,7 +34,7 @@ test.describe('Mentee Profile — empty states', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          profile: { aboutMe: '', skillsHave: [], skillsWant: [], additionalNotes: '', resumeFileName: null, resumeUrl: null },
+          profile: { aboutMe: '', skillsHave: [], skillsWant: [], additionalNotes: '' },
           history: [],
         }),
       })
@@ -56,12 +56,6 @@ test.describe('Mentee Profile — empty states', () => {
 
   test('shows the additional-notes empty label when skill_set.comments is absent', async ({ page }) => {
     await expect(page.getByTestId('mentorship-mentee-profile-details-notes-empty')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
-  });
-
-  test('shows the resume empty label when the mentee has not uploaded one', async ({ page }) => {
-    await expect(page.getByTestId('mentorship-mentee-profile-details-resume-empty')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
-    await expect(page.getByTestId('mentorship-mentee-profile-details-resume-link')).toHaveCount(0);
-    await expect(page.getByTestId('mentorship-mentee-profile-details-resume-name')).toHaveCount(0);
   });
 
   test('shows the application-history empty state when the mentee has no applications', async ({ page }) => {
@@ -90,10 +84,10 @@ const POPULATED_PROFILE = {
     skillsHave: ['Python', 'Go'],
     skillsWant: ['Observability'],
     additionalNotes: 'Comfortable working asynchronously.',
-    resumeFileName: 'test-user-1-resume.pdf',
-    resumeUrl: 'https://example.com/test-user-1-resume.pdf',
   },
-  history: [{ id: 'hist_pending', programName: 'GridFlow Ingestion', termName: 'Fall 2026', submittedOn: 'Jul 2, 2026', status: 'pending' }],
+  history: [
+    { id: 'hist_pending', programId: 'prog_gridflow', programName: 'GridFlow Ingestion', termName: 'Fall 2026', submittedOn: 'Jul 2, 2026', status: 'pending' },
+  ],
 };
 
 test.describe('Mentee Profile — edit drawer golden path', () => {
@@ -115,7 +109,6 @@ test.describe('Mentee Profile — edit drawer golden path', () => {
     await expect(page.getByTestId('mentorship-mentee-profile-details-about-text')).toContainText('Want production pipelines.');
     await expect(page.getByTestId('mentorship-mentee-profile-details-skills-list')).toContainText('Python');
     await expect(page.getByTestId('mentorship-mentee-profile-details-notes-text')).toHaveText('Comfortable working asynchronously.');
-    await expect(page.getByTestId('mentorship-mentee-profile-details-resume-link')).toContainText('test-user-1-resume.pdf');
     await expect(page.getByTestId('mentorship-application-history-name-hist_pending')).toHaveText('GridFlow Ingestion');
 
     await page.getByTestId('mentorship-mentee-profile-details-edit').click();
@@ -126,14 +119,5 @@ test.describe('Mentee Profile — edit drawer golden path', () => {
 
     await page.getByTestId('mentee-profile-edit-drawer-cancel').click();
     await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeHidden();
-  });
-
-  test('Save Changes closes the drawer and shows the coming-soon toast', async ({ page }) => {
-    await page.getByTestId('mentorship-mentee-profile-details-edit').click();
-    await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeVisible();
-
-    await page.getByTestId('mentee-profile-edit-drawer-save').click();
-    await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeHidden();
-    await expect(page.getByText(MENTORSHIP_COMING_SOON_DETAIL)).toBeVisible();
   });
 });

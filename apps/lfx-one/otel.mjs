@@ -23,6 +23,39 @@ const { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } = otelSemconv;
 
 const otlpEndpoint = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'];
 
+// Pages whose `?token=` is a signed credential. Mirrors isInviteLandingPath and
+// isMentorshipMentorInvitePath in packages/shared/src/utils/url.utils.ts; this bootstrap imports no app code.
+const CREDENTIAL_URL_PATHS = new Set(['/invite', '/invite/error', '/mentorship/mentor/invites']);
+// Upstream path that carries the mentor invite token as a segment.
+export const MENTOR_INVITE_UPSTREAM_PATH = '/mentorship/v1/mentor-invites/';
+
+/**
+ * Returns a root-relative request URL with an invite `token` replaced by `redacted`, on the
+ * credential pages and inside a `returnTo` that points at one; any other URL comes back unchanged.
+ */
+export function redactCredentialUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl, 'http://localhost');
+    const path = url.pathname.length > 1 && url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
+    let redacted = false;
+    if (CREDENTIAL_URL_PATHS.has(path) && url.searchParams.has('token')) {
+      url.searchParams.set('token', 'redacted');
+      redacted = true;
+    }
+    const returnTo = url.searchParams.get('returnTo');
+    if (returnTo) {
+      const redactedReturnTo = redactCredentialUrl(returnTo);
+      if (redactedReturnTo !== returnTo) {
+        url.searchParams.set('returnTo', redactedReturnTo);
+        redacted = true;
+      }
+    }
+    return redacted ? `${url.pathname}${url.search}` : rawUrl;
+  } catch {
+    return rawUrl.includes('token') ? rawUrl.split('?')[0] : rawUrl;
+  }
+}
+
 // Minimal JSON logger for otel.mjs — serverLogger is not available here since
 // this module runs via --import before the server module loads.
 // JSON.stringify is wrapped in try/catch so non-serializable values (bigint,
@@ -148,6 +181,16 @@ if (!otlpEndpoint) {
           const url = req.url || '';
           return url === '/livez' || url === '/readyz' || url.startsWith('/.well-known');
         },
+        // Server spans record the request URL (http.target/http.url, or url.query under the stable
+        // semconv) with its query string, which carries the invite token on the credential pages.
+        requestHook: (span, request) => {
+          if (typeof request.url !== 'string') return;
+          const redacted = redactCredentialUrl(request.url);
+          if (redacted === request.url) return;
+          span.setAttribute('http.target', redacted);
+          span.setAttribute('http.url', `${request.socket?.encrypted ? 'https' : 'http'}://${request.headers?.host ?? 'localhost'}${redacted}`);
+          span.setAttribute('url.query', redacted.split('?')[1] ?? '');
+        },
         applyCustomAttributesOnSpan: (span, request, response) => {
           const req = 'req' in response ? response.req : undefined;
           if (!req) return;
@@ -212,9 +255,12 @@ if (!otlpEndpoint) {
         // can't diverge from it. On a malformed input this falls back to normal instrumentation
         // (undici's own construction would throw on the same input and skip the span anyway, so
         // that fallback is provably harmless here, not merely assumed safe).
+        // The mentor-invite upstream call carries the signed invite token as a path segment, so it
+        // is suppressed the same way: url.full/url.path would export the credential.
         ignoreRequestHook: (request) => {
           try {
-            return new URL(request.path, request.origin).hostname === 'hooks.slack.com';
+            const url = new URL(request.path, request.origin);
+            return url.hostname === 'hooks.slack.com' || url.pathname.includes(MENTOR_INVITE_UPSTREAM_PATH);
           } catch {
             return false;
           }

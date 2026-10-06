@@ -13,6 +13,7 @@ import {
   BAND_SIGNAL_FILL_LIGHT,
   BEHAVIORAL_CLASS_CONFIG,
   DELTA_DIRECTION_TEXT_CLASS,
+  DOCS_ANCHOR_SCROLL_OFFSET_PX,
   FORMATION_ANNOUNCEMENT_TIMING_CLASS,
   FORMATION_CHECKLIST_GRID_CLASSES,
   FORMATION_ITEM_SEGMENT_COLORS,
@@ -24,12 +25,29 @@ import {
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
+  HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
+  HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
+  HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
+  HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
+  HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
+  HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
+  HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS,
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
+  HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES,
+  HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS,
   lfxColors,
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
   MENTION_SENTIMENT_CONFIG,
+  MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES,
@@ -38,7 +56,6 @@ import {
   MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
   MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
-  MENTORSHIP_MENTEE_UP_NEXT_STATUS_CLASSES,
   MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES,
@@ -71,22 +88,22 @@ export default {
     ...Object.values(AUDIENCE_SIGNAL_INFO).map((info) => info.accentClass),
     ...Object.values(MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Mentorship program-detail tabs: mentor/mentee status badges (Mentors / Applicants / Current
-    // Mentees) and term-row status badges come from shared constants, also outside `content`.
+    // and Past Mentees) and term-row status badges come from shared constants, also outside `content`.
     // The class strings are assembled in @lfx-one/shared, which Tailwind never scans, so these
     // spreads are what guarantees they survive purging regardless of usage elsewhere.
+    ...Object.values(MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Mentee tasks tab — status dropdown/badge tints selected at runtime from MENTORSHIP_MENTEE_TASK_STATUS_CLASSES.
     ...Object.values(MENTORSHIP_MENTEE_TASK_STATUS_CLASSES).flatMap((classes) => classes.split(' ')),
-    // Mentee overview: application status, past-outcome, and up-next task status badges come
+    // Mentee overview and My Tasks: application status and past-outcome badges come
     // from @lfx-one/shared constants and are applied via ngClass at runtime.
     ...Object.values(MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_UNKNOWN_BADGE_CLASS.split(' '),
     ...Object.values(MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES).flatMap((classes) => classes.split(' ')),
-    ...Object.values(MENTORSHIP_MENTEE_UP_NEXT_STATUS_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
@@ -166,6 +183,34 @@ export default {
     // @lfx-one/shared, not scanned here) plus the UNKNOWN_REVENUE_STREAM_META fallback's bg-gray-400.
     ...Object.values(HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS).flatMap((s) => s.dotClass.split(' ')),
     'bg-gray-400',
+    // Events speaker-proposal status badges and status/organization bar fills (HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS +
+    // HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS in @lfx-one/shared, not scanned here) — applied via [class].
+    ...Object.values(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS).flatMap((g) => [...g.badgeClass.split(' '), g.barClass]),
+    HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
+    ...HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS.split(' '),
+    // Events organizations membership pills and registrations bar (HEALTH_METRICS_EVENTS_ORGANIZATIONS_* in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP).flatMap((m) => m.badgeClass.split(' ')),
+    HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
+    // Events sponsorship tier and progress bar fill (HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
+    // Events top-countries bar fill (HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
+    // Members directory tier pill, NPS chips and engagement dots (HEALTH_METRICS_MEMBERS_DIRECTORY_* in @lfx-one/shared) — applied via [class].
+    ...HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS.split(' '),
+    ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES).flatMap((c) => c.split(' ')),
+    ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES),
+    // Members at-risk aging bar fill (HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
+    // Members NPS distribution segments (HEALTH_METRICS_MEMBERS_NPS_SEGMENTS in @lfx-one/shared) — applied via [class].
+    ...HEALTH_METRICS_MEMBERS_NPS_SEGMENTS.map((segment) => segment.colorClass),
+    // Non-Members warmest-organization bar fill (HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS,
+    // Members churn share-of-loss bar fill (HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
+    // Training enrollments-by-type bar fill (HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS,
+    // Training course type pills (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES).flatMap((c) => c.split(' ')),
   ],
   theme: {
     // `container.screens` only sizes the `.container` utility's max-width per breakpoint — it does
@@ -263,6 +308,9 @@ export default {
               fontWeight: '700',
               color: lfxColors.gray[900],
               letterSpacing: '-0.01em',
+              // Clears the sticky docs topbar on #fragment jumps (topbar measurement lives on the
+              // DOCS_ANCHOR_SCROLL_OFFSET_PX JSDoc); parity with DocsArticleComponent's ViewportScroller offset.
+              scrollMarginTop: `${DOCS_ANCHOR_SCROLL_OFFSET_PX}px`,
             },
             h1: { fontSize: '2.25rem', lineHeight: '1.15', marginTop: '0', marginBottom: '1rem' },
             // Article sections (markdown `##`) render at h4 scale with a 32px top gap — the

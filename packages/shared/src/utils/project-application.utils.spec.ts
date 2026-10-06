@@ -5,13 +5,18 @@ import { describe, expect, it } from 'vitest';
 
 import type { ProjectApplication, UpstreamProjectApplicationDoc } from '../interfaces/project-application.interface';
 import {
+  buildCreateProjectRequest,
   buildProjectApplicationAnswerSections,
   formatProjectApplicationAnswer,
   getProjectApplicationStateMeta,
+  getProjectApplicationStatusCallout,
   isLegalContactEmail,
   isProjectApplicationOpen,
   normalizeProjectApplicationDoc,
+  projectSlugFromName,
   reconcileProjectApplications,
+  toProjectApplicationEmailLink,
+  toProjectApplicationUrlLink,
   upsertProjectApplication,
   validateProjectApplicationAnswers,
 } from './project-application.utils';
@@ -98,15 +103,85 @@ describe('buildProjectApplicationAnswerSections', () => {
       project_website: '',
     });
     expect(sections.map((section) => section.title)).toEqual(['Project', 'Governance and licensing', 'Other answers']);
+    const text = { kind: 'text', links: [], long: false, labelHidden: false };
     expect(sections[1].rows).toEqual([
-      { key: 'license', label: 'Code license', value: 'MIT' },
-      { key: 'is_spec_project', label: 'Will the project publish a specification or standard?', value: 'No' },
+      { key: 'license', label: 'Code license', value: 'MIT', ...text },
+      { key: 'is_spec_project', label: 'Will the project publish a specification or standard?', value: 'No', ...text },
     ]);
-    expect(sections[2].rows).toEqual([{ key: 'future_question', label: 'Future question', value: 'kept' }]);
+    expect(sections[2].rows).toEqual([{ key: 'future_question', label: 'Future question', value: 'kept', ...text }]);
+  });
+
+  it('links URL and email answers, one link per formation contact', () => {
+    const sections = buildProjectApplicationAnswerSections({
+      project_repository_url: 'https://github.com/example/repo',
+      project_website: 'example.org',
+      legal_contact_email: 'legal@example.org',
+      formation_list: ['a@example.org', 'b@example.org?cc=x@example.org'],
+    });
+    const rows = sections.flatMap((section) => section.rows);
+    const byKey = (key: string) => rows.find((row) => row.key === key);
+    expect(byKey('project_repository_url')?.links).toEqual([
+      { text: 'https://github.com/example/repo', href: 'https://github.com/example/repo', external: true },
+    ]);
+    expect(byKey('project_website')?.links).toEqual([{ text: 'example.org', href: null, external: true }]);
+    expect(byKey('legal_contact_email')?.links).toEqual([{ text: 'legal@example.org', href: 'mailto:legal@example.org', external: false }]);
+    expect(byKey('formation_list')?.kind).toBe('email-list');
+    expect(byKey('formation_list')?.links.map((link) => link.href)).toEqual(['mailto:a@example.org', null]);
+  });
+
+  it('flags long-form answers and hides a label that repeats its one-answer section title', () => {
+    const sections = buildProjectApplicationAnswerSections({ mission_statement: 'Mission', license: 'MIT', description: 'About' });
+    const governance = sections.find((section) => section.title === 'Governance and licensing');
+    const about = sections.find((section) => section.title === 'About the project');
+    expect(governance?.rows.map((row) => [row.key, row.long, row.labelHidden])).toEqual([
+      ['license', false, false],
+      ['mission_statement', true, false],
+    ]);
+    expect(about?.rows).toEqual([expect.objectContaining({ key: 'description', long: true, labelHidden: true })]);
   });
 
   it('returns no sections for an empty map', () => {
     expect(buildProjectApplicationAnswerSections(undefined)).toEqual([]);
+  });
+});
+
+describe('toProjectApplicationUrlLink / toProjectApplicationEmailLink', () => {
+  it('links only http(s) URLs with a host', () => {
+    expect(toProjectApplicationUrlLink('http://example.org').href).toBe('http://example.org');
+    expect(toProjectApplicationUrlLink('javascript:alert(1)').href).toBeNull();
+    expect(toProjectApplicationUrlLink('ftp://example.org').href).toBeNull();
+  });
+
+  it('links only a plain single address', () => {
+    expect(toProjectApplicationEmailLink('legal@example.org').href).toBe('mailto:legal@example.org');
+    expect(toProjectApplicationEmailLink('legal@example').href).toBeNull();
+    expect(toProjectApplicationEmailLink('a@example.org&body=x').href).toBeNull();
+    expect(toProjectApplicationEmailLink('a#b@example.org').href).toBeNull();
+    expect(toProjectApplicationEmailLink('a/b@example.org').href).toBeNull();
+    expect(toProjectApplicationEmailLink('a@.org').href).toBeNull();
+    expect(toProjectApplicationEmailLink('a@example.').href).toBeNull();
+    expect(toProjectApplicationEmailLink('a@b@example.org').href).toBeNull();
+  });
+
+  it('checks long adversarial addresses in linear time on every rejection path', () => {
+    const body = `!@!.${'!.'.repeat(50_000)}`;
+    // One input per rejection path: the forbidden-character test (trailing space), the `@` check (a second `@`),
+    // and the domain-shape check (no forbidden character, one `@`, but it ends in `.`).
+    for (const adversarial of [`${body} `, `${body}@`, body]) {
+      const started = Date.now();
+      expect(toProjectApplicationEmailLink(adversarial).href).toBeNull();
+      expect(Date.now() - started).toBeLessThan(200);
+    }
+  });
+});
+
+describe('getProjectApplicationStatusCallout', () => {
+  it('words the explainer per persona and returns null for an unseen state', () => {
+    expect(getProjectApplicationStatusCallout('submitted', 'submitter')?.text).toContain('reviewing your proposal');
+    expect(getProjectApplicationStatusCallout('submitted', 'staff')?.text).toContain('accept or deny');
+    expect(getProjectApplicationStatusCallout('denied', 'staff')).toEqual(expect.objectContaining({ severity: 'warn' }));
+    expect(getProjectApplicationStatusCallout('archived', 'staff')).toBeNull();
+    expect(getProjectApplicationStatusCallout(undefined, 'submitter')).toBeNull();
   });
 });
 
@@ -205,5 +280,66 @@ describe('validateProjectApplicationAnswers', () => {
     expect(validateProjectApplicationAnswers({ formation_list: ['ok@example.org', 'nope'] })).toEqual([
       { field: 'formation_list', message: 'formation_list must be a list of email addresses' },
     ]);
+  });
+});
+
+describe('buildCreateProjectRequest (#1995)', () => {
+  const PARENT = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+
+  it('maps the proposal onto the project-service create body', () => {
+    const request = buildCreateProjectRequest(
+      {
+        project_name: '  Example Project ',
+        description: 'About it',
+        mission_statement: 'Mission',
+        project_repository_url: 'https://github.com/example/project',
+        project_website: 'https://example.org',
+        is_spec_project: true,
+        license: 'MIT',
+        contributing_organization: 'Acme',
+      },
+      PARENT,
+      'example-project'
+    );
+    expect(request).toEqual({
+      name: 'Example Project',
+      slug: 'example-project',
+      description: 'About it',
+      parent_uid: PARENT,
+      mission_statement: 'Mission',
+      repository_url: 'https://github.com/example/project',
+      website_url: 'https://example.org',
+      stage: 'Formation - Exploratory',
+      legal_entity_type: 'Subproject',
+      category: 'Standards',
+    });
+  });
+
+  it('leaves out blank optional answers and the category when the project is not a spec project', () => {
+    const request = buildCreateProjectRequest(
+      { project_name: 'X', description: 'D', project_website: '  ', mission_statement: '', is_spec_project: false },
+      PARENT,
+      'x1'
+    );
+    expect(request).toEqual({
+      name: 'X',
+      slug: 'x1',
+      description: 'D',
+      parent_uid: PARENT,
+      stage: 'Formation - Exploratory',
+      legal_entity_type: 'Subproject',
+    });
+  });
+});
+
+describe('projectSlugFromName (#1995)', () => {
+  it.each([
+    ['LFX One', 'lfx-one'],
+    ['  Shared AI: Findings Exchange! ', 'shared-ai-findings-exchange'],
+    ['3D Printing Group', 'd-printing-group'],
+    ['123', ''],
+    [null, ''],
+  ])('%j -> %j', (name, slug) => {
+    expect(projectSlugFromName(name)).toBe(slug);
   });
 });

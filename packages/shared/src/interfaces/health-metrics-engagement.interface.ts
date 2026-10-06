@@ -23,12 +23,12 @@ export type HealthMetricsTabKey = (typeof HEALTH_METRICS_TABS)[number]['key'];
 /** Attendance-bar tone: grey at zero, amber below the low threshold, blue otherwise. */
 export type HealthMetricsEngagementAttendanceTone = 'empty' | 'low' | 'ok';
 
-/** One entry in the Health Metrics tab bar. Only routable tabs navigate; the rest render disabled. */
+/** One entry in the Health Metrics tab bar. */
 export interface HealthMetricsTab {
   key: HealthMetricsTabKey;
   label: string;
-  /** Router path segment relative to `foundation/health-metrics`; `null` until that tab's story lands. */
-  route: string | null;
+  /** Router path segment relative to `foundation/health-metrics`; `''` is the Overview. */
+  route: string;
 }
 
 /** Engagement's sub-nav badge, keyed to its own sections. */

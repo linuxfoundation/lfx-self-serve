@@ -14,7 +14,6 @@ import {
   DEFAULT_ORG_PROJECTS_WORKSPACES,
   HEALTH_SCORE_BADGE,
   HEALTH_SCORE_LABELS,
-  HEALTH_SCORE_PARTIAL_SUFFIX,
   INFLUENCE_BAND_BAR_FILL_CLASS,
   INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT,
   INFLUENCE_BAND_LABELS,
@@ -48,7 +47,7 @@ import type {
   OrgProjectsWorkspaceId,
   SortDirection,
 } from '@lfx-one/shared/interfaces';
-import { buildHealthAriaLabel, buildInsightsUrl, downloadCsv, isPartialHealthScore, localDateStamp } from '@lfx-one/shared/utils';
+import { buildHealthAriaLabel, downloadCsv, formatHealthLabel, isPartialHealthScore, localDateStamp } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogModule } from 'primeng/dialog';
 import { PopoverModule } from 'primeng/popover';
@@ -69,6 +68,7 @@ import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org
 import { TableComponent } from '@components/table/table.component';
 import { OrgHealthPopupComponent } from '../components/org-health-popup/org-health-popup.component';
 import { AccountContextService } from '@shared/services/account-context.service';
+import { OrgEditAccessService } from '@shared/services/org-edit-access.service';
 import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
@@ -109,6 +109,7 @@ export class OrgProjectsComponent {
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly projectsService = inject(OrgLensProjectsService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
+  private readonly orgEditAccess = inject(OrgEditAccessService);
   private readonly messageService = inject(MessageService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
 
@@ -220,17 +221,12 @@ export class OrgProjectsComponent {
   /**
    * May the caller change this org's workspaces?
    *
-   * Direct writer only, matching Org Profile, the People tabs and Org Lens Access. Until LF staff
-   * existed, selecting an org implied holding a grant on it, so these controls were gated on
-   * selection alone; a staff caller can now select any org while being strictly read-only, which
-   * makes selection the wrong question. Read-only auditors also stop seeing controls they could
-   * never successfully use.
+   * Editors only (#3136): a direct or roll-up admin, or `writer` from the authorizer — matching Org
+   * Profile, the People tabs and Org Lens Access. Selection alone is the wrong question: read-only
+   * company-wide teams (`lf-staff`) and auditors can select an org but could never use these controls.
+   * Loading the page stays a pure read for non-roster editors (server `resolveCanEdit`).
    */
-  protected readonly canManageWorkspaces = computed(() => {
-    const uid = this.accountContext.selectedAccount()?.uid;
-    // LFXV2-3029 — widened to roll-up-derived editors, not just a direct grant.
-    return !!uid && this.orgRoleGrants.editorSet().has(uid);
-  });
+  protected readonly canManageWorkspaces = this.orgEditAccess.canEditSelected;
   protected readonly canAddProjects = computed(() => this.canManageWorkspaces() && !!this.selectedWorkspace() && !this.loading() && !this.error());
   protected readonly addProjectDisabledReason = computed(() => this.initAddProjectDisabledReason());
   protected readonly selectedAddProjectCount = computed(() => this.addProjectsFormValue().projects?.length ?? 0);
@@ -806,7 +802,6 @@ export class OrgProjectsComponent {
           ...project,
           projectLink,
           orgMetricsUnavailable,
-          insightsUrl: buildInsightsUrl(`/project/${project.slug}`),
           // Fallback rows have no org-scoped influence data; render neutral (no bars, "Unavailable") rather
           // than mapProject's active-row fallbacks, which would misreport "Silent" / "Non-LF Project".
           technicalBars: orgMetricsUnavailable ? [] : this.bandBars(project.technicalInfluence),
@@ -1055,15 +1050,14 @@ export class OrgProjectsComponent {
     return Object.prototype.hasOwnProperty.call(HEALTH_SCORE_BADGE, health) ? health : 'unavailable';
   }
 
-  // Bare band label, plus " - Partial" when the BFF-sourced coveredCategoryCount marks a 2-of-3 score
-  // (never recomputed locally — see OrgLensProject.healthCoveredCategoryCount). Gated on available:
-  // an unavailable badge never carries the suffix.
+  // Band label, marked partial from the BFF-sourced covered count; an unavailable badge never gets the marker.
   private healthLabelFor(project: OrgLensProject): string {
-    const label = HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)];
-    if (project.health === 'unavailable') {
+    const health = this.normalizeHealth(project.health);
+    const label = HEALTH_SCORE_LABELS[health];
+    if (health === 'unavailable') {
       return label;
     }
-    return isPartialHealthScore(project.healthCoveredCategoryCount) ? `${label}${HEALTH_SCORE_PARTIAL_SUFFIX}` : label;
+    return formatHealthLabel(label, isPartialHealthScore(project.healthCoveredCategoryCount));
   }
 
   // Fallback rows (explicit health-only/unavailable, influence/trend "Unavailable") always sort after measured rows,

@@ -292,10 +292,11 @@ export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
  * page would see a group the organization has no signed row for and settle immediately on the
  * cannot-preview state, which is the right answer for a pasted address and the wrong one here.
  *
- * So it buys a wait, not a result: the page retries for the row on a short budget and, whether or
- * not one arrives, drops the parameter and settles the ordinary way. **It names nothing and grants
- * nothing** — a crafted link costs one retry budget and then resolves exactly as the bare group
- * address would.
+ * So it buys a wait, not a result: the page retries for the row on a bounded budget and settles
+ * the ordinary way once the row arrives, or stays on this visit with a still-confirming empty
+ * state when the wait is spent without one. **It names nothing and grants nothing** — a crafted
+ * link costs one retry budget and then settles; the still-confirming state is this visit only, so
+ * a reload of the stripped address resolves exactly as the bare group address would.
  */
 export const ORG_EASYCLA_RETURN_SIGNED_PARAM = 'signed';
 
@@ -454,11 +455,21 @@ export const CCLA_SIGN_COPY = {
    * agreement is not in their organization's list yet.
    *
    * EasyCLA writes the signature when DocuSign calls it back, which races the return trip, so the
-   * page keeps asking on a short budget. Without this line the wait is an unexplained skeleton on
+   * page keeps asking for about half a minute. Without this line the wait is an unexplained skeleton on
    * the one visit where the signatory is most primed to see their agreement, and a reload is the
    * obvious thing to try — which restarts the wait rather than shortening it.
    */
   returnWait: 'Confirming your signature with EasyCLA. This can take a few seconds.',
+  /**
+   * Shown once that wait has ended and the organization's list still has no row for this group.
+   *
+   * Distinct from the hasn't-signed empty state, which is true for a pasted unsigned address and
+   * false for someone who just finished DocuSign. Refresh reloads the address after the return
+   * parameters are gone; a later load that still lacks the row uses the hasn't-signed state.
+   */
+  returnPendingTitle: "We're still confirming your signature",
+  returnPendingSubtitle: 'You finished signing. EasyCLA has not listed this agreement yet. Refresh this page in a moment.',
+  returnPendingRefresh: 'Refresh',
 } as const;
 
 /**

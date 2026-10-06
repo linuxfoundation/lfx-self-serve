@@ -19,7 +19,7 @@ describe('HealthMetricsOverviewComponent', () => {
   let fixture: ComponentFixture<HealthMetricsOverviewComponent>;
 
   /** Returns the foundation signal so a test can switch foundations without re-wiring the TestBed. */
-  async function render(foundation: ProjectContext | null, foundationSfid: string | null): Promise<WritableSignal<ProjectContext | null>> {
+  async function render(foundation: ProjectContext | null): Promise<WritableSignal<ProjectContext | null>> {
     const foundationSignal = signal<ProjectContext | null>(foundation);
     await TestBed.configureTestingModule({
       imports: [HealthMetricsOverviewComponent],
@@ -32,7 +32,7 @@ describe('HealthMetricsOverviewComponent', () => {
         { provide: UserService, useValue: { impersonating: signal(false) } },
         {
           provide: ProjectContextService,
-          useValue: { selectedFoundation: foundationSignal, selectedFoundationSfid: signal(foundationSfid) },
+          useValue: { selectedFoundation: foundationSignal },
         },
       ],
     }).compileComponents();
@@ -56,7 +56,7 @@ describe('HealthMetricsOverviewComponent', () => {
   });
 
   it('pins the rail below the gate-measured sticky header height', async () => {
-    await render(null, null);
+    await render(null);
     // The gate measures the header and publishes it here; the rail must follow it, not a constant.
     TestBed.inject(HealthMetricsChromeService).headerHeightPx.set(120);
     fixture.detectChanges();
@@ -66,7 +66,7 @@ describe('HealthMetricsOverviewComponent', () => {
   });
 
   it('renders findings groups in the fixed order', async () => {
-    await render(null, null);
+    await render(null);
     fixture.componentRef.setInput('findings', sampleFindings());
     fixture.detectChanges();
 
@@ -82,7 +82,7 @@ describe('HealthMetricsOverviewComponent', () => {
   });
 
   it('sorts findings within a group by sortRank', async () => {
-    await render(null, null);
+    await render(null);
     fixture.componentRef.setInput('findings', sampleFindings());
     fixture.detectChanges();
 
@@ -94,45 +94,82 @@ describe('HealthMetricsOverviewComponent', () => {
     expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
   });
 
-  it('builds an external Insights link for the code area, not a PCC link', async () => {
-    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+  it('builds an external Insights link for the code area', async () => {
+    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
 
     const codeTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-code"]');
     const insightsLink: HTMLAnchorElement | null = codeTile.querySelector('[data-testid="health-metrics-overview-tile-insights-link"]');
     expect(insightsLink?.href).toContain('insights.linuxfoundation.org/collection/details/test-foundation');
   });
 
-  it('resolves a PCC finding link from the Salesforce id, not the project uid', async () => {
-    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+  it('opens only the Insights finding externally; every other finding links in-app', async () => {
+    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
     fixture.componentRef.setInput('findings', sampleFindings());
     fixture.detectChanges();
 
-    const link: HTMLAnchorElement | null = fixture.nativeElement.querySelector('a[data-testid^="health-metrics-overview-finding-link-"][target="_self"]');
-    expect(link?.href).toContain('/project/a0912345678901234A/');
-    expect(link?.href).not.toContain('proj-uid');
+    const external = fixture.nativeElement.querySelectorAll('a[data-testid^="health-metrics-overview-finding-link-"][target="_blank"]');
+    expect(external.length).toBe(1);
+    expect(fixture.nativeElement.querySelectorAll('a[data-testid^="health-metrics-overview-finding-link-"][target="_self"]').length).toBe(0);
+    const inApp = Array.from<HTMLAnchorElement>(
+      fixture.nativeElement.querySelectorAll('a[data-testid^="health-metrics-overview-finding-link-"]:not([target])')
+    );
+    expect(inApp.map((link) => link.getAttribute('href')?.startsWith('/foundation/health-metrics/'))).toEqual([true, true, true, true, true]);
   });
 
-  it('hides a PCC finding link while the Salesforce id has not resolved yet', async () => {
-    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, null);
-    fixture.componentRef.setInput('findings', sampleFindings());
-    fixture.detectChanges();
-
-    // The code.insights finding link has nothing to do with the SFID and should still render —
-    // only the PCC-bound links (target="_self") are expected to disappear.
-    const insightsFindingLink = fixture.nativeElement.querySelector('a[data-testid^="health-metrics-overview-finding-link-"][target="_blank"]');
-    expect(insightsFindingLink).not.toBeNull();
-
-    const pccLinks = fixture.nativeElement.querySelectorAll('a[data-testid^="health-metrics-overview-finding-link-"][target="_self"]');
-    expect(pccLinks.length).toBe(0);
-  });
-
-  it('links an Engagement finding into the Engagement tab even before the Salesforce id resolves', async () => {
-    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, null);
+  it('links an Engagement finding into the Engagement tab', async () => {
+    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
     fixture.componentRef.setInput('findings', [finding({ linkTarget: 'eng.board', sortRank: 7 })]);
     fixture.detectChanges();
 
     const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-7"]');
     expect(link.getAttribute('href')).toBe('/foundation/health-metrics/engagement?groupType=gov#committees');
+    expect(link.getAttribute('target')).toBeNull();
+  });
+
+  it('links an Events finding into the Events tab forecast', async () => {
+    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
+    fixture.componentRef.setInput('findings', [finding({ area: 'evt', linkTarget: 'evt.forecast', sortRank: 8 })]);
+    fixture.detectChanges();
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-8"]');
+    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/events#forecast');
+    expect(link.getAttribute('target')).toBeNull();
+  });
+
+  it.each([
+    ['mem.atrisk', '/foundation/health-metrics/members#risk'],
+    ['mem.renewals', '/foundation/health-metrics/members#renewals'],
+    ['mem.list', '/foundation/health-metrics/members#list'],
+  ] as const)('links a %s finding into its Members section', async (linkTarget, href) => {
+    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
+    fixture.componentRef.setInput('findings', [finding({ area: 'mem', linkTarget, sortRank: 9 })]);
+    fixture.detectChanges();
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-9"]');
+    expect(link.getAttribute('href')).toBe(href);
+    expect(link.getAttribute('target')).toBeNull();
+  });
+
+  it.each([
+    ['non.orgs', '/foundation/health-metrics/non-members?nonFit=high-fit#orgs'],
+    ['non.conversion', '/foundation/health-metrics/non-members#conversion'],
+  ] as const)('links a %s finding into its Non-Members section', async (linkTarget, href) => {
+    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
+    fixture.componentRef.setInput('findings', [finding({ area: 'non', linkTarget, sortRank: 10 })]);
+    fixture.detectChanges();
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-10"]');
+    expect(link.getAttribute('href')).toBe(href);
+    expect(link.getAttribute('target')).toBeNull();
+  });
+
+  it('links a trn.enrollment finding into the Training enrollment section', async () => {
+    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
+    fixture.componentRef.setInput('findings', [finding({ area: 'trn', linkTarget: 'trn.enrollment', sortRank: 11 })]);
+    fixture.detectChanges();
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-11"]');
+    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/training#enroll');
     expect(link.getAttribute('target')).toBeNull();
   });
 
@@ -163,10 +200,10 @@ describe('HealthMetricsOverviewComponent', () => {
     };
   }
 
-  /** One finding per group, with two `act` rows out of rank order and one PCC-, Insights- and in-app link each. */
+  /** One finding per group, with two `act` rows out of rank order, one Insights link and the rest in-app. */
   function sampleFindings(): HealthMetricsFinding[] {
     return [
-      finding({ classification: 'act', linkTarget: 'mem.atrisk', sortRank: 2 }),
+      finding({ classification: 'act', area: 'mem', linkTarget: 'mem.atrisk', sortRank: 2 }),
       finding({ classification: 'act', linkTarget: 'eng.groups', sortRank: 1 }),
       finding({ classification: 'watch', area: 'evt', linkTarget: 'evt.forecast', sortRank: 3 }),
       finding({ classification: 'opp', area: 'non', linkTarget: 'non.orgs', sortRank: 4 }),
@@ -176,7 +213,7 @@ describe('HealthMetricsOverviewComponent', () => {
   }
 
   it('renders a "not available yet" state, not an all-clear, when there are no findings', async () => {
-    await render(null, null);
+    await render(null);
 
     const unavailable: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-findings-unavailable"]');
     expect(unavailable?.textContent).toContain('Findings are not available yet.');
@@ -185,7 +222,7 @@ describe('HealthMetricsOverviewComponent', () => {
   });
 
   it('renders only the group headers for classifications present in the findings', async () => {
-    await render(null, null);
+    await render(null);
     fixture.componentRef.setInput('findings', [finding({ classification: 'act', sortRank: 1 }), finding({ classification: 'ok', sortRank: 2 })]);
     fixture.detectChanges();
 
@@ -198,7 +235,7 @@ describe('HealthMetricsOverviewComponent', () => {
 
   describe('KPI tile strip wiring', () => {
     it('renders the live classification and stat for an area once the KPI fetch resolves', async () => {
-      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
@@ -216,7 +253,7 @@ describe('HealthMetricsOverviewComponent', () => {
     });
 
     it('hides the status chip for the events tile when showStatus is false, instead of showing "Awaiting data"', async () => {
-      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
@@ -230,11 +267,13 @@ describe('HealthMetricsOverviewComponent', () => {
       const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
       expect(evtTile.textContent).toContain('no registration goal set');
       expect(evtTile.textContent).not.toContain('Awaiting data');
+      // A "no data" figure has nothing to drill into.
+      expect(evtTile.querySelector('[data-testid="health-metrics-overview-tile-evt-link"]')).toBeNull();
       httpMock.verify();
     });
 
     it('shows a neutral "no data" tile, never a placeholder figure, for a live area when the KPI fetch fails', async () => {
-      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
@@ -266,6 +305,7 @@ describe('HealthMetricsOverviewComponent', () => {
       expect(engTile.textContent).toContain('no data this period');
       expect(engTile.textContent).not.toContain('8 of 31');
       expect(engTile.textContent).not.toContain('View groups');
+      expect(evtTile.textContent).not.toContain('View forecast');
       // Engagement never shows a status chip, failed read included; other areas keep "Awaiting data".
       expect(engTile.textContent).not.toContain('Awaiting data');
       expect(evtTile.textContent).toContain('Awaiting data');
@@ -273,7 +313,7 @@ describe('HealthMetricsOverviewComponent', () => {
     });
 
     it('renders the live Engagement tile with its link to the Engagement tab and no status chip', async () => {
-      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
@@ -289,14 +329,112 @@ describe('HealthMetricsOverviewComponent', () => {
       const engTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-eng"]');
       expect(engTile.textContent).toContain('3 of 12');
       expect(engTile.textContent).not.toContain('Awaiting data');
-      const link: HTMLAnchorElement = engTile.querySelector('[data-testid="health-metrics-overview-tile-engagement-link"]');
+      const link: HTMLAnchorElement = engTile.querySelector('[data-testid="health-metrics-overview-tile-eng-link"]');
       expect(link.getAttribute('href')).toContain('/foundation/health-metrics/engagement');
       expect(link.getAttribute('href')).toContain('#committees');
       httpMock.verify();
     });
 
+    it('renders the live Events tile with its status chip and a link to the Events tab forecast', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'watch' })] });
+      await fixture.whenStable();
+
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).toContain('Needs attention');
+      const link: HTMLAnchorElement = evtTile.querySelector('[data-testid="health-metrics-overview-tile-evt-link"]');
+      expect(link.textContent).toContain('View forecast');
+      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/events#forecast');
+      httpMock.verify();
+    });
+
+    it('renders the live Members tile with its status chip and a link to the all members list', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'mem', statValue: '$250K', statLabel: 'renewing in next 90 days', classification: 'act' })] });
+      await fixture.whenStable();
+
+      const memTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-mem"]');
+      expect(memTile.textContent).toContain('Needs action');
+      const link: HTMLAnchorElement = memTile.querySelector('[data-testid="health-metrics-overview-tile-mem-link"]');
+      expect(link.textContent).toContain('View members');
+      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members#list');
+      httpMock.verify();
+    });
+
+    it('renders the live Non-Members tile with a link to the High fit organizations', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'non', statValue: '$75K', statLabel: 'pipeline value', classification: 'opp' })] });
+      await fixture.whenStable();
+
+      const nonTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-non"]');
+      expect(nonTile.textContent).toContain('Opportunity');
+      const link: HTMLAnchorElement = nonTile.querySelector('[data-testid="health-metrics-overview-tile-non-link"]');
+      expect(link.textContent).toContain('View organizations');
+      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/non-members?nonFit=high-fit#orgs');
+      httpMock.verify();
+    });
+
+    it('renders the live Training tile with a link to the Training tab enrollment', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'trn', statValue: '1,240', statLabel: 'enrollments', classification: 'ok' })] });
+      await fixture.whenStable();
+
+      const trnTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-trn"]');
+      const link: HTMLAnchorElement = trnTile.querySelector('[data-testid="health-metrics-overview-tile-trn-link"]');
+      expect(link.textContent).toContain('View enrollment');
+      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/training#enroll');
+      httpMock.verify();
+    });
+
+    it('keeps a no-data Training tile on the strip, neutral and without a link', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'trn', statValue: '—', statLabel: 'no data this period', classification: 'none' })] });
+      await fixture.whenStable();
+
+      const trnTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-trn"]');
+      expect(trnTile).not.toBeNull();
+      expect(trnTile.textContent).toContain('no data this period');
+      expect(trnTile.querySelector('[data-testid="health-metrics-overview-tile-trn-link"]')).toBeNull();
+      httpMock.verify();
+    });
+
     it('clears the previous foundation tiles while the new foundation KPI fetch is in flight', async () => {
-      const foundationSignal = await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const foundationSignal = await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
@@ -335,7 +473,7 @@ describe('HealthMetricsOverviewComponent', () => {
     });
 
     it('projects the clicked period out of the already-fetched KPI map without issuing any new request', async () => {
-      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
@@ -367,7 +505,7 @@ describe('HealthMetricsOverviewComponent', () => {
     });
 
     it('falls back to the neutral no-data tile for a period the fetched KPI map has no entry for', async () => {
-      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
@@ -391,7 +529,7 @@ describe('HealthMetricsOverviewComponent', () => {
     });
 
     it('keeps the tiles and both rail blocks loading, and issues no request, while no foundation is selected', async () => {
-      await render(null, null);
+      await render(null);
       const httpMock = TestBed.inject(HttpTestingController);
       fixture.detectChanges();
 
@@ -409,7 +547,7 @@ describe('HealthMetricsOverviewComponent', () => {
     });
 
     it('leaves the loading state when the foundation is cleared after one was selected', async () => {
-      const foundationSignal = await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const foundationSignal = await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
@@ -443,7 +581,7 @@ describe('HealthMetricsOverviewComponent', () => {
 
   describe('foundation summary rail wiring', () => {
     it('sends the selected foundation slug and renders the fetched values in the rail', async () => {
-      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
 
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-skeleton"]')).not.toBeNull();
@@ -461,7 +599,7 @@ describe('HealthMetricsOverviewComponent', () => {
     });
 
     it('re-fetches the foundation summary when the selected foundation changes', async () => {
-      const foundationSignal = await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const foundationSignal = await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary' && r.params.get('foundationSlug') === 'test-foundation')
@@ -486,7 +624,7 @@ describe('HealthMetricsOverviewComponent', () => {
 
   describe('revenue rail wiring', () => {
     async function renderWithFoundation(): Promise<HttpTestingController> {
-      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')

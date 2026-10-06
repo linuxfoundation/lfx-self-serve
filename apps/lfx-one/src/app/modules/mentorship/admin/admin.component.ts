@@ -7,9 +7,9 @@ import { ButtonComponent } from '@components/button/button.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, MENTORSHIP_PROGRAM_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
-import { merge, share, Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged, exhaustMap, finalize, map, scan, switchMap, takeUntil, tap } from 'rxjs/operators';
+import { MentorshipAdminService } from '@services/mentorship-admin.service';
+import { merge, of, share, Subject } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, exhaustMap, finalize, map, scan, switchMap, takeUntil, tap } from 'rxjs/operators';
 
 import { ProgramsListComponent } from './components/programs-list/programs-list.component';
 import { Router } from '@angular/router';
@@ -32,19 +32,22 @@ import { Router } from '@angular/router';
 })
 export class AdminComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly mentorshipAdminService = inject(MentorshipAdminService);
   private readonly router = inject(Router);
 
   // ─── Simple WritableSignals ────────────────────────────────────────────────
   protected readonly hasLoaded = signal(false);
   protected readonly filterLoading = signal(false);
   protected readonly loadingMore = signal(false);
+  /** True when the first page of programs could not be read; the list shows an inline Retry. */
+  protected readonly programsLoadError = signal(false);
   protected readonly searchTerm = signal<string>('');
   protected readonly statusFilter = signal<MentorshipProgramStatus | null>(null);
 
   // ─── Pagination Driver ─────────────────────────────────────────────────────
   private readonly programsOffset = signal(0);
   private readonly loadMore$ = new Subject<void>();
+  private readonly retry$ = new Subject<void>();
   /** Last filter pair that `filters$` actually applied (post-debounce). */
   private readonly appliedSearch = signal('');
   private readonly appliedStatus = signal<MentorshipProgramStatus | null>(null);
@@ -73,6 +76,10 @@ export class AdminComponent {
     void this.router.navigate(['/mentorship/admin/enroll']);
   }
 
+  protected retryPrograms(): void {
+    this.retry$.next();
+  }
+
   protected onLoadMore(): void {
     if (this.loadingMore() || this.filterLoading() || !this.hasMore()) return;
     this.loadingMore.set(true);
@@ -93,7 +100,10 @@ export class AdminComponent {
       share()
     );
 
-    const firstPage$ = filters$.pipe(
+    // A retry re-runs the first page with the filters last applied.
+    const firstPageTrigger$ = merge(filters$, this.retry$.pipe(map(() => ({ search: this.appliedSearch(), status: this.appliedStatus() }))));
+
+    const firstPage$ = firstPageTrigger$.pipe(
       tap((filters) => {
         this.programsOffset.set(0);
         this.filterLoading.set(true);
@@ -101,14 +111,24 @@ export class AdminComponent {
         this.appliedStatus.set(filters.status);
       }),
       switchMap((filters) =>
-        this.mentorshipService
+        this.mentorshipAdminService
           .getPrograms({
             search: filters.search || undefined,
             status: filters.status ?? undefined,
             offset: 0,
             limit: MENTORSHIP_PROGRAM_PAGE_SIZE,
           })
-          .pipe(map((response) => ({ ...response, reset: true as const, failed: false })))
+          .pipe(
+            // Clear the error only once a read succeeds, so a retry in flight keeps the error block (not the empty state).
+            map((response) => {
+              this.programsLoadError.set(false);
+              return { ...response, reset: true as const, failed: false };
+            }),
+            catchError(() => {
+              this.programsLoadError.set(true);
+              return of({ ...EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, reset: true as const, failed: true });
+            })
+          )
       ),
       // Clear after the latest first-page emission, not in the inner `finalize`.
       // A cancelled in-flight filter fetch would otherwise set `filterLoading` false
@@ -121,7 +141,7 @@ export class AdminComponent {
 
     const nextPage$ = this.loadMore$.pipe(
       exhaustMap(() =>
-        this.mentorshipService
+        this.mentorshipAdminService
           .getPrograms({
             search: this.appliedSearch() || undefined,
             status: this.appliedStatus() ?? undefined,
@@ -129,11 +149,10 @@ export class AdminComponent {
             limit: MENTORSHIP_PROGRAM_PAGE_SIZE,
           })
           .pipe(
-            takeUntil(filters$),
-            map((response) => {
-              const failed = response.data.length === 0 && response.total === 0;
-              return { ...response, reset: false as const, failed };
-            }),
+            takeUntil(firstPageTrigger$),
+            map((response) => ({ ...response, reset: false as const, failed: false })),
+            // A failed page leaves the loaded programs as they are; Load more stays available to try again.
+            catchError(() => of({ ...EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, reset: false as const, failed: true })),
             tap((page) => {
               if (page.failed) {
                 this.programsOffset.update((curr) => Math.max(0, curr - MENTORSHIP_PROGRAM_PAGE_SIZE));

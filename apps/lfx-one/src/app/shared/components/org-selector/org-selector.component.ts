@@ -146,7 +146,7 @@ export class OrgSelectorComponent {
     });
   });
 
-  /** Gates the catalogue-search affordance; only LF-team callers can reach beyond their own rows. */
+  /** Gates the catalogue-search affordance; only company-wide-team (LF-team) callers can reach beyond their own rows. */
   protected readonly isStaff: Signal<boolean> = this.orgRoleGrantsService.isStaff;
 
   /**

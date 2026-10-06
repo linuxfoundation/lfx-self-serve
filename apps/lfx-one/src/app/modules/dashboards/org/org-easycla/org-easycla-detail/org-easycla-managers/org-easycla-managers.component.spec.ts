@@ -3,13 +3,12 @@
 
 import '@angular/compiler';
 
-import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ORG_CLA_MANAGER_REFUSAL_COPY, ORG_CLA_MANAGER_REMOVE_COPY, ORG_CLA_MANAGERS_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaManager } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
-import { UserService } from '@services/user.service';
+import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
@@ -30,7 +29,6 @@ describe('OrgEasyclaManagersComponent', () => {
   const checkPermission = vi.fn();
   const addMessage = vi.fn();
   const openDialog = vi.fn();
-  const viewerUsername = signal<string | null>('aporter');
 
   // The real service, spied on rather than stubbed: `p-confirmdialog` in the template subscribes
   // to its `requireConfirmation$`, which a bare object does not have.
@@ -52,6 +50,7 @@ describe('OrgEasyclaManagersComponent', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: false,
       ...overrides,
     };
   }
@@ -77,10 +76,11 @@ describe('OrgEasyclaManagersComponent', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    viewerUsername.set('aporter');
     confirmationService = new ConfirmationService();
     confirm = vi.spyOn(confirmationService, 'confirm');
-    getManagers.mockReturnValue(of({ signatureId: SIGNATURE_ID, managers: [manager(), manager({ lfUsername: 'aporter', name: 'Ada Porter' })] }));
+    getManagers.mockReturnValue(
+      of({ signatureId: SIGNATURE_ID, managers: [manager(), manager({ lfUsername: 'aporter', name: 'Ada Porter', isViewer: true })] })
+    );
     addManager.mockReturnValue(of(manager()));
     removeManager.mockReturnValue(of(undefined));
     checkPermission.mockReturnValue(of(true));
@@ -93,7 +93,6 @@ describe('OrgEasyclaManagersComponent', () => {
         set: {
           providers: [
             { provide: OrgLensClaService, useValue: { getManagers, addManager, removeManager, checkPermission } },
-            { provide: UserService, useValue: { viewerUsername } },
             { provide: DialogService, useValue: { open: openDialog } },
             { provide: ConfirmationService, useValue: confirmationService },
           ],
@@ -306,7 +305,7 @@ describe('OrgEasyclaManagersComponent', () => {
       component.loadIfNeeded();
       await fixture.whenStable();
 
-      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter' }));
+      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter', isViewer: true }));
 
       expect(confirm.mock.calls.at(-1)?.[0].message).toBe(ORG_CLA_MANAGER_REMOVE_COPY.self);
     });
@@ -357,12 +356,91 @@ describe('OrgEasyclaManagersComponent', () => {
       expect(component['canAdd']()).toBe(true);
       expect(component['canRemove']()).toBe(true);
 
-      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter' }));
+      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter', isViewer: true }));
       acceptConfirmation();
       await fixture.whenStable();
 
       expect(component['canAdd']()).toBe(false);
       expect(component['canRemove']()).toBe(false);
+    });
+
+    it('records the removal for the page when the viewer removes themselves, and only then', async () => {
+      await render();
+      component.loadIfNeeded();
+      await fixture.whenStable();
+      const selfRemovals = TestBed.inject(OrgClaSelfRemovalsService);
+
+      component['confirmRemove'](manager());
+      acceptConfirmation();
+      await fixture.whenStable();
+      expect(selfRemovals.removed(ORG_UID, SIGNATURE_ID)).toBe(false);
+
+      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter', isViewer: true }));
+      acceptConfirmation();
+      await fixture.whenStable();
+      expect(selfRemovals.removed(ORG_UID, SIGNATURE_ID)).toBe(true);
+    });
+
+    it('treats only the row the server flags as the viewer’s own', async () => {
+      await render();
+      component.loadIfNeeded();
+      await fixture.whenStable();
+      const selfRemovals = TestBed.inject(OrgClaSelfRemovalsService);
+
+      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter' }));
+      acceptConfirmation();
+      await fixture.whenStable();
+      expect(selfRemovals.removed(ORG_UID, SIGNATURE_ID)).toBe(false);
+
+      component['confirmRemove'](manager({ lfUsername: 'ada-lf', name: 'Ada Porter', isViewer: true }));
+      acceptConfirmation();
+      await fixture.whenStable();
+      expect(selfRemovals.removed(ORG_UID, SIGNATURE_ID)).toBe(true);
+    });
+
+    it('tells the page the roster changed after a successful add or self-removal, and not after removing someone else or a refused add', async () => {
+      await render();
+      component.loadIfNeeded();
+      await fixture.whenStable();
+      let changes = 0;
+      component.rosterChanged.subscribe(() => changes++);
+      const target = { orgUid: ORG_UID, signatureId: SIGNATURE_ID };
+
+      component['addManager']({ firstName: 'Ada', lastName: 'Porter', email: 'ada.porter@example.org' }, target);
+      await fixture.whenStable();
+      expect(changes).toBe(1);
+
+      component['confirmRemove'](manager());
+      acceptConfirmation();
+      await fixture.whenStable();
+      expect(removeManager).toHaveBeenCalledWith(ORG_UID, SIGNATURE_ID, 'kmensah');
+      expect(changes).toBe(1);
+
+      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter', isViewer: true }));
+      acceptConfirmation();
+      await fixture.whenStable();
+      expect(changes).toBe(2);
+
+      addManager.mockReturnValue(throwError(() => ({ error: { upstreamCode: 'something-new' } })));
+      component['addManager']({ firstName: 'Ada', lastName: 'Porter', email: 'ada.porter@example.org' }, target);
+      await fixture.whenStable();
+      expect(changes).toBe(2);
+    });
+
+    it('records the self-removal even when the panel is gone before the removal lands', async () => {
+      const answer = new Subject<void>();
+      removeManager.mockReturnValue(answer);
+      await render();
+      component.loadIfNeeded();
+      await fixture.whenStable();
+
+      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter', isViewer: true }));
+      acceptConfirmation();
+      fixture.destroy();
+      answer.next();
+      answer.complete();
+
+      expect(TestBed.inject(OrgClaSelfRemovalsService).removed(ORG_UID, SIGNATURE_ID)).toBe(true);
     });
 
     it('drops an open confirm when the agreement changes', async () => {

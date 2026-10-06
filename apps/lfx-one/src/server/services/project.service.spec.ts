@@ -2000,6 +2000,44 @@ describe('ProjectService — getProjectsByIds', () => {
       error: 'query failed',
     });
   });
+
+  /**
+   * Models query-service paging: it answers each `uid:` filter (up to `page_size` hits) and emits a
+   * `page_token` whenever the page is full (hits == page_size), even if nothing is left.
+   */
+  function queryServicePage(params: { filters_or: string[]; page_size: string; page_token?: string }): QueryServiceResponse<Project> {
+    if (params.page_token) return pageOf([]);
+    const hits = params.filters_or.slice(0, Number(params.page_size)).map((f) => ({ uid: f.slice('uid:'.length), slug: f }));
+    return pageOf(hits, hits.length === Number(params.page_size) ? 'next' : undefined);
+  }
+
+  it('fetches each batch in one call, with page_size one above the batch size', async () => {
+    const uids = Array.from({ length: 150 }, (_, i) => `uid-${i}`);
+    proxyRequest.mockImplementation(async (_req, _svc, _path, _method, params) => queryServicePage(params));
+
+    const result = await service.getProjectsByIds(req, uids);
+
+    expect(result.size).toBe(150);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    const sent = proxyRequest.mock.calls.map((call) => call[4] as { filters_or: string[]; page_size: string });
+    expect(sent.map((p) => p.filters_or.length)).toEqual([100, 50]);
+    expect(sent.map((p) => p.page_size)).toEqual(['101', '51']);
+  });
+
+  it('makes exactly one call for a full 100-uid batch, where page_size = batch size would make two', async () => {
+    const filters = Array.from({ length: 100 }, (_, i) => `uid:uid-${i}`);
+    proxyRequest.mockImplementation(async (_req, _svc, _path, _method, params) => queryServicePage(params));
+
+    await service.getProjectsByIds(
+      req,
+      filters.map((f) => f.slice('uid:'.length))
+    );
+
+    expect(proxyRequest).toHaveBeenCalledOnce();
+    expect(proxyRequest.mock.calls[0][4]).toMatchObject({ page_size: '101' });
+    // The old page_size = 100 gets a cursor back on the full page, forcing a second (empty) call.
+    expect(queryServicePage({ filters_or: filters, page_size: '100' }).page_token).toBe('next');
+  });
 });
 
 describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/meeting_coordinator gating)', () => {
@@ -2819,6 +2857,69 @@ describe('ProjectService.updateProjectPermissions', () => {
 
     expect(result.writers).toEqual([]);
     expect(result.auditors).toEqual([member]);
+  });
+
+  // GH-3276: a collapsed dual-role row (#3218) is removed/role-changed in one ETag-guarded
+  // write that also clears its other backend entries, instead of a second client-issued
+  // call racing the first (Copilot #3244) or resolving a duplicate email through the NATS
+  // directory, which could misresolve a stale identifier onto an unrelated, just-written
+  // real-username entry (Cursor Bugbot #3244).
+  describe('duplicateIdentifiers', () => {
+    const duplicateByUsername = { name: 'Sam Chen', email: 'sam.chen.alt@cascade-data.example', username: 'schen-dup' };
+    const duplicateByEmailOnly = { name: 'Sam Chen', email: 'sam.chen.dup@cascade-data.example' };
+
+    it('removes a duplicate matched by username alongside the primary identifier, in one write', async () => {
+      mockFetch({ writers: [member, duplicateByUsername], auditors: [] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'remove', 'sam.chen', undefined, undefined, ['schen-dup']);
+
+      expect(result.writers).toEqual([]);
+      expect(updateWithETag).toHaveBeenCalledTimes(1);
+      // No directory lookup for the duplicate identifier — it is matched directly against
+      // the settings already fetched, never resolved through NATS.
+      expect(natsRequest).not.toHaveBeenCalled();
+    });
+
+    it('removes a duplicate matched by email only (no-username entry) case-insensitively', async () => {
+      mockFetch({ writers: [member], auditors: [duplicateByEmailOnly] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'remove', 'sam.chen', undefined, undefined, [
+        'SAM.CHEN.DUP@cascade-data.example',
+      ]);
+
+      expect(result.auditors).toEqual([]);
+      expect(natsRequest).not.toHaveBeenCalled();
+    });
+
+    it('does not remove an entry whose username merely differs in case from the duplicate identifier', async () => {
+      const differentCasing = { name: 'Someone Else', email: 'someone.else@cascade-data.example', username: 'SChen-Dup' };
+      mockFetch({ writers: [member, differentCasing], auditors: [] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'remove', 'sam.chen', undefined, undefined, ['schen-dup']);
+
+      // 'schen-dup' !== 'SChen-Dup' under case-sensitive username matching — the unrelated
+      // entry must survive (this is exactly the data-loss scenario GH-3276 guards against).
+      expect(result.writers).toEqual([differentCasing]);
+    });
+
+    it('clears duplicates alongside a role change in the same write', async () => {
+      mockFetch({ writers: [member, duplicateByUsername], auditors: [] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'view', undefined, ['schen-dup']);
+
+      expect(result.writers).toEqual([]);
+      expect(result.auditors).toEqual([member]);
+      expect(updateWithETag).toHaveBeenCalledTimes(1);
+    });
+
+    it('supports clearing 3+ duplicate entries in a single request (dealako #3244 review)', async () => {
+      const dup2 = { name: 'Sam Chen', email: 'sam.chen.dup2@cascade-data.example', username: 'schen-dup2' };
+      mockFetch({ writers: [member, duplicateByUsername, dup2], auditors: [] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'remove', 'sam.chen', undefined, undefined, ['schen-dup', 'schen-dup2']);
+
+      expect(result.writers).toEqual([]);
+    });
   });
 });
 

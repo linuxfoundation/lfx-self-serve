@@ -11,6 +11,8 @@ import type {
   MyEventsResponse,
   EventsResponse,
   MyEventOrganizationsResponse,
+  MyEventsUpcomingView,
+  MyEventStatus,
   TagSeverity,
   TravelFundRequestsResponse,
   VisaRequestsResponse,
@@ -44,6 +46,12 @@ export const MY_EVENT_STATUS = {
   NOT_REGISTERED: 'Not Registered',
 } as const;
 
+/** Font Awesome icon per My Events status, shown on the table's status tag so a registration reads at a glance. */
+export const MY_EVENT_STATUS_ICON_MAP: Partial<Record<MyEventStatus, string>> = {
+  [MY_EVENT_STATUS.REGISTERED]: 'fa-light fa-circle-check',
+  [MY_EVENT_STATUS.ATTENDED]: 'fa-light fa-badge-check',
+};
+
 /**
  * EVENT_SOURCE value marking a CSV-imported (backfilled) event registration.
  *
@@ -71,6 +79,18 @@ export const EVENT_REQUEST_STATUS_SEVERITY_MAP: Partial<Record<string, TagSeveri
 };
 
 /**
+ * Snowflake label on visa rows whose letter can be downloaded. Upstream renames `letter_issued` to
+ * `Approved` today (see #2740), so this moves to `Issued` once that mapping lands.
+ */
+export const VISA_LETTER_DOWNLOADABLE_STATUS = 'Approved';
+
+/** Error code the visa letter download returns when the events team issues the letter by email */
+export const VISA_LETTER_MANUAL_ERROR_CODE = 'VISA_LETTER_MANUAL';
+
+/** Error code the visa letter download returns when upstream has not issued the letter yet */
+export const VISA_LETTER_NOT_ISSUED_ERROR_CODE = 'VISA_LETTER_NOT_ISSUED';
+
+/**
  * Status filter options for Foundation Lens events.
  * Values are raw EVENT_STATUS DB values except 'coming-soon', which is a sentinel
  * that the server maps to `IN ('Pending', 'Planned')` rather than a parameterized bind.
@@ -94,6 +114,12 @@ export const MY_EVENTS_TABS: (FilterPillOption & { id: EventTabId })[] = [
   { id: 'past', label: 'Past' },
   { id: 'visa-letters', label: 'Visa Letters' },
   { id: 'travel-funding', label: 'Travel Funding' },
+];
+
+/** Upcoming-tab registration view pills in visible order. */
+export const MY_EVENTS_UPCOMING_VIEWS: (FilterPillOption & { id: MyEventsUpcomingView })[] = [
+  { id: 'registered', label: 'My Registrations' },
+  { id: 'all', label: 'All Events' },
 ];
 
 /** Default tab for the My Events dashboard when `?tab=` is absent or invalid. */

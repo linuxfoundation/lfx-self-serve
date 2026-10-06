@@ -17,6 +17,7 @@ import {
   CommitteeUpdateData,
   CommitteeUser,
   AuditUserProfile,
+  CommitteeDocumentQueryResult,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
@@ -25,6 +26,7 @@ import {
   CreateCommitteeMemberRequest,
   GroupsIOMailingList,
   MyCommittee,
+  MyPendingApplication,
   PendingCommitteeInviteForOrg,
   PendingInvitation,
   Project,
@@ -42,7 +44,8 @@ import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-fea
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources, FetchAllQueryResourcesOptions } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
-import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
+import { generateM2MToken } from '../utils/m2m-token.util';
+import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating, getEffectiveEmail } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -88,38 +91,6 @@ interface CommitteeDocumentUpstreamResponse {
   updated_at?: string;
   created_by?: AuditUserProfile;
   /** Legacy flat username field; retained for transitional records. */
-  uploaded_by_username?: string;
-}
-
-/**
- * Query-service shape for an indexed `committee_document` resource. Files are not exposed
- * via a list endpoint upstream; they're discovered via the indexer (subject
- * `lfx.index.committee_document`).
- *
- * Per `CommitteeDocument.Tags()` in lfx-v2-committee-service, every committee_document
- * resource is indexed with the following tags:
- *   - the bare uid                          → `{uid}`
- *   - `committee_document_uid:{uid}`        — single-document lookup (returns at most 1)
- *   - `committee_uid:{committeeUID}`        — list all documents for a committee
- *   - `content_type:{contentType}`          — filter by MIME type
- *   - `uploaded_by:{uploadedByUsername}`    — filter by uploader
- *
- * Use `committee_uid:` for listing and `committee_document_uid:` for single-document lookups
- * to avoid scanning every file in the committee.
- */
-interface CommitteeDocumentQueryResult {
-  uid: string;
-  name: string;
-  file_name?: string;
-  file_size?: number;
-  content_type?: string;
-  description?: string;
-  committee_uid?: string;
-  folder_uid?: string;
-  created_at?: string;
-  updated_at?: string;
-  created_by?: AuditUserProfile;
-  /** Legacy flat username field; retained for transitional indexer records. */
   uploaded_by_username?: string;
 }
 
@@ -477,6 +448,9 @@ export class CommitteeService {
     const merged = {
       ...withAccess,
       ...settingsForResponse,
+      // Upstream omits `total_members` when it is 0; default it as the list endpoints do, so a
+      // caller who cannot read the roster sees 0 rather than an unknown count.
+      total_members: committee.total_members ?? 0,
       ...(membership && { my_role: membership.role, my_member_uid: membership.member_uid }),
       ...(inheritedPermissions && { inherited_writers: inheritedPermissions.writers, inherited_auditors: inheritedPermissions.auditors }),
       ...(mlCount !== null && { has_mailing_list: mlCount > 0 }),
@@ -1562,6 +1536,106 @@ export class CommitteeService {
   }
 
   /**
+   * Returns the caller's own pending join application for a committee, or null if none exists.
+   *
+   * No writer guard — callers can only see their own application. Uses a `tags_all` query so
+   * the result is scoped to the (committee_uid, applicant_email) pair; the full writer-gated list
+   * endpoint ({@link getCommitteeApplications}) is separate and intentionally unrelated.
+   */
+  public async getMyApplication(req: Request, committeeId: string): Promise<CommitteeJoinApplication | null> {
+    // committee_application records are indexed by applicant_email (lowercased), not by username.
+    // See CommitteeApplication.Tags() in lfx-v2-committee-service — no username tag is emitted.
+    const email = getEffectiveEmail(req);
+    if (!email) {
+      return null;
+    }
+
+    const applications = await fetchAllQueryResources<CommitteeJoinApplication>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee_application',
+          tags_all: [`committee_uid:${committeeId}`, `applicant_email:${email}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+
+    // Return the most recent pending application, if any.
+    const pending = applications.filter((a) => a.status === 'pending').sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    return pending[0] ?? null;
+  }
+
+  /**
+   * Returns all of the caller's own pending join applications across all committees, enriched with
+   * committee display fields (name, is_foundation, project_slug) for the My Groups page.
+   *
+   * No writer guard — callers can only see their own applications. Committee names are resolved via
+   * parallel `getCommitteeById` calls (one per unique committee_uid) — `getCommitteeBase` lacks the
+   * enriched project metadata fields needed here. Failures to resolve a name are logged at warning
+   * level and fall back to the committee_uid string so the row is still renderable.
+   */
+  public async getMyApplications(req: Request): Promise<MyPendingApplication[]> {
+    // committee_application records are indexed by applicant_email (lowercased), not by username.
+    // See CommitteeApplication.Tags() in lfx-v2-committee-service — no username tag is emitted.
+    const email = getEffectiveEmail(req);
+    if (!email) {
+      return [];
+    }
+
+    const applications = await fetchAllQueryResources<CommitteeJoinApplication>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee_application',
+          tags_all: [`applicant_email:${email}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+
+    const pending = applications.filter((a) => a.status === 'pending');
+    if (pending.length === 0) {
+      return [];
+    }
+
+    // Fetch committee names in parallel for each unique committee_uid.
+    // Use getCommitteeById with includeProjectMetadata so project_slug and is_foundation are
+    // populated — getCommitteeBase returns the raw upstream object which lacks these enriched fields.
+    const uniqueUids = [...new Set(pending.map((a) => a.committee_uid))];
+    const committeeMap = new Map<string, { name: string; is_foundation?: boolean; project_slug?: string }>();
+
+    await Promise.allSettled(
+      uniqueUids.map(async (uid) => {
+        try {
+          const committee = await this.getCommitteeById(req, uid, { includeProjectMetadata: true });
+          committeeMap.set(uid, {
+            name: committee?.name ?? uid,
+            is_foundation: committee?.is_foundation ?? undefined,
+            project_slug: committee?.project_slug ?? undefined,
+          });
+        } catch (error) {
+          // Committee not accessible or not found — fall back to the UID as display name,
+          // mirroring the getMyPendingInvitations fallback pattern.
+          logger.warning(req, 'get_my_applications', 'Committee enrichment failed, using UID as fallback display name', {
+            committee_uid: uid,
+            err: error,
+          });
+          committeeMap.set(uid, { name: uid });
+        }
+      })
+    );
+
+    return pending.map((app) => ({
+      ...app,
+      committee_name: committeeMap.get(app.committee_uid)?.name ?? app.committee_uid,
+      is_foundation: committeeMap.get(app.committee_uid)?.is_foundation,
+      project_slug: committeeMap.get(app.committee_uid)?.project_slug,
+    }));
+  }
+
+  /**
    * Fetches join applications for a committee from the query index.
    */
   public async getCommitteeApplications(req: Request, committeeId: string, query: Record<string, unknown> = {}): Promise<CommitteeJoinApplication[]> {
@@ -2245,6 +2319,37 @@ export class CommitteeService {
       if (options.throwOnError) {
         throw error;
       }
+
+      // The upstream settings endpoint requires committee#writer; viewers get 403.
+      // member_visibility is a public-facing property of the committee (controls whether
+      // the Members tab is visible to non-members) that must be readable by viewers.
+      // Use M2M as a privileged upstream fallback — the committee#viewer FGA check on the
+      // base resource has already been passed, so this read does not widen authorization.
+      // Only member_visibility is surfaced from the M2M result; write-sensitive settings
+      // (writers, auditors) are never forwarded to non-writer callers.
+      if ((error as MicroserviceError).statusCode === 403) {
+        try {
+          const m2mToken = await generateM2MToken(req);
+          const m2mSettings = await this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
+            req,
+            'LFX_V2_SERVICE',
+            `/committees/${committeeId}/settings`,
+            'GET',
+            undefined,
+            undefined,
+            undefined,
+            { bearerToken: m2mToken }
+          );
+          // Return only the display-relevant field — write-sensitive settings must not be
+          // forwarded to viewers even if the M2M response includes them.
+          return m2mSettings?.member_visibility !== undefined ? { member_visibility: m2mSettings.member_visibility } : {};
+        } catch {
+          logger.warning(req, 'get_committee_settings', 'M2M fallback for member_visibility also failed', {
+            committee_uid: committeeId,
+          });
+        }
+      }
+
       logger.warning(req, 'get_committee_settings', 'Failed to fetch committee settings, returning empty', {
         committee_uid: committeeId,
       });

@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ITXMeetingResponseResult, MeetingOccurrence, MeetingRsvp, RsvpCounts } from '../interfaces/meeting.interface';
+import {
+  ITXMeetingResponseResult,
+  MeetingAttendeePreviewPerson,
+  MeetingOccurrence,
+  MeetingRegistrant,
+  MeetingRsvp,
+  RsvpCounts,
+} from '../interfaces/meeting.interface';
 
 /**
  * Convert an `occurrence_id` string into a millisecond epoch, regardless of the
@@ -28,6 +35,15 @@ export function occurrenceIdToMs(occurrenceId: string | null | undefined): numbe
   // Magnitude cutoff is unit-correct regardless of string formatting (padded zeros,
   // scientific notation) and avoids reading .length on a potentially-tainted value.
   return n < 1e12 ? n * 1000 : n;
+}
+
+/**
+ * Normalize an `occurrence_id` to the Unix-seconds form Zoom/ITX expect, accepting seconds or milliseconds.
+ * Returns `null` for anything {@link occurrenceIdToMs} can't parse.
+ */
+export function occurrenceIdToSeconds(occurrenceId: string | null | undefined): string | null {
+  const ms = occurrenceIdToMs(occurrenceId);
+  return ms === null ? null : String(Math.floor(ms / 1000));
 }
 
 /**
@@ -287,4 +303,53 @@ export function mapITXResponseToMeetingRsvp(result: ITXMeetingResponseResult): M
     created_at: result.created_at,
     updated_at: result.updated_at,
   };
+}
+
+/** Preview order: people coming first, then undecided, then no reply, then declined. */
+const ATTENDEE_PREVIEW_STATUS_ORDER: Record<RegistrantAttendanceStatus, number> = { accepted: 0, maybe: 1, pending: 2, declined: 3 };
+
+/**
+ * Orders registrants for a meeting card's attendee preview and maps them to display-only faces.
+ * @description Uses the same combined RSVP / `invite_accepted` status as the guest drawer chips
+ * ({@link getRegistrantAttendanceStatus}), so the first faces shown are the people attending.
+ * The sort is stable, so ties keep the caller's (host-then-name) order.
+ */
+export function buildAttendeePreviewFromRegistrants(
+  registrants: ReadonlyArray<Pick<MeetingRegistrant, 'uid' | 'email' | 'first_name' | 'last_name' | 'avatar_url' | 'rsvp' | 'invite_accepted'>>,
+  options?: { inviteResponsesEnabled?: boolean }
+): MeetingAttendeePreviewPerson[] {
+  return registrants
+    .map((registrant) => ({ registrant, rank: ATTENDEE_PREVIEW_STATUS_ORDER[getRegistrantAttendanceStatus(registrant, options)] }))
+    .sort((a, b) => a.rank - b.rank)
+    .map(({ registrant }) => ({
+      key: registrant.uid || registrant.email,
+      name: `${registrant.first_name ?? ''} ${registrant.last_name ?? ''}`.trim() || registrant.email,
+      avatarUrl: registrant.avatar_url ?? null,
+    }));
+}
+
+/**
+ * RSVP-only fallback for surfaces that have responses but no registrant roster (the project and
+ * foundation lens cards, whose counts come from the meeting record). Same ordering as
+ * {@link buildAttendeePreviewFromRegistrants}; RSVP rows carry no profile picture.
+ *
+ * A recurring series returns several rows per registrant (`all`, `single`, `this_and_following`),
+ * so rows are grouped by registrant and each person shows once, with the response that applies to
+ * `occurrenceId` — the same resolution {@link calculateRsvpCounts} uses for the counts beside it.
+ */
+export function buildAttendeePreviewFromRsvps(rsvps: ReadonlyArray<MeetingRsvp>, occurrenceId?: string | null): MeetingAttendeePreviewPerson[] {
+  const rsvpsByRegistrant = new Map<string, MeetingRsvp[]>();
+  for (const rsvp of rsvps) {
+    const key = rsvp.registrant_id || rsvp.email;
+    if (!rsvpsByRegistrant.has(key)) {
+      rsvpsByRegistrant.set(key, []);
+    }
+    rsvpsByRegistrant.get(key)!.push(rsvp);
+  }
+
+  return [...rsvpsByRegistrant.entries()]
+    .map(([key, rows]) => ({ key, rsvp: selectApplicableRsvp(occurrenceId, rows) }))
+    .filter((entry): entry is { key: string; rsvp: MeetingRsvp } => entry.rsvp !== null)
+    .sort((a, b) => ATTENDEE_PREVIEW_STATUS_ORDER[a.rsvp.response_type] - ATTENDEE_PREVIEW_STATUS_ORDER[b.rsvp.response_type])
+    .map(({ key, rsvp }) => ({ key, name: rsvp.name?.trim() || rsvp.email, avatarUrl: null }));
 }

@@ -60,7 +60,15 @@ vi.mock('./org-lens-access.service', () => ({
 // per test: the merge tests below are about the merge and several of them call `run()` more than
 // once expecting a fresh computation each time.
 vi.mock('./valkey.service', () => ({
-  withPerUserCache: async (_ns: string, _user: string, _org: string, _ttl: number, fetcher: () => Promise<unknown>, accept?: (value: unknown) => boolean) => {
+  withPerUserCache: async (
+    _ns: string,
+    _user: string,
+    _org: string,
+    _ttl: number,
+    fetcher: () => Promise<unknown>,
+    accept?: (value: unknown) => boolean,
+    storable?: (value: unknown) => boolean
+  ) => {
     cache.readThroughs += 1;
     cache.accept = accept ?? null;
     if (cache.serveHits && cache.entry !== null) {
@@ -68,7 +76,7 @@ vi.mock('./valkey.service', () => ({
       if (!accept || accept(stored)) return stored;
     }
     const fresh = await fetcher();
-    cache.entry = JSON.stringify(fresh);
+    if (!storable || storable(fresh)) cache.entry = JSON.stringify(fresh);
     return fresh;
   },
 }));
@@ -121,10 +129,11 @@ vi.mock('@lfx-one/shared/utils', async () => {
 
 import { toColumnar } from '@lfx-one/shared/utils';
 
-import { resetSingleFlightForTests } from '../utils/single-flight';
+import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
+import { evictPerUserOrgFetch, resetSingleFlightForTests } from '../utils/single-flight';
 import { OrgPeopleDirectoryService, resolveMergeKey } from './org-people-directory.service';
 
-const ACCOUNT = '0014100000Te2ovAAB';
+const ACCOUNT = SYNTHETIC_ORG_ACCOUNT_ID;
 const req = {} as never;
 
 function storedRow(over: Partial<OrgAllEmployeeRowInternal> = {}): OrgAllEmployeeRowInternal {
@@ -872,5 +881,28 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
     expect(getAllEmployeesInternal).toHaveBeenCalledTimes(2);
     expect(first.rows[0].name).toBe('Devon Clarke');
     expect(second.rows[0].name).toBe('Second Caller Only');
+  });
+
+  // A seat reassign evicts the caller's directory flight: the post-reassign read must start fresh
+  // rather than join the old computation, and the old one must not store its pre-reassign roster.
+  it('an evicted computation neither answers the next read nor writes its result', async () => {
+    cache.serveHits = true;
+    let release!: (rows: OrgAllEmployeesInternalResponse) => void;
+    getAllEmployeesInternal
+      .mockReturnValueOnce(
+        new Promise<OrgAllEmployeesInternalResponse>((resolve) => {
+          release = resolve;
+        })
+      )
+      .mockResolvedValue(baseResponse([storedRow({ name: 'After Reassign' })]));
+
+    const stale = run();
+    evictPerUserOrgFetch('org-people-dir:v3', 'tester', ACCOUNT);
+    expect((await run()).rows[0].name).toBe('After Reassign');
+
+    release(baseResponse([storedRow({ name: 'Before Reassign' })]));
+    expect((await stale).rows[0].name).toBe('Before Reassign');
+    expect((await run()).rows[0].name).toBe('After Reassign');
+    expect(getAllEmployeesInternal).toHaveBeenCalledTimes(2);
   });
 });

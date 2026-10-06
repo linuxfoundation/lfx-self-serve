@@ -4,10 +4,15 @@
 import type {
   AudienceSignal,
   AudienceSpeakerScope,
+  CampaignBidType,
+  CampaignBudgetType,
   CampaignDeliveryTypeOption,
+  CampaignEmailSegment,
   CampaignEmailTypeOption,
   CampaignGoalOption,
   CampaignKeyword,
+  CampaignNegativeKeywordMatchType,
+  CampaignNegativeKeywordOutcome,
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
@@ -15,6 +20,7 @@ import type {
   CampaignTabOption,
   CampaignToggleAction,
   CampaignToggleStatus,
+  KeywordActionPlatform,
   LinkedInGeoTarget,
   MetaObjective,
   MetaObjectiveParams,
@@ -799,6 +805,90 @@ export const MICROSOFT_MAX_CPC_BID = 1000;
 export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
 
 /**
+ * Zero-padded `YYYY-MM-DD` shape for a campaign flight date.
+ *
+ * Shape only — it says nothing about whether the day named actually exists, so a caller that is
+ * about to act on the result must still round-trip the parsed date (see
+ * `CampaignController.isReversedFlightWindow`, which this pattern exists for).
+ */
+export const ISO_CALENDAR_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Country code to Google Ads geo target constant id.
+ *
+ * A curated list, NOT every assigned alpha-2 code: campaign-service ports the same 30 entries in
+ * `internal/platform/googleads/geo.go` (`geoTargetConstants`) and refuses anything absent from it —
+ * "geo target %q is not a supported country code". A well-formed but unlisted code such as `PT` or
+ * `ZA` therefore fails the create upstream, which is why callers gate on this map rather than on
+ * `META_GEO_CODE_PATTERN` alone.
+ *
+ * Shared so the create adapter and the legacy proxy resolve against one list. Keep it in step with
+ * `geo.go` — a code present here and absent there becomes an over-refusal at dispatch.
+ */
+export const GOOGLE_ADS_GEO_TARGET_MAP: Record<string, string> = {
+  US: '2840',
+  CA: '2124',
+  GB: '2826',
+  DE: '2276',
+  FR: '2250',
+  JP: '2392',
+  AU: '2036',
+  IN: '2356',
+  BR: '2076',
+  CN: '2156',
+  KR: '2410',
+  NL: '2528',
+  SE: '2752',
+  CH: '2756',
+  IL: '2376',
+  SG: '2702',
+  IE: '2372',
+  ES: '2724',
+  IT: '2380',
+  AT: '2040',
+  FI: '2246',
+  NO: '2578',
+  DK: '2208',
+  BE: '2056',
+  PL: '2616',
+  CZ: '2203',
+  NZ: '2554',
+  TW: '2158',
+  HK: '2344',
+  MX: '2484',
+};
+
+/**
+ * Upstream's own bound on a Google Ads geo target list (`geo.go`'s `maxGeoTargets`), checked there
+ * BEFORE de-duplication — so a list that is only over the cap because it repeats a code is still
+ * refused.
+ */
+export const GOOGLE_ADS_MAX_GEO_TARGETS = 30;
+
+/**
+ * Micros per whole currency unit, the denomination google-ads bills budgets in.
+ *
+ * Shared rather than inlined at the guard because the guard's whole purpose is to compute the
+ * SAME integer campaign-service computes and refuse exactly what it refuses. campaign-service
+ * scales the budget by this factor, rounds, and rejects a campaign whose rounded budget is zero
+ * micros ("campaign budget must be > 0"). A guard that compared the raw float against zero
+ * instead would pass a positive-but-sub-micro budget straight into that refusal, where the
+ * orchestrator reports it as the opaque "platform campaign creation failed".
+ */
+export const GOOGLE_ADS_MICROS_PER_UNIT = 1_000_000;
+
+/**
+ * LinkedIn's per-campaign budget floors, in USD.
+ *
+ * Mirrored from `internal/platform/linkedin/config.go` (`minDailyBudgetUSD` / `minLifetimeBudgetUSD`),
+ * which the client enforces before any POST. Which floor applies flips with the budget-type toggle,
+ * and nothing in the Implementation tab says the floor exists or that it moves tenfold — hence the
+ * named refusal that reads these.
+ */
+export const LINKEDIN_MIN_DAILY_BUDGET_USD = 10;
+export const LINKEDIN_MIN_LIFETIME_BUDGET_USD = 100;
+
+/**
  * The officially assigned ISO 3166-1 alpha-2 codes, derived from `COUNTRIES`.
  *
  * A Set rather than a repeated `.some()` scan: `normalizeGeoTargets` runs per code per keystroke
@@ -910,6 +1000,102 @@ export function normalizeMicrosoftGeoTargets(codes: readonly string[] | null | u
 
 /** Valid statuses for the campaign status toggle endpoint. */
 export const VALID_CAMPAIGN_TOGGLE_STATUSES: ReadonlySet<CampaignToggleStatus> = new Set<CampaignToggleStatus>(['ACTIVE', 'PAUSED']);
+
+/** Valid `budgetType` values for the campaign budget change endpoint (campaign-service's `budget_type` enum). */
+export const VALID_CAMPAIGN_BUDGET_TYPES: ReadonlySet<CampaignBudgetType> = new Set<CampaignBudgetType>(['daily', 'lifetime']);
+
+/**
+ * An etag the BFF can send as `If-Match`: visible ASCII only, which keeps `"3"` and `W/"3"` valid.
+ * Node's fetch rejects a header value holding CR/LF or a character above U+00FF before any network
+ * I/O, and that rejection is classified as a transport failure. On a budget write a transport
+ * failure is reported as UNCONFIRMED, so such an etag would tell the operator a request that never
+ * left the BFF "may already have been applied". It is refused as a 400 instead.
+ */
+export const CAMPAIGN_ETAG_HEADER_PATTERN = /^[\x21-\x7e]+$/;
+
+/**
+ * What a budget change reports when no campaign-service answer came back, such as a timeout, a
+ * lost connection or a gateway error page.
+ *
+ * The write may already have reached the ad platform, so "nothing changed" cannot be claimed.
+ * Re-applying the same amount converges and is safe, but the operator is still told to verify
+ * first. campaign-service's OWN 503 answers are passed through untouched instead, because their
+ * message already says whether the outcome was definite or unconfirmed.
+ */
+export const CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED =
+  'The budget change could not be confirmed and may already have been applied. Verify the campaign budget in the ad platform before retrying.';
+
+/** The platforms a keyword pause/remove may name (campaign-service's `apply-keyword-actions`). */
+export const KEYWORD_ACTION_PLATFORMS: ReadonlySet<KeywordActionPlatform> = new Set<KeywordActionPlatform>(['google-ads', 'microsoft-ads']);
+
+/** The platform a keyword action means when it names none: every pre-Microsoft request was Google Ads. */
+export const DEFAULT_KEYWORD_ACTION_PLATFORM: KeywordActionPlatform = 'google-ads';
+
+/**
+ * What a Microsoft keyword action reports when it may or may not have been applied: the Microsoft
+ * twin of the BFF's Google-worded unconfirmed message. A retried REMOVE is irreversible, so the
+ * operator is sent to Microsoft Advertising to check first.
+ */
+export const MICROSOFT_KEYWORD_ACTION_OUTCOME_UNCONFIRMED =
+  'The change was sent but could not be confirmed. Check the keyword in Microsoft Advertising before retrying.';
+
+/** Valid `bidType` values for the campaign bid change endpoint (campaign-service's `bid_type` enum). */
+export const VALID_CAMPAIGN_BID_TYPES: ReadonlySet<CampaignBidType> = new Set<CampaignBidType>(['cpc']);
+
+/** The `bidType` sent when the caller names none: upstream's own default and only value. */
+export const DEFAULT_CAMPAIGN_BID_TYPE: CampaignBidType = 'cpc';
+
+/**
+ * What a bid change reports when no campaign-service answer came back. The bid-lever twin of
+ * `CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED`: the write may already have reached the ad platform, so the
+ * operator is told to verify the bid there first. campaign-service's OWN 503 answers pass through
+ * untouched, because their message already says whether the outcome was definite or unconfirmed.
+ */
+export const CAMPAIGN_BID_OUTCOME_UNCONFIRMED =
+  'The bid change could not be confirmed and may already have been applied. Verify the bid in the ad platform before retrying.';
+
+/** Match types a negative keyword may carry (campaign-service's `negativeKeywordMatchTypeEnum`). */
+export const VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES: ReadonlySet<CampaignNegativeKeywordMatchType> = new Set<CampaignNegativeKeywordMatchType>([
+  'Exact',
+  'Phrase',
+]);
+
+/** Per-keyword outcomes of the negative-keywords lever (campaign-service's `negativeKeywordOutcomeEnum`). */
+export const CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES: ReadonlySet<CampaignNegativeKeywordOutcome> = new Set<CampaignNegativeKeywordOutcome>([
+  'APPLIED',
+  'ALREADY_PRESENT',
+  'FAILED',
+  'UNCONFIRMED',
+]);
+
+/** Most negative keywords one request may carry (the upstream payload's `MaxLength(60)`). */
+export const MAX_NEGATIVE_KEYWORDS_PER_REQUEST = 60;
+
+/** Microsoft's limit on a negative keyword's text, in characters (code points, not bytes). */
+export const MAX_NEGATIVE_KEYWORD_TEXT_LENGTH = 100;
+
+/**
+ * The characters a negative keyword's text may hold: letters, combining marks, digits, spaces and
+ * `& ' - .`. The same pattern as campaign-service's `NegativeKeywordInput.text`, so a request this
+ * admits is not refused upstream on its character set. Upstream additionally refuses adjacent
+ * punctuation and duplicate keywords, and names the reason in its 400.
+ */
+export const NEGATIVE_KEYWORD_TEXT_PATTERN = /^[\p{L}\p{M}\p{N} &'.-]+$/u;
+
+/**
+ * What a negative-keywords request reports when campaign-service answered 2xx with a body that
+ * cannot be read positionally (no results array, the wrong number of results, or another
+ * campaign's id). Negatives may have been added, so nothing is claimed either way.
+ */
+export const CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED =
+  "The negative keywords were sent but the confirmation could not be read. Check the campaign's negative keywords in the ad platform before retrying.";
+
+/**
+ * The reporting windows the Microsoft keyword read accepts: `CAMPAIGN_METRICS_WINDOWS` without
+ * `yesterday` and `last_14_days`, which the Microsoft client cannot map to a report date range
+ * (`microsoftKeywordsWindowEnum`, campaign-service `design/connection.go`).
+ */
+export const MICROSOFT_KEYWORDS_WINDOWS = ['today', 'last_7_days', 'last_30_days', 'this_month', 'last_month'] as const;
 
 // NOTE: LinkedIn ad accounts, default account/org IDs, employer exclusions, and
 // targeting profile URN lists are loaded at runtime from a mounted ConfigMap
@@ -1212,6 +1398,21 @@ export const CAMPAIGN_EMAIL_STAGES = ['CFP Launch', 'Schedule Announcement', 'Re
 // ---------------------------------------------------------------------------
 
 /**
+ * How long the BFF waits on an audience-builder call to the campaign service.
+ *
+ * Far above the 30s default (`api-client.service.ts`) because these endpoints are not
+ * database reads — each one walks the HubSpot Marketing API. `last-sent` alone pages up to
+ * 2000 emails (20 sequential requests) to rule out a false absence, then fans out one GET per
+ * shortlisted send plus one per referenced list. Measured against the live TLF portal on
+ * 2026-09-24: 32s at `limit=3` (what the panel asks for) and 58s at the design's `limit=10`.
+ *
+ * At 30s the call was aborted mid-flight and "Recent sends for this event" rendered as a
+ * failure on every load, even though upstream went on to answer 200. The ceiling is a
+ * giving-up point, not a budget: raising it costs nothing on the calls that return quickly.
+ */
+export const AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS = 120_000;
+
+/**
  * The Audience Builder tab.
  *
  * Declared on its own rather than added to `CAMPAIGN_TABS` because it is email-only: the paid
@@ -1376,6 +1577,29 @@ export const AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS = 300;
 export const CAMPAIGN_EMAIL_VARIANTS = ['urgency-fomo'] as const;
 
 /**
+ * Recognised `segment` values for `generate-email-copy`: narrows which content blocks appear for a
+ * named audience within the same stage's copy, orthogonal to `variant` (which restyles the whole
+ * draft). Both may be set together, either alone, or neither. Like `stage` and `variant`,
+ * campaign-service treats an unrecognised or absent value as "no segment requested" rather than an
+ * error, so this list is for the UI's own selector rather than wire validation.
+ */
+export const CAMPAIGN_EMAIL_SEGMENTS = ['developer', 'business-decision-maker', 'alumni', 'prospect'] as const;
+
+/**
+ * The selector's visible label per segment.
+ *
+ * Keyed on `CampaignEmailSegment` rather than on a re-spelled literal union so this map cannot
+ * drift from the type `CAMPAIGN_EMAIL_SEGMENTS` derives -- a member added to or renamed in the
+ * list fails to compile HERE.
+ */
+export const CAMPAIGN_EMAIL_SEGMENT_LABELS: Readonly<Record<CampaignEmailSegment, string>> = {
+  developer: 'Developer',
+  'business-decision-maker': 'Business Decision-Maker',
+  alumni: 'Alumni (Past Attendee)',
+  prospect: 'Prospect (First-Time)',
+};
+
+/**
  * Most sponsor logos carried on a brief.
  *
  * Shared rather than helper-local because THREE sites enforce it — the scrape path, the
@@ -1393,3 +1617,16 @@ export const MAX_SPONSORS = 10;
  * reaches a sent email as alt text and is caller-supplied display text with no upstream cap.
  */
 export const MAX_SPONSOR_NAME_LENGTH = 100;
+
+/**
+ * Longest HubSpot email body (`bodyHtml` / `bodyHtmlB`) the campaign create route will sanitise,
+ * in UTF-16 code units.
+ *
+ * The route has no body validator, so without this the only bound on what reaches
+ * `stripResourceLoadingHtml` is express.json's 15 MB limit, and any super-linear step in the
+ * sanitiser or its HTML parser is reachable at that size before any upstream or ownership check.
+ * The ceiling (131,072 code units) is a resource bound, not a content rule: it sits above the
+ * ~102 KB message size at which Gmail starts clipping, so typical campaign bodies fit with room
+ * to spare.
+ */
+export const MAX_HUBSPOT_BODY_HTML_LENGTH = 128 * 1024;

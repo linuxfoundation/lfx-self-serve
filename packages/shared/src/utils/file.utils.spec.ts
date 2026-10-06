@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { formatFileSize, parseContentDispositionFilename } from './file.utils';
+import { downloadFromUrl, formatFileSize, isSafeUploadFileName, parseContentDispositionFilename } from './file.utils';
 
 describe('parseContentDispositionFilename', () => {
   it('reads the quoted ASCII fallback form', () => {
@@ -39,6 +39,38 @@ describe('parseContentDispositionFilename', () => {
   });
 });
 
+describe('isSafeUploadFileName', () => {
+  it('accepts ordinary file names, including spaces, unicode and single quotes', () => {
+    expect(isSafeUploadFileName('report.pdf')).toBe(true);
+    expect(isSafeUploadFileName('Q3 board deck (final).pptx')).toBe(true);
+    expect(isSafeUploadFileName('événement-notes.md')).toBe(true);
+    expect(isSafeUploadFileName("member's guide.docx")).toBe(true);
+  });
+
+  it('rejects path separators and traversal sequences', () => {
+    expect(isSafeUploadFileName('a/b.pdf')).toBe(false);
+    expect(isSafeUploadFileName('a\\b.pdf')).toBe(false);
+    expect(isSafeUploadFileName('..pdf')).toBe(false);
+  });
+
+  it('rejects CR/LF so the name cannot add header lines to the multipart part', () => {
+    expect(isSafeUploadFileName('report.pdf\r\nContent-Type: text/html')).toBe(false);
+    expect(isSafeUploadFileName('report.pdf\nX: a')).toBe(false);
+    expect(isSafeUploadFileName('report.pdf\rX: a')).toBe(false);
+  });
+
+  it('rejects double quotes so the name cannot terminate the filename parameter', () => {
+    expect(isSafeUploadFileName('report".pdf')).toBe(false);
+  });
+
+  it('rejects every C0 control character and DEL', () => {
+    for (let code = 0x00; code <= 0x1f; code++) {
+      expect(isSafeUploadFileName(`a${String.fromCharCode(code)}b.pdf`)).toBe(false);
+    }
+    expect(isSafeUploadFileName('a\x7fb.pdf')).toBe(false);
+  });
+});
+
 describe('formatFileSize', () => {
   it('renders bytes without a decimal', () => {
     expect(formatFileSize(512)).toBe('512 B');
@@ -64,5 +96,65 @@ describe('formatFileSize', () => {
 
   it('rounds to one decimal above bytes', () => {
     expect(formatFileSize(1_468_006)).toBe('1.4 MB');
+  });
+});
+
+describe('downloadFromUrl', () => {
+  type FakeAnchor = { href: string; download: string; style: { display: string }; click: ReturnType<typeof vi.fn> };
+  let anchors: FakeAnchor[];
+
+  beforeEach(() => {
+    anchors = [];
+    vi.stubGlobal('document', {
+      baseURI: 'https://app.example.org/profile/clas',
+      createElement: vi.fn(() => {
+        const anchor: FakeAnchor = { href: '', download: '', style: { display: '' }, click: vi.fn() };
+        anchors.push(anchor);
+        return anchor;
+      }),
+      body: { appendChild: vi.fn(), removeChild: vi.fn() },
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it.each([['https://s3.example.org/signed.pdf'], ['http://localhost:4200/file.pdf'], ['blob:https://app.example.org/5b1f2c3d']])(
+    'clicks a download anchor for %p',
+    (url) => {
+      downloadFromUrl(url, 'signed.pdf');
+
+      expect(anchors).toHaveLength(1);
+      expect(anchors[0].href).toBe(url);
+      expect(anchors[0].download).toBe('signed.pdf');
+      expect(anchors[0].click).toHaveBeenCalledOnce();
+    }
+  );
+
+  it.each([['javascript:alert(1)'], ['  javascript:alert(1)'], ['JaVaScRiPt:alert(1)'], ['data:text/html,<p>x</p>'], ['vbscript:msgbox(1)']])(
+    'creates no anchor for %p',
+    (url) => {
+      downloadFromUrl(url, 'signed.pdf');
+
+      expect(anchors).toHaveLength(0);
+    }
+  );
+
+  it('logs only the refused scheme, never the URL', () => {
+    downloadFromUrl('javascript:alert(document.cookie)');
+
+    const logged = JSON.stringify(vi.mocked(console.warn).mock.calls);
+    expect(logged).toContain('javascript:');
+    expect(logged).not.toContain('alert(document.cookie)');
+  });
+
+  it('does nothing during SSR, where there is no document', () => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal('document', undefined);
+
+    expect(() => downloadFromUrl('https://s3.example.org/signed.pdf')).not.toThrow();
   });
 });

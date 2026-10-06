@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
-import { Meeting } from '@lfx-one/shared/interfaces';
+import { Component, input, signal } from '@angular/core';
+import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
+import { provideRouter, Router } from '@angular/router';
+import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
+import { MeetingInviteeAttendeesComponent } from '@app/modules/meetings/components/meeting-invitee-attendees/meeting-invitee-attendees.component';
+import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
@@ -32,6 +34,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
   let composerOpen: ReturnType<typeof vi.fn>;
   let toastAdd: ReturnType<typeof vi.fn>;
   let getMeetingDetail: ReturnType<typeof vi.fn>;
+  let getMeeting: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   /**
    * `MEETING_V2_ENABLED_FLAG`, stated per test.
@@ -43,7 +46,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
   const meetingsV2Enabled = signal(true);
 
   /** Mounts the card over `meeting` with an empty template — this suite exercises the handler, not the markup. */
-  async function mount(meeting: Meeting = MEETING): Promise<MeetingCardComponent> {
+  async function mount(meeting: Meeting = MEETING, pinned: MeetingOccurrence | null = null): Promise<MeetingCardComponent> {
     TestBed.configureTestingModule({
       providers: [
         { provide: UserService, useValue: { user: signal(null), authenticated: signal(false) } },
@@ -58,6 +61,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
           provide: MeetingService,
           useValue: {
             getMeetingDetail,
+            getMeeting,
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: '' })),
@@ -73,6 +77,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
 
     const fixture = TestBed.createComponent(MeetingCardComponent);
     fixture.componentRef.setInput('meetingInput', meeting);
+    fixture.componentRef.setInput('occurrenceInput', pinned);
     fixture.detectChanges();
 
     return fixture.componentInstance;
@@ -84,6 +89,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     toastAdd = vi.fn();
     navigate = vi.fn();
     getMeetingDetail = vi.fn().mockReturnValue(of({ ...MEETING, organizer: true }));
+    getMeeting = vi.fn().mockReturnValue(of(MEETING));
   });
 
   it('opens the composer once a fresh read still reports the viewer as organizer', async () => {
@@ -199,6 +205,146 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     expect(navigate).toHaveBeenCalledWith(['/meetings', 'meeting-1', 'edit'], { queryParams: { project: 'acme' } });
   });
 
+  describe('recurring meetings', () => {
+    const OCCURRENCE = { occurrence_id: '1893456000', start_time: '2030-01-01T00:00:00.000Z', duration: 30 };
+    const RECURRING = { ...MEETING, recurrence: { type: 2, repeat_interval: 1 }, occurrences: [OCCURRENCE] } as unknown as Meeting;
+
+    let dialogOpen: ReturnType<typeof vi.fn>;
+    let dialogResults: Subject<unknown>[];
+
+    /** Mounts over a recurring meeting and makes each `dialogService.open` hand back its own close stream. */
+    async function mountRecurring(pinned: MeetingOccurrence | null = null): Promise<MeetingCardComponent> {
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true }));
+      dialogResults = [];
+      dialogOpen = vi.fn(() => {
+        const onClose = new Subject<unknown>();
+        dialogResults.push(onClose);
+        return { onClose };
+      });
+      TestBed.overrideProvider(DialogService, { useValue: { open: dialogOpen } });
+      return mount(RECURRING, pinned);
+    }
+
+    it('asks which scope to edit before opening any editor', async () => {
+      const component = await mountRecurring();
+
+      component.onEditMeeting();
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(dialogOpen.mock.calls[0][1].data).toEqual(expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: '1893456000' }) }));
+      expect(composerOpen).not.toHaveBeenCalled();
+    });
+
+    it('opens the series editor when the organizer picks the whole series', async () => {
+      const component = await mountRecurring();
+
+      component.onEditMeeting();
+      dialogResults[0].next({ proceed: true, scope: 'series' });
+
+      expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens the reschedule dialog for that occurrence when the organizer picks only this one', async () => {
+      const component = await mountRecurring();
+      const refreshed = vi.fn();
+      component.meetingDeleted.subscribe(refreshed);
+
+      component.onEditMeeting();
+      dialogResults[0].next({ proceed: true, scope: 'occurrence' });
+
+      expect(composerOpen).not.toHaveBeenCalled();
+      expect(dialogOpen).toHaveBeenCalledTimes(2);
+      expect(dialogOpen.mock.calls[1][1].data).toEqual(expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: '1893456000' }) }));
+
+      const moved = { ...OCCURRENCE, occurrence_id: '1893542400', start_time: '2030-01-02T00:00:00.000Z' };
+      getMeeting.mockReturnValue(of({ ...RECURRING, occurrences: [moved] }));
+      dialogResults[1].next({ confirmed: true, start_time: '2030-01-02T00:00:00.000Z' });
+
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Occurrence updated' }));
+      expect(refreshed).toHaveBeenCalledTimes(1);
+      // A host that never binds `meetingDeleted` (the committee meetings list) still sees the new time.
+      expect(getMeeting).toHaveBeenCalledWith('meeting-1');
+      expect(component.currentOccurrence()?.occurrence_id).toBe('1893542400');
+    });
+
+    it('still finds a pinned occurrence whose id was written in milliseconds', async () => {
+      const component = await mountRecurring({ ...OCCURRENCE, occurrence_id: '1893456000000' } as MeetingOccurrence);
+
+      component.onEditMeeting();
+
+      expect(toastAdd).not.toHaveBeenCalled();
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(dialogOpen.mock.calls[0][1].data.occurrence.occurrence_id).toBe('1893456000');
+    });
+
+    it('takes the shown occurrence values from the fresh read, not the list payload the card rendered with', async () => {
+      const component = await mountRecurring();
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, occurrences: [{ ...OCCURRENCE, duration: 45 }] }));
+
+      component.onEditMeeting();
+
+      expect(dialogOpen.mock.calls[0][1].data).toEqual(
+        expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: '1893456000', duration: 45 }) })
+      );
+    });
+
+    it('refreshes instead of retargeting a later slot when the shown occurrence was cancelled in another tab', async () => {
+      const later = { occurrence_id: '1894060800', start_time: '2030-01-08T00:00:00.000Z', duration: 30 };
+      const component = await mountRecurring();
+      const refreshed = vi.fn();
+      component.meetingDeleted.subscribe(refreshed);
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, occurrences: [OCCURRENCE, later], cancelled_occurrences: ['1893456000'] }));
+
+      component.onEditMeeting();
+
+      expect(dialogOpen).not.toHaveBeenCalled();
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Occurrence changed' }));
+      expect(refreshed).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows the occurrence duration rather than the series duration', async () => {
+      const component = await mount({ ...RECURRING, duration: 60, occurrences: [{ ...OCCURRENCE, duration: 30 }] } as unknown as Meeting);
+
+      expect(component.meetingDuration()).toBe(30);
+    });
+
+    it('hands both dialogs the fresh meeting, so a changed series timezone is the one the form uses', async () => {
+      const component = await mountRecurring();
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, timezone: 'America/New_York' }));
+
+      component.onEditMeeting();
+      dialogResults[0].next({ proceed: true, scope: 'occurrence' });
+
+      expect(dialogOpen.mock.calls[0][1].data.meeting.timezone).toBe('America/New_York');
+      expect(dialogOpen.mock.calls[1][1].data.meeting.timezone).toBe('America/New_York');
+    });
+
+    it('refreshes instead of opening a ghost slot when the pinned occurrence is gone from the fresh read', async () => {
+      // Parent pinned this card to an occurrence another organizer has since moved.
+      const component = await mountRecurring(OCCURRENCE as MeetingOccurrence);
+      const refreshed = vi.fn();
+      component.meetingDeleted.subscribe(refreshed);
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, occurrences: [{ ...OCCURRENCE, occurrence_id: '1893542400' }] }));
+
+      component.onEditMeeting();
+
+      expect(dialogOpen).not.toHaveBeenCalled();
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Occurrence changed' }));
+      expect(refreshed).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing when the scope dialog is dismissed', async () => {
+      const component = await mountRecurring();
+
+      component.onEditMeeting();
+      dialogResults[0].next(undefined);
+
+      expect(composerOpen).not.toHaveBeenCalled();
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('still re-checks access before the pre-v2 editor, and still refuses a revoked organizer', async () => {
     meetingsV2Enabled.set(false);
     getMeetingDetail.mockReturnValue(of({ ...MEETING, organizer: false }));
@@ -211,5 +357,103 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     expect(getMeetingDetail).toHaveBeenCalledWith('meeting-1', { skipCache: true });
     expect(navigate).not.toHaveBeenCalled();
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Editing unavailable' }));
+  });
+});
+
+@Component({ selector: 'lfx-rsvp-button-group', template: '' })
+class RsvpButtonGroupStubComponent {
+  public readonly meeting = input<Meeting>();
+  public readonly occurrenceId = input<string | undefined>();
+}
+
+@Component({ selector: 'lfx-meeting-invitee-attendees', template: '' })
+class MeetingInviteeAttendeesStubComponent {
+  public readonly meeting = input<Meeting>();
+  public readonly occurrence = input<MeetingOccurrence | null>(null);
+}
+
+/**
+ * Covers which invitee panels the card renders, at the template boundary.
+ * @description The attendee preview is gated by `show_meeting_attendees` alone, so it must render even
+ * when the meeting collects no RSVPs. The outer condition once required RSVP collection too, which hid
+ * the preview; the attendee component's own spec cannot catch that because it mounts the child directly.
+ */
+describe('MeetingCardComponent — invitee panels', () => {
+  const INVITED = {
+    id: 'meeting-1',
+    project_uid: 'project-1',
+    title: 'Weekly sync',
+    start_time: '2030-01-01T10:00:00.000Z',
+    duration: 30,
+    timezone: 'UTC',
+    invited: true,
+    organizer: false,
+  } as unknown as Meeting;
+
+  async function render(meeting: Meeting): Promise<HTMLElement> {
+    // The card's animate-on-scroll directive needs IntersectionObserver, which jsdom lacks.
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        public observe = vi.fn();
+        public unobserve = vi.fn();
+        public disconnect = vi.fn();
+      }
+    );
+    TestBed.configureTestingModule({
+      deferBlockBehavior: DeferBlockBehavior.Manual,
+      providers: [
+        provideRouter([]),
+        { provide: UserService, useValue: { user: signal(null), authenticated: signal(true), viewerUsername: signal(null) } },
+        { provide: ProjectService, useValue: { project: signal(null) } },
+        { provide: MeetingComposerService, useValue: { open: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: '' })),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingCardComponent, {
+      remove: { imports: [RsvpButtonGroupComponent, MeetingInviteeAttendeesComponent] },
+      add: { imports: [RsvpButtonGroupStubComponent, MeetingInviteeAttendeesStubComponent] },
+    });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingCardComponent);
+    fixture.componentRef.setInput('meetingInput', meeting);
+    fixture.detectChanges();
+    for (const block of await fixture.getDeferBlocks()) {
+      await block.render(DeferBlockState.Complete);
+    }
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  it('shows attendees without RSVP buttons when the meeting collects no RSVPs', async () => {
+    const card = await render({ ...INVITED, is_invite_responses_enabled: false, show_meeting_attendees: true } as Meeting);
+
+    expect(card.querySelector('lfx-meeting-invitee-attendees')).not.toBeNull();
+    expect(card.querySelector('lfx-rsvp-button-group')).toBeNull();
+  });
+
+  it('shows RSVP buttons without attendees when Show Attendees is off', async () => {
+    const card = await render({ ...INVITED, is_invite_responses_enabled: true, show_meeting_attendees: false } as Meeting);
+
+    expect(card.querySelector('lfx-rsvp-button-group')).not.toBeNull();
+    expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
+  });
+
+  it('hides attendees on a Board meeting that still carries a legacy opt-in', async () => {
+    const card = await render({ ...INVITED, meeting_type: 'Board', is_invite_responses_enabled: true, show_meeting_attendees: true } as Meeting);
+
+    expect(card.querySelector('lfx-rsvp-button-group')).not.toBeNull();
+    expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
   });
 });

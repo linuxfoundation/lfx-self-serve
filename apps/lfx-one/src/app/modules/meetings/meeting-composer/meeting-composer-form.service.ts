@@ -659,7 +659,7 @@ export class MeetingComposerFormService {
     const existingMeetingId = this.meetingId();
     const save$: Observable<Meeting | null> =
       this.isEditMode() && existingMeetingId
-        ? this.meetingService.updateMeeting(existingMeetingId, meetingData as UpdateMeetingRequest, 'single').pipe(map(() => null))
+        ? this.meetingService.updateMeeting(existingMeetingId, meetingData as UpdateMeetingRequest).pipe(map(() => null))
         : this.meetingService.createMeeting(meetingData as CreateMeetingRequest).pipe(map((meeting) => meeting));
 
     return save$.pipe(

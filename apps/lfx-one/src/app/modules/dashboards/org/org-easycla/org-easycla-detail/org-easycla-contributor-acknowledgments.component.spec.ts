@@ -42,6 +42,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: true,
       ...overrides,
     };
   }
@@ -283,6 +284,20 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(identity?.getAttribute('href')).toBe('mailto:contributor@example.org');
     });
 
+    it.each(['victim@example.com%0D%0ABcc:attacker@example.com', 'a@example.com?bcc=b@example.org', 'r&d@example.org', 'tag#1@example.org'])(
+      'renders an email %s that is not mailto-safe as plain text with no mailto link',
+      async (email) => {
+        getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ email })])));
+        const fixture = await render();
+
+        const identity = byTestId(fixture, 'org-easycla-acknowledgment-identity');
+        expect(identity?.tagName).toBe('SPAN');
+        expect(textIn(identity)).toBe(email);
+        expect(identity?.getAttribute('href')).toBeNull();
+        expect(fixture.nativeElement.querySelector('a[href^="mailto:"]')).toBeFalsy();
+      }
+    );
+
     it('renders an em-dash for the ID column when the producer sent nothing usable, rather than dropping the row', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ name: 'Name Only' })])));
       const fixture = await render();
@@ -460,6 +475,31 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
         'No longer matches Approval List criteria. Invalidate to remove for good.'
       );
       expect(byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')).toBeNull();
+    });
+
+    it.each([
+      ['is not on the roster', false],
+      ['has no roster answer', undefined],
+    ])('offers no remedy links or Invalidate when ACS allows both but the viewer %s', async (_case, viewerIsClaManager) => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([notAuthorized()])));
+      const fixture = await render(claGroup({ viewerIsClaManager }));
+
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-not-authorized-detail')).replace(/\s+/g, ' ')).toBe(
+        'No longer matches Approval List criteria.'
+      );
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgment-invalidate"] button')).toBeNull();
+    });
+
+    it('offers no remedy links or Invalidate when the row names the viewer but the fresh list says they cannot edit', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([notAuthorized()], { canEdit: false })));
+      const fixture = await render(claGroup({ viewerIsClaManager: true }));
+
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-not-authorized-detail')).replace(/\s+/g, ' ')).toBe(
+        'No longer matches Approval List criteria.'
+      );
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgment-invalidate"] button')).toBeNull();
     });
 
     it('offers no remedy links to a read-only reader who can neither invalidate nor edit the list', async () => {
@@ -717,6 +757,16 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
         { kind: 'email', value: 'ada@example.org' },
         { kind: 'github-username', value: 'ADA-L' },
       ]);
+    });
+
+    it('matches the approval-list entry of a valid email that is not mailto-safe', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', email: 'r&d@example.org' })], { canEdit: true })));
+      getApprovalList.mockReturnValueOnce(of({ signatureId: 'signature-uuid-1', entries: [{ kind: 'email', value: 'r&d@example.org' }], canEdit: false }));
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+
+      expect(openDialog.mock.calls[0][1].data.matchingEntries()).toEqual([{ kind: 'email', value: 'r&d@example.org' }]);
     });
 
     it('offers the also-remove option when ACS allows approval-list-update', async () => {

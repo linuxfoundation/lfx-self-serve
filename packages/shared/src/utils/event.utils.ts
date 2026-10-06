@@ -103,3 +103,24 @@ export function buildCertificateFileName(eventName: string | null | undefined, s
 
   return sanitizeFilename(`${parts.join('-')}${CERTIFICATE_EXTENSION}`, MAX_FILENAME_LENGTH);
 }
+
+const VISA_LETTER_PREFIX = 'visa-letter';
+
+/**
+ * Build the download filename for a visa support letter, e.g.
+ * "visa-letter-kubecon-india-2026-jane-doe.pdf". Falls back to `eventId` when no event name or
+ * attendee name is available, so the file always has a discriminator.
+ */
+export function buildVisaLetterFileName(eventName: string | null | undefined, attendeeName: string | null | undefined, eventId: string): string {
+  // Attendee gets up to a third of the budget so a long event name can't crowd it out entirely.
+  const budget = MAX_FILENAME_LENGTH - VISA_LETTER_PREFIX.length - CERTIFICATE_EXTENSION.length - 2;
+  const attendeeSlug = attendeeName ? truncateByCodePoint(slugifyEventName(attendeeName).normalize('NFD'), Math.floor(budget / 3)) : '';
+  const eventSlug = eventName ? truncateByCodePoint(slugifyEventName(eventName).normalize('NFD'), budget - attendeeSlug.length) : '';
+
+  const parts = [VISA_LETTER_PREFIX];
+  if (eventSlug) parts.push(eventSlug);
+  if (attendeeSlug) parts.push(attendeeSlug);
+  if (!eventSlug && !attendeeSlug) parts.push(eventId);
+
+  return sanitizeFilename(`${parts.join('-')}${CERTIFICATE_EXTENSION}`, MAX_FILENAME_LENGTH);
+}

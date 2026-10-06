@@ -11,6 +11,7 @@
 // `skippedIdentities` — SS surfaces that as identity-gap telemetry.
 
 import { MY_CLAS_PATH } from '@lfx-one/shared/constants';
+import { isHttpsUrl } from '@lfx-one/shared/utils';
 import {
   Auth0Identity,
   ClaGroupOption,
@@ -49,6 +50,7 @@ import {
 import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { urlSchemeForLog } from '../helpers/validation.helper';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating } from '../utils/auth-helper';
 import { Auth0Service } from './auth0.service';
 import { EmailVerificationService } from './email-verification.service';
@@ -274,6 +276,8 @@ export function normalizeGithubId(rawUserId: string): string | null {
  * Two server-side sources are unioned; both are re-verified upstream (EasyCLA drops any email
  * the user does not actually own into `skippedIdentities`), so over-sending is safe:
  *   - the authoritative verified-email list (`user_emails.read`): primary + `verified` alternates.
+ *     That primary carries no verified flag, so it is added only when the session email passed
+ *     the `email_verified` check (`primaryEmail` non-null).
  *   - emails carried on the already-fetched linked identities (`profileData.email`).
  *
  * The session primary is always included as a floor so behaviour never regresses when the
@@ -295,7 +299,9 @@ export function collectClaEmails(primaryEmail: string | null, emailData: EmailMa
   add(primaryEmail);
 
   if (emailData) {
-    add(emailData.primary_email);
+    // The auth-service primary is the same root email as the session claim; skip it when the
+    // session email is unverified (primaryEmail null) so it cannot re-enter as an identity.
+    if (primaryEmail) add(emailData.primary_email);
     for (const alternate of emailData.alternate_emails ?? []) {
       if (alternate.verified) add(alternate.email);
     }
@@ -645,10 +651,24 @@ export class ClaService {
       throw error;
     }
 
-    if (!result?.url) return null;
+    // Typed as a string, but `gatewayFetch` only casts the parsed body, and `new URL` would coerce
+    // an array of one https address into a pass.
+    const url: unknown = result?.url;
+    if (url == null || url === '') return null;
+
+    if (typeof url !== 'string' || !isHttpsUrl(url)) {
+      logger.warning(req, 'cla_get_pdf_url', 'upstream returned a signed document address that is not an https URL', {
+        signature_id: signatureId,
+        pdf_url_scheme: typeof url === 'string' ? urlSchemeForLog(url) : 'non-string',
+      });
+      throw new MicroserviceError('Upstream returned an unusable signed document address', 502, 'CLA_PDF_URL_INVALID', {
+        operation: 'cla_get_pdf_url',
+        service: SERVICE,
+      });
+    }
 
     logger.success(req, 'cla_get_pdf_url', startTime);
-    return { url: result.url, expiresInSeconds: result.expiresInSeconds ?? 0 };
+    return { url, expiresInSeconds: result?.expiresInSeconds ?? 0 };
   }
 
   /**
@@ -755,7 +775,8 @@ export class ClaService {
     }
 
     const userId = result?.userId?.trim();
-    const signUrl = result?.signUrl?.trim();
+    const rawSignUrl: unknown = result?.signUrl;
+    const signUrl = typeof rawSignUrl === 'string' ? rawSignUrl.trim() : undefined;
     // The verified account is parsed out of `identity` rather than assumed to be the one sent.
     // Without it there is nothing to check the pick against, which is not a success.
     const recorded = recordedGithubIdentity(result?.identity);
@@ -763,6 +784,17 @@ export class ClaService {
 
     if (!userId || !signUrl || !recorded) {
       throw new MicroserviceError('Upstream prepared no usable signing session', 502, 'CLA_BINDING_INCOMPLETE', { service: SERVICE });
+    }
+
+    if (!isHttpsUrl(signUrl)) {
+      logger.warning(req, 'cla_prepare_sign', 'upstream returned a signing address that is not an https URL', {
+        cla_group_id: claGroupId,
+        sign_url_scheme: urlSchemeForLog(signUrl),
+      });
+      throw new MicroserviceError('Upstream returned an unusable signing address', 502, 'CLA_SIGN_URL_INVALID', {
+        operation: 'cla_prepare_sign',
+        service: SERVICE,
+      });
     }
 
     // A prepare that skipped the chosen account still opened a session — for whatever identity

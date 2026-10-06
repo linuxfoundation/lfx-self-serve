@@ -29,7 +29,7 @@ import { HealthMetricsChromeService } from '../../health-metrics-gate/health-met
 import { HealthMetricsL2SubNavComponent } from '../health-metrics-l2-sub-nav/health-metrics-l2-sub-nav.component';
 import { HealthMetricsL2SectionDirective } from './health-metrics-l2-section.directive';
 
-import type { HealthMetricsL2Section, HealthMetricsL2SectionView, HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsL2CrossReference, HealthMetricsL2Section, HealthMetricsL2SectionView, HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
  * Level 2 tab shell — anchored sections inside their own scrolling pane, beside a sub-nav that stays
@@ -63,7 +63,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   public readonly navLabel = input.required<string>();
   /** Prefixes every `data-testid`, so each tab keeps its own test ids. */
   public readonly testIdPrefix = input.required<string>();
-  public readonly crossReferenceNote = input('');
+  public readonly crossReference = input<HealthMetricsL2CrossReference | null>(null);
 
   protected readonly panes = viewChild<ElementRef<HTMLElement>>('panes');
   private readonly endSentinel = viewChild<ElementRef<HTMLElement>>('endSentinel');

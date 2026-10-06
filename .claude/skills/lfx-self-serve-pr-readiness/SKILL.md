@@ -6,10 +6,8 @@ description: >
   conventional-commit format, rebase status, DCO + GPG signing per
   commit, total diff size, and protected files touched) against the
   target base branch. Does NOT
-  audit code; the review protocol is owned by `CLAUDE.md`'s **Pre-PR
-  review** section. Run inside Mode 2, once its whole-branch review, the
-  required finding fixes, the documentation-currency updates, and the
-  resulting signed/DCO commit are complete.
+  audit code; the review protocol is owned by `AGENTS.md`'s **Pre-PR
+  review** section, which names this skill in its `Preflight` value.
 context: fork
 allowed-tools: Bash, Read, Glob, Grep
 ---
@@ -18,7 +16,7 @@ allowed-tools: Bash, Read, Glob, Grep
 
 You are checking whether **local commits are shaped correctly to open as a PR** — branch name, GitHub Issue references in commit messages, conventional-commit format, rebase status, DCO + GPG signing on every commit, total diff size.
 
-This skill does NOT audit code. `CLAUDE.md`'s **Pre-PR review** section is the single owner of that protocol, and this check is a step inside its Mode 2. Before running it, confirm the work that precedes it in Mode 2 is complete: the whole-branch review returned a valid batch, its required findings are fixed, the documentation-currency updates are done, and all of that is in a signed/DCO commit against a clean tree. If any of that is outstanding, stop and finish it first.
+This skill does NOT audit code. `AGENTS.md`'s **Pre-PR review** section is the single owner of that protocol; this check is named in that section's `Preflight` value.
 
 The PR-shape checklist lives in `references/pr-shape.md` and is walked directly in this body.
 
@@ -109,7 +107,7 @@ Every finding must quote an item in `references/pr-shape.md`. Drop hallucinated 
 | Branch rebased      | PASS       | origin/main is an ancestor                             |
 | Diff size           | PASS       | 342 additions                                          |
 | DCO + GPG signing   | PASS       | 3/3 commits signed + signed-off                        |
-| Protected files     | SHOULD_FIX | 1 file: CLAUDE.md (surface in PR body, tag code owner) |
+| Protected files     | SHOULD_FIX | 1 file: AGENTS.md (surface in PR body, tag code owner) |
 
 ## Verdict reasoning
 
@@ -130,6 +128,6 @@ Every finding must quote an item in `references/pr-shape.md`. Drop hallucinated 
 
 ## Companion skills & subagents
 
-- Mode 2 whole-branch review, its finding fixes, the documentation-currency updates, and the resulting signed/DCO commit: owned by `CLAUDE.md`'s **Pre-PR review** section and required before this check.
+- `AGENTS.md`'s **Pre-PR review** section — names this check in its `Preflight` value.
 - `/preflight` — mechanical checks (license, format, lint, build, protected files). Run after this passes.
-- `/lfx-review-pr` — post-PR reviewer. Not part of pre-PR.
+- Once the PR exists: `AGENTS.md`'s **Post-PR review** section (process the PR's bot and human threads). There is no local reviewer after PR-open.

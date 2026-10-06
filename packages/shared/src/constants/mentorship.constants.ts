@@ -2,32 +2,37 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  MentorshipApplicantAction,
   MentorshipApplicantDisplayStatus,
   MentorshipApplicantTaskStatus,
-  MentorshipMenteeAction,
+  MentorshipCurrentMenteeAction,
   MentorshipMenteeStatus,
   MentorshipMentorStatus,
-  MentorshipProgram,
   MentorshipProgramDecisionStatus,
   MentorshipProgramReviewDecision,
+  MentorshipUpstreamProgramStatus,
+} from '../interfaces/mentorship.interface';
+import type {
+  MentorshipAdminMentorStatus,
+  MentorshipAdminProgramTabCounts,
+  MentorshipProgram,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipTermRowStatus,
-  MentorshipUpstreamProgramStatus,
-} from '../interfaces/mentorship.interface';
+} from '../interfaces/mentorship-admin.interface';
 
 /**
  * Allowed program statuses. Ordered by lifecycle so a `.sort` on this array
  * yields the same order the admin filter dropdown renders.
  */
-export const MENTORSHIP_PROGRAM_STATUSES = ['open', 'pending-review', 'completed'] as const;
+export const MENTORSHIP_PROGRAM_STATUSES = ['open', 'pending-review', 'completed', 'rejected', 'hidden'] as const;
 
 /** Human-readable labels for each program status (used by badge + filter). */
 export const MENTORSHIP_PROGRAM_STATUS_LABELS: Record<MentorshipProgramStatus, string> = {
   open: 'Open',
   'pending-review': 'Pending Review',
   completed: 'Completed',
+  rejected: 'Rejected',
+  hidden: 'Hidden',
 };
 
 /**
@@ -39,6 +44,8 @@ export const MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES: Record<MentorshipProgramSt
   open: 'bg-emerald-100 text-emerald-700',
   'pending-review': 'bg-amber-100 text-amber-700',
   completed: 'bg-gray-100 text-gray-600',
+  rejected: 'bg-red-100 text-red-700',
+  hidden: 'bg-slate-100 text-slate-600',
 };
 
 /** Deterministic avatar-tile palette cycled by (title.charCodeAt(0) % length). */
@@ -56,11 +63,102 @@ export const EMPTY_MENTORSHIP_PROGRAMS_RESPONSE: MentorshipProgramsResponse = {
   total: 0,
 };
 
-/**
- * Admin program-list page size. Passed as `limit` on `GET /api/mentorship/programs`.
- * Sized below `MOCK_MENTORSHIP_PROGRAMS.length` so Load more is exercisable against the mock BFF.
- */
-export const MENTORSHIP_PROGRAM_PAGE_SIZE = 2;
+/** Admin program-list page size. Passed as `limit` on `GET /api/mentorship/admin/programs`. */
+export const MENTORSHIP_PROGRAM_PAGE_SIZE = 12;
+
+/** Most programs one `GET /api/mentorship/admin/programs` page may return; the BFF rejects a larger `limit`. */
+export const MENTORSHIP_PROGRAMS_MAX_LIMIT = 50;
+
+/** The two mentee tabs of an admin program page; `type` on `GET /api/mentorship/admin/programs/:programId/mentees`. */
+export const MENTORSHIP_ADMIN_MENTEE_TABS = ['current', 'past'] as const;
+
+/** Admin mentee tab page size. Passed as `limit` on `GET /api/mentorship/admin/programs/:programId/mentees`. */
+export const MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE = 10;
+
+/** Most mentees one `GET /api/mentorship/admin/programs/:programId/mentees` page may return; the BFF rejects a larger `limit`. */
+export const MENTORSHIP_ADMIN_MENTEES_MAX_LIMIT = 50;
+
+/** Pause after the last keystroke before the Current Mentees search is sent upstream. */
+export const MENTORSHIP_ADMIN_MENTEES_SEARCH_DEBOUNCE_MS = 300;
+
+/** Shown in a tab count badge whose read failed. */
+export const MENTORSHIP_ADMIN_COUNT_UNAVAILABLE_LABEL = '–';
+
+export const MENTORSHIP_ADMIN_MENTEES_LOAD_ERROR_MESSAGE = 'We could not load the mentees. Try again.';
+export const MENTORSHIP_ADMIN_TASKS_LOAD_ERROR_MESSAGE = 'We could not load the tasks. Try again.';
+export const MENTORSHIP_ADMIN_PROGRAM_LOAD_ERROR_MESSAGE = 'We could not load this program. Try again.';
+export const MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_TITLE = 'No access to this program';
+export const MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_MESSAGE = 'You do not have permission to manage this program.';
+
+/** Attendance types an admin picks when accepting an application; `attendance_type` upstream. */
+export const MENTORSHIP_ATTENDANCE_TYPES = ['full_time', 'part_time'] as const;
+
+/** Statuses an admin may set through `PATCH …/applications/:applicationId/status`; Withdraw has its own route. */
+export const MENTORSHIP_ADMIN_DECISION_STATUSES = ['accepted', 'declined', 'graduated'] as const;
+
+export const MENTORSHIP_ATTENDANCE_TYPE_LABELS: Record<(typeof MENTORSHIP_ATTENDANCE_TYPES)[number], string> = {
+  full_time: 'Full time',
+  part_time: 'Part time',
+};
+
+/** Shown when a decision hits a 409: the application moved on, so the list reloads. */
+export const MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE = 'This application changed. The list has been refreshed.';
+/** Shown when an accept hits a 422: the application's term is no longer open. */
+export const MENTORSHIP_ADMIN_TERM_CLOSED_ACCEPT_MESSAGE = "This term is closed, so the application can't be accepted.";
+/** Graduate confirmation warning; `{count}` is the number of tasks not yet Submitted or Completed. */
+export const MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_TEMPLATE = "{count} tasks aren't Submitted or Completed.";
+export const MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_SINGULAR_TEMPLATE = "{count} task isn't Submitted or Completed.";
+
+/** Copy of the Current Mentees decision dialogs and toasts. */
+export const MENTORSHIP_ADMIN_ACCEPT_DIALOG_HEADER = 'Accept Application';
+export const MENTORSHIP_ADMIN_ACCEPT_ATTENDANCE_LABEL = 'Attendance type';
+export const MENTORSHIP_ADMIN_ACCEPT_ATTENDANCE_REQUIRED_MESSAGE = 'Choose an attendance type to accept the application.';
+export const MENTORSHIP_ADMIN_DECLINE_CONFIRM_MESSAGE = 'Decline this application? The mentee is told it was declined.';
+export const MENTORSHIP_ADMIN_WITHDRAW_CONFIRM_MESSAGE = "Withdraw this application on the mentee's behalf? This can't be undone.";
+export const MENTORSHIP_ADMIN_GRADUATE_CONFIRM_MESSAGE = 'Graduate this mentee?';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_HEADER = 'Decline by Term';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_MESSAGE = "Decline every pending application in the term you pick. Accepted mentees aren't affected.";
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_NO_TERMS_MESSAGE = 'There is no open term to decline applications in.';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_TERM_LABEL = 'Term';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_REQUIRED_MESSAGE = 'Choose a term to continue.';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_CONFIRM_TEMPLATE = 'Decline all pending applications in {term}? This cannot be undone.';
+/** `{count}` is the number of applications the bulk decline reported. */
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_DONE_TEMPLATE = '{count} applications declined';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_DONE_SINGULAR_TEMPLATE = '1 application declined';
+export const MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES = {
+  accepted: 'Application accepted',
+  declined: 'Application declined',
+  withdrawn: 'Application withdrawn',
+  graduated: 'Mentee graduated',
+} as const;
+export const MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE = "The change couldn't be saved. Please try again.";
+export const MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE = 'Another change is still being saved. Try again in a moment.';
+
+/** Copy of the reviewer-note save toasts on Current Mentees. */
+export const MENTORSHIP_ADMIN_NOTE_SAVE_SUCCESS_SUMMARY = 'Note saved';
+export const MENTORSHIP_ADMIN_NOTE_CLEAR_SUCCESS_SUMMARY = 'Note cleared';
+export const MENTORSHIP_ADMIN_NOTE_SAVE_ERROR_SUMMARY = 'Could not save the note';
+export const MENTORSHIP_ADMIN_NOTE_SAVE_ERROR_FALLBACK = 'Something went wrong. Please try again.';
+export const MENTORSHIP_ADMIN_NOTE_TOAST_LIFE = 5000;
+
+/** Note save failures with their own copy, keyed by the BFF's status: a 403 is a lost admin role, a 404 an application that is gone. */
+export const MENTORSHIP_ADMIN_NOTE_SAVE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  403: 'You can no longer edit notes on this program. Refresh the page and try again.',
+  404: 'This application no longer exists. Refresh the page and try again.',
+};
+
+/** Admin Create task toasts on Current Mentees: their copy and how long they stay up (ms). */
+export const MENTORSHIP_ADMIN_TASK_CREATE_SUCCESS_SUMMARY = 'Task created';
+export const MENTORSHIP_ADMIN_TASK_CREATE_ERROR_SUMMARY = 'Could not create the task';
+export const MENTORSHIP_ADMIN_TASK_CREATE_ERROR_FALLBACK = "The task may not have been created. Check the mentee's row before trying again.";
+export const MENTORSHIP_ADMIN_TASK_CREATE_TOAST_LIFE = 5000;
+
+/** Task create failures with their own copy, keyed by the BFF's status: a 400 is a mentee no longer accepted, a 403 a lost admin role, a 404 an application that is gone. */
+export const MENTORSHIP_ADMIN_TASK_CREATE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'This mentee can no longer be given tasks. Refresh the page and try again.',
+  403: 'You can no longer create tasks on this program. Refresh the page and try again.',
+  404: 'This application no longer exists. Refresh the page and try again.',
+};
 
 /**
  * Toast `summary` shown by every mentorship register form when submit is blocked by
@@ -70,23 +168,54 @@ export const MENTORSHIP_PROGRAM_PAGE_SIZE = 2;
  */
 export const MENTORSHIP_REGISTER_WARN_SUMMARY = 'Check your registration';
 
-/** Underline tabs on `/mentorship/admin/:programId`. Order matches the admin screenshot. */
-export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
-  { value: 'mentees', label: 'Current Mentees' },
-  { value: 'applicants', label: 'Applicants' },
-  { value: 'mentors', label: 'Mentors' },
-  { value: 'terms', label: 'Terms' },
-] as const;
+/**
+ * Failure-banner copy both register forms share, keyed by `MentorshipRegisterSubmitFailureKind`. The
+ * profile-exists and ineligible messages are role-specific and live with each role's constants.
+ */
+export const MENTORSHIP_REGISTER_ERROR_CONFLICT = 'Your profile is in conflict with an existing record. Refresh the page and try again.';
+export const MENTORSHIP_REGISTER_ERROR_READ_ONLY = 'You are viewing as another user, so registration is read-only.';
+export const MENTORSHIP_REGISTER_ERROR_FALLBACK = 'We could not save your registration. Please try again in a moment.';
+
+/** Field error both register forms show when a picked skill is not in `MENTORSHIP_SKILL_OPTIONS`. */
+export const MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL = 'Choose skills from the suggested list.';
 
 /**
- * Mentor lifecycle statuses on the admin Mentors tab. Source of the
- * `MentorshipMentorStatus` union; declaration order is the lifecycle order.
+ * Most rows one `GET .../mentors` or `GET .../terms` page may return. The BFF rejects a larger `limit` and caps
+ * its upstream read here too, since upstream resets a larger `limit` to 50.
+ */
+export const MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT = 50;
+
+/** Most `GET .../terms` pages the Terms tab follows to read every term, so a list that never ends cannot loop forever. */
+export const MENTORSHIP_ADMIN_TERMS_MAX_PAGES = 20;
+
+/** Admin Mentors and Terms tab page size. Passed as `limit` on `GET .../mentors` and `GET .../terms`. */
+export const MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE = 10;
+
+export const MENTORSHIP_ADMIN_MENTORS_LOAD_ERROR_MESSAGE = 'We could not load the mentors. Try again.';
+export const MENTORSHIP_ADMIN_TERMS_LOAD_ERROR_MESSAGE = 'We could not load the terms. Try again.';
+
+/**
+ * Underline tabs on `/mentorship/admin/:programId`. Order matches the admin screenshot;
+ * `countKey` names the `MentorshipAdminProgramTabCounts` field each tab's badge reads.
+ */
+export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
+  { value: 'current-mentees', label: 'Current Mentees', countKey: 'currentMentees' },
+  { value: 'past-mentees', label: 'Past Mentees', countKey: 'pastMentees' },
+  { value: 'mentors', label: 'Mentors', countKey: 'mentors' },
+  { value: 'terms', label: 'Terms', countKey: 'terms' },
+] as const satisfies readonly { value: string; label: string; countKey: keyof MentorshipAdminProgramTabCounts }[];
+
+/**
+ * Mentor request statuses as the mentor sees them on the Become a Mentor form. Source of the
+ * `MentorshipMentorStatus` union; declaration order is the lifecycle order. The admin Mentors
+ * tab reads the wider `MENTORSHIP_ADMIN_MENTOR_STATUSES` instead.
  */
 export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn'] as const;
 
 /**
- * Mentee lifecycle statuses on the admin Current Mentees / Applicants tabs.
+ * Mentee lifecycle statuses on the admin Current Mentees / Past Mentees tabs.
  * Superset of mentor statuses; mentees additionally reach `graduated`.
+ * Declaration order is the status filter's option order.
  */
 export const MENTORSHIP_MENTEE_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn', 'graduated'] as const;
 
@@ -95,6 +224,30 @@ export const MENTORSHIP_MENTOR_STATUS_LABELS: Record<MentorshipMentorStatus, str
   accepted: 'Accepted',
   declined: 'Declined',
   withdrawn: 'Withdrawn',
+};
+
+/**
+ * Mentor lifecycle on the admin Mentors tab, which reads every `program_members` status upstream keeps
+ * (`active` is the accepted mentor). Declaration order is the status filter's option order.
+ */
+export const MENTORSHIP_ADMIN_MENTOR_STATUSES = ['requested', 'pending', 'invited', 'active', 'declined', 'withdrawn'] as const;
+
+export const MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS: Record<MentorshipAdminMentorStatus, string> = {
+  requested: 'Requested',
+  pending: 'Pending',
+  invited: 'Invited',
+  active: 'Accepted',
+  declined: 'Declined',
+  withdrawn: 'Withdrawn',
+};
+
+export const MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipAdminMentorStatus, string> = {
+  requested: 'bg-amber-100 text-amber-700',
+  pending: 'bg-amber-100 text-amber-700',
+  invited: 'bg-blue-100 text-blue-700',
+  active: 'bg-emerald-100 text-emerald-700',
+  declined: 'bg-red-100 text-red-600',
+  withdrawn: 'bg-gray-100 text-gray-600',
 };
 
 export const MENTORSHIP_MENTEE_STATUS_LABELS: Record<MentorshipMenteeStatus, string> = {
@@ -121,58 +274,60 @@ export const MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES: Record<MentorshipMenteeStat
 };
 
 /**
- * Statuses the admin Current Mentees tab covers: a live program shows the mentees
- * taking part, plus any who graduated early. Doubles as the tab's status-filter
- * options and as the set `mentorshipMenteesForProgram` scopes its rows to, so the
- * header count and the table can never disagree.
+ * Statuses the mentor's Mentees tab covers: the mentees taking part, plus any who
+ * graduated early. Doubles as that tab's status-filter options.
  */
 export const MENTORSHIP_CURRENT_MENTEE_STATUSES: readonly MentorshipMenteeStatus[] = ['accepted', 'graduated'];
 
 /**
- * Statuses the Past Mentees tab covers — the three ways a participation ends.
- * `accepted` is not one of them: a program cannot be completed until every accepted
- * mentee has been graduated or declined, so that combination never reaches the tab.
- */
-export const MENTORSHIP_PAST_MENTEE_STATUSES: readonly MentorshipMenteeStatus[] = ['withdrawn', 'declined', 'graduated'];
-
-/**
- * Statuses the Applicants tab's "Other Active Applications" column lists. Graduating
- * counts: it says the person saw a program through, which is worth showing an admin
- * reviewing them. Only the two rejections — declined and withdrawn — are left out.
+ * Statuses the "Other Active Applications" column lists. Graduating counts: it says
+ * the person saw a program through, which is worth showing an admin reviewing them.
+ * Only the two rejections — declined and withdrawn — are left out.
  */
 export const MENTORSHIP_ACTIVE_APPLICATION_STATUSES: readonly MentorshipMenteeStatus[] = ['pending', 'accepted', 'graduated'];
 
 /**
- * Label the `mentees` tab takes on for a completed program. The tab keeps its
- * `mentees` value so counts, routing, and ARIA wiring are unchanged.
- */
-export const MENTORSHIP_PAST_MENTEES_TAB_LABEL = 'Past Mentees';
-
-/**
  * Row actions on the admin Current Mentees tab. Source of the
- * `MentorshipMenteeAction` union; each action moves the mentee to the
- * same-named terminal status.
+ * `MentorshipCurrentMenteeAction` union; declaration order is the menu order.
  */
-export const MENTORSHIP_MENTEE_ACTIONS = ['withdrawn', 'declined', 'graduated'] as const;
+export const MENTORSHIP_CURRENT_MENTEE_ACTIONS = ['accept', 'create-task', 'graduate', 'decline', 'withdraw'] as const;
 
 /** Menu labels for the Current Mentees row actions — imperative, unlike the status labels. */
-export const MENTORSHIP_MENTEE_ACTION_LABELS: Record<MentorshipMenteeAction, string> = {
-  withdrawn: 'Withdraw',
-  declined: 'Decline',
-  graduated: 'Graduate',
+export const MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS: Record<MentorshipCurrentMenteeAction, string> = {
+  accept: 'Accept',
+  'create-task': 'Create task',
+  graduate: 'Graduate',
+  decline: 'Decline',
+  withdraw: 'Withdraw',
 };
 
-export const MENTORSHIP_MENTEE_ACTION_ICONS: Record<MentorshipMenteeAction, string> = {
-  withdrawn: 'fa-light fa-circle-minus',
-  declined: 'fa-light fa-circle-xmark',
-  graduated: 'fa-light fa-graduation-cap',
+export const MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS: Record<MentorshipCurrentMenteeAction, string> = {
+  accept: 'fa-light fa-circle-check',
+  'create-task': 'fa-light fa-list-check',
+  graduate: 'fa-light fa-graduation-cap',
+  decline: 'fa-light fa-circle-xmark',
+  withdraw: 'fa-light fa-circle-minus',
 };
 
 /**
- * Statuses the Applicants tab displays. These are not wire statuses: an application
- * stays `pending` throughout the prerequisite work, and the tab splits that one status
- * into `applied` (tasks still outstanding) and `tasks-completed` (all submitted). The
- * remaining four are the mentee statuses unchanged.
+ * Row actions each status offers on the Current Mentees tab. An application under
+ * review can be decided; an accepted mentee can be given tasks and graduated. The
+ * three terminal statuses offer nothing — the row keeps only its Note link.
+ */
+export const MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS: Record<MentorshipMenteeStatus, readonly MentorshipCurrentMenteeAction[]> = {
+  pending: ['accept', 'decline', 'withdraw'],
+  accepted: ['create-task', 'graduate', 'decline', 'withdraw'],
+  declined: [],
+  withdrawn: [],
+  graduated: [],
+};
+
+/**
+ * Statuses the admin Current Mentees and mentor Applicants tables display. These are not
+ * wire statuses: an application stays `pending` throughout the prerequisite work, and those
+ * tables split that one status into `applied` (tasks still outstanding) and `tasks-completed`
+ * (all submitted). The rest are the mentee statuses unchanged. Past Mentees shows the wire
+ * status, since a closed term's pending row is history rather than review work.
  */
 export const MENTORSHIP_APPLICANT_DISPLAY_STATUSES = ['applied', 'tasks-completed', 'accepted', 'declined', 'withdrawn', 'graduated'] as const;
 
@@ -185,7 +340,7 @@ export const MENTORSHIP_APPLICANT_STATUS_LABELS: Record<MentorshipApplicantDispl
   graduated: 'Graduated',
 };
 
-/** The four shared statuses reuse the mentee classes so the two palettes can't drift apart. */
+/** The shared statuses reuse the mentee classes so the two palettes can't drift apart. */
 export const MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES: Record<MentorshipApplicantDisplayStatus, string> = {
   applied: 'bg-amber-100 text-amber-700',
   'tasks-completed': 'bg-blue-100 text-blue-700',
@@ -195,28 +350,9 @@ export const MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES: Record<MentorshipApplica
   graduated: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.graduated,
 };
 
-/** Explains the Applied / Tasks Completed split; rendered above the Applicants table. */
+/** Explains the Applied / Tasks Completed split; rendered above the Current Mentees table. */
 export const MENTORSHIP_APPLICANT_STATUS_NOTE =
   'Application status stays “Applied” while a mentee works on prerequisite tasks. When all prerequisites are complete, “Tasks Completed” appears above the status and the program admin is notified by email to review the submission and make the admission decision.';
-
-/**
- * Row actions on the Applicants tab. Source of the `MentorshipApplicantAction`
- * union; each action moves the application to the same-named status.
- */
-export const MENTORSHIP_APPLICANT_ACTIONS = ['accepted', 'declined', 'withdrawn'] as const;
-
-/** Menu labels for the Applicants row actions — imperative, unlike the status labels. */
-export const MENTORSHIP_APPLICANT_ACTION_LABELS: Record<MentorshipApplicantAction, string> = {
-  accepted: 'Accept',
-  declined: 'Decline',
-  withdrawn: 'Withdraw',
-};
-
-export const MENTORSHIP_APPLICANT_ACTION_ICONS: Record<MentorshipApplicantAction, string> = {
-  accepted: 'fa-light fa-circle-check',
-  declined: 'fa-light fa-circle-xmark',
-  withdrawn: 'fa-light fa-circle-minus',
-};
 
 /** Status values for one row in the Applicants tab tasks sub-table. */
 /**

@@ -131,6 +131,47 @@ describe('EventsService.getMyEvents status derivation', () => {
   });
 });
 
+describe('EventsService.getMyEvents query failures', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    snowflakeMocks.execute.mockResolvedValue({ rows: [], metadata: [] });
+    service = new EventsService();
+  });
+
+  it.each([1, 10])('propagates Upcoming registered-only query errors with pageSize=%s', async (pageSize) => {
+    const error = new Error('Snowflake unavailable');
+    snowflakeMocks.execute.mockRejectedValueOnce(error);
+
+    await expect(service.getMyEvents({} as never, USER_EMAIL, { isPast: false, registeredOnly: true, pageSize, offset: 0, sortOrder: 'ASC' })).rejects.toBe(
+      error
+    );
+  });
+
+  it('returns a genuine zero when the registered-count query succeeds without rows', async () => {
+    await expect(
+      service.getMyEvents({} as never, USER_EMAIL, { isPast: false, registeredOnly: true, pageSize: 1, offset: 0, sortOrder: 'ASC' })
+    ).resolves.toEqual({ data: [], total: 0, pageSize: 1, offset: 0 });
+  });
+
+  it.each([
+    { isPast: false, registeredOnly: undefined },
+    { isPast: false, registeredOnly: false },
+    { isPast: true, registeredOnly: true },
+    { isPast: undefined, registeredOnly: true },
+  ])('preserves the empty fallback for isPast=$isPast, registeredOnly=$registeredOnly', async (scope) => {
+    snowflakeMocks.execute.mockRejectedValueOnce(new Error('Snowflake unavailable'));
+
+    await expect(service.getMyEvents({} as never, USER_EMAIL, { ...scope, pageSize: 25, offset: 10, sortOrder: 'ASC' })).resolves.toEqual({
+      data: [],
+      total: 0,
+      pageSize: 25,
+      offset: 10,
+    });
+  });
+});
+
 describe('EventsService.getMyEvents past-event SQL', () => {
   let service: InstanceType<typeof EventsService>;
 
@@ -208,6 +249,169 @@ describe('EventsService.getMyEvents past-event SQL', () => {
   });
 });
 
+describe('EventsService.getMyEvents co-located exclusion', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    snowflakeMocks.execute.mockResolvedValue({ rows: [] });
+    service = new EventsService();
+  });
+
+  async function queryFor(options: Record<string, unknown>): Promise<{ sql: string; binds: string[] }> {
+    await service.getMyEvents({} as never, USER_EMAIL, { pageSize: 10, offset: 0, ...options } as never);
+    const [sql, binds] = snowflakeMocks.execute.mock.calls[0] as [string, string[]];
+    return { sql, binds };
+  }
+
+  function placeholderCount(sql: string): number {
+    return (sql.match(/\?/g) ?? []).length;
+  }
+
+  it('hides co-located events inside affiliated_upcoming only, so registered events are never hidden', async () => {
+    const { sql } = await queryFor({ isPast: false, affiliatedProjectSlugs: ['example'] });
+    const affiliatedStart = sql.indexOf('affiliated_upcoming AS (');
+    const registeredStart = sql.indexOf('registered_events AS (');
+    const exclusion = sql.indexOf('AND COALESCE(IS_COLOCATED_EVENT, FALSE) = FALSE');
+
+    for (const landmark of [affiliatedStart, registeredStart, exclusion]) {
+      expect(landmark).toBeGreaterThanOrEqual(0);
+    }
+    expect(affiliatedStart).toBeLessThan(exclusion);
+    expect(exclusion).toBeLessThan(registeredStart);
+    expect(sql.slice(registeredStart)).not.toContain('IS_COLOCATED_EVENT');
+  });
+
+  it('reads the flag from EVENT_REGISTRATIONS without a dimension subquery', async () => {
+    const { sql } = await queryFor({ isPast: false, affiliatedProjectSlugs: ['example'] });
+
+    expect(sql).not.toContain('SILVER_DIM.EVENTS');
+    expect(sql).not.toContain('NOT IN (SELECT');
+  });
+
+  it('adds no binds between the affiliated slugs and the user email', async () => {
+    const { binds } = await queryFor({ isPast: false, affiliatedProjectSlugs: ['a', 'b'] });
+
+    expect(binds.slice(0, 3)).toEqual(['a', 'b', USER_EMAIL]);
+  });
+
+  it.each([
+    ['no affiliated slugs', {}],
+    ['an eventId and slugs', { eventId: 'evt-1', affiliatedProjectSlugs: ['a', 'b'] }],
+  ])('keeps the bind count equal to the placeholder count with %s', async (_label, options) => {
+    const { sql, binds } = await queryFor({ isPast: false, ...options });
+
+    expect(binds).toHaveLength(placeholderCount(sql));
+  });
+
+  it('leaves the past branch unfiltered', async () => {
+    const { sql } = await queryFor({ isPast: true });
+
+    expect(sql).not.toContain('IS_COLOCATED_EVENT');
+  });
+});
+
+describe('EventsService.getEventOrganizations registration scope', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    snowflakeMocks.execute.mockResolvedValue({ rows: [] });
+    service = new EventsService();
+  });
+
+  async function queryFor(options: Record<string, unknown>) {
+    await service.getEventOrganizations({} as never, USER_EMAIL, options);
+    const [sql, binds] = snowflakeMocks.execute.mock.calls[0] as [string, string[]];
+    expect(binds).toHaveLength((sql.match(/\?/g) ?? []).length);
+    return { sql, binds };
+  }
+
+  it('omits affiliated discovery and its binds for My Registrations, including registered co-located events', async () => {
+    const { sql, binds } = await queryFor({
+      isPast: false,
+      registeredOnly: true,
+      affiliatedProjectSlugs: ['alpha', 'beta'],
+      projectName: 'Example Foundation',
+    });
+
+    expect(sql).toContain("LOWER(USER_EMAIL) = ? AND REGISTRATION_STATUS = 'Accepted'");
+    expect(sql).not.toContain('LOWER(PROJECT_SLUG)');
+    expect(sql).not.toContain('IS_COLOCATED_EVENT');
+    expect(binds).toEqual([USER_EMAIL, 'Example Foundation']);
+  });
+
+  it.each([undefined, false])('defaults registeredOnly=%s to accepted registrations OR non-co-located affiliated discovery', async (registeredOnly) => {
+    const { sql, binds } = await queryFor({ isPast: false, registeredOnly, affiliatedProjectSlugs: ['alpha', 'beta'], projectName: 'Example Foundation' });
+
+    expect(sql).toMatch(
+      /\(LOWER\(USER_EMAIL\) = \? AND REGISTRATION_STATUS = 'Accepted'\)\s+OR \(LOWER\(PROJECT_SLUG\) IN \(\?, \?\)\s+AND COALESCE\(IS_COLOCATED_EVENT, FALSE\) = FALSE\)/
+    );
+    expect(binds).toEqual([USER_EMAIL, 'alpha', 'beta', 'Example Foundation']);
+  });
+
+  it.each([true, false])('has no discovery restriction or extra binds without affiliations, registeredOnly=%s', async (registeredOnly) => {
+    const { sql, binds } = await queryFor({ isPast: false, registeredOnly });
+
+    expect(sql).not.toContain('LOWER(PROJECT_SLUG)');
+    expect(sql).not.toContain('IS_COLOCATED_EVENT');
+    expect(binds).toEqual([USER_EMAIL]);
+  });
+
+  it.each([true, false])('leaves Past unchanged even with affiliated slugs and registeredOnly=%s', async (registeredOnly) => {
+    const { sql, binds } = await queryFor({ isPast: true, registeredOnly, affiliatedProjectSlugs: ['alpha'], projectName: 'Example Foundation' });
+
+    expect(sql).toContain('WHERE LOWER(USER_EMAIL) = ?');
+    expect(sql).not.toContain('REGISTRATION_STATUS');
+    expect(sql).not.toContain('IS_COLOCATED_EVENT');
+    expect(sql).not.toContain('PROJECT_SLUG');
+    expect(binds).toEqual([USER_EMAIL, 'Example Foundation']);
+  });
+});
+
+describe('EventsService.getMyEvents upcoming eligibility filters', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    snowflakeMocks.execute.mockResolvedValue({ rows: [] });
+    service = new EventsService();
+  });
+
+  async function sqlFor(options: Record<string, unknown>): Promise<string> {
+    await service.getMyEvents({} as never, USER_EMAIL, { isPast: false, pageSize: 10, offset: 0, ...options } as never);
+    return snowflakeMocks.execute.mock.calls[0][0] as string;
+  }
+
+  it('matches the user email case-insensitively in both user CTEs', async () => {
+    const sql = await sqlFor({ registeredOnly: true });
+
+    expect(sql.match(/WHERE LOWER\(USER_EMAIL\) = \?/g)).toHaveLength(2);
+    expect(sql).not.toMatch(/WHERE USER_EMAIL = \?/);
+  });
+
+  it('keeps one registration per event, preferring Accepted', async () => {
+    const sql = await sqlFor({ registeredOnly: true, anyRegistrationStatus: true });
+
+    expect(sql).toContain("QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1)) = 1");
+  });
+
+  it('requires an Accepted registration by default (visa letters)', async () => {
+    const sql = await sqlFor({ registeredOnly: true, isVisaRequestAccepted: true });
+
+    expect(sql.match(/AND REGISTRATION_STATUS = 'Accepted'/g)).toHaveLength(2);
+    expect(sql).toContain('AND r.IS_VISA_REQUEST_ACCEPTED = TRUE');
+  });
+
+  it('counts any registration status when anyRegistrationStatus is set (travel funding)', async () => {
+    const sql = await sqlFor({ registeredOnly: true, isTravelFundRequestAccepted: true, anyRegistrationStatus: true });
+
+    expect(sql).not.toContain("AND REGISTRATION_STATUS = 'Accepted'");
+    expect(sql).toContain('AND r.IS_TRAVEL_FUND_ACCEPTED = TRUE');
+    expect(sql).not.toContain('TRAVEL_FUND_END_TS >=');
+  });
+});
+
 describe('EventsService filter options use the same past-event predicate', () => {
   let service: InstanceType<typeof EventsService>;
 
@@ -235,6 +439,7 @@ describe('EventsService filter options use the same past-event predicate', () =>
 
     expect(lastSql()).toContain('WHERE NOT (CASE WHEN');
     expect(lastSql()).not.toContain('IS_PAST_EVENT = FALSE');
+    expect(lastSql()).toContain("LOWER(USER_EMAIL) = ? AND REGISTRATION_STATUS = 'Accepted'");
   });
 
   it('applies the negated predicate to the upcoming countries query', async () => {
@@ -242,5 +447,136 @@ describe('EventsService filter options use the same past-event predicate', () =>
 
     expect(lastSql()).toContain('WHERE NOT (CASE WHEN');
     expect(lastSql()).not.toContain('IS_PAST_EVENT = FALSE');
+  });
+});
+
+describe('EventsService past and request lists match email case-insensitively', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    snowflakeMocks.execute.mockResolvedValue({ rows: [] });
+    service = new EventsService();
+  });
+
+  function lastSql(): string {
+    return snowflakeMocks.execute.mock.calls[0][0] as string;
+  }
+
+  it('dedups the past list per event, preferring Accepted', async () => {
+    await service.getMyEvents({} as never, USER_EMAIL, { isPast: true, pageSize: 10, offset: 0 } as never);
+
+    expect(lastSql()).toContain('WHERE LOWER(USER_EMAIL) = ?');
+    expect(lastSql()).toContain("QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1)) = 1");
+    expect(lastSql()).not.toMatch(/WHERE USER_EMAIL = \?/);
+  });
+
+  it('matches the past foundations query case-insensitively', async () => {
+    await service.getEventOrganizations({} as never, USER_EMAIL, { isPast: true } as never);
+
+    expect(lastSql()).toContain('WHERE LOWER(USER_EMAIL) = ?');
+  });
+
+  it.each([
+    ['getVisaRequests', 'VL_APPLICATION_DATE'],
+    ['getTravelFundRequests', 'TF_APPLICATION_DATE'],
+  ] as const)('%s keeps the latest request per event', async (method, dateColumn) => {
+    await service[method]({} as never, USER_EMAIL, { pageSize: 10, offset: 0 } as never);
+
+    expect(lastSql()).toContain('AND LOWER(USER_EMAIL) = ?');
+    expect(lastSql()).toContain(`QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY ${dateColumn} DESC NULLS LAST) = 1`);
+  });
+});
+
+describe('EventsService.isEligibleForEventRequest', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new EventsService();
+  });
+
+  function lastCall(): [string, unknown[]] {
+    return snowflakeMocks.execute.mock.calls[0] as [string, unknown[]];
+  }
+
+  it('requires an accepted registration and visa requests for visa letters', async () => {
+    snowflakeMocks.execute.mockResolvedValue({ rows: [{ ELIGIBLE: 1 }] });
+
+    await expect(service.isEligibleForEventRequest({} as never, USER_EMAIL, 'evt-1', 'visa')).resolves.toBe(true);
+
+    const [sql, binds] = lastCall();
+    expect(sql).toContain('WHERE LOWER(USER_EMAIL) = ?');
+    expect(sql).toContain('AND NOT (CASE WHEN');
+    expect(sql).toContain("AND REGISTRATION_STATUS = 'Accepted' AND IS_VISA_REQUEST_ACCEPTED = TRUE");
+    expect(binds).toEqual([USER_EMAIL, 'evt-1']);
+  });
+
+  it('accepts any registration status for travel funding', async () => {
+    snowflakeMocks.execute.mockResolvedValue({ rows: [{ ELIGIBLE: 1 }] });
+
+    await service.isEligibleForEventRequest({} as never, USER_EMAIL, 'evt-1', 'travel-fund');
+
+    const [sql] = lastCall();
+    expect(sql).toContain('AND IS_TRAVEL_FUND_ACCEPTED = TRUE');
+    expect(sql).not.toContain('REGISTRATION_STATUS');
+    expect(sql).not.toContain('TRAVEL_FUND_END_TS');
+  });
+
+  it('returns false when no registration matches', async () => {
+    snowflakeMocks.execute.mockResolvedValue({ rows: [] });
+
+    await expect(service.isEligibleForEventRequest({} as never, USER_EMAIL, 'evt-1', 'visa')).resolves.toBe(false);
+  });
+
+  it('propagates Snowflake errors instead of reporting ineligible', async () => {
+    snowflakeMocks.execute.mockRejectedValue(new Error('snowflake down'));
+
+    await expect(service.isEligibleForEventRequest({} as never, USER_EMAIL, 'evt-1', 'travel-fund')).rejects.toThrow('snowflake down');
+  });
+});
+
+describe('EventsService.getVisaRequests event-ended gate', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new EventsService();
+  });
+
+  function visaRow(eventEnded: unknown): Record<string, unknown> {
+    return {
+      EVENT_ID: 'evt-1',
+      EVENT_NAME: 'Example Community Summit',
+      EVENT_URL: null,
+      EVENT_LOCATION: null,
+      EVENT_CITY: 'Shanghai',
+      EVENT_COUNTRY: 'China',
+      APPLICATION_DATE: '2026-06-01T00:00:00.000Z',
+      REQUEST_STATUS: 'Approved',
+      TRAVEL_FUND_END_TS: null,
+      EVENT_ENDED: eventEnded,
+      TOTAL_RECORDS: 1,
+    };
+  }
+
+  it('selects EVENT_ENDED from the end date, falling back to the start date', async () => {
+    snowflakeMocks.execute.mockResolvedValue({ rows: [] });
+
+    await service.getVisaRequests({} as never, USER_EMAIL, { pageSize: 10, offset: 0 } as never);
+
+    expect(snowflakeMocks.execute.mock.calls[0][0]).toContain('COALESCE(EVENT_END_DATE, EVENT_START_DATE) < CURRENT_DATE() AS EVENT_ENDED');
+  });
+
+  it.each([
+    [true, true],
+    [false, false],
+    [null, false],
+  ])('maps EVENT_ENDED %j to eventEnded %j', async (eventEnded, expected) => {
+    snowflakeMocks.execute.mockResolvedValue({ rows: [visaRow(eventEnded)] });
+
+    const result = await service.getVisaRequests({} as never, USER_EMAIL, { pageSize: 10, offset: 0 } as never);
+
+    expect(result.data[0].eventEnded).toBe(expected);
   });
 });

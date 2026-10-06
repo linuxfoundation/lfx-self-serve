@@ -21,6 +21,8 @@ import {
   GW_EMBED_SESSION_RECOVERY_KEY,
   GW_EMBED_SIGNIN_STATE_KEY,
   GW_EMBED_SIGNIN_STATE_PARAM,
+  GW_EMBED_PROJECT_QUERY_PARAM,
+  GW_EMBED_PROJECT_ROUTE_PREFIX,
   GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_STORAGE_KEY_PREFIX,
   GW_EMBED_STYLESHEET_PATH,
@@ -30,6 +32,7 @@ import { GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostConte
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 
+import { ProjectContextService } from '../../../shared/services/project-context.service';
 import { UserService } from '../../../shared/services/user.service';
 
 import { getRuntimeConfig } from '../../../shared/providers/runtime-config.provider';
@@ -71,6 +74,7 @@ export class GwModuleOutletComponent {
   private readonly transferState = inject(TransferState);
   private readonly messageService = inject(MessageService);
   private readonly userService = inject(UserService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   // viewChild mount points — both are unconditional siblings in the template so they exist in the
   // DOM (and are stable references) before the embed ever mounts.
@@ -176,11 +180,8 @@ export class GwModuleOutletComponent {
       // case is that sign-in does not complete — never that an unverified token is adopted.
     }
 
-    const returnWithState = new URL(returnUrl);
-    returnWithState.searchParams.set(GW_EMBED_SIGNIN_STATE_PARAM, state);
-
     const separator = lfidStartUrl.includes('?') ? '&' : '?';
-    window.location.assign(`${lfidStartUrl}${separator}return_url=${encodeURIComponent(returnWithState.toString())}`);
+    window.location.assign(`${lfidStartUrl}${separator}return_url=${encodeURIComponent(this.buildSignInReturnUrl(returnUrl, state))}`);
   }
 
   // 10. Private initializer
@@ -634,7 +635,49 @@ export class GwModuleOutletComponent {
     // only risks a later arrival looking like a fresh sign-in return.
     const url = new URL(`${window.location.origin}${this.routePrefix}${GW_EMBED_LANDING_PATH}${window.location.search}`);
     url.searchParams.delete(GW_EMBED_SIGNIN_STATE_PARAM);
+    // Applied here, not only in buildSignInReturnUrl: the stored-session recovery reload
+    // navigates to this URL directly, and a param-less reload hits the same guard bounce
+    // the sign-in return did (ensureProjectParam is idempotent for the other caller).
+    this.ensureProjectParam(url);
     return url.toString();
+  }
+
+  /**
+   * Composes the final sign-in return URL: the browser-binding state nonce plus the
+   * project-param guarantee. Pure URL-in/URL-out so the spec can cover the wiring —
+   * jsdom won't let `window.location.assign` be stubbed, so the composition is the
+   * testable unit, and startSignIn only encodes and navigates.
+   */
+  private buildSignInReturnUrl(returnUrl: string, state: string): string {
+    const url = new URL(returnUrl);
+    url.searchParams.set(GW_EMBED_SIGNIN_STATE_PARAM, state);
+    this.ensureProjectParam(url);
+    return url.toString();
+  }
+
+  /**
+   * Guarantees the sign-in return URL carries `?project=<slug>` (GH-3286).
+   *
+   * The sign-in return is a full page load, and without the param the tenant
+   * guard and the newsletter guard's legacy chain fall back to the project
+   * context service, which has not rehydrated at guard time — so the return
+   * bounced to the lens page before this outlet could mount and adopt the
+   * session. The embed's internal redirect to its login dead-end drops the
+   * host query string, so the login page's own URL cannot be trusted to
+   * carry it; source the slug from the context the guards already approved
+   * for this mount instead. No context and no existing param leaves the URL
+   * unchanged — the return then behaves exactly as before this guarantee.
+   */
+  private ensureProjectParam(url: URL): void {
+    if (url.searchParams.get(GW_EMBED_PROJECT_QUERY_PARAM)) {
+      return;
+    }
+    const context =
+      this.routePrefix === GW_EMBED_PROJECT_ROUTE_PREFIX ? this.projectContextService.selectedProject() : this.projectContextService.selectedFoundation();
+    const slug = context?.slug;
+    if (slug) {
+      url.searchParams.set(GW_EMBED_PROJECT_QUERY_PARAM, slug);
+    }
   }
 
   /** Whether a stored embed session exists and hasn't expired. */

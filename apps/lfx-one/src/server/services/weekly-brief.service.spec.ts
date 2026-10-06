@@ -220,7 +220,7 @@ import { logger } from './logger.service';
 import { __resetMockBriefStateForTesting, briefWindow, currentWeekInProgressWindow, WeeklyBriefService } from './weekly-brief.service';
 
 const req = {} as unknown as Request;
-const userReq = { oidc: { user: { nickname: 'alice', sub: 'auth0|alice-sub' } } } as unknown as Request;
+const userReq = { oidc: { user: { 'https://sso.linuxfoundation.org/claims/username': 'alice', sub: 'auth0|alice-sub' } } } as unknown as Request;
 
 describe('briefWindow', () => {
   afterEach(() => {
@@ -2218,7 +2218,7 @@ describe('WeeklyBriefService', () => {
     });
 
     it('rateBrief throws (400) when the resolved identity cannot build a safe rating key (defense-in-depth — not reachable via normal auth)', async () => {
-      const unsafeReq = { oidc: { user: { nickname: 'unsafe' } } } as unknown as Request;
+      const unsafeReq = { oidc: { user: { 'https://sso.linuxfoundation.org/claims/username': 'unsafe' } } } as unknown as Request;
       const initial = await service.getCurrentBrief(unsafeReq, 'committee-1');
 
       await expect(service.rateBrief(unsafeReq, 'committee-1', initial.brief!.uid, 'up', 1)).rejects.toMatchObject({ statusCode: 400 });
@@ -2472,7 +2472,7 @@ describe('WeeklyBriefService', () => {
       });
     }
 
-    const nonImpersonatingReq = { oidc: { user: { email: 'Writer@Example.com' } }, bearerToken: 'writer-token' } as unknown as Request;
+    const nonImpersonatingReq = { oidc: { user: { email: 'Writer@Example.com', email_verified: true } }, bearerToken: 'writer-token' } as unknown as Request;
 
     /**
      * Impersonation session: `bearerToken` starts as the impersonation token (what
@@ -2494,7 +2494,7 @@ describe('WeeklyBriefService', () => {
           impersonationUser: { email: 'Target@Example.com', sub: 'auth0|target' },
         },
         oidc: {
-          user: { email: 'Staff@Example.com' },
+          user: { email: 'Staff@Example.com', email_verified: true },
           accessToken: {
             access_token: 'real-staff-token',
             isExpired: () => !!opts.realTokenExpired,

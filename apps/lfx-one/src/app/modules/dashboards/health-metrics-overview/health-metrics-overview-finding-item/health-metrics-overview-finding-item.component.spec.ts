@@ -194,7 +194,7 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-42"]')).not.toBeNull();
   });
 
-  it('renders an in-app link, not a PCC href, when the finding carries a route', async () => {
+  it('renders an in-app link, not an external href, when the finding carries a route', async () => {
     await render({
       sortRank: 5,
       linkRoute: { commands: ['/foundation/health-metrics', 'engagement'], fragment: 'orgs', queryParams: { orgFilter: null } },

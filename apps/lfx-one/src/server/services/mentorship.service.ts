@@ -2,75 +2,53 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS,
-  EMPTY_MENTORSHIP_PROGRAM_LISTS,
   MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
   MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS,
   MENTORSHIP_PROGRAM_REVIEW_DECISIONS,
-  MENTORSHIP_PROGRAM_STATUSES,
   MOCK_MENTORSHIP_INVITABLE_USERS,
   MOCK_MENTORSHIP_LF_PROJECTS,
-  MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED,
-  MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT,
-  MOCK_MENTORSHIP_MENTEE_OVERVIEW_EMPTY,
-  MOCK_MENTORSHIP_MENTEE_PROFILE,
-  MOCK_MENTORSHIP_MENTEE_TASKS,
-  MOCK_MENTORSHIP_MENTOR_PROFILE,
-  getMockMentorshipMentorProgramLists,
-  getMockMentorshipMentorPrograms,
-  MOCK_MENTORSHIP_PROGRAM_LISTS,
   MOCK_MENTORSHIP_PROGRAMS,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiBadge,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
-  MentorshipMenteeApplyTarget,
-  MentorshipMenteeHasProfileResponse,
-  MentorshipMenteeOverviewResponse,
-  MentorshipMenteePhase,
-  MentorshipMenteeProfileResponse,
-  MentorshipMenteeTasksResponse,
-  MentorshipMentorProfileResponse,
-  MentorshipMentorProgram,
-  MentorshipMentorProgramDetail,
-  MentorshipMentorProgramLists,
-  MentorshipMentorProgramsResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
-  MentorshipProgramDetail,
   MentorshipProgramReview,
   MentorshipProgramReviewDecision,
-  MentorshipProgramsResponse,
-  MentorshipProgramStatus,
+  MentorshipLfxProfileFields,
   MentorshipUpstreamProgram,
   MentorshipUpstreamProgramDecisionRequest,
+  MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
-import { buildMentorshipMentorProgramDetail, buildMentorshipProgramDetail, isMentorshipCiiProjectId } from '@lfx-one/shared/utils';
+import { isMentorshipCiiProjectId } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { MENTORSHIP_ME_PROFILES_PATH } from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import {
+  buildMentorshipUpstreamLfxProfileFields,
+  buildMentorshipUpstreamProfileLinks,
+  resolveMentorshipGithubProfileLink,
+  resolveMentorshipPrimaryEmail,
+} from '../helpers/mentorship-lfx-profile.helper';
+import { paginateOffsetLimit } from '../helpers/mentorship-params.helper';
 
+import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
-const DEFAULT_PROGRAM_LIMIT = 50;
-const MAX_LIMIT = 50;
 const CII_BADGE_TIMEOUT_MS = 10_000;
 
 /**
- * Read-only mock seed data — the admin list has data to show while the upstream
+ * Read-only mock seed data for the enroll name-availability check while the upstream
  * mentorship-service is not yet wired. No writes; enrollment shows a coming-soon
  * toast instead.
  */
 const mockPrograms: readonly MentorshipProgram[] = MOCK_MENTORSHIP_PROGRAMS.map((program) => ({ ...program }));
-
-function paginateOffsetLimit<T>(items: readonly T[], offset: number, limit: number): { data: T[]; total: number } {
-  const start = Math.max(0, offset);
-  const size = Math.min(MAX_LIMIT, Math.max(1, limit));
-  return { data: items.slice(start, start + size), total: items.length };
-}
 
 /**
  * Allowlisted CII badge URL. `Number()` is the sanitizer CodeQL models for path IDs
@@ -87,75 +65,7 @@ function buildCiiBadgeJsonUrl(projectId: string): string {
 
 export class MentorshipService {
   private readonly microserviceProxy = new MicroserviceProxyService();
-
-  public async getPrograms(
-    req: Request,
-    options: { search?: string; status?: MentorshipProgramStatus; offset?: number; limit?: number } = {}
-  ): Promise<MentorshipProgramsResponse> {
-    logger.debug(req, 'mentorship_get_programs', 'Filtering mentorship programs', options);
-
-    let filtered: readonly MentorshipProgram[] = mockPrograms;
-    if (options.status) {
-      filtered = filtered.filter((p) => p.status === options.status);
-    }
-    if (options.search) {
-      const needle = options.search.trim().toLowerCase();
-      if (needle) {
-        filtered = filtered.filter((p) => p.name.toLowerCase().includes(needle) || p.projectName.toLowerCase().includes(needle));
-      }
-    }
-
-    const page = paginateOffsetLimit(filtered, options.offset ?? 0, options.limit ?? DEFAULT_PROGRAM_LIMIT);
-    logger.debug(req, 'mentorship_get_programs', 'Mentorship programs page built', { count: page.data.length, total: page.total });
-
-    return page;
-  }
-
-  public async getMentorPrograms(req: Request): Promise<MentorshipMentorProgramsResponse> {
-    logger.debug(req, 'mentorship_get_mentor_programs', 'Loading mentor programs');
-    const data = getMockMentorshipMentorPrograms().map((program) => ({ ...program }));
-    logger.debug(req, 'mentorship_get_mentor_programs', 'Mentor programs loaded', { count: data.length });
-    return { data, total: data.length };
-  }
-
-  public async getMentorProfile(req: Request): Promise<MentorshipMentorProfileResponse> {
-    logger.debug(req, 'mentorship_get_mentor_profile', 'Loading mentor profile');
-    const response: MentorshipMentorProfileResponse = {
-      profile: { ...MOCK_MENTORSHIP_MENTOR_PROFILE.profile, skills: [...MOCK_MENTORSHIP_MENTOR_PROFILE.profile.skills] },
-      history: MOCK_MENTORSHIP_MENTOR_PROFILE.history.map((entry) => ({ ...entry })),
-    };
-    logger.debug(req, 'mentorship_get_mentor_profile', 'Mentor profile loaded', { history_count: response.history.length });
-    return response;
-  }
-
-  public async getMentorProgram(req: Request, programId: string): Promise<MentorshipMentorProgramDetail> {
-    logger.debug(req, 'mentorship_get_mentor_program', 'Resolving mentor program', { programId });
-    const program = this.findMentorProgram(programId);
-    if (!program) {
-      throw new ResourceNotFoundError('Mentor program', programId, { operation: 'mentorship_get_mentor_program' });
-    }
-
-    // Lists are keyed by mentor program id so a Fall card cannot pick up a Winter
-    // slug-twin, and cards without people fixtures stay empty instead of inheriting
-    // another program's rows.
-    const lists: MentorshipMentorProgramLists = getMockMentorshipMentorProgramLists()[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
-    const detail = buildMentorshipMentorProgramDetail(program, lists);
-    logger.debug(req, 'mentorship_get_mentor_program', 'Mentor program detail built', { programId, slug: program.slug, tabCounts: detail.tabCounts });
-    return detail;
-  }
-
-  public async getProgram(req: Request, programId: string): Promise<MentorshipProgramDetail> {
-    logger.debug(req, 'mentorship_get_program', 'Resolving mentorship program', { programId });
-    const program = this.findProgram(programId);
-    if (!program) {
-      throw new ResourceNotFoundError('Mentorship program', programId, { operation: 'mentorship_get_program' });
-    }
-
-    const lists = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug] ?? EMPTY_MENTORSHIP_PROGRAM_LISTS;
-    const detail = buildMentorshipProgramDetail(program, lists);
-    logger.debug(req, 'mentorship_get_program', 'Mentorship program detail built', { programId, slug: program.slug, tabCounts: detail.tabCounts });
-    return detail;
-  }
+  private readonly emailVerificationService = new EmailVerificationService();
 
   public async isProgramNameAvailable(req: Request, name: string): Promise<MentorshipNameAvailability> {
     logger.debug(req, 'mentorship_name_available', 'Checking mentorship program name availability', { name });
@@ -255,95 +165,6 @@ export class MentorshipService {
     return badge;
   }
 
-  // ---------------------------------------------------------------------------
-  // Mentee endpoints (mock data, no real upstream yet)
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Mock — always returns `false` so the guard falls through to the register page.
-   * When the real profiles endpoint lands, this calls it and returns `true` if
-   * the signed-in user already has a mentee profile.
-   */
-  public async hasMenteeProfile(req: Request): Promise<MentorshipMenteeHasProfileResponse> {
-    logger.debug(req, 'mentorship_has_mentee_profile', 'Checking mentee profile existence (mock: false)');
-    return { hasProfile: false };
-  }
-
-  public async getMenteeOverview(req: Request, phase?: MentorshipMenteePhase): Promise<MentorshipMenteeOverviewResponse> {
-    logger.debug(req, 'mentorship_get_mentee_overview', 'Loading mentee overview', { phase: phase ?? 'applicant (default)' });
-
-    const mocks: Record<MentorshipMenteePhase, MentorshipMenteeOverviewResponse> = {
-      empty: MOCK_MENTORSHIP_MENTEE_OVERVIEW_EMPTY,
-      applicant: MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT,
-      accepted: MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED,
-    };
-
-    const response = mocks[phase ?? 'applicant'];
-    logger.debug(req, 'mentorship_get_mentee_overview', 'Mentee overview loaded', { phase: response.phase });
-    return response;
-  }
-
-  public async getMenteeTasks(req: Request): Promise<MentorshipMenteeTasksResponse> {
-    logger.debug(req, 'mentorship_get_mentee_tasks', 'Loading mentee tasks');
-    const response: MentorshipMenteeTasksResponse = {
-      data: MOCK_MENTORSHIP_MENTEE_TASKS.data.map((task) => ({ ...task })),
-      total: MOCK_MENTORSHIP_MENTEE_TASKS.total,
-    };
-    logger.debug(req, 'mentorship_get_mentee_tasks', 'Mentee tasks loaded', { count: response.data.length });
-    return response;
-  }
-
-  /**
-   * Mock BFF until the Mentorship `user_profiles` read is wired. Authenticated, but not
-   * scoped to `req`'s user — identity filtering is tracked with that real read
-   * (linuxfoundation/lfx-self-serve#2764). Do not invent authorization here.
-   */
-  public async getMenteeProfile(req: Request): Promise<MentorshipMenteeProfileResponse> {
-    logger.debug(req, 'mentorship_get_mentee_profile', 'Loading mentee profile');
-    const response: MentorshipMenteeProfileResponse = {
-      profile: {
-        ...MOCK_MENTORSHIP_MENTEE_PROFILE.profile,
-        skillsHave: [...MOCK_MENTORSHIP_MENTEE_PROFILE.profile.skillsHave],
-        skillsWant: [...MOCK_MENTORSHIP_MENTEE_PROFILE.profile.skillsWant],
-      },
-      history: MOCK_MENTORSHIP_MENTEE_PROFILE.history.map((entry) => ({ ...entry })),
-      demographics: MOCK_MENTORSHIP_MENTEE_PROFILE.demographics ? { ...MOCK_MENTORSHIP_MENTEE_PROFILE.demographics } : undefined,
-    };
-    logger.debug(req, 'mentorship_get_mentee_profile', 'Mentee profile loaded', { history_count: response.history.length });
-    return response;
-  }
-
-  /**
-   * Header fields for the mentee apply page. Resolves the program the same way the
-   * admin detail does (id, then slug) and the term against that program's term rows.
-   * Does not return the admin lists — those include other applicants.
-   */
-  public async getMenteeApplyTarget(req: Request, programId: string, programTermId: string): Promise<MentorshipMenteeApplyTarget> {
-    logger.debug(req, 'mentorship_get_mentee_apply_target', 'Resolving mentee apply target', { programId, programTermId });
-    const program = this.findProgram(programId);
-    if (!program) {
-      throw new ResourceNotFoundError('Mentorship program', programId, { operation: 'mentorship_get_mentee_apply_target' });
-    }
-
-    const lists = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug] ?? EMPTY_MENTORSHIP_PROGRAM_LISTS;
-    const term = lists.terms.find((item) => item.id === programTermId);
-    if (!term) {
-      throw new ResourceNotFoundError('Mentorship program term', programTermId, { operation: 'mentorship_get_mentee_apply_target' });
-    }
-
-    const target: MentorshipMenteeApplyTarget = {
-      programName: program.name,
-      projectName: program.projectName,
-      termName: term.name,
-    };
-    logger.debug(req, 'mentorship_get_mentee_apply_target', 'Mentee apply target resolved', {
-      programName: target.programName,
-      projectName: target.projectName,
-      termName: target.termName,
-    });
-    return target;
-  }
-
   /**
    * The program an approve/reject email link points at. Proxied to the mentorship service
    * with the caller's own token, so its `viewer` check decides who can see the program.
@@ -378,19 +199,48 @@ export class MentorshipService {
     return toProgramReview(program);
   }
 
-  /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */
-  private findProgram(programId: string): MentorshipProgram | undefined {
-    return mockPrograms.find((item) => item.id === programId) ?? mockPrograms.find((item) => item.slug === programId);
-  }
+  /**
+   * Copies the LFX profile's name and logo, with the caller's verified primary email and connected
+   * GitHub account, onto every mentor and mentee profile the caller holds, and returns how many were
+   * updated. The email and the GitHub link are looked up here rather than taken from the browser,
+   * and each is left out when its lookup fails. The GitHub link is laid over each row's stored
+   * `profile_links`, since upstream replaces that column whole. Each row is patched by id, since
+   * `PATCH /me/profiles/{type}` refuses a type with more than one row; upstream checks the row is
+   * the caller's. Only the keys that have a value are sent, so with no rows, or nothing to send, no
+   * row is patched. A failed row propagates and leaves the rows after it unpatched; the card asks
+   * the user to save again, which rewrites them all.
+   */
+  public async syncLfxProfileFields(req: Request, fields: MentorshipLfxProfileFields): Promise<number> {
+    const profiles = await listAllMentorshipPages<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_PROFILES_PATH);
+    const targets = profiles.filter((profile) => profile.profile_type === 'mentor' || profile.profile_type === 'mentee');
+    if (targets.length === 0) return 0;
 
-  /** Mentor programs resolve by id (default) or slug, matching `/mentorship/mentor/programs/:programId`. */
-  private findMentorProgram(programId: string): MentorshipMentorProgram | undefined {
-    return getMockMentorshipMentorPrograms().find((item) => item.id === programId) ?? getMockMentorshipMentorPrograms().find((item) => item.slug === programId);
-  }
-}
+    const [email, githubProfileLink] = await Promise.all([
+      resolveMentorshipPrimaryEmail(req, this.emailVerificationService),
+      resolveMentorshipGithubProfileLink(req, this.emailVerificationService),
+    ]);
+    const body = buildMentorshipUpstreamLfxProfileFields(fields, email);
+    if (Object.keys(body).length === 0 && githubProfileLink === undefined) return 0;
+    logger.debug(req, 'mentorship_sync_lfx_profile', 'Copying LFX profile fields onto mentorship profiles', {
+      profile_count: targets.length,
+      field_count: Object.keys(body).length,
+      has_email: body.email !== undefined,
+      has_github: githubProfileLink !== undefined,
+    });
 
-export function isMentorshipProgramStatus(value: unknown): value is MentorshipProgramStatus {
-  return typeof value === 'string' && (MENTORSHIP_PROGRAM_STATUSES as readonly string[]).includes(value);
+    for (const profile of targets) {
+      const profileLinks = buildMentorshipUpstreamProfileLinks(profile.profile_links, githubProfileLink);
+      await proxyMentorshipRequest<unknown>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_ME_PROFILES_PATH}/by-id/${encodeURIComponent(profile.id)}`,
+        'PATCH',
+        undefined,
+        profileLinks ? { ...body, profile_links: profileLinks } : body
+      );
+    }
+    return targets.length;
+  }
 }
 
 export function isMentorshipProgramReviewDecision(value: unknown): value is MentorshipProgramReviewDecision {

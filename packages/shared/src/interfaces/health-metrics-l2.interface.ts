@@ -14,12 +14,24 @@ export interface HealthMetricsL2Section {
   description: string;
   footnote: string;
   footnoteCaution: boolean;
+  /** A pill beside the heading, e.g. for figures still pending validation. */
+  headingBadge?: string;
 }
 
 /** A section with its DOM ids resolved once, so the template never calls a builder per render. */
 export interface HealthMetricsL2SectionView extends HealthMetricsL2Section {
   id: string;
   headingId: string;
+}
+
+/** Note under the sub-nav whose trailing tab name links to a section of that tab. */
+export interface HealthMetricsL2CrossReference {
+  text: string;
+  linkLabel: string;
+  /** Tab path segment under `HEALTH_METRICS_BASE_PATH`. */
+  route: string;
+  /** Section key on the target tab, so the link lands on it. */
+  fragment: string;
 }
 
 /** Sub-nav badge for one section: a count plus an optional qualifier note. */

@@ -3,14 +3,13 @@
 
 <div class="flex flex-col gap-4" data-testid="mentorship-past-mentees-tab">
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-    <!-- min-w-0 + flex-1: the search takes the leftover width without squeezing the
-         filter and export controls, which otherwise wrap their labels. -->
+    <!-- min-w-0 + flex-1: the search takes the leftover width without squeezing the filter controls. -->
     <label class="w-full min-w-0 sm:flex-1">
       <span class="sr-only">Search past mentees</span>
       <lfx-input-text [form]="form" control="search" placeholder="Search" icon="fa-light fa-magnifying-glass" dataTest="mentorship-past-mentees-search" />
     </label>
 
-    <div class="flex shrink-0 items-center gap-2">
+    <div class="flex shrink-0 flex-wrap items-center gap-2">
       <div class="w-full sm:w-48">
         <lfx-select
           [form]="form"
@@ -36,64 +35,77 @@
           styleClass="w-full"
           dataTest="mentorship-past-mentees-term" />
       </div>
-
-      <lfx-button
-        label="Download By Status"
-        icon="fa-light fa-download"
-        iconPos="left"
-        severity="secondary"
-        size="small"
-        [outlined]="true"
-        styleClass="whitespace-nowrap !py-2.5"
-        (onClick)="onAction('Download by status')"
-        data-testid="mentorship-past-mentees-download" />
     </div>
   </div>
 
-  <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-    <lfx-table
-      [value]="rows()"
-      dataKey="id"
-      size="small"
-      [paginator]="true"
-      [first]="first()"
-      (onPage)="first.set($event.first)"
-      [rows]="pageSize"
-      [rowsPerPageOptions]="rowsPerPageOptions"
-      [showCurrentPageReport]="true"
-      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-      tableStyleClass="table-fixed min-w-[36rem]"
-      paginatorDropdownAppendTo="body"
-      ariaLabel="Past mentees">
-      <ng-template #header>
-        <tr>
-          <th class="w-[46%] px-4 py-3 !text-sm !font-medium !text-gray-600">Mentee</th>
-          <th class="w-[27%] px-4 py-3 !text-sm !font-medium !text-gray-600">Term</th>
-          <th class="w-[27%] px-4 py-3 !text-sm !font-medium !text-gray-600">Status</th>
-        </tr>
-      </ng-template>
+  @if (loadFailed()) {
+    <div
+      class="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-6"
+      role="alert"
+      data-testid="mentorship-admin-past-mentees-load-error">
+      <p class="text-sm text-red-600">{{ loadErrorMessage }}</p>
+      <lfx-button label="Retry" size="small" [text]="true" (onClick)="onRetry()" data-testid="mentorship-admin-past-mentees-retry" />
+    </div>
+  } @else {
+    <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      <lfx-table
+        [value]="rows()"
+        dataKey="id"
+        size="small"
+        [lazy]="true"
+        [lazyLoadOnInit]="false"
+        [loading]="loading()"
+        [paginator]="true"
+        [first]="offset()"
+        [totalRecords]="total()"
+        (onLazyLoad)="onLazyLoad($event)"
+        [rows]="pageSize"
+        [showCurrentPageReport]="true"
+        currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+        tableStyleClass="table-fixed min-w-[36rem]"
+        paginatorDropdownAppendTo="body"
+        ariaLabel="Past mentees">
+        <ng-template #header>
+          <tr>
+            <th class="w-[46%] px-4 py-3 !text-sm !font-medium !text-gray-600">Mentee</th>
+            <th class="w-[27%] px-4 py-3 !text-sm !font-medium !text-gray-600">Term</th>
+            <th class="w-[27%] px-4 py-3 !text-sm !font-medium !text-gray-600">Status</th>
+          </tr>
+        </ng-template>
 
-      <ng-template #body let-row>
-        <tr [attr.data-testid]="'mentorship-past-mentee-row-' + row.id">
-          <td class="px-4 py-3 max-w-[46%]">
-            <lfx-mentorship-person-cell [name]="row.name" [initials]="row.initials" [avatarStyleClass]="row.avatarStyleClass" [avatarUrl]="row.avatarUrl" />
-          </td>
-          <td class="px-4 py-3 max-w-[27%]">
-            <span class="max-w-full block truncate text-sm text-gray-700" [title]="row.termName">{{ row.termName }}</span>
-          </td>
-          <td class="px-4 py-3">
-            <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-lg" [class]="row.statusBadgeClass">
-              {{ row.statusLabel }}
-            </span>
-          </td>
-        </tr>
-      </ng-template>
+        <ng-template #body let-row>
+          <tr [attr.data-testid]="'mentorship-past-mentee-row-' + row.id">
+            <td class="px-4 py-3 max-w-[46%]">
+              <lfx-mentorship-person-cell [name]="row.name" [initials]="row.initials" [avatarStyleClass]="row.avatarStyleClass" [avatarUrl]="row.avatarUrl" />
+            </td>
+            <td class="px-4 py-3 max-w-[27%]">
+              <!-- Focusable, with the tooltip on focus too, so keyboard users can read a cut-off term. -->
+              <span
+                class="max-w-full block truncate text-sm text-gray-700"
+                tabindex="0"
+                role="note"
+                [attr.aria-label]="row.termName"
+                [pTooltip]="row.termName"
+                tooltipEvent="both"
+                tooltipPosition="top"
+                [attr.data-testid]="'mentorship-past-mentee-term-' + row.id">
+                {{ row.termName }}
+              </span>
+            </td>
+            <td class="px-4 py-3">
+              <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-lg" [class]="row.statusBadgeClass">
+                {{ row.statusLabel }}
+              </span>
+            </td>
+          </tr>
+        </ng-template>
 
-      <ng-template #emptymessage>
-        <tr>
-          <td colspan="3" class="px-4 py-10 text-center text-sm text-gray-500" data-testid="mentorship-past-mentees-empty">No past mentees.</td>
-        </tr>
-      </ng-template>
-    </lfx-table>
-  </div>
+        <ng-template #emptymessage>
+          <tr>
+            <td colspan="3" class="px-4 py-10 text-center text-sm text-gray-500" data-testid="mentorship-past-mentees-empty">No past mentees.</td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+    </div>
+  }
 </div>

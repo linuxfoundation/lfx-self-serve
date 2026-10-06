@@ -16,13 +16,13 @@ import {
   RejectCommitteeJoinApplicationRequest,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { isFileTypeAllowed } from '@lfx-one/shared/utils';
+import { canViewCommitteeRoster, isFileTypeAllowed, isSafeUploadFileName } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { pipeline } from 'node:stream/promises';
 
-import { ServiceValidationError } from '../errors';
+import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { getStringQueryParam, validateFoundationUidParameter } from '../helpers/validation.helper';
@@ -349,8 +349,28 @@ export class CommitteeController {
         return;
       }
 
+      // Resolve a vanity slug to the canonical UID so the visibility, writer and auditor checks
+      // below run against the real committee object
+      const committeeUid = await this.committeeService.resolveCommitteeUid(req, id, {
+        operation: 'get_committee_members',
+        service: 'committee_controller',
+        path: req.path,
+      });
+
+      // Enforce member_visibility: hidden (or unset) rosters are readable only by writers/auditors
+      const committee = await this.committeeService.getCommitteeById(req, committeeUid, { includeAuditor: true });
+      if (!canViewCommitteeRoster(committee)) {
+        logger.success(req, 'get_committee_members', startTime, {
+          committee_id: id,
+          member_count: 0,
+          roster_hidden: true,
+        });
+        res.json([]);
+        return;
+      }
+
       // Get the committee members
-      const members = await this.committeeService.getCommitteeMembers(req, id, req.query);
+      const members = await this.committeeService.getCommitteeMembers(req, committeeUid, req.query);
 
       // Log the success
       logger.success(req, 'get_committee_members', startTime, {
@@ -405,8 +425,26 @@ export class CommitteeController {
         return;
       }
 
+      // Resolve a vanity slug to the canonical UID so the visibility, writer and auditor checks
+      // below run against the real committee object
+      const committeeUid = await this.committeeService.resolveCommitteeUid(req, id, {
+        operation: 'get_committee_member_by_id',
+        service: 'committee_controller',
+        path: req.path,
+      });
+
+      // Enforce member_visibility: hidden (or unset) rosters are readable only by writers/auditors
+      const committee = await this.committeeService.getCommitteeById(req, committeeUid, { includeAuditor: true });
+      if (!canViewCommitteeRoster(committee)) {
+        throw new AuthorizationError('You do not have permission to view members of this committee', {
+          operation: 'get_committee_member_by_id',
+          service: 'committee_controller',
+          path: req.path,
+        });
+      }
+
       // Get the committee member by ID
-      const member = await this.committeeService.getCommitteeMemberById(req, id, memberId);
+      const member = await this.committeeService.getCommitteeMemberById(req, committeeUid, memberId);
 
       // Log the success
       logger.success(req, 'get_committee_member_by_id', startTime, {
@@ -1113,8 +1151,10 @@ export class CommitteeController {
 
       // Reject path-traversal patterns in the filename so upstream can't be tricked into
       // writing or referencing files outside the committee scope. Frontend strips these
-      // already; the server enforces the same rule for direct callers.
-      if (/[/\\\0]/.test(trimmedFileName!) || trimmedFileName!.includes('..')) {
+      // already; the server enforces the same rule for direct callers. Control characters and
+      // quotes are rejected too — they would break out of the multipart part's Content-Disposition
+      // filename parameter.
+      if (!isSafeUploadFileName(trimmedFileName!)) {
         next(
           ServiceValidationError.forField('file_name', 'File name contains invalid characters', {
             operation: 'upload_committee_document',
@@ -1356,6 +1396,54 @@ export class CommitteeController {
 
       logger.success(req, 'join_committee', startTime, { committee_id: id });
       res.status(201).json(member);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /committees/my-applications
+   * Returns all of the caller's own pending join applications across every committee.
+   * No writer guard — callers can only see their own applications.
+   */
+  public async getMyApplications(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_my_committee_applications', {});
+
+    try {
+      res.set('Cache-Control', 'private, no-cache');
+      const applications = await this.committeeService.getMyApplications(req);
+      logger.success(req, 'get_my_committee_applications', startTime, { count: applications.length });
+      res.json(applications);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /committees/:id/my-applications
+   * Returns the caller's own pending join application, or 404 when none exists.
+   * No writer guard — callers can only see their own application.
+   */
+  public async getMyApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_my_committee_application', { committee_id: id });
+
+    try {
+      res.set('Cache-Control', 'private, no-cache');
+      const application = await this.committeeService.getMyApplication(req, id);
+
+      if (!application) {
+        return next(
+          new ResourceNotFoundError('Committee application', id, {
+            operation: 'get_my_committee_application',
+            service: 'committee_controller',
+            path: `/committees/${id}/my-applications`,
+          })
+        );
+      }
+
+      logger.success(req, 'get_my_committee_application', startTime, { committee_id: id, found: true, application_uid: application.uid });
+      res.json(application);
     } catch (error) {
       next(error);
     }

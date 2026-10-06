@@ -1,32 +1,51 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="recurring-meeting-edit-options">
+<div class="recurring-meeting-edit-options" data-testid="recurring-meeting-edit-options">
   <div class="mb-4">
     <p class="text-gray-700">This is a recurring meeting. What would you like to edit?</p>
   </div>
 
   <form [formGroup]="editForm" class="flex flex-col gap-4">
     <div class="flex items-start gap-3">
-      <lfx-radio-button [form]="editForm" control="editType" name="editType" value="single" inputId="edit-single"> </lfx-radio-button>
+      <lfx-radio-button [form]="editForm" control="scope" name="scope" value="occurrence" inputId="edit-scope-occurrence"> </lfx-radio-button>
       <div class="flex-1">
-        <label for="edit-single" class="font-medium text-gray-900 cursor-pointer">Edit only this occurrence</label>
-        <div class="text-sm text-gray-600 mt-1">Changes will apply only to this specific meeting instance.</div>
+        <label for="edit-scope-occurrence" class="font-medium text-gray-900 cursor-pointer">Only this occurrence</label>
+        <div class="text-sm text-gray-600 mt-1">
+          @if (occurrence) {
+            Change the time, title, or agenda of {{ occurrence.start_time | meetingTime: occurrence.duration : 'date' : meeting.timezone }} without changing the
+            rest of the series.
+          } @else {
+            Change the time, title, or agenda of this occurrence without changing the rest of the series.
+          }
+        </div>
       </div>
     </div>
 
     <div class="flex items-start gap-3">
-      <lfx-radio-button [form]="editForm" control="editType" name="editType" value="future" inputId="edit-future"> </lfx-radio-button>
+      <lfx-radio-button [form]="editForm" control="scope" name="scope" value="series" inputId="edit-scope-series"> </lfx-radio-button>
       <div class="flex-1">
-        <label for="edit-future" class="font-medium text-gray-900 cursor-pointer">Edit this and all future occurrences</label>
-        <div class="text-sm text-gray-600 mt-1">Changes will apply to this meeting and all future meetings in the series.</div>
+        <label for="edit-scope-series" class="font-medium text-gray-900 cursor-pointer">The entire series</label>
+        <div class="text-sm text-gray-600 mt-1">Edit the title, schedule, guests, and settings for every upcoming occurrence.</div>
       </div>
     </div>
   </form>
 
   <!-- Action Buttons -->
   <div class="flex justify-end gap-3 mt-6">
-    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (click)="onCancel()"> </lfx-button>
-    <lfx-button label="Continue" severity="info" size="small" icon="fa-light fa-arrow-right" (click)="onConfirm()"> </lfx-button>
+    <lfx-button
+      label="Cancel"
+      severity="secondary"
+      [outlined]="true"
+      size="small"
+      (click)="onCancel()"
+      data-testid="recurring-edit-scope-cancel-button"></lfx-button>
+    <lfx-button
+      label="Continue"
+      severity="info"
+      size="small"
+      icon="fa-light fa-arrow-right"
+      (click)="onConfirm()"
+      data-testid="recurring-edit-scope-continue-button"></lfx-button>
   </div>
 </div>

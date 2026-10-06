@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
+import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, GOOGLE_ADS_GEO_TARGET_MAP, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
 
 import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
@@ -34,6 +34,7 @@ import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
+import { extractPageLinks, resolveRegistrationUrl, verifyPageLink } from '../helpers/event-links.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
@@ -652,6 +653,20 @@ function getLinkedInStrategySystemPrompt(programType?: CampaignProgramType): str
   return programType === 'education' ? LINKEDIN_STRATEGY_SYSTEM_PROMPT_EDUCATION : LINKEDIN_STRATEGY_SYSTEM_PROMPT_EVENTS;
 }
 
+/**
+ * What the URL rule in both extraction prompts is defending against.
+ *
+ * Asked for "the agenda URL", a model reads the site's URL shape and composes a plausible one —
+ * `/schedule/`, `/agenda-2026/` — when the page states none. These values are printed as
+ * hyperlinks into a marketing email sent under a real foundation's name, so a confident wrong URL
+ * is worse than an absent one. The instruction is belt; `verifyPageLink` is braces, and it is the
+ * part that actually holds: anything not present as an `href` in the fetched HTML is dropped
+ * server-side no matter how the model justifies it.
+ */
+const LINK_EXTRACTION_RULE = `For every *_url field: copy the URL exactly as it appears in an href attribute in the HTML above.
+Never construct, complete, guess or "correct" a URL, and never derive one from the site's URL
+pattern. If the page does not link to it, use null.`;
+
 const EVENT_EXTRACTION_PROMPT = `Extract structured event details from this HTML. Return valid JSON:
 {
   "name": "event name",
@@ -662,8 +677,16 @@ const EVENT_EXTRACTION_PROMPT = `Extract structured event details from this HTML
   "themes": ["theme1", "theme2"],
   "registration_url": "URL",
   "slug": "url-friendly-slug",
-  "format_notes": "in-person/virtual/hybrid"
+  "format_notes": "in-person/virtual/hybrid",
+  "description": "how the event describes itself, 1-3 sentences, in its own words",
+  "speakers": ["speaker name, or 'Name, Title, Company' when the page states them"],
+  "agenda_url": "URL of the agenda/schedule/program page",
+  "cfp_url": "URL of the call-for-proposals or speaker-submission page",
+  "venue_url": "URL of the venue/travel/hotel page",
+  "sponsorship_url": "URL of the sponsorship or become-a-sponsor page"
 }
+
+${LINK_EXTRACTION_RULE}
 
 If a field cannot be determined, use null.`;
 
@@ -680,8 +703,16 @@ const EDUCATION_EXTRACTION_PROMPT = `Extract structured course/certification det
   "format_notes": "self-paced/instructor-led/hybrid",
   "price": "price or price range if found",
   "certification_code": "e.g. CKA, LFCS, CKAD if applicable",
-  "prerequisites": "prerequisites if listed"
+  "prerequisites": "prerequisites if listed",
+  "description": "how the course describes itself, 1-3 sentences, in its own words",
+  "speakers": ["instructor name, or 'Name, Title, Company' when the page states them"],
+  "agenda_url": "URL of the syllabus/curriculum/course-outline page",
+  "cfp_url": null,
+  "venue_url": "URL of the training-location or delivery-details page, if any",
+  "sponsorship_url": null
 }
+
+${LINK_EXTRACTION_RULE}
 
 If a field cannot be determined, use null.`;
 
@@ -1272,7 +1303,7 @@ function getExtractionPrompt(programType?: CampaignProgramType): string {
  */
 const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'microsoft-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
 const SUPPORTED_PROGRAM_TYPES: ReadonlySet<CampaignProgramType> = new Set<CampaignProgramType>(['events', 'education']);
-// DERIVED from the shared constant, not a second hand-written list. CLAUDE.md requires shared
+// DERIVED from the shared constant, not a second hand-written list. AGENTS.md requires shared
 // constants to live in `@lfx-one/shared`, and the controller already validates against this one —
 // a duplicate here would let a newly-added delivery type be accepted by the controller and
 // rejected by this service, which is the worst version of the drift: it type-checks, and the two
@@ -1311,43 +1342,6 @@ function failJob(jobId: string, error: string): void {
   jobs.set(jobId, { status: 'error', error });
   setTimeout(() => jobs.delete(jobId), JOB_TTL_MS);
 }
-
-// ---------------------------------------------------------------------------
-// Country code to Google Ads geo target constant ID
-// ---------------------------------------------------------------------------
-
-const GEO_TARGET_MAP: Record<string, string> = {
-  US: '2840',
-  CA: '2124',
-  GB: '2826',
-  DE: '2276',
-  FR: '2250',
-  JP: '2392',
-  AU: '2036',
-  IN: '2356',
-  BR: '2076',
-  CN: '2156',
-  KR: '2410',
-  NL: '2528',
-  SE: '2752',
-  CH: '2756',
-  IL: '2376',
-  SG: '2702',
-  IE: '2372',
-  ES: '2724',
-  IT: '2380',
-  AT: '2040',
-  FI: '2246',
-  NO: '2578',
-  DK: '2208',
-  BE: '2056',
-  PL: '2616',
-  CZ: '2203',
-  NZ: '2554',
-  TW: '2158',
-  HK: '2344',
-  MX: '2484',
-};
 
 // ---------------------------------------------------------------------------
 // CampaignProxyService — brief generation + campaign creation
@@ -1462,6 +1456,11 @@ export class CampaignProxyService {
     let pageUrl = '';
     let heroImageUrl = '';
     let sponsors: CampaignEventSponsor[] = [];
+    // Both are needed by the extraction block below, which is a SEPARATE `if (!isRefinement)` --
+    // `finalUrl` is scoped to the fetch block and the extraction cannot reach it. An empty map
+    // fails every link check, which is the right default for a refinement that never scraped.
+    let pageLinks = new Map<string, string>();
+    let pageBaseUrl = '';
 
     if (!isRefinement) {
       yield { type: 'status', data: `Scraping ${body.url}...` };
@@ -1485,6 +1484,13 @@ export class CampaignProxyService {
         // Resolved against the FINAL url, not the requested one: fetchSafeUrl follows up to 5
         // redirects, and a relative `og:image` belongs to the page that served it.
         ({ heroImageUrl, sponsors } = extractHeroAndSponsors(html, finalUrl));
+        // Same final-url reasoning as the hero above: a relative `href` on a redirected page
+        // resolves against the URL that SERVED it, so verifying against the requested one would
+        // reject links the page really does carry.
+        pageBaseUrl = finalUrl;
+        // Collected from the FULL page, not `extractableHtml(html)`: the extraction model sees a
+        // 60k-char excerpt, but a link it reports is legitimate if the page carries it anywhere.
+        pageLinks = extractPageLinks(html, finalUrl);
       } catch (error) {
         yield { type: 'error', data: `Failed to fetch ${pageLabel}: ${error instanceof Error ? error.message : 'Unknown error'}` };
         return;
@@ -1500,6 +1506,13 @@ export class CampaignProxyService {
         const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${pageUrl || body.url}\n\nHTML:\n${extractableHtml(html)}`);
         eventDetails = JSON.parse(stripJsonFences(extraction)) as Record<string, unknown>;
         // Education extraction also yields price, certification_code, prerequisites — deferred until CampaignEventDetails supports them
+        //
+        // `registration_url` is passed through UNVERIFIED while the four below go through
+        // `verifyPageLink`. That asymmetry is deliberate and documented at the helper: it is the
+        // primary CTA's href, event pages commonly drive registration from a scripted button
+        // rather than an `<a href>`, and verifying it would strip working CTAs from briefs that
+        // work today. A RELATIVE one is verified against the page's anchors and made absolute: it
+        // can only have come from an href, and `coerceCampaignEventDetails` blanks relative URLs.
         yield {
           type: 'event',
           data: {
@@ -1509,10 +1522,15 @@ export class CampaignProxyService {
             countryCode: eventDetails['country_code'] ?? '',
             audience: eventDetails['audience'] ?? '',
             themes: Array.isArray(eventDetails['themes']) ? eventDetails['themes'] : [],
-            registrationUrl: eventDetails['registration_url'] ?? '',
+            registrationUrl: resolveRegistrationUrl(eventDetails['registration_url'], pageLinks, pageBaseUrl),
             speakers: Array.isArray(eventDetails['speakers']) ? eventDetails['speakers'] : [],
             slug: eventDetails['slug'] ?? '',
             formatNotes: eventDetails['format_notes'] ?? '',
+            description: eventDetails['description'] ?? '',
+            agendaUrl: verifyPageLink(eventDetails['agenda_url'], pageLinks, pageBaseUrl),
+            cfpUrl: verifyPageLink(eventDetails['cfp_url'], pageLinks, pageBaseUrl),
+            venueUrl: verifyPageLink(eventDetails['venue_url'], pageLinks, pageBaseUrl),
+            sponsorshipUrl: verifyPageLink(eventDetails['sponsorship_url'], pageLinks, pageBaseUrl),
             heroImageUrl,
             sponsors,
           },
@@ -2196,7 +2214,7 @@ export class CampaignProxyService {
     // 3. Geo targeting
     const geoOps = body.geoTargets
       .map((geo) => {
-        const geoConstantId = GEO_TARGET_MAP[geo.toUpperCase()];
+        const geoConstantId = GOOGLE_ADS_GEO_TARGET_MAP[geo.toUpperCase()];
         return geoConstantId ? { campaign: campaignResource, location: { geo_target_constant: `geoTargetConstants/${geoConstantId}` } } : null;
       })
       .filter((op): op is NonNullable<typeof op> => op !== null);
@@ -2319,7 +2337,7 @@ export class CampaignProxyService {
     // Geo targeting at ad group level (Demand Gen doesn't support campaign-level location criteria)
     const geoOps = body.geoTargets
       .map((geo) => {
-        const geoConstantId = GEO_TARGET_MAP[geo.toUpperCase()];
+        const geoConstantId = GOOGLE_ADS_GEO_TARGET_MAP[geo.toUpperCase()];
         return geoConstantId ? { ad_group: adGroupResource, location: { geo_target_constant: `geoTargetConstants/${geoConstantId}` } } : null;
       })
       .filter((op): op is NonNullable<typeof op> => op !== null);

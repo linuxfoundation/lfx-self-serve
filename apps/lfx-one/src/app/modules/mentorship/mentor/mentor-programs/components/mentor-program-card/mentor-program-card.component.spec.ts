@@ -41,6 +41,18 @@ describe('MentorProgramCardComponent', () => {
     expect(element().textContent).toContain('GridFlow: Time-Series Ingestion Pipeline');
   });
 
+  it('leaves the project or the term out of the season line when the program has none', () => {
+    fixture.componentRef.setInput('program', { ...mentorProgram, projectName: '' });
+    fixture.detectChanges();
+    expect(element().textContent).toContain('Fall 2026');
+    expect(element().textContent).not.toContain('·');
+
+    fixture.componentRef.setInput('program', { ...mentorProgram, term: '' });
+    fixture.detectChanges();
+    expect(element().textContent).toContain('LF Energy');
+    expect(element().textContent).not.toContain('·');
+  });
+
   it('renders mentor metrics', () => {
     const metrics = element().querySelector('[data-testid="mentorship-mentor-program-card-metrics"]');
 

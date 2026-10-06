@@ -26,8 +26,8 @@ features:
   - title: My Groups
     details: View and manage committees and working groups you belong to.
     link: /committees/
-  - title: My Documents
-    details: Access governance documents associated with your projects.
+  - title: Documents
+    details: Browse folders, files, and links for a project or foundation.
     link: /documents/
   - title: My Surveys
     details: Complete and review surveys from your projects and working groups.

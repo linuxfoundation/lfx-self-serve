@@ -1,0 +1,30 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (!loading() && previewPeople().length > 0) {
+  <div class="rounded-md px-3 py-2 bg-gray-100/60" data-testid="invitee-attendees">
+    <lfx-meeting-attendee-preview [people]="previewPeople()" [total]="registrants().length" (viewAll)="drawerVisible.set(true)" />
+  </div>
+
+  <p-drawer [(visible)]="drawerVisible" position="right" styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full" data-testid="invitee-attendees-drawer">
+    <ng-template #header>
+      <div class="flex items-center gap-3">
+        <div class="bg-blue-600 text-white rounded-full w-12 h-12 flex items-center justify-center">
+          <i class="fa-light fa-user-group text-white text-2xl"></i>
+        </div>
+        <div class="flex flex-col">
+          <h1>Meeting Guests</h1>
+          <span class="text-base text-gray-500">{{ drawerRegistrants().length }} guests</span>
+        </div>
+      </div>
+    </ng-template>
+    <lfx-meeting-registrants-display
+      [meeting]="meeting()"
+      [visible]="drawerVisible()"
+      [myMeetingRegistrants]="true"
+      [initialRegistrants]="drawerRegistrants()"
+      [initialRegistrantsLoading]="fullRosterLoading()"
+      [showAddRegistrant]="false">
+    </lfx-meeting-registrants-display>
+  </p-drawer>
+}

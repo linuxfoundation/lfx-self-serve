@@ -40,21 +40,25 @@ Request → Controller → Service → Microservice/Data Layer
 
 ## Documentation
 
-| Document                                                          | Topics                                                                          |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [SSR Server](./ssr-server.md)                                     | Express.js configuration, Angular SSR integration, static assets, health checks |
-| [Authentication](./authentication.md)                             | Auth0 integration, selective auth middleware, M2M tokens, session management    |
-| [Logging & Monitoring](./logging-monitoring.md)                   | Pino logger service, operation lifecycle, log levels, CloudWatch format         |
-| [Error Handling](./error-handling-architecture.md)                | Error classification, ServiceValidationError, error middleware                  |
-| [Server Helpers](./server-helpers.md)                             | Validation type guards, pagination helper, polling, URL validation              |
-| [Pagination](./pagination.md)                                     | Cursor-based pagination, fetchAllQueryResources, frontend patterns              |
-| [AI Service](./ai-service.md)                                     | LiteLLM proxy, meeting agenda generation, JSON schema validation                |
-| [NATS Integration](./nats-integration.md)                         | Inter-service messaging, project slug resolution, lazy connections              |
-| [Snowflake Integration](./snowflake-integration.md)               | Analytics queries, connection pooling, query deduplication                      |
-| [Public Meetings](./public-meetings.md)                           | Unauthenticated meeting access, M2M token flow                                  |
-| [EasyCLA Org Lens role-bridge](./easycla-org-lens-role-bridge.md) | Who sees Sign CLA vs who can mutate the approval list; ACS hop, not Help Center |
-| [Gatewaze Embed Proxy](./gw-proxy.md)                             | Wildcard BFF proxy, authorization, header policy, body limits, 413 drain        |
-| [Project Applications](./project-applications.md)                 | Propose-a-project BFF, M2M create, If-Match, revise-then-accept parent          |
+| Document                                                              | Topics                                                                          |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [SSR Server](./ssr-server.md)                                         | Express.js configuration, Angular SSR integration, static assets, health checks |
+| [Authentication](./authentication.md)                                 | Auth0 integration, selective auth middleware, M2M tokens, session management    |
+| [Logging & Monitoring](./logging-monitoring.md)                       | Pino logger service, operation lifecycle, log levels, CloudWatch format         |
+| [Error Handling](./error-handling-architecture.md)                    | Error classification, ServiceValidationError, error middleware                  |
+| [Server Helpers](./server-helpers.md)                                 | Validation type guards, pagination helper, polling, URL validation              |
+| [Pagination](./pagination.md)                                         | Cursor-based pagination, fetchAllQueryResources, frontend patterns              |
+| [AI Service](./ai-service.md)                                         | LiteLLM proxy, meeting agenda generation, JSON schema validation                |
+| [NATS Integration](./nats-integration.md)                             | Inter-service messaging, project slug resolution, lazy connections              |
+| [Snowflake Integration](./snowflake-integration.md)                   | Analytics queries, connection pooling, query deduplication                      |
+| [Public Meetings](./public-meetings.md)                               | Unauthenticated meeting access, M2M token flow                                  |
+| [Mentorship Mentee Registration](./mentorship-mentee-registration.md) | Register BFF, replace-all upsert pre-check, error mapping, impersonation block  |
+| [Mentorship Mentor BFF](./mentorship-mentor.md)                       | Mentor route map, sub-router, controller and services, data source              |
+| [Mentorship Admin BFF](./mentorship-admin.md)                         | Admin route map, sub-router, controller and services, shared mappers            |
+| [EasyCLA Org Lens role-bridge](./easycla-org-lens-role-bridge.md)     | Who sees Sign CLA vs who can mutate the approval list; ACS hop, not Help Center |
+| [Gatewaze Embed Proxy](./gw-proxy.md)                                 | Wildcard BFF proxy, authorization, header policy, body limits, 413 drain        |
+| [LFX Insights API Tokens](./insights-tokens.md)                       | PAT service proxy, M2M Key Contact check, fail-closed eligibility               |
+| [Project Applications](./project-applications.md)                     | Propose-a-project BFF, M2M create, If-Match, accept creates the project         |
 
 ### Committee Management
 
@@ -230,7 +234,7 @@ See [Logging & Monitoring](./logging-monitoring.md) for full details.
 
 ## Quick Links
 
-- [Server Configuration](../../CLAUDE.md#backend-stack)
-- [Logging System](../../CLAUDE.md#logging-system)
+- [Server Configuration](#server-stack)
+- [Logging System](#logging-rules)
 - [Shared Interfaces](../shared/package-architecture.md)
 - [Frontend Integration](../frontend/README.md)

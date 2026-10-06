@@ -27,6 +27,7 @@ const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, p
     getProjectBySlug: vi.fn(),
     getProjectSlugs: vi.fn(),
     updateProjectStaff: vi.fn(),
+    updateProjectPermissions: vi.fn(),
   },
 }));
 
@@ -34,6 +35,7 @@ vi.mock('@lfx-one/shared/utils', () => ({
   computeIsFoundation: computeIsFoundationMock,
   isFileTypeAllowed: vi.fn(),
   isUuid: isUuidMock,
+  maskIdentifierForLogs: (identifier: string) => identifier,
 }));
 vi.mock('@lfx-one/shared/constants', async () => {
   // Deep-import the real allowlist so the drift guard below asserts the production
@@ -64,10 +66,24 @@ vi.mock('@lfx-one/shared/constants', async () => {
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
 // validation.helper pulls in a heavy shared/constants + shared/enums graph; stub it
 // wholesale so only the controller's getLensRedirect path loads.
-vi.mock('../helpers/validation.helper', () => ({
-  getStringQueryParam: vi.fn((req: any, key: string) => (typeof req.query?.[key] === 'string' ? req.query[key] : undefined)),
-  validateUidParameter: vi.fn(() => true),
-}));
+vi.mock('../helpers/validation.helper', async () => {
+  const { ServiceValidationError } = await import('../errors');
+  return {
+    getStringQueryParam: vi.fn((req: any, key: string) => (typeof req.query?.[key] === 'string' ? req.query[key] : undefined)),
+    validateUidParameter: vi.fn(() => true),
+    getValidatedDuplicateIdentifiers: vi.fn((duplicateIdentifiers: unknown, operation: string) => {
+      if (duplicateIdentifiers === undefined) return undefined;
+      if (
+        !Array.isArray(duplicateIdentifiers) ||
+        duplicateIdentifiers.length > 20 ||
+        duplicateIdentifiers.some((id) => typeof id !== 'string' || id.trim() === '' || id.length > 320)
+      ) {
+        throw ServiceValidationError.forField('duplicateIdentifiers', 'duplicateIdentifiers must be an array of at most 20 non-blank strings', { operation });
+      }
+      return duplicateIdentifiers;
+    }),
+  };
+});
 
 vi.mock('../services/project.service', () => ({
   ProjectService: vi.fn(function () {
@@ -757,6 +773,115 @@ function buildStaffReqRes(uid: string = PROJECT_UID, body: unknown = {}) {
   const next = vi.fn();
   return { req, res, next };
 }
+
+function buildPermissionsReqRes(uid: string, username: string, body: unknown = {}) {
+  const req = {
+    params: { uid, username },
+    body,
+    query: {},
+    headers: {},
+    bearerToken: 'user-token',
+    path: `/api/projects/${uid}/permissions/${username}`,
+  } as any;
+  const res = { json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() } as any;
+  const next = vi.fn();
+  return { req, res, next };
+}
+
+// GH-3276: `duplicateIdentifiers` on the PUT/DELETE body must reach the service call
+// unmodified so a collapsed dual-role row (#3218) is cleared in the same ETag-guarded
+// write as the primary identifier, instead of a second non-atomic client call (Copilot
+// #3244) that could also misresolve a stale duplicate through the NATS directory
+// (Cursor Bugbot #3244).
+describe('ProjectController permissions duplicateIdentifiers pass-through', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('updateUserPermissionRole passes duplicateIdentifiers from the body through to the service', async () => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'manage', duplicateIdentifiers: ['bchen@vendor-corp.example'] });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', 'manage', undefined, [
+      'bchen@vendor-corp.example',
+    ]);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('updateUserPermissionRole passes undefined when the body carries no duplicateIdentifiers', async () => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'manage' });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', 'manage', undefined, undefined);
+  });
+
+  it('removeUserFromProjectPermissions passes duplicateIdentifiers from the body through to the service', async () => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { duplicateIdentifiers: ['bchen@vendor-corp.example'] });
+
+    await controller.removeUserFromProjectPermissions(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'remove', 'blairchen', undefined, undefined, [
+      'bchen@vendor-corp.example',
+    ]);
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('removeUserFromProjectPermissions tolerates a missing body (no duplicateIdentifiers)', async () => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', undefined);
+
+    await controller.removeUserFromProjectPermissions(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'remove', 'blairchen', undefined, undefined, undefined);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // dealako + Copilot (PR #3244 review): a malformed duplicateIdentifiers must be rejected
+  // with a 400 before it reaches the service's array .map()/.filter() calls, not thrown as
+  // an uncaught TypeError that surfaces as a 500.
+  it('updateUserPermissionRole rejects a non-array duplicateIdentifiers without calling the service', async () => {
+    const controller = new ProjectController();
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'manage', duplicateIdentifiers: 'abc' });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('updateUserPermissionRole rejects a duplicateIdentifiers array with non-string elements without calling the service', async () => {
+    const controller = new ProjectController();
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'manage', duplicateIdentifiers: [1, {}] });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('removeUserFromProjectPermissions rejects an oversized duplicateIdentifiers array without calling the service', async () => {
+    const controller = new ProjectController();
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { duplicateIdentifiers: Array.from({ length: 21 }, (_, i) => `id${i}`) });
+
+    await controller.removeUserFromProjectPermissions(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(res.status).not.toHaveBeenCalledWith(204);
+  });
+});
 
 describe('ProjectController.updateProjectStaff', () => {
   let controller: ProjectController;

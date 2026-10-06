@@ -19,7 +19,7 @@ import {
   PublicMeetingProject,
   PublicMeetingRegistrationResponse,
 } from '@lfx-one/shared/interfaces';
-import { joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { getPastMeetingResourceId, joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -58,6 +58,10 @@ export class PublicMeetingController {
     const startTime = logger.startOperation(req, 'get_public_meeting_by_id', {
       meeting_id: id,
     });
+
+    // The body depends on the passcode header and the session (host_key for organizers), neither of
+    // which is part of the URL a cache keys on, so no cache may keep it.
+    res.setHeader('Cache-Control', 'private, no-store');
 
     try {
       // Check if the meeting UID is provided
@@ -127,8 +131,7 @@ export class PublicMeetingController {
       // client. m2mToken is still active on req.bearerToken.
       const parent = await this.resolveParentProject(req, project);
 
-      // Registrant counts are no longer derived here — the full roster read was purely to derive
-      // two integers with no consumer once the join page holds its own roster (GH-1731).
+      await this.addInviteeRegistrantCount(req, meeting, id, m2mToken);
 
       // Organizer identity is authenticated-visible info (LFXV2-2802). For authenticated callers,
       // enrich created_by/owner from the live v1_meeting index (the ITX detail payload omits created_by);
@@ -180,6 +183,7 @@ export class PublicMeetingController {
                 email: userEmail,
               });
               meeting.invited = true;
+              await this.addInviteeRegistrantCount(req, meeting, id, m2mToken);
               res.json({
                 meeting,
                 project: this.toPublicMeetingProject(project, parent),
@@ -196,8 +200,8 @@ export class PublicMeetingController {
       }
 
       // Check if the user has passed in a password, if so, check if it's correct
-      const { password } = req.query;
-      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'get_public_meeting_by_id', req, next)) {
+      const password = this.getRequestMeetingPassword(req);
+      if (!this.validateMeetingPassword(password, meeting.password as string, 'get_public_meeting_by_id', req, next)) {
         return;
       }
 
@@ -287,6 +291,20 @@ export class PublicMeetingController {
         meeting.organizer = isOrganizer;
       }
 
+      // /past-meetings/:uid/participants hides the rows from viewers who are not on them, so the
+      // join page's attendance stats read these counts instead. Organizers get the rows. The read
+      // fails on a partial page walk, so a short list leaves the counts out rather than understating them.
+      if (fullAccess && !isOrganizer && isAuthenticated && originalToken !== undefined) {
+        try {
+          const participants = await this.meetingService.getPastMeetingParticipants(req, getPastMeetingResourceId(meeting), true);
+          meeting.participant_count = participants.length;
+          meeting.attended_count = participants.filter((p) => p.is_attended).length;
+          meeting.individual_registrants_count = participants.filter((p) => p.is_invited).length;
+        } catch (error) {
+          logger.warning(req, 'get_public_past_meeting_by_id', 'Participant counts unavailable', { past_meeting_id: id, err: error });
+        }
+      }
+
       // Past meetings never surface the Zoom host key — strip it unconditionally.
       stripHostKey(meeting);
 
@@ -354,6 +372,9 @@ export class PublicMeetingController {
       meeting_id: id,
     });
 
+    // Gated by the passcode header and the session, not the URL — see getMeetingById.
+    res.setHeader('Cache-Control', 'private, no-store');
+
     try {
       if (!this.validateMeetingId(id, 'get_public_meeting_occurrences', req, next)) {
         return;
@@ -410,7 +431,7 @@ export class PublicMeetingController {
 
   public async postMeetingJoinUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
-    const { password } = req.query;
+    const password = this.getRequestMeetingPassword(req);
     const bodyEmail = typeof req.body.email === 'string' ? req.body.email.trim() : '';
     const email: string = bodyEmail || getEffectiveEmail(req) || '';
     const username = getEffectiveUsername(req);
@@ -435,7 +456,7 @@ export class PublicMeetingController {
       }
 
       // Check if the user has passed in a password, if so, check if it's correct
-      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_link', req, next)) {
+      if (!this.validateMeetingPassword(password, meeting.password as string, 'post_meeting_link', req, next)) {
         return;
       }
 
@@ -626,6 +647,22 @@ export class PublicMeetingController {
     } catch (error) {
       // Error handler will log
       next(error);
+    }
+  }
+
+  /**
+   * Sets `registrant_count` for an invitee who is not an organizer, so they see how many people
+   * are invited even when the guest list is hidden from them. Reads the query-service count
+   * endpoint rather than the roster (GH-1731). Never throws: a failed count leaves it unset.
+   */
+  private async addInviteeRegistrantCount(req: Request, meeting: Meeting, meetingUid: string, m2mToken: string): Promise<void> {
+    if (!meeting.invited || meeting.organizer) {
+      return;
+    }
+    try {
+      meeting.registrant_count = await this.meetingService.getMeetingRegistrantCount(req, meetingUid, m2mToken);
+    } catch (error) {
+      logger.warning(req, 'get_public_meeting_by_id', 'Registrant count unavailable', { meeting_id: meetingUid, err: error });
     }
   }
 
@@ -882,6 +919,19 @@ export class PublicMeetingController {
     }
 
     return false;
+  }
+
+  /**
+   * Reads the meeting passcode from the request header the client sends it in (keeping it out of
+   * request URLs), falling back to the legacy `?password=` query param for older client bundles.
+   */
+  private getRequestMeetingPassword(req: Request): string {
+    const fromHeader = req.headers[MEETING_PASSWORD_HEADER];
+    if (typeof fromHeader === 'string' && fromHeader) {
+      return fromHeader;
+    }
+    const fromQuery = req.query['password'];
+    return typeof fromQuery === 'string' ? fromQuery : '';
   }
 
   /**

@@ -13,14 +13,15 @@ import {
   OrgAccessSummary,
   OrgAccessUser,
 } from '@lfx-one/shared/interfaces';
+import { sanitizeDisplayText } from '@lfx-one/shared/utils/html-utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
+import { resolveOrgLensEdit } from '../helpers/org-lens-edit-access.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
-import { OrgRoleGrantsService } from './org-role-grants.service';
 import { invalidatePerUserCache, withPerUserCache } from './valkey.service';
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -76,15 +77,13 @@ function isPrincipalArray(value: unknown): boolean {
 // single member while preserving every other member's username/invite lifecycle. This
 // replaces the previous full-replace read-modify-write, which could reset untouched members.
 // All member-service calls go through the LFX_V2_MEMBER_SERVICE base (defaults to the gateway);
-// caller-management (canManage) still reads role-grants via LFX_V2_SERVICE (query-service).
+// caller-management (canManage) is decided by `resolveOrgLensEdit` (roster via LFX_V2_SERVICE, then the authorizer).
 export class OrgLensAccessService {
   private readonly microserviceProxy: MicroserviceProxyService;
-  private readonly roleGrants: OrgRoleGrantsService;
   private readonly keyContacts: OrgLensKeyContactsService;
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
-    this.roleGrants = new OrgRoleGrantsService();
     this.keyContacts = new OrgLensKeyContactsService();
   }
 
@@ -93,7 +92,7 @@ export class OrgLensAccessService {
   /**
    * US1 — list elevated-access principals + summary + caller management flag.
    * Pass `knownCanManage` from a write path that already asserted it to avoid a redundant
-   * role-grants lookup on the post-write refresh.
+   * edit decision (roster lookup + authorizer call) on the post-write refresh.
    */
   public async listAccessUsers(req: Request, orgUid: string, knownCanManage?: boolean): Promise<OrgAccessListResponse> {
     // A write refresh passes knownCanManage and must reflect the just-written state — bypass the cache
@@ -104,19 +103,31 @@ export class OrgLensAccessService {
     }
     const username = getEffectiveUsername(req) ?? '';
     // `:list` / `:principals` suffixes keep this read and getAccessPrincipals from colliding on the shared key.
+    // `canManage` is the edit decision as a UX boolean (#3136): `resolveOrgLensEdit` has logged any failure, and
+    // the write paths it decorates are guarded by `assertCanManage`. A decision it could not verify is a
+    // fail-closed `false`, not a verdict — served but never cached, or one authorizer blip would hide Access
+    // management for the whole TTL while the other tabs (no-store `edit-check`) still show their controls.
+    let canManageVerified = true;
     return withPerUserCache(
       `${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:list`,
       username,
       orgUid,
       VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-      () => this.computeAccessList(req, orgUid, undefined),
-      isAccessListResponse
+      () => {
+        const canManage = resolveOrgLensEdit(req, orgUid, 'resolve_org_access_can_manage').then((decision) => {
+          canManageVerified = decision.kind !== 'unverifiable';
+          return decision.kind === 'allowed';
+        });
+        return this.computeAccessList(req, orgUid, canManage);
+      },
+      isAccessListResponse,
+      () => canManageVerified
     );
   }
 
   /**
    * Lightweight principals read for the unified people directory: settings → mapped writers/auditors only.
-   * Skips the `canManage` role-grants lookup and job-title enrichment that `listAccessUsers` does for the
+   * Skips the `canManage` edit decision and job-title enrichment that `listAccessUsers` does for the
    * Access tab — the directory orchestrator owns its own merge + enrichment.
    */
   public async getAccessPrincipals(req: Request, orgUid: string): Promise<OrgAccessUser[]> {
@@ -143,7 +154,7 @@ export class OrgLensAccessService {
     };
     await this.microserviceProxy.proxyRequest(req, 'LFX_V2_MEMBER_SERVICE', `/b2b_orgs/${encodeURIComponent(orgUid)}/settings/users`, 'POST', undefined, body);
     await this.invalidateCallerCaches(req, orgUid);
-    // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
+    // canManage was just asserted true above — reuse it to skip a second edit decision.
     return this.listAccessUsers(req, orgUid, true);
   }
 
@@ -160,7 +171,7 @@ export class OrgLensAccessService {
       { invited_as: ORG_ACCESS_ROLE_RELATION[role] }
     );
     await this.invalidateCallerCaches(req, orgUid);
-    // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
+    // canManage was just asserted true above — reuse it to skip a second edit decision.
     return this.listAccessUsers(req, orgUid, true);
   }
 
@@ -175,7 +186,7 @@ export class OrgLensAccessService {
       'DELETE'
     );
     await this.invalidateCallerCaches(req, orgUid);
-    // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
+    // canManage was just asserted true above — reuse it to skip a second edit decision.
     return this.listAccessUsers(req, orgUid, true);
   }
 
@@ -196,13 +207,10 @@ export class OrgLensAccessService {
     ]);
   }
 
-  private async computeAccessList(req: Request, orgUid: string, knownCanManage: boolean | undefined): Promise<OrgAccessListResponse> {
-    const [settings, canManage] = await Promise.all([
-      this.fetchSettings(req, orgUid),
-      knownCanManage === undefined ? this.resolveCanManage(req, orgUid) : Promise.resolve(knownCanManage),
-    ]);
+  private async computeAccessList(req: Request, orgUid: string, canManage: boolean | Promise<boolean>): Promise<OrgAccessListResponse> {
+    const [settings, resolvedCanManage] = await Promise.all([this.fetchSettings(req, orgUid), canManage]);
     const users = await this.enrichJobTitles(req, orgUid, this.mapPrincipals(settings));
-    return { orgUid, users, summary: this.buildSummary(users), canManage };
+    return { orgUid, users, summary: this.buildSummary(users), canManage: resolvedCanManage };
   }
 
   /** Authoritative settings read (member-service source of record). */
@@ -228,7 +236,9 @@ export class OrgLensAccessService {
         if (status === 'revoked' || status === 'expired') continue;
         // writer-wins: admins are consumed first, so never overwrite an existing admin row.
         if (byEmail.has(email)) continue;
-        const name = (principal.name ?? '').trim() || email.split('@')[0];
+        // Upstream names are untrusted display text (an inviter supplies them), so markup and invisible
+        // characters are stripped before they reach any client sink.
+        const name = sanitizeDisplayText(principal.name ?? '') || sanitizeDisplayText(email.split('@')[0]) || sanitizeDisplayText(email);
         byEmail.set(email, {
           email,
           // Only an accepted principal has a username, and member-service emits its FGA tuple on
@@ -282,94 +292,30 @@ export class OrgLensAccessService {
     return users.map((user) => ({ ...user, jobTitle: titleByEmail.get(user.email) ?? null }));
   }
 
-  /** Caller can manage iff the org uid is a direct or roll-up-derived (LFXV2-3029) editor grant. UX gate only. */
-  private async resolveCanManage(req: Request, orgUid: string): Promise<boolean> {
-    const username = getEffectiveUsername(req);
-    if (!username) return false;
-    try {
-      const grants = await this.roleGrants.getRoleGrants(req, username);
-      const canManage = OrgRoleGrantsService.hasEditorAccess(grants, orgUid);
-      // This gate answers a boolean for the UX by contract, so it cannot signal "unverifiable" the
-      // way `assertCanManage` does — the write path it decorates is guarded there. Log the case so
-      // a hidden-affordance report is diagnosable instead of looking like a missing grant.
-      if (!canManage && grants.degraded) {
-        logger.warning(req, 'resolve_org_access_can_manage', 'Role-grants lookup degraded; canManage=false may understate the caller', {
-          org_uid: orgUid,
-        });
-      }
-      return canManage;
-    } catch (error) {
-      logger.warning(req, 'resolve_org_access_can_manage', 'Role-grants lookup failed; defaulting canManage=false', {
-        org_uid: orgUid,
-        err: error instanceof Error ? error.message : String(error),
-      });
-      return false;
-    }
-  }
-
   /**
-   * Write gate: throws 403 when the caller is verified NOT to be an editor (direct or roll-up-
-   * derived), but a retriable 503 when the role-grants lookup itself fails — so a transient
-   * outage doesn't masquerade as "no permission". (The lenient `resolveCanManage` is for the
-   * read/list UX gate only.)
+   * Write gate: throws 403 when the caller is verified NOT to be able to edit the org, but a
+   * retriable 503 when that could not be verified — so a transient outage doesn't masquerade as
+   * "no permission". (The list's lenient `canManage` in `listAccessUsers` is the UX gate only.)
    */
   private async assertCanManage(req: Request, orgUid: string, operation: string): Promise<void> {
-    const forbidden = (): MicroserviceError =>
-      new MicroserviceError('You do not have permission to manage Org Lens access for this organization.', 403, 'FORBIDDEN', {
-        operation,
-        service: 'LFX_V2_MEMBER_SERVICE',
-        path: `/b2b_orgs/${orgUid}/settings/users`,
-      });
-
-    const username = getEffectiveUsername(req);
-    if (!username) {
-      throw forbidden();
+    const decision = await resolveOrgLensEdit(req, orgUid, operation);
+    if (decision.kind === 'allowed') {
+      return;
     }
-
-    // `path` is only claimed when the caller knows which upstream failed. A thrown lookup does:
-    // it is the role-grants query (`/query/resources`), not the member-service settings endpoint.
-    // A degraded lookup does not — `degraded` collapses that query failing, the authorizer
-    // (`/access-check`) failing, and a traversal cap that nothing failed on at all — so naming one
-    // path there would route outage telemetry at the wrong upstream.
-    const unavailable = (error?: unknown, path?: string): MicroserviceError =>
-      new MicroserviceError("Couldn't verify your permissions right now. Please try again.", 503, 'ROLE_GRANTS_UNAVAILABLE', {
+    if (decision.kind === 'unverifiable') {
+      // `path` is only claimed when the failed upstream is known; a degraded roll-up collapses several causes.
+      throw new MicroserviceError("Couldn't verify your permissions right now. Please try again.", 503, 'ROLE_GRANTS_UNAVAILABLE', {
         operation,
         service: 'LFX_V2_SERVICE',
-        ...(path ? { path } : {}),
-        originalError: error instanceof Error ? error : undefined,
+        ...(decision.path ? { path: decision.path } : {}),
+        originalError: decision.error instanceof Error ? decision.error : undefined,
       });
-
-    let isEditor: boolean;
-    let degraded: boolean;
-    try {
-      const grants = await this.roleGrants.getRoleGrants(req, username);
-      isEditor = OrgRoleGrantsService.hasEditorAccess(grants, orgUid);
-      degraded = grants.degraded;
-    } catch (error) {
-      // Couldn't verify (transient role-grants outage) — surface a retriable error, not a 403.
-      logger.warning(req, 'assert_org_access_can_manage', 'Role-grants lookup failed; cannot verify manager permission', {
-        org_uid: orgUid,
-        operation,
-        err: error instanceof Error ? error.message : String(error),
-      });
-      throw unavailable(error, '/query/resources');
     }
-
-    // A degraded lookup resolves fewer organizations than the caller may actually hold, so a
-    // negative answer means "we couldn't finish checking", not "you don't have it". The lookup
-    // reports that by returning `degraded` rather than throwing, so the 403/503 split has to be
-    // made here too — otherwise an incomplete roll-up hands a real editor a permanent-looking 403.
-    if (!isEditor && degraded) {
-      logger.warning(req, 'assert_org_access_can_manage', 'Role-grants lookup degraded; cannot rule out an inherited editor grant', {
-        org_uid: orgUid,
-        operation,
-      });
-      throw unavailable();
-    }
-
-    if (!isEditor) {
-      throw forbidden();
-    }
+    throw new MicroserviceError('You do not have permission to manage Org Lens access for this organization.', 403, 'FORBIDDEN', {
+      operation,
+      service: 'LFX_V2_MEMBER_SERVICE',
+      path: `/b2b_orgs/${orgUid}/settings/users`,
+    });
   }
 
   // ── small utilities ──────────────────────────────────────────────────────────

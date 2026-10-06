@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_EMAIL_VARIANTS, CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
+import type {
+  CAMPAIGN_EMAIL_SEGMENTS,
+  CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_EMAIL_VARIANTS,
+  CAMPAIGN_METRICS_WINDOWS,
+  MICROSOFT_KEYWORDS_WINDOWS,
+} from '../constants/campaign.constants';
 
 // ---------------------------------------------------------------------------
 // Platform & Phase
@@ -218,6 +224,26 @@ export interface CampaignEventDetails {
   speakers: string[];
   slug: string;
   formatNotes: string;
+  /**
+   * The event's own summary of itself, 1-3 sentences.
+   *
+   * This is the single richest fact the scrape produces, and email copy generation is its main
+   * consumer: campaign-service's generator refuses to invent facts, so without a description it
+   * can only write from the name, dates and location and the resulting email is three lines long.
+   */
+  description: string;
+  /**
+   * Links the event page itself publishes, beyond `registrationUrl`.
+   *
+   * Empty string means "the page did not state one", which is NOT the same as "the model could
+   * not find one": every value here survived `verifyPageLink`, so it is a URL the fetched HTML
+   * actually links to. A link the extraction invented is dropped before it reaches this type.
+   * See `event-links.helper.ts` for why that check exists rather than trusting the extraction.
+   */
+  agendaUrl: string;
+  cfpUrl: string;
+  venueUrl: string;
+  sponsorshipUrl: string;
   heroImageUrl?: string;
   sponsors?: CampaignEventSponsor[];
 }
@@ -731,7 +757,16 @@ export type CampaignAudienceStatus = 'building' | 'built' | 'failed';
  */
 export interface CampaignAudience {
   id: string;
-  projectId: string;
+  /**
+   * Optional because one producer genuinely cannot know it. A recorded compose
+   * (`AudienceComposeMasterResult.audience`) returns a deliberately slim row — id, status,
+   * version and master list — and the BFF that fills the rest holds the project SLUG, not its id.
+   * Fabricating one there would put an unusable value on a field callers are entitled to trust.
+   *
+   * Nothing in the UI reads it today; it is carried because the build and read-back paths do
+   * return it and dropping it would lose real information those paths have.
+   */
+  projectId?: string;
   briefId: string;
   platform: string;
   platformMasterListId?: string;
@@ -742,10 +777,20 @@ export interface CampaignAudience {
   etag?: string;
 }
 
-/** Result of asking campaign-service to build a brief's audience. */
-export interface BuildAudienceResult {
+/**
+ * Result of reading back the audiences campaign-service already holds for a brief.
+ *
+ * `enabled: false` is a steady state rather than a failure: the flag being dark is an ordinary
+ * deployment state, and the caller branches on it the same way as on an empty list.
+ *
+ * `audiences` is newest-first, as upstream returns it. No `etag`: `list-audiences` declares no
+ * `Header("etag:ETag")`, so a caller that means to PATCH one of these rows must re-read the
+ * SINGLE audience first to obtain a concurrency token — a row from this list carries none, and
+ * inventing one here would be a token that means nothing upstream.
+ */
+export interface ListAudiencesResult {
   enabled: boolean;
-  audience?: CampaignAudience;
+  audiences?: CampaignAudience[];
   error?: string;
 }
 
@@ -1560,6 +1605,72 @@ export interface CampaignServiceKeywords {
   truncated: boolean;
 }
 
+/**
+ * The reporting windows campaign-service's Microsoft keyword read accepts: the subset of
+ * `CampaignMetricsWindow` the Microsoft client maps to a date range (`microsoftKeywordsWindowEnum`).
+ */
+export type MicrosoftKeywordsWindow = (typeof MICROSOFT_KEYWORDS_WINDOWS)[number];
+
+/**
+ * campaign-service's `microsoft-ads-keywords` result, in its own vocabulary.
+ *
+ * The rows are the Google row shape: `criterion_id` is Microsoft's KeywordId and `ad_group_id` its
+ * AdGroupId, `cost_micros` is Spend (account currency) times 10^6, and `ctr` is a fraction. Unlike
+ * the Google read they come from the last FINISHED asynchronous report, not a live query.
+ */
+export interface CampaignServiceMicrosoftKeywords {
+  window: CampaignMetricsWindow;
+  /** Empty while no finished report covers every campaign the project owns (`metrics_as_of` absent). */
+  rows: CampaignServiceKeywordRow[];
+  row_count: number;
+  truncated: boolean;
+  /**
+   * When the served report was REQUESTED (RFC 3339). ABSENT when no finished report covers every
+   * campaign this project now owns; `rows` is then empty rather than a partial picture.
+   */
+  metrics_as_of?: string;
+  /** True while a newer report is building, so a later read will return newer (or the first) rows. */
+  metrics_pending: boolean;
+  /**
+   * False when Microsoft left at least one returned row's conversion count blank. Those rows carry
+   * `conversions: 0`, which is then NOT a measurement, so CPA must not be computed from them.
+   */
+  conversions_complete: boolean;
+  /** True when Microsoft flagged the served report's last day as possibly still aggregating. */
+  data_incomplete: boolean;
+}
+
+/** A Microsoft keyword row as the UI renders it: the Google row without the Google Ads deep link. */
+export type MicrosoftKeywordMetrics = Omit<KeywordMetrics, 'googleAdsUrl'>;
+
+/**
+ * Response of `GET /api/campaigns/microsoft/keywords`.
+ *
+ * Currency amounts, CTR as a percentage, like `KeywordMetricsResponse`. The report-freshness
+ * fields travel with the rows so the UI can say "metrics as of ..." and "building".
+ */
+export interface MicrosoftKeywordMetricsResponse {
+  pulledAt: string;
+  /** The window the counters cover, as campaign-service reports it. */
+  window: CampaignMetricsWindow;
+  totalKeywords: number;
+  /** True when the project has MORE keywords than `keywords` carries; `totals` is then a subtotal. */
+  truncated: boolean;
+  /** When the served report was requested, or `null` when no finished report covers the project yet. */
+  metricsAsOf: string | null;
+  /** True while a newer report is building. With `metricsAsOf: null` it means the first one is. */
+  metricsPending: boolean;
+  /**
+   * False when at least one row's conversions were not reported (shown as 0, not measured). A
+   * consumer must not present a CPA or a conversions total as complete when this is false.
+   */
+  conversionsComplete: boolean;
+  /** True when Microsoft flagged the report's last day as still aggregating, so counters may rise. */
+  dataIncomplete: boolean;
+  totals: KeywordTotals;
+  keywords: MicrosoftKeywordMetrics[];
+}
+
 export interface CampaignServiceAudienceBucket {
   dimension: 'age' | 'gender' | 'device';
   /** Google's own enum literal, e.g. `AGE_RANGE_25_34`. */
@@ -1614,8 +1725,15 @@ export interface OrderedKeywordResult {
   response: KeywordActionResponse;
 }
 
-/** One campaign's worth of a keyword-action request, keyed by the platform campaign id. */
+/**
+ * One campaign's worth of a keyword-action request, keyed by the platform AND its campaign id.
+ *
+ * The platform is part of the key because Google and Microsoft mint campaign ids in unrelated
+ * spaces: the same digits can name one campaign on each, and folding them into one group would
+ * resolve and mutate the wrong platform's campaign.
+ */
 export interface KeywordActionGroup {
+  platform: KeywordActionPlatform;
   platformCampaignId: string;
   keywords: KeywordActionRequest[];
 }
@@ -1627,19 +1745,38 @@ export interface CampaignServiceKeywordActionInput {
   action: 'PAUSE' | 'REMOVE';
 }
 
+/**
+ * A Microsoft Advertising keyword action's own outcome. Mirrors `keywordItemOutcomeEnum` in
+ * campaign-service's `design/brief.go`. Google's batch is atomic and its results carry none.
+ */
+export type CampaignServiceKeywordItemOutcome = 'APPLIED' | 'FAILED' | 'UNCONFIRMED';
+
 export interface CampaignServiceKeywordActionResult {
   ad_group_id: string;
   criterion_id: string;
   action: 'PAUSE' | 'REMOVE';
-  resource_name: string;
+  /**
+   * Google Ads only: the criterion resource name Google returned. Present on every Google result;
+   * absent on Microsoft Advertising, which has no resource names.
+   */
+  resource_name?: string;
+  /**
+   * Microsoft Advertising only: this action's own outcome, because a Microsoft batch is applied
+   * item by item. ABSENT on Google, where every result on a 200 was applied.
+   */
+  outcome?: CampaignServiceKeywordItemOutcome;
+  /** Microsoft Advertising only: the platform's error code for a FAILED or UNCONFIRMED action, when it named one. */
+  error_code?: string;
 }
 
 /**
  * The outcome of one campaign's keyword batch.
  *
- * There is NO partial success within a batch: upstream sends it as a single atomic mutate with
- * partial failure disabled, so `applied_count` always equals the number requested or the whole
- * request failed. A caller must not read it as "how many of my actions worked".
+ * Google Ads: there is NO partial success within a batch. Upstream sends it as a single atomic
+ * mutate with partial failure disabled, so `applied_count` always equals the number requested or
+ * the whole request failed. Microsoft Advertising: each result carries its own `outcome`, and
+ * `applied_count` counts only `APPLIED`, so it can be fewer than requested. Either way `results[i]`
+ * answers `actions[i]` of the request.
  */
 export interface CampaignServiceKeywordActions {
   campaign_id: string;
@@ -1677,11 +1814,25 @@ export interface ImpressionShareMetrics {
 
 export type KeywordActionType = 'pause' | 'remove';
 
+/**
+ * The ad platforms whose keywords can be paused or removed from the Optimize tab: campaign-service's
+ * `apply-keyword-actions` serves Google Ads and Microsoft Advertising only.
+ */
+export type KeywordActionPlatform = Extract<CampaignPlatform, 'google-ads' | 'microsoft-ads'>;
+
 export interface KeywordActionRequest {
+  /** The ad platform's own campaign id (Google's or Microsoft's numeric id), not campaign-service's UUID. */
   campaignId: string;
   adGroupId: string;
+  /** Google Ads: the criterion id. Microsoft Advertising: the KeywordId (`criterion_id` on its keyword rows). */
   criterionId: string;
   action: KeywordActionType;
+  /**
+   * The platform the ids belong to. OPTIONAL and defaulting to `google-ads`, so every request sent
+   * before Microsoft keyword actions existed keeps its meaning. Microsoft is reachable only through
+   * campaign-service (the legacy keyword path is Google-only).
+   */
+  platform?: KeywordActionPlatform;
 }
 
 export interface KeywordActionResponse {
@@ -2341,6 +2492,230 @@ export interface CampaignStatusUpdateResult {
   serviceStatus?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Campaign Budget Change
+// ---------------------------------------------------------------------------
+
+/**
+ * The pacing a budget amount is expressed in. Mirrors the `budget_type` enum of campaign-service's
+ * `update-campaign-budget` (`design/brief.go`).
+ *
+ * It must name the pacing the campaign ALREADY has upstream: that endpoint changes the amount,
+ * never the pacing, and refuses a mismatch with 409 rather than translating it.
+ */
+export type CampaignBudgetType = 'daily' | 'lifetime';
+
+/**
+ * Body of `PATCH /api/campaigns/:campaignId/budget`.
+ *
+ * Every field is required, and there is nothing safe to default. campaign-service addresses the
+ * campaign by `(project, brief, campaign)` and requires `If-Match`. A defaulted `budgetType` would
+ * turn an omission into a 409 about a pacing the caller never named.
+ */
+export interface CampaignBudgetUpdateRequest {
+  /** Parent brief of the campaign being changed. */
+  briefId: string;
+  /** The campaign row's current ETag, sent as `If-Match`. A missing one is a 428 upstream and a stale one a 412. */
+  etag: string;
+  /**
+   * The new amount, in the AD ACCOUNT's own currency (not USD). Sent upstream exactly as given:
+   * this app never converts or rounds it. The platform's own floor (LinkedIn's minimums, Meta's
+   * minor unit) is enforced upstream, and a 400 from there names it.
+   */
+  budget: number;
+  budgetType: CampaignBudgetType;
+}
+
+/**
+ * Everything needed to address and authorize one budget change, as the server client takes it.
+ * Every field is required. A wrong one is a 404, 428 or 412 upstream rather than a type error.
+ */
+export interface CampaignBudgetUpdateParams {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  budget: number;
+  budgetType: CampaignBudgetType;
+  /** The etag read WITH the campaign, not one cached from an earlier render. */
+  etag: string;
+}
+
+export interface CampaignBudgetUpdateResult {
+  /** The ROW's platform as campaign-service reports it. The request does not name one. */
+  platform: string;
+  campaignId: string;
+  /**
+   * The amount requested, which the platform accepted; the platform may hold it rounded to its
+   * smallest settable unit (LinkedIn cents, Meta the account currency's minor unit). A 200 is only
+   * returned after the platform accepted the write, but campaign-service persists the requested
+   * amount, not a readback of what the platform holds, and this is an echo of the request.
+   */
+  budget: number;
+  budgetType: CampaignBudgetType;
+  /** The row's NEW ETag. The caller's own validator went stale when this write committed. */
+  etag?: string;
+  /**
+   * The row's status, which a budget change leaves exactly as found. This is how a
+   * `created_degraded` campaign keeps its reconciliation marker while its spend is cut.
+   */
+  serviceStatus: string;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Bid Change
+// ---------------------------------------------------------------------------
+
+/**
+ * The unit a bid is expressed in. Mirrors the `bid_type` enum of campaign-service's
+ * `update-campaign-bid` (`design/brief.go`), which has one value today: a manual max
+ * cost-per-click. It must match how the ad group bids upstream, which refuses a mismatch with 409
+ * rather than re-bidding in a unit the caller never named.
+ */
+export type CampaignBidType = 'cpc';
+
+/**
+ * Body of `PATCH /api/campaigns/:campaignId/bid`.
+ *
+ * The bid route's sibling of `CampaignBudgetUpdateRequest`. `bidType` alone is optional, because
+ * upstream defaults it to its only value; everything else is required for the same reasons as the
+ * budget change.
+ */
+export interface CampaignBidUpdateRequest {
+  /** Parent brief of the campaign being changed. */
+  briefId: string;
+  /** The campaign row's current ETag, sent as `If-Match`. A missing one is a 428 upstream and a stale one a 412. */
+  etag: string;
+  /**
+   * The new max cost-per-click bid, in the AD ACCOUNT's own currency (not USD). Sent upstream
+   * exactly as given: this app never converts or rounds it. Each platform's own floor and ceiling
+   * (Microsoft's 0.01-1000) is enforced upstream, and a 400 from there names it.
+   */
+  bid: number;
+  bidType?: CampaignBidType;
+}
+
+/** Everything needed to address and authorize one bid change, as the server client takes it. */
+export interface CampaignBidUpdateParams {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  bid: number;
+  bidType: CampaignBidType;
+  /** The etag read WITH the campaign, not one cached from an earlier render. */
+  etag: string;
+}
+
+export interface CampaignBidUpdateResult {
+  /** The ROW's platform as campaign-service reports it. The request does not name one. */
+  platform: string;
+  campaignId: string;
+  /**
+   * The bid requested, which the platform accepted. An echo of the request, like
+   * `CampaignBudgetUpdateResult.budget`: campaign-service persists the requested amount, not a
+   * readback of what the platform holds.
+   */
+  bid: number;
+  bidType: CampaignBidType;
+  /** The row's NEW ETag. The caller's own validator went stale when this write committed. */
+  etag?: string;
+  /** The row's status, which a bid change leaves exactly as found. */
+  serviceStatus: string;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Negative Keywords
+// ---------------------------------------------------------------------------
+
+/**
+ * The match types a negative keyword may carry. Mirrors `negativeKeywordMatchTypeEnum` in
+ * campaign-service's `design/brief.go`. Microsoft Advertising supports only these two for a
+ * negative keyword, so `Broad` is not offered.
+ */
+export type CampaignNegativeKeywordMatchType = 'Exact' | 'Phrase';
+
+/**
+ * One negative keyword's outcome. Mirrors `negativeKeywordOutcomeEnum`.
+ *
+ * - `APPLIED`: added by this request.
+ * - `ALREADY_PRESENT`: the campaign already had it, so the requested state holds. A success.
+ * - `FAILED`: definitely not added (see `errorCode`).
+ * - `UNCONFIRMED`: may have been added. Verify in the ad platform before retrying.
+ */
+export type CampaignNegativeKeywordOutcome = 'APPLIED' | 'ALREADY_PRESENT' | 'FAILED' | 'UNCONFIRMED';
+
+export interface CampaignNegativeKeywordInput {
+  /** Letters, digits, spaces and `& ' - .` only; at most 100 characters. */
+  text: string;
+  matchType: CampaignNegativeKeywordMatchType;
+}
+
+/**
+ * Body of `POST /api/campaigns/:campaignId/negative-keywords`.
+ *
+ * No etag: campaign-service persists nothing for this lever (the negatives live on the platform),
+ * so it takes no `If-Match`.
+ */
+export interface CampaignNegativeKeywordsRequest {
+  briefId: string;
+  /** 1 to 60 entries. `results[i]` in the response answers `negativeKeywords[i]`. */
+  negativeKeywords: CampaignNegativeKeywordInput[];
+}
+
+/** Everything the server client needs to add negative keywords to one campaign. */
+export interface CampaignNegativeKeywordsParams {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  negativeKeywords: CampaignNegativeKeywordInput[];
+}
+
+export interface CampaignNegativeKeywordResult {
+  /** The text as sent to the platform: upstream trims it and collapses whitespace. */
+  text: string;
+  matchType: CampaignNegativeKeywordMatchType;
+  outcome: CampaignNegativeKeywordOutcome;
+  /** The platform's id for a negative keyword this request added. Absent for every other outcome. */
+  negativeKeywordId?: string;
+  /** The platform's machine-readable error code for a FAILED keyword, when it named one. */
+  errorCode?: string;
+}
+
+/**
+ * The outcome of one negative-keywords request.
+ *
+ * NOT ATOMIC and POSITIONAL: Microsoft adds each negative independently, and `results[i]` answers
+ * `negativeKeywords[i]` of the request. The BFF never filters or reorders `results`, so a caller
+ * may zip them onto the list it sent.
+ */
+export interface CampaignNegativeKeywordsResult {
+  campaignId: string;
+  results: CampaignNegativeKeywordResult[];
+  /** How many requested negatives are now on the campaign: outcomes `APPLIED` or `ALREADY_PRESENT`. */
+  appliedCount: number;
+}
+
+/** One negative keyword as campaign-service's `negative-keyword-input` takes it. */
+export interface CampaignServiceNegativeKeywordInput {
+  text: string;
+  match_type: CampaignNegativeKeywordMatchType;
+}
+
+/** One entry of campaign-service's `negative-keywords` result, in its own vocabulary. */
+export interface CampaignServiceNegativeKeywordResult {
+  text: string;
+  match_type: CampaignNegativeKeywordMatchType;
+  outcome: CampaignNegativeKeywordOutcome;
+  negative_keyword_id?: string;
+  error_code?: string;
+}
+
+/** campaign-service's `negative-keywords` result: one entry per requested keyword, in request order. */
+export interface CampaignServiceNegativeKeywords {
+  campaign_id: string;
+  results: CampaignServiceNegativeKeywordResult[];
+  applied_count: number;
+}
+
 /**
  * The reporting windows campaign-service accepts. Mirrors `metricsWindowEnum` in
  * `design/brief.go` — the seven values of `model.MetricsWindow`.
@@ -2558,6 +2933,21 @@ export type CampaignEmailStage = (typeof CAMPAIGN_EMAIL_STAGES)[number];
 export type CampaignEmailVariant = (typeof CAMPAIGN_EMAIL_VARIANTS)[number];
 
 /**
+ * Narrows which of a `generate-email-copy` draft's content blocks are relevant to a named
+ * audience -- `'developer'`, `'business-decision-maker'`, `'alumni'` or `'prospect'`.
+ *
+ * Orthogonal to `CampaignEmailVariant`: variant restyles the whole draft's framing, segment
+ * narrows which blocks within that draft matter to this audience. Both may be set together,
+ * either alone, or neither. Same free-text, lenient-fallback shape as `CampaignEmailStage` and
+ * `CampaignEmailVariant`: an unrecognised or absent value produces the normal stage-based copy
+ * under a 200 rather than an error.
+ *
+ * Derived from `CAMPAIGN_EMAIL_SEGMENTS` rather than restated, so the UI's selector and this type
+ * cannot drift apart.
+ */
+export type CampaignEmailSegment = (typeof CAMPAIGN_EMAIL_SEGMENTS)[number];
+
+/**
  * One selectable email type.
  *
  * The TYPE is what an operator recognises ("Thank You + Survey"); the STAGE is what
@@ -2687,6 +3077,8 @@ export interface AudienceListBrief {
   size?: number;
   missing: boolean;
   resolvedFromLegacyId?: string;
+  /** Deep link to the list in HubSpot; absent when the list no longer resolves. */
+  hubspotUrl?: string;
 }
 
 /**
@@ -2761,6 +3153,16 @@ export interface AudienceComposeMasterRequest {
   /** ISO dates; the first parseable one supplies the name's `YYQN` segment. */
   eventDates?: string[];
   excludeListIds?: string[];
+  /**
+   * Attach the composed master to this brief, as its built send audience.
+   *
+   * Optional because the builder is deliberately usable with no campaign to attach to — the
+   * routes are project-scoped for exactly that reason. When it is set, campaign-service records
+   * the audience row itself INSIDE the compose: that is the only point at which the HubSpot
+   * portal the lists were created in is provably known, and an audience with no recorded portal
+   * is refused at dispatch and cannot be repaired by a later PATCH.
+   */
+  briefId?: string;
 }
 
 /** A list this request created in HubSpot. */
@@ -2774,6 +3176,22 @@ export interface AudienceComposedList {
    * would read as "this audience is empty", which is the opposite of the truth.
    */
   size?: number;
+}
+
+/**
+ * A confirmed master list that a compose created but did not record as the brief's send audience.
+ *
+ * Carries the brief and project the compose was DISPATCHED with. The list alone could not be scoped:
+ * a reply landing after the operator switched briefs was filed under the brief they had moved to,
+ * telling them to use the previous brief's list for the current email.
+ */
+export interface AudienceComposeUnattachedEvent {
+  master: AudienceComposedList;
+  /** The brief the compose was sent for; empty for an exploratory compose with no saved plan. */
+  briefId: string;
+  projectSlug: string;
+  /** The parent's brief-state generation at dispatch; scopes a brief-less event. */
+  scope: number;
 }
 
 /**
@@ -2793,11 +3211,29 @@ export interface AudienceComposeMasterResult {
   suppression?: AudienceComposedList;
   /** The inclusion list ids the master was built from, in the order applied. */
   sourceListIds: string[];
+  /**
+   * Whether the master was recorded as the brief's built send audience.
+   *
+   * Explicit rather than inferred from `audience` being present, and it is not the same question
+   * as "was a `briefId` sent": an upstream that predates this field composes normally and returns
+   * nothing, which the proxy reads as `false`. A caller that inferred "attached" from an absent
+   * object would tell the operator their send is wired up against a deployment that never wired
+   * anything.
+   */
+  recorded: boolean;
+  /**
+   * The recorded audience row, present exactly when `recorded` is true.
+   *
+   * The same `CampaignAudience` the build path returns, so the parent can set it on the one signal
+   * that gates staging without an adapter. It carries no `etag` — upstream does not return one on
+   * this response, and a PATCH would have to re-read the single audience first.
+   */
+  audience?: CampaignAudience;
 }
 
 /** A partial `compose-master` failure: what was created before the failure, and why it failed. */
 /**
- * A compose that did not complete. FOUR shapes are reachable and the field that is set tells the
+ * A compose that did not complete. FIVE shapes are reachable and the field that is set tells the
  * caller which (`docs/api-catalog.md` in campaign-service):
  *
  *  - `suppression` alone — the suppression list definitely exists and the master create failed.
@@ -2806,6 +3242,10 @@ export interface AudienceComposeMasterResult {
  *  - `masterName` alone — no exclusions were requested (or the suppression create failed
  *    outright) and the master create is unconfirmed.
  *  - `suppression` + `masterName` — the suppression list exists and the master is unconfirmed.
+ *  - `master` (with `suppression` when one was created) — BOTH lists exist and are confirmed, and
+ *    the attempt to record them as the brief's audience failed. Reachable only on a compose that
+ *    asked to attach. It is a partial rather than a 500 precisely because a 500 invites the retry
+ *    that would mint a second master list for one send.
  *
  * `suppression` and `suppressionName` are never both set: an id is only reported once a create is
  * confirmed, at which point there is no unconfirmed name left to report. None of these is a bare
@@ -2819,7 +3259,39 @@ export interface AudienceComposeMasterPartial {
   suppressionName?: string;
   /** Deterministic name of a master list whose creation could not be confirmed. */
   masterName?: string;
+  /**
+   * The confirmed master list, when the lists exist but attaching them to the brief failed.
+   *
+   * Never set together with `masterName`: one says the master is confirmed, the other says it is
+   * not. This is the one shape whose lists are both real and usable — the operator's route out is
+   * attaching this list by hand, not composing again.
+   */
+  master?: AudienceComposedList;
   error: string;
+}
+
+/**
+ * Record lists that ALREADY exist as a brief's send audience — "send to the same lists as this
+ * earlier email" — without composing a new master list.
+ *
+ * Nothing is created in HubSpot. Upstream reads every id back from the project's portal before
+ * recording it, so a mistyped or foreign id is a 404 rather than a send that fails at dispatch.
+ */
+export interface AudienceAttachExistingRequest {
+  briefId: string;
+  /** The single include list the send goes to. */
+  masterListId: string;
+  /** Existing lists the send suppresses. */
+  suppressionListIds?: string[];
+  /** Human-readable note recorded on the audience row; upstream derives one when omitted. */
+  inclusionSummary?: string;
+}
+
+/** The result of attaching existing lists: the verified include list and the recorded audience. */
+export interface AudienceAttachExistingResult {
+  master: AudienceComposedList;
+  suppressionListIds: string[];
+  audience: CampaignAudience;
 }
 
 // --- Audience QA -----------------------------------------------------------

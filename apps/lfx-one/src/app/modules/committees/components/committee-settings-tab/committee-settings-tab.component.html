@@ -83,7 +83,13 @@
                     }
                     <span class="text-[11px] text-gray-500">{{ ml.type | mailingListType }}</span>
                   </div>
-                  <div class="text-[11.5px] text-gray-400 mt-0.5">{{ ml | mailingListEmail }} · {{ ml.subscriber_count }} subscribers</div>
+                  <div class="text-[11.5px] text-gray-400 mt-0.5">
+                    @let mlEmail = ml | mailingListEmail;
+                    @if (mlEmail) {
+                      {{ mlEmail }} ·
+                    }
+                    {{ ml.subscriber_count }} subscribers
+                  </div>
                 </div>
               </div>
               @if (canEdit()) {

@@ -99,7 +99,7 @@ export interface CascadingRoleGrant {
 
 /** Wire shape returned by `GET /api/orgs/me/role-grants` — writers/auditors are disjoint (writer-wins). */
 export interface RoleGrantsResponse {
-  /** Direct writer-role `b2b_org.uid` values (`writers[].username === caller && invite_status === 'accepted'`); disjoint from auditors/cascading sets. Since LFXV2-3029 this is the direct-only *persona* answer for the selector badge, NOT the edit gate — edit capability is `writers` ∪ `cascadingWriters`, read through `editorSet` on the client and `OrgRoleGrantsService.hasEditorAccess` on the server. */
+  /** Direct writer-role `b2b_org.uid` values (`writers[].username === caller && invite_status === 'accepted'`); disjoint from auditors/cascading sets. Since LFXV2-3029 this is the direct-only *persona* answer for the selector badge, NOT the edit gate. `writers` ∪ `cascadingWriters` is the caller's roster-editor set (`editorSet` / `hasEditorAccess`); Org Lens edit gates follow `writer` on the org (#3136) via `OrgEditAccessService` on the client and `resolveOrgLensEdit` on the server. */
   writers: string[];
   /** `b2b_org.uid` values where caller has direct `auditor` AND is NOT a direct writer on the same org. */
   auditors: string[];
@@ -111,9 +111,9 @@ export interface RoleGrantsResponse {
   username: string;
   /** Server-side load timestamp (ISO 8601 UTC). */
   loaded_at: string;
-  /** Caller is a member of any LF team in `LF_TEAM_IDS` (`lf-staff`) — the population that holds `auditor` on every `b2b_org`. `false` whenever the determination could not be completed, so it is fail-closed rather than unknown (see `staffCheck`). It is an affordance signal (switcher + catalogue search), never a read gate — the gate asks the authorizer per org, so an explicitly-granted caller still reads that org with this false. Distinct from `PersonaResult.isLFStaff`, which is a separate staff-only check with separate consumers. Always present, never optional, so a client cannot read "absent" as "unknown". Orthogonal to the grant arrays. */
+  /** Caller is a member of a team in `ORG_WIDE_READ_TEAM_IDS` — the teams that read every `b2b_org`, through a plain `auditor` grant (`lf-staff`) or the `global_org_admin` relation (#3077). `false` whenever the determination could not be completed, so it is fail-closed rather than unknown (see `staffCheck`). It is an affordance signal (switcher + catalogue search), never a read gate — the gate asks the authorizer per org, so an explicitly-granted caller still reads that org with this false. Distinct from `PersonaResult.isLFStaff`, which is a separate staff-only check with separate consumers. Always present, never optional, so a client cannot read "absent" as "unknown". Orthogonal to the grant arrays. */
   isStaff: boolean;
-  /** #2961 — the caller is in `team:lf-contractor` and not in an `LF_TEAM_IDS` team. Contractors read an organization only through an explicit grant, so this only explains an empty Org Lens (`contractor-no-grant`); it grants nothing and never widens the switcher. `false` whenever the team check did not complete (see `staffCheck`). Optional for rolling deploys: absent ⇒ `false`. */
+  /** #2961 — the caller is in `team:lf-contractor` and not `isStaff`. Contractors read an organization only through an explicit grant, so this only explains an empty Org Lens (`contractor-no-grant`); it grants nothing and never widens the switcher. `false` whenever the team check did not complete (see `staffCheck`). Optional for rolling deploys: absent ⇒ `false`. */
   isContractor?: boolean;
   /** LFXV2-3029 — true when the caller's inherited grants could not be fully resolved, so the arrays above are a lower bound rather than the complete set. Lets the client say the lookup broke rather than that the caller has no organizations, and tells a server gate to answer "unverifiable" (503) instead of "denied" (403) on a negative. Never invalidates an entry that IS listed: every uid present is authoritative. Always present. */
   degraded: boolean;
@@ -387,9 +387,9 @@ export interface AccessAwareOrgsResult {
   loadedAt: string;
   /** Caller's resolved username (echoed back through `RoleGrantsResponse.username`). */
   username: string;
-  /** Caller is a member of an LF team (`LF_TEAM_IDS`). Resolved independently of the roster, so it is meaningful even when `resolved` is empty or `upstreamFailed` is true. */
+  /** Caller is a member of a team in `ORG_WIDE_READ_TEAM_IDS`. Resolved independently of the roster, so it is meaningful even when `resolved` is empty or `upstreamFailed` is true. */
   isStaff: boolean;
-  /** #2961 — caller is in `team:lf-contractor` and not LF team; resolved in the same batched team check as `isStaff`, fail-closed `false`. */
+  /** #2961 — caller is in `team:lf-contractor` and not `isStaff`; resolved in the same batched team check as `isStaff`, fail-closed `false`. */
   isContractor: boolean;
   /** LFXV2-3029 — true when the inherited portion of the set is a lower bound: the connected-component walk hit a hard cap or failed outright, authoritative classification of discovered candidates could not be completed, or a direct grant's `b2b_org` doc never landed so its component was never walked. Distinct from `upstreamFailed`: the direct-grant roster still loaded, and every entry in `resolved` is still authoritative — this flags what is *missing*, so it must never be read as invalidating an org that is present. Surfaces on `RoleGrantsResponse.degraded`. */
   degraded: boolean;

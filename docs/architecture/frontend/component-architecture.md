@@ -6,7 +6,7 @@ The project follows a modular file organization pattern where components are org
 
 ### Module Structure
 
-Feature modules live as top-level directories under `apps/lfx-one/src/app/modules/` (not nested under a `project/` parent). The tree below shows a representative slice of how each module is organized — see [CLAUDE.md](../../../CLAUDE.md#feature-modules) for the full current inventory (badges, documents, events, trainings, transactions, etc. follow the same pattern).
+Feature modules live as top-level directories under `apps/lfx-one/src/app/modules/` (not nested under a `project/` parent). The tree below shows a representative slice of how each module is organized — see [AGENTS.md](../../../AGENTS.md#feature-modules) for the full current inventory (badges, documents, events, trainings, transactions, etc. follow the same pattern).
 
 ```text
 apps/lfx-one/src/app/modules/
@@ -210,6 +210,9 @@ Reach for **child routes** only when each tab is a page in its own right — its
     { path: '', pathMatch: 'full', loadComponent: ... },           // Overview
     { path: 'engagement', title: '...', loadComponent: ... },      // Engagement (Level 2)
     { path: 'events', title: '...', loadComponent: ... },          // Events (Level 2)
+    { path: 'members', title: '...', loadComponent: ... },         // Members (Level 2)
+    { path: 'non-members', title: '...', loadComponent: ... },     // Non-Members (Level 2)
+    { path: 'training', title: '...', loadComponent: ... },        // Training (Level 2)
   ],
 }
 ```
@@ -219,7 +222,7 @@ Two rules this shell establishes:
 - **Chrome that outlives a tab switch is a component-provided service, never `providedIn: 'root'`.** `HealthMetricsChromeService` is listed in the gate's `providers`, so every child route inherits the same instance through the node injector — the selected period and the measured sticky-header height survive tab switches, and both reset when the user leaves the page. A root-provided service would leak that state across unrelated visits.
 - **`routerLinkActive` needs `queryParams: 'ignored'`.** Tab links carry no query params while the URL always carries `foundationSlug`, so the default matching never marks a tab active. Pass an explicit `IsActiveMatchOptions`, using `paths: 'exact'` for the empty-path tab and `paths: 'subset'` for the rest.
 
-A Level 2 tab composes `HealthMetricsL2ShellComponent` (`modules/dashboards/components/health-metrics-l2-shell/`) rather than re-implementing the layout. The tab passes its `sections`, `idPrefix`, `dataSections`, `subNavItems`, `navLabel` and `testIdPrefix` (plus an optional `crossReferenceNote`) — `sections` and `dataSections` are read once at init, while `subNavItems` stays reactive so badges update as counts arrive — projects each section body through an `<ng-template lfxHealthMetricsL2Section="key">`, and relays each body's `reading`/`settled` to the shell. The shell owns the sub-nav, the bounded scrolling pane, the scroll-spy and fragment deep links; a section with no projected body renders an anchored "Awaiting data" placeholder.
+A Level 2 tab composes `HealthMetricsL2ShellComponent` (`modules/dashboards/components/health-metrics-l2-shell/`) rather than re-implementing the layout. The tab passes its `sections`, `idPrefix`, `dataSections`, `subNavItems`, `navLabel` and `testIdPrefix` (plus an optional `crossReference`, a note whose trailing tab name links to a section of that tab) — `sections` and `dataSections` are read once at init, while `subNavItems` stays reactive so badges update as counts arrive — projects each section body through an `<ng-template lfxHealthMetricsL2Section="key">`, and relays each body's `reading`/`settled` to the shell. The shell owns the sub-nav, the bounded scrolling pane, the scroll-spy and fragment deep links; a section with no projected body renders an anchored "Awaiting data" placeholder.
 
 For the scroll-spy used inside a Level 2 page, five rules apply, each attributed to the component that established it:
 
@@ -227,7 +230,7 @@ For the scroll-spy used inside a Level 2 page, five rules apply, each attributed
 - Keep an `intersecting` Set, so exactly one item is ever active (`account-settings.component.ts`).
 - Give a short last section an end sentinel with a **non-zero height** (`account-settings.component.ts`), and observe it only once the area genuinely overflows (`health-metrics-l2-shell.component.ts`). A zero-height sentinel never intersects; one in a non-scrolling area intersects immediately and lights the last item at rest.
 - Register teardown once via `destroyRef.onDestroy`, **not** inside the setup function, which re-runs whenever the sticky offset changes (`health-metrics-l2-shell.component.ts`, whose observer is rebuilt as the sticky offset and the pane's overflow change).
-- Release a fragment deep link only once **every** async section that can change the pane's height has settled (`health-metrics-l2-shell.component.ts`'s `dataSections` input, e.g. `HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS`). Clearing the pending key on the first section to report leaves a later section's reflow to push the anchor out of view unanswered. A section joins that list only once its component emits `reading`/`settled` and the tab relays both to the shell's `sectionReading`/`sectionSettled` — a listed section that never emits `settled` holds every deep link until the TTL.
+- Release a fragment deep link only once **every** async section that can change the pane's height has settled (`health-metrics-l2-shell.component.ts`'s `dataSections` input, e.g. `HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS`). Clearing the pending key on the first section to report leaves a later section's reflow to push the anchor out of view unanswered. A section joins that list only once its component emits `reading`/`settled` and the tab relays both to the shell's `sectionReading`/`sectionSettled` — a listed section that never emits `settled` holds every deep link until the TTL. A key names a read, not necessarily an anchor: two reads under one anchor each get their own key (Members' `bridge` under `#tiers`, in `HEALTH_METRICS_MEMBERS_DATA_SECTIONS`), so the first to settle cannot release the link.
 
 Each async section of a Level 2 page owns its own read, and every one of them faces the same
 ordering problem: the foundation is not selected on the first pass. The rule the engagement sections

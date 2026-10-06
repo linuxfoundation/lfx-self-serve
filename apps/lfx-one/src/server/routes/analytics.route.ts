@@ -261,6 +261,42 @@ router.get('/events-at-a-glance', requireDashboardAccess, (req, res, next) => an
 // Health Metrics Events "Registrations & growth" section (#2967)
 router.get('/events-registrations-growth', requireDashboardAccess, (req, res, next) => analyticsController.getEventsRegistrationsGrowth(req, res, next));
 
+// Health Metrics Events "Revenue" section (#2968)
+router.get('/events-revenue', requireDashboardAccess, (req, res, next) => analyticsController.getEventsRevenue(req, res, next));
+
+// Health Metrics Events "Speakers & proposals" section (#2969)
+router.get('/events-speakers', requireDashboardAccess, (req, res, next) => analyticsController.getEventsSpeakers(req, res, next));
+router.get('/events-organizations', requireDashboardAccess, (req, res, next) => analyticsController.getEventsOrganizations(req, res, next));
+router.get('/events-sponsorship', requireDashboardAccess, (req, res, next) => analyticsController.getEventsSponsorship(req, res, next));
+router.get('/events-geography', requireDashboardAccess, (req, res, next) => analyticsController.getEventsGeography(req, res, next));
+
+// Health Metrics Members "Membership & revenue by tier" section (#3100)
+router.get('/members-tiers', requireDashboardAccess, (req, res, next) => analyticsController.getMembersTiers(req, res, next));
+
+// Health Metrics Members "Membership bridge" and its movement lists (#3101)
+router.get('/members-bridge', requireDashboardAccess, (req, res, next) => analyticsController.getMembersBridge(req, res, next));
+router.get('/members-movements', requireDashboardAccess, (req, res, next) => analyticsController.getMembersMovements(req, res, next));
+
+// Health Metrics Members "All members" (#3102)
+router.get('/members-directory', requireDashboardAccess, (req, res, next) => analyticsController.getMembersDirectory(req, res, next));
+router.get('/members-directory-tiers', requireDashboardAccess, (req, res, next) => analyticsController.getMembersDirectoryTiers(req, res, next));
+router.get('/members-at-risk', requireDashboardAccess, (req, res, next) => analyticsController.getMembersAtRisk(req, res, next));
+router.get('/members-renewals', requireDashboardAccess, (req, res, next) => analyticsController.getMembersRenewals(req, res, next));
+router.get('/members-board-attendance', requireDashboardAccess, (req, res, next) => analyticsController.getMembersBoardAttendance(req, res, next));
+router.get('/members-nps', requireDashboardAccess, (req, res, next) => analyticsController.getMembersNps(req, res, next));
+router.get('/members-churn', requireDashboardAccess, (req, res, next) => analyticsController.getMembersChurn(req, res, next));
+router.get('/members-churn-departures', requireDashboardAccess, (req, res, next) => analyticsController.getMembersChurnDepartures(req, res, next));
+
+// Health Metrics Non-Members sections: company participation (#3180), people (#3181) and conversion (#3182)
+router.get('/non-members-orgs', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersOrgs(req, res, next));
+router.get('/non-members-people', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersPeople(req, res, next));
+router.get('/non-members-conversion', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersConversion(req, res, next));
+
+// Health Metrics Training tab (#3198) and its enrollment (#3199) and courses (#3200) sections
+router.get('/training-presence', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingPresence(req, res, next));
+router.get('/training-enrollment', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingEnrollment(req, res, next));
+router.get('/training-courses', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingCourses(req, res, next));
+
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.
 // Authorization is enforced server-side with ED/FGA detection. Shared with LF Staff Marketing

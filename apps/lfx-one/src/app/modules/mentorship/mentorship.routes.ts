@@ -5,6 +5,7 @@ import { Routes } from '@angular/router';
 
 import { menteeApplyGuard } from '@shared/guards/mentee-apply.guard';
 import { menteeRegisterGuard } from '@shared/guards/mentee-profile.guard';
+import { mentorRegisterGuard } from '@shared/guards/mentor-profile.guard';
 
 export const MENTORSHIP_ROUTES: Routes = [
   {
@@ -40,12 +41,13 @@ export const MENTORSHIP_ROUTES: Routes = [
     // children below — `path: 'mentor'` with the default `prefix` match would otherwise
     // capture `/mentorship/mentor/programs` and `/mentorship/mentor/profile` too.
     //
-    // Serves the Become a Mentor form until the profiles API can tell us the signed-in
-    // user already has a mentor profile, at which point this path serves the shell
-    // instead, falling back to this form when they have none.
+    // `canActivate` checks whether the user already has a mentor profile and, if so,
+    // redirects to the shell's My Programs tab. No profile, or a failed check, renders
+    // the form.
     path: 'mentor',
     pathMatch: 'full',
     title: 'Become a Mentor',
+    canActivate: [mentorRegisterGuard],
     loadComponent: () => import('./mentor/mentor-register/mentor-register.component').then((m) => m.MentorRegisterComponent),
   },
   {
@@ -59,11 +61,19 @@ export const MENTORSHIP_ROUTES: Routes = [
     loadComponent: () => import('./mentor/mentor-program-detail/mentor-program-detail.component').then((m) => m.MentorProgramDetailComponent),
   },
   {
+    // Landing page for the link in the mentor invite email (`?token=`). Like program-review, it
+    // only answers the invitation on a click, so a mail scanner prefetching the link changes
+    // nothing. A sibling listed before the prefix-matched shell, so the shell does not swallow it.
+    path: 'mentor/invites',
+    title: 'Mentor Invitation',
+    loadComponent: () => import('./mentor/mentor-invite/mentor-invite.component').then((m) => m.MentorInviteComponent),
+  },
+  {
     // Register form — matches `/mentorship/mentee` exactly. `canActivate` checks whether
     // the user already has a mentee profile; if so it redirects to the apply page when
-    // both apply ids are on the URL, otherwise to the shell's overview.
-    // Today the mock always returns `false` (no profile), so this always renders.
-    // `pathMatch: 'full'` keeps it from swallowing shell children.
+    // both apply ids are on the URL, otherwise to the shell's overview. No profile, or a
+    // failed check, renders the register form. `pathMatch: 'full'` keeps it from
+    // swallowing shell children.
     path: 'mentee',
     pathMatch: 'full',
     title: 'Become a Mentee',
@@ -94,7 +104,7 @@ export const MENTORSHIP_ROUTES: Routes = [
       },
       {
         path: 'tasks',
-        title: 'My Application Tasks',
+        title: 'My Tasks',
         loadComponent: () => import('./mentee/mentee-application-tasks/mentee-application-tasks.component').then((m) => m.MenteeApplicationTasksComponent),
       },
       {
@@ -112,9 +122,6 @@ export const MENTORSHIP_ROUTES: Routes = [
     path: 'mentor',
     loadComponent: () => import('./mentor/mentor-page/mentor-page.component').then((m) => m.MentorPageComponent),
     children: [
-      // `/mentorship/mentor/` (trailing slash) lands here rather than 404, matching the
-      // shell's default view. Wildcard below covers unknown children the same way.
-      { path: '', pathMatch: 'full', redirectTo: 'programs' },
       {
         path: 'programs',
         title: 'My Programs',
@@ -125,6 +132,7 @@ export const MENTORSHIP_ROUTES: Routes = [
         title: 'Mentor Profile',
         loadComponent: () => import('./mentor/mentor-profile/mentor-profile.component').then((m) => m.MentorProfileComponent),
       },
+      // Unknown children, and the empty path, fall to the shell's default view rather than 404.
       { path: '**', redirectTo: 'programs' },
     ],
   },

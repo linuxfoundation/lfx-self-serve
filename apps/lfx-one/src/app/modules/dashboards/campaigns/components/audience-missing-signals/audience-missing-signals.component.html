@@ -5,7 +5,9 @@
   <div class="flex flex-col gap-2" data-testid="audience-missing-signals-gaps">
     <h5 class="text-sm font-semibold text-gray-900">Qualifying lists not found</h5>
     @if (missing().length === 0) {
-      <p class="text-sm text-gray-500">Every signal we look for was matched by at least one list.</p>
+      <p class="rounded-md border border-dashed border-gray-300 bg-gray-50 p-3 text-xs text-gray-500">
+        Every signal we look for was matched by at least one list.
+      </p>
     } @else {
       <p class="text-xs text-gray-500">
         Discovery found no list for these signals. That may be correct for this event — or the list exists under a name the search did not match, in which case
@@ -58,9 +60,9 @@
         Searching...
       </div>
     } @else if (searchResults().length > 0) {
-      <div class="flex flex-col gap-2">
+      <div class="grid grid-cols-1 gap-2 lg:grid-cols-2">
         @for (list of searchRows(); track list.listId) {
-          <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 bg-white p-2">
+          <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-100 bg-gray-50 p-2 hover:border-gray-200">
             <div class="flex min-w-0 flex-col gap-0.5">
               <span class="text-xs font-medium break-words text-gray-900">{{ list.name }}</span>
               <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
@@ -79,7 +81,7 @@
               type="button"
               (click)="onAdd(list)"
               [disabled]="disabled() || list.selected"
-              class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              class="shrink-0 rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               [attr.data-testid]="'audience-missing-signals-add-' + list.listId">
               {{ list.selected ? 'Added' : 'Add' }}
             </button>

@@ -12,7 +12,7 @@
       <!-- Page Header -->
       <div class="flex items-start justify-between mt-3">
         <div>
-          <h1 class="font-display font-light text-2xl" data-testid="documents-dashboard-title">{{ pageTitle() }}</h1>
+          <h1 class="font-display font-light text-2xl" data-testid="documents-dashboard-title">{{ pageTitle }}</h1>
           <p class="mt-1 text-sm text-gray-500" data-testid="documents-dashboard-description">
             {{ documentLabel.plural }}, links, and attachments across groups, meetings, and foundations.
           </p>
@@ -54,7 +54,7 @@
             }
 
             <!-- Breadcrumb (only when drilled into a folder) -->
-            @if (currentFolder(); as folder) {
+            @if (!searchQuery().trim() && currentFolder(); as folder) {
               <nav class="flex items-center gap-2 pb-3 border-b border-gray-100 text-sm" data-testid="documents-dashboard-breadcrumb" aria-label="Breadcrumb">
                 <button
                   type="button"
@@ -83,12 +83,12 @@
                     data-testid="documents-search-input">
                   </lfx-input-text>
                 </div>
-                <div class="w-36 shrink-0 overflow-hidden">
+                <div class="w-40 shrink-0 overflow-hidden">
                   <lfx-select
                     [form]="filterForm"
-                    control="projectSource"
+                    control="projectDocumentSource"
                     size="small"
-                    [options]="projectSourceOptions"
+                    [options]="projectDocumentSourceOptions"
                     placeholder="All Sources"
                     [showClear]="true"
                     styleClass="w-full"
@@ -111,7 +111,7 @@
             </lfx-documents-table>
           </div>
         } @else {
-          <!-- ── ME / ORG lens — legacy aggregator UI ───────────────────────── -->
+          <!-- ── No project context — legacy aggregator UI ───────────────────── -->
           <!-- Source Tabs -->
           <lfx-card-tabs-bar
             [options]="sourceTabOptions"
@@ -297,7 +297,7 @@
                     <!-- Actions column -->
                     <td>
                       <div class="flex items-center justify-end gap-1">
-                        @if (doc.source === 'file' && doc.attachmentUid) {
+                        @if (doc.attachmentUid) {
                           <lfx-button
                             label="Download"
                             icon="fa-light fa-arrow-down-to-line"

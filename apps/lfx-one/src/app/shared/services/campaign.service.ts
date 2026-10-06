@@ -5,6 +5,8 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { CAMPAIGN_JOB_POLL_INTERVAL_MS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import {
+  AudienceAttachExistingRequest,
+  AudienceAttachExistingResult,
   AudienceBuilderCapabilities,
   AudienceComposeMasterRequest,
   AudienceComposeMasterResult,
@@ -20,7 +22,6 @@ import {
   AudienceQaRunRequest,
   AudienceSuppressionList,
   BriefMetrics,
-  BuildAudienceResult,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
   CampaignBriefLoadResult,
@@ -31,6 +32,7 @@ import {
   CampaignCreateRequest,
   CampaignCreateResponse,
   CampaignDeliveryType,
+  CampaignEmailSegment,
   CampaignEmailStage,
   CampaignEmailVariant,
   CampaignJobOutcome,
@@ -48,6 +50,7 @@ import {
   KeywordMetricsResponse,
   LinkedInAccount,
   LinkedInMonitorResponse,
+  ListAudiencesResult,
   MetaAccountOption,
   MetaMonitorResponse,
   RedditAccountOption,
@@ -165,14 +168,17 @@ export class CampaignService {
   }
 
   /**
-   * Build the brief's send audience. No body — campaign-service derives it from the brief itself.
+   * Read back the audiences campaign-service already holds for this brief, newest first.
+   *
+   * A GET, and idempotent: this is what lets a page reload recover an attached audience instead
+   * of sending the operator back to the Audience tab to compose a second HubSpot list. It is the
+   * ONLY audience call this client makes -- audiences are produced on the Audience tab and never
+   * derived from here.
    */
-  public buildAudience(projectSlug: string, briefId: string): Observable<BuildAudienceResult> {
-    return this.http.post<BuildAudienceResult>(
-      '/api/campaigns/audience/build',
-      {},
-      { params: new HttpParams().set('project', projectSlug).set('brief_id', briefId) }
-    );
+  public listAudiences(projectSlug: string, briefId: string): Observable<ListAudiencesResult> {
+    return this.http.get<ListAudiencesResult>('/api/campaigns/audiences', {
+      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+    });
   }
 
   /**
@@ -182,7 +188,8 @@ export class CampaignService {
     projectSlug: string,
     briefId: string,
     stage?: CampaignEmailStage,
-    variant?: CampaignEmailVariant
+    variant?: CampaignEmailVariant,
+    segment?: CampaignEmailSegment
   ): Observable<GenerateEmailCopyResult> {
     // `stage` travels in this request's BODY, and in the BFF's own request to campaign-service it
     // travels in the QUERY STRING. The two hops differ deliberately: declaring it as a Goa body
@@ -198,7 +205,10 @@ export class CampaignService {
     //
     // `variant` follows the exact same shape as `stage` for the same reason: omitted rather than
     // sent empty, and unrecognised upstream falls back to ordinary stage-based copy under a 200.
-    const body = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}) };
+    //
+    // `segment` likewise, and it is INDEPENDENT of `variant`: the two narrow different things
+    // (framing vs which blocks apply), so any combination of the three is a legal request.
+    const body = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}), ...(segment ? { segment } : {}) };
     return this.http.post<GenerateEmailCopyResult>('/api/campaigns/email-copy', body, {
       params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
     });
@@ -514,6 +524,14 @@ export class CampaignService {
    */
   public composeAudienceMaster(projectSlug: string, request: AudienceComposeMasterRequest): Observable<AudienceComposeMasterResult> {
     return this.http.post<AudienceComposeMasterResult>('/api/campaigns/audience-builder/compose-master', request, { params: { project: projectSlug } });
+  }
+
+  /**
+   * Records lists that already exist as the brief's send audience, composing nothing. Safe to
+   * retry: no HubSpot list is created on any path.
+   */
+  public attachExistingAudience(projectSlug: string, request: AudienceAttachExistingRequest): Observable<AudienceAttachExistingResult> {
+    return this.http.post<AudienceAttachExistingResult>('/api/campaigns/audience-builder/attach-existing', request, { params: { project: projectSlug } });
   }
 
   /**

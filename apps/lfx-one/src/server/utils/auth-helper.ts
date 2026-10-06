@@ -63,7 +63,8 @@ export async function getUsernameFromAuth(req: Request): Promise<string | null> 
  * Gets the effective email for the current request context.
  * During impersonation, returns the target user's email from the impersonation session,
  * or null when the target has no stored email — it never falls back to the impersonator's
- * own OIDC email. Otherwise returns the OIDC session user's email.
+ * own OIDC email. Otherwise returns the OIDC session user's email, or null when the ID token does
+ * not assert `email_verified: true` (see `getVerifiedOidcEmail`).
  */
 export function getEffectiveEmail(req: Request): string | null {
   // Never fall back to the impersonator's OIDC email: the stored target email can be
@@ -71,7 +72,53 @@ export function getEffectiveEmail(req: Request): string | null {
   if (isImpersonating(req)) {
     return (req.appSession?.['impersonationUser']?.email as string)?.toLowerCase() || null;
   }
-  return (req.oidc?.user?.['email'] as string)?.toLowerCase() || null;
+  return getVerifiedOidcEmail(req)?.toLowerCase() || null;
+}
+
+/**
+ * The OIDC session's `email` claim, but only when the ID token asserts `email_verified: true`.
+ *
+ * Every email getter below feeds lookups that treat the address as proof of identity — several
+ * under the M2M token or without `filter_grants` (meeting registrants, vote/survey responses,
+ * groups.io members, Snowflake event registrations), precisely so email-only invitees with no
+ * LFID can be matched. An unverified address proves nothing: anyone can sign up with an
+ * invitee's email, and Auth0's unique-email constraint doesn't stop it when no account holds
+ * that address yet. Anything other than a literal `true` (false, missing, a string) fails closed
+ * to null, so callers take their existing "no email" path.
+ */
+function getVerifiedOidcEmail(req: Request): string | null {
+  const user = req.oidc?.user;
+  if (user?.['email_verified'] !== true) {
+    return null;
+  }
+  return (user['email'] as string) || null;
+}
+
+/**
+ * Resolves the effective identity pair behind every email-OR-username index query (My Surveys,
+ * My Votes, Pending Actions) in one place: the lowercased effective email plus the
+ * prefix-stripped username. A future identity-resolution change (new provider claim, new
+ * normalization rule) lands here instead of drifting across call sites — the GH-2987 class of
+ * bug. Either side can be null (email-only or username-only auth contexts); callers decide how
+ * to handle the both-null case.
+ */
+export async function resolveUserIdentity(req: Request): Promise<{ email: string | null; username: string | null }> {
+  const rawUsername = await getUsernameFromAuth(req);
+  return { email: getEffectiveEmail(req), username: rawUsername ? stripAuthPrefix(rawUsername) : null };
+}
+
+/**
+ * Gets the effective email WITHOUT lowercasing — the same resolution as `getEffectiveEmail`
+ * (impersonation target first, never the impersonator's own), preserving the stored casing.
+ * Pair it with `getEffectiveEmail` only when querying a case-sensitive exact-match index whose
+ * stored casing is outside our control (e.g. `vote_response.user_email` — GH #2985), matching
+ * on both the lowercased and the raw value. Almost all callers want `getEffectiveEmail`.
+ */
+export function getRawEffectiveEmail(req: Request): string | null {
+  if (isImpersonating(req)) {
+    return (req.appSession?.['impersonationUser']?.email as string) || null;
+  }
+  return getVerifiedOidcEmail(req);
 }
 
 /**
@@ -79,21 +126,28 @@ export function getEffectiveEmail(req: Request): string | null {
  * identity getter in this file that does NOT resolve to the impersonation target. `req.oidc.user`
  * is always the actual authenticated user's OIDC session, impersonation or not (impersonation is
  * layered on top via `req.appSession`, never by replacing `req.oidc.user`), so this is just
- * `getEffectiveEmail`'s non-impersonating branch, unconditionally.
+ * `getEffectiveEmail`'s non-impersonating branch, unconditionally — including its null for an
+ * unverified email.
  *
  * Use this only where the real actor's identity — not the target's — must be attributed for a
  * genuinely externally-visible, hard-to-retract action (e.g. weekly-brief mailing-list share,
  * LFXV2-3093). Most callers want `getEffectiveEmail` instead.
  */
 export function getRealEmail(req: Request): string | null {
-  return (req.oidc?.user?.['email'] as string)?.toLowerCase() || null;
+  return getVerifiedOidcEmail(req)?.toLowerCase() || null;
 }
 
 /**
  * Gets the effective username for the current request context.
  * During impersonation, returns the target user's username from the impersonation session,
  * or null when the target has no stored username — it never falls back to the impersonator's
- * own OIDC username. Otherwise returns the OIDC session user's username/nickname.
+ * own OIDC username. Otherwise returns the IdP-asserted LF username claim
+ * (`https://sso.linuxfoundation.org/claims/username`), or null when the session has none
+ * (e.g. an unlinked social / enterprise-SSO session).
+ *
+ * Deliberately no fallback to `nickname` / `username`: those are display claims, not the LFID.
+ * This value keys M2M, NATS, Snowflake and object-store lookups, so it must be the IdP-asserted
+ * identifier only.
  */
 export function getEffectiveUsername(req: Request): string | null {
   // Never fall back to the impersonator's OIDC username: the stored target username can
@@ -101,9 +155,35 @@ export function getEffectiveUsername(req: Request): string | null {
   if (isImpersonating(req)) {
     return (req.appSession?.['impersonationUser']?.username as string) || null;
   }
-  // `preferred_username` is the Authelia LFID-username fallback (#912) — additive last, so Auth0
-  // (nickname/username) precedence is unchanged. Mirrors `getUsernameFromAuth`.
-  return (req.oidc?.user?.['nickname'] as string) || (req.oidc?.user?.['username'] as string) || (req.oidc?.user?.['preferred_username'] as string) || null;
+  const claim = req.oidc?.user?.['https://sso.linuxfoundation.org/claims/username'];
+  if (typeof claim === 'string' && claim) {
+    return claim;
+  }
+  // Authelia (local dev) sessions carry no LF username claim; there `preferred_username` is the
+  // provisioned login (#912). Honored only when the session issuer is Authelia, never for Auth0.
+  if ((process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '').includes('auth.k8s.orb.local')) {
+    const preferred = req.oidc?.user?.['preferred_username'];
+    return typeof preferred === 'string' && preferred ? preferred : null;
+  }
+  return null;
+}
+
+/**
+ * The LF username EasyCLA compares a CCLA's CLA Manager list against: the Auth0 username, which
+ * the ID token carries on the LF username claim and the gateway forwards to EasyCLA.
+ *
+ * While impersonating, the session's own claims are the impersonator's, so the impersonated user's
+ * stored username is returned. Returns '' when neither is present, so a roster match fails closed.
+ * Deliberately no fallback to `nickname` or `getEffectiveUsername`: nothing ties those to the
+ * value EasyCLA compares.
+ */
+export function getEffectiveLfUsername(req: Request): string {
+  if (isImpersonating(req)) {
+    const target = req.appSession?.['impersonationUser']?.username;
+    return typeof target === 'string' ? target : '';
+  }
+  const claim = req.oidc?.user?.['https://sso.linuxfoundation.org/claims/username'];
+  return typeof claim === 'string' ? claim : '';
 }
 
 /**

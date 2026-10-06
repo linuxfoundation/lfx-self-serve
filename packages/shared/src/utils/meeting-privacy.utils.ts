@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HOST_KEY_EARLY_MINUTES, HOST_KEY_LATE_MINUTES } from '../constants';
 import { MeetingVisibility } from '../enums';
 import type { Meeting, MeetingOccurrence } from '../interfaces';
 import { canJoinMeeting } from './meeting.utils';
@@ -68,4 +69,19 @@ export function isHostKeyVisible(meeting: Pick<Meeting, 'host_key' | 'can_view_h
  */
 export function isHostKeyVisibleForJoinWindow(meeting: Meeting | null | undefined, occurrence?: MeetingOccurrence | null): boolean {
   return !!meeting && canJoinMeeting(meeting, occurrence) && isHostKeyVisible(meeting);
+}
+
+/**
+ * Whether `now` falls inside the host-key visibility window [effective_start − 70 min, effective_start + duration + 40 min).
+ * Prefers `next_occurrence_start_time` over `start_time` for recurring meetings (the series origin can be far past); fail-closed on missing/unparseable start. Mirrors PCC.
+ */
+export function isWithinHostKeyWindow(meeting: Pick<Meeting, 'start_time' | 'duration' | 'next_occurrence_start_time'>, now = new Date()): boolean {
+  const effectiveStart = meeting.next_occurrence_start_time || meeting.start_time;
+  if (!effectiveStart) return false;
+  const startMs = Date.parse(effectiveStart);
+  if (isNaN(startMs)) return false;
+  const windowStart = startMs - HOST_KEY_EARLY_MINUTES * 60_000;
+  const windowEnd = startMs + (meeting.duration ?? 0) * 60_000 + HOST_KEY_LATE_MINUTES * 60_000;
+  const nowMs = now.getTime();
+  return nowMs >= windowStart && nowMs < windowEnd;
 }

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, effect, input, output } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -11,7 +12,7 @@ import { FilterPillOption } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-meetings-top-bar',
-  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, FilterPillsComponent],
+  imports: [NgTemplateOutlet, ReactiveFormsModule, InputTextComponent, SelectComponent, FilterPillsComponent],
   templateUrl: './meetings-top-bar.component.html',
 })
 export class MeetingsTopBarComponent {
@@ -23,8 +24,13 @@ export class MeetingsTopBarComponent {
   public readonly timeFilter = input<'upcoming' | 'past'>('upcoming');
   public readonly pendingRsvpOnly = input<boolean>(false);
   public readonly showPendingRsvpFilter = input<boolean>(false);
+  public readonly pendingRsvpCount = input<number>(0);
   public readonly organizerOnly = input<boolean>(false);
   public readonly showOrganizerFilter = input<boolean>(false);
+  public readonly organizerCount = input<number>(0);
+  public readonly showDeclined = input<boolean>(false);
+  public readonly showDeclinedFilter = input<boolean>(false);
+  public readonly declinedCount = input<number>(0);
   public readonly meetingTypeChange = output<string | null>();
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();
@@ -33,19 +39,12 @@ export class MeetingsTopBarComponent {
   public readonly timeFilterChange = output<'upcoming' | 'past'>();
   public readonly pendingRsvpOnlyChange = output<boolean>();
   public readonly organizerOnlyChange = output<boolean>();
+  public readonly showDeclinedChange = output<boolean>();
 
   public readonly timeTabOptions: FilterPillOption[] = [
     { id: 'upcoming', label: 'Upcoming' },
     { id: 'past', label: 'Past' },
   ];
-
-  // Single-pill toggle: when active (pendingRsvpOnly === true), selectedFilter === 'pending'
-  // and the pill highlights; when inactive, selectedFilter doesn't match any option so the pill
-  // renders gray. Clicking always fires 'pending', and the handler inverts the current state.
-  public readonly pendingRsvpPillOptions: FilterPillOption[] = [{ id: 'pending', label: 'Pending RSVP' }];
-
-  // Same single-pill toggle mechanics as pendingRsvpPillOptions above.
-  public readonly organizerPillOptions: FilterPillOption[] = [{ id: 'organizer', label: 'Organized by me' }];
 
   public searchForm: FormGroup = new FormGroup({
     search: new FormControl(''),
@@ -88,13 +87,14 @@ export class MeetingsTopBarComponent {
     this.timeFilterChange.emit(value as 'upcoming' | 'past');
   }
 
-  public onPendingRsvpPillChange(): void {
-    // Single pill — clicking always toggles the current state.
-    this.pendingRsvpOnlyChange.emit(!this.pendingRsvpOnly());
-  }
-
-  public onOrganizerPillChange(): void {
-    // Single pill — clicking always toggles the current state.
-    this.organizerOnlyChange.emit(!this.organizerOnly());
+  /** Each chip is an independent on/off filter, so a click inverts that chip's current state. */
+  public onToggleChip(id: string): void {
+    if (id === 'pending') {
+      this.pendingRsvpOnlyChange.emit(!this.pendingRsvpOnly());
+    } else if (id === 'organizer') {
+      this.organizerOnlyChange.emit(!this.organizerOnly());
+    } else if (id === 'declined') {
+      this.showDeclinedChange.emit(!this.showDeclined());
+    }
   }
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Formation-only project sidebar (#2754) — robust structural tests. Asserts the redirect URL and
+ * Formation-stage project sidebar (#2754, #3059) — robust structural tests. Asserts the redirect URL and
  * the sidebar's data-testid contract independent of copy — see formation-sidebar.spec.ts for the
  * content-based behaviour coverage.
  */
@@ -28,15 +28,14 @@ const SIDEBAR_LOAD_TIMEOUT = 20_000;
 const ELEMENT_TIMEOUT = 10_000;
 const ACTIVE_PROJECT_SLUG = 'cascade-active-project';
 
-/** Every project-lens item the formation-only sidebar must drop, by the sidebar's auto-derived testids. */
-const FULL_NAV_TESTIDS = [
-  'sidebar-item-dashboard',
-  'sidebar-item-meetings',
-  'sidebar-item-mailing-lists',
-  'sidebar-item-groups',
-  'sidebar-item-documents',
-  'sidebar-item-governance',
-] as const;
+/** The project-lens items a forming project keeps next to Formation (#3059), by the sidebar's auto-derived testids. */
+const FORMATION_STAGE_TESTIDS = ['sidebar-item-meetings', 'sidebar-item-mailing-lists', 'sidebar-item-groups'] as const;
+
+/** Every project-lens item the formation-stage sidebar must drop. */
+const HIDDEN_WHILE_FORMING_TESTIDS = ['sidebar-item-dashboard', 'sidebar-item-documents', 'sidebar-item-governance'] as const;
+
+/** Every standard project-lens item an active project shows. */
+const FULL_NAV_TESTIDS = [...FORMATION_STAGE_TESTIDS, ...HIDDEN_WHILE_FORMING_TESTIDS] as const;
 
 test.describe('Project lens sidebar for a formation-stage project — structural contract (#2754)', () => {
   test.beforeEach(async ({ page }) => {
@@ -45,7 +44,7 @@ test.describe('Project lens sidebar for a formation-stage project — structural
     await setPersonaCookie(page);
   });
 
-  test('redirects a formation project to the checklist and keeps only the Formation testid in the sidebar', async ({ page }) => {
+  test('redirects a formation project to the checklist and keeps only the formation-stage testids in the sidebar', async ({ page }) => {
     const project = buildBaseProject(FORMATION_PROJECT_SLUG, { stage: 'Formation - Engaged', category: 'project' });
     await stubProjectLensItems(page, project);
     await mockFormationChecklistApis(page, { project });
@@ -57,7 +56,10 @@ test.describe('Project lens sidebar for a formation-stage project — structural
     });
     await waitForSidebar(page);
     await expect(page.getByTestId('sidebar-project-formation')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    for (const testId of FULL_NAV_TESTIDS) {
+    for (const testId of FORMATION_STAGE_TESTIDS) {
+      await expect(page.getByTestId(testId), `${testId} should stay visible for a formation project`).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    }
+    for (const testId of HIDDEN_WHILE_FORMING_TESTIDS) {
       await expect(page.getByTestId(testId), `${testId} should be hidden for a formation project`).toHaveCount(0);
     }
   });

@@ -49,10 +49,12 @@ import {
   getPastMeetingTranscriptUrl,
   MaterialsChangedEvent,
   MeetingAttachment,
+  MeetingCancelOccurrenceResult,
   MeetingHostCandidate,
   MeetingJoinPageState,
   MeetingOccurrence,
   MeetingRecurrence,
+  MeetingRescheduleOccurrenceResult,
   getMeetingSeriesUid,
   MeetingRegistrant,
   MeetingRsvp,
@@ -69,7 +71,14 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { getUserTimezone, isHostKeyVisible, isMeetingInviteResponsesEnabled, isPastMeetingCompositeId, reconcileOptimisticPad } from '@lfx-one/shared/utils';
+import {
+  getUserTimezone,
+  isHostKeyVisible,
+  isMeetingAttendeeListShared,
+  isMeetingInviteResponsesEnabled,
+  isPastMeetingCompositeId,
+  reconcileOptimisticPad,
+} from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -107,10 +116,13 @@ import {
   timer,
 } from 'rxjs';
 
+import { CancelOccurrenceConfirmationComponent } from '../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { GuestFormComponent } from '../components/guest-form/guest-form.component';
+import { HostKeyPanelComponent } from '../components/host-key-panel/host-key-panel.component';
 import { MeetingMaterialsDrawerComponent } from '../components/meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingRsvpDetailsComponent } from '../components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { PublicRegistrationModalComponent } from '../components/public-registration-modal/public-registration-modal.component';
+import { RescheduleOccurrenceDialogComponent } from '../components/reschedule-occurrence-dialog/reschedule-occurrence-dialog.component';
 
 @Component({
   selector: 'lfx-meeting-join',
@@ -127,6 +139,7 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     MeetingRegistrantsDisplayComponent,
     MeetingOrganizerComponent,
     GuestFormComponent,
+    HostKeyPanelComponent,
     TooltipModule,
     DrawerModule,
     SkeletonModule,
@@ -217,15 +230,10 @@ export class MeetingJoinComponent implements OnInit {
   private optimisticAdditional = signal(0);
   public materialsDrawerVisible = signal(false);
   protected showAllFiles = signal(false);
-  // Host key is masked by default. Reveal state is scoped to a specific meeting id so that
-  // navigating to a different meeting on the same component instance requires a fresh reveal and
-  // never renders another meeting's key unmasked once its response arrives.
-  private readonly revealedHostKeyMeetingId: WritableSignal<string | null> = signal<string | null>(null);
-  protected readonly showHostKey: Signal<boolean> = computed(() => !!this.meeting()?.id && this.revealedHostKeyMeetingId() === this.meeting().id);
-  // Single gate for the host-key chip: the BFF authorized this viewer (and sent a key) AND the
-  // meeting is inside the 70-min pre / 40-min post window applied server-side to can_view_host_key.
-  // The frontend does not re-derive the window — it trusts the BFF's flag directly.
+  // Single gate for the host-key callout: BFF authorized (can_view_host_key + key sent) and inside the
+  // 70-min pre / 40-min post window applied server-side. The frontend trusts the BFF's flag directly.
   protected readonly hostKeyVisible: Signal<boolean> = computed(() => isHostKeyVisible(this.meeting()));
+  protected readonly canManageOccurrence: Signal<boolean> = this.initCanManageOccurrence();
   protected visibleFiles = computed(() => (this.showAllFiles() ? this.materialFiles() : this.materialFiles().slice(0, 5)));
   protected hasMoreFiles = computed(() => this.materialFiles().length > 5);
   // Authoritative "view as past" flag derived from the hyphenated occurrence ID URL pattern —
@@ -254,6 +262,9 @@ export class MeetingJoinComponent implements OnInit {
   // shows the skeleton, not meeting A's content, until meeting B resolves).
   protected meetingMatchesRoute = computed(() => this.meetingRouteId() === this.meetingResolvedRouteId());
   private refreshTrigger$ = new BehaviorSubject<void>(undefined);
+  // Re-reads the series timeline after an organizer moves or cancels an occurrence; the timeline is
+  // otherwise fetched once per series and would keep the occurrence at its old slot.
+  private seriesOccurrencesRefresh$ = new BehaviorSubject<void>(undefined);
   private pastMeetingAttachmentsRefresh$ = new BehaviorSubject<void>(undefined);
   // Set immediately on self-registration success so the UI responds before the meeting refetch
   // settles the invited flag (query-service indexing lag).
@@ -327,7 +338,8 @@ export class MeetingJoinComponent implements OnInit {
   // instead of leaking a previous meeting's roster into the new one.
   private registrantsRosterKey = signal<string | null>(null);
   // Counts from actual data
-  protected totalInvitees = computed(() => this.registrants().length);
+  // An invitee who may not see the guests gets no roster, only the server's count.
+  protected totalInvitees = computed(() => (this.canViewGuests() ? this.registrants().length : (this.meeting()?.registrant_count ?? 0)));
   // The roster the child component holds is now the base count — this pad is purely optimistic,
   // covering the window between an add and the query-service refetch catching up.
   public additionalRegistrantsCount = computed(() => this.optimisticAdditional());
@@ -337,11 +349,18 @@ export class MeetingJoinComponent implements OnInit {
   // upcoming registrants signal is empty on past join pages), so the chip and the participants
   // drawer resolve organizers from the same people.
   protected organizerChipHosts = computed<MeetingHostCandidate[]>(() => (this.isPastMeeting() ? this.pastMeetingParticipants() : this.registrants()));
-  // Past meeting attendance stats (derived from participants)
-  protected participantCount = computed(() => this.pastMeetingParticipants().length);
-  protected attendedCount = computed(() => this.pastMeetingParticipants().filter((p) => p.is_attended).length);
+  // Past meeting attendance stats: derived from the participants when the viewer gets them, else
+  // the server's counts — the participants endpoint hides the rows from viewers not on them.
+  protected participantCount = computed(() => this.pastMeetingParticipants().length || (this.meeting()?.participant_count ?? 0));
+  protected attendedCount = computed(() => {
+    const participants = this.pastMeetingParticipants();
+    return participants.length ? participants.filter((p) => p.is_attended).length : (this.meeting()?.attended_count ?? 0);
+  });
   protected absentCount = computed(() => this.participantCount() - this.attendedCount());
-  protected invitedCount = computed(() => this.pastMeetingParticipants().filter((p) => p.is_invited).length);
+  protected invitedCount = computed(() => {
+    const participants = this.pastMeetingParticipants();
+    return participants.length ? participants.filter((p) => p.is_invited).length : (this.meeting()?.individual_registrants_count ?? 0);
+  });
   protected attendancePercentage = computed(() => {
     const total = this.participantCount();
     const attended = this.attendedCount();
@@ -351,6 +370,9 @@ export class MeetingJoinComponent implements OnInit {
   // Computed signals for invited/registration status
   public isInvited: Signal<boolean>;
   public effectivelyInvited: Signal<boolean>;
+  // Matches the BFF roster gate: an invitee sees the other guests only when the organizer shares them.
+  protected attendeeListShared = computed(() => isMeetingAttendeeListShared(this.meeting()));
+  protected canViewGuests = computed(() => !!this.meeting()?.organizer || (this.effectivelyInvited() && this.attendeeListShared()));
   public canRegisterForMeeting: Signal<boolean>;
   public canToggleRsvpView: Signal<boolean>;
   public showMyRsvp: WritableSignal<boolean> = signal<boolean>(false);
@@ -531,39 +553,66 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
-  /**
-   * Toggles the masked/revealed state of the host key for the currently loaded meeting.
-   * Reveal state is keyed to the meeting id, so it resets when a different meeting loads.
-   */
-  public toggleHostKey(): void {
-    const meetingId = this.meeting()?.id ?? null;
-    this.revealedHostKeyMeetingId.update((current) => (current === meetingId ? null : meetingId));
-  }
-
-  /**
-   * Copies the raw host key to the clipboard, showing a success or failure toast.
-   * No-ops when the current meeting has no host key.
-   */
-  public copyHostKey(): void {
-    const hostKey = this.meeting().host_key;
-    if (!hostKey) {
+  /** Opens the edit dialog (time, duration, title, agenda) for the occurrence this page is showing. */
+  public rescheduleCurrentOccurrence(): void {
+    const meeting = this.meeting();
+    const occurrence = this.currentOccurrence();
+    if (!occurrence) {
       return;
     }
 
-    const success = this.clipboard.copy(hostKey);
-    if (success) {
+    const dialogRef = this.dialogService.open(RescheduleOccurrenceDialogComponent, {
+      header: 'Edit Occurrence',
+      width: '520px',
+      modal: true,
+      closable: true,
+      dismissableMask: false,
+      data: { meeting, occurrence },
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingRescheduleOccurrenceResult | undefined) => {
+      if (!result?.confirmed || !result.start_time) {
+        return;
+      }
+
       this.messageService.add({
         severity: 'success',
-        summary: 'Host Key Copied',
-        detail: 'The host key has been copied to your clipboard',
+        summary: 'Occurrence updated',
+        detail: 'Only this occurrence was changed. The rest of the series is unchanged.',
       });
-    } else {
-      this.messageService.add({
-        severity: 'error',
-        summary: 'Copy Failed',
-        detail: 'Unable to copy the host key. Please copy it manually.',
-      });
+      this.showOccurrenceAfterChange(new Date(result.start_time).getTime());
+    });
+  }
+
+  /** Opens the cancel confirmation for the occurrence this page is showing. */
+  public cancelCurrentOccurrence(): void {
+    const meeting = this.meeting();
+    const occurrence = this.currentOccurrence();
+    if (!occurrence) {
+      return;
     }
+
+    const dialogRef = this.dialogService.open(CancelOccurrenceConfirmationComponent, {
+      header: 'Cancel Occurrence',
+      width: '450px',
+      modal: true,
+      closable: true,
+      dismissableMask: false,
+      data: { meeting, occurrence },
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingCancelOccurrenceResult | undefined) => {
+      if (result?.confirmed) {
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Occurrence cancelled',
+          detail: 'This occurrence was cancelled. The rest of the series is unchanged.',
+        });
+        this.showOccurrenceAfterChange(this.nextLiveOccurrenceStartMs());
+      } else if (result?.error) {
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: result.error });
+      }
+    });
   }
 
   public onRegistrantsToggle(): void {
@@ -954,6 +1003,24 @@ export class MeetingJoinComponent implements OnInit {
     this.password.set(fromQuery || this.statePassword());
   }
 
+  /**
+   * Re-reads the series after an occurrence was moved or cancelled and points the page at the right one.
+   * @description The `occurrence` query param is the occurrence's start instant, and a reschedule gives
+   * the occurrence a new one — so it is rewritten to `startMs`. A cancel passes the successor's start,
+   * or `null` when there is none so the page falls through to whatever is still active. The explicit refresh covers the case where the
+   * URL does not change, which the router treats as a no-op.
+   */
+  private showOccurrenceAfterChange(startMs: number | null): void {
+    void this.router.navigate([], {
+      relativeTo: this.activatedRoute,
+      queryParams: { occurrence: startMs === null ? null : String(startMs) },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+    this.seriesOccurrencesRefresh$.next();
+    this.refreshTrigger$.next();
+  }
+
   // The password the composer's post-create toast hands over in router navigation state.
   // `history` is browser-only, so the read is guarded; on the server the query param is the only
   // source a page has.
@@ -998,10 +1065,40 @@ export class MeetingJoinComponent implements OnInit {
         filter((meeting) => !!meeting && (!!meeting.recurrence || getMeetingSeriesUid(meeting) !== meeting.id)),
         map((meeting) => getMeetingSeriesUid(meeting)),
         distinctUntilChanged(),
-        switchMap((seriesUid) => this.meetingService.getPublicMeetingOccurrences(seriesUid, this.password()))
+        switchMap((seriesUid) =>
+          this.seriesOccurrencesRefresh$.pipe(switchMap(() => this.meetingService.getPublicMeetingOccurrences(seriesUid, this.password())))
+        )
       ),
       { initialValue: empty }
     );
+  }
+
+  // Upstream enforces `organizer` on both occurrence writes; this only decides whether to offer them.
+  private initCanManageOccurrence(): Signal<boolean> {
+    return computed(
+      () =>
+        this.authenticated() &&
+        !!this.meeting()?.organizer &&
+        !!this.meeting()?.recurrence &&
+        !this.loadedViaPastMeetingId() &&
+        !this.isPastMeeting() &&
+        !!this.currentOccurrence()
+    );
+  }
+
+  /**
+   * Start instant (ms) of the live occurrence after the one this page is showing, or `null` if none.
+   * @description Read before a cancel lands: once the cancelled slot drops out of the timeline, clearing
+   * `?occurrence=` would fall back to the series' earliest upcoming occurrence rather than this one's
+   * successor. Past records are excluded — they are never a cancel's natural next stop.
+   */
+  private nextLiveOccurrenceStartMs(): number | null {
+    const { sorted, currentIdx } = this.occurrenceContext();
+    const next = currentIdx >= 0 ? sorted[currentIdx + 1] : undefined;
+    if (!next || next.meeting_and_occurrence_id) {
+      return null;
+    }
+    return new Date(next.start_time).getTime();
   }
 
   private initializeOccurrenceContext(): Signal<{ sorted: OccurrenceNavItem[]; currentIdx: number }> {
@@ -1623,9 +1720,10 @@ export class MeetingJoinComponent implements OnInit {
         toObservable(this.optimisticInvited),
       ]).pipe(
         switchMap(([meeting, occurrence, authenticated, , optimisticInvited]) => {
-          if (!meeting?.id || !authenticated || !(meeting.organizer || meeting.invited || optimisticInvited) || this.isPastMeeting()) {
-            // No fetch will happen on this branch (unauthenticated, not organizer/invited, or a
-            // past meeting) — clear the loading flag so the RSVP card doesn't hang on a skeleton.
+          const canViewGuests = meeting?.organizer || ((meeting?.invited || optimisticInvited) && isMeetingAttendeeListShared(meeting));
+          if (!meeting?.id || !authenticated || !canViewGuests || this.isPastMeeting()) {
+            // No fetch will happen on this branch (unauthenticated, not allowed to see the guests, or
+            // a past meeting) — clear the loading flag so the RSVP card doesn't hang on a skeleton.
             this.registrantsLoading.set(false);
             return of([] as MeetingRegistrant[]);
           }

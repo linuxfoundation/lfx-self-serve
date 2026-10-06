@@ -22,21 +22,29 @@ import { Request } from 'express';
 
 import { resolveSeatAvatar } from '../helpers/avatar.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
-import { coalescePerUserOrgFetch } from '../utils/single-flight';
+import { coalescePerUserOrgFetch, evictPerUserOrgFetch } from '../utils/single-flight';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgLensMembershipsService } from './org-lens-memberships.service';
 import { ProjectService } from './project.service';
-import { invalidateOrgGroupsCache, withPerUserCache } from './valkey.service';
+import { invalidateOrgGroupsCache, invalidatePerUserCache, withPerUserCache } from './valkey.service';
+
+/**
+ * committee-service org-seat page size. committee-service 0.4.52 (lfx-v2-committee-service#216) accepts
+ * up to 5000 (above that it returns 400). Each request is a full server-side org read whatever the page
+ * size, so a larger page is strictly cheaper upstream: it turns ~6 requests into 1 for the largest org.
+ */
+const ORG_SEAT_PAGE_SIZE = 5000;
 
 /**
  * Picker roster bound (FR-006 typeahead): cap the org-wide seat drain so opening the Reassign modal
- * doesn't pull the full cross-foundation roster (up to the 200-page × 500 = 100k safety cap) just to
- * feed a client-filtered typeahead. Key contacts are always included in full; committee members beyond
- * this bound are omitted from the suggestions (manual entry still works).
+ * doesn't pull the full cross-foundation roster (up to the 200-page × 5000 = 1M safety cap) just to
+ * feed a client-filtered typeahead. One page of up to 5000 rows for one full server-side read (it was
+ * 4 × 500 = 2000 rows for four full reads). Key contacts are always included in full; committee members
+ * beyond this bound are omitted from the suggestions (manual entry still works).
  */
-const PICKER_MAX_SEAT_PAGES = 4;
+const PICKER_MAX_SEAT_PAGES = 1;
 
 /** Board & Committee tab service (spec 026, live data): proxies live committee-service seats (user token → Heimdall `b2b_org#auditor`), splits Board vs other by `committee_category` (FR-003); voting history deferred (D12, empty list); no mock fixture — committee-service owns the data. */
 export class OrgLensBoardCommitteeService {
@@ -159,7 +167,7 @@ export class OrgLensBoardCommitteeService {
     // well as on the People-tab reassign. Unconditional rather than gated on category: a board
     // reassign discarding the entry costs one rebuild, whereas missing a non-board one serves
     // wrong counts for the whole retention window.
-    await invalidateOrgGroupsCache(accountId);
+    await Promise.all([invalidateOrgGroupsCache(accountId), this.invalidateCallerSeatCaches(req, accountId)]);
 
     logger.debug(req, 'reassign_committee_seat_proxy', 'committee-service returned reassigned seat', {
       org_uid: accountId,
@@ -167,6 +175,33 @@ export class OrgLensBoardCommitteeService {
       committee_category: upstream.committee_category,
     });
     return { accountId, foundationId, seat };
+  }
+
+  /**
+   * Best-effort discard of the caller's own per-user seat roster and People directory for one org,
+   * after a successful seat write. The Board/Committee tabs re-fetch immediately after a reassign,
+   * and without this the caller's 30-second entries would serve the pre-reassign seat back to them.
+   * Keyed by the same effective username `fetchAllOrgSeats` / `OrgPeopleDirectoryService.getLive`
+   * build their keys from; other callers' entries are left to their TTL. `del` never throws.
+   *
+   * Evicting the in-process flights first matters as much as the delete: a fill that started before
+   * the reassign (e.g. the All Employees live merge draining seats in the background) would
+   * otherwise be joined by the post-reassign read and write the old roster back after the delete.
+   * Once evicted, that fill skips its write (`isCurrent` is false) and the next read starts fresh.
+   *
+   * Residual, not covered: this fence is per process. A fill already in flight on ANOTHER replica
+   * for the same caller and org can still write the pre-reassign roster after this delete, and a
+   * local fill that passed its `isCurrent` check just before eviction can land its write a few
+   * milliseconds after it. Either is bounded by the 30-second per-user TTL.
+   */
+  public async invalidateCallerSeatCaches(req: Request, orgUid: string): Promise<void> {
+    const username = getEffectiveUsername(req) ?? '';
+    evictPerUserOrgFetch(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid);
+    evictPerUserOrgFetch(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, orgUid);
+    await Promise.all([
+      invalidatePerUserCache(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid),
+      invalidatePerUserCache(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, orgUid),
+    ]);
   }
 
   /**
@@ -184,21 +219,30 @@ export class OrgLensBoardCommitteeService {
    * A consequence for monitoring: an oversize warning now counts a burst, not a caller.
    *
    * What is shared is the COMPACT envelope; each caller rebuilds its own seat objects from it.
+   *
+   * `onDrain` fires only when THIS call runs the committee-service drain (a Valkey miss on the
+   * flight it started). It stays silent on a Valkey hit, and also when this request joined an
+   * in-flight drain started by the same user — so the timing log's `seats_drained: false` covers
+   * both, and `seats_duration_ms` tells them apart.
    */
-  public async fetchAllOrgSeats(req: Request, orgUid: string): Promise<CommitteeServiceOrgSeat[]> {
+  public async fetchAllOrgSeats(req: Request, orgUid: string, onDrain?: () => void): Promise<CommitteeServiceOrgSeat[]> {
     const username = getEffectiveUsername(req) ?? '';
     // Same effective principal (impersonation honoured) + org the cache key is built from, and
     // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
     // bucket per blank principal would hand the first caller's permission-filtered roster to every
     // other caller that happened to arrive without a resolvable identity.
-    const entry = await coalescePerUserOrgFetch(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid, () =>
+    const entry = await coalescePerUserOrgFetch(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid, (isCurrent) =>
       withPerUserCache<CompactOrgSeatsEntry>(
         VALKEY_CACHE.ORG_SEATS_NAMESPACE,
         username,
         orgUid,
         VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-        async () => toCompactOrgSeats(await this.fetchOrgSeats(req, orgUid)),
-        isCompactOrgSeatsEntry
+        async () => {
+          onDrain?.();
+          return toCompactOrgSeats(await this.fetchOrgSeats(req, orgUid));
+        },
+        isCompactOrgSeatsEntry,
+        isCurrent
       )
     );
     return fromCompactOrgSeats(entry);
@@ -266,7 +310,7 @@ export class OrgLensBoardCommitteeService {
 
     // committee-service returns a paginated page { seats, page_token } (LFXV2-1865). The grouped view and CSV
     // export need the org's FULL (foundation-scoped) roster, so they drain every page by following the opaque
-    // cursor up to `maxPages` (default 200 × 500 = 100k safety stop against a pathological cursor loop). The
+    // cursor up to `maxPages` (default 200 × 5000 = 1M safety stop against a pathological cursor loop). The
     // picker passes a much smaller bound and tolerates truncation (see below).
     const seats: CommitteeServiceOrgSeat[] = [];
     let pageToken: string | undefined;
@@ -274,7 +318,7 @@ export class OrgLensBoardCommitteeService {
     do {
       // ApiClientService serializes array params as repeated keys (project_uids=a&project_uids=b), which
       // the committee-service read contract accepts (filters organization_id + project_uid ∈ {family}).
-      const params: Record<string, string | string[]> = { v: '1', page_size: '500' };
+      const params: Record<string, string | string[]> = { v: '1', page_size: String(ORG_SEAT_PAGE_SIZE) };
       if (projectUids?.length) {
         params['project_uids'] = projectUids;
       }

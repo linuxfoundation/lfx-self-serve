@@ -4,25 +4,38 @@
 import {
   PROJECT_APPLICATION_BOOLEAN_KEYS,
   PROJECT_APPLICATION_CANONICAL_KEYS,
+  PROJECT_APPLICATION_CREATED_LEGAL_ENTITY_TYPE,
+  PROJECT_APPLICATION_CREATED_STAGE,
   PROJECT_APPLICATION_EMAIL_KEYS,
   PROJECT_APPLICATION_EMAIL_LIST_KEYS,
   PROJECT_APPLICATION_FIELD_LABELS,
+  PROJECT_APPLICATION_LONG_TEXT_KEYS,
+  PROJECT_APPLICATION_MAILTO_FORBIDDEN_CHARS_REGEX,
   PROJECT_APPLICATION_SECTIONS,
+  PROJECT_APPLICATION_SPEC_CATEGORY,
   PROJECT_APPLICATION_STATE_META,
+  PROJECT_APPLICATION_STATUS_CALLOUTS,
   PROJECT_APPLICATION_UNKNOWN_STATE_META,
   PROJECT_APPLICATION_URL_KEYS,
   PROJECT_APPLICATION_URL_KEYS_REQUIRING_HOST,
 } from '../constants/project-application.constants';
 import type {
   ProjectApplication,
+  ProjectApplicationAnswerKind,
+  ProjectApplicationAnswerLink,
+  ProjectApplicationAnswerRow,
   ProjectApplicationAnswers,
   ProjectApplicationAnswerSection,
   ProjectApplicationRow,
   ProjectApplicationStateMeta,
+  ProjectApplicationStatusCallout,
   ProjectApplicationValidationIssue,
+  ProjectApplicationViewMode,
   UpstreamProjectApplication,
   UpstreamProjectApplicationDoc,
 } from '../interfaces/project-application.interface';
+import type { CreateProjectRequest } from '../interfaces/project.interface';
+import { slugify } from './string.utils';
 
 /** Normalizes a query-service `project_application` document onto the browser shape. */
 export function normalizeProjectApplicationDoc(doc: UpstreamProjectApplicationDoc): ProjectApplication {
@@ -128,24 +141,114 @@ export function buildProjectApplicationAnswerSections(answers: ProjectApplicatio
     const rows = section.keys
       .map((key) => {
         known.add(key);
-        return { key, label: getProjectApplicationFieldLabel(key), value: formatProjectApplicationAnswer(source[key]) };
+        return buildProjectApplicationAnswerRow(key, source[key]);
       })
       .filter((row) => row.value !== '');
     if (rows.length > 0) {
-      sections.push({ title: section.title, rows });
+      sections.push({ title: section.title, rows: hideRedundantLabel(section.title, rows) });
     }
   }
 
   const otherRows = Object.keys(source)
     .filter((key) => !known.has(key))
     .sort()
-    .map((key) => ({ key, label: getProjectApplicationFieldLabel(key), value: formatProjectApplicationAnswer(source[key]) }))
+    .map((key) => buildProjectApplicationAnswerRow(key, source[key]))
     .filter((row) => row.value !== '');
   if (otherRows.length > 0) {
     sections.push({ title: 'Other answers', rows: otherRows });
   }
 
   return sections;
+}
+
+/** One answer as the detail view renders it: URL and email answers carry their entries as links. */
+export function buildProjectApplicationAnswerRow(key: string, raw: unknown): ProjectApplicationAnswerRow {
+  const value = formatProjectApplicationAnswer(raw);
+  const kind = getProjectApplicationAnswerKind(key);
+  return {
+    key,
+    label: getProjectApplicationFieldLabel(key),
+    value,
+    kind,
+    links: value ? toProjectApplicationAnswerLinks(kind, raw, value) : [],
+    long: PROJECT_APPLICATION_LONG_TEXT_KEYS.has(key),
+    labelHidden: false,
+  };
+}
+
+/** Link target for a URL answer — only an absolute http(s) URL with a host is linked; anything else stays text. */
+export function toProjectApplicationUrlLink(text: string): ProjectApplicationAnswerLink {
+  return { text, href: isHttpUrl(text, true) ? text : null, external: true };
+}
+
+/**
+ * Link target for an email answer. Only a plain single address becomes a `mailto:` link — stricter than the
+ * stored-value rules, so a legacy entry carrying `?`, `&` or other mailto-header characters stays text.
+ */
+export function toProjectApplicationEmailLink(text: string): ProjectApplicationAnswerLink {
+  return { text, href: isPlainEmailAddress(text) ? `mailto:${text}` : null, external: false };
+}
+
+/** One `@` between a non-empty local part and a dotted domain, with no forbidden characters — checked without backtracking. */
+function isPlainEmailAddress(text: string): boolean {
+  if (PROJECT_APPLICATION_MAILTO_FORBIDDEN_CHARS_REGEX.test(text)) {
+    return false;
+  }
+  const at = text.indexOf('@');
+  if (at <= 0 || at !== text.lastIndexOf('@')) {
+    return false;
+  }
+  const domain = text.slice(at + 1);
+  const dot = domain.lastIndexOf('.');
+  return dot > 0 && dot < domain.length - 1;
+}
+
+/** The state explainer for the detail drawer, worded for the persona viewing it; `null` for an unseen state. */
+export function getProjectApplicationStatusCallout(state: string | null | undefined, mode: ProjectApplicationViewMode): ProjectApplicationStatusCallout | null {
+  const copy = state ? PROJECT_APPLICATION_STATUS_CALLOUTS[state] : undefined;
+  if (!copy) {
+    return null;
+  }
+  return { severity: copy.severity, icon: copy.icon, text: mode === 'staff' ? copy.staff : copy.submitter };
+}
+
+function getProjectApplicationAnswerKind(key: string): ProjectApplicationAnswerKind {
+  if (PROJECT_APPLICATION_URL_KEYS.has(key)) {
+    return 'url';
+  }
+  if (PROJECT_APPLICATION_EMAIL_KEYS.has(key)) {
+    return 'email';
+  }
+  if (PROJECT_APPLICATION_EMAIL_LIST_KEYS.has(key)) {
+    return 'email-list';
+  }
+  return 'text';
+}
+
+function toProjectApplicationAnswerLinks(kind: ProjectApplicationAnswerKind, raw: unknown, value: string): ProjectApplicationAnswerLink[] {
+  switch (kind) {
+    case 'url':
+      return [toProjectApplicationUrlLink(value)];
+    case 'email':
+      return [toProjectApplicationEmailLink(value)];
+    case 'email-list': {
+      const entries = Array.isArray(raw) ? raw.map((entry) => formatProjectApplicationAnswer(entry)) : value.split(',');
+      return entries
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => toProjectApplicationEmailLink(entry));
+    }
+    default:
+      return [];
+  }
+}
+
+/** A one-answer section whose label repeats the section title shows the label to screen readers only. */
+function hideRedundantLabel(title: string, rows: ProjectApplicationAnswerRow[]): ProjectApplicationAnswerRow[] {
+  if (rows.length === 1 && rows[0].label === title) {
+    return [{ ...rows[0], labelHidden: true }];
+  }
+  return rows;
 }
 
 /**
@@ -299,4 +402,46 @@ function containsNul(value: unknown): boolean {
     return Object.entries(value).some(([key, entry]) => key.includes('\u0000') || containsNul(entry));
   }
   return false;
+}
+
+/**
+ * Maps an accepted application onto project-service's create body (#1995). Blank optional answers are left out
+ * rather than sent empty — the URL fields are `format: uri` upstream. Answers project-service has no field for
+ * (trademark, contributing organization, contacts, license, chat, CLA/DCO) stay on the application only.
+ */
+export function buildCreateProjectRequest(answers: ProjectApplicationAnswers, parentProjectUid: string, slug: string): CreateProjectRequest {
+  const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+  const request: CreateProjectRequest = {
+    name: text(answers.project_name),
+    slug,
+    description: text(answers.description),
+    parent_uid: parentProjectUid,
+    stage: PROJECT_APPLICATION_CREATED_STAGE,
+    legal_entity_type: PROJECT_APPLICATION_CREATED_LEGAL_ENTITY_TYPE,
+  };
+
+  const missionStatement = text(answers.mission_statement);
+  const repositoryUrl = text(answers.project_repository_url);
+  const websiteUrl = text(answers.project_website);
+  if (missionStatement) {
+    request.mission_statement = missionStatement;
+  }
+  if (repositoryUrl) {
+    request.repository_url = repositoryUrl;
+  }
+  if (websiteUrl) {
+    request.website_url = websiteUrl;
+  }
+  if (answers.is_spec_project === true) {
+    request.category = PROJECT_APPLICATION_SPEC_CATEGORY;
+  }
+  return request;
+}
+
+/**
+ * Suggested project slug for a proposed project name: `slugify`, with any leading digits or separators dropped
+ * because project-service slugs must start with a letter. Returns `''` when nothing usable remains.
+ */
+export function projectSlugFromName(name: string | null | undefined): string {
+  return slugify(name ?? '').replace(/^[^a-z]+/, '');
 }

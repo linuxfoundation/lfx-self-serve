@@ -1,8 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ProjectStage } from '../enums/project-stage.enum';
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
-import type { ProjectApplicationOption, ProjectApplicationSectionConfig, ProjectApplicationStateMeta } from '../interfaces/project-application.interface';
+import type {
+  ProjectApplicationOption,
+  ProjectApplicationSectionConfig,
+  ProjectApplicationStateMeta,
+  ProjectApplicationStatusCalloutCopy,
+} from '../interfaces/project-application.interface';
 
 /** Page-level tab ids (`?tab=`) on My Formations and the foundation Formations queue (#3037). */
 export const PROJECT_APPLICATION_TABS = {
@@ -18,6 +24,35 @@ export const PROJECT_APPLICATION_CACHE_CONTROL = 'private, no-store';
 
 /** Answer key the BFF writes the formation team's chosen parent project to before accepting. */
 export const PROJECT_APPLICATION_PARENT_KEY = 'parent_project_uid';
+
+/** Answer key the BFF writes the formation team's chosen project slug to before creating the project (#1995). */
+export const PROJECT_APPLICATION_SLUG_KEY = 'project_slug';
+
+/** Answer key the BFF writes the created project's UID to, so a retried accept never creates it twice (#1995). */
+export const PROJECT_APPLICATION_PROJECT_UID_KEY = 'project_uid';
+
+/**
+ * Answer keys only the formation team may set — the placement and project-creation record written at accept.
+ * The BFF strips them at submit and from any revise by someone outside the team, so a submitter can neither
+ * place their project nor plant a `project_uid` that would make accept skip creating it.
+ */
+export const PROJECT_APPLICATION_STAFF_KEYS: readonly string[] = [
+  PROJECT_APPLICATION_PARENT_KEY,
+  PROJECT_APPLICATION_SLUG_KEY,
+  PROJECT_APPLICATION_PROJECT_UID_KEY,
+];
+
+/** project-service's slug rule (`CreateProjectRequestBody.slug`): starts with a letter, ends alphanumeric. */
+export const PROJECT_SLUG_REGEX = /^[a-z][a-z0-9_-]*[a-z0-9]$/;
+
+/** Stage the project created at accept starts in. */
+export const PROJECT_APPLICATION_CREATED_STAGE = ProjectStage.FormationExploratory;
+
+/** Legal entity type of the project created at accept — a subproject of the chosen parent. */
+export const PROJECT_APPLICATION_CREATED_LEGAL_ENTITY_TYPE = 'Subproject';
+
+/** Category of the created project when the proposal says it will publish a specification or standard. */
+export const PROJECT_APPLICATION_SPEC_CATEGORY = 'Standards';
 
 /** Character limit on "About the project" — the design's counter. */
 export const PROJECT_APPLICATION_DESCRIPTION_MAX = 1000;
@@ -66,6 +101,16 @@ export const PROJECT_APPLICATION_EMAIL_LIST_KEYS: ReadonlySet<string> = new Set(
 /** Answer keys formation-service validates with the legal-contact email rule. */
 export const PROJECT_APPLICATION_EMAIL_KEYS: ReadonlySet<string> = new Set(['legal_contact_email']);
 
+/**
+ * Characters that keep an email answer from becoming a `mailto:` link: whitespace, address-syntax specials
+ * (`<>"'(),;:`), mailto-header (`?&=%`) and URI-delimiter (`#/\`) characters, so a link always targets exactly
+ * the address it displays. A single-character class, so testing it runs in linear time on any input.
+ */
+export const PROJECT_APPLICATION_MAILTO_FORBIDDEN_CHARS_REGEX = /[\s<>"'(),;:?&=%#/\\]/;
+
+/** Long-form prose answers the detail view renders full width under their label. */
+export const PROJECT_APPLICATION_LONG_TEXT_KEYS: ReadonlySet<string> = new Set(['mission_statement', 'description']);
+
 /** UI labels per answer key. Keys missing here fall back to a humanized key in the detail view. */
 export const PROJECT_APPLICATION_FIELD_LABELS: Record<string, string> = {
   project_name: 'Project name',
@@ -82,6 +127,8 @@ export const PROJECT_APPLICATION_FIELD_LABELS: Record<string, string> = {
   is_spec_project: 'Will the project publish a specification or standard?',
   description: 'About the project',
   parent_project_uid: 'Parent project',
+  project_slug: 'Project slug',
+  project_uid: 'Created project',
 };
 
 /** Detail-view grouping — mirrors the intake form's section cards. */
@@ -140,6 +187,34 @@ export const PROJECT_APPLICATION_STATE_META: Record<string, ProjectApplicationSt
 };
 
 export const PROJECT_APPLICATION_UNKNOWN_STATE_META: ProjectApplicationStateMeta = { label: 'Unknown', severity: 'secondary' };
+
+/** Status explainer under the detail drawer's header, per state and persona. Unlisted states show none. */
+export const PROJECT_APPLICATION_STATUS_CALLOUTS: Record<string, ProjectApplicationStatusCalloutCopy> = {
+  submitted: {
+    severity: 'info',
+    icon: 'fa-light fa-hourglass-half',
+    submitter: 'The formation team is reviewing your proposal. You can revise or withdraw it until a decision is made.',
+    staff: 'Awaiting a decision. Review the answers below, then accept or deny the proposal.',
+  },
+  accepted: {
+    severity: 'success',
+    icon: 'fa-light fa-circle-check',
+    submitter: 'Your proposal was accepted. The formation team will follow up with next steps.',
+    staff: 'This proposal was accepted.',
+  },
+  denied: {
+    severity: 'warn',
+    icon: 'fa-light fa-circle-xmark',
+    submitter: 'Your proposal was not accepted. Contact the formation team if you have questions.',
+    staff: 'This proposal was denied. The submitter is not notified automatically.',
+  },
+  withdrawn: {
+    severity: 'secondary',
+    icon: 'fa-light fa-arrow-rotate-left',
+    submitter: 'You withdrew this proposal. It can no longer be revised or reviewed.',
+    staff: 'The submitter withdrew this proposal. It can no longer be accepted or denied.',
+  },
+};
 
 /** State filter pills on the formation team's review queue. */
 export const PROJECT_APPLICATION_STATE_FILTER_OPTIONS: FilterPillOption[] = [

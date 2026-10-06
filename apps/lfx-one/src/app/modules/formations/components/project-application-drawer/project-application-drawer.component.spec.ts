@@ -3,10 +3,19 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import type { Project, ProjectApplication, ProjectApplicationViewMode } from '@lfx-one/shared/interfaces';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import type {
+  Project,
+  ProjectApplication,
+  ProjectApplicationAcceptChoice,
+  ProjectApplicationAnswerLink,
+  ProjectApplicationStatusCallout,
+  ProjectApplicationViewMode,
+} from '@lfx-one/shared/interfaces';
 import { ProjectApplicationService } from '@services/project-application.service';
-import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
+import { Confirmation, ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
+import type { DrawerPassThroughOptions } from 'primeng/types/drawer';
 import { of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -23,6 +32,15 @@ interface DrawerAccess {
   onRevise: (answers: Record<string, unknown>) => void;
   startEditing: () => void;
   errorMessage: () => string | null;
+  moreActions: () => MenuItem[];
+  statusCallout: () => ProjectApplicationStatusCallout | null;
+  showUpdated: () => boolean;
+  submitterEmailLink: () => ProjectApplicationAnswerLink | null;
+  drawerPt: () => DrawerPassThroughOptions;
+}
+
+function footerClass(component: DrawerAccess): string | undefined {
+  return (component.drawerPt().footer as { class?: string } | undefined)?.class;
 }
 
 function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectApplication {
@@ -53,7 +71,7 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     };
     const messages = { add: vi.fn() };
     // The accept dialog closes with whatever the test pushes through `dialogClose`.
-    const dialogClose = new Subject<Project | undefined>();
+    const dialogClose = new Subject<ProjectApplicationAcceptChoice | undefined>();
     const dialog = { open: vi.fn(() => ({ onClose: dialogClose.asObservable() })) };
 
     await TestBed.configureTestingModule({
@@ -63,6 +81,7 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
         { provide: DialogService, useValue: dialog },
         { provide: MessageService, useValue: messages },
         ConfirmationService,
+        provideNoopAnimations(),
       ],
     }).compileComponents();
     // Auto-accept every confirm so the action under test runs.
@@ -111,6 +130,53 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     expect(component.isStaff()).toBe(false);
   });
 
+  it("keeps the submitter's secondary actions in the More menu, delete last and set apart", async () => {
+    const { component } = await setup('submitter');
+    expect(component.moreActions().map((item) => item.label ?? '---')).toEqual(['Withdraw', '---', 'Delete']);
+  });
+
+  it("adds revise to the formation team's More menu, behind accept and deny", async () => {
+    const { component, service } = await setup('staff');
+    const items = component.moreActions();
+    expect(items.map((item) => item.label ?? '---')).toEqual(['Revise', 'Withdraw', '---', 'Delete']);
+    items[0].command?.({});
+    expect(component.editing()).toBe(true);
+    items[1].command?.({});
+    expect(service.withdraw).toHaveBeenCalledTimes(1);
+  });
+
+  it("explains the state in the viewer's own terms", async () => {
+    const submitter = await setup('submitter');
+    expect(submitter.component.statusCallout()?.text).toContain('reviewing your proposal');
+    const staff = await setup('staff', buildApplication({ state: 'denied' }));
+    expect(staff.component.statusCallout()).toEqual(expect.objectContaining({ severity: 'warn', text: expect.stringContaining('not notified') }));
+    const unknown = await setup('staff', buildApplication({ state: 'archived' }));
+    expect(unknown.component.statusCallout()).toBeNull();
+  });
+
+  it('shows the updated date only when it falls on a different day from the submission', async () => {
+    const changedLater = await setup('submitter');
+    expect(changedLater.component.showUpdated()).toBe(true);
+    const sameDay = await setup('submitter', buildApplication({ created_at: '2026-09-01T09:00:00Z', updated_at: '2026-09-01T09:05:00Z' }));
+    expect(sameDay.component.showUpdated()).toBe(false);
+  });
+
+  it('links the submitter email only when it is a plain address, and shows nothing without one', async () => {
+    const plain = await setup('staff');
+    expect(plain.component.submitterEmailLink()).toEqual(expect.objectContaining({ href: 'mailto:jane@example.org' }));
+    const unsafe = await setup('staff', buildApplication({ submitter_email: 'jane#x@example.org' }));
+    expect(unsafe.component.submitterEmailLink()).toEqual(expect.objectContaining({ text: 'jane#x@example.org', href: null }));
+    const missing = await setup('staff', buildApplication({ submitter_email: '' }));
+    expect(missing.component.submitterEmailLink()).toBeNull();
+  });
+
+  it('hides the footer while editing and shows it with a divider otherwise', async () => {
+    const { component } = await setup('submitter');
+    expect(footerClass(component)).toBe('border-t border-gray-200');
+    component.startEditing();
+    expect(footerClass(component)).toBe('hidden');
+  });
+
   it('closes every state transition once the application is decided', async () => {
     const { component } = await setup('staff', buildApplication({ state: 'accepted' }));
     expect(component.isOpen()).toBe(false);
@@ -146,11 +212,11 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     expect(service.accept).not.toHaveBeenCalled();
   });
 
-  it('accepts under the parent chosen in the dialog', async () => {
+  it('accepts under the parent and with the slug chosen in the dialog', async () => {
     const { component, service, changed, dialogClose } = await setup('staff');
     component.onAccept();
-    dialogClose.next({ uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project);
-    expect(service.accept).toHaveBeenCalledWith(expect.objectContaining({ revision: 4 }), 'parent-uid');
+    dialogClose.next({ parent: { uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project, slug: 'new-project' });
+    expect(service.accept).toHaveBeenCalledWith(expect.objectContaining({ revision: 4 }), 'parent-uid', 'new-project');
     expect(changed[0].state).toBe('accepted');
   });
 
@@ -164,11 +230,11 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     expect(messages.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
   });
 
-  it('reloads after any accept failure, since the parent may already be recorded', async () => {
+  it('reloads after any accept failure, since the choices or the project may already be recorded', async () => {
     const { component, service, staleCount, messages, dialogClose } = await setup('staff');
     service.accept.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502, error: { error: 'Upstream unavailable' } })));
     component.onAccept();
-    dialogClose.next({ uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project);
+    dialogClose.next({ parent: { uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project, slug: 'new-project' });
     expect(staleCount()).toBe(1);
     expect(messages.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'The proposal could not be accepted' }));
   });

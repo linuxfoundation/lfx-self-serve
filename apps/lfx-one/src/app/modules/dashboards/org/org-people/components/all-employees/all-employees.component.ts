@@ -1,11 +1,29 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
+import { DecimalPipe, isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { catchError, combineLatest, distinctUntilChanged, finalize, map, of, skip, Subject, switchMap, take, takeUntil, tap } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  distinctUntilChanged,
+  EMPTY,
+  finalize,
+  map,
+  merge,
+  mergeMap,
+  Observable,
+  of,
+  skip,
+  Subject,
+  switchMap,
+  take,
+  takeUntil,
+  tap,
+  throwError,
+} from 'rxjs';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -48,6 +66,7 @@ export class AllEmployeesComponent {
   private readonly directory = inject(OrgPeopleDirectoryStateService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly initialLimit = ORG_ALL_EMPLOYEES_INITIAL_LIMIT;
 
@@ -116,14 +135,7 @@ export class AllEmployeesComponent {
           this.loadingState.set(false);
           return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
         }
-        return this.directory.getDirectory(orgUid).pipe(
-          tap(() => this.loadingState.set(false)),
-          catchError(() => {
-            this.fetchErrorState.set(true);
-            this.loadingState.set(false);
-            return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
-          })
-        );
+        return this.loadRoster(orgUid);
       })
     ),
     { initialValue: EMPTY_ORG_ALL_EMPLOYEES_RESPONSE }
@@ -354,6 +366,94 @@ export class AllEmployeesComponent {
       courses: iconFor('courses'),
       access: iconFor('access'),
     };
+  }
+
+  /**
+   * Two-phase roster load. The Snowflake roster answers in well under a second, while the live merge
+   * (access principals + committee-service seats) can take far longer on a large org, so both are
+   * requested at once: rows and stats paint from Snowflake as soon as it answers, and the live merge
+   * replaces them wholesale when it lands — one response at a time, never both, so rows are never
+   * duplicated. A Snowflake answer arriving after live has landed is dropped, never shown over it.
+   *
+   * A live failure after Snowflake rendered keeps the Snowflake rows (no error state); a Snowflake
+   * failure waits for live; only both failing shows the error state.
+   *
+   * When the server's own stored-roster read fails, the live merge answers with live sources only.
+   * Such a response (no row sourced from `snowflake`) never replaces the stored roster on its own
+   * authority: it is held until the Snowflake phase settles, then dropped as a live failure if
+   * Snowflake rendered rows, or shown if Snowflake was empty or failed. Holding matters because the
+   * directory service replays a cached response synchronously, ahead of Snowflake. Follow-up: the
+   * server should flag the response as degraded and not cache it, instead of the client inferring it
+   * from row provenance.
+   *
+   * On the server this fetches nothing and leaves the skeleton; the browser starts both requests
+   * after hydration. These reads have not been observed holding SSR in prod, but the cause is not
+   * established, so this is guarded like org-groups (#2063).
+   */
+  private loadRoster(orgUid: string): Observable<OrgAllEmployeesResponse> {
+    if (!isPlatformBrowser(this.platformId)) {
+      return EMPTY;
+    }
+
+    const state = {
+      snowflake: 'pending' as 'pending' | 'rows' | 'empty' | 'failed',
+      heldLive: null as OrgAllEmployeesResponse | null,
+      liveLanded: false,
+      liveFailed: false,
+    };
+    const bothFailed = (): Observable<OrgAllEmployeesResponse> => {
+      this.fetchErrorState.set(true);
+      this.loadingState.set(false);
+      return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
+    };
+    const renderLive = (res: OrgAllEmployeesResponse): Observable<OrgAllEmployeesResponse> => {
+      state.heldLive = null;
+      state.liveLanded = true;
+      this.loadingState.set(false);
+      return of(res);
+    };
+    const missingStoredRoster = (): Error => new Error('Live directory is missing the stored roster');
+
+    const snowflake$ = this.dataService.getAllEmployees(orgUid).pipe(
+      take(1),
+      mergeMap((res) => {
+        if (state.liveLanded) return EMPTY;
+        state.snowflake = res.rows.length > 0 ? 'rows' : 'empty';
+        if (state.heldLive) {
+          if (state.snowflake === 'empty') return renderLive(state.heldLive);
+          state.heldLive = null;
+          state.liveFailed = true;
+          console.error('Failed to load org people directory (live):', missingStoredRoster());
+        }
+        this.loadingState.set(false);
+        return of(res);
+      }),
+      catchError((error: unknown) => {
+        console.error('Failed to load org people roster (Snowflake):', error);
+        state.snowflake = 'failed';
+        if (state.heldLive) return renderLive(state.heldLive);
+        return state.liveFailed ? bothFailed() : EMPTY;
+      })
+    );
+    const live$ = this.directory.getDirectory(orgUid).pipe(
+      take(1),
+      mergeMap((res) => {
+        if (!res.rows.some((row) => row.sources.includes('snowflake'))) {
+          if (state.snowflake === 'pending') {
+            state.heldLive = res;
+            return EMPTY;
+          }
+          if (state.snowflake === 'rows') return throwError(missingStoredRoster);
+        }
+        return renderLive(res);
+      }),
+      catchError((error: unknown) => {
+        console.error('Failed to load org people directory (live):', error);
+        state.liveFailed = true;
+        return state.snowflake === 'failed' ? bothFailed() : EMPTY;
+      })
+    );
+    return merge(snowflake$, live$);
   }
 
   private loadDetailIfNeeded(row: OrgAllEmployeeRow): void {

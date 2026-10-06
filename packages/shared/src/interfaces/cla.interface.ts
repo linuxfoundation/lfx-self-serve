@@ -626,8 +626,9 @@ export interface OrgClaGroupProject {
 /**
  * One corporate CLA the organization holds — one signing entity, one CLA Group (#1978).
  *
- * Every field here is organization-grain. The upstream payload carries the CCLA managers
- * themselves; they are dropped at the mapper, so `claManagersCount` is all that survives.
+ * Every field here is organization-grain except `viewerIsClaManager`, which is per viewer. The
+ * upstream payload carries the CCLA managers themselves; they are dropped at the mapper, so
+ * `claManagersCount` and the viewer's own flag are all that survive.
  * That drop is at the mapper and not at the template on purpose: a template that declines to
  * render a field still ships it to the browser inside the transferred state.
  */
@@ -724,11 +725,19 @@ export interface OrgClaGroup {
    *
    * Optional because absence carries meaning: unsigned, not-started, and picker-preview rows
    * omit it. A signed row carries it even when the agreement is sanctioned. Sanctions occupy
-   * the status slot and do not hide the toggle; the Overview shows it for a signed row that is
-   * not a preview, when the caller holds the grant. Absent from an upstream field maps to
+   * the status slot and do not hide the toggle. Absent from an upstream field maps to
    * `false` at the mapper, matching the producer's own default.
    */
   autoCreateEcla?: boolean;
+  /**
+   * Whether the effective viewer (the impersonated user, while impersonating) is on this
+   * agreement's CLA manager list. Per viewer, unlike the rest of this row, so the list response
+   * is never cached. Server-decided by an exact LF username match, so the browser MUST NOT work
+   * it out itself. False when there is no
+   * list or no username, so visibility fails closed. The Approval List and Acknowledgments
+   * controls also need the loaded list's own `canEdit`.
+   */
+  viewerIsClaManager: boolean;
 }
 
 /**
@@ -1142,8 +1151,9 @@ export interface OrgClaContributorAcknowledgmentList {
   /**
    * Whether the caller may invalidate rows on this agreement.
    *
-   * Server-decided from the CCLA's manager roster (LF-username match), fails open only when the
-   * producer sent no roster at all — matching the sibling approval-list posture.
+   * Server-decided from the CCLA's manager roster (LF-username match). False when the producer
+   * sent no roster at all, matching the invalidate write, which the producer does not check
+   * against the roster itself.
    */
   canEdit: boolean;
   resultCount: number;
@@ -1351,6 +1361,12 @@ export interface OrgClaManager {
   name?: string;
   email?: string;
   addedOn?: string;
+  /**
+   * Present, and true, on the manager list's row for the effective viewer (the impersonated user,
+   * while impersonating). Server-decided with the same identity and the same exact comparison the
+   * roster check uses, so the browser MUST NOT work it out from its own username.
+   */
+  isViewer?: true;
 }
 
 export interface OrgClaManagerList {

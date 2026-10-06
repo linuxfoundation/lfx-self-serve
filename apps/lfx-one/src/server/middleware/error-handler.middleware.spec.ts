@@ -18,6 +18,10 @@
  * searching it for the sentence is the only assertion that cannot pass while the leak is open.
  */
 
+// The CLA service imports `validation.helper`, whose shared utils barrel pulls in Angular-dependent
+// siblings. Without the compiler the suite fails to collect at all.
+import '@angular/compiler';
+
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 

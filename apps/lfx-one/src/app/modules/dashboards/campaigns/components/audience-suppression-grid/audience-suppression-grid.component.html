@@ -24,57 +24,62 @@
       <p class="text-sm text-gray-500">No suppression lists resolved yet.</p>
     </div>
   } @else {
-    @for (group of groups(); track group.category) {
-      <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4" [attr.data-testid]="'audience-suppression-group-' + group.category">
-        <div class="flex flex-col gap-1">
-          <h5 class="text-sm font-semibold text-gray-900">{{ group.label }}</h5>
-          <p class="text-xs text-gray-500">{{ group.hint }}</p>
-        </div>
-        <div class="flex flex-col gap-2">
-          @for (list of group.lists; track list.key) {
-            <div class="flex items-start gap-2 rounded-md border border-gray-100 bg-gray-50 p-2">
-              <input
-                type="checkbox"
-                class="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300"
-                [checked]="list.selected"
-                [disabled]="disabled() || list.unresolved"
-                (change)="onToggle(list.key, list.listId)"
-                [attr.id]="'audience-suppression-' + list.key"
-                [attr.data-testid]="'audience-suppression-grid-toggle-' + list.key"
-                [attr.aria-label]="'Exclude ' + (list.name || list.label)" />
-              <div class="flex min-w-0 flex-col gap-1">
-                <label class="cursor-pointer text-xs font-medium break-words text-gray-900" [attr.for]="'audience-suppression-' + list.key">{{
-                  list.name
-                }}</label>
-                <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                  <span>{{ list.sizeText }}</span>
-                  <span class="rounded bg-white px-1.5 py-0.5 text-gray-600 ring-1 ring-gray-200">{{ list.label }}</span>
-                  <!-- An unresolved row carries no list id BY CONTRACT: the service returns the
-                       hygiene term with its key and label so the operator can see it was looked
-                       for and not found. It must not offer a link to nothing, and must not read
-                       as an exclusion that is available to apply. -->
-                  @if (!list.unresolved) {
-                    <a
-                      [href]="list.hubspotUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="text-blue-600 hover:underline"
-                      [attr.data-testid]="'audience-suppression-grid-link-' + list.listId">
-                      Open in HubSpot
-                    </a>
-                  } @else {
-                    <span
-                      class="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700 ring-1 ring-amber-200"
-                      [attr.data-testid]="'audience-suppression-grid-unresolved-' + list.key">
-                      Not found in this portal — cannot be applied
-                    </span>
-                  }
+    <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      @for (group of groups(); track group.category) {
+        <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-4" [attr.data-testid]="'audience-suppression-group-' + group.category">
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center justify-between gap-2">
+              <h5 class="text-sm font-semibold text-gray-900">{{ group.label }}</h5>
+              <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{{ group.lists.length }}</span>
+            </div>
+            <p class="text-xs text-gray-500">{{ group.hint }}</p>
+          </div>
+          <div class="flex flex-col gap-2">
+            @for (list of group.lists; track list.key) {
+              <div class="flex items-start gap-2 rounded-md border border-gray-100 bg-gray-50 p-2 hover:border-gray-200">
+                <input
+                  type="checkbox"
+                  class="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300"
+                  [checked]="list.selected"
+                  [disabled]="disabled() || list.unresolved"
+                  (change)="onToggle(list.key, list.listId)"
+                  [attr.id]="'audience-suppression-' + list.key"
+                  [attr.data-testid]="'audience-suppression-grid-toggle-' + list.key"
+                  [attr.aria-label]="'Exclude ' + (list.name || list.label)" />
+                <div class="flex min-w-0 flex-col gap-1">
+                  <label class="cursor-pointer text-xs font-medium break-words text-gray-900" [attr.for]="'audience-suppression-' + list.key">{{
+                    list.name
+                  }}</label>
+                  <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                    <span>{{ list.sizeText }}</span>
+                    <span class="rounded bg-white px-1.5 py-0.5 text-gray-600 ring-1 ring-gray-200">{{ list.label }}</span>
+                    <!-- An unresolved row carries no list id BY CONTRACT: the service returns the
+                         hygiene term with its key and label so the operator can see it was looked
+                         for and not found. It must not offer a link to nothing, and must not read
+                         as an exclusion that is available to apply. -->
+                    @if (!list.unresolved) {
+                      <a
+                        [href]="list.hubspotUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="text-blue-600 hover:underline"
+                        [attr.data-testid]="'audience-suppression-grid-link-' + list.listId">
+                        Open in HubSpot
+                      </a>
+                    } @else {
+                      <span
+                        class="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700 ring-1 ring-amber-200"
+                        [attr.data-testid]="'audience-suppression-grid-unresolved-' + list.key">
+                        Not found in this portal — cannot be applied
+                      </span>
+                    }
+                  </div>
                 </div>
               </div>
-            </div>
-          }
+            }
+          </div>
         </div>
-      </div>
-    }
+      }
+    </div>
   }
 </div>

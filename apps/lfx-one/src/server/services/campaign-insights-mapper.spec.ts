@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CampaignServiceAudience, CampaignServiceKeywords } from '@lfx-one/shared/interfaces';
+import type { CampaignServiceAudience, CampaignServiceKeywords, CampaignServiceMicrosoftKeywords } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
-import { toAudienceDemographics, toKeywordMetricsResponse, windowForDays } from './campaign-insights-mapper';
+import { toAudienceDemographics, toKeywordMetricsResponse, toMicrosoftKeywordMetricsResponse, windowForDays } from './campaign-insights-mapper';
 
 // These tests exist for the unit conversions specifically. Every difference between
 // campaign-service's vocabulary and the UI's is silent when wrong: micro-units rendered as
@@ -237,5 +237,126 @@ describe('toAudienceDemographics', () => {
     expect(result.age).toEqual([]);
     expect(result.gender).toEqual([]);
     expect(result.device).toEqual([]);
+  });
+});
+
+describe('toMicrosoftKeywordMetricsResponse', () => {
+  function microsoftPayload(overrides: Partial<CampaignServiceMicrosoftKeywords> = {}): CampaignServiceMicrosoftKeywords {
+    return {
+      window: 'last_7_days',
+      row_count: 2,
+      truncated: true,
+      metrics_as_of: '2026-10-05T14:30:00Z',
+      metrics_pending: false,
+      conversions_complete: true,
+      data_incomplete: false,
+      rows: [
+        {
+          criterion_id: '7001',
+          ad_group_id: '1301',
+          campaign_id: '5501',
+          ad_group_name: 'Registration',
+          campaign_name: 'KubeCon - Search',
+          text: 'kubernetes training',
+          match_type: 'PHRASE',
+          status: 'ENABLED',
+          impressions: 4000,
+          clicks: 200,
+          cost_micros: 12_340_000,
+          ctr: 0.05,
+          conversions: 7.5,
+          quality_score: 6,
+        },
+        {
+          criterion_id: '7002',
+          ad_group_id: '1301',
+          campaign_id: '5501',
+          ad_group_name: 'Registration',
+          campaign_name: 'KubeCon - Search',
+          text: 'k8s course',
+          match_type: 'EXACT',
+          status: 'PAUSED',
+          impressions: 1000,
+          clicks: 0,
+          cost_micros: 0,
+          ctr: 0,
+          conversions: 0,
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  it('converts rows in the Google units, keeping the Microsoft ids as the action handles', () => {
+    const out = toMicrosoftKeywordMetricsResponse(microsoftPayload(), PULLED_AT);
+
+    expect(out.keywords[0]).toEqual({
+      keyword: 'kubernetes training',
+      matchType: 'PHRASE',
+      qualityScore: 6,
+      status: 'ENABLED',
+      adGroup: 'Registration',
+      adGroupId: '1301',
+      criterionId: '7001',
+      campaign: 'KubeCon - Search',
+      campaignId: '5501',
+      impressions: 4000,
+      clicks: 200,
+      ctr: 5,
+      avgCpc: 12.34 / 200,
+      spend: 12.34,
+      conversions: 7.5,
+    });
+    // No Google Ads deep link on a Microsoft row.
+    expect(out.keywords[0]).not.toHaveProperty('googleAdsUrl');
+    expect(out.keywords[1].qualityScore).toBeNull();
+    expect(out.keywords[1].avgCpc).toBe(0);
+  });
+
+  it('keeps upstream row order and totals over the converted rows', () => {
+    const out = toMicrosoftKeywordMetricsResponse(microsoftPayload(), PULLED_AT);
+
+    expect(out.keywords.map((k) => k.criterionId)).toEqual(['7001', '7002']);
+    expect(out.totals).toEqual({ impressions: 5000, clicks: 200, spend: 12.34, conversions: 7.5, avgCtr: 4 });
+    expect(out.totalKeywords).toBe(2);
+    expect(out.truncated).toBe(true);
+  });
+
+  it('passes the report freshness through for the UI to state', () => {
+    const out = toMicrosoftKeywordMetricsResponse(microsoftPayload({ metrics_pending: true, conversions_complete: false, data_incomplete: true }), PULLED_AT);
+
+    expect(out).toEqual(
+      expect.objectContaining({
+        pulledAt: PULLED_AT,
+        window: 'last_7_days',
+        metricsAsOf: '2026-10-05T14:30:00Z',
+        metricsPending: true,
+        conversionsComplete: false,
+        dataIncomplete: true,
+      })
+    );
+  });
+
+  // The first read: no finished report yet, so no rows and no as-of, with one building.
+  it('reports a first read as building, with no as-of and no rows', () => {
+    const payload = microsoftPayload({ rows: [], row_count: 0, truncated: false, metrics_pending: true });
+    delete payload.metrics_as_of;
+
+    const out = toMicrosoftKeywordMetricsResponse(payload, PULLED_AT);
+
+    expect(out.metricsAsOf).toBeNull();
+    expect(out.metricsPending).toBe(true);
+    expect(out.keywords).toEqual([]);
+    expect(out.totals).toEqual({ impressions: 0, clicks: 0, spend: 0, conversions: 0, avgCtr: 0 });
+  });
+
+  // Only an explicit true says conversions were measured; a missing flag must not read as complete.
+  it('treats a missing conversions_complete as incomplete', () => {
+    const payload = microsoftPayload() as Partial<CampaignServiceMicrosoftKeywords>;
+    delete payload.conversions_complete;
+
+    const out = toMicrosoftKeywordMetricsResponse(payload as CampaignServiceMicrosoftKeywords, PULLED_AT);
+
+    expect(out.conversionsComplete).toBe(false);
   });
 });

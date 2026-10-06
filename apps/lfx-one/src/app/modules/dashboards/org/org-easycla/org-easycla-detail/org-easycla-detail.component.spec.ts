@@ -7,6 +7,7 @@ import { Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, Navigation, provideRouter, Router } from '@angular/router';
 import {
@@ -27,7 +28,7 @@ import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
-import { UserService } from '@services/user.service';
+import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import type { Confirmation } from 'primeng/api';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -42,6 +43,7 @@ import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-
 import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
 import { OrgEasyclaDetailComponent } from './org-easycla-detail.component';
+import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-managers.component';
 
 // CLA-Group-shaped, because both the signed-row lookup and the preview-selection gate match
 // canonically — the producer emits one id hyphenated or compact, in either case. A readable
@@ -117,6 +119,7 @@ describe('OrgEasyclaDetailComponent', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: true,
       approvalCriteriaCount: 7,
       ...overrides,
     };
@@ -164,7 +167,6 @@ describe('OrgEasyclaDetailComponent', () => {
           },
         },
         { provide: MessageService, useValue: { add: addMessage } },
-        { provide: UserService, useValue: { viewerUsername: signal(null) } },
         ConfirmationService,
       ],
     }).compileComponents();
@@ -2889,6 +2891,7 @@ describe('OrgEasyclaDetailComponent', () => {
         await flush(fixture);
 
         expect(byTestId(fixture, 'org-easycla-detail-error-state')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).toBeNull();
         expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
       } finally {
         vi.useRealTimers();
@@ -2912,17 +2915,20 @@ describe('OrgEasyclaDetailComponent', () => {
         await flush(fixture);
 
         expect(byTestId(fixture, 'org-easycla-detail-error-state')).toBeNull();
-        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeNull();
       } finally {
         vi.useRealTimers();
       }
     });
 
     /**
-     * Bounded, because past a few seconds the likelier explanations are ones no amount of waiting
-     * fixes. What the exhausted wait must not do is leave the address: this is the address the
-     * agreement will have once EasyCLA catches up, so a reload is all it takes — where the list
-     * would be a dead end wearing a different URL.
+     * Bounded, because past about half a minute the likelier explanations are ones no amount of
+     * waiting fixes. What the exhausted wait must not do is leave the address, or say the
+     * organization has not signed: this is the address the agreement will have once EasyCLA
+     * catches up, so a reload is all it takes — where the list would be a dead end wearing a
+     * different URL. The still-confirming state is this visit only. A later load of the stripped
+     * address, if the row is still absent, is the ordinary hasn't-signed state.
      */
     it('settles on this address, not the list, when the wait is spent', async () => {
       vi.useFakeTimers();
@@ -2932,9 +2938,115 @@ describe('OrgEasyclaDetailComponent', () => {
         await vi.advanceTimersByTimeAsync(30_000);
         await flush(fixture);
 
-        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+        const pending = byTestId(fixture, 'org-easycla-detail-signature-pending-state');
+        expect(pending).not.toBeNull();
+        expect(pending?.textContent).toContain(CCLA_SIGN_COPY.returnPendingTitle);
+        expect(pending?.textContent).toContain(CCLA_SIGN_COPY.returnPendingSubtitle);
+        expect(pending?.textContent).toContain(CCLA_SIGN_COPY.returnPendingRefresh);
+        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
         expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
         expect(navigate).not.toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla'], expect.anything());
+
+        const reload = vi.fn();
+        vi.stubGlobal('location', { reload });
+        pending?.querySelector('button')?.click();
+        expect(reload).toHaveBeenCalledOnce();
+        expect(navigate).not.toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla'], expect.anything());
+      } finally {
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * The component is reused when the address moves to another CLA Group or the viewer picks
+     * another organization, so the still-confirming state has to go with the visit it described.
+     * Kept, the next unsigned group would claim a signature nobody made for it.
+     */
+    it.each([
+      ['another CLA Group', () => paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }))],
+      [
+        'another organization',
+        () => {
+          getClaGroups.mockReturnValue(of({ orgUid: ELSEWHERE.uid, claGroups: [] }));
+          selectedAccount.set(ELSEWHERE);
+        },
+      ],
+    ])('drops the still-confirming state when the page moves to %s', async (_label, move) => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({ claGroups: [] });
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).not.toBeNull();
+
+        move();
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * The wait is for the agreement the return names, so a mid-wait move to another CLA Group has
+     * to tear it down — otherwise its completion handler sets the still-confirming state on a
+     * visit nobody just signed for, and until it does, the new page stays stuck behind the
+     * confirming skeleton that owns the live region.
+     */
+    it('ends the wait when the page moves to another CLA Group mid-wait', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({ claGroups: [] });
+        getClaGroups.mockClear();
+        getClaGroups.mockReturnValue(new Subject());
+
+        await vi.advanceTimersByTimeAsync(2000);
+        await flush(fixture);
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).not.toBeNull();
+
+        // Route change cancels the stalled retry; the new agreement is unlisted here, so the
+        // page falls through to its ordinary unlisted-group handling rather than any pending
+        // state owned by the return trip.
+        paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
+        await flush(fixture);
+
+        // Nothing survives on the new agreement — the old wait is torn down, the trip is settled.
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
+        expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+
+        // Even if the stalled list wakes up later, the completion handler must not stamp the new
+        // page with a confirmation state for an agreement nobody just signed.
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * The still-confirming state replaces an already-announced polite status, so screen-reader
+     * users have to hear the swap: without a live region on the new state, waiting ends silently
+     * and the Refresh action goes unannounced.
+     */
+    it('announces the still-confirming empty state politely for screen readers', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({ claGroups: [] });
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+
+        const pending = byTestId(fixture, 'org-easycla-detail-signature-pending-state');
+        const liveRegion = pending?.closest('[role="status"]');
+        expect(liveRegion).not.toBeNull();
+        expect(liveRegion?.getAttribute('aria-live')).toBe('polite');
       } finally {
         vi.useRealTimers();
       }
@@ -2959,6 +3071,7 @@ describe('OrgEasyclaDetailComponent', () => {
         await flush(fixture);
 
         expect(byTestId(fixture, 'org-easycla-detail-title')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).toBeNull();
         expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
       } finally {
         vi.useRealTimers();
@@ -2968,27 +3081,32 @@ describe('OrgEasyclaDetailComponent', () => {
     /**
      * The budget is count-bounded, but each attempt talks to the BFF and the BFF's own gateway
      * timeout is 30 seconds. `concatMap` runs the attempts in series, so a stalled BFF would leave
-     * three attempts waiting the full 30 seconds each — about 90 seconds against a doc comment that
-     * describes a few-second budget. The per-attempt `timeout()` bounds the wait in wall-clock time
-     * as well as in count.
+     * twelve attempts waiting the full 30 seconds each — about six minutes. The per-attempt
+     * `timeout()` bounds the wait in wall-clock time as well as in count.
      *
      * A request that neither errors nor completes is what the fixture models: a Subject that is
      * never fed. Without the timeout `concatMap` waits for it for ever, and even a 30-second
      * advance cannot spend the budget.
+     *
+     * The interval keeps ticking while an attempt hangs, so twelve near-timeout attempts queue up
+     * and would run to about 38 seconds. The overall deadline ends the wait at 30.
      */
     it('bounds the wait in wall-clock time when each attempt hangs, not only in count', async () => {
       vi.useFakeTimers();
       try {
-        // One retry-delay plus one per-attempt timeout is (2000 + 3000)ms; three attempts is
-        // 15_000ms. Sized a beat past that, so a regression off by one attempt still fails.
-        const budgetMs = 3 * (2000 + 3000);
         const { fixture } = await renderReturn({ claGroups: [] });
         getClaGroups.mockReturnValue(new Subject());
 
-        await vi.advanceTimersByTimeAsync(budgetMs + 1000);
+        await vi.advanceTimersByTimeAsync(29_000);
+        await flush(fixture);
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).not.toBeNull();
+
+        await vi.advanceTimersByTimeAsync(1_000);
         await flush(fixture);
 
-        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeNull();
         expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
       } finally {
         vi.useRealTimers();
@@ -3107,14 +3225,15 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
-     * The flag defers the four-way discriminator; it does not add a fifth outcome. An address
-     * without it resolves exactly as it did before — which is what keeps a group address from
-     * reading as a signing return every time someone opens one.
+     * An address without the flag resolves exactly as it did before — which is what keeps a group
+     * address from reading as a signing return every time someone opens one. The still-confirming
+     * state is only for a visit that arrived with the flag.
      */
     it('opens no wait on an ordinary visit that carries no flag', async () => {
       const { fixture } = await renderReturn({ org: null, flag: null, claGroups: [], listOrgUid: SELECTED_ACCOUNT.uid });
 
       expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).toBeNull();
       expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
       expect(navigate).not.toHaveBeenCalled();
     });
@@ -3190,6 +3309,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: true,
       approvalCriteriaCount: 7,
       ...overrides,
     };
@@ -3374,6 +3494,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: true,
       approvalCriteriaCount: 7,
       autoCreateEcla: false,
       ...overrides,
@@ -3426,6 +3547,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
           },
         },
         { provide: MessageService, useValue: { add: addMessage } },
+        DialogService,
         ConfirmationService,
       ],
     }).compileComponents();
@@ -3471,10 +3593,200 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(fixture.nativeElement.querySelector('label[for="org-easycla-detail-auto-ecla-toggle"]')).not.toBeNull();
   });
 
+  it('withdraws the roster-gated controls when a self-removal lands after the Managers tab was left', async () => {
+    const fixture = await render();
+    const component = fixture.componentInstance as unknown as { selectTab: (tab: string) => void; claGroup: () => OrgClaGroup | undefined };
+    const claService = TestBed.inject(OrgLensClaService) as unknown as { getManagers: ReturnType<typeof vi.fn>; removeManager: ReturnType<typeof vi.fn> };
+    const self = { lfUsername: 'aporter', name: 'Ada Porter', email: 'ada.porter@example.org', addedOn: '2024-05-02T11:00:00Z', isViewer: true as const };
+    claService.getManagers.mockReturnValue(
+      of({
+        signatureId: 'signature-uuid-1',
+        managers: [{ lfUsername: 'kmensah', name: 'Kwame Mensah', email: 'kwame.mensah@example.org', addedOn: '2024-05-02T11:00:00Z' }, self],
+      })
+    );
+    const removal = new Subject<void>();
+    claService.removeManager.mockReturnValue(removal);
+
+    component.selectTab('managers');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const panel = fixture.debugElement.query(By.directive(OrgEasyclaManagersComponent));
+    const confirm = vi.spyOn(panel.injector.get(ConfirmationService), 'confirm');
+    panel.componentInstance['confirmRemove'](self);
+    confirm.mock.calls.at(-1)?.[0]?.accept?.();
+
+    component.selectTab('overview');
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.directive(OrgEasyclaManagersComponent))).toBeNull();
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).not.toBeNull();
+
+    removal.next();
+    removal.complete();
+    fixture.detectChanges();
+
+    expect(component.claGroup()?.viewerIsClaManager).toBe(false);
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+  });
+
+  it('offers the roster-gated controls after a manager change once the re-read list names the viewer', async () => {
+    const fixture = await render(row({ viewerIsClaManager: false }));
+    const component = fixture.componentInstance as unknown as { selectTab: (tab: string) => void; claGroup: () => OrgClaGroup | undefined };
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+
+    component.selectTab('managers');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: true })] }));
+    const listReads = getClaGroups.mock.calls.length;
+    fixture.debugElement.query(By.directive(OrgEasyclaManagersComponent)).componentInstance.rosterChanged.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getClaGroups.mock.calls.length).toBe(listReads + 1);
+    expect(fixture.debugElement.query(By.directive(OrgEasyclaManagersComponent))).not.toBeNull();
+    component.selectTab('overview');
+    fixture.detectChanges();
+    expect(component.claGroup()?.viewerIsClaManager).toBe(true);
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).not.toBeNull();
+  });
+
+  it('keeps the controls hidden after a self-removal when an older re-read still naming the viewer lands last', async () => {
+    const fixture = await render();
+    const component = fixture.componentInstance as unknown as { onRosterChanged: () => void; claGroup: () => OrgClaGroup | undefined };
+    const older = new Subject<OrgClaGroupList>();
+    const newer = new Subject<OrgClaGroupList>();
+    getClaGroups.mockReturnValueOnce(older).mockReturnValueOnce(newer);
+
+    component.onRosterChanged();
+    TestBed.inject(OrgClaSelfRemovalsService).record(SELECTED_ACCOUNT.uid, 'signature-uuid-1');
+    component.onRosterChanged();
+    newer.next({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: false })] });
+    older.next({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: true })] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component.claGroup()?.viewerIsClaManager).toBe(false);
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+  });
+
+  it('keeps the controls hidden when a self-removal lands after the panel closed and an earlier re-read still naming the viewer lands after it', async () => {
+    const fixture = await render();
+    const component = fixture.componentInstance;
+    const earlier = new Subject<OrgClaGroupList>();
+    getClaGroups.mockReturnValueOnce(earlier);
+    component['onRosterChanged']();
+    const listReads = getClaGroups.mock.calls.length;
+
+    TestBed.inject(OrgClaSelfRemovalsService).record(SELECTED_ACCOUNT.uid, 'signature-uuid-1');
+    earlier.next({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: true })] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getClaGroups.mock.calls.length).toBe(listReads);
+    expect(component['claGroup']()?.viewerIsClaManager).toBe(false);
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+  });
+
+  it('keeps a self-removal hidden through a failed re-read, and still applies the next re-read', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fixture = await render();
+    const component = fixture.componentInstance;
+    const selfRemovals = TestBed.inject(OrgClaSelfRemovalsService);
+    selfRemovals.record(SELECTED_ACCOUNT.uid, 'signature-uuid-1');
+
+    getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream unavailable')));
+    component['onRosterChanged']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(selfRemovals.removed(SELECTED_ACCOUNT.uid, 'signature-uuid-1')).toBe(true);
+    expect(component['claGroup']()?.viewerIsClaManager).toBe(false);
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+
+    getClaGroups.mockReturnValueOnce(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: false })] }));
+    component['onRosterChanged']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(selfRemovals.removed(SELECTED_ACCOUNT.uid, 'signature-uuid-1')).toBe(false);
+    expect(component['claGroup']()?.viewerIsClaManager).toBe(false);
+    warn.mockRestore();
+  });
+
+  it('drops a re-read that lands after the viewer switched organization', async () => {
+    const fixture = await render(row({ viewerIsClaManager: false }));
+    const component = fixture.componentInstance as unknown as { onRosterChanged: () => void; claGroup: () => OrgClaGroup | undefined };
+    const stale = new Subject<OrgClaGroupList>();
+    getClaGroups.mockReturnValueOnce(stale).mockReturnValue(of({ orgUid: '0014100000OtherOrgAA', claGroups: [row({ viewerIsClaManager: false })] }));
+
+    component.onRosterChanged();
+    selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    stale.next({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: true })] });
+    fixture.detectChanges();
+
+    expect(component.claGroup()?.viewerIsClaManager).toBe(false);
+  });
+
+  it('keeps a self-removal hidden while a re-read still lists the viewer, and drops it once one does not', async () => {
+    const fixture = await render();
+    const component = fixture.componentInstance as unknown as { onRosterChanged: () => void; claGroup: () => OrgClaGroup | undefined };
+    const selfRemovals = TestBed.inject(OrgClaSelfRemovalsService);
+    selfRemovals.record(SELECTED_ACCOUNT.uid, 'signature-uuid-1');
+
+    getClaGroups.mockReturnValueOnce(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: true })] }));
+    component.onRosterChanged();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.claGroup()?.viewerIsClaManager).toBe(false);
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+
+    getClaGroups.mockReturnValueOnce(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: false })] }));
+    component.onRosterChanged();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(selfRemovals.removed(SELECTED_ACCOUNT.uid, 'signature-uuid-1')).toBe(false);
+  });
+
+  it('ignores a re-read started before the viewer left the organization and came back', async () => {
+    const OTHER_UID = '0014100000OtherOrgAA';
+    const fixture = await render();
+    const component = fixture.componentInstance as unknown as { onRosterChanged: () => void; claGroup: () => OrgClaGroup | undefined };
+    const stale = new Subject<OrgClaGroupList>();
+    getClaGroups.mockReturnValueOnce(stale);
+    component.onRosterChanged();
+
+    getClaGroups.mockImplementation((uid: string) => of({ orgUid: uid, claGroups: [row({ viewerIsClaManager: uid === OTHER_UID })] }));
+    selectedAccount.set({ uid: OTHER_UID, accountName: 'Other' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    selectedAccount.set(SELECTED_ACCOUNT);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(getClaGroups).toHaveBeenLastCalledWith(SELECTED_ACCOUNT.uid);
+    expect(component.claGroup()?.viewerIsClaManager).toBe(false);
+
+    stale.next({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: true })] });
+    fixture.detectChanges();
+
+    expect(component.claGroup()?.viewerIsClaManager).toBe(false);
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+  });
+
   it('hides the toggle when ACS denies, rather than rendering it disabled', async () => {
     checkPermission.mockReturnValue(of(false));
 
     const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).toBeNull();
+  });
+
+  it.each([
+    ['is not on the roster', false],
+    ['has no roster answer', undefined],
+  ])('hides the toggle when ACS allows but the viewer %s', async (_case, viewerIsClaManager) => {
+    const fixture = await render(row({ viewerIsClaManager }));
 
     expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).toBeNull();
   });
@@ -3582,6 +3894,29 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
       expect.objectContaining({
         severity: 'error',
         detail: 'This organization is on the OFAC list. Contact support.',
+      })
+    );
+  });
+
+  it('rolls back and toasts with the server sentence when the roster refusal carries only a message', async () => {
+    const error = new HttpErrorResponse({
+      status: 403,
+      error: { message: 'Only a CLA manager named on this CLA can change its Auto ECLA setting' },
+    });
+    setAutoCreateEcla.mockReturnValue(throwError(() => error));
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaValue: () => boolean };
+    component.onAutoEclaToggle(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.autoEclaValue()).toBe(false);
+    expect(addMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        detail: 'Only a CLA manager named on this CLA can change its Auto ECLA setting',
       })
     );
   });

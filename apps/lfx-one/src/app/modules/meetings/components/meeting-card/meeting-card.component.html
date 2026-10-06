@@ -118,18 +118,14 @@
             [routerLink]="meetingDetailUrl()"
             [queryParams]="meetingDetailQueryParams()">
             <lfx-tag
-              [value]="
-                (meetingStartTime() | meetingTime: meeting().duration : 'date') + ' • ' + (meetingStartTime() | meetingTime: meeting().duration : 'time')
-              "
+              [value]="(meetingStartTime() | meetingTime: meetingDuration() : 'date') + ' • ' + (meetingStartTime() | meetingTime: meetingDuration() : 'time')"
               severity="secondary"
               icon="fa-light fa-calendar-days"></lfx-tag>
           </a>
         } @else {
           <a class="hover:opacity-80 transition-opacity" data-testid="meeting-datetime" [href]="meetingDetailUrl()" target="_blank" rel="noopener noreferrer">
             <lfx-tag
-              [value]="
-                (meetingStartTime() | meetingTime: meeting().duration : 'date') + ' • ' + (meetingStartTime() | meetingTime: meeting().duration : 'time')
-              "
+              [value]="(meetingStartTime() | meetingTime: meetingDuration() : 'date') + ' • ' + (meetingStartTime() | meetingTime: meetingDuration() : 'time')"
               severity="secondary"
               icon="fa-light fa-calendar-days"></lfx-tag>
           </a>
@@ -152,7 +148,7 @@
       @if (showAiSummaryBadge()) {
         <lfx-tag value="AI Summary" severity="secondary" icon="fa-light fa-sparkles" styleClass="tag-feature-ai"></lfx-tag>
       }
-      @if (meeting().show_meeting_attendees) {
+      @if (attendeeListShared()) {
         <lfx-tag value="Show Attendees" severity="secondary" icon="fa-light fa-users"></lfx-tag>
       }
     </div>
@@ -195,7 +191,11 @@
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2 text-xs tracking-wide leading-tight text-gray-400">
                 <i class="fa-light fa-paperclip text-xs"></i>
-                <span>Resources</span>
+                <span>Materials</span>
+                @if (meeting().recurrence && !pastMeeting()) {
+                  <!-- Upcoming materials have no occurrence field upstream, so they apply to every date. -->
+                  <span class="text-[10px] text-gray-400" data-testid="materials-scope-hint">· all dates</span>
+                }
                 @if (attachments().length > 0) {
                   <span class="inline-flex items-center text-[10px] font-medium text-gray-500 bg-gray-200/80 px-1.5 py-0.5 rounded-full">
                     {{ attachments().length }}
@@ -208,7 +208,7 @@
                   (click)="openMaterialsDrawer(); $event.stopPropagation()"
                   class="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
                   data-testid="manage-materials-card-btn">
-                  Manage
+                  Edit materials
                 </button>
               }
             </div>
@@ -237,7 +237,7 @@
                 }
               </div>
             } @else {
-              <p class="text-xs text-gray-400 italic">No resources available</p>
+              <p class="text-xs text-gray-400 italic">No materials yet</p>
             }
           </div>
         } @placeholder {
@@ -324,8 +324,10 @@
                 [currentOccurrence]="currentOccurrence()"
                 [pastMeeting]="pastMeeting()"
                 [showAddButton]="!pastMeeting()"
+                [showAttendeePreview]="true"
                 [additionalRegistrantsCount]="additionalRegistrantsCount()"
-                (addClicked)="showRegistrants.set(true)"
+                (addClicked)="onInvitePeople()"
+                (viewAllClicked)="showRegistrants.set(true)"
                 (currentUserHasRsvpChanged)="userHasRsvp.set($event)">
               </lfx-meeting-rsvp-details>
             }
@@ -353,10 +355,15 @@
             </div>
           }
         } @else if (!pastMeeting()) {
-          <!-- Show RSVP Selection for authenticated invited non-organizers (upcoming meetings only) -->
-          @if (effectivelyInvited() && inviteResponsesEnabled()) {
+          <!-- RSVP selection and attendee preview for authenticated invited non-organizers (upcoming meetings only) -->
+          @if (effectivelyInvited() && (inviteResponsesEnabled() || attendeeListShared())) {
             @defer (on viewport) {
-              <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+              @if (inviteResponsesEnabled()) {
+                <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+              }
+              @if (attendeeListShared()) {
+                <lfx-meeting-invitee-attendees [meeting]="meeting()" [occurrence]="occurrence()" />
+              }
             } @placeholder {
               <div class="rounded-md p-3 flex flex-col gap-2 flex-1 bg-gray-100/60 animate-pulse min-h-[80px]"></div>
             }
@@ -419,6 +426,7 @@
               data-testid="view-guests-button"
               (click)="onRegistrantsToggle()">
             </lfx-button>
+            <lfx-host-key-popover class="w-full" [meeting]="meeting()" [occurrence]="occurrence()" [pastMeeting]="pastMeeting()" />
             @if (canToggleRsvpView()) {
               <lfx-button
                 class="w-full"
@@ -468,7 +476,7 @@
         position="right"
         styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
         data-testid="meeting-registrants-drawer"
-        (onHide)="drawerGuestCount.set(null)">
+        (onHide)="onRegistrantsDrawerHide()">
         <ng-template #header>
           <div class="flex items-center gap-3">
             <div class="bg-blue-600 text-white rounded-full w-12 h-12 flex items-center justify-center">
@@ -497,6 +505,8 @@
           [pastMeeting]="pastMeeting()"
           [visible]="showRegistrants()"
           [showAddRegistrant]="!pastMeeting()"
+          [openAddFormOnShow]="openRegistrantsOnAddForm()"
+          [occurrence]="occurrence()"
           (registrantsCountChange)="additionalRegistrantsCount.set($event)"
           (totalCountChange)="drawerGuestCount.set($event)"
           (resolvedHostsChange)="drawerHosts.set($event)">

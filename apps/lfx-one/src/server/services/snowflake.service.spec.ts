@@ -173,6 +173,42 @@ describe('SnowflakeService circuit breaker', () => {
     expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.CLOSED);
   });
 
+  it('rejects an oversized bind list with a 400 before reaching Snowflake or the circuit breaker', async () => {
+    const use = vi.fn(querySuccess);
+    const { service } = serviceWithPool(use);
+    const binds = Array.from({ length: SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES + 1 }, (_, i) => `value-${i}`);
+
+    for (let i = 0; i < SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2; i++) {
+      await expect(service.execute(`SELECT ${i}`, binds)).rejects.toMatchObject({ statusCode: 400, code: 'SNOWFLAKE_TOO_MANY_BINDS' });
+    }
+
+    expect(use).not.toHaveBeenCalled();
+    expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+  });
+
+  it('accepts a bind list at the cap', async () => {
+    const use = vi.fn(querySuccess);
+    const { service } = serviceWithPool(use);
+    const binds = Array.from({ length: SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES }, (_, i) => `value-${i}`);
+
+    await expect(service.execute('SELECT 1', binds)).resolves.toEqual({ rows: [], metadata: [] });
+    expect(use).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the HALF_OPEN probe slot free when an oversized bind list is rejected', async () => {
+    const use = vi.fn(querySuccess);
+    const { service, internals } = serviceWithPool(use);
+    internals.circuitState = SnowflakeCircuitState.OPEN;
+    internals.lastFailureTime = Date.now() - SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_RESET_TIMEOUT_MS - 1;
+    const binds = Array.from({ length: SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES + 1 }, (_, i) => `value-${i}`);
+
+    await expect(service.execute('SELECT 1', binds)).rejects.toMatchObject({ code: 'SNOWFLAKE_TOO_MANY_BINDS' });
+    expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+
+    await expect(service.execute('SELECT 2')).resolves.toEqual({ rows: [], metadata: [] });
+    expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.CLOSED);
+  });
+
   it('serves the generic client message and no Snowflake text in the full response body', async () => {
     const { service } = serviceWithPool(vi.fn(missingObject));
 

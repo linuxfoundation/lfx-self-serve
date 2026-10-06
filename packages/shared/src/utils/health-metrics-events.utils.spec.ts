@@ -7,14 +7,23 @@ import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_EVENTS_SECTIONS } from '../constants/health-metrics-events.constants';
 import {
   buildHealthMetricsEventsAtAGlanceView,
+  buildHealthMetricsEventsOrganizationRowView,
   buildHealthMetricsEventsForecastNote,
   buildHealthMetricsEventsForecastRowViews,
+  buildHealthMetricsEventsGeographyView,
   buildHealthMetricsEventsPastView,
   buildHealthMetricsEventsRegistrationsGrowthView,
+  buildHealthMetricsEventsRevenueView,
+  buildHealthMetricsEventsSpeakersNote,
+  buildHealthMetricsEventsSpeakersView,
+  buildHealthMetricsEventsSpeakersYears,
+  buildHealthMetricsEventsSponsorshipView,
   buildHealthMetricsEventsSubNavItems,
   filterHealthMetricsEventsForecastable,
+  formatHealthMetricsEventsOrganizationsCountLabel,
   formatHealthMetricsEventsPastClosedLabel,
   formatHealthMetricsEventsRevenue,
+  hasHealthMetricsEventsGoal,
   pickHealthMetricsEventsForecastFormat,
   resolveHealthMetricsEventsForecastStatus,
   resolveHealthMetricsEventsForecastVerdict,
@@ -27,9 +36,20 @@ import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsAtAGlancePeriod,
   HealthMetricsEventsForecastEvent,
+  HealthMetricsEventsGeography,
+  HealthMetricsEventsGeographyPeriod,
+  HealthMetricsEventsOrganization,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastEvent,
   HealthMetricsEventsRegistrationsGrowthYear,
+  HealthMetricsEventsRevenue,
+  HealthMetricsEventsRevenueEvent,
+  HealthMetricsEventsRevenuePeriod,
+  HealthMetricsEventsSpeakers,
+  HealthMetricsEventsSpeakersPeriod,
+  HealthMetricsEventsSpeakersProposal,
+  HealthMetricsEventsSponsorship,
+  HealthMetricsEventsSponsorshipPeriod,
 } from '../interfaces/health-metrics-events.interface';
 
 function event(overrides: Partial<HealthMetricsEventsForecastEvent> = {}): HealthMetricsEventsForecastEvent {
@@ -190,6 +210,10 @@ describe('forecast table helpers', () => {
     expect(buildHealthMetricsEventsForecastRowViews([event({ goal: null })])[0]).toMatchObject({ statusLabel: 'No goal', goalLabel: '—', progressPct: null });
   });
 
+  it.each([0, -5])('reads a goal of %i as no goal, labelled with a dash', (goal) => {
+    expect(buildHealthMetricsEventsForecastRowViews([event({ goal })])[0]).toMatchObject({ statusLabel: 'No goal', goalLabel: '—', progressPct: null });
+  });
+
   it('truncates long pill names with an ellipsis', () => {
     expect(truncateHealthMetricsEventsPillName('Short')).toBe('Short');
     const long = truncateHealthMetricsEventsPillName('A'.repeat(40));
@@ -219,6 +243,10 @@ describe('resolveHealthMetricsEventsPastStatus', () => {
 
   it('reads no goal as no goal, never as a miss', () => {
     expect(resolveHealthMetricsEventsPastStatus(pastEvent({ goal: null, goalMet: null, paceStatus: null }))).toBe('no-goal');
+  });
+
+  it.each([0, -5])('reads a goal of %i as no goal, never as a hit', (goal) => {
+    expect(resolveHealthMetricsEventsPastStatus(pastEvent({ goal, registrations: 120, goalMet: null }))).toBe('no-goal');
   });
 
   it('falls back to final registrations when the outcome is not flagged', () => {
@@ -317,6 +345,21 @@ describe('buildHealthMetricsEventsPastView', () => {
       dateLabel: 'Mar 10, 2026',
     });
     expect(noGoal).toMatchObject({ status: 'no-goal', goalLabel: '—', progressPct: null, progressClass: 'bg-gray-200' });
+  });
+
+  it.each([0, -5])('labels a past goal of %i with a dash and draws no bar', (goal) => {
+    const view = buildHealthMetricsEventsPastView({ ...past, events: [pastEvent({ goal, goalMet: null, registrations: 120 })] }, 'YTD');
+
+    expect(view.rows[0]).toMatchObject({ status: 'no-goal', goalLabel: '—', progressPct: null });
+  });
+});
+
+describe('hasHealthMetricsEventsGoal', () => {
+  it('treats only a positive goal as set', () => {
+    expect(hasHealthMetricsEventsGoal(450)).toBe(true);
+    expect(hasHealthMetricsEventsGoal(0)).toBe(false);
+    expect(hasHealthMetricsEventsGoal(-5)).toBe(false);
+    expect(hasHealthMetricsEventsGoal(null)).toBe(false);
   });
 });
 
@@ -418,6 +461,125 @@ describe('buildHealthMetricsEventsAtAGlanceView', () => {
 
   it('marks a period missing from the read as unmeasured', () => {
     expect(buildHealthMetricsEventsAtAGlanceView(glance(), 'COMPLETED_YEAR_4').measured).toBe(false);
+  });
+});
+
+describe('buildHealthMetricsEventsRevenueView', () => {
+  function revenuePeriod(overrides: Partial<HealthMetricsEventsRevenuePeriod> = {}): HealthMetricsEventsRevenuePeriod {
+    return {
+      range: 'YTD',
+      totalUsd: 258000,
+      registrationUsd: 180000,
+      sponsorshipUsd: 78000,
+      registrationShare: 0.6977,
+      sponsorshipShare: 0.3023,
+      hasUnconverted: false,
+      changes: { total: 0.06, registration: 0.05, sponsorship: -0.09 },
+      ...overrides,
+    };
+  }
+
+  function revenueEvent(overrides: Partial<HealthMetricsEventsRevenueEvent> = {}): HealthMetricsEventsRevenueEvent {
+    return {
+      eventId: 'rev-1',
+      eventName: 'Summit',
+      eventStartDate: '2026-03-10',
+      registrationUsd: 96000,
+      sponsorshipUsd: 40000,
+      registrationGoal: 145000,
+      sponsorshipGoal: null,
+      hasUnconverted: false,
+      registrationGoalWithheld: false,
+      sponsorshipGoalWithheld: false,
+      ranges: ['YTD'],
+      ...overrides,
+    };
+  }
+
+  function revenue(overrides: Partial<HealthMetricsEventsRevenue> = {}): HealthMetricsEventsRevenue {
+    return {
+      periods: [revenuePeriod(), revenuePeriod({ range: 'COMPLETED_YEAR_3', changes: null })],
+      events: [revenueEvent(), revenueEvent({ eventId: 'rev-2', ranges: ['COMPLETED_YEAR'] })],
+      eventsMeasured: true,
+      ...overrides,
+    };
+  }
+
+  it('builds the headline, the two money lines and a split that sums to 100', () => {
+    const view = buildHealthMetricsEventsRevenueView(revenue(), 'YTD');
+
+    expect(view.measured).toBe(true);
+    expect(view.headline).toMatchObject({ label: 'Total event revenue', value: '$258K', delta: '+6%', deltaDirection: 'up' });
+    expect(view.side).toEqual([
+      expect.objectContaining({ key: 'registration', value: '$180K', delta: '+5%' }),
+      expect.objectContaining({ key: 'sponsorship', value: '$78K', delta: '−9%', deltaDirection: 'down' }),
+      expect.objectContaining({ key: 'split', value: '70 / 30', delta: null }),
+    ]);
+  });
+
+  it('lists only the events in the period, with each goal only where one is set', () => {
+    const { rows } = buildHealthMetricsEventsRevenueView(revenue(), 'YTD');
+
+    expect(rows.map((row) => row.event.eventId)).toEqual(['rev-1']);
+    expect(rows[0]).toMatchObject({
+      dateLabel: 'Mar 10, 2026',
+      registrationLabel: '$96K',
+      registrationGoalLabel: '$145K',
+      sponsorshipLabel: '$40K',
+      sponsorshipGoalLabel: '',
+    });
+  });
+
+  it('draws no delta for the period the view does not compare', () => {
+    const view = buildHealthMetricsEventsRevenueView(revenue(), 'COMPLETED_YEAR_3');
+
+    expect([view.headline, ...view.side].every((stat) => stat.delta === null)).toBe(true);
+  });
+
+  it('reads unmeasured figures and shares as not available, and keeps a refund signed', () => {
+    const period = revenuePeriod({
+      totalUsd: -1200,
+      registrationUsd: null,
+      registrationShare: null,
+      changes: { total: null, registration: null, sponsorship: null },
+    });
+    const view = buildHealthMetricsEventsRevenueView(revenue({ periods: [period] }), 'YTD');
+
+    expect(view.headline).toMatchObject({ value: '-$1.2K', delta: 'not available' });
+    expect(view.side[0].value).toBe('not available');
+    expect(view.side[2].value).toBe('not available');
+  });
+
+  it('shows the unconverted note when the headline or a listed event is short', () => {
+    expect(buildHealthMetricsEventsRevenueView(revenue(), 'YTD').hasUnconverted).toBe(false);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [revenuePeriod({ hasUnconverted: true })] }), 'YTD').hasUnconverted).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ events: [revenueEvent({ hasUnconverted: true })] }), 'YTD').hasUnconverted).toBe(true);
+  });
+
+  it('marks the headline only when the period totals leave out unconverted revenue, not for one listed event', () => {
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [revenuePeriod({ hasUnconverted: true })] }), 'YTD').headlineUnconverted).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ events: [revenueEvent({ hasUnconverted: true })] }), 'YTD').headlineUnconverted).toBe(false);
+  });
+
+  it('labels a withheld goal instead of leaving it blank, without marking the revenue or an unset goal', () => {
+    const event = revenueEvent({ registrationGoal: null, registrationGoalWithheld: true });
+    const view = buildHealthMetricsEventsRevenueView(revenue({ events: [event] }), 'YTD');
+
+    expect(view.rows[0]).toMatchObject({ registrationGoalLabel: 'goal not in USD', sponsorshipGoalLabel: '' });
+    expect(view.hasUnconverted).toBe(false);
+  });
+
+  it('carries whether the read had per-event figures at all', () => {
+    expect(buildHealthMetricsEventsRevenueView(revenue(), 'YTD').eventsMeasured).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ events: [], eventsMeasured: false }), 'YTD')).toMatchObject({ eventsMeasured: false, rows: [] });
+  });
+
+  it('marks a period missing from the read as unmeasured', () => {
+    expect(buildHealthMetricsEventsRevenueView(revenue(), 'COMPLETED_YEAR_4')).toMatchObject({ foundationMeasured: true, measured: false });
+  });
+
+  it('marks the whole foundation unmeasured when the read carried no period at all', () => {
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [] }), 'YTD')).toMatchObject({ foundationMeasured: false, measured: false });
   });
 });
 
@@ -523,5 +685,462 @@ describe('buildHealthMetricsEventsRegistrationsGrowthView', () => {
       hasPartialYear: false,
       pandemicNote: null,
     });
+  });
+});
+
+describe('buildHealthMetricsEventsSpeakersView', () => {
+  function speakersPeriod(overrides: Partial<HealthMetricsEventsSpeakersPeriod> = {}): HealthMetricsEventsSpeakersPeriod {
+    return {
+      range: 'YTD',
+      submitted: 6283,
+      accepted: 348,
+      inReview: 3447,
+      declined: 2488,
+      speakers: 3559,
+      acceptanceRate: 0.055388,
+      changes: { speakers: -0.143029 },
+      ...overrides,
+    };
+  }
+
+  function proposal(overrides: Partial<HealthMetricsEventsSpeakersProposal> = {}): HealthMetricsEventsSpeakersProposal {
+    return {
+      proposalKey: 'p-1',
+      range: 'YTD',
+      jobTitle: 'Staff Engineer',
+      organizationName: 'Acme Motors',
+      unaffiliated: false,
+      eventName: 'Summit',
+      sessionTitle: 'A talk',
+      submissionDate: '2026-03-10',
+      status: 'Accepted',
+      statusGroup: 'accepted',
+      ...overrides,
+    };
+  }
+
+  function speakers(overrides: Partial<HealthMetricsEventsSpeakers> = {}): HealthMetricsEventsSpeakers {
+    return {
+      periods: [speakersPeriod(), speakersPeriod({ range: 'COMPLETED_YEAR_3', submitted: 4000, changes: null })],
+      organizations: [
+        { accountId: 'org-b', accountName: 'Vendor Corp', periods: [{ range: 'YTD', submitted: 200, rank: 2 }] },
+        { accountId: 'org-a', accountName: 'Acme Motors', periods: [{ range: 'YTD', submitted: 400, rank: 1 }] },
+        { accountId: 'org-c', accountName: 'Other Co', periods: [{ range: 'COMPLETED_YEAR', submitted: 90, rank: 1 }] },
+      ],
+      unaffiliated: [{ range: 'YTD', submitted: 1351 }],
+      proposals: [
+        proposal({ proposalKey: 'p-old', submissionDate: '2026-01-02', status: 'Waitlisted', statusGroup: 'in-review' }),
+        proposal(),
+        proposal({ proposalKey: 'p-ind', unaffiliated: true, organizationName: null, status: 'Rejected', statusGroup: 'declined' }),
+        proposal({ proposalKey: 'p-prev', range: 'COMPLETED_YEAR' }),
+      ],
+      ...overrides,
+    };
+  }
+
+  it('builds the headline and side stats with the speakers change', () => {
+    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
+
+    expect(view.foundationMeasured).toBe(true);
+    expect(view.measured).toBe(true);
+    expect(view.countLabel).toBe('6,283 proposals');
+    expect(view.headline).toMatchObject({ key: 'accepted', label: 'Accepted proposals', value: '348', delta: null });
+    expect(view.side.map((stat) => stat.value)).toEqual(['6,283', '6%', '3,559']);
+    expect(view.side[2]).toMatchObject({ delta: '−14%', deltaDirection: 'down' });
+  });
+
+  it('leaves the speakers stat without a delta for an uncompared period', () => {
+    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR_3', 'all');
+
+    expect(view.side[2]).toMatchObject({ delta: null, deltaDirection: 'neutral' });
+  });
+
+  it('counts the chosen tab, singular for one', () => {
+    const data = speakers({ periods: [speakersPeriod({ inReview: 1 })] });
+
+    expect(buildHealthMetricsEventsSpeakersView(data, 'YTD', 'accepted').countLabel).toBe('348 proposals');
+    expect(buildHealthMetricsEventsSpeakersView(data, 'YTD', 'in-review').countLabel).toBe('1 proposal');
+  });
+
+  it('ranks the status bars by count, scaled against the largest', () => {
+    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
+
+    expect(view.statusBars.map((bar) => bar.key)).toEqual(['in-review', 'declined', 'accepted']);
+    expect(view.statusBars[0]).toMatchObject({ label: 'In review', valueLabel: '3,447', widthPct: 100, barClass: 'bg-amber-500' });
+    expect(view.statusBars[2].widthPct).toBeCloseTo((348 / 3447) * 100);
+  });
+
+  it('charts the four years oldest first, marking the open one partial', () => {
+    expect(buildHealthMetricsEventsSpeakersYears(speakers())).toEqual([
+      {
+        year: getYearForRange('COMPLETED_YEAR_3'),
+        submitted: 4000,
+        isPartialYear: false,
+        yearLabel: `${getYearForRange('COMPLETED_YEAR_3')}`,
+        submittedLabel: '4,000',
+      },
+      {
+        year: getYearForRange('COMPLETED_YEAR_2'),
+        submitted: null,
+        isPartialYear: false,
+        yearLabel: `${getYearForRange('COMPLETED_YEAR_2')}`,
+        submittedLabel: 'not available',
+      },
+      {
+        year: getYearForRange('COMPLETED_YEAR'),
+        submitted: null,
+        isPartialYear: false,
+        yearLabel: `${getYearForRange('COMPLETED_YEAR')}`,
+        submittedLabel: 'not available',
+      },
+      { year: getYearForRange('YTD'), submitted: 6283, isPartialYear: true, yearLabel: `${getYearForRange('YTD')} (partial year)`, submittedLabel: '6,283' },
+    ]);
+  });
+
+  it("ranks the period's organizations and keeps individuals on their own line", () => {
+    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
+
+    expect(view.organizations).toEqual([
+      { key: 'org-a', label: 'Acme Motors', valueLabel: '400', widthPct: 100, barClass: 'bg-blue-500' },
+      { key: 'org-b', label: 'Vendor Corp', valueLabel: '200', widthPct: 50, barClass: 'bg-blue-500' },
+    ]);
+    expect(view.individualLabel).toBe('1,351 proposals submitted');
+    expect(buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR', 'all').individualLabel).toBeNull();
+    expect(buildHealthMetricsEventsSpeakersView(speakers({ unaffiliated: [{ range: 'YTD', submitted: 1 }] }), 'YTD', 'all').individualLabel).toBe(
+      '1 proposal submitted'
+    );
+  });
+
+  it("lists the period's proposals most recent first, filtered by the tab", () => {
+    const all = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
+
+    expect(all.proposals.map((row) => row.proposal.proposalKey)).toEqual(['p-1', 'p-ind', 'p-old']);
+    expect(all.proposals[1]).toMatchObject({ organizationLabel: 'Individual', statusClass: 'bg-gray-100 text-gray-600' });
+    expect(all.proposals[0]).toMatchObject({ organizationLabel: 'Acme Motors', statusClass: 'bg-emerald-50 text-emerald-700' });
+    expect(buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'in-review').proposals.map((row) => row.proposal.proposalKey)).toEqual(['p-old']);
+  });
+
+  it('caps the list at ten and shows a dash for a missing organization or date', () => {
+    const many = Array.from({ length: 12 }, (_, index) => proposal({ proposalKey: `p-${String(index).padStart(2, '0')}` }));
+    const view = buildHealthMetricsEventsSpeakersView(speakers({ proposals: many }), 'YTD', 'all');
+
+    expect(view.proposals).toHaveLength(10);
+    const bare = buildHealthMetricsEventsSpeakersView(
+      speakers({ proposals: [proposal({ organizationName: null, submissionDate: null, statusGroup: null })] }),
+      'YTD',
+      'all'
+    );
+    expect(bare.proposals[0]).toMatchObject({ organizationLabel: '—', dateLabel: '—', statusClass: 'bg-gray-100 text-gray-600' });
+  });
+
+  it('reads as unmeasured with no period, and as foundation-unmeasured with none at all', () => {
+    const missing = buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR', 'all');
+    const empty = buildHealthMetricsEventsSpeakersView(speakers({ periods: [] }), 'YTD', 'all');
+
+    expect(missing).toMatchObject({ foundationMeasured: true, measured: false, countLabel: '' });
+    expect(empty.foundationMeasured).toBe(false);
+  });
+});
+
+describe('buildHealthMetricsEventsSpeakersNote', () => {
+  function withChange(speakersChange: number | null): HealthMetricsEventsSpeakers {
+    return {
+      periods: [
+        {
+          range: 'YTD',
+          submitted: 10,
+          accepted: 1,
+          inReview: 5,
+          declined: 4,
+          speakers: 8,
+          acceptanceRate: 0.1,
+          changes: { speakers: speakersChange },
+        },
+      ],
+      organizations: [],
+      unaffiliated: [],
+      proposals: [],
+    };
+  }
+
+  it('notes a steep fall and stays empty otherwise', () => {
+    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.42), 'YTD')).toBe('down 42% YoY');
+    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.14), 'YTD')).toBe('');
+    expect(buildHealthMetricsEventsSpeakersNote(withChange(null), 'YTD')).toBe('');
+    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.42), 'COMPLETED_YEAR')).toBe('');
+  });
+
+  it('stays empty at exactly the threshold and notes a fall just past it', () => {
+    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.3), 'YTD')).toBe('');
+    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.3004), 'YTD')).toBe('down 30% YoY');
+  });
+});
+
+describe('buildHealthMetricsEventsOrganizationRowView', () => {
+  const organization = (overrides: Partial<HealthMetricsEventsOrganization> = {}): HealthMetricsEventsOrganization => ({
+    accountId: '0014100000AcmeAAAA',
+    accountName: 'Acme Motors',
+    logoUrl: 'https://acme-motors.example/logo.png',
+    isMember: true,
+    registrations: 1204,
+    registrationsShare: 0.5,
+    sponsorshipUsd: 150000,
+    proposals: 12,
+    speakers: 4,
+    events: 3,
+    ...overrides,
+  });
+
+  it('labels a member with its figures and a bar scaled to the top organization', () => {
+    expect(buildHealthMetricsEventsOrganizationRowView(organization())).toEqual({
+      accountId: '0014100000AcmeAAAA',
+      accountName: 'Acme Motors',
+      logoUrl: 'https://acme-motors.example/logo.png',
+      memberLabel: 'Member',
+      memberClass: 'bg-emerald-50 text-emerald-700',
+      registrationsLabel: '1,204',
+      barWidthPct: 50,
+      sponsorshipLabel: '$150K',
+      proposalsLabel: '12',
+      speakersLabel: '4',
+      eventsLabel: '3',
+    });
+  });
+
+  it('reads zero sponsorship and proposals as not tracked, but keeps a measured zero elsewhere', () => {
+    const row = buildHealthMetricsEventsOrganizationRowView(organization({ sponsorshipUsd: 0, proposals: 0, registrations: 0, speakers: 0 }));
+
+    expect(row.sponsorshipLabel).toBe('—');
+    expect(row.proposalsLabel).toBe('—');
+    expect(row.registrationsLabel).toBe('0');
+    expect(row.speakersLabel).toBe('0');
+  });
+
+  it('labels a non-member, drops a missing logo and keeps the bar inside its track', () => {
+    const row = buildHealthMetricsEventsOrganizationRowView(organization({ isMember: false, logoUrl: null, registrationsShare: 1.2, sponsorshipUsd: null }));
+
+    expect(row.memberLabel).toBe('Non-member');
+    expect(row.memberClass).toBe('bg-gray-100 text-gray-600');
+    expect(row.logoUrl).toBe('');
+    expect(row.barWidthPct).toBe(100);
+    expect(row.sponsorshipLabel).toBe('—');
+  });
+
+  it('draws no bar when the share is not available', () => {
+    expect(buildHealthMetricsEventsOrganizationRowView(organization({ registrationsShare: null })).barWidthPct).toBe(0);
+  });
+});
+
+describe('formatHealthMetricsEventsOrganizationsCountLabel', () => {
+  it('counts organizations, singular for one', () => {
+    expect(formatHealthMetricsEventsOrganizationsCountLabel(1204)).toBe('1,204 organizations');
+    expect(formatHealthMetricsEventsOrganizationsCountLabel(1)).toBe('1 organization');
+    expect(formatHealthMetricsEventsOrganizationsCountLabel(0)).toBe('0 organizations');
+  });
+
+  it('shows a dash while the count is unknown', () => {
+    expect(formatHealthMetricsEventsOrganizationsCountLabel(null)).toBe('—');
+  });
+});
+
+describe('buildHealthMetricsEventsSponsorshipView', () => {
+  function sponsorshipPeriod(overrides: Partial<HealthMetricsEventsSponsorshipPeriod> = {}): HealthMetricsEventsSponsorshipPeriod {
+    return {
+      range: 'YTD',
+      revenueUsd: 750000,
+      goalUsd: 1000000,
+      tierPackages: 12,
+      addOns: 3,
+      progressToGoal: 0.75,
+      changes: { revenue: 0.25 },
+      tiers: [
+        { name: 'Gold', packages: 5 },
+        { name: 'Silver', packages: 5 },
+        { name: 'Platinum', packages: 2 },
+      ],
+      ...overrides,
+    };
+  }
+
+  function sponsorship(...periods: HealthMetricsEventsSponsorshipPeriod[]): HealthMetricsEventsSponsorship {
+    return { periods: periods.length ? periods : [sponsorshipPeriod()] };
+  }
+
+  it('builds the headline, side stats, progress and tier bars scaled to the top tier', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(), 'YTD');
+
+    expect(view.foundationMeasured).toBe(true);
+    expect(view.measured).toBe(true);
+    expect(view.packagesLabel).toBe('12 packages sold');
+    expect(view.headline).toMatchObject({ label: 'Sponsorship revenue', value: '$750K', delta: '+25%', deltaDirection: 'up' });
+    expect(view.side.map((stat) => [stat.label, stat.value])).toEqual([
+      ['Goal', '$1M'],
+      ['Tier packages', '12'],
+      ['Add-ons', '3'],
+    ]);
+    expect(view.goalSet).toBe(true);
+    expect(view.progress).toEqual({ pctLabel: '75%', widthPct: 75 });
+    expect(view.tiers.map((tier) => [tier.label, tier.valueLabel, tier.widthPct])).toEqual([
+      ['Gold', '5', 100],
+      ['Silver', '5', 100],
+      ['Platinum', '2', 40],
+    ]);
+  });
+
+  it('shows no progress bar when the goal is not set or zero', () => {
+    for (const goalUsd of [null, 0]) {
+      const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ goalUsd })), 'YTD');
+
+      expect(view.goalSet).toBe(false);
+      expect(view.progress).toBeNull();
+      expect(view.side[0].value).toBe('not set');
+    }
+  });
+
+  it('caps the bar at full while the label keeps the real percent', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ revenueUsd: 1250000, progressToGoal: 1.25 })), 'YTD');
+
+    expect(view.progress).toEqual({ pctLabel: '125%', widthPct: 100 });
+  });
+
+  it('draws no bar for a goal the view models no progress for, without calling the goal unset', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(
+      sponsorship(sponsorshipPeriod({ range: 'COMPLETED_YEAR_2', progressToGoal: null })),
+      'COMPLETED_YEAR_2'
+    );
+
+    expect(view.goalSet).toBe(true);
+    expect(view.progress).toBeNull();
+  });
+
+  it('carries no delta for a period that is not compared', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ range: 'COMPLETED_YEAR_3', changes: null })), 'COMPLETED_YEAR_3');
+
+    expect(view.headline).toMatchObject({ delta: null, deltaDirection: 'neutral' });
+  });
+
+  it('marks a compared period with no prior value as not available', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ changes: { revenue: null } })), 'YTD');
+
+    expect(view.headline).toMatchObject({ delta: 'not available', deltaDirection: 'neutral' });
+  });
+
+  it('uses the singular for one package', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ tierPackages: 1, addOns: 0 })), 'YTD');
+
+    expect(view.packagesLabel).toBe('1 package sold');
+  });
+
+  it('counts tier packages only in the packages pill, keeping add-ons out', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ tierPackages: 5, addOns: 7 })), 'YTD');
+
+    expect(view.packagesLabel).toBe('5 packages sold');
+  });
+
+  it('reads as unmeasured for a period missing from the response', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(), 'COMPLETED_YEAR');
+
+    expect(view.foundationMeasured).toBe(true);
+    expect(view.measured).toBe(false);
+    expect(view.packagesLabel).toBe('');
+    expect(view.headline.value).toBe('not available');
+    expect(view.progress).toBeNull();
+    expect(view.tiers).toEqual([]);
+  });
+
+  it('reads as unmeasured for a foundation with no sponsorship', () => {
+    const view = buildHealthMetricsEventsSponsorshipView({ periods: [] }, 'YTD');
+
+    expect(view.foundationMeasured).toBe(false);
+    expect(view.measured).toBe(false);
+  });
+});
+
+describe('buildHealthMetricsEventsGeographyView', () => {
+  function geographyPeriod(overrides: Partial<HealthMetricsEventsGeographyPeriod> = {}): HealthMetricsEventsGeographyPeriod {
+    return {
+      range: 'YTD',
+      countries: 42,
+      changes: { countries: 0.1 },
+      topCountries: [
+        { country: 'Canada', registrations: 800 },
+        { country: 'Germany', registrations: 400 },
+        { country: 'Japan', registrations: 200 },
+      ],
+      rankedCountries: 40,
+      ...overrides,
+    };
+  }
+
+  function geography(...periods: HealthMetricsEventsGeographyPeriod[]): HealthMetricsEventsGeography {
+    return { periods: periods.length ? periods : [geographyPeriod()] };
+  }
+
+  it('builds the headline, the pill and bars scaled to the top country', () => {
+    const view = buildHealthMetricsEventsGeographyView(geography(), 'YTD');
+
+    expect(view.foundationMeasured).toBe(true);
+    expect(view.measured).toBe(true);
+    expect(view.countries).toBe(42);
+    expect(view.countriesLabel).toBe('42 countries');
+    expect(view.headline).toMatchObject({ label: 'Countries represented', value: '42', delta: '+10%', deltaDirection: 'up' });
+    expect(view.bars.map((bar) => [bar.label, bar.valueLabel, bar.widthPct])).toEqual([
+      ['Canada', '800', 100],
+      ['Germany', '400', 50],
+      ['Japan', '200', 25],
+    ]);
+    expect(view.moreLabel).toBe('+37 more');
+  });
+
+  it('shows no tail line when the bars cover every country', () => {
+    const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ rankedCountries: 3 })), 'YTD');
+
+    expect(view.moreLabel).toBe('');
+  });
+
+  it('uses the singular for one country', () => {
+    const view = buildHealthMetricsEventsGeographyView(
+      geography(geographyPeriod({ countries: 1, topCountries: [{ country: 'Canada', registrations: 5 }], rankedCountries: 1 })),
+      'YTD'
+    );
+
+    expect(view.countriesLabel).toBe('1 country');
+  });
+
+  it('carries no delta for a period that is not compared', () => {
+    const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ range: 'COMPLETED_YEAR_2', changes: null })), 'COMPLETED_YEAR_2');
+
+    expect(view.headline).toMatchObject({ delta: null, deltaDirection: 'neutral' });
+  });
+
+  it('marks a compared period with no prior value as not available', () => {
+    const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ changes: { countries: null } })), 'YTD');
+
+    expect(view.headline).toMatchObject({ delta: 'not available', deltaDirection: 'neutral' });
+  });
+
+  it('reads a period with no country registrations as unmeasured, even with a rollup count', () => {
+    const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ countries: 3, topCountries: [], rankedCountries: 0 })), 'YTD');
+
+    expect(view.measured).toBe(false);
+    expect(view.countries).toBeNull();
+    expect(view.countriesLabel).toBe('');
+    expect(view.headline).toMatchObject({ value: 'not available', delta: null });
+    expect(view.bars).toEqual([]);
+    expect(view.moreLabel).toBe('');
+  });
+
+  it('reads as unmeasured for a period missing from the response', () => {
+    const view = buildHealthMetricsEventsGeographyView(geography(), 'COMPLETED_YEAR');
+
+    expect(view.foundationMeasured).toBe(true);
+    expect(view.measured).toBe(false);
+  });
+
+  it('reads as unmeasured for a foundation with no geography', () => {
+    const view = buildHealthMetricsEventsGeographyView({ periods: [] }, 'YTD');
+
+    expect(view.foundationMeasured).toBe(false);
+    expect(view.measured).toBe(false);
   });
 });

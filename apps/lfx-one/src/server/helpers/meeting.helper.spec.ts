@@ -1,6 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// meeting-privacy.utils (deep-imported into the shared-utils mock below) transitively imports
+// @angular/common/http — the JIT facade must be present in this plain-Node environment.
+import '@angular/compiler';
+
 import type { Meeting, MeetingUserInfo, PastMeeting } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,7 +23,7 @@ const { resolveCreatedByForMeetings } = vi.hoisted(() => ({
 // under test (human creator → skip; service-account/empty/zero-valued → enrich).
 const SKIP = ['zoom.webhooks', 'zoom.events'];
 const isHumanIdentity = (identity: MeetingUserInfo | undefined | null): boolean => !!identity?.name && !SKIP.includes((identity.username ?? '').toLowerCase());
-vi.mock('@lfx-one/shared/utils', () => ({
+vi.mock('@lfx-one/shared/utils', async () => ({
   resolveMeetingOwner: (meeting: { owner?: MeetingUserInfo } | null | undefined) => (isHumanIdentity(meeting?.owner) ? meeting!.owner! : null),
   resolveMeetingOrganizer: (meeting: { created_by?: MeetingUserInfo; owner?: MeetingUserInfo } | null | undefined) => {
     if (isHumanIdentity(meeting?.owner)) {
@@ -30,10 +34,13 @@ vi.mock('@lfx-one/shared/utils', () => ({
     }
     return null;
   },
+  // Real, so the host-key gate suites run the actual window check. Deep import — the barrel
+  // itself pulls in Angular-tainted modules this environment can't load without the compiler.
+  isWithinHostKeyWindow: (await import('@lfx-one/shared/utils/meeting-privacy.utils')).isWithinHostKeyWindow,
 }));
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
-// meeting.helper now imports HOST_KEY_* from shared/constants; stub the barrel so the
-// full constants module graph (which imports shared/enums for ArtifactVisibility etc.) doesn't load.
+// The deep-imported shared meeting-privacy module reads HOST_KEY_* from this barrel; stub it so
+// the full constants module graph (which imports shared/enums for ArtifactVisibility etc.) doesn't load.
 vi.mock('@lfx-one/shared/constants', () => ({ HOST_KEY_EARLY_MINUTES: 70, HOST_KEY_LATE_MINUTES: 40 }));
 
 // Stub the services constructed at module load so importing the helper doesn't pull in the
@@ -52,7 +59,7 @@ vi.mock('../services/logger.service', () => ({
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(), getUsernameFromAuth: vi.fn() }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn() }));
 
-import { applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, isWithinHostKeyWindow, resolveOrganizerAndHostKey, stripHostKey } from './meeting.helper';
+import { applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, resolveOrganizerAndHostKey, stripHostKey } from './meeting.helper';
 
 const req = {} as unknown as Request;
 const human: MeetingUserInfo = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
@@ -327,77 +334,6 @@ describe('applyOrganizerAndHostKeyResult', () => {
     expect(meeting.organizer).toBe(false);
     expect(meeting.can_view_host_key).toBe(false);
     expect(meeting.host_key).toBeUndefined();
-  });
-});
-
-describe('isWithinHostKeyWindow', () => {
-  // Pin a fixed reference point so boundary assertions are fully deterministic.
-  const NOW = new Date('2025-06-01T12:00:00.000Z');
-  const nowMs = NOW.getTime();
-
-  function iso(offsetMs: number): string {
-    return new Date(nowMs + offsetMs).toISOString();
-  }
-
-  it('returns true when now is exactly at the window start (start_time − 70 min)', () => {
-    // start_time = now + 70 min → windowStart = now exactly
-    expect(isWithinHostKeyWindow({ start_time: iso(70 * MIN), duration: 60 }, NOW)).toBe(true);
-  });
-
-  it('returns false when now is one ms before the window start', () => {
-    const oneMsBefore = new Date(nowMs - 1);
-    expect(isWithinHostKeyWindow({ start_time: iso(70 * MIN), duration: 60 }, oneMsBefore)).toBe(false);
-  });
-
-  it('returns true during the meeting itself', () => {
-    // start_time = 15 min ago; now is 15 min past start, well inside window
-    expect(isWithinHostKeyWindow({ start_time: iso(-15 * MIN), duration: 60 }, NOW)).toBe(true);
-  });
-
-  it('returns true up to 40 min after meeting end', () => {
-    // start_time = 90 min ago, duration = 60 → end = 30 min ago, tail ends at now + 10 min
-    expect(isWithinHostKeyWindow({ start_time: iso(-90 * MIN), duration: 60 }, NOW)).toBe(true);
-  });
-
-  it('returns false when now is exactly at the window end (start + duration + 40 min)', () => {
-    // windowEnd = start + 60 + 40 = now → exclusive upper bound, must be false
-    expect(isWithinHostKeyWindow({ start_time: iso(-(60 + 40) * MIN), duration: 60 }, NOW)).toBe(false);
-  });
-
-  it('returns false when now is just past the window end', () => {
-    expect(isWithinHostKeyWindow({ start_time: iso(-(60 + 41) * MIN), duration: 60 }, NOW)).toBe(false);
-  });
-
-  it('returns false when the meeting is more than 70 min away', () => {
-    expect(isWithinHostKeyWindow({ start_time: iso(71 * MIN), duration: 60 }, NOW)).toBe(false);
-  });
-
-  it('prefers next_occurrence_start_time over start_time for recurring meetings', () => {
-    // series start_time is 30 days in the past (window long closed)
-    // next_occurrence_start_time is 30 min from now (inside window)
-    expect(
-      isWithinHostKeyWindow(
-        {
-          start_time: iso(-30 * 24 * 60 * MIN),
-          next_occurrence_start_time: iso(30 * MIN),
-          duration: 60,
-        },
-        NOW
-      )
-    ).toBe(true);
-  });
-
-  it('falls back to start_time when next_occurrence_start_time is absent', () => {
-    // start_time is 30 min from now — inside window
-    expect(isWithinHostKeyWindow({ start_time: iso(30 * MIN), duration: 60 }, NOW)).toBe(true);
-  });
-
-  it('returns false when start_time is absent', () => {
-    expect(isWithinHostKeyWindow({ start_time: '', duration: 60 }, NOW)).toBe(false);
-  });
-
-  it('returns false when start_time is not a valid date', () => {
-    expect(isWithinHostKeyWindow({ start_time: 'not-a-date', duration: 60 }, NOW)).toBe(false);
   });
 });
 
