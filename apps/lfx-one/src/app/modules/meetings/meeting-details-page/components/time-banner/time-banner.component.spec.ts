@@ -64,6 +64,14 @@ describe('MeetingTimeBannerComponent', () => {
   }
 
   it('shows the date and time in the viewer timezone once it resolves after the first render', async () => {
+    // The first render matches the server's, which has no viewer timezone: a skeleton, no date. The
+    // view's own change detection renders it without running the app's after-render hooks.
+    fixture = TestBed.createComponent(MeetingTimeBannerComponent);
+    fixture.componentRef.changeDetectorRef.detectChanges();
+    expect(query('meeting-time-banner-skeleton')).not.toBeNull();
+    expect(query('meeting-time-banner-date')).toBeNull();
+    expect(query('meeting-time-banner-time')).toBeNull();
+
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -71,6 +79,17 @@ describe('MeetingTimeBannerComponent', () => {
     expect(query('meeting-time-banner-date')?.textContent?.trim()).toMatch(/^[A-Z][a-z]+day, [A-Z][a-z]{2} \d{1,2}$/);
     expect(query('meeting-time-banner-time')?.textContent?.trim()).toMatch(/^\d{1,2}:\d{2} [AP]M – \d{1,2}:\d{2} [AP]M$/);
     expect(query('meeting-time-banner-timezone')?.textContent?.trim()).not.toBe('');
+  });
+
+  it('names both offsets for a range that crosses a DST change', async () => {
+    await fixture.whenStable();
+    // 1:30 AM Pacific Daylight Time to 1:30 AM Pacific Standard Time, across the fall-back hour.
+    meeting.set(build({ start_time: '2026-11-01T08:30:00Z', duration: 60 }));
+    (fixture.componentInstance as unknown as { userTimezone: WritableSignal<string | null> }).userTimezone.set('America/Los_Angeles');
+    fixture.detectChanges();
+
+    expect(query('meeting-time-banner-time')?.textContent?.trim()).toBe('1:30 AM – 1:30 AM');
+    expect(query('meeting-time-banner-timezone')?.textContent?.trim()).toBe('Pacific Daylight Time – Pacific Standard Time');
   });
 
   it("dates the banner from the page's selected occurrence", async () => {

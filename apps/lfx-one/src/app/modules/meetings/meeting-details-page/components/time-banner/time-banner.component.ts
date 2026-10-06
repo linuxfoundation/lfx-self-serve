@@ -100,7 +100,13 @@ export class MeetingTimeBannerComponent {
     return computed(() => {
       const window = this.window();
       const timezone = this.userTimezone();
-      return window && timezone ? getLongTimezoneName(window.start, timezone) : '';
+      if (!window || !timezone) {
+        return '';
+      }
+      // A range that crosses a DST change names both offsets, so the end is not mislabelled.
+      const startName = getLongTimezoneName(window.start, timezone);
+      const endName = getLongTimezoneName(window.end, timezone);
+      return startName === endName ? startName : `${startName} – ${endName}`;
     });
   }
 
