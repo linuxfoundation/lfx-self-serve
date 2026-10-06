@@ -18,11 +18,17 @@
         }
       }
       @case ('guest-join') {
-        <!-- E2-06 adds the guest form beside sign-in. -->
+        <!-- E2-06 (FR-025): sign in, or join as a guest with the form below. -->
         <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">
-          The meeting is open. Sign in with your LFX account to join.
+          The meeting is open. Sign in with your LFX account to join, or join as a guest.
         </p>
         <ng-container [ngTemplateOutlet]="signIn" />
+        <div class="flex items-center gap-[10px] text-[12px] text-[var(--md-text-muted)]" aria-hidden="true">
+          <span class="h-px flex-1 bg-[var(--md-divider)]"></span>
+          or
+          <span class="h-px flex-1 bg-[var(--md-divider)]"></span>
+        </div>
+        <lfx-meeting-guest-join />
       }
       @case ('register') {
         <!-- E2-02 (FR-021): registration needs a session, so a visitor signs in first. -->

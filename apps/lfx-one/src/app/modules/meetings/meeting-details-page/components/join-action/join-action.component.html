@@ -31,6 +31,15 @@
         <span>{{ joinState().error }}</span>
         @if (notRegistered()) {
           <span>Your account's email is not on this meeting's invite list. Ask the organizer to invite it.</span>
+          @if (!showGuestForm()) {
+            <button
+              type="button"
+              class="w-fit rounded-[var(--md-radius-xs)] font-semibold underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+              (click)="joinWithDifferentEmail()"
+              data-testid="meeting-action-join-different-email">
+              Join with a different email
+            </button>
+          }
         }
         <button
           type="button"
@@ -40,6 +49,9 @@
           Try again
         </button>
       </div>
+      @if (showGuestForm()) {
+        <lfx-meeting-guest-join />
+      }
     </div>
   }
   @default {

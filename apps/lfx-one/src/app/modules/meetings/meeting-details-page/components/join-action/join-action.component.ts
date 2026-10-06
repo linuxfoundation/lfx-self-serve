@@ -2,18 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MeetingJoinUrlState } from '@lfx-one/shared/interfaces';
-import { buildJoinUrlWithParams, isHttpUrl } from '@lfx-one/shared/utils';
-import { MeetingService } from '@services/meeting.service';
+import { buildJoinUrlWithParams } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, startWith, switchMap, take } from 'rxjs';
+import { BehaviorSubject, combineLatest, distinctUntilChanged, filter, map, of, switchMap, take } from 'rxjs';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
+import { MeetingJoinUrlService } from '../../meeting-join-url.service';
+import { MeetingGuestJoinComponent } from '../guest-join/guest-join.component';
 
 /**
  * The `join` kind of the V2 action slot (E2-01, #1775, FR-027): one Join button with loading,
@@ -25,17 +26,17 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  *
  * The fetch is browser-only, so the server renders the loading state, which is also what the
  * button shows until the URL resolves. An error offers a retry. A `NOT_REGISTERED_FOR_MEETING`
- * error says the viewer's email is not on the invite list; joining with a different email is the
- * guest form's job (E2-06).
+ * error says the viewer's email is not on the invite list and offers V1's escape hatch: joining
+ * with a different email through the guest form (E2-06), during which auto-join stays off.
  */
 @Component({
   selector: 'lfx-meeting-join-action',
-  imports: [ButtonComponent],
+  imports: [ButtonComponent, MeetingGuestJoinComponent],
   templateUrl: './join-action.component.html',
 })
 export class MeetingJoinActionComponent {
   private readonly state = inject(MeetingDetailsStateService);
-  private readonly meetingService = inject(MeetingService);
+  private readonly joinUrlService = inject(MeetingJoinUrlService);
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
   private readonly activatedRoute = inject(ActivatedRoute);
@@ -52,6 +53,8 @@ export class MeetingJoinActionComponent {
 
   protected readonly joinState: Signal<MeetingJoinUrlState> = this.initJoinState();
   protected readonly notRegistered = computed(() => this.joinState().code === 'NOT_REGISTERED_FOR_MEETING');
+  /** Whether the viewer chose to join with a different email, after a `NOT_REGISTERED_FOR_MEETING`. */
+  protected readonly showGuestForm = signal(false);
 
   public constructor() {
     this.initAutoJoin();
@@ -59,6 +62,10 @@ export class MeetingJoinActionComponent {
 
   protected retry(): void {
     this.retry$.next();
+  }
+
+  protected joinWithDifferentEmail(): void {
+    this.showGuestForm.set(true);
   }
 
   private initJoinState(): Signal<MeetingJoinUrlState> {
@@ -80,29 +87,12 @@ export class MeetingJoinActionComponent {
           if (!meeting.id || !viewerEmail) {
             return of(loading);
           }
-          return this.fetchJoinUrl(meeting.id, meeting.password, viewerEmail).pipe(startWith(loading));
+          return this.joinUrlService
+            .fetch(meeting.id, meeting.password, viewerEmail)
+            .pipe(map((joinState) => (joinState.url ? { ...joinState, url: buildJoinUrlWithParams(joinState.url, this.userService.user()) } : joinState)));
         })
       ),
       { initialValue: loading }
-    );
-  }
-
-  private fetchJoinUrl(meetingId: string, password: string | null, email: string): Observable<MeetingJoinUrlState> {
-    return this.meetingService.getPublicMeetingJoinUrl(meetingId, password, { email }).pipe(
-      map((res): MeetingJoinUrlState => {
-        // The link is bound to an anchor and passed to window.open, so only http(s) gets that far.
-        if (!res.link || !isHttpUrl(res.link, true)) {
-          return { status: 'error', error: 'Failed to load meeting join URL. Please try again.' };
-        }
-        return { status: 'ready', url: buildJoinUrlWithParams(res.link, this.userService.user()) };
-      }),
-      catchError((error) =>
-        of<MeetingJoinUrlState>({
-          status: 'error',
-          error: error?.error?.error || 'Failed to load meeting join URL. Please try again.',
-          code: error?.error?.code ?? null,
-        })
-      )
     );
   }
 
@@ -126,6 +116,8 @@ export class MeetingJoinActionComponent {
         filter((joinState) => joinState.status === 'ready' && !!joinState.url),
         take(1),
         filter(() => this.activatedRoute.snapshot.queryParamMap.get('zoom_redirect')?.toLowerCase() !== 'false'),
+        // V1's suppression: never open the account's link while the viewer is joining as someone else.
+        filter(() => !this.showGuestForm()),
         filter(() => this.state.claimAutoJoin(this.state.meeting()?.id ?? '')),
         takeUntilDestroyed(this.destroyRef)
       )

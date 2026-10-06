@@ -70,9 +70,16 @@ own namespace; the two never share a value.
 | `meeting-action-join-button`            | The Join control in the `join` kind (see below)                                                                       |
 | `meeting-action-join-error`             | Its error message (`role="alert"`)                                                                                    |
 | `meeting-action-join-retry`             | Its error's "Try again" control                                                                                       |
+| `meeting-action-join-different-email`   | After `NOT_REGISTERED_FOR_MEETING`, the control that opens the guest form to join with another email                  |
 | `meeting-action-join-explainer`         | "Public meeting. Anyone with this link can join." under Join                                                          |
 | `meeting-action-join-hint`              | Before the window, the early-join rule for a viewer who will be able to join                                          |
 | `meeting-action-sign-in`                | The slot's sign-in control (`guest-join`, and `register` / `tools` for a visitor)                                     |
+| `meeting-guest-join-form`               | The guest join form (`guest-join`, and the different-email path)                                                      |
+| `meeting-guest-join-name`               | Its full-name field                                                                                                   |
+| `meeting-guest-join-email`              | Its email field                                                                                                       |
+| `meeting-guest-join-organization`       | Its organization field                                                                                                |
+| `meeting-guest-join-button`             | Its Join control (see below)                                                                                          |
+| `meeting-guest-join-error`              | Its error message (`role="alert"`)                                                                                    |
 | `meeting-action-register-button`        | `register`'s "Register for meeting" control, for a signed-in outsider                                                 |
 | `meeting-action-message`                | The slot's line of copy: a finished kind's explanation, or the one line for a kind whose full design is still to come |
 | `meeting-organizer`                     | "Organized by" in the rail card                                                                                       |
@@ -192,6 +199,15 @@ data-state: loading | ready | error
 `loading` is also the server render, since the join URL is fetched in the browser only. The
 criterion in issue #1775 to keep V1's testids predates this contract; the rule above that V2 never
 shares a V1 value wins.
+
+### `meeting-guest-join-button[data-state]`
+
+```text
+data-state: idle | loading | ready | error
+```
+
+`idle` until the form's fields are valid (nothing to fetch yet), and also the server render. V1's
+`guest-form-*` and `join-meeting-button-form` stay V1's and are never reused here.
 
 ## Occurrences
 

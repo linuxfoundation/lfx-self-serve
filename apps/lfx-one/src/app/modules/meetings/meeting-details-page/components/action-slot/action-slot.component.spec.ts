@@ -14,12 +14,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PublicRegistrationModalComponent } from '../../../components/public-registration-modal/public-registration-modal.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
+import { MeetingGuestJoinComponent } from '../guest-join/guest-join.component';
 import { MeetingJoinActionComponent } from '../join-action/join-action.component';
 import { MeetingActionSlotComponent } from './action-slot.component';
 
 // The Join control has its own spec; here it only has to be the one rendered.
 @Component({ selector: 'lfx-meeting-join-action', template: '<span data-testid="join-action-stub"></span>' })
 class JoinActionStubComponent {}
+
+@Component({ selector: 'lfx-meeting-guest-join', template: '<span data-testid="guest-join-stub"></span>' })
+class GuestJoinStubComponent {}
 
 const SIGN_IN_HREF = '/login?returnTo=https%3A%2F%2Fapp.example%2Fmeetings%2Fmeeting-1';
 const KINDS: ActionSlotKind[] = ['join', 'rsvp', 'register', 'invitation-required', 'guest-join', 'tools', 'no-access', 'rsvp-unavailable', 'none'];
@@ -87,7 +91,10 @@ describe('MeetingActionSlotComponent', () => {
         { provide: MessageService, useValue: { add } },
       ],
     })
-      .overrideComponent(MeetingActionSlotComponent, { remove: { imports: [MeetingJoinActionComponent] }, add: { imports: [JoinActionStubComponent] } })
+      .overrideComponent(MeetingActionSlotComponent, {
+        remove: { imports: [MeetingJoinActionComponent, MeetingGuestJoinComponent] },
+        add: { imports: [JoinActionStubComponent, GuestJoinStubComponent] },
+      })
       .overrideComponent(MeetingActionSlotComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
       .compileComponents();
 
@@ -195,6 +202,14 @@ describe('MeetingActionSlotComponent', () => {
       expect(text('meeting-action-message')).toBe('This meeting has ended.');
       expect(query('meeting-action-slot')?.textContent).not.toContain('private');
     });
+  });
+
+  // E2-06 (FR-025).
+  it('offers an anonymous visitor in the window sign-in, or the guest form', () => {
+    render('guest-join', 'visitor');
+
+    expect(query('meeting-action-sign-in')).not.toBeNull();
+    expect(query('guest-join-stub')).not.toBeNull();
   });
 
   // E2-02 (FR-021).

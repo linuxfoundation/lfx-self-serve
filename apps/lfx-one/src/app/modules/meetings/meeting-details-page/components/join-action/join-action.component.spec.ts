@@ -149,6 +149,24 @@ describe('MeetingJoinActionComponent', () => {
       expect(query('meeting-action-join-error')?.textContent).toContain("Your account's email is not on this meeting's invite list.");
     });
 
+    // V1's escape hatch (E2-06): join with another email through the guest form.
+    it('offers joining with a different email, through the guest form', () => {
+      create({ response: throwError(() => ({ error: { error: 'Not registered', code: 'NOT_REGISTERED_FOR_MEETING' } })) });
+      expect(query('meeting-guest-join-form')).toBeNull();
+
+      query('meeting-action-join-different-email')?.click();
+      fixture.detectChanges();
+
+      expect(query('meeting-guest-join-form')).not.toBeNull();
+      expect(query('meeting-action-join-different-email')).toBeNull();
+    });
+
+    it('does not offer a different email for other errors', () => {
+      create({ response: throwError(() => ({ error: { error: 'Meeting not joinable yet' } })) });
+
+      expect(query('meeting-action-join-different-email')).toBeNull();
+    });
+
     it('treats a response without a link as an error, not a button that never loads', () => {
       create({ response: of({}) });
 

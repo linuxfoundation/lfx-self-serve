@@ -1,0 +1,82 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities). One column: the
+     rail is 344px wide. Join's state is in data-state (testid-contract.md). -->
+<form class="flex flex-col gap-[12px]" [formGroup]="form" (submit)="$event.preventDefault()" data-testid="meeting-guest-join-form">
+  <div class="flex flex-col gap-[6px]">
+    <label for="meeting-guest-join-name" class="text-[12.5px] font-semibold text-[var(--md-text-heading)]">
+      Full name <span class="text-[var(--md-status-live)]" aria-hidden="true">*</span>
+    </label>
+    <lfx-input-text
+      [form]="form"
+      control="name"
+      inputId="meeting-guest-join-name"
+      size="small"
+      autocomplete="name"
+      styleClass="w-full"
+      data-testid="meeting-guest-join-name" />
+  </div>
+
+  <div class="flex flex-col gap-[6px]">
+    <label for="meeting-guest-join-email" class="text-[12.5px] font-semibold text-[var(--md-text-heading)]">
+      Email <span class="text-[var(--md-status-live)]" aria-hidden="true">*</span>
+    </label>
+    <lfx-input-text
+      [form]="form"
+      control="email"
+      type="email"
+      inputId="meeting-guest-join-email"
+      size="small"
+      autocomplete="email"
+      styleClass="w-full"
+      data-testid="meeting-guest-join-email" />
+  </div>
+
+  <div class="flex flex-col gap-[6px]">
+    <label for="meeting-guest-join-organization" class="text-[12.5px] font-semibold text-[var(--md-text-heading)]">Organization</label>
+    <lfx-input-text
+      [form]="form"
+      control="organization"
+      inputId="meeting-guest-join-organization"
+      size="small"
+      autocomplete="organization"
+      styleClass="w-full"
+      data-testid="meeting-guest-join-organization" />
+  </div>
+
+  @if (joinState().status === 'ready') {
+    <lfx-button
+      label="Join as guest"
+      icon="fa-light fa-video"
+      [href]="joinState().url"
+      target="_blank"
+      rel="noopener noreferrer"
+      [styleClass]="buttonClass"
+      data-testid="meeting-guest-join-button"
+      [attr.data-state]="joinState().status" />
+  } @else {
+    <lfx-button
+      label="Join as guest"
+      icon="fa-light fa-video"
+      [loading]="joinState().status === 'loading'"
+      [disabled]="true"
+      [styleClass]="buttonClass + ' !opacity-60'"
+      data-testid="meeting-guest-join-button"
+      [attr.data-state]="joinState().status" />
+  }
+
+  @if (joinState().status === 'error') {
+    <div
+      class="flex flex-col gap-[4px] rounded-[var(--md-radius-md)] bg-[var(--md-status-live-bg)] px-[12px] py-[10px] text-[12.5px] leading-[1.4] text-[var(--md-status-live)]"
+      role="alert"
+      data-testid="meeting-guest-join-error">
+      @if (notRegistered()) {
+        <span>This email is not on the meeting's invite list. Use the email address your invitation was sent to.</span>
+      } @else {
+        <span>{{ joinState().error }}</span>
+      }
+      <span>Please contact the meeting organizer or support team if you believe this is an error.</span>
+    </div>
+  }
+</form>
