@@ -11,9 +11,10 @@ import {
   MENTORSHIP_ADMIN_NOTE_SAVE_SUCCESS_SUMMARY,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
 } from '@lfx-one/shared/constants';
+import { MentorshipAdminSavedNote } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MessageService } from 'primeng/api';
-import { firstValueFrom, Observable, of, throwError } from 'rxjs';
+import { firstValueFrom, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AdminNoteSaveService } from './admin-note-save.service';
@@ -79,6 +80,35 @@ describe('AdminNoteSaveService', () => {
     await expect(firstValueFrom(service.save(APPLICATION_ID, 'Note'))).resolves.toBe(false);
 
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Read-only while impersonating.' }));
+  });
+
+  it('reports the note as saving until the save settles, then announces it', () => {
+    const pending = new Subject<void>();
+    updateApplicationNote.mockReturnValueOnce(pending);
+    const saved: MentorshipAdminSavedNote[] = [];
+    service.saved$.subscribe((note) => saved.push(note));
+
+    service.save(APPLICATION_ID, 'Strong screening call.').subscribe();
+
+    expect(service.isSaving(APPLICATION_ID)).toBe(true);
+    expect(saved).toEqual([]);
+
+    pending.next();
+    pending.complete();
+
+    expect(service.isSaving(APPLICATION_ID)).toBe(false);
+    expect(saved).toEqual([{ applicationId: APPLICATION_ID, note: 'Strong screening call.' }]);
+  });
+
+  it('stops reporting a failed save as saving and announces nothing', async () => {
+    updateApplicationNote.mockReturnValueOnce(throwError(() => httpError(500)));
+    const saved: MentorshipAdminSavedNote[] = [];
+    service.saved$.subscribe((note) => saved.push(note));
+
+    await firstValueFrom(service.save(APPLICATION_ID, 'Note'));
+
+    expect(service.isSaving(APPLICATION_ID)).toBe(false);
+    expect(saved).toEqual([]);
   });
 
   it('shows the fallback for any other failure', async () => {

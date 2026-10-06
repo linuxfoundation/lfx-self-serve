@@ -28,7 +28,6 @@ import {
   MentorshipMentorTaskCreateResponse,
   MentorshipMentorTaskReviewDecision,
   MentorshipUpstreamApplication,
-  MentorshipUpstreamApplicationNoteUpdate,
   MentorshipUpstreamListResponse,
   MentorshipUpstreamMentorDetail,
   MentorshipUpstreamMentorProgram,
@@ -62,6 +61,7 @@ import {
 } from '../constants';
 import { BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import { saveMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
 import { resolveMentorshipGithubProfileLink, resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
 import { mapMentorshipMentoringHistory, mapMentorshipMentorProfileDetails } from '../helpers/mentorship-mentor-profile.helper';
 import {
@@ -248,19 +248,12 @@ export class MentorshipMentorService {
    * Saves the reviewer note on one application of a program the caller mentors. The note is the application's
    * own, so every mentor of the program sees and edits the same one; an empty note clears it. Upstream checks
    * the caller is an active mentor or administrator of the program (403 otherwise) and answers 404 for an
-   * application that is gone; both pass through. The note is never logged.
+   * application that is gone; both pass through. The admin route saves through the same function. The note is never
+   * logged.
    */
   public async updateApplicationNote(req: Request, applicationId: string, request: MentorshipMentorApplicationNoteUpdate): Promise<void> {
-    const body: MentorshipUpstreamApplicationNoteUpdate = { reviewer_note: request.note };
     logger.debug(req, 'mentorship_update_application_note', 'Saving reviewer note', { applicationId, cleared: request.note === '' });
-    await proxyMentorshipRequest<unknown>(
-      this.microserviceProxy,
-      req,
-      `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/note`,
-      'PUT',
-      undefined,
-      body
-    );
+    await saveMentorshipApplicationNote(this.microserviceProxy, req, applicationId, request.note);
   }
 
   /**

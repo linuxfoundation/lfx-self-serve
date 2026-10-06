@@ -73,8 +73,10 @@ Three write routes, each behind `blockDuringImpersonation` (a 403 with code `IMP
 
 - The body is `{ note }`: a string, trimmed here, at most `MENTORSHIP_MENTEE_NOTE_MAX` (2000) characters. An empty note clears it. A missing body, a non-string `note`, an over-long note or a bad `applicationId` is a 400 before any upstream call.
 - The BFF sends `PUT /applications/{id}/note` with `{ reviewer_note }` and answers 204.
+- The body check and the upstream save live in `server/helpers/mentorship-application-note.helper.ts`, which the mentor note route (see [Mentorship mentor](./mentorship-mentor.md#reviewer-notes)) uses too, so the two routes cannot drift apart.
 - Upstream 403 and 404 (and 409) pass through unchanged. The page shows its own message for a 403 and a 404, the server's message for the impersonation 403, and a generic one otherwise, and leaves the row's note as it was.
-- The note dialog is the same one the mentor surface uses, and the Current Mentees tab owns it. A saved note is written into its row, so the row shows it straight away; leaving the tab and coming back reads the rows again, saved note included. A save of an unchanged note sends nothing, and a row's dialog stays shut while its save is in flight. A note changes no tab count, so the page does not reload its counts.
+- The note dialog is the same one the mentor surface uses, and the Current Mentees tab owns it. A save of an unchanged note sends nothing. A note changes no tab count, so the page does not reload its counts.
+- The save's state lives in `AdminNoteSaveService`, not the tab, because switching tabs destroys the tab. The save is not tied to the tab, so it and its toast finish if the admin leaves first. While it is in flight `isSaving(id)` keeps that row's dialog shut, in a tab rebuilt by a switch too. When it succeeds `saved$` announces it, and whichever Current Mentees tab is on screen writes the note into its row; a tab built later reads the rows again, saved note included.
 - Logs carry the application id and the note's length only, never its text.
 
 ## Program list sourcing

@@ -423,6 +423,29 @@ describe('CurrentMenteesTabComponent', () => {
       expect(dialogOpen).toHaveBeenCalledTimes(2);
     });
 
+    it('keeps the dialog shut and lands the save in the tab rebuilt by a tab switch', () => {
+      const pending = new Subject<void>();
+      updateApplicationNote.mockReturnValue(pending);
+      dialogResult = 'saved across the switch';
+      clickNote('app_1');
+
+      // The parent's `@switch` destroys the tab on a switch and builds a new one on the way back.
+      fixture.destroy();
+      fixture = TestBed.createComponent(CurrentMenteesTabComponent);
+      fixture.componentRef.setInput('programId', 'prog_1');
+      settle();
+      clickNote('app_1');
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(updateApplicationNote).toHaveBeenCalledTimes(1);
+
+      pending.next();
+      pending.complete();
+      settle();
+
+      expect(noteText('app_1')).toBe('saved across the switch');
+    });
+
     it('survives the dialog service declining to open a second dialog', () => {
       // PrimeNG returns null when a dialog of the same component is still registered.
       dialogOpen.mockReturnValue(null);

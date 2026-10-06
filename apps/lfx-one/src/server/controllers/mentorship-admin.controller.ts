@@ -10,7 +10,6 @@ import {
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTOR_STATUSES,
   MENTORSHIP_ATTENDANCE_TYPES,
-  MENTORSHIP_MENTEE_NOTE_MAX,
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_PROGRAM_PAGE_SIZE,
   MENTORSHIP_PROGRAM_STATUSES,
@@ -27,6 +26,7 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { parseMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
 import { parseMentorshipAdminPaging, parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
 import { isMentorshipProgramStatus, MentorshipAdminService } from '../services/mentorship-admin.service';
@@ -249,14 +249,7 @@ export class MentorshipAdminController {
       }
 
       const applicationId = this.requireUuidParam(req, 'applicationId', operation);
-      const raw: unknown = req.body?.note;
-      if (typeof raw !== 'string') {
-        throw ServiceValidationError.forField('note', 'note must be a string', { operation });
-      }
-      const note = raw.trim();
-      if (note.length > MENTORSHIP_MENTEE_NOTE_MAX) {
-        throw ServiceValidationError.forField('note', `note must be at most ${MENTORSHIP_MENTEE_NOTE_MAX} characters`, { operation });
-      }
+      const note = parseMentorshipApplicationNote(req.body, operation);
 
       await this.mentorshipAdminService.updateApplicationNote(req, applicationId, note);
 

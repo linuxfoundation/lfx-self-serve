@@ -121,6 +121,12 @@ export interface MentorshipAdminApplicationStatusUpdate {
   attendanceType?: MentorshipAttendanceType;
 }
 
+/** A reviewer note an admin saved, announced so whichever Current Mentees tab is on screen writes it into its row. */
+export interface MentorshipAdminSavedNote {
+  applicationId: string;
+  note: string;
+}
+
 /** Response of `POST /api/mentorship/admin/programs/:programId/terms/:termId/decline-pending`. */
 export interface MentorshipAdminDeclinePendingResponse {
   declinedCount: number;

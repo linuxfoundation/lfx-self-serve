@@ -74,7 +74,7 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, debounceTime, distinctUntilChanged, finalize, map, Observable, of, switchMap, take, tap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, map, Observable, of, switchMap, take, tap } from 'rxjs';
 
 import { AdminNoteSaveService } from '../../../../services/admin-note-save.service';
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
@@ -173,8 +173,6 @@ export class CurrentMenteesTabComponent {
   private readonly reloadCount = signal(0);
   /** True while a decision write is in flight; Decline by Term is disabled and a second decision is refused meanwhile. */
   protected readonly decisionInFlight = signal(false);
-  /** Applications whose note is being saved. Their dialog stays shut until the save settles, so it never opens on a stale note. */
-  private readonly savingNoteIds = new Set<string>();
   /** Set when the tab is destroyed, so a decision that lands afterwards does not reload the gone table. */
   private destroyed = false;
 
@@ -185,6 +183,7 @@ export class CurrentMenteesTabComponent {
     this.destroyRef.onDestroy(() => (this.destroyed = true));
     this.initFilters();
     this.initPageReads();
+    this.initSavedNotes();
   }
 
   protected onLazyLoad(event: { first?: number | null }): void {
@@ -197,7 +196,7 @@ export class CurrentMenteesTabComponent {
 
   /** Opens the note dialog on the row's note; an unchanged note, or a dismissed dialog, saves nothing. */
   protected onOpenNote(id: string, name: string, note?: string): void {
-    if (this.savingNoteIds.has(id)) return;
+    if (this.noteSave.isSaving(id)) return;
     const current = (note ?? '').trim();
     // `open()` returns null when a dialog of the same component is still registered,
     // which a quick second click on another row's note can do.
@@ -215,7 +214,8 @@ export class CurrentMenteesTabComponent {
     dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((value: string | undefined) => {
       // A dismissed dialog closes with `undefined`; an empty string is an explicit clear.
       if (value === undefined || value.trim() === current) return;
-      this.saveNote(id, value.trim());
+      // Not tied to the tab: the save, and its toast, finish even if the admin leaves first.
+      this.noteSave.save(id, value.trim()).subscribe();
     });
   }
 
@@ -450,20 +450,6 @@ export class CurrentMenteesTabComponent {
       });
   }
 
-  /**
-   * Not tied to the tab: a save, and its toast, finish even if the admin leaves first. A saved note is written into its
-   * row; a failed one leaves the row as it was.
-   */
-  private saveNote(applicationId: string, note: string): void {
-    this.savingNoteIds.add(applicationId);
-    this.noteSave
-      .save(applicationId, note)
-      .pipe(finalize(() => this.savingNoteIds.delete(applicationId)))
-      .subscribe((saved) => {
-        if (saved) this.applications.update((applications) => applications.map((row) => (row.id === applicationId ? { ...row, note } : row)));
-      });
-  }
-
   private initTermOptions() {
     return computed((): FilterOption<string | null>[] => [
       { label: MENTORSHIP_ALL_OPEN_TERMS_OPTION_LABEL, value: null },
@@ -546,6 +532,16 @@ export class CurrentMenteesTabComponent {
         this.applications.set(page.data);
         this.total.set(page.total);
       });
+  }
+
+  /**
+   * Writes each saved note into its row, so the table shows it without a read. The saves come from the service, so a
+   * save started before a tab switch still lands in this tab; a failed save leaves the row as it was.
+   */
+  private initSavedNotes(): void {
+    this.noteSave.saved$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ applicationId, note }) => {
+      this.applications.update((applications) => applications.map((row) => (row.id === applicationId ? { ...row, note } : row)));
+    });
   }
 
   private toRow(person: MentorshipProgramApplicant) {
