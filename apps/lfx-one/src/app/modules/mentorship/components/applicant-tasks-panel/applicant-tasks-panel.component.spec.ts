@@ -3,6 +3,7 @@
 
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MentorshipApplicantTask, MentorshipApplicantTaskRow, MentorshipApplicantTaskStatus, MentorshipTaskFormValue } from '@lfx-one/shared/interfaces';
 import { mentorshipApplicantTaskRows } from '@lfx-one/shared/utils';
@@ -166,6 +167,7 @@ describe('ApplicantTasksPanelComponent', () => {
       control?.setValue(value);
       internals().onStatusChange(taskRow('tsk_editable'), { value });
     };
+    const statusForm = (): FormGroup => internals().statusFormCache.get('tsk_editable') as unknown as FormGroup;
     const editButton = (): HTMLButtonElement =>
       element().querySelector('[data-testid="mentorship-applicant-task-edit-tsk_editable"] button') as HTMLButtonElement;
 
@@ -233,6 +235,30 @@ describe('ApplicantTasksPanelComponent', () => {
       updatingIds.set(new Set());
       fixture.detectChanges();
       expect(editButton().disabled).toBe(false);
+    });
+
+    it('disables the select while a save is in flight and frees it when the save lands', () => {
+      const response = new Subject<MentorshipApplicantTask | null>();
+      update.mockReturnValue(response);
+
+      changeStatus('completed');
+      fixture.detectChanges();
+      expect(statusForm().disabled).toBe(true);
+
+      response.next({ ...savedTask, status: 'completed' });
+      response.complete();
+      fixture.detectChanges();
+      expect(statusForm().disabled).toBe(false);
+    });
+
+    it('disables the select of a rebuilt panel while a save started by a collapsed panel is in flight', () => {
+      updatingIds.set(new Set(['tsk_editable']));
+      fixture.detectChanges();
+      expect(statusForm().disabled).toBe(true);
+
+      updatingIds.set(new Set());
+      fixture.detectChanges();
+      expect(statusForm().disabled).toBe(false);
     });
 
     it('sends no second change for a task that is still saving', () => {

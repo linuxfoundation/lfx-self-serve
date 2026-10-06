@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, effect, inject, input, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -77,10 +77,14 @@ export class ApplicantTasksPanelComponent {
 
   protected readonly visibleTaskRows = this.initVisibleTaskRows();
 
-  /** Per visible task, whether a change to it is being saved, here or by a panel collapsed mid-save; Edit is disabled meanwhile. */
+  /** Per visible task, whether a change to it is being saved, here or by a panel collapsed mid-save; Edit and the select are disabled meanwhile. */
   protected readonly busyTaskIds = this.initBusyTaskIds();
 
   protected readonly panelTitle = computed(() => `Tasks Assigned to ${this.applicantName()}`);
+
+  public constructor() {
+    this.initStatusSelectLock();
+  }
 
   protected onViewTask(task: MentorshipApplicantTaskRow): void {
     this.comingSoon.notify(`View ${task.name} for ${this.applicantName()}`);
@@ -148,9 +152,6 @@ export class ApplicantTasksPanelComponent {
   }
 
   private setSaving(taskId: string, saving: boolean): void {
-    const form = this.statusFormCache.get(taskId);
-    if (saving) form?.disable({ emitEvent: false });
-    else form?.enable({ emitEvent: false });
     this.savingTaskIds.update((current) => {
       const next = new Set(current);
       if (saving) next.add(taskId);
@@ -175,6 +176,24 @@ export class ApplicantTasksPanelComponent {
   /** Kept apart from the rows: a save settling must not rebuild them, since that can move a select's value mid-computed. */
   private initBusyTaskIds() {
     return computed<Readonly<Record<string, boolean>>>(() => Object.fromEntries(this.visibleTasks().map((task) => [task.id, this.isBusy(task.id)])));
+  }
+
+  /**
+   * Disables each visible select while its task is saving, here or by a panel collapsed mid-save, so a rebuilt panel
+   * offers no pick that `saveTask` would only drop. An effect rather than the rows computed, since disabling writes the
+   * select's state.
+   */
+  private initStatusSelectLock(): void {
+    effect(() => {
+      const busy = this.busyTaskIds();
+      const rows = this.visibleTaskRows();
+      untracked(() => {
+        for (const row of rows) {
+          if (busy[row.id]) row.statusForm.disable({ emitEvent: false });
+          else row.statusForm.enable({ emitEvent: false });
+        }
+      });
+    });
   }
 
   private statusFormFor(taskId: string, status: MentorshipApplicantTaskStatus): TaskStatusForm {

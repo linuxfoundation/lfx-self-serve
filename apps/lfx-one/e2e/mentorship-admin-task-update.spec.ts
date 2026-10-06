@@ -94,14 +94,29 @@ test.describe('Admin Current Mentees — Edit task and set status', () => {
     expect(requests.mentees).toHaveLength(menteeReads);
   });
 
-  test('puts the select back and says why when a submitted task that needs a file has none', async ({ page }) => {
+  test('puts the select back and shows the generic copy when a change that cannot trip the file guard is a 400', async ({ page }) => {
     await open(page, requests, patches, 400);
 
     await pickStatus(page, 'Completed');
 
     await expect(page.getByText('Could not update the task')).toBeVisible();
-    await expect(page.getByText('requires a file', { exact: false })).toBeVisible();
+    await expect(page.getByText('The task was not changed', { exact: false })).toBeVisible();
+    await expect(page.getByText('requires a file', { exact: false })).toHaveCount(0);
     await expect(page.getByTestId(STATUS_SELECT)).toContainText('Submitted');
+  });
+
+  test('says why when turning on the file requirement is a 400 from the file guard', async ({ page }) => {
+    await open(page, requests, patches, 400);
+
+    await page.getByTestId(EDIT_BUTTON).getByRole('button').click();
+    const dialog = page.getByTestId('mentorship-task-form-dialog');
+    await expect(dialog).toBeVisible();
+    await dialog.locator('#mentorship-task-requires-file').check();
+    await page.getByTestId('mentorship-task-form-submit').click();
+
+    await expect(page.getByText('Could not update the task')).toBeVisible();
+    await expect(page.getByText('requires a file', { exact: false })).toBeVisible();
+    expect(patches).toEqual([{ requiresFileSubmission: true }]);
   });
 
   test('tells the admin the task no longer exists when the change is a 404', async ({ page }) => {
