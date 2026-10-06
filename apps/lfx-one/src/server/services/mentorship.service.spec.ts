@@ -214,7 +214,7 @@ describe('MentorshipService LF project search', () => {
     });
   });
 
-  it('follows the page token while a page comes back short, and returns the token it stopped at', async () => {
+  it('follows the page token while a page comes back short, asking only for the slots still open, and returns the token it stopped at', async () => {
     proxyRequest.mockResolvedValueOnce(page([project('uid-1', 'Alpha')], 'cursor-2')).mockResolvedValueOnce(page([project('uid-2', 'Beta')], 'cursor-3'));
 
     const result = await service.getLfProjects(buildReq(), { limit: 2 });
@@ -223,7 +223,7 @@ describe('MentorshipService LF project search', () => {
     expect(proxyRequest).toHaveBeenLastCalledWith(expect.anything(), 'LFX_V2_SERVICE', '/query/resources', 'GET', {
       type: 'project',
       sort: 'name_asc',
-      page_size: 2,
+      page_size: 1,
       page_token: 'cursor-2',
     });
     expect(result).toEqual({
@@ -233,6 +233,21 @@ describe('MentorshipService LF project search', () => {
       ],
       page_token: 'cursor-3',
     });
+  });
+
+  it('never returns more projects than the page size across refill reads', async () => {
+    const projects = (from: number, count: number) => Array.from({ length: count }, (_, i) => project(`uid-${from + i}`, `Project${from + i}`));
+    proxyRequest
+      .mockResolvedValueOnce(page(projects(1, 11), 'cursor-2'))
+      .mockImplementationOnce(async (_req, _service, _path, _method, query) =>
+        page(projects(12, Number((query as { page_size: number }).page_size)), 'cursor-3')
+      );
+
+    const result = await service.getLfProjects(buildReq(), { limit: 12 });
+
+    expect(proxyRequest.mock.calls.map((call) => (call[4] as { page_size: number }).page_size)).toEqual([12, 1]);
+    expect(result.data).toHaveLength(12);
+    expect(result.page_token).toBe('cursor-3');
   });
 
   it('stops after MENTORSHIP_LF_PROJECT_MAX_READS reads and hands the cursor back', async () => {

@@ -105,8 +105,8 @@ export class MentorshipService {
    * The query service can trim a page after cutting it (access filtering) and still return a `page_token`, so this follows the
    * token until `limit` projects are in hand or `MENTORSHIP_LF_PROJECT_MAX_READS` reads are spent, and hands back the token it
    * stopped at, so a short page can still carry a cursor. A cursor that comes back unchanged ends the list (no `page_token`): following it
-   * would only replay the page just read and duplicate its projects. The page may hold a little more than `limit`, since a project is never
-   * dropped between two cursors. `limit` is held to 1–`MENTORSHIP_LF_PROJECT_MAX_LIMIT` and `search` is cut to
+   * would only replay the page just read and duplicate its projects. Each read asks only for the slots still open, so the page never holds more
+   * than `limit` (the cursor carries the sort position, not the page size). `limit` is held to 1–`MENTORSHIP_LF_PROJECT_MAX_LIMIT` and `search` is cut to
    * `MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH`.
    */
   public async getLfProjects(req: Request, options: { search?: string; pageToken?: string; limit?: number } = {}): Promise<MentorshipLfProjectsResponse> {
@@ -122,7 +122,7 @@ export class MentorshipService {
       const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         type: 'project',
         ...(search ? { name: search, sort: 'best_match' } : { sort: 'name_asc' }),
-        page_size: limit,
+        page_size: limit - projects.length,
         ...(pageToken && { page_token: pageToken }),
       });
       projects.push(...response.resources.map((resource) => resource.data).filter((project) => project.slug !== ROOT_PROJECT_SLUG));
