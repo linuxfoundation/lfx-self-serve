@@ -1,17 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Clipboard } from '@angular/cdk/clipboard';
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
 import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
-import { Meeting, MeetingCommittee, MeetingTypeConfig, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingCommitteeLink, MeetingTypeConfig, ProjectContext, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { getMeetingSeriesUid } from '@lfx-one/shared/utils';
+import { ClipboardShareService } from '@services/clipboard-share.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { MessageService } from 'primeng/api';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 
@@ -29,15 +29,14 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  */
 @Component({
   selector: 'lfx-meeting-header',
-  imports: [ButtonComponent, TagComponent],
+  imports: [ButtonComponent, NgTemplateOutlet, TagComponent],
   templateUrl: './header.component.html',
 })
 export class MeetingHeaderComponent {
   private readonly state = inject(MeetingDetailsStateService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly clipboard = inject(Clipboard);
-  private readonly messageService = inject(MessageService);
+  private readonly clipboardShare = inject(ClipboardShareService);
 
   /**
    * The prototype's chip on top of `lfx-tag outlined rounded`: 25px tall (15px line + 4px padding +
@@ -50,28 +49,35 @@ export class MeetingHeaderComponent {
   protected readonly meeting: Signal<(Meeting & { project: PublicMeetingProject }) | undefined> = this.state.meeting;
   protected readonly project = computed(() => this.meeting()?.project);
   protected readonly meetingType: Signal<MeetingTypeConfig | null> = this.initMeetingType();
-  /** Committees with both a name and a uid; a chip needs both to say what it is and where it goes. */
-  protected readonly committees: Signal<MeetingCommittee[]> = computed(() => (this.meeting()?.committees ?? []).filter((c) => !!c.name && !!c.uid));
+  /**
+   * Recurring for a live series (`recurrence`) and for a past occurrence of one: the past payload can
+   * omit `recurrence`, but its series uid then differs from its own id, as v1 reads it.
+   */
+  protected readonly recurring = computed(() => {
+    const meeting = this.meeting();
+    return !!meeting && (!!meeting.recurrence || getMeetingSeriesUid(meeting) !== meeting.id);
+  });
+  /** Committees with both a name and a uid, linked to their group page with the uid encoded. */
+  protected readonly committees: Signal<MeetingCommitteeLink[]> = this.initCommittees();
+  /**
+   * The foundation the project link opens: the resolved parent, or the project itself when it is
+   * top-level. `null` when the project has a parent the BFF could not resolve (a ROOT parent or a
+   * failed lookup): mixing the parent's uid with the child's name and slug would open the overview
+   * on inconsistent context, so the project then shows without a link.
+   */
+  protected readonly foundation: Signal<ProjectContext | null> = this.initFoundation();
 
   /**
    * Opens the meeting's foundation overview in a new tab, as v1's context chips do: sets the
    * foundation context first, so the overview opens on the right project.
    */
   protected openFoundation(): void {
-    const meeting = this.meeting();
-    const project = this.project();
-    const parent = project?.parent ?? null;
-    const isTopLevel = !project?.parent_uid;
-    const uid = parent?.uid || project?.parent_uid || (isTopLevel ? project?.uid || meeting?.project_uid : undefined);
-    if (!uid || !isPlatformBrowser(this.platformId)) {
+    const foundation = this.foundation();
+    if (!foundation || !isPlatformBrowser(this.platformId)) {
       return;
     }
 
-    this.projectContextService.setFoundation({
-      uid,
-      name: parent?.name || project?.name || meeting?.project_name || '',
-      slug: parent?.slug || project?.slug || '',
-    });
+    this.projectContextService.setFoundation(foundation);
     window.open('/foundation/overview', '_blank', 'noopener,noreferrer');
   }
 
@@ -89,8 +95,29 @@ export class MeetingHeaderComponent {
     if (meeting.password) {
       url.searchParams.set('password', meeting.password);
     }
-    this.clipboard.copy(url.toString());
-    this.messageService.add({ severity: 'success', summary: 'Meeting link copied', detail: 'The meeting link is on your clipboard.' });
+    // The shared service confirms the copy, or reports a failed clipboard write instead of a false success.
+    this.clipboardShare.copyLink(url.toString(), 'The meeting link is on your clipboard.');
+  }
+
+  private initCommittees(): Signal<MeetingCommitteeLink[]> {
+    return computed(() =>
+      (this.meeting()?.committees ?? [])
+        .filter((committee) => !!committee.name && !!committee.uid)
+        .map((committee) => ({ uid: committee.uid, name: committee.name ?? '', href: `/groups/${encodeURIComponent(committee.uid)}` }))
+    );
+  }
+
+  private initFoundation(): Signal<ProjectContext | null> {
+    return computed(() => {
+      const project = this.project();
+      if (!project) {
+        return null;
+      }
+      if (project.parent) {
+        return { uid: project.parent.uid, name: project.parent.name, slug: project.parent.slug };
+      }
+      return project.parent_uid ? null : { uid: project.uid, name: project.name, slug: project.slug };
+    });
   }
 
   private initMeetingType(): Signal<MeetingTypeConfig | null> {

@@ -1,13 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Clipboard } from '@angular/cdk/clipboard';
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Meeting, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { environment } from '@environments/environment';
+import { ClipboardShareService } from '@services/clipboard-share.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
@@ -19,8 +18,7 @@ describe('MeetingHeaderComponent', () => {
   let fixture: ComponentFixture<MeetingHeaderComponent>;
   let meeting: WritableSignal<LoadedMeeting | undefined>;
   let setFoundation: ReturnType<typeof vi.fn>;
-  let copy: ReturnType<typeof vi.fn>;
-  let addMessage: ReturnType<typeof vi.fn>;
+  let copyLink: ReturnType<typeof vi.fn>;
 
   const project: PublicMeetingProject = {
     uid: 'project-1',
@@ -54,8 +52,7 @@ describe('MeetingHeaderComponent', () => {
         { provide: PLATFORM_ID, useValue: platform },
         { provide: MeetingDetailsStateService, useValue: { meeting } },
         { provide: ProjectContextService, useValue: { setFoundation } },
-        { provide: Clipboard, useValue: { copy } },
-        { provide: MessageService, useValue: { add: addMessage } },
+        { provide: ClipboardShareService, useValue: { copyLink } },
       ],
     }).compileComponents();
 
@@ -66,8 +63,7 @@ describe('MeetingHeaderComponent', () => {
   beforeEach(async () => {
     meeting = signal<LoadedMeeting | undefined>(build());
     setFoundation = vi.fn();
-    copy = vi.fn().mockReturnValue(true);
-    addMessage = vi.fn();
+    copyLink = vi.fn();
     await create();
   });
 
@@ -119,15 +115,34 @@ describe('MeetingHeaderComponent', () => {
     expect(query('meeting-header-badge-type')).toBeNull();
   });
 
-  it('copies the meeting link, with the password when the payload has one, and confirms it', () => {
+  // ClipboardShareService confirms a copy or reports a failed clipboard write; it is tested itself.
+  it('copies the meeting link, with the password when the payload has one, through the shared clipboard service', () => {
     show({ password: 'a&b' } as Partial<Meeting>);
 
     query('meeting-header-copy-link')?.querySelector('button')?.click();
 
-    const copied = new URL(copy.mock.calls[0][0]);
+    const copied = new URL(copyLink.mock.calls[0][0]);
     expect(`${copied.origin}${copied.pathname}`).toBe(`${environment.urls.home}/meetings/meeting-1`);
     expect(copied.searchParams.get('password')).toBe('a&b');
-    expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+  });
+
+  it('has no foundation link when the project has a parent the BFF could not resolve', () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    meeting.set({ ...build(), project: { ...project, parent_uid: 'foundation-1', parent: null } });
+    fixture.detectChanges();
+
+    const context = query('meeting-header-project');
+    expect(context?.tagName).toBe('DIV');
+    context?.click();
+    expect(setFoundation).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  // The past payload can omit `recurrence`; series membership shows in a series uid unlike its own id.
+  it('shows Recurring for a past occurrence of a series without a recurrence', () => {
+    show({ recurrence: null, meeting_id: 'series-1' } as Partial<Meeting>);
+
+    expect(query('meeting-header-badge-recurring')).not.toBeNull();
   });
 
   it('shows Recurring only for a recurring meeting', () => {
@@ -140,7 +155,12 @@ describe('MeetingHeaderComponent', () => {
 
   it('links each committee to its group page in a new tab, skipping ones without a name or uid', () => {
     show({
-      committees: [{ uid: 'c-1', name: 'Steering Committee' }, { uid: 'c-2' }, { uid: '', name: 'Unlinked' }] as Meeting['committees'],
+      committees: [
+        { uid: 'c-1', name: 'Steering Committee' },
+        { uid: 'c/2?x', name: 'Odd Uid Committee' },
+        { uid: 'c-3' },
+        { uid: '', name: 'Unlinked' },
+      ] as Meeting['committees'],
     });
 
     const link = query('meeting-header-badge-committee-c-1') as HTMLAnchorElement;
@@ -148,7 +168,9 @@ describe('MeetingHeaderComponent', () => {
     expect(link.target).toBe('_blank');
     expect(link.rel).toContain('noopener');
     expect(link.textContent).toContain('Steering Committee');
-    expect(fixture.nativeElement.querySelectorAll('[data-testid^="meeting-header-badge-committee-"]').length).toBe(1);
+    expect(link.getAttribute('title')).toBe('Steering Committee');
+    expect(query('meeting-header-badge-committee-c/2?x')?.getAttribute('href')).toBe('/groups/c%2F2%3Fx');
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="meeting-header-badge-committee-"]').length).toBe(2);
   });
 
   // The `*_enabled` flags survive on the reduced past payload, so these show even without artifact access.
