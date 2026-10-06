@@ -3641,7 +3641,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    * disabled button.
    */
   it('refuses a flagged channel combined with anything else', () => {
-    const c = seedGoogleForm({ includeSearch: true, includeVideo: true }, { googleChannels: true });
+    const c = seedGoogleForm({ includeSearch: true, includeDisplay: true }, { googleChannels: true });
 
     expect(c['canSubmit']()).toBe(false);
   });
@@ -3658,18 +3658,57 @@ describe('ImplementationTabComponent google channels capability gate', () => {
   });
 
   it('allows a flagged channel on its own', () => {
-    const c = seedGoogleForm({ includeVideo: true }, { googleChannels: true });
+    const c = seedGoogleForm({ includeDisplay: true }, { googleChannels: true });
     expect(c['canSubmit']()).toBe(true);
   });
 
   /**
+   * Video is the one flagged channel the capability CANNOT unlock, because the limit is Google's:
+   * the Ads API has no call that creates a Video campaign, so `CreateVideoCampaign` refuses in its
+   * first statement upstream. The box is disabled in the form, but `selectedGoogleChannels` reads
+   * `getRawValue()`, which reports disabled controls — so a draft that carries a `true` from
+   * before the box was disabled would still dispatch a create Google refuses outright.
+   *
+   * The capability is set TRUE here deliberately. With it false this would pass against no guard
+   * at all, since the whole block is gated on it — the assertion has to be made in the one state
+   * where every other flagged channel IS submittable. `allows a flagged channel on its own`
+   * directly above is that control: same seed, same capability, Display instead of Video.
+   */
+  it('refuses Video even with the capability on and the raw value set', () => {
+    const c = seedGoogleForm({}, { googleChannels: true });
+    c['campaignForm'].controls.includeVideo.setValue(true);
+
+    expect(c['campaignForm'].getRawValue().includeVideo).toBe(true);
+    expect(c['selectedGoogleChannels']()).not.toContain('video');
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * And it is disabled rather than hidden — the assertion that distinguishes this change from
+   * simply dropping the channel. A user who finds no Video box cannot tell a deliberate answer
+   * from a missing feature, so the box, its label and the reason all have to be on screen.
+   */
+  it('renders the Video box disabled, with the reason, once the capability is on', () => {
+    fixture.componentRef.setInput('googleChannelsEnabled', true);
+    fixture.detectChanges();
+
+    const box = checkbox('includeVideo');
+    expect(box).not.toBeNull();
+    expect(box?.disabled).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-include-video-reason"]')).not.toBeNull();
+  });
+
+  /**
    * A hidden selection must not make the form submittable either. `applyDraft` can leave
-   * `includeVideo: true` on a tab that mounted while the capability was `null`; the control then
+   * `includeDisplay: true` on a tab that mounted while the capability was `null`; the control then
    * disappears when it resolves `false`, but the FORM value stays true and `submit` builds
    * `campaignTypes` from the form.
+   *
+   * Display rather than Video, which this used to use: Video is now refused by its own guard
+   * regardless of the capability, so it would pass here against no capability gate at all.
    */
   it('does not treat a hidden flagged selection as a submittable Google campaign', () => {
-    const c = seedGoogleForm({ includeVideo: true }, { googleChannels: false });
+    const c = seedGoogleForm({ includeDisplay: true }, { googleChannels: false });
 
     expect(c['canSubmit']()).toBe(false);
   });
@@ -3680,7 +3719,6 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    */
   it.each([
     ['includePerformanceMax', 'PMax'],
-    ['includeVideo', 'Video'],
     ['includeDisplay', 'Display'],
   ])('previews the %s name token', (control, token) => {
     const c = seedGoogleForm({ [control]: true }, { googleChannels: true });
@@ -3699,7 +3737,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
   });
 
   it('previews a Search-only name when a hidden flagged selection accompanies Search', () => {
-    const c = seedGoogleForm({ includeSearch: true, includeVideo: true }, { googleChannels: false });
+    const c = seedGoogleForm({ includeSearch: true, includeDisplay: true }, { googleChannels: false });
 
     expect(c['campaignName']()).toContain('| Search |');
     expect(c['campaignName']()).not.toContain('| Multi |');

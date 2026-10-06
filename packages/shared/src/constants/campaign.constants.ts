@@ -1949,6 +1949,36 @@ export const GOOGLE_CAMPAIGN_CHANNEL_LABELS = {
 export const GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG = ['performance-max', 'video', 'display'] as const;
 
 /**
+ * Whether this application offers Video as a CREATABLE channel.
+ *
+ * `false` — and not because of a deployment flag or a gap on our side. The Google Ads API has no
+ * call that creates a Video campaign at all: campaign-service's `CreateVideoCampaign` returns the
+ * `ErrVideoCreateUnsupported` sentinel in its FIRST statement, before any request is sent, so a
+ * `video` create can only ever come back as a refusal. No flag anywhere can make it succeed.
+ *
+ * Everything else about the channel is live upstream — fetching, reporting, ADOPTION of a campaign
+ * built by hand in Google Ads, the activation gate, monitoring — which is why `video` keeps its
+ * place in {@link GOOGLE_CAMPAIGN_CHANNELS}, its label, its name token and its form control. Only
+ * the create is impossible, and only the create is withheld here.
+ *
+ * Flipping this to `true` is the whole change on the day Google ships the API.
+ */
+export const GOOGLE_VIDEO_CREATE_SUPPORTED = false;
+
+/**
+ * What the Implementation tab tells a user who finds the Video box greyed out.
+ *
+ * Named rather than hidden: the three capability-gated channels above DISAPPEAR when a deployment
+ * cannot serve them, because a disabled box there would advertise something the deployment might
+ * genuinely gain later and invites a support question nobody can answer. This one is the opposite
+ * case — the limitation is Google's, it is permanent until Google changes it, and a user who sees
+ * Search, Performance Max and Display but no Video has no way to learn why. Saying so costs one
+ * line and closes the question.
+ */
+export const GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON =
+  'The Google Ads API cannot create Video campaigns. Build the campaign in Google Ads and it can be adopted here for reporting and optimization.';
+
+/**
  * The channel token the generated campaign NAME carries, per Google channel.
  *
  * Deliberately not `GOOGLE_CAMPAIGN_CHANNEL_LABELS`. These strings go into the pipe-delimited

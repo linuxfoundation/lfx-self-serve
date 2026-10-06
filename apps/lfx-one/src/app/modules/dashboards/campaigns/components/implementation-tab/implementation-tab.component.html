@@ -167,13 +167,19 @@
                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Performance Max Campaign
               </label>
-              <label class="flex items-center gap-2 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  formControlName="includeVideo"
-                  data-testid="implementation-include-video"
-                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              <!--
+                Disabled rather than omitted, matching the retired Meta placement below and for the
+                same reason: a channel someone expects to find has to read as a deliberate answer,
+                not a missing feature. The difference from its three neighbours is WHOSE limit it
+                is — they are hidden when a DEPLOYMENT cannot serve them, which may change on the
+                next rollout; this one is Google's own, permanent until Google ships the API, and
+                a user comparing this list against Google Ads has no other way to learn that.
+                The control is disabled in the form itself, so nothing here can submit it.
+              -->
+              <label class="flex cursor-not-allowed items-center gap-2 text-sm text-gray-400" [title]="videoCreateUnsupportedReason">
+                <input type="checkbox" formControlName="includeVideo" data-testid="implementation-include-video" class="rounded border-gray-200" />
                 Video Campaign
+                <span class="text-xs italic" data-testid="implementation-include-video-reason">(not supported by the Google Ads API)</span>
               </label>
               <label class="flex items-center gap-2 text-sm text-gray-700">
                 <input
