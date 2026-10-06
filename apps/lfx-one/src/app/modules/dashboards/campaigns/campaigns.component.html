@@ -1039,7 +1039,8 @@
                       } @else if (emailAudienceWriteInFlight()) {
                         <!-- Before the audience-state branches: on a first compose the audience is still
                              null, and "compose it first" told the operator to do what was running. -->
-                        The audience is being written on the Audience tab — wait for it to finish before staging.
+                        An audience write is still running on the Audience tab (possibly started for another email or project) — wait for it to finish before
+                        staging.
                       } @else if (emailAudience() === null) {
                         Compose the send audience on the Audience tab first.
                       } @else if (emailAudience()?.status === 'building') {

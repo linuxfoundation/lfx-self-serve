@@ -139,7 +139,8 @@ export class AudienceBuilderTabComponent {
    */
   public readonly audienceScope = input(0);
   /**
-   * The parent is STAGING a send -- creating a HubSpot draft that resolves this brief's audience.
+   * The parent is STAGING a send, or its last stage is unresolved (a draft may still be created) --
+   * either way a HubSpot draft may resolve this brief's audience.
    *
    * The other half of `audienceWriteInFlight`. Stage waits for an audience write, and this makes the
    * exclusion two-way: a compose or attach started while the create is on the wire could change
@@ -868,8 +869,12 @@ export class AudienceBuilderTabComponent {
       .pipe(distinctUntilChanged(), pairwise(), takeUntilDestroyed(this.destroyRef))
       .subscribe(([previousProject]) => {
         this.resetForNewContext(previousProject);
-        lastEventKey = '';
-        lastAdvertisedUrl = '';
+        // NOT cleared to '': the parent keeps its brief across a foundation switch, so the event on
+        // screen is unchanged and `eventKey` will not re-emit. Forgetting it made the next brief read
+        // as "the first after exploratory work", and work discovered here for event E survived into
+        // event F's brief whenever F shared E's URL or had none.
+        lastEventKey = this.eventKey().trim().toLowerCase() || this.initialEventUrl();
+        lastAdvertisedUrl = this.initialEventUrl();
         this.capabilitiesFailed.set(false);
         // reset(), not setValue(''): the dirty flag is project-scoped state too. setValue leaves
         // the control dirty, and the `initialEventUrl` seed below only fires while it is pristine
@@ -902,8 +907,8 @@ export class AudienceBuilderTabComponent {
     // switch does. The parent hands Plan's next event to the same component, and the `briefId`
     // reset above clears only the attach state -- so event A's discovery, ticks and identity
     // survived, and a compose then sent A's lists (and A's event name into the list names) with
-    // B's brief id. Keyed on the advertised event URL, which is what names the event here: the
-    // same event re-proceeded, or another email stage for it, keeps the operator's selection.
+    // B's brief id. The same event re-proceeded, or another email stage for it, keeps the operator's
+    // selection (how the event is identified is below).
     //
     // An EMPTY URL means "no brief right now", not "a different event", so it is skipped and the
     // comparison is against the last NON-empty one. Every stage change and every return to Plan
@@ -939,10 +944,19 @@ export class AudienceBuilderTabComponent {
         const previousUrl = lastAdvertisedUrl;
         lastEventKey = nextKey;
         lastAdvertisedUrl = advertised;
+        const differentEvent = this.isDifferentEvent(previousKey, nextKey, previousUrl, advertised);
         if (!(this.hasDiscovered() || this.discovering())) {
+          // No discovery yet, but a TYPED URL is work too: the seed below never overwrites a dirty
+          // field, so a URL typed for event B survived into event C's brief and the next discovery
+          // composed B's lists with C's brief id. Reseed it; nothing else exists to reset.
+          // Only for a different EVENT: a later update to the same event's brief must not clobber
+          // what the operator typed over the seed.
+          if (previousKey !== '' && previousKey !== nextKey && this.eventUrlControl.dirty) {
+            this.eventUrlControl.reset(advertised, { emitEvent: false });
+          }
           return;
         }
-        if (!this.isDifferentEvent(previousKey, nextKey, previousUrl, advertised)) {
+        if (!differentEvent) {
           return;
         }
         this.resetForNewContext(this.projectSlug());
@@ -1263,7 +1277,7 @@ export class AudienceBuilderTabComponent {
     const unattached = (master: AudienceComposedList): void => {
       this.looseComposedMaster.set(master);
       this.rememberComposedMaster(master);
-      this.audienceComposeUnattached.emit({ master, briefId: dispatchBriefId, projectSlug: dispatchProject, scope: dispatchScope });
+      this.reportUnattached(master, dispatchBriefId, dispatchProject, dispatchScope);
     };
 
     this.campaignService
@@ -1287,11 +1301,18 @@ export class AudienceBuilderTabComponent {
       )
       .subscribe({
         next: (result) => {
-          // A RECORDED audience is reported past the generation guard when the project is unchanged,
-          // for the reason the attach reply gives. A project switch still swallows it.
+          // A stale reply is still REPORTED to the parent when the project is unchanged: recorded, so
+          // the parent shows what upstream now resolves; or unrecorded, so its per-brief "unattached
+          // list" warning is filed -- the operator's only route back to a real, billed list. Both are
+          // scoped by the dispatch, not by what is on screen. It is not added to THIS run's reuse
+          // grid, which now belongs to another event.
           if (run !== this.runGeneration) {
-            if (result.recorded && result.audience && dispatchProject === this.projectSlug()) {
-              this.audienceAttached.emit(result.audience);
+            if (dispatchProject === this.projectSlug()) {
+              if (result.recorded && result.audience) {
+                this.audienceAttached.emit(result.audience);
+              } else {
+                this.reportUnattached(result.master, dispatchBriefId, dispatchProject, dispatchScope);
+              }
             }
             return;
           }
@@ -1300,9 +1321,8 @@ export class AudienceBuilderTabComponent {
           this.lastWriteWasAttach.set(false);
           this.composing.set(false);
 
-          // Emitted INSIDE the staleness guard above, and it has to be: an emission after the run
-          // advanced would attach this project's master list to whatever brief the parent holds
-          // now, which on a project switch is a different project's send entirely.
+          // Both this emission and the stale one above rely on the parent's `onAudienceComposed`,
+          // which accepts a row only when `audience.briefId` is the brief it is addressing now.
           if (result.recorded && result.audience) {
             this.audienceAttached.emit(result.audience);
           } else {
@@ -1314,6 +1334,11 @@ export class AudienceBuilderTabComponent {
         },
         error: (httpErr: HttpErrorResponse) => {
           if (run !== this.runGeneration) {
+            // A stale partial whose master IS confirmed is still a real list: file its warning.
+            const stalePartial = httpErr.status === 502 ? this.asComposePartialBody(httpErr.error) : null;
+            if (stalePartial?.master && dispatchProject === this.projectSlug()) {
+              this.reportUnattached(stalePartial.master, dispatchBriefId, dispatchProject, dispatchScope);
+            }
             return;
           }
           // A 502 alone does not make this a partial compose. An ordinary gateway or network
@@ -1561,8 +1586,8 @@ export class AudienceBuilderTabComponent {
           // upstream whatever the panel did meanwhile, and the parent accepts the row only for the
           // brief it is addressing now -- so after an event round trip A -> B -> A the row lands on
           // A, where otherwise the lock released at `finalize` while the parent still showed the old
-          // audience upstream no longer resolves. A project switch still swallows it: that is a
-          // different portal's send entirely.
+          // audience upstream no longer resolves. It is withheld while ANOTHER project is on screen;
+          // after a round trip back, the parent's brief-id check is what keeps it to its own brief.
           if (run === this.runGeneration || dispatchProject === this.projectSlug()) {
             this.audienceAttached.emit(result.audience);
           }
@@ -1680,19 +1705,17 @@ export class AudienceBuilderTabComponent {
     return hasSuppression || hasMaster || nonEmpty(candidate.suppressionName) || nonEmpty(candidate.masterName) ? (body as AudienceComposeMasterPartial) : null;
   }
 
-  /**
-   * Starts the panel over for a new project or event, keeping the one fact the reset must not lose.
-   *
-   * A compose in flight is not cancelled by the reset -- the HubSpot lists are already being
-   * created -- and its reply is about to be discarded by the run-generation guard. The reset itself
-   * is still correct: showing the previous context's discovery is its own defect. So reset, and
-   * record the create as unconfirmed in the context it was made in, because losing that silently
-   * is how a duplicate gets composed later.
-   */
+  /** Tells the parent about a master that exists but was not recorded, scoped by its dispatch. */
+  private reportUnattached(master: AudienceComposedList, briefId: string, projectSlug: string, scope: number): void {
+    this.audienceComposeUnattached.emit({ master, briefId, projectSlug, scope });
+  }
+
   /** Whether a brief arriving now is for a different event than the panel's work. See the reset. */
   private isDifferentEvent(previousKey: string, nextKey: string, previousUrl: string, advertised: string): boolean {
     const edited = this.eventUrlControl.dirty;
-    const discoveredElsewhere = advertised !== '' && this.discoveredEventUrl() !== advertised;
+    // The work's URL: what was discovered, or -- before any discovery -- what the operator typed.
+    const workUrl = this.discoveredEventUrl() || this.eventUrlControl.value.trim();
+    const discoveredElsewhere = advertised !== '' && workUrl !== advertised;
     if (previousKey === '') {
       // First brief after exploratory work: kept only if it was discovered for this brief's URL.
       return edited && discoveredElsewhere;
@@ -1707,6 +1730,15 @@ export class AudienceBuilderTabComponent {
     return previousUrl !== '' && advertised !== '' && previousUrl !== advertised;
   }
 
+  /**
+   * Starts the panel over for a new project or event, keeping the one fact the reset must not lose.
+   *
+   * A compose in flight is not cancelled by the reset -- the HubSpot lists are already being
+   * created -- and its reply is about to be discarded by the run-generation guard. The reset itself
+   * is still correct: showing the previous context's discovery is its own defect. So reset, and
+   * record the create as unconfirmed in the context it was made in, because losing that silently
+   * is how a duplicate gets composed later.
+   */
   private resetForNewContext(strandedIn: string): void {
     const wasComposing = this.composing();
     this.resetRunState();

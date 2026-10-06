@@ -219,6 +219,9 @@ describe('AudienceBuilderTabComponent', () => {
   describe('discovery', () => {
     it('seeds the event URL from the brief without overwriting a typed value', async () => {
       await render({ initialEventUrl: 'https://events.example.org/synthetic-summit' });
+      // The SAME event throughout: a later update to its brief, not a different event's brief.
+      fixture.componentRef.setInput('eventKey', 'synthetic-summit');
+      fixture.detectChanges();
       expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value).toBe('https://events.example.org/synthetic-summit');
 
       // A later brief update must not clobber what the operator typed over the seed.
@@ -936,6 +939,79 @@ describe('AudienceBuilderTabComponent', () => {
       fixture.detectChanges();
 
       expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "B's hand-built selection survived under A").toBeNull();
+    });
+
+    it("reseeds a URL typed for one event, before any discovery, when a different event's brief arrives", async () => {
+      // The seed never overwrites a dirty field, so B's typed URL survived into C's brief and the next
+      // discovery composed B's lists with C's brief id.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      fixture.componentRef.setInput('eventKey', 'event-a');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/event-b');
+
+      fixture.componentRef.setInput('eventKey', 'event-c');
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-c');
+      fixture.detectChanges();
+
+      expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value, "B's typed URL survived into C").toBe(
+        'https://events.example.org/event-c'
+      );
+    });
+
+    it('keeps a URL typed before the first brief when that brief advertises it', async () => {
+      await render({ briefId: '' });
+      typeEventUrl('https://events.example.org/event-b');
+
+      fixture.componentRef.setInput('eventKey', 'event-b');
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value).toBe('https://events.example.org/event-b');
+    });
+
+    it("starts over when a different event's brief arrives after a foundation switch that kept the brief", async () => {
+      // The parent keeps its brief across a foundation switch, so forgetting the event on screen made
+      // the next brief read as "the first after exploratory work" and E's lists survived into F's brief.
+      await render({ initialEventUrl: '', briefId: 'brief-e' });
+      fixture.componentRef.setInput('eventKey', 'event-e');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('projectSlug', 'other-foundation');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/shared');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('eventKey', 'event-f');
+      fixture.componentRef.setInput('briefId', 'brief-f');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "E's lists survived into F's brief").toBeNull();
+    });
+
+    it('files the unattached warning for an abandoned compose that created a list', async () => {
+      // An event change now strands a compose in the SAME project; its reply was swallowed by the
+      // generation guard, so the parent's warning -- the only route back to a billed list -- was lost.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      fixture.componentRef.setInput('eventKey', 'event-a');
+      fixture.detectChanges();
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      const reply = new Subject<AudienceComposeMasterResult>();
+      composeAudienceMaster.mockReturnValue(reply);
+      click('campaigns-audience-compose');
+      const unattached: AudienceComposedList[] = [];
+      fixture.componentInstance.audienceComposeUnattached.subscribe((e) => unattached.push(e.master));
+
+      fixture.componentRef.setInput('eventKey', 'event-b');
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+      const master = { listId: '900', name: 'Master', hubspotUrl: 'u' };
+      reply.next({ master, sourceListIds: ['101'], recorded: false });
+      reply.complete();
+
+      expect(unattached, "the abandoned compose's real list was never reported").toEqual([master]);
     });
 
     it('keeps exploratory work when the FIRST brief is for the URL the operator discovered', async () => {

@@ -1720,8 +1720,10 @@ export class CampaignsComponent {
    */
   protected readonly emailStaging = signal<'idle' | 'staging' | 'done' | 'error'>('idle');
   /**
-   * A stage ended WITHOUT a terminal answer -- the poll lost track of the job, or timed out -- so a
-   * HubSpot draft may still be created against this brief's audience.
+   * A stage ended WITHOUT a terminal answer, so a HubSpot draft may still be created against this
+   * brief's audience: the poll lost track of the job or timed out, the create was accepted with no
+   * job or reported `indeterminate`, it failed after it was sent, or a reset cancelled it after
+   * dispatch.
    *
    * `emailStaging` becomes `'error'` on those paths, which released every lock keyed on it while the
    * background dispatcher could still resolve the audience. So this holds them -- audience writes,
@@ -3145,7 +3147,15 @@ export class CampaignsComponent {
     // precondition upstream actively refuses on (`resolveBuiltAudience`), so omitting it here
     // would let the enumeration drift from the guard it mirrors -- and the failure would arrive
     // from HubSpot after the draft work had begun rather than from this early return.
-    if (brief === null || sourceEmailId === '' || projectSlug === '' || this.emailAudience()?.status !== 'built' || this.emailAudienceWriteInFlight()) {
+    if (
+      brief === null ||
+      sourceEmailId === '' ||
+      projectSlug === '' ||
+      this.emailAudience()?.status !== 'built' ||
+      this.emailAudienceWriteInFlight() ||
+      this.emailStaging() === 'staging' ||
+      this.emailStagingUnresolved()
+    ) {
       return;
     }
 
@@ -3169,7 +3179,13 @@ export class CampaignsComponent {
       // And the AUDIENCE can change during it: the Audience tab stays mounted, so a replacement
       // compose or attach started while the brief id was resolving would otherwise have the create
       // clone a draft against the list being replaced. Same gate `canStageEmail` holds, re-read.
-      if (this.emailAudienceWriteInFlight() || this.emailAudience()?.status !== 'built') {
+      // The unresolved check is re-made against the RESOLVED brief id: the on-screen key is
+      // `emailBriefId()`, which can be '' before the persist above assigns it.
+      if (
+        this.emailAudienceWriteInFlight() ||
+        this.emailAudience()?.status !== 'built' ||
+        this.unresolvedStages().has(this.stageScopeKey(projectSlug, briefId))
+      ) {
         this.emailStaging.set('error');
         this.emailStagingMessage.set('The send audience changed while staging. Stage again once it has finished updating.');
         return;

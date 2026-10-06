@@ -3464,7 +3464,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(
         (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent,
         'Stage was disabled with no reason given'
-      ).toContain('being written');
+      ).toContain('audience write is still running');
 
       internals().emailAudienceWriteInFlight.set(false);
       expect(internals().canStageEmail()).toBe(true);
@@ -3734,7 +3734,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       fixture.detectChanges();
 
       const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent ?? '';
-      expect(hint).toContain('being written');
+      expect(hint).toContain('audience write is still running');
       expect(hint, 'the hint asked for the compose that was running').not.toContain('Compose the send audience');
     });
 
