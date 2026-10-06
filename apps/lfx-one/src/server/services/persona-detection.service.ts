@@ -179,6 +179,12 @@ export class PersonaDetectionService {
     };
   }
 
+  /**
+   * Checks whether the current user holds `writer_guard` on the tenant ROOT project. Surfaced as
+   * `isRootWriter`. Request-cached, resolves the ROOT uid via NATS, and fails closed to `false`.
+   * The ROOT `global_writer` half does not cascade, so a ROOT grant does not answer for a named
+   * project — see {@link checkProjectWriter}.
+   */
   public async checkRootWriter(req: Request): Promise<boolean> {
     const cached = this.rootWriterRequestCache.get(req);
     if (cached) return cached;
@@ -256,6 +262,16 @@ export class PersonaDetectionService {
   }
 
   /**
+   * The cascading half of {@link checkRootCampaignManager}: ROOT `marketing_ops` only. Backs
+   * `isCampaignManagerRootGrant`, which the frontend stores as a grant for every project, and
+   * `requireMarketingAccess`'s named-project campaign pass, so it must exclude
+   * `global_marketing_ops` — that relation does not cascade from ROOT.
+   */
+  public async checkRootCampaignManagerCascade(req: Request): Promise<boolean> {
+    return (await this.checkRootMarketingOps(req)).marketingOps;
+  }
+
+  /**
    * Checks whether the current user holds `auditor_guard` on the tenant ROOT project — the Formations
    * queue's (`foundation/formations`, GH-1958) authorization boundary, enforced by `requireAuditor`.
    * Mirrors {@link checkRootWriter}: request-cached, resolves the ROOT uid via NATS, and fails closed
@@ -284,15 +300,6 @@ export class PersonaDetectionService {
     if (!projectSlug) return this.checkRootCampaignManager(req);
     if (await this.checkRootCampaignManagerCascade(req)) return true;
     return this.checkProjectAccess(req, projectSlug, 'campaign_manager', 'check_project_campaign_manager');
-  }
-
-  /**
-   * The cascading half of {@link checkRootCampaignManager}: ROOT `marketing_ops` only. Backs
-   * `isCampaignManagerRootGrant`, which the frontend stores as a grant for every project, so it
-   * must exclude `global_marketing_ops` — that relation does not cascade from ROOT.
-   */
-  private async checkRootCampaignManagerCascade(req: Request): Promise<boolean> {
-    return (await this.checkRootMarketingOps(req)).marketingOps;
   }
 
   /**
