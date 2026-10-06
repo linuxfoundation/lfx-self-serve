@@ -35,7 +35,10 @@ export class AdminNoteSaveService {
 
   private readonly savingIds = new Set<string>();
   private readonly savedNotes = new Subject<MentorshipAdminSavedNote>();
-  /** The last note saved for each application, with the version it was saved at. */
+  /**
+   * The last note saved for each application, with the version it was saved at. Never pruned: a save overwrites its
+   * application's entry, so this holds at most one entry per application the admin saved a note on this session.
+   */
   private readonly latestSaved = new Map<string, MentorshipAdminVersionedNote>();
   private savedVersion = 0;
 
