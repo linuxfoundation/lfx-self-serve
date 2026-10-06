@@ -16,19 +16,26 @@ const snowflakeMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/constants', () => ({
-  COMING_SOON_SENTINEL: 'coming-soon',
-  DEFAULT_EVENT_SORT_FIELD: 'EVENT_START_DATE',
-  DEFAULT_VISA_REQUEST_SORT_FIELD: 'APPLICATION_DATE',
-  EVENT_SOURCE_BACKFILL: 'backfill',
-  MY_EVENT_STATUS: { ATTENDED: 'Attended', REGISTERED: 'Registered', NOT_REGISTERED: 'Not Registered' },
-  TRAVEL_FUND_OFFERED_AGG: 'BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED)',
-  TRAVEL_FUND_OPEN_ENDED_AGG: 'BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED AND TRAVEL_FUND_END_TS IS NULL)',
-  TRAVEL_FUND_LATEST_DEADLINE_AGG: 'MAX(IFF(IS_TRAVEL_FUND_ACCEPTED, TRAVEL_FUND_END_TS, NULL))',
-  VALID_EVENT_SORT_FIELDS: new Set(['EVENT_NAME', 'PROJECT_NAME', 'EVENT_START_DATE', 'EVENT_CITY']),
-  VALID_VISA_REQUEST_SORT_FIELDS: new Set(['EVENT_NAME', 'EVENT_CITY', 'APPLICATION_DATE']),
-  WHOLE_NUMBER_PATTERN: /^\d+$/,
-}));
+vi.mock('@lfx-one/shared/constants', async () => {
+  // Use the real travel fund aggregates so the SQL assertions can't drift from the source of truth.
+  const { TRAVEL_FUND_OFFERED_AGG, TRAVEL_FUND_OPEN_ENDED_AGG, TRAVEL_FUND_LATEST_DEADLINE_AGG } = await vi.importActual<
+    typeof import('../../../../../packages/shared/src/constants/events.constants')
+  >('../../../../../packages/shared/src/constants/events.constants');
+
+  return {
+    COMING_SOON_SENTINEL: 'coming-soon',
+    DEFAULT_EVENT_SORT_FIELD: 'EVENT_START_DATE',
+    DEFAULT_VISA_REQUEST_SORT_FIELD: 'APPLICATION_DATE',
+    EVENT_SOURCE_BACKFILL: 'backfill',
+    MY_EVENT_STATUS: { ATTENDED: 'Attended', REGISTERED: 'Registered', NOT_REGISTERED: 'Not Registered' },
+    TRAVEL_FUND_OFFERED_AGG,
+    TRAVEL_FUND_OPEN_ENDED_AGG,
+    TRAVEL_FUND_LATEST_DEADLINE_AGG,
+    VALID_EVENT_SORT_FIELDS: new Set(['EVENT_NAME', 'PROJECT_NAME', 'EVENT_START_DATE', 'EVENT_CITY']),
+    VALID_VISA_REQUEST_SORT_FIELDS: new Set(['EVENT_NAME', 'EVENT_CITY', 'APPLICATION_DATE']),
+    WHOLE_NUMBER_PATTERN: /^\d+$/,
+  };
+});
 vi.mock('@lfx-one/shared/utils', async () => {
   const eventUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/event.utils')>(
     '../../../../../packages/shared/src/utils/event.utils'

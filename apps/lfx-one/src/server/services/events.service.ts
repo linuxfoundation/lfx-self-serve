@@ -1143,12 +1143,12 @@ export class EventsService {
                  ELSE IS_PAST_EVENT END`;
   }
 
-  /** Event offers travel funding and its deadline (among the flagged rows) is unset or still ahead. */
   /** Latest deadline across flagged rows; NULL (open-ended) when any flagged row has no deadline. `over` makes it a window aggregate. */
   private travelFundDeadlineSql(over = ''): string {
     return `IFF(${TRAVEL_FUND_OPEN_ENDED_AGG}${over}, NULL, ${TRAVEL_FUND_LATEST_DEADLINE_AGG}${over})`;
   }
 
+  /** Event offers travel funding and its deadline (among the flagged rows) is unset or still ahead. */
   private travelFundOpenSql(offered: string, deadline: string): string {
     return `${offered} AND (${deadline} IS NULL OR ${deadline} >= CURRENT_TIMESTAMP())`;
   }
