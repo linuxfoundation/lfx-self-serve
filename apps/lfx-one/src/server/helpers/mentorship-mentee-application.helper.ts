@@ -11,7 +11,7 @@ import {
   MentorshipUpstreamProgramTerm,
   MentorshipUpstreamTask,
 } from '@lfx-one/shared/interfaces';
-import { formatIsoDateLabel, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
+import { formatIsoDateLabel, toMentorshipUtcEndOfDayInstant, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
 
 import { MENTORSHIP_MENTEE_HISTORY_STATUS_ORDER } from '../constants/mentorship.constants';
 
@@ -19,14 +19,14 @@ import { MENTORSHIP_MENTEE_HISTORY_STATUS_ORDER } from '../constants/mentorship.
 const isSubmittedTask = (task: MentorshipUpstreamTask): boolean => task.status === 'submitted' || task.status === 'complete';
 
 /**
- * A task's own due date, else the term's application close for a prerequisite task, as its UTC
- * midnight instant. Upstream stores both as bare dates, which `DatePipe` would read as local
- * midnight and show a day early east of UTC. The task view and the submit check both resolve it
+ * A task's own due date as its UTC midnight instant, else, for a prerequisite task, the term's
+ * application close as the end of its UTC day. A bare date would be read by `DatePipe` as local
+ * midnight and shown a day early east of UTC. The task view and the submit check both resolve it
  * here, so the page and the BFF lock a task on the same day.
  */
 export const resolveMentorshipMenteeTaskDueDate = (task: MentorshipUpstreamTask, applicationEndDate: string | undefined): string | undefined => {
   if (task.due_date) return toMentorshipUtcInstant(task.due_date);
-  if (task.category === 'prerequisite' && applicationEndDate) return toMentorshipUtcInstant(applicationEndDate);
+  if (task.category === 'prerequisite' && applicationEndDate) return toMentorshipUtcEndOfDayInstant(applicationEndDate);
   return undefined;
 };
 
@@ -70,21 +70,22 @@ export const mapMentorshipMenteeApplication = (
   upstreamStatus: application.status,
   createdOn: application.created_on,
   updatedOn: application.updated_on,
-  decisionExpectedDate: application.term?.application_end_date ? toMentorshipUtcInstant(application.term.application_end_date) : undefined,
+  decisionExpectedDate: application.term?.application_end_date ? toMentorshipUtcEndOfDayInstant(application.term.application_end_date) : undefined,
   ...(tasks && { tasks: tasks.map((task) => mapMentorshipMenteeApplicationTask(task, application.term?.application_end_date ?? undefined)) }),
 });
 
 /**
  * Whether a term takes applications at `now`, by the check upstream runs on submit: the term is
  * `open`, `now` is not before its application start and not after its application end. Upstream
- * stores both as bare dates, read here as UTC midnight as upstream does, and a missing date leaves
+ * returns both as UTC instants, compared as they are, as upstream does; a bare date is read as the
+ * start of its UTC day for the start and the end of its UTC day for the end. A missing date leaves
  * that side of the window open.
  */
 const isAcceptingApplications = (term: MentorshipUpstreamProgramTerm, now: Date): boolean => {
   if (term.status !== 'open') return false;
   const time = now.getTime();
   if (term.application_start_date && time < Date.parse(toMentorshipUtcInstant(term.application_start_date))) return false;
-  if (term.application_end_date && time > Date.parse(toMentorshipUtcInstant(term.application_end_date))) return false;
+  if (term.application_end_date && time > Date.parse(toMentorshipUtcEndOfDayInstant(term.application_end_date))) return false;
   return true;
 };
 

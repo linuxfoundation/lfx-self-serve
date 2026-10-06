@@ -2,9 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_GOALS,
+  CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
+  CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
   CAMPAIGN_PLATFORMS,
   COUNTRIES,
   JOB_LOST_MESSAGE,
@@ -18,6 +21,7 @@ import type {
   CampaignAudience,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
+  CampaignBidUpdateParams,
   CampaignBriefPersistResult,
   CampaignBudgetUpdateParams,
   CampaignDeliveryType,
@@ -29,6 +33,9 @@ import type {
   CampaignKeyword,
   CampaignListResult,
   CampaignMetricsWindow,
+  CampaignNegativeKeywordResult,
+  CampaignNegativeKeywordsParams,
+  CampaignNegativeKeywordsResult,
   CampaignPlatform,
   CampaignPlatformResult,
   CampaignProgramType,
@@ -41,15 +48,21 @@ import type {
   CampaignServiceKeywordActionInput,
   CampaignServiceKeywordActions,
   CampaignServiceKeywords,
+  CampaignServiceMicrosoftKeywords,
+  CampaignServiceNegativeKeywordInput,
+  CampaignServiceNegativeKeywordResult,
+  CampaignServiceNegativeKeywords,
   CampaignToggleStatus,
   GenerateEmailCopyResult,
   HubSpotEmailSearchResult,
   HubSpotMarketingEmail,
+  KeywordActionPlatform,
   LinkedInBriefCopy,
   ListAudiencesResult,
   LinkedInCreativeVariant,
   MetaAdVariant,
   MetaBriefCopy,
+  MicrosoftKeywordsWindow,
   QueryServiceResponse,
   RedditAdVariant,
   RedditBriefCopy,
@@ -57,10 +70,11 @@ import type {
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { ServiceValidationError } from '../errors/service-validation.error';
 import { toAudienceStatus } from '../helpers/campaign-audience.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
-import { upstreamAnswered } from './campaign-keyword-actions';
+import { displayableErrorCode, upstreamAnswered } from './campaign-keyword-actions';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -1482,8 +1496,149 @@ export class CampaignServiceClient {
       );
       return { ...response.data, etag: readEtag(response) ?? response.data.etag };
     } catch (error) {
-      throw asUnconfirmedBudgetFailure(error);
+      throw asUnconfirmedWriteFailure(error, 'update_campaign_budget', CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED);
     }
+  }
+
+  /**
+   * Change a campaign's manual max cost-per-click bid on its ad platform, then persist it.
+   *
+   * The budget change's sibling, with the same wire facts: a DISPATCHING write that
+   * campaign-service sends to the platform first and persists only once the platform confirms,
+   * `If-Match` required (428 missing, 412 stale), and the fresh ETag taken off the response
+   * header. The amount is in the AD ACCOUNT's own currency and is sent exactly as given.
+   *
+   * Upstream owns every refusal (an unsupported platform, an automated bid strategy that would
+   * ignore the bid, an adopted campaign with no recorded ad group, the platform's own floor and
+   * ceiling) and its message passes through untouched. A failure nobody answered is rewritten as
+   * `CAMPAIGN_BID_OUTCOME_UNCONFIRMED`, as for the budget.
+   */
+  public async updateCampaignBid(req: Request, params: CampaignBidUpdateParams): Promise<CampaignServiceCampaign> {
+    const path =
+      `/projects/${encodePathSegment(params.projectSlug)}` +
+      `/briefs/${encodePathSegment(params.briefId)}` +
+      `/campaigns/${encodePathSegment(params.campaignId)}/bid`;
+
+    logger.debug(req, 'update_campaign_bid', 'Sending bid change to campaign-service', {
+      campaign_id: params.campaignId,
+      brief_id: params.briefId,
+      bid_type: params.bidType,
+    });
+
+    try {
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceCampaign>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        path,
+        'PATCH',
+        // `query` is the FIFTH argument and `data` the SIXTH, as for the budget change.
+        undefined,
+        { bid: params.bid, bid_type: params.bidType },
+        { 'If-Match': params.etag }
+      );
+      return { ...response.data, etag: readEtag(response) ?? response.data.etag };
+    } catch (error) {
+      throw asUnconfirmedWriteFailure(error, 'update_campaign_bid', CAMPAIGN_BID_OUTCOME_UNCONFIRMED);
+    }
+  }
+
+  /**
+   * Add campaign-level negative keywords to one live campaign (Microsoft Advertising today).
+   *
+   * NOT ATOMIC and POSITIONAL: upstream answers one result per requested keyword, in request
+   * order, each with its own outcome. The response is therefore mapped index for index and never
+   * filtered, sorted or de-duplicated, because a caller zips `results[i]` onto the keyword it sent
+   * at `i`, and a shifted entry would show a keyword that was not added as added.
+   *
+   * No `If-Match` and no ETag: upstream persists nothing for this lever. Upstream's own refusals
+   * (400 malformed batch or unsupported platform, 409, 503) pass through unchanged. A transport
+   * failure is left as the proxy raised it, because re-adding a negative the campaign already has
+   * answers `ALREADY_PRESENT`, so a retry converges.
+   *
+   * A 2xx that cannot be read positionally (no results array, a different number of results than
+   * keywords sent, another campaign's id, or ANY entry naming a different keyword or match type
+   * than the one sent at its index) is refused as unconfirmed rather than mapped: the negatives may
+   * have been added, and nothing in such a body says which. Checking only the count would let two
+   * results swapped in place show a negative that was not added as APPLIED.
+   */
+  public async addNegativeKeywords(req: Request, params: CampaignNegativeKeywordsParams): Promise<CampaignNegativeKeywordsResult> {
+    const path =
+      `/projects/${encodePathSegment(params.projectSlug)}` +
+      `/briefs/${encodePathSegment(params.briefId)}` +
+      `/campaigns/${encodePathSegment(params.campaignId)}/negative-keywords`;
+
+    logger.debug(req, 'add_negative_keywords', 'Sending negative keywords to campaign-service', {
+      campaign_id: params.campaignId,
+      brief_id: params.briefId,
+      count: params.negativeKeywords.length,
+    });
+
+    const response = await this.microserviceProxy.proxyRequest<CampaignServiceNegativeKeywords>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      path,
+      'POST',
+      // The body is the SIXTH argument: a payload in the query position goes out with no body.
+      undefined,
+      { negative_keywords: params.negativeKeywords.map((kw): CampaignServiceNegativeKeywordInput => ({ text: kw.text, match_type: kw.matchType })) }
+    );
+
+    const readable =
+      response?.campaign_id === params.campaignId && Array.isArray(response.results) && response.results.length === params.negativeKeywords.length;
+    // Every entry, not just the count: results[i] must name the keyword and match type sent at i.
+    const mismatchedIndex = readable ? response.results.findIndex((entry, i) => answersAnotherNegativeKeyword(entry, params.negativeKeywords[i])) : -1;
+    if (!readable || mismatchedIndex !== -1) {
+      logger.warning(req, 'add_negative_keywords', 'Upstream answered with a result set that cannot be read positionally', {
+        campaign_id: params.campaignId,
+        echoed_campaign_id: response?.campaign_id,
+        requested: params.negativeKeywords.length,
+        returned: Array.isArray(response?.results) ? response.results.length : null,
+        mismatched_index: mismatchedIndex === -1 ? null : mismatchedIndex,
+      });
+      throw new MicroserviceError('Negative keyword confirmation did not match the request', 502, 'BAD_GATEWAY', {
+        operation: 'add_negative_keywords',
+        service: 'campaign_service_client',
+        path,
+        clientMessage: CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+      });
+    }
+
+    // Index for index. An unreadable ENTRY becomes UNCONFIRMED at its own position rather than
+    // being dropped, which would shift every later result onto the wrong keyword.
+    const results = response.results.map((entry, i) => toNegativeKeywordResult(entry, params.negativeKeywords[i]));
+    return {
+      campaignId: params.campaignId,
+      results,
+      // Recounted from the mapped results rather than copied, so it cannot disagree with them
+      // when an entry above was downgraded to UNCONFIRMED.
+      appliedCount: results.filter((r) => r.outcome === 'APPLIED' || r.outcome === 'ALREADY_PRESENT').length,
+    };
+  }
+
+  /**
+   * Microsoft Advertising keyword performance for the project's OWN campaigns.
+   *
+   * The Google keyword read's sibling, in the same row shape, but served from the last FINISHED
+   * asynchronous Microsoft report rather than live: `metrics_as_of` says when that report was
+   * requested, and `metrics_pending` that a newer one is building. The first read returns no rows
+   * with `metrics_pending: true`. The window is a QUERY parameter (fifth argument); omitted, upstream
+   * applies `last_30_days`.
+   */
+  public async getMicrosoftAdsKeywords(req: Request, projectSlug: string, window?: MicrosoftKeywordsWindow): Promise<CampaignServiceMicrosoftKeywords> {
+    if (projectSlug === '') {
+      // Same refusal as getGoogleAdsKeywords: an empty segment addresses a different route.
+      throw ServiceValidationError.forField('project', 'A keyword read requires the project it is scoped to.', {
+        operation: 'get_microsoft_ads_keywords',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceMicrosoftKeywords>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/microsoft-ads/keywords`,
+      'GET',
+      window ? { window } : undefined
+    );
   }
 
   /**
@@ -1782,19 +1937,25 @@ export class CampaignServiceClient {
     // mutation still lets THIS call overrun the request window one step earlier.
     timeoutMs?: number
   ): Promise<CampaignServiceCampaignResolution> {
-    if (projectSlug === '' || platformCampaignID === '') {
-      throw new Error('A campaign reference lookup requires both the project and the platform campaign id.');
-    }
-    return this.microserviceProxy.proxyRequest<CampaignServiceCampaignResolution>(
-      req,
-      'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodePathSegment(projectSlug)}/google-ads/campaign-ref`,
-      'GET',
-      { platform_campaign_id: platformCampaignID },
-      undefined,
-      undefined,
-      timeoutMs === undefined ? undefined : { timeoutMs }
-    );
+    return this.resolveCampaignRef(req, 'google-ads', projectSlug, platformCampaignID, timeoutMs);
+  }
+
+  /**
+   * Resolve one Microsoft Advertising campaign id to campaign-service's own campaign and brief.
+   *
+   * The Microsoft twin of `resolveGoogleAdsCampaign` (`resolve-microsoft-ads-campaign`): a Microsoft
+   * keyword row carries Microsoft's numeric CampaignId, and the keyword-actions route is keyed by
+   * campaign-service's UUID under its brief. Same contract — an unowned id is a 200 with an empty
+   * `matches` — with one difference the caller must handle: MORE THAN ONE match is reachable here,
+   * because Microsoft ids are per ad account and no upstream index makes them single.
+   */
+  public async resolveMicrosoftAdsCampaign(
+    req: Request,
+    projectSlug: string,
+    platformCampaignID: string,
+    timeoutMs?: number
+  ): Promise<CampaignServiceCampaignResolution> {
+    return this.resolveCampaignRef(req, 'microsoft-ads', projectSlug, platformCampaignID, timeoutMs);
   }
 
   /**
@@ -1861,6 +2022,29 @@ export class CampaignServiceClient {
       `/projects/${encodePathSegment(projectSlug)}/google-ads/audience`,
       'GET',
       window ? { window } : undefined
+    );
+  }
+
+  /** The shared campaign-ref GET. The platform segment comes from the calling method, never the request. */
+  private async resolveCampaignRef(
+    req: Request,
+    platform: KeywordActionPlatform,
+    projectSlug: string,
+    platformCampaignID: string,
+    timeoutMs?: number
+  ): Promise<CampaignServiceCampaignResolution> {
+    if (projectSlug === '' || platformCampaignID === '') {
+      throw new Error('A campaign reference lookup requires both the project and the platform campaign id.');
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceCampaignResolution>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/${platform}/campaign-ref`,
+      'GET',
+      { platform_campaign_id: platformCampaignID },
+      undefined,
+      undefined,
+      timeoutMs === undefined ? undefined : { timeoutMs }
     );
   }
 
@@ -2408,7 +2592,7 @@ function readEtag(response: ApiResponse<unknown>): string | null {
 }
 
 /**
- * The error a failed budget change should surface.
+ * The error a failed budget or bid change should surface.
  *
  * campaign-service's own answers, at any status, pass through unchanged. That covers a 400 naming
  * a platform minimum, a 409 refusal, a 412 or 428, and a 503 whose message already separates
@@ -2416,10 +2600,11 @@ function readEtag(response: ApiResponse<unknown>): string | null {
  * boundary refusal that never dispatched, so it also passes through.
  *
  * What is left (a BFF transport failure, a timeout, or a gateway 5xx) is a write that may have
- * reached the ad platform. Its client message becomes `CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED`
- * rather than a bare "please try again". `message` stays as it was, so the log keeps the cause.
+ * reached the ad platform. Its client message becomes the lever's own unconfirmed message
+ * (`CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED`, `CAMPAIGN_BID_OUTCOME_UNCONFIRMED`) rather than a bare
+ * "please try again". `message` stays as it was, so the log keeps the cause.
  */
-function asUnconfirmedBudgetFailure(error: unknown): unknown {
+function asUnconfirmedWriteFailure(error: unknown, operation: string, clientMessage: string): unknown {
   if (!(error instanceof MicroserviceError) || upstreamAnswered(error)) {
     return error;
   }
@@ -2427,15 +2612,72 @@ function asUnconfirmedBudgetFailure(error: unknown): unknown {
     return error;
   }
   return new MicroserviceError(error.message, error.statusCode, error.code, {
-    operation: 'update_campaign_budget',
+    operation,
     service: error.service,
     path: error.path,
     errorBody: error.errorBody,
     originalMessage: error.originalMessage,
     originalError: error,
     transportFailure: error.transportFailure,
-    clientMessage: CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
+    clientMessage,
   });
+}
+
+/**
+ * Negative-keyword text as campaign-service sends it to the platform: trimmed, internal whitespace
+ * collapsed to one space. Case is kept, as upstream keeps it (it case-folds only to detect duplicates).
+ */
+function normalizeNegativeKeywordText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Whether an upstream result names a different keyword than the one sent at its index: another
+ * match type, or text that differs from the sent text once both are normalised as upstream
+ * normalises it. Such an entry means the response is shifted or misordered, so the CALLER treats
+ * the whole response as unreadable. An entry that is not an object names nothing and is left to
+ * `toNegativeKeywordResult`, which reports it UNCONFIRMED in place.
+ */
+function answersAnotherNegativeKeyword(
+  entry: CampaignServiceNegativeKeywordResult | null | undefined,
+  sent: CampaignNegativeKeywordsParams['negativeKeywords'][number]
+): boolean {
+  if (!entry || typeof entry !== 'object') {
+    return false;
+  }
+  return (
+    entry.match_type !== sent.matchType ||
+    typeof entry.text !== 'string' ||
+    normalizeNegativeKeywordText(entry.text) !== normalizeNegativeKeywordText(sent.text)
+  );
+}
+
+/**
+ * One upstream negative-keyword result in the UI's vocabulary, at the position it answers.
+ *
+ * The caller has already checked that the entry names the keyword sent here, so the result reports
+ * the SENT keyword (normalised as upstream sends it), never upstream's echo. An entry that is not an
+ * object, or names an outcome outside the contract, cannot say what happened to its keyword: it is
+ * reported as UNCONFIRMED, never dropped and never guessed as applied. `error_code` is untrusted
+ * wire data the UI renders, so it is relayed only when it looks like an identifier.
+ */
+function toNegativeKeywordResult(
+  entry: CampaignServiceNegativeKeywordResult | null | undefined,
+  sent: CampaignNegativeKeywordsParams['negativeKeywords'][number]
+): CampaignNegativeKeywordResult {
+  const text = normalizeNegativeKeywordText(sent.text);
+  if (!entry || typeof entry !== 'object' || !CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES.has(entry.outcome)) {
+    return { text, matchType: sent.matchType, outcome: 'UNCONFIRMED' };
+  }
+  const result: CampaignNegativeKeywordResult = { text, matchType: sent.matchType, outcome: entry.outcome };
+  if (typeof entry.negative_keyword_id === 'string' && entry.negative_keyword_id !== '') {
+    result.negativeKeywordId = entry.negative_keyword_id;
+  }
+  const errorCode = displayableErrorCode(entry.error_code);
+  if (errorCode) {
+    result.errorCode = errorCode;
+  }
+  return result;
 }
 
 /**

@@ -134,7 +134,8 @@ export type MentorshipMenteeTaskCategory = 'prerequisite' | 'non_prerequisite';
  * BFF mapping from `GET /mentorship/v1/applications/{id}/tasks`:
  * - `submitFile` ← `tasks.submit_file` (`null` | `'required'` | URL)
  * - `fileUrl` ← `tasks.file`
- * - `dueDate` ← `tasks.due_date`, else the term's application close for a prerequisite task, as its UTC midnight instant
+ * - `dueDate` ← `tasks.due_date` as its UTC midnight instant, else, for a prerequisite task, the term's application
+ *   close as the end of its UTC day
  * - `submittedOn` ← `tasks.updated_on` when status is `submitted` or `complete`
  * - `updatedOn` ← `tasks.updated_on`
  */
@@ -153,8 +154,9 @@ export interface MentorshipMenteeApplicationTask {
   /** Uploaded file URL — present when `submitFile` is a URL or after a successful upload */
   fileUrl?: string;
   /**
-   * ISO 8601 UTC instant, rendered via `DatePipe` with `'UTC'`. The BFF turns the upstream date-only
-   * value into its UTC midnight instant, since `DatePipe` reads a bare date as local midnight.
+   * ISO 8601 UTC instant, rendered via `DatePipe` with `'UTC'`. The BFF turns a bare date into a UTC
+   * instant (a task's own due date at the start of its day, a term's application close at the end of
+   * it), since `DatePipe` reads a bare date as local midnight.
    */
   dueDate?: string;
   /**
@@ -457,7 +459,7 @@ export interface MentorshipMenteeTermRef {
  * - `programName` / `programLogoUrl` ← the embedded `program`
  * - `projectName` ← the embedded `program.project_name`; absent when the program has no LF project
  * - `term` ← the embedded `term`
- * - `decisionExpectedDate` ← `term.application_end_date` as its UTC midnight instant
+ * - `decisionExpectedDate` ← `term.application_end_date` as an instant; a bare date is taken as the end of its UTC day
  * - `tasks` ← `GET /mentorship/v1/applications/{id}/tasks`, read only with `withTasks=true` and
  *   only for pending, accepted and graduated applications; absent otherwise, never an empty stand-in
  */

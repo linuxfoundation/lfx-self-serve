@@ -22,6 +22,7 @@ import {
 import { lfxColors } from '../constants/colors.constants';
 import { CommitteeMemberVotingStatus, MeetingType, RecurrenceType } from '../enums';
 import { PollStatus } from '../enums/poll.enum';
+import { isSameOccurrenceId } from './rsvp-calculator.util';
 import type {
   BuildMeetingOccurrenceRouteOptions,
   CalendarColor,
@@ -32,6 +33,7 @@ import type {
   MeetingCommittee,
   MeetingHostCandidate,
   MeetingOccurrence,
+  MeetingOccurrenceOption,
   MeetingOccurrenceRoute,
   MeetingOrganizerChipModel,
   MeetingOrganizerLink,
@@ -401,6 +403,44 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
   return futureOccurrences.length > 0 ? futureOccurrences[0] : null;
+}
+
+/**
+ * Formats an occurrence's start for a picker row, in the series' own timezone.
+ * @description e.g. `Tue, Oct 14, 2026 · 10:00 AM PDT`. The zone name is part of the label because the
+ * occurrence endpoints take no timezone — the series' zone is the one every occurrence is edited in.
+ */
+export function formatMeetingOccurrenceLabel(occurrence: MeetingOccurrence, timezone?: string | null): string {
+  const start = new Date(occurrence.start_time);
+
+  if (isNaN(start.getTime())) {
+    return occurrence.occurrence_id;
+  }
+
+  const zone = timezone ? { timeZone: timezone } : {};
+  const date = start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', ...zone });
+  const time = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZoneName: 'short', ...zone });
+
+  return `${date} · ${time}`;
+}
+
+/**
+ * Picker rows for the occurrences of a recurring meeting an organizer can still edit or cancel.
+ * @description Active (not cancelled) occurrences that have not ended yet, earliest first. `includeId`
+ * keeps one more occurrence in the list even when it has ended — the card's own occurrence stays
+ * "current" through its join window, which runs past its end, and the picker opens preselected on it.
+ */
+export function buildMeetingOccurrenceOptions(meeting: Meeting, includeId?: string | null, now: Date = new Date()): MeetingOccurrenceOption[] {
+  const active = getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences);
+
+  return active
+    .filter((occurrence) => {
+      // Indexed occurrences can omit `duration` when they inherit the series'; zero would end a running one at its start.
+      const end = new Date(occurrence.start_time).getTime() + (occurrence.duration || meeting.duration || 0) * 60000;
+      return end > now.getTime() || (!!includeId && isSameOccurrenceId(occurrence.occurrence_id, includeId));
+    })
+    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+    .map((occurrence) => ({ label: formatMeetingOccurrenceLabel(occurrence, meeting.timezone), value: occurrence.occurrence_id }));
 }
 
 /**

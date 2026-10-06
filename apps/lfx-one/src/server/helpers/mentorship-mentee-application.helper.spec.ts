@@ -47,8 +47,9 @@ describe('resolveMentorshipMenteeTaskDueDate', () => {
     expect(resolveMentorshipMenteeTaskDueDate({ ...baseTask, due_date: '2026-07-15' }, '2026-08-01')).toBe('2026-07-15T00:00:00Z');
   });
 
-  it("falls back to the term's application close for a prerequisite with no due date", () => {
-    expect(resolveMentorshipMenteeTaskDueDate(baseTask, '2026-08-01')).toBe('2026-08-01T00:00:00Z');
+  it("falls back to the term's application close, as the end of its UTC day, for a prerequisite with no due date", () => {
+    expect(resolveMentorshipMenteeTaskDueDate(baseTask, '2026-08-01')).toBe('2026-08-01T23:59:59.999Z');
+    expect(resolveMentorshipMenteeTaskDueDate(baseTask, '2026-08-01T23:59:59Z')).toBe('2026-08-01T23:59:59Z');
   });
 
   it('gives no due date to a non-prerequisite or uncategorized task, or when the term has no application close', () => {
@@ -68,7 +69,7 @@ describe('mapMentorshipMenteeApplicationTask', () => {
       status: 'incomplete',
       submitFile: null,
       fileUrl: undefined,
-      dueDate: '2026-08-01T00:00:00Z',
+      dueDate: '2026-08-01T23:59:59.999Z',
       submittedOn: undefined,
       updatedOn: '2026-06-05T10:00:00Z',
     });
@@ -120,7 +121,7 @@ describe('mapMentorshipMenteeApplication', () => {
       upstreamStatus: 'pending',
       createdOn: '2026-06-28T10:00:00Z',
       updatedOn: '2026-06-29T10:00:00Z',
-      decisionExpectedDate: '2026-08-01T00:00:00Z',
+      decisionExpectedDate: '2026-08-01T23:59:59.999Z',
       tasks: [mapMentorshipMenteeApplicationTask(baseTask, '2026-08-01')],
     });
   });
@@ -202,14 +203,20 @@ describe('mapMentorshipMenteeApplyTarget', () => {
     ['a closed term', { status: 'closed' as const }, insideWindow],
     ['a deleted term', { status: 'deleted' as const }, insideWindow],
     ['a window that has not opened', {}, new Date('2026-05-31T23:59:59Z')],
-    ['a window that has closed', {}, new Date('2026-08-01T00:00:01Z')],
+    ['a window that has closed', {}, new Date('2026-08-02T00:00:00Z')],
   ])('does not accept applications for %s', (_label, overrides, now) => {
     expect(mapMentorshipMenteeApplyTarget(program, { ...term, ...overrides }, now).acceptingApplications).toBe(false);
   });
 
-  it('reads the window dates as UTC midnight, as upstream does, so both edges still accept', () => {
+  it('reads a bare window start as the start of its UTC day and a bare window end as the end of its UTC day', () => {
     expect(mapMentorshipMenteeApplyTarget(program, term, new Date('2026-06-01T00:00:00Z')).acceptingApplications).toBe(true);
-    expect(mapMentorshipMenteeApplyTarget(program, term, new Date('2026-08-01T00:00:00Z')).acceptingApplications).toBe(true);
+    expect(mapMentorshipMenteeApplyTarget(program, term, new Date('2026-08-01T23:59:59.999Z')).acceptingApplications).toBe(true);
+  });
+
+  it('compares the instants upstream returns as they are, as upstream does', () => {
+    const instants = { ...term, application_start_date: '2026-06-01T00:00:00Z', application_end_date: '2026-08-01T23:59:59Z' };
+    expect(mapMentorshipMenteeApplyTarget(program, instants, new Date('2026-08-01T23:59:59Z')).acceptingApplications).toBe(true);
+    expect(mapMentorshipMenteeApplyTarget(program, instants, new Date('2026-08-02T00:00:00Z')).acceptingApplications).toBe(false);
   });
 
   it('leaves a side of the window open when its date is missing', () => {

@@ -4,12 +4,36 @@
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="meetups-dashboard">
   <div class="flex flex-col gap-6">
     <!-- Page Header -->
-    <div class="flex items-start justify-between mt-3">
+    <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between mt-3">
       <div>
         <h1 class="font-display font-light text-2xl" data-testid="meetups-page-title">My Meetups</h1>
         <p class="mt-1 text-sm text-gray-500" data-testid="meetups-description">
-          Discover upcoming meetups and review the ones you have joined across communities.
+          Community meetups you're registered for, plus upcoming meetups from Open Community Groups.
         </p>
+      </div>
+      <div class="flex flex-wrap items-center gap-6">
+        <span
+          class="flex items-center gap-1.5 text-sm text-gray-600 cursor-help"
+          tabindex="0"
+          role="note"
+          aria-label="Can't see your meetup? Just RSVP'd on ocgroups.dev? It can take a while to show up here."
+          pTooltip="Just RSVP'd on ocgroups.dev? It can take a while to show up here."
+          tooltipEvent="both"
+          tooltipPosition="bottom"
+          appendTo="body"
+          data-testid="meetups-registration-delay-hint">
+          <i class="fa-light fa-face-monocle text-lg" aria-hidden="true"></i>
+          <span class="underline decoration-dotted">Can't see your meetup?</span>
+        </span>
+        <lfx-button
+          label="Discover Meetups"
+          icon="fa-light fa-arrow-up-right-from-square"
+          [text]="true"
+          severity="primary"
+          [href]="discoverUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="meetups-discover-button" />
       </div>
     </div>
 
@@ -22,16 +46,14 @@
       @if (showFiltersBar()) {
         <div class="px-5 pt-4 pb-3">
           <lfx-meetups-top-bar
-            [showStatusFilter]="showStatusFilter()"
+            [isPast]="isPast()"
+            [registeredOnly]="upcomingRegisteredOnly()"
             [searchQuery]="selectedSearchQuery()"
             [community]="selectedCommunity()"
             [role]="selectedRole()"
-            [status]="selectedStatus()"
-            [statusOptions]="statusOptions"
             (searchQueryChange)="onSearchQueryChange($event)"
             (communityChange)="onCommunityChange($event)"
-            (roleChange)="onRoleChange($event)"
-            (statusChange)="onStatusChange($event)" />
+            (roleChange)="onRoleChange($event)" />
         </div>
       }
 
@@ -42,7 +64,6 @@
           [community]="selectedCommunity()"
           [searchQuery]="selectedSearchQuery()"
           [role]="selectedRole()"
-          [status]="selectedStatus()"
           (resetFilters)="resetFilters()" />
       </div>
     </lfx-card>

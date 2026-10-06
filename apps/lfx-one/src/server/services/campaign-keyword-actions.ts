@@ -6,12 +6,15 @@ import type { Request } from 'express';
 import type { CampaignServiceClient } from './campaign-service.service';
 import { logger } from './logger.service';
 
+import { DEFAULT_KEYWORD_ACTION_PLATFORM, MICROSOFT_KEYWORD_ACTION_OUTCOME_UNCONFIRMED } from '@lfx-one/shared/constants';
 import type {
   BulkKeywordActionRequest,
+  CampaignServiceCampaignResolution,
   CampaignServiceKeywordActions,
   BulkKeywordActionResponse,
   CampaignServiceKeywordActionInput,
   KeywordActionGroup,
+  KeywordActionPlatform,
   KeywordActionRequest,
   KeywordActionResponse,
   KeywordActionType,
@@ -65,21 +68,36 @@ function success(action: KeywordActionType, criterionId: string): KeywordActionR
 }
 
 /**
+ * The platform a keyword's ids belong to. An absent platform is Google Ads: every request sent
+ * before Microsoft keyword actions existed named none, and must keep meaning what it meant.
+ */
+export function keywordPlatform(kw: KeywordActionRequest): KeywordActionPlatform {
+  return kw.platform ?? DEFAULT_KEYWORD_ACTION_PLATFORM;
+}
+
+/**
  * Group the flat request by campaign, preserving the order each campaign was first seen.
  *
  * Order matters for the response: the UI renders `results` as a list, and a stable grouping
  * keeps a batch's results in a predictable order rather than one that depends on object-key
  * iteration for numeric-looking keys.
+ *
+ * Keyed on (platform, campaign id), not the id alone: Google and Microsoft mint campaign ids in
+ * unrelated spaces, so the same digits can name one campaign on each, and one group for both would
+ * resolve one platform's campaign and mutate it with the other's keywords. A Google-only request
+ * groups exactly as before.
  */
 export function groupByCampaign(keywords: KeywordActionRequest[]): KeywordActionGroup[] {
   const groups = new Map<string, KeywordActionGroup>();
   for (const kw of keywords) {
-    const existing = groups.get(kw.campaignId);
+    const platform = keywordPlatform(kw);
+    const key = `${platform}|${kw.campaignId}`;
+    const existing = groups.get(key);
     if (existing) {
       existing.keywords.push(kw);
       continue;
     }
-    groups.set(kw.campaignId, { platformCampaignId: kw.campaignId, keywords: [kw] });
+    groups.set(key, { platform, platformCampaignId: kw.campaignId, keywords: [kw] });
   }
   return [...groups.values()];
 }
@@ -99,6 +117,10 @@ export function toUpstreamActions(keywords: KeywordActionRequest[], action: Keyw
  * upstream batch is all-or-nothing: `applied_count` always equals the number requested, or the
  * whole call threw. Reading `results` back per-criterion would be no more accurate and would
  * silently drop a keyword if upstream ever returned them in a different order.
+ *
+ * GOOGLE ADS ONLY. Microsoft batches are NOT all-or-nothing (each result carries its own
+ * `outcome`), so a Microsoft group is reported per item by `microsoftItemResults` instead, and
+ * never reaches this.
  */
 export function appliedResults(group: KeywordActionGroup, action: KeywordActionType): OrderedKeywordResult[] {
   return group.keywords.map((kw) => ({ source: kw, response: success(action, kw.criterionId) }));
@@ -139,9 +161,13 @@ export function inRequestOrder(keywords: KeywordActionRequest[], results: Ordere
   // another's success landed in a shared bucket and were handed out by arrival order. A keyword
   // that was never paused then reported "Paused", which is the one thing this module must never
   // say.
+  //
+  // PLATFORM included too, for the reason `groupByCampaign` keys on it: the same digits can be a
+  // Google campaign and a Microsoft one, and their outcomes must not share a bucket. A request
+  // naming no platform keys exactly as before.
   const byKeyword = new Map<string, KeywordActionResponse[]>();
   for (const { source, response } of results) {
-    const key = `${source.campaignId}-${source.adGroupId}-${source.criterionId}`;
+    const key = `${keywordPlatform(source)}-${source.campaignId}-${source.adGroupId}-${source.criterionId}`;
     const bucket = byKeyword.get(key);
     if (bucket) bucket.push(response);
     else byKeyword.set(key, [response]);
@@ -149,7 +175,7 @@ export function inRequestOrder(keywords: KeywordActionRequest[], results: Ordere
   // shift() so a request naming the same keyword twice consumes one result per occurrence
   // rather than repeating the first.
   return keywords
-    .map((kw) => byKeyword.get(`${kw.campaignId}-${kw.adGroupId}-${kw.criterionId}`)?.shift())
+    .map((kw) => byKeyword.get(`${keywordPlatform(kw)}-${kw.campaignId}-${kw.adGroupId}-${kw.criterionId}`)?.shift())
     .filter((r): r is KeywordActionResponse => r !== undefined);
 }
 
@@ -224,6 +250,14 @@ function describeOutcomeMismatch(
     if (!r || typeof r.ad_group_id !== 'string' || typeof r.criterion_id !== 'string' || typeof r.action !== 'string') {
       return 'upstream returned a result entry that does not name a criterion';
     }
+    // A per-item `outcome` is Microsoft's (Google's atomic batch carries none, and `resource_name`
+    // is optional now for the same reason). Every entry here is about to be reported as applied,
+    // so one that names any outcome other than APPLIED contradicts that and is a mismatch. A
+    // Microsoft partial apply already fails the `applied_count` check above; this closes the case
+    // where the count agrees and an entry does not.
+    if (r.outcome !== undefined && r.outcome !== 'APPLIED') {
+      return `upstream reported outcome ${String(r.outcome)} for a requested criterion`;
+    }
     const remaining = tally.get(key(r));
     if (!remaining) {
       return 'upstream confirmed a criterion that was not requested';
@@ -245,6 +279,86 @@ function describeOutcomeMismatch(
  */
 export const CAMPAIGN_OUTCOME_UNCONFIRMED =
   'The change was sent but the confirmation did not match the request. Check the campaign in Google Ads before retrying.';
+
+/**
+ * The unconfirmed wording for a platform: Google's is unchanged, Microsoft's names Microsoft
+ * Advertising, because sending an operator to the wrong console to verify an irreversible REMOVE
+ * is its own failure.
+ */
+export function unconfirmedMessageFor(platform: KeywordActionPlatform): string {
+  return platform === 'microsoft-ads' ? MICROSOFT_KEYWORD_ACTION_OUTCOME_UNCONFIRMED : CAMPAIGN_OUTCOME_UNCONFIRMED;
+}
+
+/**
+ * A platform error code, kept only when it LOOKS like one. `error_code` is untrusted wire data that
+ * lands in a message the UI renders, so anything but a short identifier is dropped rather than shown.
+ * Exported so every campaign-service result mapper that relays an `error_code` applies the same rule.
+ */
+export function displayableErrorCode(code: unknown): string | null {
+  return typeof code === 'string' && /^[A-Za-z0-9_]{1,100}$/.test(code) ? code : null;
+}
+
+/**
+ * Report ONE Microsoft campaign's keyword batch item by item, or explain why it cannot be read.
+ *
+ * Microsoft applies each action independently (campaign-service's `apply-keyword-actions`), so a
+ * 200 can carry APPLIED next to FAILED, and the Google rule — every keyword applied or none — would
+ * either report a failed keyword as paused or a paused one as failed. Upstream promises
+ * `results[i]` answers `actions[i]`; that promise is CHECKED here, entry by entry, and any break in
+ * it (another campaign's id, a short or long array, an entry naming a different keyword or action,
+ * an outcome that is not one of the three, or an `applied_count` that disagrees with the outcomes)
+ * makes the whole group unreadable. The caller then reports every keyword UNCONFIRMED: the request
+ * reached Microsoft, so nothing can be claimed either way.
+ *
+ * Exported so the per-item mapping can be pinned without a fan-out.
+ */
+export function microsoftItemResults(
+  group: KeywordActionGroup,
+  action: KeywordActionType,
+  applied: CampaignServiceKeywordActions,
+  expectedCampaignId: string
+): { results: OrderedKeywordResult[] } | { mismatch: string } {
+  if (applied?.campaign_id !== expectedCampaignId) {
+    return { mismatch: `campaign_id ${String(applied?.campaign_id)} != ${expectedCampaignId} requested` };
+  }
+  if (!Array.isArray(applied.results)) {
+    return { mismatch: 'upstream returned no results array to confirm against' };
+  }
+  const requested = toUpstreamActions(group.keywords, action);
+  if (applied.results.length !== requested.length) {
+    return { mismatch: `results length ${applied.results.length} != ${requested.length} requested` };
+  }
+  const results: OrderedKeywordResult[] = [];
+  let appliedCount = 0;
+  for (let i = 0; i < requested.length; i++) {
+    const r = applied.results[i];
+    const want = requested[i];
+    const source = group.keywords[i];
+    // Positional: results[i] must name the keyword and action actions[i] sent. An entry that names
+    // another keyword would hand that keyword's outcome to this one.
+    if (!r || r.ad_group_id !== want.ad_group_id || r.criterion_id !== want.criterion_id || r.action !== want.action) {
+      return { mismatch: `result ${i} does not answer action ${i}` };
+    }
+    const code = displayableErrorCode(r.error_code);
+    const suffix = code ? ` (${code})` : '';
+    if (r.outcome === 'APPLIED') {
+      appliedCount++;
+      results.push({ source, response: success(action, source.criterionId) });
+    } else if (r.outcome === 'FAILED') {
+      // DEFINITE: Microsoft did not apply it (or, for NOT_SENT, it was never sent), so retrying is safe.
+      results.push({ source, response: failure(action, source.criterionId, `Microsoft Advertising did not apply this keyword change${suffix}.`) });
+    } else if (r.outcome === 'UNCONFIRMED') {
+      results.push({ source, response: failure(action, source.criterionId, `${MICROSOFT_KEYWORD_ACTION_OUTCOME_UNCONFIRMED}${suffix}`) });
+    } else {
+      // An absent or unknown outcome is not a Microsoft answer, so it confirms nothing.
+      return { mismatch: `result ${i} carries no recognised outcome` };
+    }
+  }
+  if (applied.applied_count !== appliedCount) {
+    return { mismatch: `applied_count ${String(applied.applied_count)} != ${appliedCount} APPLIED outcomes` };
+  }
+  return { results };
+}
 
 /**
  * Whether an error means the request never got a reply, as opposed to being answered.
@@ -294,8 +408,8 @@ const UPSTREAM_UNCONFIRMED_MARKER = 'are unconfirmed';
  * BFF-raised transport failure is the one thing that says the next campaign is unreachable too,
  * and those are the errors that carry `originalError` or the TIMEOUT code.
  *
- * Exported for `CampaignServiceClient.updateCampaignBudget`, which has the same problem: a budget
- * write that nobody answered may still have reached the ad platform.
+ * Exported for `CampaignServiceClient.updateCampaignBudget` and `updateCampaignBid`, which have the
+ * same problem: a budget or bid write that nobody answered may still have reached the ad platform.
  */
 export function upstreamAnswered(error: unknown): boolean {
   const e = error as { originalError?: unknown; code?: unknown; errorBody?: unknown; statusCode?: unknown } | null | undefined;
@@ -345,7 +459,7 @@ export function upstreamAnswered(error: unknown): boolean {
  * Only a 4xx other than 408 is a boundary refusal that provably never dispatched. Transport, 408
  * and 5xx are UNCONFIRMED: the mutate may already have run, and a retried REMOVE is irreversible.
  */
-export function classifyMutationFailure(error: unknown): string {
+export function classifyMutationFailure(error: unknown, platform: KeywordActionPlatform = DEFAULT_KEYWORD_ACTION_PLATFORM): string {
   const e = error as { statusCode?: unknown; status?: unknown } | null | undefined;
   // Not a nested ternary: `.claude/rules` forbids them, and this reads better as a fallback chain.
   let status = 0;
@@ -358,12 +472,12 @@ export function classifyMutationFailure(error: unknown): string {
   // Upstream's own marker decides it whenever upstream answered: it knows whether its mutate went
   // out, and the status cannot carry that (its definite and unconfirmed arms share 503).
   if (upstreamAnswered(error)) {
-    return raw.toLowerCase().includes(UPSTREAM_UNCONFIRMED_MARKER) ? `${CAMPAIGN_OUTCOME_UNCONFIRMED} (${raw})` : raw;
+    return raw.toLowerCase().includes(UPSTREAM_UNCONFIRMED_MARKER) ? `${unconfirmedMessageFor(platform)} (${raw})` : raw;
   }
   // Nobody answered. A 4xx other than 408 still proves a boundary refusal that never dispatched;
   // anything else is a request that may already have run, so it fails CLOSED.
   const refusedAtBoundary = status >= 400 && status < 500 && status !== 408;
-  return refusedAtBoundary ? raw : `${CAMPAIGN_OUTCOME_UNCONFIRMED} (${raw})`;
+  return refusedAtBoundary ? raw : `${unconfirmedMessageFor(platform)} (${raw})`;
 }
 
 /**
@@ -419,6 +533,10 @@ export const KEYWORD_ACTION_DEADLINE_MS = 45_000;
  * fails, so every keyword is reported individually and a campaign-level failure marks ALL of
  * that campaign's keywords failed — the batch is all-or-nothing upstream, so claiming
  * otherwise would leave someone hunting for which half applied.
+ *
+ * That holds for GOOGLE ADS. A keyword naming `platform: 'microsoft-ads'` is resolved through the
+ * Microsoft campaign-ref and its campaign's 200 is read PER ITEM (`microsoftItemResults`), because
+ * Microsoft applies each action independently. A request naming no platform is Google, unchanged.
  *
  * Campaigns are resolved and applied SEQUENTIALLY rather than in parallel. These are
  * spend-affecting mutations on live campaigns, and a burst of concurrent mutates against one
@@ -479,7 +597,12 @@ export async function applyKeywordActionsViaCampaignService(
       // non-positive budget reach the call. The mutation below recomputes, because the resolve
       // has run by then and genuinely consumed time.
       const resolveBudgetMs = groupBudgetMs;
-      const resolution = await client.resolveGoogleAdsCampaign(req, projectSlug, group.platformCampaignId, resolveBudgetMs);
+      // The resolver follows the group's PLATFORM. Both answer the same contract, so every check
+      // below applies to either; a Google group calls exactly what it always called.
+      const resolution: CampaignServiceCampaignResolution =
+        group.platform === 'microsoft-ads'
+          ? await client.resolveMicrosoftAdsCampaign(req, projectSlug, group.platformCampaignId, resolveBudgetMs)
+          : await client.resolveGoogleAdsCampaign(req, projectSlug, group.platformCampaignId, resolveBudgetMs);
       // THE ECHO MUST MATCH WHAT WE ASKED FOR. `platform_campaign_id` is part of the resolution
       // contract and nothing checked it: a stale or misrouted 200 describing a DIFFERENT campaign
       // is internally consistent -- count agrees, array agrees, ids are well-formed -- so every
@@ -514,7 +637,9 @@ export async function applyKeywordActionsViaCampaignService(
         continue;
       }
       // Ambiguity is refused rather than resolved by taking the first match: upstream reports
-      // it precisely because picking one would mutate a campaign nobody named.
+      // it precisely because picking one would mutate a campaign nobody named. For Microsoft it is
+      // REACHABLE, not merely defensive: its ids are per ad account, so one project can hold two
+      // live rows for the same id.
       if (resolution.match_count > 1) {
         results.push(...failedResults(group, body.action, CAMPAIGN_AMBIGUOUS));
         continue;
@@ -544,6 +669,7 @@ export async function applyKeywordActionsViaCampaignService(
       // whole request: the other campaigns in the batch are unaffected and their actions
       // should still be attempted.
       logger.warning(req, 'keyword_actions', 'Campaign reference lookup failed', {
+        platform: group.platform,
         platformCampaignId: group.platformCampaignId,
         error: error instanceof Error ? error.message : 'unknown',
       });
@@ -594,6 +720,23 @@ export async function applyKeywordActionsViaCampaignService(
         toUpstreamActions(group.keywords, body.action),
         remainingMs
       );
+      // MICROSOFT IS PER ITEM. Its 200 can mix APPLIED and FAILED, so each keyword is reported by
+      // its own outcome, positionally, rather than by the Google all-or-nothing rule below.
+      if (group.platform === 'microsoft-ads') {
+        const itemized = microsoftItemResults(group, body.action, applied, ref.campaign_id);
+        if ('mismatch' in itemized) {
+          logger.warning(req, 'keyword_actions', 'Upstream confirmed a different set than was requested', {
+            platform: group.platform,
+            platformCampaignId: group.platformCampaignId,
+            campaignId: ref.campaign_id,
+            mismatch: itemized.mismatch,
+          });
+          results.push(...failedResults(group, body.action, MICROSOFT_KEYWORD_ACTION_OUTCOME_UNCONFIRMED));
+          continue;
+        }
+        results.push(...itemized.results);
+        continue;
+      }
       // The 2xx is CHECKED, not assumed. Upstream's batch is all-or-nothing, so applied_count
       // should equal what was sent — but upstream derives it from the results it actually
       // returns (`AppliedCount: len(results)`) rather than asserting it against the request, so a
@@ -622,13 +765,14 @@ export async function applyKeywordActionsViaCampaignService(
       // Reporting that as definite invites a retry of a mutate that may already have run, and a
       // retried REMOVE is irreversible. Only a 4xx other than 408 is a boundary refusal that
       // provably never dispatched.
-      const message = classifyMutationFailure(error);
+      const message = classifyMutationFailure(error, group.platform);
       // The stop flag is set HERE too, not only in the resolver catch. A transport failure means
       // the service is unreachable regardless of which call discovered it, and resolving first
       // does not make the next mutate any likelier to land — so leaving this arm out let a mutate
       // that lost its connection fall straight back into the fan-out this flag exists to stop.
       transportFailed = isTransportFailure(error);
       logger.warning(req, 'keyword_actions', 'Keyword action batch failed', {
+        platform: group.platform,
         platformCampaignId: group.platformCampaignId,
         campaignId: ref.campaign_id,
         error: message,

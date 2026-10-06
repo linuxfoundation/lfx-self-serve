@@ -420,9 +420,20 @@ async function openDetailsSection(page: Page): Promise<void> {
 }
 
 /**
+ * Makes an edit unrelated to the organizer, so Save enables.
+ * @description Save stays disabled until the update payload differs from what loaded. The tests that
+ * assert an *omitted* `owner` key leave the picker matching the saved baseline, so without a change
+ * elsewhere there would be nothing to save. The title is outside the owner logic under test.
+ */
+async function makeUnrelatedEdit(page: Page): Promise<void> {
+  await page.getByTestId('composer-title-input').locator('input').pressSequentially(' (edited)');
+}
+
+/**
  * Saves from wherever the composer is — "Save changes" fires the PUT.
  * @description Edit mode has no Next control and no last-section gate: the footer offers Cancel and
- * Save, and Save is enabled on whole-form validity rather than on having visited every section.
+ * Save, and Save is enabled on whole-form validity plus an actual change, rather than on having visited
+ * every section.
  */
 async function saveFromComposer(page: Page): Promise<void> {
   // The disabled state lives on the wrapper's inner native button, not the lfx-button host the
@@ -455,6 +466,7 @@ test.describe('Meeting edit composer — owner picker (GH-1673)', () => {
     // Untouched picker → no saved/current mismatch → the revert row stays hidden.
     await expect(page.getByTestId('composer-organizer-saved')).toHaveCount(0);
 
+    await makeUnrelatedEdit(page);
     await saveFromComposer(page);
 
     await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
@@ -485,6 +497,7 @@ test.describe('Meeting edit composer — owner picker (GH-1673)', () => {
     await expect(input).toHaveValue(`${OWNER.name} (${OWNER.email})`);
     await expect(page.getByTestId('composer-organizer-saved')).toHaveCount(0);
 
+    await makeUnrelatedEdit(page);
     await saveFromComposer(page);
 
     await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();
@@ -532,6 +545,7 @@ test.describe('Meeting edit composer — owner picker (GH-1673)', () => {
     await page.getByTestId('composer-organizer-search').locator('.p-autocomplete-clear-icon').click();
     await expect(input).toHaveValue('');
 
+    await makeUnrelatedEdit(page);
     await saveFromComposer(page);
 
     await expect.poll(() => captured.put, { timeout: ELEMENT_TIMEOUT }).not.toBeNull();

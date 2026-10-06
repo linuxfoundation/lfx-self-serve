@@ -4,7 +4,7 @@ description: How to view and filter your crowdfunding initiatives by status in L
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, view, status, list]
-last_updated: 2026-06-29
+last_updated: 2026-10-06
 intercom_collection: Crowdfunding
 ---
 
@@ -30,10 +30,16 @@ Below the stats bar, your initiatives are displayed as cards. Use the status fil
 
 Each filter pill shows the count of initiatives in that group. The list supports pagination with a load-more button.
 
+## Create an initiative
+
+Select **New Initiative** in the page header to open the creation flow in LFX Crowdfunding in a new tab. Initiative creation and submission happen in that separate product, not in LFX Self Serve.
+
+When you have no initiatives, the empty list also offers **New Initiative**. If you already have initiatives but the selected status filter has no matches, the list shows that filter's empty message without an in-panel creation action. You can switch filters or use **New Initiative** in the header.
+
 ## Before you begin
 
 - Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
-- You must have created at least one crowdfunding initiative. If the My Initiatives section is empty, you have not created any initiatives yet — new initiatives are submitted at [crowdfunding.linuxfoundation.org](https://crowdfunding.linuxfoundation.org).
+- You do not need an existing initiative to use this page. To start one, use **New Initiative** to open the separate [LFX Crowdfunding product](https://crowdfunding.linuxfoundation.org) in a new tab.
 
 ## Steps
 

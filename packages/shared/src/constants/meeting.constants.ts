@@ -368,6 +368,14 @@ export const MEETING_COMPOSER_SECTIONS = [
 export const MEETING_QUICK_CREATE_SECTIONS = ['details-access', 'date-schedule', 'guests', 'agenda-resources'] as const;
 
 /**
+ * Sections the composer shows when editing a single occurrence of a recurring meeting.
+ * @description Upstream's occurrence update takes only a title, start time, duration and agenda, so the
+ * sections holding nothing but series-level settings — platform and features, guests — are left out.
+ * The sections kept here hide their own series-level fields (access, recurrence, resources).
+ */
+export const MEETING_COMPOSER_OCCURRENCE_SECTIONS = ['details-access', 'date-schedule', 'agenda-resources'] as const;
+
+/**
  * Feature rows the composer preview lists, in display order.
  * @description Only the labels are the preview's own — shorter wording than the section's toggle
  * titles. Controls and icons come from {@link MEETING_FEATURE_BY_KEY}, so renaming a feature key

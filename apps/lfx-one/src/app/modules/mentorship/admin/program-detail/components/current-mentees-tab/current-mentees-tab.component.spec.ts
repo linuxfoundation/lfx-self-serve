@@ -13,7 +13,8 @@ import {
   MentorshipAdminMenteesResponse,
   MentorshipAdminTermOption,
   MentorshipApplicantTask,
-  MentorshipNoteRequest,
+  MentorshipMentorTaskCreateRequest,
+  MentorshipMentorTaskCreateResponse,
   MentorshipProgramApplicant,
   MentorshipTaskDialogAssignee,
   MentorshipTaskFormValue,
@@ -24,6 +25,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MenteeNoteDialogComponent } from '../../../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 import { CurrentMenteesTabComponent } from './current-mentees-tab.component';
 
@@ -87,7 +89,9 @@ describe('CurrentMenteesTabComponent', () => {
   let updateApplicationStatus: ReturnType<typeof vi.fn<(applicationId: string, body: MentorshipAdminApplicationStatusUpdate) => Observable<void>>>;
   let withdrawApplication: ReturnType<typeof vi.fn<(applicationId: string) => Observable<void>>>;
   let declinePendingForTerm: ReturnType<typeof vi.fn<(programId: string, termId: string) => Observable<MentorshipAdminDeclinePendingResponse>>>;
-  /** What the stubbed dialog service closes with: an attendance type for Accept, a term for Decline by Term. */
+  let updateApplicationNote: ReturnType<typeof vi.fn<(applicationId: string, note: string) => Observable<void>>>;
+  let createTasks: ReturnType<typeof vi.fn<(request: MentorshipMentorTaskCreateRequest) => Observable<MentorshipMentorTaskCreateResponse>>>;
+  /** What the stubbed dialog service closes with: an attendance type for Accept, a term for Decline by Term, a note. */
   let dialogResult: unknown;
   let dialogOpen: ReturnType<typeof vi.fn>;
 
@@ -104,6 +108,8 @@ describe('CurrentMenteesTabComponent', () => {
     updateApplicationStatus = vi.fn().mockReturnValue(of(undefined));
     withdrawApplication = vi.fn().mockReturnValue(of(undefined));
     declinePendingForTerm = vi.fn().mockReturnValue(of({ declinedCount: 4 }));
+    updateApplicationNote = vi.fn().mockReturnValue(of(undefined));
+    createTasks = vi.fn().mockReturnValue(of({ created: ['app_4'], failed: [] }));
     dialogResult = undefined;
     dialogOpen = vi.fn().mockImplementation(() => ({ onClose: of(dialogResult) }));
 
@@ -116,7 +122,15 @@ describe('CurrentMenteesTabComponent', () => {
         MessageService,
         {
           provide: MentorshipAdminService,
-          useValue: { getProgramMentees, getApplicationTasks, updateApplicationStatus, withdrawApplication, declinePendingForTerm },
+          useValue: {
+            getProgramMentees,
+            getApplicationTasks,
+            updateApplicationStatus,
+            withdrawApplication,
+            declinePendingForTerm,
+            updateApplicationNote,
+            createTasks,
+          },
         },
         { provide: DialogService, useValue: { open: dialogOpen } },
         // Stub the dialog service so the spec never touches PrimeNG's DialogService,
@@ -321,33 +335,169 @@ describe('CurrentMenteesTabComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_5"]')).not.toBeNull();
   });
 
-  it('asks the parent to open the note rather than owning the dialog itself', () => {
-    const requests: MentorshipNoteRequest[] = [];
-    fixture.componentInstance.noteRequested.subscribe((request) => requests.push(request));
+  describe('reviewer note', () => {
+    const noteText = (id: string): string | undefined => element().querySelector(`[data-testid="mentorship-current-mentee-note-${id}"]`)?.textContent?.trim();
+    const clickNote = (id: string): void => {
+      element().querySelector<HTMLButtonElement>(`[data-testid="mentorship-current-mentee-note-${id}"]`)?.click();
+      settle();
+    };
+    const showNote = (note: string): void => {
+      getProgramMentees.mockReturnValue(of({ data: [mentee({ note })], total: 1 }));
+      fixture.componentInstance['onRetry']();
+      settle();
+    };
 
-    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-current-mentee-note-app_2"]')?.click();
+    it('opens the note dialog on the note the row arrived with', () => {
+      showNote('from the server');
 
-    expect(requests).toEqual([{ personId: 'app_2', personName: 'Diego Souza', note: undefined }]);
-  });
+      clickNote('app_1');
 
-  it('hands the parent the note the row arrived with', () => {
-    getProgramMentees.mockReturnValue(of({ data: [mentee({ id: 'app_n', name: 'Nia Okoye', note: 'from the server' })], total: 1 }));
-    fixture.componentInstance['onRetry']();
-    settle();
-    const requests: MentorshipNoteRequest[] = [];
-    fixture.componentInstance.noteRequested.subscribe((request) => requests.push(request));
+      expect(dialogOpen).toHaveBeenCalledWith(
+        MenteeNoteDialogComponent,
+        expect.objectContaining({ data: { personName: 'Ifeoma Adeyemi', note: 'from the server' } })
+      );
+    });
 
-    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-current-mentee-note-app_n"]')?.click();
+    it('sends the trimmed note for the application and writes it into the row', () => {
+      dialogResult = '  needs a second look  ';
 
-    expect(requests).toEqual([{ personId: 'app_n', personName: 'Nia Okoye', note: 'from the server' }]);
-  });
+      clickNote('app_2');
 
-  it('renders the parent note draft in place of the note the row arrived with', () => {
-    fixture.componentRef.setInput('noteDrafts', { app_2: 'a saved note' });
-    settle();
+      expect(updateApplicationNote).toHaveBeenCalledWith('app_2', 'needs a second look');
+      expect(noteText('app_2')).toBe('needs a second look');
+      expect(noteText('app_1')).toBe('Add note');
+    });
 
-    expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_2"]')?.textContent?.trim()).toBe('a saved note');
-    expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_1"]')?.textContent?.trim()).toBe('Add note');
+    it('opens the dialog on the saved note the next time', () => {
+      dialogResult = 'a saved note';
+      clickNote('app_1');
+
+      clickNote('app_1');
+
+      expect(dialogOpen).toHaveBeenLastCalledWith(
+        MenteeNoteDialogComponent,
+        expect.objectContaining({ data: { personName: 'Ifeoma Adeyemi', note: 'a saved note' } })
+      );
+    });
+
+    it('sends an empty note to clear the one the row arrived with', () => {
+      showNote('from the server');
+      dialogResult = '';
+
+      clickNote('app_1');
+
+      expect(updateApplicationNote).toHaveBeenCalledWith('app_1', '');
+      expect(noteText('app_1')).toBe('Add note');
+    });
+
+    it('does not send a note that did not change', () => {
+      showNote('from the server');
+      dialogResult = ' from the server ';
+
+      clickNote('app_1');
+
+      expect(updateApplicationNote).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing when the dialog is dismissed', () => {
+      clickNote('app_1');
+
+      expect(updateApplicationNote).not.toHaveBeenCalled();
+      expect(noteText('app_1')).toBe('Add note');
+    });
+
+    it('keeps the note the row had when the save fails', () => {
+      showNote('from the server');
+      dialogResult = 'a new note';
+      updateApplicationNote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+
+      clickNote('app_1');
+
+      expect(noteText('app_1')).toBe('from the server');
+    });
+
+    it('keeps the dialog shut while that row has a save in flight', () => {
+      const pending = new Subject<void>();
+      updateApplicationNote.mockReturnValue(pending);
+      dialogResult = 'first';
+
+      clickNote('app_1');
+      clickNote('app_1');
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+
+      pending.next();
+      pending.complete();
+      settle();
+      clickNote('app_1');
+
+      expect(noteText('app_1')).toBe('first');
+      expect(dialogOpen).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the dialog shut and lands the save in the tab rebuilt by a tab switch', () => {
+      const pending = new Subject<void>();
+      updateApplicationNote.mockReturnValue(pending);
+      dialogResult = 'saved across the switch';
+      clickNote('app_1');
+
+      // The parent's `@switch` destroys the tab on a switch and builds a new one on the way back.
+      fixture.destroy();
+      fixture = TestBed.createComponent(CurrentMenteesTabComponent);
+      fixture.componentRef.setInput('programId', 'prog_1');
+      settle();
+      clickNote('app_1');
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(updateApplicationNote).toHaveBeenCalledTimes(1);
+
+      pending.next();
+      pending.complete();
+      settle();
+
+      expect(noteText('app_1')).toBe('saved across the switch');
+    });
+
+    it('keeps a save over the older answer of a read in flight when it landed', () => {
+      const pending = new Subject<void>();
+      updateApplicationNote.mockReturnValue(pending);
+      dialogResult = 'saved mid-read';
+      clickNote('app_1');
+
+      // Back on the tab while the save is pending: the rebuilt tab's read answers only after the save lands.
+      fixture.destroy();
+      const staleRead = new Subject<MentorshipAdminMenteesResponse>();
+      getProgramMentees.mockReturnValue(staleRead);
+      fixture = TestBed.createComponent(CurrentMenteesTabComponent);
+      fixture.componentRef.setInput('programId', 'prog_1');
+      settle();
+
+      pending.next();
+      pending.complete();
+      settle();
+      staleRead.next({ data: [mentee({ note: 'before the save' })], total: 1 });
+      staleRead.complete();
+      settle();
+
+      expect(noteText('app_1')).toBe('saved mid-read');
+    });
+
+    it('trusts a read that started after the save', () => {
+      dialogResult = 'saved earlier';
+      clickNote('app_1');
+
+      showNote('changed since');
+
+      expect(noteText('app_1')).toBe('changed since');
+    });
+
+    it('survives the dialog service declining to open a second dialog', () => {
+      // PrimeNG returns null when a dialog of the same component is still registered.
+      dialogOpen.mockReturnValue(null);
+
+      expect(() => clickNote('app_1')).not.toThrow();
+      expect(updateApplicationNote).not.toHaveBeenCalled();
+    });
   });
 
   describe('View Tasks', () => {
@@ -475,23 +625,167 @@ describe('CurrentMenteesTabComponent', () => {
     expect(addSpy).not.toHaveBeenCalled();
   });
 
-  it('routes the created task to the coming-soon toast until the write endpoint lands', () => {
-    openCreate.mockReturnValue(
-      of({
-        taskId: undefined,
+  describe('Create task', () => {
+    const formValue = (overrides: Partial<MentorshipTaskFormValue> = {}): MentorshipTaskFormValue => ({
+      taskId: undefined,
+      name: 'Submit ingestion benchmark report',
+      description: 'Upload the benchmark output.',
+      requiresFileSubmission: false,
+      assignedMenteeIds: ['app_4'],
+      ...overrides,
+    });
+    const createFor = (id: string): void => {
+      const row = rowFor(id)!;
+      fixture.componentInstance['onRowAction'](row, row.actions.find((action) => action.value === 'create-task')!);
+      settle();
+    };
+
+    it('creates nothing when the dialog is dismissed', () => {
+      createFor('app_4');
+
+      expect(createTasks).not.toHaveBeenCalled();
+    });
+
+    it('sends one application with the form values, then reloads the page and tells the parent', () => {
+      openCreate.mockReturnValue(of(formValue({ dueOn: '2026-09-30', requiresFileSubmission: true })));
+      const emitted = vi.fn();
+      fixture.componentRef.setInput('countsRefresh', emitted);
+      const reads = getProgramMentees.mock.calls.length;
+
+      createFor('app_4');
+
+      expect(createTasks).toHaveBeenCalledTimes(1);
+      expect(createTasks).toHaveBeenCalledWith({
+        applicationIds: ['app_4'],
         name: 'Submit ingestion benchmark report',
         description: 'Upload the benchmark output.',
-        requiresFileSubmission: false,
-        assignedMenteeIds: ['app_4'],
-      } satisfies MentorshipTaskFormValue)
-    );
-    const addSpy = vi.spyOn(TestBed.inject(MessageService), 'add');
-    const row = rowFor('app_4')!;
+        dueDate: '2026-09-30',
+        requiresFileSubmission: true,
+      });
+      expect(emitted).toHaveBeenCalledTimes(1);
+      expect(getProgramMentees.mock.calls.length).toBe(reads + 1);
+    });
 
-    fixture.componentInstance['onRowAction'](row, row.actions[0]);
+    it('reloads the page and the counts after a failure, which may still have created the task', () => {
+      clickViewTasks('app_4');
+      openCreate.mockReturnValue(of(formValue()));
+      createTasks.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+      const emitted = vi.fn();
+      fixture.componentRef.setInput('countsRefresh', emitted);
+      const reads = getProgramMentees.mock.calls.length;
 
-    expect(addSpy).toHaveBeenCalledTimes(1);
-    expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Create task "Submit ingestion benchmark report" for Alex Rivera');
+      createFor('app_4');
+
+      expect(emitted).toHaveBeenCalledTimes(1);
+      expect(getProgramMentees.mock.calls.length).toBe(reads + 1);
+      expect(getApplicationTasks).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the form shut while a decision is in flight', () => {
+      withdrawApplication.mockReturnValue(new Subject<void>());
+      const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+      const pendingRow = rowFor('app_1')!;
+      fixture.componentInstance['onRowAction'](pendingRow, pendingRow.actions.find((action) => action.value === 'withdraw')!);
+      confirm.mock.calls[0][0].accept?.();
+      const toast = vi.spyOn(TestBed.inject(MessageService), 'add');
+      openCreate.mockReturnValue(of(formValue()));
+
+      createFor('app_4');
+
+      expect(withdrawApplication).toHaveBeenCalledTimes(1);
+      expect(openCreate).not.toHaveBeenCalled();
+      expect(createTasks).not.toHaveBeenCalled();
+      expect((toast.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Please wait');
+    });
+
+    it('reads no tasks after creating one for a collapsed row', () => {
+      openCreate.mockReturnValue(of(formValue()));
+
+      createFor('app_4');
+
+      expect(getApplicationTasks).not.toHaveBeenCalled();
+    });
+
+    it('keeps an expanded row expanded and reads its tasks once after the reload', () => {
+      clickViewTasks('app_4');
+      expect(getApplicationTasks).toHaveBeenCalledTimes(1);
+      openCreate.mockReturnValue(of(formValue()));
+
+      createFor('app_4');
+
+      expect(getApplicationTasks).toHaveBeenCalledTimes(2);
+      expect(element().querySelector('[data-testid="mentorship-current-mentee-tasks-expanded-app_4"]')).not.toBeNull();
+    });
+
+    it('reads the tasks only once when the row is collapsed and expanded again during the reload', () => {
+      clickViewTasks('app_4');
+      openCreate.mockReturnValue(of(formValue()));
+      const reload = new Subject<ReturnType<typeof firstPage>>();
+      getProgramMentees.mockReturnValue(reload);
+
+      createFor('app_4');
+      fixture.componentInstance['toggleTasksExpanded']('app_4');
+      fixture.componentInstance['toggleTasksExpanded']('app_4');
+      reload.next(firstPage());
+      settle();
+
+      expect(getApplicationTasks.mock.calls.map(([id]) => id)).toEqual(['app_4', 'app_4']);
+    });
+
+    it('collapses the other rows and drops their cached tasks', () => {
+      clickViewTasks('app_1');
+      clickViewTasks('app_4');
+      openCreate.mockReturnValue(of(formValue()));
+
+      createFor('app_4');
+
+      expect(getApplicationTasks.mock.calls.map(([id]) => id)).toEqual(['app_1', 'app_4', 'app_4']);
+      expect(element().querySelector('[data-testid="mentorship-current-mentee-tasks-expanded-app_1"]')).toBeNull();
+    });
+
+    it('asks the admin to wait while another write is in flight, and writes nothing', () => {
+      const pending = new Subject<{ created: string[]; failed: string[] }>();
+      createTasks.mockReturnValue(pending);
+      openCreate.mockReturnValue(of(formValue()));
+      const toast = vi.spyOn(TestBed.inject(MessageService), 'add');
+
+      createFor('app_4');
+      createFor('app_4');
+
+      expect(createTasks).toHaveBeenCalledTimes(1);
+      expect((toast.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Please wait');
+    });
+
+    it('keeps the form shut in the tab rebuilt by a tab switch while the create is in flight', () => {
+      const pending = new Subject<{ created: string[]; failed: string[] }>();
+      createTasks.mockReturnValue(pending);
+      openCreate.mockReturnValue(of(formValue()));
+      createFor('app_4');
+
+      // The parent's `@switch` destroys the tab on a switch and builds a new one on the way back.
+      fixture.destroy();
+      fixture = TestBed.createComponent(CurrentMenteesTabComponent);
+      fixture.componentRef.setInput('programId', 'prog_1');
+      settle();
+      const toast = vi.spyOn(TestBed.inject(MessageService), 'add');
+      createFor('app_4');
+
+      expect(openCreate).toHaveBeenCalledTimes(1);
+      expect(createTasks).toHaveBeenCalledTimes(1);
+      expect((toast.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Please wait');
+
+      pending.next({ created: ['app_4'], failed: [] });
+      pending.complete();
+      createTasks.mockReturnValue(of({ created: ['app_4'], failed: [] }));
+      createFor('app_4');
+
+      expect(openCreate).toHaveBeenCalledTimes(2);
+      expect(createTasks).toHaveBeenCalledTimes(2);
+    });
+
+    it('offers no Create task on a pending row', () => {
+      expect(labelsFor('app_1')).not.toContain('Create task');
+    });
   });
 
   describe('application decisions', () => {
