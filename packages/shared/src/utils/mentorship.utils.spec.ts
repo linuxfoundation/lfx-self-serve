@@ -83,6 +83,8 @@ import {
   mentorshipMentorReviewTasks,
   mentorshipMentorSubmittedTaskCount,
   mentorshipApplicantHasTasks,
+  buildMentorshipAdminTaskUpdate,
+  mentorshipTaskSubmittedCount,
   mentorshipApplicantTaskRows,
   getMentorshipEnrollStepErrors,
   getMentorshipMenteeIntroductionError,
@@ -120,6 +122,7 @@ import {
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
   toMentorshipDateOnly,
+  toMentorshipUtcEndOfDayInstant,
   toMentorshipUtcInstant,
   buildMentorshipGraduateTaskWarning,
 } from './mentorship.utils';
@@ -825,6 +828,55 @@ describe('program detail helpers', () => {
     expect(mentorshipApplicantTaskRows(tasks)[1]).toMatchObject({
       statusLabel: 'Pending',
       statusBadgeClass: 'bg-gray-100 text-gray-600',
+    });
+  });
+
+  describe('buildMentorshipAdminTaskUpdate', () => {
+    const task = {
+      id: 'tsk_1',
+      name: 'Read the guide',
+      description: 'Start with chapter one',
+      status: 'pending' as const,
+      dueOn: '2026-09-30',
+      requiresFileSubmission: false,
+      prerequisite: false,
+      createdOn: '2026-05-14',
+      updatedOn: '2026-06-20',
+    };
+    const unchanged = {
+      taskId: 'tsk_1',
+      name: 'Read the guide',
+      description: 'Start with chapter one',
+      dueOn: '2026-09-30',
+      requiresFileSubmission: false,
+      assignedMenteeIds: [],
+      status: 'pending' as const,
+    };
+
+    it('counts a submitted or completed task as one submitted task', () => {
+      expect(['pending', 'in-progress', 'submitted', 'completed'].map((status) => mentorshipTaskSubmittedCount(status as 'pending'))).toEqual([0, 0, 1, 1]);
+    });
+
+    it('is empty when nothing changed', () => {
+      expect(buildMentorshipAdminTaskUpdate(task, unchanged)).toEqual({});
+    });
+
+    it('carries only the fields that changed', () => {
+      expect(buildMentorshipAdminTaskUpdate(task, { ...unchanged, name: 'Read the new guide', status: 'completed' })).toEqual({
+        name: 'Read the new guide',
+        status: 'completed',
+      });
+    });
+
+    it('sends an empty due date when it was cleared, and the flag when it was switched', () => {
+      expect(buildMentorshipAdminTaskUpdate(task, { ...unchanged, dueOn: undefined, requiresFileSubmission: true })).toEqual({
+        dueDate: '',
+        requiresFileSubmission: true,
+      });
+    });
+
+    it('treats a task with no due date and a form with none as unchanged', () => {
+      expect(buildMentorshipAdminTaskUpdate({ ...task, dueOn: undefined }, { ...unchanged, dueOn: undefined })).toEqual({});
     });
   });
 
@@ -1709,6 +1761,16 @@ describe('toMentorshipUtcInstant', () => {
 
   it('leaves a full timestamp unchanged', () => {
     expect(toMentorshipUtcInstant('2026-07-15T10:30:00Z')).toBe('2026-07-15T10:30:00Z');
+  });
+});
+
+describe('toMentorshipUtcEndOfDayInstant', () => {
+  it('turns a date-only value into the last millisecond of its UTC day', () => {
+    expect(toMentorshipUtcEndOfDayInstant('2026-07-15')).toBe('2026-07-15T23:59:59.999Z');
+  });
+
+  it('leaves a full timestamp unchanged', () => {
+    expect(toMentorshipUtcEndOfDayInstant('2026-07-15T10:30:00Z')).toBe('2026-07-15T10:30:00Z');
   });
 });
 

@@ -35,10 +35,10 @@
             <lfx-mentorship-past-mentees-tab [programId]="programPage.program.id" [terms]="terms()" />
           }
           @case ('mentors') {
-            <lfx-mentorship-mentors-tab [programId]="programPage.program.id" />
+            <lfx-mentorship-mentors-tab [programId]="programPage.program.id" [countsRefresh]="countsRefresh" />
           }
           @case ('terms') {
-            <lfx-mentorship-terms-tab [programId]="programPage.program.id" />
+            <lfx-mentorship-terms-tab [programId]="programPage.program.id" [countsRefresh]="countsRefresh" />
           }
         }
       </div>

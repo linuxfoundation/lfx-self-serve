@@ -28,6 +28,7 @@ import { gatewazeEmbedEnabledGuard } from './shared/guards/gatewaze-embed-enable
 import { flatDocumentsRedirect } from './shared/guards/flat-documents-redirect.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
+import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
@@ -606,6 +607,7 @@ export const routes: Routes = [
       {
         path: 'meetups',
         title: 'My Meetups',
+        canActivate: [meetupsLensGuard],
         loadChildren: () => import('./modules/meetups/meetups.routes').then((m) => m.MEETUPS_ROUTES),
       },
       {

@@ -47,6 +47,7 @@ import {
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
   MENTION_SENTIMENT_CONFIG,
+  MENTORSHIP_ADMIN_MENTOR_ACTION_APPEARANCE,
   MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES,
@@ -92,6 +93,8 @@ export default {
     // The class strings are assembled in @lfx-one/shared, which Tailwind never scans, so these
     // spreads are what guarantees they survive purging regardless of usage elsewhere.
     ...Object.values(MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    // Mentors tab row actions: icon tints (incl. hover:) picked at runtime from MENTORSHIP_ADMIN_MENTOR_ACTION_APPEARANCE.
+    ...Object.values(MENTORSHIP_ADMIN_MENTOR_ACTION_APPEARANCE).flatMap(({ styleClass }) => styleClass.split(' ')),
     ...Object.values(MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),

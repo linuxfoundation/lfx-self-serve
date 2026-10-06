@@ -11,7 +11,7 @@
       iconPos="left"
       severity="primary"
       size="small"
-      [disabled]="!canAddTerm()"
+      [disabled]="!canAddTerm() || writeInFlight()"
       [tooltip]="atMaxOpenTerms() ? maxTermsMessage : undefined"
       (onClick)="onCreateTerm()"
       data-testid="mentorship-terms-create" />

@@ -3,8 +3,15 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MAX_SPONSORS, MAX_SPONSOR_NAME_LENGTH } from '../constants/campaign.constants';
-import { normalizeSponsors } from './campaign.utils';
+import {
+  CAMPAIGN_ACTION_RULE_LEVERS,
+  CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS,
+  MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
+  MAX_SPONSORS,
+  MAX_SPONSOR_NAME_LENGTH,
+} from '../constants/campaign.constants';
+import type { BriefMetricsActionRule, CampaignOptimizeLever } from '../interfaces/campaign.interface';
+import { campaignActionItemLever, campaignActionRuleLever, keywordActionKey, normalizeSponsors, parseNegativeKeywordInput } from './campaign.utils';
 
 /**
  * Sponsor entries arrive from a SCRAPED page: attacker-influenced names and logo urls that reach
@@ -100,5 +107,138 @@ describe('normalizeSponsors', () => {
 
     expect(normalizeSponsors(list)).toEqual([]);
     expect(normalizeSponsors(list, 2)).toEqual([{ name: 'Good', logoUrl: logo(1) }]);
+  });
+});
+
+/**
+ * Monitor finding → Optimize lever. The mapping decides which control an operator is handed for a
+ * finding about live spend, so every rule is pinned explicitly rather than sampled.
+ */
+describe('campaignActionRuleLever', () => {
+  // Every token campaign-service's brief rule engine emits (internal/service/rules/actions.go).
+  // Listed here independently of the map, so a rule dropped from the map fails this spec.
+  const expected: Record<BriefMetricsActionRule, CampaignOptimizeLever> = {
+    zero_delivery: 'pause_resume',
+    underspending: 'budget',
+    budget_constrained: 'budget',
+    low_ctr: 'none',
+    no_conversions: 'none',
+  };
+
+  it('covers exactly the rule engine tokens, no more and no fewer', () => {
+    expect(Object.keys(CAMPAIGN_ACTION_RULE_LEVERS).sort()).toEqual(Object.keys(expected).sort());
+  });
+
+  it.each(Object.entries(expected))('maps %s to %s', (rule, lever) => {
+    expect(campaignActionRuleLever(rule)).toBe(lever);
+  });
+
+  it.each([
+    ['an unknown token', 'paused_should_run'],
+    ['an empty string', ''],
+    ['an inherited key', 'toString'],
+    ['a prototype key', '__proto__'],
+    ['a different case', 'UNDERSPENDING'],
+    ['a number', 7],
+    ['null', null],
+    ['undefined', undefined],
+  ])('falls back to none for %s', (_label, rule) => {
+    expect(campaignActionRuleLever(rule)).toBe('none');
+  });
+});
+
+describe('campaignActionItemLever', () => {
+  const allPlatforms = ['google-ads', 'microsoft-ads', 'linkedin-ads', 'meta-ads', 'reddit-ads', 'twitter-ads'];
+
+  it.each(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'])('offers the budget lever on %s', (platform) => {
+    expect(campaignActionItemLever('underspending', platform)).toBe('budget');
+    expect(campaignActionItemLever('budget_constrained', platform)).toBe('budget');
+  });
+
+  // X has no budget write upstream; offering the lever would open an editor whose every save 400s.
+  it('offers no budget lever on X', () => {
+    expect(campaignActionItemLever('underspending', 'twitter-ads')).toBe('none');
+    expect(campaignActionItemLever('budget_constrained', 'twitter-ads')).toBe('none');
+  });
+
+  // Gated on the SAME set the row toggle uses, so the lever can never be offered where the toggle
+  // itself would be unavailable for the platform.
+  it.each(allPlatforms)('offers pause/resume on %s exactly when the row toggle supports it', (platform) => {
+    const expected = CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS.pause_resume.has(platform) ? 'pause_resume' : 'none';
+    expect(campaignActionItemLever('zero_delivery', platform)).toBe(expected);
+  });
+
+  // Microsoft keyword actions run through campaign-service since #3308; every other platform has none.
+  it.each(allPlatforms)('restricts keyword actions to Google Ads and Microsoft Advertising (%s)', (platform) => {
+    expect(CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS.keywords.has(platform)).toBe(platform === 'google-ads' || platform === 'microsoft-ads');
+  });
+
+  // No rule is mapped to the bid or negative-keyword levers: the rule engine's advice for none of
+  // them is a bid change or a negative keyword, so every rule's lever is one of the three below.
+  it('maps no rule to a lever outside budget, pause/resume and none', () => {
+    expect(new Set(Object.values(CAMPAIGN_ACTION_RULE_LEVERS))).toEqual(new Set(['budget', 'pause_resume', 'none']));
+  });
+
+  it.each(allPlatforms)('offers nothing for a rule without a lever on %s', (platform) => {
+    expect(campaignActionItemLever('low_ctr', platform)).toBe('none');
+    expect(campaignActionItemLever('no_conversions', platform)).toBe('none');
+  });
+
+  it.each([
+    ['an unknown platform', 'hubspot'],
+    ['an empty platform', ''],
+    ['a missing platform', undefined],
+    ['a non-string platform', 42],
+  ])('offers nothing for %s', (_label, platform) => {
+    expect(campaignActionItemLever('underspending', platform)).toBe('none');
+    expect(campaignActionItemLever('zero_delivery', platform)).toBe('none');
+  });
+
+  it('offers nothing for an unknown rule on a supported platform', () => {
+    expect(campaignActionItemLever('some_future_rule', 'google-ads')).toBe('none');
+  });
+});
+
+describe('parseNegativeKeywordInput', () => {
+  it('keeps one keyword per line, in order, ignoring blank lines and normalising whitespace', () => {
+    expect(parseNegativeKeywordInput('free download\n\n  cheap   tickets \r\njobs')).toEqual({
+      keywords: ['free download', 'cheap tickets', 'jobs'],
+      problems: [],
+    });
+  });
+
+  it('accepts the allowed punctuation and non-Latin letters', () => {
+    expect(parseNegativeKeywordInput("rock & roll\nO'Brien\nk8s-tutorial\nv1.2\ncafé\n東京").problems).toEqual([]);
+  });
+
+  it('reports each line it cannot send, by its 1-based line number, and does not send it', () => {
+    const parsed = parseNegativeKeywordInput('good\nbad!\n\nfoo--bar\nGood');
+    expect(parsed.keywords).toEqual(['good']);
+    expect(parsed.problems.map((p) => [p.line, p.text])).toEqual([
+      [2, 'bad!'],
+      [4, 'foo--bar'],
+      [5, 'Good'],
+    ]);
+    expect(parsed.problems[0].reason).toContain('letters, digits, spaces');
+    expect(parsed.problems[1].reason).toContain('punctuation');
+    expect(parsed.problems[2].reason).toContain('more than once');
+  });
+
+  // Characters, not UTF-16 units, as upstream counts them.
+  it('counts length in characters', () => {
+    const astral = '𝔸'.repeat(MAX_NEGATIVE_KEYWORD_TEXT_LENGTH);
+    expect(parseNegativeKeywordInput(astral).problems).toEqual([]);
+    expect(parseNegativeKeywordInput('a'.repeat(MAX_NEGATIVE_KEYWORD_TEXT_LENGTH + 1)).problems[0].reason).toContain(`${MAX_NEGATIVE_KEYWORD_TEXT_LENGTH}`);
+  });
+
+  it.each([null, undefined, 42])('treats a non-string (%s) as empty', (value) => {
+    expect(parseNegativeKeywordInput(value)).toEqual({ keywords: [], problems: [] });
+  });
+});
+
+describe('keywordActionKey', () => {
+  it('keeps the Google key unchanged and qualifies the Microsoft one', () => {
+    expect(keywordActionKey('google-ads', '11', '22')).toBe('11-22');
+    expect(keywordActionKey('microsoft-ads', '11', '22')).toBe('microsoft-ads:11-22');
   });
 });

@@ -39,8 +39,6 @@ export class ComposerDetailsAccessComponent {
   private readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
-  /** Quick create renders these fields under its own dialog header, where a section heading only repeats it. */
-  public readonly showHeading = input(true);
   /** Quick create renders the type as its own chip row above these fields, so the select would duplicate it. */
   public readonly showTypeSelect = input(true);
   /**
@@ -49,6 +47,12 @@ export class ComposerDetailsAccessComponent {
    * answer for the fast path, and the drawer covers the rarer case of scheduling on someone else's behalf.
    */
   public readonly showOrganizer = input(true);
+  /**
+   * Whether to offer the visibility and join restriction cards.
+   * @description Off for a single-occurrence edit: both are series settings, and upstream's occurrence
+   * update has no field for either.
+   */
+  public readonly showAccess = input(true);
   /**
    * Hint text for a title that was written by something other than the organizer.
    * @description Passed in rather than derived here because only quick create prefills from the meeting

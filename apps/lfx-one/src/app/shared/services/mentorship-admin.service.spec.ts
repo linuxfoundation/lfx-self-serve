@@ -222,6 +222,30 @@ describe('MentorshipAdminService', () => {
     expect(result).toEqual({ created: ['app_1'], failed: [] });
   });
 
+  it('patches one task and returns the updated task', () => {
+    const body = { name: 'Read the guide', status: 'completed' } as const;
+    const updated = { id: 'task_1', name: 'Read the guide', status: 'completed' } as MentorshipApplicantTask;
+    let result: MentorshipApplicantTask | undefined;
+    service.updateTask('task_1', body).subscribe((response) => (result = response));
+
+    const req = http.expectOne('/api/mentorship/admin/tasks/task_1');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual(body);
+    req.flush(updated);
+    expect(result).toEqual(updated);
+  });
+
+  it('logs a failed task edit by status only and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.updateTask('task_1', { status: 'submitted' }).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/admin/tasks/task_1').flush({ message: 'private-task-text' }, { status: 400, statusText: 'Bad Request' });
+
+    expect(status).toBe(400);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] updateTask failed', { status: 400, statusText: 'Bad Request' });
+  });
+
   it('declines the pending applications of a term and returns the count', () => {
     let declined = -1;
     service.declinePendingForTerm('prog_1', 'trm_1').subscribe((response) => (declined = response.declinedCount));
@@ -238,6 +262,28 @@ describe('MentorshipAdminService', () => {
     service.withdrawApplication('app_1').subscribe({ error: (err: { status: number }) => (status = err.status) });
 
     http.expectOne('/api/mentorship/admin/applications/app_1/withdraw').flush({ message: 'changed' }, { status: 409, statusText: 'Conflict' });
+
+    expect(status).toBe(409);
+    expect(JSON.stringify(logged.mock.calls)).toContain('409');
+  });
+
+  it('patches the status of one mentor, with encoded ids', () => {
+    let done = 0;
+    service.updateProgramMentor('prog 1', 'mem/1', { status: 'withdrawn' }).subscribe(() => done++);
+
+    const req = http.expectOne('/api/mentorship/admin/programs/prog%201/mentors/mem%2F1');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ status: 'withdrawn' });
+    req.flush(null, { status: 204, statusText: 'No Content' });
+    expect(done).toBe(1);
+  });
+
+  it('logs a failed mentor change by status only and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.updateProgramMentor('prog_1', 'mem_1', { status: 'active' }).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/admin/programs/prog_1/mentors/mem_1').flush({ message: 'changed' }, { status: 409, statusText: 'Conflict' });
 
     expect(status).toBe(409);
     expect(JSON.stringify(logged.mock.calls)).toContain('409');

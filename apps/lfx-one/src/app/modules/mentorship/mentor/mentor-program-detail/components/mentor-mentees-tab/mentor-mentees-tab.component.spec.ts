@@ -14,6 +14,7 @@ import { MessageService } from 'primeng/api';
 import { Observable, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AdminTaskUpdateService } from '../../../../services/admin-task-update.service';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 import { MentorMenteesTabComponent } from './mentor-mentees-tab.component';
 
@@ -74,7 +75,13 @@ describe('MentorMenteesTabComponent', () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MentorMenteesTabComponent],
-      providers: [provideNoopAnimations(), MessageService, { provide: MentorshipTaskDialogService, useValue: { openCreate, openCreateGroup, openEdit } }],
+      providers: [
+        provideNoopAnimations(),
+        MessageService,
+        { provide: MentorshipTaskDialogService, useValue: { openCreate, openCreateGroup, openEdit } },
+        // The panel also injects the admin task-update service; mentor rows are not editable, so it is never called.
+        { provide: AdminTaskUpdateService, useValue: { update: vi.fn(), isUpdating: () => false } },
+      ],
     });
 
     fixture = TestBed.createComponent(MentorMenteesTabComponent);

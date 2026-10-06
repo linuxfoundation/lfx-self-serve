@@ -5,7 +5,7 @@
 
 The admin pages under `/mentorship/admin/*` read their data from the LFX One BFF's `/api/mentorship/admin/*` routes. The admin code has its own router, controller and services, separate from the mentor and mentee code, so each admin screen can move to the mentorship service without touching the other two (linuxfoundation/lfx-mentorship#229).
 
-The program list and the program page (header, tab counts and all four tabs) read the mentorship service (see [Program list sourcing](#program-list-sourcing) and [Program page sourcing](#program-page-sourcing)). The program page reads no mock data; the Enroll form's lookups and the Mentors tab's invite picker still do (see [Program list sourcing](#program-list-sourcing)). Application decisions on Current Mentees (accept, decline, withdraw, graduate, decline by term), the reviewer note and Create task write through the mentorship service (see [Application decisions](#application-decisions), [Reviewer note](#reviewer-note) and [Create task](#create-task)). The other write actions (invite, remove, term create, edit, close, re-open, delete) stay "coming soon" stubs until their PRs.
+The program list and the program page (header, tab counts and all four tabs) read the mentorship service (see [Program list sourcing](#program-list-sourcing) and [Program page sourcing](#program-page-sourcing)). The program page reads no mock data; the Enroll form's lookups and the Mentors tab's invite picker still do (see [Program list sourcing](#program-list-sourcing)). Application decisions on Current Mentees (accept, decline, withdraw, graduate, decline by term), the reviewer note, Create task and the Mentors tab's Accept, Decline, Revoke invite and Remove write through the mentorship service (see [Application decisions](#application-decisions), [Reviewer note](#reviewer-note), [Create task](#create-task) and [Mentor status](#mentor-status)). The Terms tab's create, edit, close, re-open and delete write through it too (see [Term writes](#term-writes)). Mentor invite stays a "coming soon" stub until its PR.
 
 ## Routes
 
@@ -22,8 +22,15 @@ The program list and the program page (header, tab counts and all four tabs) rea
 | POST   | `/api/mentorship/admin/programs/:programId/terms/:termId/decline-pending` | `declinePendingForTerm`   | Decline by Term on the Current Mentees toolbar        |
 | PUT    | `/api/mentorship/admin/applications/:applicationId/note`                  | `updateApplicationNote`   | Note on a Current Mentees row                         |
 | POST   | `/api/mentorship/admin/tasks`                                             | `createTasks`             | Create task on an accepted Current Mentees row        |
+| PATCH  | `/api/mentorship/admin/tasks/:taskId`                                     | `updateTask`              | Edit and the status select on an expanded task row    |
+| PATCH  | `/api/mentorship/admin/programs/:programId/mentors/:memberId`             | `updateProgramMentor`     | Accept, Decline, Revoke invite and Remove on a mentor |
+| POST   | `/api/mentorship/admin/programs/:programId/terms`                         | `createTerm`              | Add Term on the Terms tab                             |
+| PATCH  | `/api/mentorship/admin/programs/:programId/terms/:termId`                 | `updateTerm`              | Edit on a term row                                    |
+| POST   | `/api/mentorship/admin/programs/:programId/terms/:termId/close`           | `closeTerm`               | Close on a term row                                   |
+| POST   | `/api/mentorship/admin/programs/:programId/terms/:termId/reopen`          | `reopenTerm`              | Re-Open on a term row                                 |
+| DELETE | `/api/mentorship/admin/programs/:programId/terms/:termId`                 | `deleteTerm`              | Delete on a term row                                  |
 
-`programId`, `applicationId` and `termId` must be UUIDs; anything else is a 400. The list accepts `search`, `status`, `offset` and `limit` (1–50, default 12). A malformed, blank, repeated or out-of-range `offset` or `limit` is a 400, and so is a repeated `search` or `status`. The mentees route requires `type` (`current` for open terms, `past` for closed ones), and accepts `status`, `termId`, `search`, `offset` and `limit` (1–50); a bad value is a 400. The mentors route accepts `status` (`requested`, `pending`, `invited`, `active`, `declined`, `withdrawn`), `search`, `offset` and `limit` (1–50, default 10). The terms route accepts `offset` and `limit` (1–50, default 10).
+`programId`, `applicationId`, `termId` and `memberId` must be UUIDs; anything else is a 400. The list accepts `search`, `status`, `offset` and `limit` (1–50, default 12). A malformed, blank, repeated or out-of-range `offset` or `limit` is a 400, and so is a repeated `search` or `status`. The mentees route requires `type` (`current` for open terms, `past` for closed ones), and accepts `status`, `termId`, `search`, `offset` and `limit` (1–50); a bad value is a 400. The mentors route accepts `status` (`requested`, `pending`, `invited`, `active`, `declined`, `withdrawn`), `search`, `offset` and `limit` (1–50, default 10). The terms route accepts `offset` and `limit` (1–50, default 10).
 
 ## Program page sourcing
 
@@ -68,6 +75,28 @@ Three write routes, each behind `blockDuringImpersonation` (a 403 with code `IMP
 - Every decision reloads the current page, which also clears the loaded tasks and collapses the rows, and has the program page read its tab counts again without its loading state, so the open tab keeps its filters and page. A write is never cancelled by the tab going away; one that answers after the admin switched tabs still toasts and refreshes the counts, through a callback the page hands the tab, but reloads no table.
 - Logs carry the application, program and term ids, the status and the declined count only, never names or emails.
 
+## Mentor status
+
+`PATCH …/programs/:programId/mentors/:memberId` moves one mentor to a new status, behind `blockDuringImpersonation`, with the caller's bearer token so upstream decides who may change it.
+
+- The body is `{ status }` and `status` must be `active`, `declined` or `withdrawn`; anything else, or a bad id, is a 400 before any upstream call. The BFF sends `PATCH /programs/{programId}/members/{memberId}` with `{ status }` and answers 204.
+- The Mentors tab offers by status (`MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS`): `requested` and `pending` get Accept (`active`) and Decline (`declined`), `invited` gets Revoke invite (`declined`), `active` gets Remove (`withdrawn`), and `declined` and `withdrawn` get none. Every action confirms first.
+- Upstream answers 409 for a transition the mentor's status does not allow. It passes through, and the tab reloads and shows `This mentor changed. The list has been refreshed.` Other failures show the generic message, and the impersonation 403 shows the server's text.
+- A success toasts, reloads the page and has the program page read its tab counts again, through the same callback as the mentee decisions, so a write that lands after a tab switch still refreshes the counts.
+- Logs carry the program and member ids and the status only, never names or emails.
+- **Known gap: no Delete.** Upstream's `DELETE /programs/{programId}/members/{memberId}` only sets `withdrawn`, and only from `active`, so it adds nothing over Remove. The tab has no Delete action and the BFF has no delete route. A hard delete (US7 scenario 4) needs an upstream change first.
+
+## Term writes
+
+Create, edit, close, re-open and delete a term, each behind `blockDuringImpersonation` and with the caller's bearer token.
+
+- Create and edit take `{ name, startDate, endDate, applicationStartDate, applicationEndDate }` (`YYYY-MM-DD`). The name is trimmed and 1–50 characters; each date must be a real calendar date. The order follows upstream: application end on or after application start (a one-day window is valid), start after application end, end on or after start (a one-month term is valid). Anything else, or a bad id, is a 400 before any upstream call (`parseMentorshipAdminTermInput`).
+- The BFF sends upstream RFC 3339 timestamps in UTC: each date as the start of its day (`YYYY-MM-DDT00:00:00Z`), except `application_end_date`, which goes as the last millisecond of its day (`YYYY-MM-DDT23:59:59.999Z`) so the term takes applications through that whole date, and `end_date_time`, which goes as the end of the last day of its month (`2026-12-01` → `2026-12-31T23:59:59.999Z`): the term dialog picks months, and the UI treats a term as running through its end month, so upstream's close/re-open/edit checks agree with it. The writes are `POST /programs/{programId}/terms` (always `status: open`) and `PATCH …/terms/{termId}`. Create answers 201 and edit 200, each with the term row (zero application counts). Close (`POST …/close`), re-open (`POST …/reopen`) and delete (`DELETE`) answer 204.
+- **Four open terms.** Create and re-open first read the program's open terms (`limit=4`) and refuse with a 409 and `MENTORSHIP_MAX_OPEN_TERMS_MESSAGE` at four or more, without any write call. Upstream enforces the limit as well.
+- Upstream answers 409 when a term to close still has accepted applications and when a term to delete has applications. It passes through, the tab shows the server's reason, reads the terms again and has the program page read its tab counts again.
+- A success toasts, reloads the terms and refreshes the counts, so both mentee tabs and the Terms count follow the change. The tab sends one write at a time.
+- Logs carry the program and term ids only, never the term name.
+
 ## Reviewer note
 
 `PUT …/note` saves the one shared reviewer note of an application, behind `blockDuringImpersonation`, with the caller's bearer token.
@@ -90,6 +119,17 @@ Three write routes, each behind `blockDuringImpersonation` (a 403 with code `IMP
 - A create that settles, created or not, reloads the current page and has the program page read its tab counts again, as every decision does: a failure may still have created the task, and its message sends the admin to the mentee's row. The tasks cache is cleared with the reload, so a row that was collapsed reads no tasks. A row that was expanded stays expanded and reads its tasks once, after the reload lands; every other row collapses.
 - The create runs in `AdminTaskCreateService` and is not cancelled by the tab going away. While another write is in flight the tab shows "Please wait", opens no form and sends nothing. The service also tracks the mentees getting a task (`isCreating(id)`), so a tab rebuilt by a switch while a create is still running keeps that mentee's form shut and sends nothing for them.
 - Logs carry the application count and the created and failed counts only, never the task's name or description.
+
+## Edit task and set status
+
+`PATCH …/tasks/:taskId` changes one task, behind `blockDuringImpersonation`, with the caller's bearer token so upstream decides who may edit. Upstream is `PATCH /mentorship/v1/tasks/{id}` (lfx-mentorship#227).
+
+- The body is `MentorshipAdminTaskUpdate`: every field is optional and an absent one is left unchanged, but at least one is required. The status select sends `status` alone; the edit dialog sends only what it changed, diffed against the row by `buildMentorshipAdminTaskUpdate` in `@lfx-one/shared/utils`. The body check is `parseMentorshipAdminTaskUpdate` and the upstream body is `buildMentorshipUpstreamTaskUpdate`, both in `mentorship-admin-task.helper.ts`. `status` goes through `MENTORSHIP_ADMIN_TASK_STATUS_TO_UPSTREAM`, `requiresFileSubmission` maps to `submit_file` (`required`, or `''` to clear it) and an empty `dueDate` clears the due date.
+- Upstream lets a status move to any other status. A task that requires a file cannot be Submitted without an uploaded file, whether it is moving to Submitted or gaining the file requirement, and upstream answers that with a 400. That 400 gets its own copy only for a change that can trip the guard (a move to Submitted or a change to the file requirement); any other 400 shows the generic copy. A 403 and a 404 each have their own copy, and any other failure shows the generic one. A failed change leaves the row as it was.
+- The answer is 200 with the task as the row reads it. The Current Mentees tab writes it into that row's cached tasks (`patchSavedTask`), so an edit or status change reads no list again. It also moves the row's `tasksSubmitted` by the change in submitted or completed tasks, because Graduate's warning reads that count and a reload is not made.
+- The save runs in `AdminTaskUpdateService`, which tracks the tasks being saved: a task with a change in flight takes no second change, and its select and Edit are disabled. The in-flight ids are a signal, so a panel rebuilt mid-save keeps both disabled and re-enables them when the save settles, whether it succeeded or failed. The save is not cancelled by a row collapsing, so it lands in the cache even if the panel was destroyed. One that lands while the row's tasks are cleared or being re-read after a table reload is dropped, since that read brings the newer tasks.
+- Only the admin Current Mentees tab sets `editable` on the task panel. The mentor tabs use the same panel but have no BFF route, so they still show the "coming soon" toast.
+- Logs carry the task id and the names of the fields changed, never the task's text.
 
 ## Program list sourcing
 

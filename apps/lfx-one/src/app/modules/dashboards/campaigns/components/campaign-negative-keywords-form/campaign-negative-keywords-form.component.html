@@ -1,0 +1,134 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form
+  class="flex flex-col gap-3 rounded-md border border-gray-200 bg-gray-50 p-3"
+  [formGroup]="form"
+  (ngSubmit)="submit()"
+  [attr.aria-label]="'Add negative keywords to ' + campaignName()"
+  [attr.data-testid]="'optimization-campaign-negatives-form-' + campaignId()">
+  <!-- Pending is announced here: the submit button goes native-disabled and leaves the focus order. -->
+  <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">{{ pendingAnnouncement() }}</div>
+
+  <div class="flex flex-col gap-1">
+    <label class="text-xs font-medium text-gray-700" [for]="ids().keywords">Negative keywords, one per line</label>
+    <lfx-textarea
+      [form]="form"
+      control="keywords"
+      [rows]="4"
+      [inputId]="ids().keywords"
+      placeholder="free download"
+      [ariaDescribedBy]="keywordsDescribedBy()"
+      [invalid]="keywordsInvalid()"
+      [required]="true"
+      [attr.data-testid]="'optimization-campaign-negatives-keywords-' + campaignId()" />
+    <p class="text-xs text-gray-500" [id]="ids().keywordsHint">
+      1 to {{ maxKeywords }} keywords ({{ keywordCount() }} entered). Letters, digits, spaces and &amp; ' - . only, at most 100 characters each. Added to this
+      campaign in Microsoft Advertising.
+    </p>
+    @if (keywordsError() || lineProblems().length > 0) {
+      <div class="flex flex-col gap-0.5" [id]="ids().keywordsError" [attr.data-testid]="'optimization-campaign-negatives-error-' + campaignId()">
+        @if (keywordsError(); as message) {
+          <p class="text-xs text-red-600">{{ message }}</p>
+        }
+        @for (problem of lineProblems(); track problem.line) {
+          <p class="text-xs text-red-600" [attr.data-testid]="'optimization-campaign-negatives-line-error-' + problem.line">
+            Line {{ problem.line }} ("{{ problem.text }}"): {{ problem.reason }}
+          </p>
+        }
+      </div>
+    }
+  </div>
+
+  <fieldset class="flex flex-col gap-1" [attr.aria-describedby]="ids().typeHint">
+    <legend class="mb-1 text-xs font-medium text-gray-700">Match type</legend>
+    <div class="flex items-center gap-4">
+      @for (option of matchTypeOptions; track option.value) {
+        <lfx-radio-button
+          [form]="form"
+          control="matchType"
+          [name]="ids().typeName"
+          [value]="option.value"
+          [inputId]="ids().typeName + '-' + option.value"
+          [label]="option.label"
+          [attr.data-testid]="'optimization-campaign-negatives-type-' + option.value + '-' + campaignId()" />
+      }
+    </div>
+    <p class="text-xs text-gray-500" [id]="ids().typeHint">Applies to every keyword in this request. Microsoft supports Exact and Phrase for negatives.</p>
+  </fieldset>
+
+  <!--
+    A request that produced no per-keyword results. UNCONFIRMED names the keywords it covers: any of
+    them may already be on the campaign, so the operator verifies before sending them again.
+  -->
+  @if (batchOutcome(); as outcome) {
+    @if (outcome.state === 'unconfirmed') {
+      <div
+        class="flex flex-col gap-1 rounded-md border border-amber-300 bg-amber-50 p-2"
+        [attr.data-testid]="'optimization-campaign-negatives-unconfirmed-' + campaignId()">
+        <p class="text-xs font-semibold text-amber-900">
+          <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i>
+          Not confirmed: these negative keywords may have been added
+        </p>
+        <p class="text-xs text-amber-800">{{ outcome.message }}</p>
+        <p class="text-xs text-amber-800">Sent: {{ batchKeywordsText() }}</p>
+      </div>
+    } @else {
+      <p class="text-xs text-red-600" [attr.data-testid]="'optimization-campaign-negatives-failed-' + campaignId()">{{ outcome.message }}</p>
+    }
+  }
+
+  <!--
+    Per-keyword outcomes, in the order the keywords were SENT: `results[i]` answers keyword i, so
+    the list is never re-sorted or filtered. Not a live region: the toast announces the summary.
+  -->
+  @if (outcomeRows().length > 0) {
+    <div class="flex flex-col gap-1" [attr.data-testid]="'optimization-campaign-negatives-results-' + campaignId()">
+      <p class="text-xs font-medium text-gray-700">{{ outcomeSummary() }}</p>
+      <ol class="flex flex-col gap-1">
+        @for (row of outcomeRows(); track row.index) {
+          <li class="flex flex-wrap items-baseline gap-x-2 text-xs" [attr.data-testid]="'optimization-campaign-negatives-result-' + row.index">
+            <span class="font-medium text-gray-900">{{ row.text }}</span>
+            <span class="text-gray-500">{{ row.matchType }}</span>
+            @switch (row.outcome) {
+              @case ('APPLIED') {
+                <span class="font-medium text-emerald-700" [attr.data-outcome]="row.outcome">{{ row.label }}</span>
+              }
+              @case ('ALREADY_PRESENT') {
+                <span class="font-medium text-gray-600" [attr.data-outcome]="row.outcome">{{ row.label }}</span>
+              }
+              @case ('FAILED') {
+                <span class="font-medium text-red-600" [attr.data-outcome]="row.outcome">{{ row.label }}</span>
+              }
+              @default {
+                <span class="font-medium text-amber-700" [attr.data-outcome]="row.outcome">{{ row.label }}</span>
+              }
+            }
+            @if (row.detail) {
+              <span class="text-gray-600">{{ row.detail }}</span>
+            }
+          </li>
+        }
+      </ol>
+    </div>
+  }
+
+  <div class="flex items-center gap-2">
+    <lfx-button
+      type="submit"
+      label="Add negative keywords"
+      size="small"
+      [ariaLabel]="submitLabel()"
+      [disabled]="pending()"
+      [loading]="pending()"
+      [attr.data-testid]="'optimization-campaign-negatives-submit-' + campaignId()" />
+    <lfx-button
+      label="Close"
+      size="small"
+      severity="secondary"
+      [text]="true"
+      [disabled]="pending()"
+      (onClick)="cancelEdit.emit()"
+      [attr.data-testid]="'optimization-campaign-negatives-cancel-' + campaignId()" />
+  </div>
+</form>

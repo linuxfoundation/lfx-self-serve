@@ -93,7 +93,7 @@
       <p class="text-sm text-amber-800">
         {{ conflictedCount() === 1 ? 'A campaign below was' : conflictedCount() + ' campaigns below were' }} changed by someone else while this page was open,
         so {{ conflictedCount() === 1 ? 'its status' : 'their statuses' }} may not match the ad platform.
-        {{ conflictedCount() === 1 ? 'Its toggle is' : 'Their toggles are' }} disabled until you refresh the list.
+        {{ conflictedCount() === 1 ? 'Its controls are' : 'Their controls are' }} disabled until you refresh the list.
         @if (hasActionableSiblings()) {
           Other campaigns are unaffected and can still be paused or resumed.
         }
@@ -107,6 +107,101 @@
           Refresh campaigns
         </button>
       </div>
+    </section>
+  }
+
+  <!--
+    Monitor findings, each linked to the ONE control that resolves it. The items are
+    campaign-service's brief rule engine (`action_items` on the brief metrics read), which carry a
+    stable rule token and the campaign's own id — what lets an item be tied to its row.
+
+    No amounts are shown here: each campaign spends in its own ad account's currency, so a figure
+    would need a currency this view does not know, and findings are never summed across campaigns.
+  -->
+  @if (briefMetricsState() !== 'idle') {
+    <section
+      class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4"
+      aria-labelledby="optimization-findings-heading"
+      data-testid="optimization-findings">
+      <div class="flex flex-col gap-0.5">
+        <h3 id="optimization-findings-heading" class="text-sm font-semibold text-gray-900">Monitor findings</h3>
+        <p class="text-xs text-gray-500">What Monitor flagged on this brief's campaigns, with the control that addresses each one.</p>
+      </div>
+      @switch (briefMetricsState()) {
+        @case ('loading') {
+          <p class="flex items-center gap-2 text-sm text-gray-500" data-testid="optimization-findings-loading">
+            <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            Reading monitor findings...
+          </p>
+        }
+        @case ('error') {
+          <!-- A failed read, stated as one: never rendered as "nothing flagged". -->
+          <div class="flex flex-col items-start gap-2" data-testid="optimization-findings-error">
+            <p class="text-sm text-red-700">Monitor findings could not be loaded. The campaign controls below still work.</p>
+            <button
+              type="button"
+              (click)="reloadFindings()"
+              class="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+              data-testid="optimization-findings-retry">
+              Try again
+            </button>
+          </div>
+        }
+        @default {
+          @if (findings().length === 0) {
+            <p class="text-sm text-gray-500" data-testid="optimization-findings-empty">{{ findingsEmptyMessage() }}</p>
+          } @else {
+            <ul class="flex flex-col gap-2">
+              @for (finding of findings(); track finding.key) {
+                <li
+                  class="flex flex-col gap-2 rounded-md border border-gray-100 px-3 py-2 md:flex-row md:items-start md:justify-between"
+                  [attr.data-testid]="'optimization-finding-' + finding.key">
+                  <div class="flex min-w-0 items-start gap-3">
+                    <span class="mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold" [class]="finding.item.priority | priorityClass">
+                      {{ finding.item.priority }}
+                    </span>
+                    <div class="flex min-w-0 flex-col gap-0.5">
+                      <span class="whitespace-normal break-words text-sm font-medium text-gray-900 lg:truncate">{{ finding.campaignName }}</span>
+                      <span class="text-xs text-gray-500">{{ finding.platformLabel }}</span>
+                      <span class="text-xs text-gray-700">{{ finding.item.issue }}</span>
+                      <span class="text-xs text-blue-600">→ {{ finding.item.action }}</span>
+                      @if (finding.leverBlockedReason) {
+                        <span
+                          class="text-xs text-gray-500"
+                          [id]="'optimization-finding-blocked-' + finding.key"
+                          [attr.data-testid]="'optimization-finding-blocked-' + finding.key"
+                          >{{ finding.leverBlockedReason }}</span
+                        >
+                      }
+                    </div>
+                  </div>
+                  @if (finding.lever !== 'none') {
+                    <!--
+                      A raw button like the row controls beside it: it needs `aria-describedby`,
+                      which the `lfx-button` wrapper does not forward. The accessible name contains
+                      the visible text and names the campaign it acts on.
+                    -->
+                    <button
+                      type="button"
+                      (click)="resolveFinding(finding)"
+                      [disabled]="finding.leverBlockedReason !== ''"
+                      [attr.aria-label]="finding.leverAriaLabel"
+                      [attr.aria-describedby]="finding.leverBlockedReason ? 'optimization-finding-blocked-' + finding.key : null"
+                      class="shrink-0 self-start rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                      [attr.data-testid]="'optimization-finding-lever-' + finding.key">
+                      {{ finding.leverLabel }}
+                    </button>
+                  } @else {
+                    <span class="shrink-0 self-start text-xs text-gray-400" [attr.data-testid]="'optimization-finding-no-lever-' + finding.key">
+                      No control for this in LFX One
+                    </span>
+                  }
+                </li>
+              }
+            </ul>
+          }
+        }
+      }
     </section>
   }
 
@@ -153,72 +248,221 @@
         <div class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="optimization-toggle-announcement">{{ toggleAnnouncement() }}</div>
         <ul class="flex flex-col gap-2">
           @for (row of rows; track row.campaign.id) {
-            <li class="flex items-center justify-between gap-3 rounded-md border border-gray-100 px-3 py-2">
-              <div class="flex min-w-0 flex-col gap-0.5">
-                <span class="truncate text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
-                <span class="text-xs text-gray-500">{{ row.campaign.platform }} · {{ row.status }}</span>
-                <!--
-                  NOT `role="alert"`. The failure is already announced by the toast, which is
-                  itself a live region — a second live role here made one failure speak twice.
-                  This text stays as the button's `aria-describedby` target (see `describedByFor`),
-                  so it is read WITH the control on demand rather than fired at the user again.
-                -->
-                @if (toggleError()[row.campaign.id]; as message) {
-                  <span
-                    class="text-xs text-red-600"
-                    [id]="'campaign-error-' + row.campaign.id"
-                    [attr.data-testid]="'optimization-campaign-error-' + row.campaign.id"
-                    >{{ message }}</span
-                  >
-                }
-                <!--
-                  Why the button is dead. A disabled control with no explanation reads as a broken
-                  page — the operator retries, then goes looking for a permissions problem. This
-                  names the actual state and, where it resolves itself, says so. Not `role="alert"`:
-                  it is a standing property of the row, not an event, and it is what
-                  `aria-describedby` points at so the button announces the reason with its name.
-                -->
-                @if (row.action === 'unavailable') {
-                  <span
-                    class="text-xs text-gray-500"
-                    [id]="'campaign-unavailable-' + row.campaign.id"
-                    [attr.data-testid]="'optimization-campaign-unavailable-' + row.campaign.id"
-                    >{{ row.unavailableReason }}</span
-                  >
-                }
-              </div>
-              <!--
-                The accessible name NAMES THE CAMPAIGN. The visible text is just "Pause", which is
-                unambiguous beside its row and useless out of context — a screen-reader user moving
-                by button hears "Pause" N times with no way to tell the rows apart. The label
-                CONTAINS the visible word rather than replacing it, so speech input ("click Pause")
-                still matches.
+            <li class="flex flex-col gap-2 rounded-md border border-gray-100 px-3 py-2" [attr.data-testid]="'optimization-campaign-row-' + row.campaign.id">
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex min-w-0 flex-col gap-0.5">
+                  <span class="truncate text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
+                  <span class="text-xs text-gray-500">{{ row.campaign.platform }} · {{ row.status }}</span>
+                  <!--
+                    NOT `role="alert"`. The failure is already announced by the toast, which is
+                    itself a live region — a second live role here made one failure speak twice.
+                    This text stays as the button's `aria-describedby` target (see `describedByFor`),
+                    so it is read WITH the control on demand rather than fired at the user again.
+                  -->
+                  @if (toggleError()[row.campaign.id]; as message) {
+                    <span
+                      class="text-xs text-red-600"
+                      [id]="'campaign-error-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-error-' + row.campaign.id"
+                      >{{ message }}</span
+                    >
+                  }
+                  <!--
+                    Why the button is dead. A disabled control with no explanation reads as a broken
+                    page — the operator retries, then goes looking for a permissions problem. This
+                    names the actual state and, where it resolves itself, says so. Not `role="alert"`:
+                    it is a standing property of the row, not an event, and it is what
+                    `aria-describedby` points at so the button announces the reason with its name.
+                  -->
+                  @if (row.action === 'unavailable') {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-unavailable-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-unavailable-' + row.campaign.id"
+                      >{{ row.unavailableReason }}</span
+                    >
+                  }
+                  <!--
+                    The budget this session confirmed. The index carries no budget, so nothing is shown
+                    until a change lands here. No currency symbol: the amount is in the ad account's own
+                    currency, which this app does not know, and it is shown exactly as accepted.
+                  -->
+                  @if (confirmedBudget()[row.campaign.id]; as budget) {
+                    <span class="text-xs text-gray-600" [attr.data-testid]="'optimization-campaign-budget-current-' + row.campaign.id"
+                      >Budget set here: {{ budget.budget }} {{ budget.budgetType }} (ad account currency)</span
+                    >
+                  }
+                  <!--
+                    An unconfirmed budget change stays stated on the row after its editor is closed:
+                    it may already be live, and the sticky toast can be dismissed.
+                  -->
+                  @if (budgetOutcome()[row.campaign.id]?.state === 'unconfirmed' && !budgetEditorOpen()[row.campaign.id]) {
+                    <span class="text-xs text-amber-700" [attr.data-testid]="'optimization-campaign-budget-unconfirmed-note-' + row.campaign.id"
+                      >Budget change not confirmed. It may already be applied; verify it in the ad platform before retrying.</span
+                    >
+                  }
+                  <!-- The bid this session confirmed. No currency symbol: it is in the ad account's own currency. -->
+                  @if (confirmedBid()[row.campaign.id]; as bid) {
+                    <span class="text-xs text-gray-600" [attr.data-testid]="'optimization-campaign-bid-current-' + row.campaign.id"
+                      >Max CPC bid set here: {{ bid.bid }} (ad account currency)</span
+                    >
+                  }
+                  @if (bidOutcome()[row.campaign.id]?.state === 'unconfirmed' && !bidEditorOpen()[row.campaign.id]) {
+                    <span class="text-xs text-amber-700" [attr.data-testid]="'optimization-campaign-bid-unconfirmed-note-' + row.campaign.id"
+                      >Bid change not confirmed. It may have applied; verify it in the ad platform before retrying.</span
+                    >
+                  }
+                  <!-- Why there is no budget editor for this row; the disabled button points here. -->
+                  @if (!row.budgetAvailable) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-budget-unavailable-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-budget-unavailable-' + row.campaign.id"
+                      >{{ row.budgetUnavailableReason }}</span
+                    >
+                  }
+                  <!-- Why there is no bid editor for this row (platform support, or not created yet). -->
+                  @if (!row.bidAvailable) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-bid-unavailable-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-bid-unavailable-' + row.campaign.id"
+                      >{{ row.bidUnavailableReason }}</span
+                    >
+                  }
+                  @if (row.negativeKeywordsOffered && !row.negativeKeywordsAvailable) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-negatives-unavailable-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-negatives-unavailable-' + row.campaign.id"
+                      >{{ row.negativeKeywordsUnavailableReason }}</span
+                    >
+                  }
+                </div>
+                <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  <!--
+                    Discloses the row's budget editor. A raw button like the toggle beside it, because it
+                    needs `aria-controls` and `aria-describedby`, which the `lfx-button` wrapper does not
+                    forward to its inner button. Disabled, with its reason described, for a platform or
+                    campaign that cannot take a budget change; held open while a change is in flight.
+                  -->
+                  <button
+                    type="button"
+                    (click)="toggleBudgetEditor(row)"
+                    [id]="'campaign-budget-edit-' + row.campaign.id"
+                    [disabled]="!row.budgetAvailable || budgetPending()[row.campaign.id]"
+                    [attr.aria-expanded]="row.budgetAvailable ? !!budgetEditorOpen()[row.campaign.id] : null"
+                    [attr.aria-controls]="budgetEditorOpen()[row.campaign.id] ? 'campaign-budget-panel-' + row.campaign.id : null"
+                    [attr.aria-describedby]="row.budgetAvailable ? null : 'campaign-budget-unavailable-' + row.campaign.id"
+                    [attr.aria-label]="'Change budget for ' + row.campaign.campaign_name"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    [attr.data-testid]="'optimization-campaign-budget-edit-' + row.campaign.id">
+                    Change budget
+                  </button>
+                  <!-- The bid editor's disclosure, built like the budget one beside it. -->
+                  <button
+                    type="button"
+                    (click)="toggleBidEditor(row)"
+                    [id]="'campaign-bid-edit-' + row.campaign.id"
+                    [disabled]="!row.bidAvailable || bidPending()[row.campaign.id]"
+                    [attr.aria-expanded]="row.bidAvailable ? !!bidEditorOpen()[row.campaign.id] : null"
+                    [attr.aria-controls]="bidEditorOpen()[row.campaign.id] ? 'campaign-bid-panel-' + row.campaign.id : null"
+                    [attr.aria-describedby]="row.bidAvailable ? null : 'campaign-bid-unavailable-' + row.campaign.id"
+                    [attr.aria-label]="'Change bid for ' + row.campaign.campaign_name"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    [attr.data-testid]="'optimization-campaign-bid-edit-' + row.campaign.id">
+                    Change bid
+                  </button>
+                  <!-- Microsoft Advertising rows only: campaign-level negative keywords. -->
+                  @if (row.negativeKeywordsOffered) {
+                    <button
+                      type="button"
+                      (click)="toggleNegativesEditor(row)"
+                      [disabled]="!row.negativeKeywordsAvailable || negativesPending()[row.campaign.id]"
+                      [attr.aria-expanded]="row.negativeKeywordsAvailable ? !!negativesEditorOpen()[row.campaign.id] : null"
+                      [attr.aria-controls]="negativesEditorOpen()[row.campaign.id] ? 'campaign-negatives-panel-' + row.campaign.id : null"
+                      [attr.aria-describedby]="row.negativeKeywordsAvailable ? null : 'campaign-negatives-unavailable-' + row.campaign.id"
+                      [attr.aria-label]="'Add negative keywords to ' + row.campaign.campaign_name"
+                      class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      [attr.data-testid]="'optimization-campaign-negatives-edit-' + row.campaign.id">
+                      Negative keywords
+                    </button>
+                  }
+                  <!--
+                    The accessible name NAMES THE CAMPAIGN. The visible text is just "Pause", which is
+                    unambiguous beside its row and useless out of context — a screen-reader user moving
+                    by button hears "Pause" N times with no way to tell the rows apart. The label
+                    CONTAINS the visible word rather than replacing it, so speech input ("click Pause")
+                    still matches.
 
-                `aria-describedby` points at the row's error only when one exists; a dangling
-                reference to an element that renders conditionally is worse than none.
-              -->
-              <button
-                type="button"
-                (click)="toggleCampaign(row)"
-                [disabled]="togglePending()[row.campaign.id] || row.action === 'unavailable' || row.conflicted"
-                [attr.aria-label]="row.toggleLabel + ' ' + row.campaign.campaign_name"
-                [attr.aria-busy]="togglePending()[row.campaign.id] ? 'true' : null"
-                [attr.aria-describedby]="row.describedBy"
-                class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                [attr.data-testid]="'optimization-campaign-toggle-' + row.campaign.id">
-                <!--
-                  The visible label stays the ACTION word while pending, rather than becoming
-                  "Working". The accessible name is `row.toggleLabel + campaign`, so swapping the
-                  visible text broke label-in-name: a speech-input user says what they see
-                  ("click Pause") and it no longer matched the name. Progress is carried by the
-                  spinner for sighted users, `aria-busy` on the button, and the live region above
-                  for assistive tech — none of which change what the control is CALLED.
-                -->
-                @if (togglePending()[row.campaign.id]) {
-                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
-                }
-                {{ row.toggleLabel }}
-              </button>
+                    `aria-describedby` points at the row's error only when one exists; a dangling
+                    reference to an element that renders conditionally is worse than none.
+                  -->
+                  <button
+                    type="button"
+                    (click)="toggleCampaign(row)"
+                    [disabled]="
+                      togglePending()[row.campaign.id] ||
+                      budgetPending()[row.campaign.id] ||
+                      bidPending()[row.campaign.id] ||
+                      row.action === 'unavailable' ||
+                      row.conflicted
+                    "
+                    [attr.aria-label]="row.toggleLabel + ' ' + row.campaign.campaign_name"
+                    [attr.aria-busy]="togglePending()[row.campaign.id] ? 'true' : null"
+                    [attr.aria-describedby]="row.describedBy"
+                    class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    [attr.data-testid]="'optimization-campaign-toggle-' + row.campaign.id">
+                    <!--
+                      The visible label stays the ACTION word while pending, rather than becoming
+                      "Working". The accessible name is `row.toggleLabel + campaign`, so swapping the
+                      visible text broke label-in-name: a speech-input user says what they see
+                      ("click Pause") and it no longer matched the name. Progress is carried by the
+                      spinner for sighted users, `aria-busy` on the button, and the live region above
+                      for assistive tech — none of which change what the control is CALLED.
+                    -->
+                    @if (togglePending()[row.campaign.id]) {
+                      <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                    }
+                    {{ row.toggleLabel }}
+                  </button>
+                </div>
+              </div>
+              @if (budgetEditorOpen()[row.campaign.id]) {
+                <lfx-campaign-budget-form
+                  [id]="'campaign-budget-panel-' + row.campaign.id"
+                  [campaignId]="row.campaign.id"
+                  [campaignName]="row.campaign.campaign_name"
+                  [knownBudgetType]="confirmedBudget()[row.campaign.id]?.budgetType ?? null"
+                  [initialBudget]="confirmedBudget()[row.campaign.id]?.budget ?? null"
+                  [pending]="!!budgetPending()[row.campaign.id]"
+                  [blockedReason]="row.budgetBlockedReason"
+                  [outcome]="budgetOutcome()[row.campaign.id] ?? null"
+                  (submitBudget)="changeCampaignBudget(row, $event)"
+                  (cancelEdit)="cancelBudgetEditor(row.campaign.id)" />
+              }
+              @if (bidEditorOpen()[row.campaign.id]) {
+                <lfx-campaign-bid-form
+                  [id]="'campaign-bid-panel-' + row.campaign.id"
+                  [campaignId]="row.campaign.id"
+                  [campaignName]="row.campaign.campaign_name"
+                  [initialBid]="confirmedBid()[row.campaign.id]?.bid ?? null"
+                  [pending]="!!bidPending()[row.campaign.id]"
+                  [blockedReason]="row.bidBlockedReason"
+                  [outcome]="bidOutcome()[row.campaign.id] ?? null"
+                  (submitBid)="changeCampaignBid(row, $event)"
+                  (cancelEdit)="cancelBidEditor(row.campaign.id)" />
+              }
+              @if (negativesEditorOpen()[row.campaign.id]) {
+                <lfx-campaign-negative-keywords-form
+                  [id]="'campaign-negatives-panel-' + row.campaign.id"
+                  [projectSlug]="projectSlug()"
+                  [briefId]="briefId()"
+                  [campaignId]="row.campaign.id"
+                  [campaignName]="row.campaign.campaign_name"
+                  (pendingChange)="setNegativesPending(row.campaign.id, $event)"
+                  (cancelEdit)="closeNegativesEditor(row.campaign.id)" />
+              }
             </li>
           }
         </ul>
@@ -330,7 +574,8 @@
     }
 
     <!-- Wasted Keyword Spend -->
-    <div class="flex flex-col gap-3" data-testid="optimization-wasted-keywords">
+    <!-- Focus target for a finding's keyword lever, hence the id and `tabindex="-1"`. -->
+    <div id="optimization-wasted-keywords" tabindex="-1" class="flex flex-col gap-3 focus:outline-none" data-testid="optimization-wasted-keywords">
       <div class="flex items-center gap-2">
         <h4 class="text-sm font-semibold text-gray-900">Keywords Spending Without Conversions</h4>
         @if (hasWastedKeywords()) {
@@ -440,7 +685,7 @@
                         <span class="flex flex-col items-center gap-0.5">
                           <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
                           @if (!result.success) {
-                            <span class="max-w-[16rem] text-[11px] leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                            <span class="max-w-64 text-xs leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
                           }
                         </span>
                       } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
@@ -538,7 +783,7 @@
                         <span class="flex flex-col items-center gap-0.5">
                           <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
                           @if (!result.success) {
-                            <span class="max-w-[16rem] text-[11px] leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                            <span class="max-w-64 text-xs leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
                           }
                         </span>
                       } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
@@ -632,6 +877,20 @@
         </div>
       </div>
     }
+  }
+
+  <!--
+    Microsoft Advertising keywords, from campaign-service's saved reports. Outside the Google monitor
+    block above on purpose: it has its own source, window and freshness, and a Google outage must
+    not hide it. The keyword actions run through this component's own (positional) action path.
+  -->
+  @if (activeFoundationSlug()) {
+    <lfx-microsoft-keywords-table
+      [projectSlug]="activeFoundationSlug()"
+      [reloadToken]="microsoftKeywordsReload()"
+      [actionInProgress]="actionInProgress()"
+      [actionResults]="actionResults()"
+      (keywordAction)="onMicrosoftKeywordAction($event)" />
   }
 
   <!-- LinkedIn Optimization -->
