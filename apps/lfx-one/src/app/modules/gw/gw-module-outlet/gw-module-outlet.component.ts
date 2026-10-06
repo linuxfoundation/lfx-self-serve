@@ -284,11 +284,13 @@ export class GwModuleOutletComponent {
       this.mountHandle = mod.mount(this.embedRoot().nativeElement, ctx);
       this.lastSyncedUrl = `${window.location.pathname}${window.location.search}`;
       this.watchHostNavigation();
-      void this.mountHandle.ready.then((manifest) => {
-        if (manifest) {
-          console.info(`[GwModuleOutlet] Gatewaze embed ${manifest.version} mounted (contract ${manifest.contract})`);
-        }
-      });
+      // Keep the skeleton up until the embed is actually in the DOM: `mounting` is cleared in the
+      // finally below, and clearing it on the synchronous return would leave the outlet blank
+      // while the loader is still fetching.
+      const manifest = await this.mountHandle.ready;
+      if (manifest) {
+        console.info(`[GwModuleOutlet] Gatewaze embed ${manifest.version} mounted (contract ${manifest.contract})`);
+      }
     } catch (error) {
       // No client-side error-reporting service exists yet; console.error is the established
       // fallback used throughout apps/lfx-one/src/app/shared (no-console isn't a lint rule here).

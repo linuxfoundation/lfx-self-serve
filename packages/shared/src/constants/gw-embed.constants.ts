@@ -124,6 +124,37 @@ export const GW_EMBED_STYLESHEET_ROUTE = '/public/api/gw-embed-stylesheet';
 /** What a hashed embed stylesheet file name looks like; anything else is rejected by the route. */
 export const GW_EMBED_STYLESHEET_NAME_PATTERN = /^admin-embed-[A-Za-z0-9_-]{1,32}\.css$/;
 
+/** How long the upstream stylesheet fetch may take; the file is ~2MB from a CDN-fronted origin. */
+export const GW_EMBED_STYLESHEET_UPSTREAM_TIMEOUT_MS = 15_000;
+
+/** Largest upstream stylesheet accepted, in bytes; the real one is ~2.3MB, so this is headroom. */
+export const GW_EMBED_STYLESHEET_MAX_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Scoped stylesheets kept in memory per server process. Names are content-hashed, so a cached
+ * copy never goes stale on the upstream side; the cap only bounds memory across Gatewaze releases.
+ */
+export const GW_EMBED_STYLESHEET_CACHE_MAX_ENTRIES = 4;
+
+/**
+ * How long a failed upstream fetch is remembered per name. Without this every distinct valid name
+ * would cost a fresh upstream request, and the route is anonymous, so it needs a brake beyond
+ * the per-IP limiter.
+ */
+export const GW_EMBED_STYLESHEET_NEGATIVE_CACHE_MS = 60_000;
+
+/** Upstream fetches allowed at once across all names; requests beyond this get a 503 with Retry-After. */
+export const GW_EMBED_STYLESHEET_MAX_IN_FLIGHT = 2;
+
+/**
+ * Browser/CDN caching for the scoped stylesheet. The body is LFX output (containment transform
+ * plus theme layer) under an upstream-hashed name, so it is not immutable: a theme or transform
+ * fix must reach users without a URL change. Short max-age with stale-while-revalidate and an
+ * ETag keeps page loads fast while bounding staleness to minutes.
+ */
+export const GW_EMBED_STYLESHEET_MAX_AGE_S = 300;
+export const GW_EMBED_STYLESHEET_STALE_WHILE_REVALIDATE_S = 7 * 24 * 60 * 60;
+
 /**
  * What the embed resolves an empty `apiBaseUrl` to — the same-origin BFF proxy mount.
  *
