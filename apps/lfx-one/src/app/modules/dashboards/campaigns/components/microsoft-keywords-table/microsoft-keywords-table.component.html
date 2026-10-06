@@ -1,0 +1,200 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Focus target for a finding's keyword lever on a Microsoft campaign, hence the id and `tabindex="-1"`. -->
+<section
+  id="optimization-microsoft-keywords"
+  tabindex="-1"
+  class="flex flex-col gap-3 focus:outline-none"
+  aria-labelledby="optimization-microsoft-keywords-heading"
+  data-testid="optimization-microsoft-keywords">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <h4 id="optimization-microsoft-keywords-heading" class="text-sm font-semibold text-gray-900">Microsoft Advertising Keywords</h4>
+    <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Microsoft keyword reporting window" data-testid="microsoft-keywords-windows">
+      @for (option of windowOptions; track option.value) {
+        <button
+          type="button"
+          (click)="selectWindow(option.value)"
+          [attr.aria-pressed]="selectedWindow() === option.value"
+          [class]="
+            selectedWindow() === option.value
+              ? 'rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white'
+              : 'rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200'
+          "
+          [attr.data-testid]="'microsoft-keywords-window-' + option.value">
+          {{ option.label }}
+        </button>
+      }
+    </div>
+  </div>
+
+  @switch (state()) {
+    @case ('loading') {
+      <div class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-500" data-testid="microsoft-keywords-loading">
+        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+        Loading Microsoft keyword metrics...
+      </div>
+    }
+    @case ('not-connected') {
+      <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600" data-testid="microsoft-keywords-not-connected">
+        Microsoft Advertising keyword metrics aren't available for this foundation.
+      </div>
+    }
+    @case ('error') {
+      <div class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3" data-testid="microsoft-keywords-error">
+        <p class="text-sm text-gray-600">{{ errorMessage() }}</p>
+        <lfx-button
+          label="Retry"
+          icon="fa-light fa-rotate-right"
+          size="small"
+          severity="secondary"
+          [text]="true"
+          (onClick)="retry()"
+          data-testid="microsoft-keywords-retry" />
+      </div>
+    }
+    @case ('loaded') {
+      @if (data(); as report) {
+        @if (reportBuilding()) {
+          <!-- No finished report covers the project yet: the empty rows mean "building", never "no keywords". -->
+          <div class="flex items-center gap-2 rounded-lg border border-dashed border-blue-200 bg-blue-50 px-4 py-3" data-testid="microsoft-keywords-building">
+            <i class="fa-light fa-hourglass-half text-blue-500" aria-hidden="true"></i>
+            <p class="text-sm text-blue-800">The Microsoft keyword report is building. Check back in a few minutes.</p>
+          </div>
+        } @else {
+          <div class="flex flex-col gap-1 text-xs text-gray-500">
+            <p data-testid="microsoft-keywords-as-of">Metrics as of {{ report.metricsAsOf | date: 'medium' }}</p>
+            @if (report.metricsPending) {
+              <p class="flex items-center gap-1.5 text-blue-700" data-testid="microsoft-keywords-pending">
+                <i class="fa-light fa-arrows-rotate fa-spin" aria-hidden="true"></i>
+                Building newer metrics. These figures will update once the next report finishes.
+              </p>
+            }
+            @if (!report.conversionsComplete) {
+              <p class="text-amber-700" data-testid="microsoft-keywords-conversions-incomplete">
+                Conversions not measured for some keywords: Microsoft left their count blank, so a 0 there is not a measurement.
+              </p>
+            }
+            @if (report.dataIncomplete) {
+              <p class="text-amber-700" data-testid="microsoft-keywords-data-incomplete">
+                Partial data: Microsoft flagged the report's last day as still aggregating, so these figures may still rise.
+              </p>
+            }
+            @if (report.truncated) {
+              <p data-testid="microsoft-keywords-truncated">Showing the top {{ report.keywords.length }} keywords; the totals cover only those.</p>
+            }
+          </div>
+
+          @if (rows().length === 0) {
+            <p class="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500" data-testid="microsoft-keywords-empty">
+              No Microsoft keyword activity in this window.
+            </p>
+          } @else {
+            <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                  <caption class="sr-only">
+                    Microsoft Advertising keyword metrics. Amounts are in each ad account's own currency.
+                  </caption>
+                  <thead>
+                    <tr class="border-b border-gray-200 bg-gray-50">
+                      <th scope="col" class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
+                      <th scope="col" class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
+                      <th scope="col" class="px-4 py-2.5 text-xs font-medium text-gray-500">Campaign</th>
+                      <th scope="col" class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Impr.</th>
+                      <th scope="col" class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
+                      <th scope="col" class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">CTR</th>
+                      <th scope="col" class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend (acct. currency)</th>
+                      <th scope="col" class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Avg CPC (acct. currency)</th>
+                      <th scope="col" class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Conv.</th>
+                      <th scope="col" class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of rows(); track row.key) {
+                      <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'microsoft-keyword-row-' + row.key">
+                        <td class="px-4 py-2.5 font-medium text-gray-900">{{ row.keyword.keyword }}</td>
+                        <td class="px-4 py-2.5">
+                          <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ row.keyword.matchType }}</span>
+                        </td>
+                        <td class="px-4 py-2.5 text-xs text-gray-500">{{ row.keyword.campaign }}</td>
+                        <td class="px-4 py-2.5 text-right text-gray-700">{{ row.keyword.impressions | number }}</td>
+                        <td class="px-4 py-2.5 text-right text-gray-700">{{ row.keyword.clicks | number }}</td>
+                        <td class="px-4 py-2.5 text-right text-gray-700">{{ row.keyword.ctr | adsPct }}</td>
+                        <td class="px-4 py-2.5 text-right text-gray-700">{{ row.keyword.spend | number: '1.2-2' }}</td>
+                        <td class="px-4 py-2.5 text-right text-gray-700">{{ row.keyword.avgCpc | number: '1.2-2' }}</td>
+                        <td class="px-4 py-2.5 text-right text-gray-700" [attr.data-testid]="'microsoft-keyword-conversions-' + row.key">
+                          @if (row.conversionsMeasured) {
+                            {{ row.keyword.conversions | number }}
+                          } @else {
+                            <span class="text-xs text-amber-700">Not measured</span>
+                          }
+                        </td>
+                        <td class="px-4 py-2.5 text-center">
+                          @if (row.result; as result) {
+                            <!-- Three states: an unconfirmed REMOVE may already have applied, so it is never "Failed". -->
+                            <span class="flex flex-col items-center gap-0.5" [attr.data-testid]="'microsoft-keyword-outcome-' + row.key">
+                              <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
+                              @if (!result.success) {
+                                <span class="max-w-[16rem] text-[11px] leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                              }
+                            </span>
+                          } @else if (row.inProgress) {
+                            <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
+                            <span class="sr-only">Working on {{ row.keyword.keyword }}</span>
+                          } @else {
+                            <div class="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                (click)="act(row.keyword, 'pause')"
+                                class="rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                                [attr.aria-label]="'Pause keyword ' + row.keyword.keyword"
+                                [attr.data-testid]="'microsoft-keyword-pause-' + row.key">
+                                <i class="fa-light fa-pause" aria-hidden="true"></i>
+                              </button>
+                              <button
+                                type="button"
+                                (click)="act(row.keyword, 'remove')"
+                                class="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                                [attr.aria-label]="'Remove keyword ' + row.keyword.keyword"
+                                [attr.data-testid]="'microsoft-keyword-remove-' + row.key">
+                                <i class="fa-light fa-trash" aria-hidden="true"></i>
+                              </button>
+                            </div>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                  <tfoot>
+                    <!--
+                      Counts only. Spend is NOT totalled: the campaigns may bill in different ad
+                      account currencies, and a sum across them would be a number with no unit.
+                    -->
+                    <tr class="border-t border-gray-200 bg-gray-50" data-testid="microsoft-keywords-totals">
+                      <th scope="row" colspan="3" class="px-4 py-2.5 text-xs font-medium text-gray-700">
+                        {{ report.truncated ? 'Subtotal (rows shown)' : 'Total' }}
+                      </th>
+                      <td class="px-4 py-2.5 text-right text-xs font-medium text-gray-700">{{ report.totals.impressions | number }}</td>
+                      <td class="px-4 py-2.5 text-right text-xs font-medium text-gray-700">{{ report.totals.clicks | number }}</td>
+                      <td class="px-4 py-2.5 text-right text-xs font-medium text-gray-700">{{ report.totals.avgCtr | adsPct }}</td>
+                      <td class="px-4 py-2.5 text-right text-xs text-gray-500" colspan="2">Not totalled across campaigns</td>
+                      <td class="px-4 py-2.5 text-right text-xs font-medium text-gray-700" data-testid="microsoft-keywords-total-conversions">
+                        @if (conversionsTotalMeasured()) {
+                          {{ report.totals.conversions | number }}
+                        } @else {
+                          <span class="text-amber-700">Not measured</span>
+                        }
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          }
+        }
+      }
+    }
+  }
+</section>
