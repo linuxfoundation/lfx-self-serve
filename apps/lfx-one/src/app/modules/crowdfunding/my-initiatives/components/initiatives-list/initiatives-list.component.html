@@ -13,7 +13,17 @@
       }
     </lfx-card>
   } @else {
-    <lfx-empty-state [icon]="emptyIcon()" [title]="emptyTitle()" [subtitle]="emptySubtitle()" data-testid="initiatives-empty-state" />
+    <lfx-empty-state
+      [icon]="emptyIcon()"
+      [title]="emptyTitle()"
+      [subtitle]="emptySubtitle()"
+      [ctaLabel]="initiatives().length === 0 ? 'New Initiative' : undefined"
+      [ctaHref]="createUrl()"
+      ctaTarget="_blank"
+      ctaRel="noopener noreferrer"
+      [ctaGhost]="true"
+      [ctaSize]="undefined"
+      data-testid="initiatives-empty-state" />
   }
 
   @if (hasMore()) {
