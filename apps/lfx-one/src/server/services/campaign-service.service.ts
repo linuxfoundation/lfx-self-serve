@@ -49,6 +49,7 @@ import type {
   CampaignServiceKeywordActions,
   CampaignServiceKeywords,
   CampaignServiceMicrosoftKeywords,
+  CampaignServiceNegativeKeywordInput,
   CampaignServiceNegativeKeywordResult,
   CampaignServiceNegativeKeywords,
   CampaignToggleStatus,
@@ -69,10 +70,11 @@ import type {
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { ServiceValidationError } from '../errors/service-validation.error';
 import { toAudienceStatus } from '../helpers/campaign-audience.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
-import { upstreamAnswered } from './campaign-keyword-actions';
+import { displayableErrorCode, upstreamAnswered } from './campaign-keyword-actions';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -1548,8 +1550,10 @@ export class CampaignServiceClient {
    * answers `ALREADY_PRESENT`, so a retry converges.
    *
    * A 2xx that cannot be read positionally (no results array, a different number of results than
-   * keywords sent, or another campaign's id) is refused as unconfirmed rather than mapped: the
-   * negatives may have been added, and nothing in such a body says which.
+   * keywords sent, another campaign's id, or ANY entry naming a different keyword or match type
+   * than the one sent at its index) is refused as unconfirmed rather than mapped: the negatives may
+   * have been added, and nothing in such a body says which. Checking only the count would let two
+   * results swapped in place show a negative that was not added as APPLIED.
    */
   public async addNegativeKeywords(req: Request, params: CampaignNegativeKeywordsParams): Promise<CampaignNegativeKeywordsResult> {
     const path =
@@ -1570,15 +1574,20 @@ export class CampaignServiceClient {
       'POST',
       // The body is the SIXTH argument: a payload in the query position goes out with no body.
       undefined,
-      { negative_keywords: params.negativeKeywords.map((kw) => ({ text: kw.text, match_type: kw.matchType })) }
+      { negative_keywords: params.negativeKeywords.map((kw): CampaignServiceNegativeKeywordInput => ({ text: kw.text, match_type: kw.matchType })) }
     );
 
-    if (response?.campaign_id !== params.campaignId || !Array.isArray(response.results) || response.results.length !== params.negativeKeywords.length) {
+    const readable =
+      response?.campaign_id === params.campaignId && Array.isArray(response.results) && response.results.length === params.negativeKeywords.length;
+    // Every entry, not just the count: results[i] must name the keyword and match type sent at i.
+    const mismatchedIndex = readable ? response.results.findIndex((entry, i) => answersAnotherNegativeKeyword(entry, params.negativeKeywords[i])) : -1;
+    if (!readable || mismatchedIndex !== -1) {
       logger.warning(req, 'add_negative_keywords', 'Upstream answered with a result set that cannot be read positionally', {
         campaign_id: params.campaignId,
         echoed_campaign_id: response?.campaign_id,
         requested: params.negativeKeywords.length,
         returned: Array.isArray(response?.results) ? response.results.length : null,
+        mismatched_index: mismatchedIndex === -1 ? null : mismatchedIndex,
       });
       throw new MicroserviceError('Negative keyword confirmation did not match the request', 502, 'BAD_GATEWAY', {
         operation: 'add_negative_keywords',
@@ -1612,7 +1621,10 @@ export class CampaignServiceClient {
   public async getMicrosoftAdsKeywords(req: Request, projectSlug: string, window?: MicrosoftKeywordsWindow): Promise<CampaignServiceMicrosoftKeywords> {
     if (projectSlug === '') {
       // Same refusal as getGoogleAdsKeywords: an empty segment addresses a different route.
-      throw new Error('A keyword read requires the project it is scoped to.');
+      throw ServiceValidationError.forField('project', 'A keyword read requires the project it is scoped to.', {
+        operation: 'get_microsoft_ads_keywords',
+        service: 'campaign_service_client',
+      });
     }
     return this.microserviceProxy.proxyRequest<CampaignServiceMicrosoftKeywords>(
       req,
@@ -2606,30 +2618,58 @@ function asUnconfirmedWriteFailure(error: unknown, operation: string, clientMess
 }
 
 /**
+ * Negative-keyword text as campaign-service sends it to the platform: trimmed, internal whitespace
+ * collapsed to one space. Case is kept, as upstream keeps it (it case-folds only to detect duplicates).
+ */
+function normalizeNegativeKeywordText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Whether an upstream result names a different keyword than the one sent at its index: another
+ * match type, or text that differs from the sent text once both are normalised as upstream
+ * normalises it. Such an entry means the response is shifted or misordered, so the CALLER treats
+ * the whole response as unreadable. An entry that is not an object names nothing and is left to
+ * `toNegativeKeywordResult`, which reports it UNCONFIRMED in place.
+ */
+function answersAnotherNegativeKeyword(
+  entry: CampaignServiceNegativeKeywordResult | null | undefined,
+  sent: CampaignNegativeKeywordsParams['negativeKeywords'][number]
+): boolean {
+  if (!entry || typeof entry !== 'object') {
+    return false;
+  }
+  return (
+    entry.match_type !== sent.matchType ||
+    typeof entry.text !== 'string' ||
+    normalizeNegativeKeywordText(entry.text) !== normalizeNegativeKeywordText(sent.text)
+  );
+}
+
+/**
  * One upstream negative-keyword result in the UI's vocabulary, at the position it answers.
  *
- * An entry that is not an object, or names an outcome outside the contract, cannot say what
- * happened to its keyword. It is reported as UNCONFIRMED with the keyword that was SENT at that
- * position, never dropped and never guessed as applied.
+ * The caller has already checked that the entry names the keyword sent here, so the result reports
+ * the SENT keyword (normalised as upstream sends it), never upstream's echo. An entry that is not an
+ * object, or names an outcome outside the contract, cannot say what happened to its keyword: it is
+ * reported as UNCONFIRMED, never dropped and never guessed as applied. `error_code` is untrusted
+ * wire data the UI renders, so it is relayed only when it looks like an identifier.
  */
 function toNegativeKeywordResult(
   entry: CampaignServiceNegativeKeywordResult | null | undefined,
   sent: CampaignNegativeKeywordsParams['negativeKeywords'][number]
 ): CampaignNegativeKeywordResult {
+  const text = normalizeNegativeKeywordText(sent.text);
   if (!entry || typeof entry !== 'object' || !CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES.has(entry.outcome)) {
-    return { text: sent.text, matchType: sent.matchType, outcome: 'UNCONFIRMED' };
+    return { text, matchType: sent.matchType, outcome: 'UNCONFIRMED' };
   }
-  const result: CampaignNegativeKeywordResult = {
-    // Upstream echoes the text as sent to the platform (trimmed, whitespace collapsed).
-    text: typeof entry.text === 'string' ? entry.text : sent.text,
-    matchType: entry.match_type === 'Exact' || entry.match_type === 'Phrase' ? entry.match_type : sent.matchType,
-    outcome: entry.outcome,
-  };
+  const result: CampaignNegativeKeywordResult = { text, matchType: sent.matchType, outcome: entry.outcome };
   if (typeof entry.negative_keyword_id === 'string' && entry.negative_keyword_id !== '') {
     result.negativeKeywordId = entry.negative_keyword_id;
   }
-  if (typeof entry.error_code === 'string' && entry.error_code !== '') {
-    result.errorCode = entry.error_code;
+  const errorCode = displayableErrorCode(entry.error_code);
+  if (errorCode) {
+    result.errorCode = errorCode;
   }
   return result;
 }

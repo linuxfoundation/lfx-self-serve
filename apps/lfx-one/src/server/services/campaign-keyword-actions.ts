@@ -292,8 +292,9 @@ export function unconfirmedMessageFor(platform: KeywordActionPlatform): string {
 /**
  * A platform error code, kept only when it LOOKS like one. `error_code` is untrusted wire data that
  * lands in a message the UI renders, so anything but a short identifier is dropped rather than shown.
+ * Exported so every campaign-service result mapper that relays an `error_code` applies the same rule.
  */
-function displayableErrorCode(code: unknown): string | null {
+export function displayableErrorCode(code: unknown): string | null {
   return typeof code === 'string' && /^[A-Za-z0-9_]{1,100}$/.test(code) ? code : null;
 }
 

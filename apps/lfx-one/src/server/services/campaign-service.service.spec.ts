@@ -48,6 +48,7 @@ import type { Request } from 'express';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { ServiceValidationError } from '../errors/service-validation.error';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { adaptJobPollResponse, CampaignServiceClient, deriveEventSlug, fromBriefResponse, isCampaignServiceJobId } from './campaign-service.service';
 
@@ -3580,7 +3581,10 @@ describe('CampaignServiceClient.addNegativeKeywords', () => {
     expect(result.results.map((r) => r.outcome)).toEqual(['APPLIED', 'FAILED', 'ALREADY_PRESENT', 'UNCONFIRMED']);
   });
 
-  it('keeps the text upstream echoes, which it sent to the platform normalised', async () => {
+  // Upstream echoes the text it sent the platform, trimmed and whitespace-collapsed. A difference
+  // in whitespace alone is the same keyword; the result reports the SENT keyword, normalised the
+  // same way, rather than adopting the echo.
+  it('accepts an echo that differs only in whitespace, and reports the keyword it sent', async () => {
     proxyRequest.mockResolvedValueOnce({
       campaign_id: 'c-1',
       results: [{ text: 'free download', match_type: 'Phrase', outcome: 'APPLIED' }],
@@ -3592,7 +3596,25 @@ describe('CampaignServiceClient.addNegativeKeywords', () => {
       negativeKeywords: [{ text: '  free   download ', matchType: 'Phrase' }],
     });
 
-    expect(result.results[0].text).toBe('free download');
+    expect(result.results).toEqual([{ text: 'free download', matchType: 'Phrase', outcome: 'APPLIED' }]);
+  });
+
+  // error_code is untrusted wire data the UI renders: only an identifier-shaped code is relayed.
+  it.each([
+    ['markup', '<img src=x onerror=alert(1)>'],
+    ['a sentence', 'the keyword matches an existing keyword'],
+    ['an over-long code', 'X'.repeat(101)],
+    ['a non-string', 42],
+  ])('omits an error_code that is %s', async (_label, errorCode) => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [{ text: 'crack', match_type: 'Exact', outcome: 'FAILED', error_code: errorCode }],
+      applied_count: 0,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: [sent[1]] });
+
+    expect(result.results).toEqual([{ text: 'crack', matchType: 'Exact', outcome: 'FAILED' }]);
   });
 
   // An entry that cannot say what happened to its keyword stays AT ITS POSITION as UNCONFIRMED,
@@ -3626,6 +3648,38 @@ describe('CampaignServiceClient.addNegativeKeywords', () => {
     [
       'another campaign’s id',
       { campaign_id: 'c-9', results: sent.map((k) => ({ text: k.text, match_type: k.matchType, outcome: 'APPLIED' })), applied_count: 4 },
+    ],
+    // Right count, wrong order: a count-only check would show 'crack' (FAILED upstream) as APPLIED.
+    [
+      'two results swapped in place',
+      {
+        campaign_id: 'c-1',
+        results: [
+          { text: 'crack', match_type: 'Exact', outcome: 'FAILED' },
+          { text: 'free download', match_type: 'Phrase', outcome: 'APPLIED' },
+          { text: 'torrent', match_type: 'Phrase', outcome: 'APPLIED' },
+          { text: 'cheap', match_type: 'Exact', outcome: 'APPLIED' },
+        ],
+        applied_count: 3,
+      },
+    ],
+    [
+      'an entry whose match_type differs from the one sent',
+      {
+        campaign_id: 'c-1',
+        results: sent.map((k, i) => ({ text: k.text, match_type: i === 2 ? 'Exact' : k.matchType, outcome: 'APPLIED' })),
+        applied_count: 4,
+      },
+    ],
+    [
+      'an entry with no text',
+      {
+        campaign_id: 'c-1',
+        results: sent.map((k, i) =>
+          i === 3 ? { match_type: k.matchType, outcome: 'APPLIED' } : { text: k.text, match_type: k.matchType, outcome: 'APPLIED' }
+        ),
+        applied_count: 4,
+      },
     ],
   ])('refuses a 2xx with %s as unconfirmed rather than mapping it', async (_label, body) => {
     proxyRequest.mockResolvedValueOnce(body);
@@ -3683,7 +3737,12 @@ describe('CampaignServiceClient.getMicrosoftAdsKeywords', () => {
   });
 
   it('refuses an empty project without calling the proxy', async () => {
-    await expect(new CampaignServiceClient().getMicrosoftAdsKeywords(req, '')).rejects.toThrow(/requires the project/);
+    const caught = await new CampaignServiceClient().getMicrosoftAdsKeywords(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors).toEqual([
+      { field: 'project', message: 'A keyword read requires the project it is scoped to.', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
 
     expect(proxyRequest).not.toHaveBeenCalled();
   });

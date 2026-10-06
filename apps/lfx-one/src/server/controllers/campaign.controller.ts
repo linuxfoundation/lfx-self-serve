@@ -1737,7 +1737,7 @@ export class CampaignController {
       // Microsoft ids are positive int64s too, so the format check above holds for both.
       if (kw.platform !== undefined && !KEYWORD_ACTION_PLATFORMS.has(kw.platform)) {
         next(
-          ServiceValidationError.forField('keywords', 'platform must be "google-ads" or "microsoft-ads" when given', {
+          ServiceValidationError.forField('keywords', `platform must be one of: ${[...KEYWORD_ACTION_PLATFORMS].join(', ')} when given`, {
             operation: 'keyword_actions',
             service: 'campaign_controller',
           })
