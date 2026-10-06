@@ -1772,6 +1772,17 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 
+  it('marks a 202 with no job id as indeterminate, not as a refusal', async () => {
+    // Accepted upstream, so the dispatch may still create the campaign; a retry could duplicate it.
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: {} });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res.jobId).toBeNull();
+    expect(res.indeterminate).toBe(true);
+  });
+
   it('sends the envelope as the request BODY, not as query parameters', async () => {
     // `proxyRequestWithResponse(req, service, path, method, query, data)`. Passing the envelope
     // fifth serializes it into the query string and sends no body, which campaign-service
@@ -1829,6 +1840,7 @@ describe('CampaignServiceClient.createCampaigns', () => {
 
     expect(res.jobId).toBeNull();
     expect(res.error).toContain('nothing was created');
+    expect(res.indeterminate, 'a definite refusal was marked indeterminate').toBeUndefined();
     expect(res.error).toContain('try again');
   });
 
@@ -1980,6 +1992,8 @@ describe('CampaignServiceClient.createCampaigns', () => {
 
     expect(res.error).toContain('could not be confirmed');
     expect(res.error).not.toContain('nothing was created');
+    // Structured, so the caller holds the stage without parsing the copy.
+    expect(res.indeterminate, 'an unconfirmed create was not marked indeterminate').toBe(true);
   });
 
   /**

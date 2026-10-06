@@ -1352,6 +1352,12 @@ export interface CampaignServiceCreateResult {
    * null. Never a raw upstream error — the caller renders this.
    */
   error: string | null;
+  /**
+   * The create MAY have started upstream although no job can be followed: accepted with no job id,
+   * or a failure after the request left that cannot be classified as a rejection. The caller must
+   * treat the outcome as unresolved -- a retry could create a duplicate -- rather than as a refusal.
+   */
+  indeterminate?: boolean;
 }
 
 export interface CampaignCreateResult {

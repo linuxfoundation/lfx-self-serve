@@ -726,7 +726,8 @@ export class CampaignController {
         // platforms while the user is being told creation failed, which is the one outcome worth
         // more than a confusing error message.
         logger.warning(req, 'campaign_create', 'campaign-service refused the create; not falling back', { briefId, projectSlug });
-        res.json({ jobId: '', error: viaService.error });
+        // `indeterminate` travels with it: a create that MAY have started must not read as a refusal.
+        res.json({ jobId: '', error: viaService.error, ...(viaService.indeterminate ? { indeterminate: true } : {}) });
         return;
       }
 

@@ -1338,7 +1338,12 @@ export class CampaignServiceClient {
         // A 202 with no job id is unusable: the caller has no way to poll, and reporting success
         // would leave a dispatch running that nothing can observe. Say so rather than returning
         // an empty id the poller would treat as a legacy in-process job.
-        return { enabled: true, jobId: null, error: 'Campaign creation was accepted but returned no job to track. Check the ad platforms before retrying.' };
+        return {
+          enabled: true,
+          jobId: null,
+          error: 'Campaign creation was accepted but returned no job to track. Check the ad platforms before retrying.',
+          indeterminate: true,
+        };
       }
       return { enabled: true, jobId, error: null };
     } catch (error: unknown) {
@@ -1385,6 +1390,7 @@ export class CampaignServiceClient {
         enabled: true,
         jobId: null,
         error: 'Campaign creation could not be confirmed. It may have started — check the ad platforms before retrying.',
+        indeterminate: true,
       };
     }
   }

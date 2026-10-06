@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -3557,6 +3557,36 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
       expect(internals().emailStagingHeld(), 'a finished stage was held as unresolved').toBe(false);
+    });
+
+    it.each([
+      ['an indeterminate create (it may have started)', { jobId: '', error: 'Campaign creation could not be confirmed.', indeterminate: true }, true],
+      ['a definite refusal (nothing was created)', { jobId: '', error: 'Campaign creation was rejected and nothing was created.' }, false],
+    ])('on %s, holds the stage only if a draft may exist', async (_label, response, held) => {
+      // A refusal left `dispatchedStage` set, so a later segment change or reset turned a draft that
+      // cannot exist into an unresolved hold -- and an indeterminate error read as a refusal.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of(response) as never);
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+
+      expect(internals().emailStagingHeld()).toBe(held);
+    });
+
+    it('holds the stage when the create request fails after it was sent', async () => {
+      // The request may have reached the BFF and started; failing closed beats a duplicate draft.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })) as never);
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingHeld(), 'a create that may have started was released').toBe(true);
     });
 
     it('holds the locks when staging is accepted but returns no job to follow', async () => {

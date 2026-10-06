@@ -3279,6 +3279,13 @@ export class CampaignsComponent {
 
       if (outcome.error) {
         this.emailStaging.set('error');
+        // An error is not always a refusal: the BFF marks a create that MAY have started (accepted
+        // with no job, or unconfirmed after it left) as indeterminate. Held, or a retry duplicates it.
+        if (outcome.indeterminate) {
+          this.markStageUnresolved(projectSlug, briefId);
+        } else {
+          this.dispatchedStage = null;
+        }
         this.emailStagingMessage.set(outcome.error);
         return;
       }
@@ -3299,6 +3306,11 @@ export class CampaignsComponent {
 
       this.pollStagingJob(outcome.jobId, projectSlug, briefId);
     } catch {
+      // A failure AFTER the create left is indeterminate: it may have reached the BFF and started.
+      // Fail closed and hold its scope; a failure before dispatch (the persist) has nothing to hold.
+      if (this.dispatchedStage !== null) {
+        this.markStageUnresolved(this.dispatchedStage.projectSlug, this.dispatchedStage.briefId);
+      }
       // Guarded like every other write in this method. A reset mid-stage would otherwise raise a
       // failure banner for a brief nobody is looking at -- and on the email tab that reads as
       // "your staging failed" about work the operator has already navigated away from.
