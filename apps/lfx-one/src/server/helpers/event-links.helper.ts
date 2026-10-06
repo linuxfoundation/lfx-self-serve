@@ -11,12 +11,22 @@ import { MAX_PAGE_LINKS, RAW_TEXT_CLOSER_SOLIDUS_RE, RAW_TEXT_CONTAINERS, TOKENI
  * HTML `<base href>`.
  *
  * What this protects against is a model INVENTING a URL, not a page planting one: the page is the
- * authority on its own links, and its owner can publish any real link they like. The rule is
- * therefore one-sided -- where this tokenizer and a browser COULD disagree, the region is treated
- * as inert. A real link may be dropped (the verification then simply finds nothing); an inert one
- * is not accepted. There are no exceptions to that rule here, because each exception tried so far
- * (honouring a self-closing slash inside SVG, rendering a declarative shadow root) was itself a
- * way back in.
+ * authority on its own links, and its owner can publish any real link they like. So the aim is
+ * one-sided -- where this tokenizer and a browser could disagree, treat the region as inert; a real
+ * link may be dropped (verification then finds nothing), an inert one should not be accepted.
+ * Exceptions tried so far (honouring a self-closing slash inside SVG, rendering a declarative shadow
+ * root) were each a way back in, so none is made.
+ *
+ * KNOWN RESIDUAL GAPS. A flat tokenizer cannot match a browser exactly; only a spec tree builder
+ * can, and those are quadratic on hostile input (see below). These inputs can still yield a link a
+ * browser does not render, or the wrong `<base>`, and are accepted on the threat model above --
+ * each is markup only the page's own author can write, for a link they could simply publish:
+ * a raw-text closer hidden inside an attribute, comment or `<!x` in noscript/iframe/noembed/
+ * noframes or a self-closed raw-text element; raw-text elements inside SVG/MathML (`<svg><style>`
+ * with `<!--` or CDATA); comment and bogus-comment endings the tokenizer reads differently
+ * (`--!>`, `<!->`, HTML-content CDATA); `<frameset>` and `<select>` insertion modes; MathML `<a>`
+ * and `<base>`; and a real `<base>` inside a region suppressed here. Tracked in #3306 for a
+ * spec-parser-in-a-worker follow-up.
  *
  * Built on htmlparser2's TOKENIZER, which implements the tokenizing rules a hand-rolled scanner kept
  * being defeated on: an `href` inside another attribute's value, anchor markup inside an attribute,
