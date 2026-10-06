@@ -62,8 +62,8 @@ export interface PersonaApiResponse extends PersonaDetections {
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona. Request-scoped, not cached. */
   isLFStaff: boolean;
   /**
-   * `auditor` FGA grant on the tenant ROOT project — the Formations queue's (`foundation/formations`,
-   * GH-1958) authorization boundary. Unlike {@link isMarketingAuditor}, `auditor` has no
+   * `auditor_guard` FGA grant on the tenant ROOT project — the Formations queue's (`foundation/formations`,
+   * GH-1958) authorization boundary. Unlike {@link isMarketingAuditor}, it has no
    * project-scoped variant to race, so this is always computed (not flag-gated) and carries no
    * "root grant" distinction field. Request-scoped, not cached.
    */

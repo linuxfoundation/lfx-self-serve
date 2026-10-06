@@ -2069,6 +2069,7 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
 
     const result = await service.getProjectById(req, 'p1', true, false, true);
 
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'p1', access: 'auditor_guard' });
     expect(result.auditor).toBeUndefined();
     expect(warning).toHaveBeenCalledWith(req, 'get_project_by_id', 'auditor check failed, skipping field', {
       project_uid: 'p1',
