@@ -26,6 +26,7 @@ import {
   MentorshipTermRowStatus,
   MentorshipUpstreamAdministeredProgram,
   MentorshipUpstreamApplication,
+  MentorshipUpstreamApplicationNoteUpdate,
   MentorshipUpstreamListResponse,
   MentorshipUpstreamMemberManagementRow,
   MentorshipUpstreamProgramApplicationRow,
@@ -328,6 +329,21 @@ export class MentorshipAdminService {
       'PATCH',
       undefined,
       { status: body.status, ...(body.status === 'accepted' ? { attendance_type: body.attendanceType } : {}) }
+    );
+  }
+
+  /** Saves, edits or clears (an empty `note`) the one reviewer note of an application. Upstream's 403 and 404 pass through. The note is never logged. */
+  public async updateApplicationNote(req: Request, applicationId: string, note: string): Promise<void> {
+    logger.debug(req, 'mentorship_admin_update_application_note', 'Saving application reviewer note', { applicationId, noteLength: note.length });
+
+    const body: MentorshipUpstreamApplicationNoteUpdate = { reviewer_note: note };
+    await proxyMentorshipRequest<unknown>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/note`,
+      'PUT',
+      undefined,
+      body
     );
   }
 

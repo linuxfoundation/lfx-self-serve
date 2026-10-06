@@ -99,6 +99,13 @@ export class MentorshipAdminService {
       .pipe(take(1), this.logFailure('updateApplicationStatus'));
   }
 
+  /** Saves, edits or clears (an empty `note`) the reviewer note of one application. Resolves on 204. */
+  public updateApplicationNote(applicationId: string, note: string): Observable<void> {
+    return this.http
+      .put<void>(`/api/mentorship/admin/applications/${encodeURIComponent(applicationId)}/note`, { note })
+      .pipe(take(1), this.logFailure('updateApplicationNote'));
+  }
+
   /** Withdraws one application on the mentee's behalf. Resolves on 204. */
   public withdrawApplication(applicationId: string): Observable<void> {
     return this.http

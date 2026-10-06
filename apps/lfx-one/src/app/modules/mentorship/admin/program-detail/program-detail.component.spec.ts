@@ -55,6 +55,7 @@ describe('ProgramDetailComponent', () => {
   let dialogOpen: ReturnType<typeof vi.fn>;
   let getProgram: ReturnType<typeof vi.fn<(programId: string) => Observable<MentorshipAdminProgramPage>>>;
   let getProgramMentees: ReturnType<typeof vi.fn>;
+  let updateApplicationNote: ReturnType<typeof vi.fn<(applicationId: string, note: string) => Observable<void>>>;
 
   // Takes the observable rather than the value: a dismissed dialog closes with `undefined`,
   // and passing that through a defaulted parameter would silently restore the default.
@@ -65,6 +66,7 @@ describe('ProgramDetailComponent', () => {
     dialogOpen = options.dialog ?? vi.fn(() => ({ onClose }));
     getProgram = vi.fn().mockReturnValue(options.page ?? of(programPage()));
     getProgramMentees = vi.fn().mockReturnValue(of(options.mentees ?? menteesPage()));
+    updateApplicationNote = vi.fn().mockReturnValue(of(undefined));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -82,6 +84,7 @@ describe('ProgramDetailComponent', () => {
             getProgramMentors: vi.fn().mockReturnValue(of({ data: [], total: 0 })),
             getProgramTerms: vi.fn().mockReturnValue(of({ data: [], total: 0 })),
             getApplicationTasks: vi.fn().mockReturnValue(of([])),
+            updateApplicationNote,
           },
         },
         {
@@ -235,8 +238,64 @@ describe('ProgramDetailComponent', () => {
 
     clickNote('app_1');
 
+    expect(updateApplicationNote).not.toHaveBeenCalled();
     expect(fixture.componentInstance['noteDrafts']()).toEqual({});
     expect(noteText('app_1')).toBe('Add note');
+  });
+
+  describe('saving a reviewer note', () => {
+    it('sends the trimmed note for the application and shows it once saved', () => {
+      buildWith(of('  needs a second look  '));
+
+      clickNote('app_1');
+
+      expect(updateApplicationNote).toHaveBeenCalledWith('app_1', 'needs a second look');
+      expect(noteText('app_1')).toBe('needs a second look');
+    });
+
+    it('sends an empty note to clear the one the row arrived with', () => {
+      buildWith(of(''), { mentees: { data: [application({ note: 'from the server' })], total: 1 } });
+
+      clickNote('app_1');
+
+      expect(updateApplicationNote).toHaveBeenCalledWith('app_1', '');
+      expect(noteText('app_1')).toBe('Add note');
+    });
+
+    it('does not send a note that did not change', () => {
+      buildWith(of(' from the server '), { mentees: { data: [application({ note: 'from the server' })], total: 1 } });
+
+      clickNote('app_1');
+
+      expect(updateApplicationNote).not.toHaveBeenCalled();
+    });
+
+    it('keeps the note the row had when the save fails', () => {
+      buildWith(of('a new note'), { mentees: { data: [application({ note: 'from the server' })], total: 1 } });
+      updateApplicationNote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+
+      clickNote('app_1');
+
+      expect(fixture.componentInstance['noteDrafts']()).toEqual({});
+      expect(noteText('app_1')).toBe('from the server');
+    });
+
+    it('holds a second save for a row until the first one answers', () => {
+      buildWith(of('first'));
+      const pending = new Subject<void>();
+      updateApplicationNote.mockReturnValue(pending);
+
+      clickNote('app_1');
+      clickNote('app_1');
+
+      expect(updateApplicationNote).toHaveBeenCalledTimes(1);
+
+      pending.next();
+      pending.complete();
+      settle();
+
+      expect(noteText('app_1')).toBe('first');
+    });
   });
 
   it('seeds the dialog with the row note, then with the draft once one exists', () => {

@@ -25,6 +25,7 @@ import { MentorsTabComponent } from './components/mentors-tab/mentors-tab.compon
 import { PastMenteesTabComponent } from './components/past-mentees-tab/past-mentees-tab.component';
 import { ProgramDetailHeaderComponent } from './components/program-detail-header/program-detail-header.component';
 import { TermsTabComponent } from './components/terms-tab/terms-tab.component';
+import { AdminNoteSaveService } from '../../services/admin-note-save.service';
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 
 /** Why the page could not be shown: the caller may not manage the program, it does not exist, or the read failed. */
@@ -59,6 +60,7 @@ export class ProgramDetailComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly mentorshipAdminService = inject(MentorshipAdminService);
   private readonly dialogService = inject(DialogService);
+  private readonly noteSave = inject(AdminNoteSaveService);
   private readonly comingSoon = inject(MentorshipComingSoonService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -71,10 +73,12 @@ export class ProgramDetailComponent {
   protected readonly loadErrorMessage = MENTORSHIP_ADMIN_PROGRAM_LOAD_ERROR_MESSAGE;
 
   /**
-   * Notes edited this session, keyed by person id. Local until a write endpoint
-   * exists; a person absent from the map falls back to the note their row arrived with.
+   * Notes saved this session, keyed by person id, so a tab shows one without reading its rows again;
+   * a person absent from the map falls back to the note their row arrived with.
    */
   protected readonly noteDrafts = signal<Record<string, string>>({});
+  /** Rows whose note is being saved; a second save for one waits for the first. */
+  private readonly savingNoteIds = signal<ReadonlySet<string>>(new Set());
 
   private readonly reloadCount = signal(0);
   /** Bumped by every page read and silent refresh; only the latest one may write the page. */
@@ -143,8 +147,33 @@ export class ProgramDetailComponent {
       // Dismissing the dialog resolves to `undefined` and must leave the note untouched;
       // an empty string is an explicit clear.
       if (note === undefined) return;
-      this.noteDrafts.update((drafts) => ({ ...drafts, [request.personId]: note }));
+      this.saveNote(request, note);
     });
+  }
+
+  /**
+   * Saves the note, then keeps it in `noteDrafts` so every tab shows it without a read. An unchanged note is not sent,
+   * and a second save for the same row waits for the first. The save is not tied to the page, so leaving it mid-save
+   * still lands the note. A failed save toasts and leaves the row's note as it was.
+   */
+  private saveNote(request: MentorshipNoteRequest, note: string): void {
+    const personId = request.personId;
+    const trimmed = note.trim();
+    if (this.savingNoteIds().has(personId)) return;
+    if (trimmed === this.noteFor(request).trim()) return;
+
+    this.savingNoteIds.update((ids) => new Set(ids).add(personId));
+    this.noteSave
+      .save(personId, trimmed)
+      .pipe(take(1))
+      .subscribe((saved) => {
+        this.savingNoteIds.update((ids) => {
+          const next = new Set(ids);
+          next.delete(personId);
+          return next;
+        });
+        if (saved) this.noteDrafts.update((drafts) => ({ ...drafts, [personId]: trimmed }));
+      });
   }
 
   /** Reads the page for the route's program, again on a retry; a read still in flight is dropped. */

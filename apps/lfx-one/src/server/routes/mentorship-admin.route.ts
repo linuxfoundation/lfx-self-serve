@@ -16,6 +16,7 @@ router.get('/programs/:programId/mentors', (req, res, next) => adminController.g
 router.get('/programs/:programId/terms', (req, res, next) => adminController.getProgramTerms(req, res, next));
 router.get('/applications/:applicationId/tasks', (req, res, next) => adminController.getApplicationTasks(req, res, next));
 router.patch('/applications/:applicationId/status', blockDuringImpersonation, (req, res, next) => adminController.updateApplicationStatus(req, res, next));
+router.put('/applications/:applicationId/note', blockDuringImpersonation, (req, res, next) => adminController.updateApplicationNote(req, res, next));
 router.post('/applications/:applicationId/withdraw', blockDuringImpersonation, (req, res, next) => adminController.withdrawApplication(req, res, next));
 router.post('/programs/:programId/terms/:termId/decline-pending', blockDuringImpersonation, (req, res, next) =>
   adminController.declinePendingForTerm(req, res, next)

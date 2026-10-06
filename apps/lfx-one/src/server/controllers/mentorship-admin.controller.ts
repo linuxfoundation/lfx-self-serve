@@ -10,6 +10,7 @@ import {
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTOR_STATUSES,
   MENTORSHIP_ATTENDANCE_TYPES,
+  MENTORSHIP_MENTEE_NOTE_MAX,
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_PROGRAM_PAGE_SIZE,
   MENTORSHIP_PROGRAM_STATUSES,
@@ -230,6 +231,36 @@ export class MentorshipAdminController {
       await this.mentorshipAdminService.updateApplicationStatus(req, applicationId, body);
 
       logger.success(req, operation, startTime, { applicationId, status: body.status });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PUT /api/mentorship/admin/applications/:applicationId/note — body { note } -> 204. A note blank once trimmed clears it;
+  // one over MENTORSHIP_MENTEE_NOTE_MAX characters is a 400. The note is never logged, only its length.
+  public async updateApplicationNote(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'update_mentorship_admin_application_note';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const applicationId = this.requireUuidParam(req, 'applicationId', operation);
+      const raw: unknown = req.body?.note;
+      if (typeof raw !== 'string') {
+        throw ServiceValidationError.forField('note', 'note must be a string', { operation });
+      }
+      const note = raw.trim();
+      if (note.length > MENTORSHIP_MENTEE_NOTE_MAX) {
+        throw ServiceValidationError.forField('note', `note must be at most ${MENTORSHIP_MENTEE_NOTE_MAX} characters`, { operation });
+      }
+
+      await this.mentorshipAdminService.updateApplicationNote(req, applicationId, note);
+
+      logger.success(req, operation, startTime, { applicationId, noteLength: note.length });
       res.status(204).send();
     } catch (error) {
       next(error);

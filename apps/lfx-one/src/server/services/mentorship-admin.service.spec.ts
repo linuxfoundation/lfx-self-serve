@@ -589,6 +589,24 @@ describe('MentorshipAdminService application decisions', () => {
     await expect(service.updateApplicationStatus(buildReq(), APPLICATION_ID, { status: 'graduated' })).rejects.toMatchObject({ statusCode: 422 });
   });
 
+  it('puts the note upstream as the reviewer note of the application', async () => {
+    const spy = stubProgramReads({ [`${APPLICATION_PATH}/note`]: {} });
+
+    await service.updateApplicationNote(buildReq(), APPLICATION_ID, 'needs a second look');
+    await service.updateApplicationNote(buildReq(), APPLICATION_ID, '');
+
+    expect(spy.mock.calls.map((call) => [call[2], call[3], call[5]])).toEqual([
+      [`${APPLICATION_PATH}/note`, 'PUT', { reviewer_note: 'needs a second look' }],
+      [`${APPLICATION_PATH}/note`, 'PUT', { reviewer_note: '' }],
+    ]);
+  });
+
+  it.each([403, 404, 409])('passes an upstream %s on from the note write', async (status) => {
+    stubProgramReads({ [`${APPLICATION_PATH}/note`]: new MicroserviceError('upstream', status, 'UPSTREAM') });
+
+    await expect(service.updateApplicationNote(buildReq(), APPLICATION_ID, 'x')).rejects.toMatchObject({ statusCode: status });
+  });
+
   it.each(['pending', 'hold', 'accepted'])('withdraws a %s application on the mentee behalf', async (status) => {
     const spy = stubProgramReads({ [APPLICATION_PATH]: { id: APPLICATION_ID, status }, [`${APPLICATION_PATH}/withdraw-for-mentee`]: {} });
 

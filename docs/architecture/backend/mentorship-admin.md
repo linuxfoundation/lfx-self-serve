@@ -5,7 +5,7 @@
 
 The admin pages under `/mentorship/admin/*` read their data from the LFX One BFF's `/api/mentorship/admin/*` routes. The admin code has its own router, controller and services, separate from the mentor and mentee code, so each admin screen can move to the mentorship service without touching the other two (linuxfoundation/lfx-mentorship#229).
 
-The program list and the program page (header, tab counts and all four tabs) read the mentorship service (see [Program list sourcing](#program-list-sourcing) and [Program page sourcing](#program-page-sourcing)). The program page reads no mock data; the Enroll form's lookups and the Mentors tab's invite picker still do (see [Program list sourcing](#program-list-sourcing)). Application decisions on Current Mentees (accept, decline, withdraw, graduate, decline by term) write through the mentorship service (see [Application decisions](#application-decisions)). The other write actions (invite, remove, term create, edit, close, re-open, delete) stay "coming soon" stubs until their PRs.
+The program list and the program page (header, tab counts and all four tabs) read the mentorship service (see [Program list sourcing](#program-list-sourcing) and [Program page sourcing](#program-page-sourcing)). The program page reads no mock data; the Enroll form's lookups and the Mentors tab's invite picker still do (see [Program list sourcing](#program-list-sourcing)). Application decisions on Current Mentees (accept, decline, withdraw, graduate, decline by term) and the reviewer note write through the mentorship service (see [Application decisions](#application-decisions) and [Reviewer note](#reviewer-note)). The other write actions (invite, remove, term create, edit, close, re-open, delete) stay "coming soon" stubs until their PRs.
 
 ## Routes
 
@@ -20,6 +20,7 @@ The program list and the program page (header, tab counts and all four tabs) rea
 | PATCH  | `/api/mentorship/admin/applications/:applicationId/status`                | `updateApplicationStatus` | Accept, Decline and Graduate on a Current Mentees row |
 | POST   | `/api/mentorship/admin/applications/:applicationId/withdraw`              | `withdrawApplication`     | Withdraw on a Current Mentees row                     |
 | POST   | `/api/mentorship/admin/programs/:programId/terms/:termId/decline-pending` | `declinePendingForTerm`   | Decline by Term on the Current Mentees toolbar        |
+| PUT    | `/api/mentorship/admin/applications/:applicationId/note`                  | `updateApplicationNote`   | Note on a Current Mentees row                         |
 
 `programId`, `applicationId` and `termId` must be UUIDs; anything else is a 400. The list accepts `search`, `status`, `offset` and `limit` (1–50, default 12). A malformed, blank, repeated or out-of-range `offset` or `limit` is a 400, and so is a repeated `search` or `status`. The mentees route requires `type` (`current` for open terms, `past` for closed ones), and accepts `status`, `termId`, `search`, `offset` and `limit` (1–50); a bad value is a 400. The mentors route accepts `status` (`requested`, `pending`, `invited`, `active`, `declined`, `withdrawn`), `search`, `offset` and `limit` (1–50, default 10). The terms route accepts `offset` and `limit` (1–50, default 10).
 
@@ -65,6 +66,16 @@ Three write routes, each behind `blockDuringImpersonation` (a 403 with code `IMP
 - Graduate's task warning is computed in the browser from the row's counts, `max(tasksTotal - tasksSubmitted, 0)`. No task is read for it.
 - Every decision reloads the current page, which also clears the loaded tasks and collapses the rows, and has the program page read its tab counts again without its loading state, so the open tab keeps its filters and page. A write is never cancelled by the tab going away; one that answers after the admin switched tabs still toasts and refreshes the counts, through a callback the page hands the tab, but reloads no table.
 - Logs carry the application, program and term ids, the status and the declined count only, never names or emails.
+
+## Reviewer note
+
+`PUT …/note` saves the one shared reviewer note of an application, behind `blockDuringImpersonation`, with the caller's bearer token.
+
+- The body is `{ note }`: a string, trimmed here, at most `MENTORSHIP_MENTEE_NOTE_MAX` (2000) characters. An empty note clears it. A missing body, a non-string `note`, an over-long note or a bad `applicationId` is a 400 before any upstream call.
+- The BFF sends `PUT /applications/{id}/note` with `{ reviewer_note }` and answers 204.
+- Upstream 403 and 404 (and 409) pass through unchanged. The page shows its own message for a 403 and a 404, the server's message for the impersonation 403, and a generic one otherwise, and leaves the row's note as it was.
+- The note dialog is the same one the mentor surface uses. The row shows the saved note straight away; a save of an unchanged note sends nothing, and one save per application is in flight at a time. A note changes no tab count, so the page does not reload its counts.
+- Logs carry the application id and the note's length only, never its text.
 
 ## Program list sourcing
 

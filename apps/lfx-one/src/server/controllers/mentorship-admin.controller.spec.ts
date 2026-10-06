@@ -5,6 +5,7 @@
 // which needs the JIT compiler under vitest.
 import '@angular/compiler';
 
+import { MENTORSHIP_MENTEE_NOTE_MAX } from '@lfx-one/shared/constants';
 import type { NextFunction, Request, Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -364,6 +365,72 @@ describe('MentorshipAdminController', () => {
       expect(write).not.toHaveBeenCalled();
     });
 
+    describe('updateApplicationNote', () => {
+      const noteReq = (body: unknown, applicationId = APPLICATION_ID): Request => ({ ...buildReq({}, { applicationId }), body }) as Request;
+
+      it('passes the trimmed note and answers 204', async () => {
+        const write = vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationNote').mockResolvedValue();
+        const out = writeRes();
+
+        await controller.updateApplicationNote(noteReq({ note: '  needs a second look  ' }), out, next);
+
+        expect(write).toHaveBeenCalledWith(expect.anything(), APPLICATION_ID, 'needs a second look');
+        expect(out.status).toHaveBeenCalledWith(204);
+        expect(next).not.toHaveBeenCalled();
+      });
+
+      it('passes an empty note on, which clears it', async () => {
+        const write = vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationNote').mockResolvedValue();
+
+        await controller.updateApplicationNote(noteReq({ note: '   ' }), writeRes(), next);
+
+        expect(write).toHaveBeenCalledWith(expect.anything(), APPLICATION_ID, '');
+      });
+
+      it('accepts a note of exactly the largest length', async () => {
+        const write = vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationNote').mockResolvedValue();
+
+        await controller.updateApplicationNote(noteReq({ note: 'a'.repeat(MENTORSHIP_MENTEE_NOTE_MAX) }), writeRes(), next);
+
+        expect(write).toHaveBeenCalledTimes(1);
+        expect(next).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['an application id that is not a UUID', { note: 'x' }, '12'],
+        ['no body', undefined, APPLICATION_ID],
+        ['a note that is not a string', { note: 5 }, APPLICATION_ID],
+        ['a note over the largest length', { note: 'a'.repeat(MENTORSHIP_MENTEE_NOTE_MAX + 1) }, APPLICATION_ID],
+      ])('rejects %s with a 400 and no upstream call', async (_label, body, applicationId) => {
+        const write = vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationNote');
+
+        await controller.updateApplicationNote(noteReq(body, applicationId), writeRes(), next);
+
+        expect(statusCodes()).toEqual([400]);
+        expect(write).not.toHaveBeenCalled();
+      });
+
+      it('passes an upstream 409 on to next', async () => {
+        vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationNote').mockRejectedValue(Object.assign(new Error('changed'), { statusCode: 409 }));
+
+        await controller.updateApplicationNote(noteReq({ note: 'x' }), writeRes(), next);
+
+        expect(statusCodes()).toEqual([409]);
+      });
+
+      it('logs the application id and the note length, never the note', async () => {
+        vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationNote').mockResolvedValue();
+
+        await controller.updateApplicationNote(noteReq({ note: 'private-reviewer-text' }), writeRes(), next);
+
+        // The request is the first argument of every call, so only the rest is what the controller chose to log.
+        const logged = JSON.stringify([...vi.mocked(logger.startOperation).mock.calls, ...vi.mocked(logger.success).mock.calls].map((call) => call.slice(1)));
+        expect(logged).toContain(APPLICATION_ID);
+        expect(logged).toContain(`"noteLength":${'private-reviewer-text'.length}`);
+        expect(logged).not.toContain('private-reviewer-text');
+      });
+    });
+
     it('withdrawApplication answers 204', async () => {
       const write = vi.spyOn(MentorshipAdminService.prototype, 'withdrawApplication').mockResolvedValue();
       const out = writeRes();
@@ -412,6 +479,7 @@ describe('MentorshipAdminController', () => {
       ['getProgramMentors', 'getProgramMentors', { programId: PROGRAM_ID }, {}],
       ['getProgramTerms', 'getProgramTerms', { programId: PROGRAM_ID }, {}],
       ['getApplicationTasks', 'getApplicationTasks', { applicationId: PROGRAM_ID }, {}],
+      ['updateApplicationNote', 'updateApplicationNote', { applicationId: PROGRAM_ID }, {}],
     ] as const)('%s passes an AuthenticationError to next without reading upstream', async (method, serviceMethod, params, query) => {
       vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
       const read = vi.spyOn(MentorshipAdminService.prototype, serviceMethod);
