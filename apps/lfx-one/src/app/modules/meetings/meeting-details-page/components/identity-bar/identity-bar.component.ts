@@ -3,12 +3,10 @@
 
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, input, Signal, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MEETING_STATUS_LABELS } from '@lfx-one/shared/constants';
-import { environment } from '@environments/environment';
 import { LensService } from '@services/lens.service';
 import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
@@ -37,7 +35,6 @@ export class MeetingIdentityBarComponent {
   protected readonly userService = inject(UserService);
   private readonly lensService = inject(LensService);
   private readonly router = inject(Router);
-  private readonly activatedRoute = inject(ActivatedRoute);
 
   /** True once the page header has scrolled out of view; the bar then shows the meeting's identity. */
   public readonly condensed = input(false);
@@ -55,7 +52,8 @@ export class MeetingIdentityBarComponent {
   /** Start of the page's selected occurrence (the state service's), else of the meeting itself. */
   protected readonly startTime: Signal<string | undefined> = this.initStartTime();
   protected readonly subtitle: Signal<string> = this.initSubtitle();
-  protected readonly signInHref: Signal<string> = this.initSignInHref();
+  /** The state service's sign-in link, which the action slot shares (FR-013). */
+  protected readonly signInHref: Signal<string> = this.state.signInHref;
 
   protected navigateToMyMeetings(): void {
     this.lensService.setLens('me');
@@ -79,23 +77,6 @@ export class MeetingIdentityBarComponent {
       // The state service's status, which the header's pill shows too (E1-05).
       const label = MEETING_STATUS_LABELS[status];
       return [meeting.project?.name, label].filter(Boolean).join(' · ');
-    });
-  }
-
-  private initSignInHref(): Signal<string> {
-    const params = toSignal(this.activatedRoute.paramMap, { initialValue: this.activatedRoute.snapshot.paramMap });
-    const query = toSignal(this.activatedRoute.queryParamMap, { initialValue: this.activatedRoute.snapshot.queryParamMap });
-    return computed(() => {
-      const search = new URLSearchParams();
-      const queryParams = query();
-      for (const key of queryParams.keys) {
-        for (const value of queryParams.getAll(key)) {
-          search.append(key, value);
-        }
-      }
-      const queryString = search.toString();
-      const returnTo = `${environment.urls.home}/meetings/${encodeURIComponent(params().get('id') ?? '')}${queryString ? `?${queryString}` : ''}`;
-      return `/login?returnTo=${encodeURIComponent(returnTo)}`;
     });
   }
 }

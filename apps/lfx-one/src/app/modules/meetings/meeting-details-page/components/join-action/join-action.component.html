@@ -1,0 +1,56 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- One button, three states in data-state (testid-contract.md: identity in the testid, state in data-*).
+     Prototype geometry in exact px (the app's 14px root would shrink rem utilities). -->
+@switch (joinState().status) {
+  @case ('ready') {
+    <lfx-button
+      label="Join now"
+      icon="fa-light fa-video"
+      [href]="joinState().url"
+      target="_blank"
+      rel="noopener noreferrer"
+      [styleClass]="buttonClass"
+      data-testid="meeting-action-join-button"
+      data-state="ready" />
+  }
+  @case ('error') {
+    <div class="flex flex-col gap-[10px]">
+      <lfx-button
+        label="Join now"
+        icon="fa-light fa-video"
+        [disabled]="true"
+        [styleClass]="buttonClass + ' !opacity-60'"
+        data-testid="meeting-action-join-button"
+        data-state="error" />
+      <div
+        class="flex flex-col gap-[6px] rounded-[var(--md-radius-md)] bg-[var(--md-status-live-bg)] px-[12px] py-[10px] text-[12.5px] leading-[1.4] text-[var(--md-status-live)]"
+        role="alert"
+        data-testid="meeting-action-join-error">
+        <span>{{ joinState().error }}</span>
+        @if (notRegistered()) {
+          <span>Your account's email is not on this meeting's invite list. Ask the organizer to invite it.</span>
+        }
+        <button
+          type="button"
+          class="w-fit rounded-[var(--md-radius-xs)] font-semibold underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+          (click)="retry()"
+          data-testid="meeting-action-join-retry">
+          Try again
+        </button>
+      </div>
+    </div>
+  }
+  @default {
+    <!-- Also the server render: the join URL is fetched in the browser only. -->
+    <lfx-button
+      label="Join now"
+      icon="fa-light fa-video"
+      [loading]="true"
+      [disabled]="true"
+      [styleClass]="buttonClass"
+      data-testid="meeting-action-join-button"
+      data-state="loading" />
+  }
+}

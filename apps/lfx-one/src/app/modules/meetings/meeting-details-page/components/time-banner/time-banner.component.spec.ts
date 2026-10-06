@@ -103,16 +103,11 @@ describe('MeetingTimeBannerComponent', () => {
     expect(query('meeting-time-banner-date')?.textContent?.trim()).not.toBe(first);
   });
 
-  it('shows the relative start and the meeting own early-join rule before the meeting', () => {
+  // The early-join rule is the action slot's now (E2-01); the banner keeps the relative start.
+  it('shows only the relative start before the meeting', () => {
     expect(query('meeting-time-banner')?.getAttribute('data-state')).toBe('before');
-    expect(text('meeting-time-banner-message')).toBe('Starts in 3 days. You may only join up to 15 minutes before the start time.');
-  });
-
-  it('falls back to the default early-join rule when the meeting sets none', () => {
-    meeting.set(build({ early_join_time_minutes: undefined } as Partial<Meeting>));
-    fixture.detectChanges();
-
-    expect(query('meeting-time-banner-message')?.textContent).toContain('up to 10 minutes');
+    expect(text('meeting-time-banner-message')).toBe('Starts in 3 days.');
+    expect(query('meeting-time-banner-message')?.textContent).not.toContain('join');
   });
 
   it.each([

@@ -51,8 +51,9 @@ axis values and `ActionSlotKind` members defined in the state matrix.
 - **FR-011**: A status pill MUST reflect the time state (upcoming / live / ended) and, for a viewer
   on the invite list (`Meeting.invited`) with RSVP tracking on, their own RSVP: a registrant, or an
   organizer who is also invited (`testid-contract.md` § `data-my-rsvp`).
-- **FR-012**: The time banner MUST distinguish before-window (with the early-join minutes), in-window
-  and ended, using the same window maths as `canJoinMeeting` / `hasMeetingEnded`.
+- **FR-012**: The time banner MUST distinguish before-window, in-window and ended, using the same
+  window maths as `canJoinMeeting` / `hasMeetingEnded`. Before the window, a viewer who will be able
+  to join MUST be told the early-join minutes; the action slot states them, under Join's place (E2-01).
 - **FR-013**: The sticky identity bar's sign-in MUST preserve the current URL as `returnTo`,
   including `?password=` when present.
 - **FR-014**: "Organized by" MUST NOT render for anonymous viewers (the BFF removes the fields), and a
@@ -87,8 +88,8 @@ axis values and `ActionSlotKind` members defined in the state matrix.
 - **FR-028**: After the meeting ends, the slot MUST be `tools` for organizers and for any viewer with
   `full_access`, and `no-access` otherwise. For an anonymous viewer with `full_access`, `tools` MUST
   render a sign-in variant until public artifact routes exist (E4-04).
-- **FR-029**: Whether RSVP stays available beside Join during the window is an open decision (E2-01).
-  Until decided, V2 MUST match V1: no RSVP in the window.
+- **FR-029**: Inside the join window the slot MUST be Join only, as in V1: no RSVP in the window
+  (decided 2026-10-06 in E2-01). Revisit with the RSVP card (E2-05) if late RSVPs become a need.
 
 ### Content sections
 

@@ -28,6 +28,12 @@ class TimeBannerStubComponent {}
 @Component({ selector: 'lfx-impersonation-banner', template: '' })
 class ImpersonationBannerStubComponent {}
 
+@Component({ selector: 'lfx-meeting-action-slot', template: '' })
+class ActionSlotStubComponent {}
+
+@Component({ selector: 'lfx-meeting-organizer', template: '' })
+class OrganizerStubComponent {}
+
 describe('MeetingDetailsPageComponent', () => {
   let fixture: ComponentFixture<MeetingDetailsPageComponent>;
   let status: WritableSignal<MeetingDetailsLoadStatus>;
@@ -53,9 +59,11 @@ describe('MeetingDetailsPageComponent', () => {
             NgClass,
             NgTemplateOutlet,
             ButtonComponent,
+            ActionSlotStubComponent,
             HeaderStubComponent,
             IdentityBarStubComponent,
             ImpersonationBannerStubComponent,
+            OrganizerStubComponent,
             TimeBannerStubComponent,
             SkeletonModule,
           ],

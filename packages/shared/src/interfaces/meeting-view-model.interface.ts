@@ -91,6 +91,21 @@ export type MeetingViewerRole = 'visitor' | 'outsider' | 'registrant' | 'organiz
 export type ActionSlotKind = 'join' | 'rsvp' | 'register' | 'invitation-required' | 'guest-join' | 'tools' | 'no-access' | 'rsvp-unavailable' | 'none';
 
 /**
+ * The V2 Join control's state (E2-01, FR-027): the join URL is fetched for the signed-in viewer
+ * once the slot resolves to `join`. `loading` is also what the server renders, since the fetch is
+ * browser-only.
+ */
+export interface MeetingJoinUrlState {
+  status: 'loading' | 'ready' | 'error';
+  /** The Zoom link with the viewer's display-name params, once `ready`. */
+  url?: string;
+  /** The BFF's message, or a generic one, once `error`. */
+  error?: string;
+  /** The BFF's error code, e.g. `NOT_REGISTERED_FOR_MEETING`. */
+  code?: string | null;
+}
+
+/**
  * The meeting's privacy, resolved once into the label and icon the header renders plus the raw
  * fields any further branching needs. `openToPublic` — public *and* unrestricted — gates
  * self-registration only. Joining keys on `restricted` alone, because reaching a non-open page

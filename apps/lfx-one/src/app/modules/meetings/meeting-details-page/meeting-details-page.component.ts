@@ -10,6 +10,8 @@ import { SkeletonModule } from 'primeng/skeleton';
 
 import { MeetingHeaderComponent } from './components/header/header.component';
 import { MeetingIdentityBarComponent } from './components/identity-bar/identity-bar.component';
+import { MeetingActionSlotComponent } from './components/action-slot/action-slot.component';
+import { MeetingOrganizerComponent } from './components/organizer/organizer.component';
 import { MeetingTimeBannerComponent } from './components/time-banner/time-banner.component';
 import { MeetingDetailsStateService } from './meeting-details-state.service';
 
@@ -31,8 +33,10 @@ import { MeetingDetailsStateService } from './meeting-details-state.service';
     NgTemplateOutlet,
     ButtonComponent,
     ImpersonationBannerComponent,
+    MeetingActionSlotComponent,
     MeetingHeaderComponent,
     MeetingIdentityBarComponent,
+    MeetingOrganizerComponent,
     MeetingTimeBannerComponent,
     SkeletonModule,
   ],
