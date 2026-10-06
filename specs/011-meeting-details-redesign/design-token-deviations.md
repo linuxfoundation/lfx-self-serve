@@ -128,6 +128,14 @@ because acceptance requires every radius and shadow to resolve through a token.
 | `--md-shadow-pop`    | `0 6px 18px var(--md-shadow-color)` | hover/raised cards and tiles           |
 | `--md-shadow-focus`  | `0 0 0 3px var(--md-accent)`        | focus ring — 4.82:1 light, 6.25:1 dark |
 
+### Feature (non-text)
+
+Icon-only colours that sit beside their own label, so no text-contrast tier applies.
+
+| Token             | V2 value  | Nearest `lfxColors` | Difference | Adopt upstream?        |
+| ----------------- | --------- | ------------------- | ---------- | ---------------------- | ------------------------------------------------------------------- | ------------------------------ |
+| `--md-feature-ai` | `#7c3aed` | n/a                 | n/a        | `violet.600` `#7F22FE` | AI-summary icon only (non-text); prototype violet is less saturated | Yes — converge on `violet.600` |
+
 ## Dark values
 
 The prototype carries a `[data-theme="dark"]` block. Those values are reproduced under
@@ -168,6 +176,7 @@ without adjustment; `--md-glyph-faint` stays non-text, as it is in light.
 | `--md-status-good`   | `#3bb87c`  | 6.97:1  | 5.58:1      | `emerald.500` `#00BC7D` |
 | `--md-status-warn`   | `#e0a94a`  | 8.32:1  | 6.44:1      | `amber.300` `#FFD230`   |
 | `--md-status-live`   | `#ff6b60`  | 6.29:1  | 5.21:1      | `red.400` `#FF6467`     |
+| `--md-feature-ai`    | `#a78bfa`  | n/a     | n/a         | `violet.400` `#A684FF`  |
 
 The `-bg` tints are derived from their hue exactly as in light and are omitted.
 

@@ -12,6 +12,13 @@ import type { MeetingVisibility } from '../enums';
  */
 export type MeetingTimeState = 'before' | 'live' | 'ended';
 
+/** A committee chip in the V2 header: its name, and its group page path with the uid encoded. */
+export interface MeetingCommitteeLink {
+  uid: string;
+  name: string;
+  href: string;
+}
+
 /**
  * Who the viewer is, as far as this meeting is concerned.
  *

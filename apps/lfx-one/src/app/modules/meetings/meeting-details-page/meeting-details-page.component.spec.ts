@@ -19,6 +19,9 @@ class IdentityBarStubComponent {
   public readonly condensed = input(false);
 }
 
+@Component({ selector: 'lfx-meeting-header', template: '<h1>stub header</h1>' })
+class HeaderStubComponent {}
+
 @Component({ selector: 'lfx-impersonation-banner', template: '' })
 class ImpersonationBannerStubComponent {}
 
@@ -43,7 +46,15 @@ describe('MeetingDetailsPageComponent', () => {
     })
       .overrideComponent(MeetingDetailsPageComponent, {
         set: {
-          imports: [NgClass, NgTemplateOutlet, ButtonComponent, IdentityBarStubComponent, ImpersonationBannerStubComponent, SkeletonModule],
+          imports: [
+            NgClass,
+            NgTemplateOutlet,
+            ButtonComponent,
+            HeaderStubComponent,
+            IdentityBarStubComponent,
+            ImpersonationBannerStubComponent,
+            SkeletonModule,
+          ],
           providers: [{ provide: MeetingDetailsStateService, useValue: { status, meeting: signal(meeting), refresh, retrying, failureCount } }],
         },
       })
@@ -71,11 +82,11 @@ describe('MeetingDetailsPageComponent', () => {
     expect(query('meeting-header-section')).toBeNull();
   });
 
-  it('renders the shell with the meeting title once ready', () => {
+  it('renders the shell with the meeting header once ready', () => {
     show('ready');
 
     expect(query('meeting-skeleton')).toBeNull();
-    expect(query('meeting-header-section')?.querySelector('h1')?.textContent?.trim()).toBe('Weekly Sync');
+    expect(query('meeting-header-section')?.querySelector('lfx-meeting-header')).not.toBeNull();
     expect(query('meeting-content-column')).not.toBeNull();
     expect(query('meeting-rail')?.getAttribute('aria-label')).toBe('Meeting actions');
   });

@@ -37,10 +37,10 @@
           </div>
         }
         @case ('ready') {
-          @if (state.meeting(); as meeting) {
-            <!-- E1-03 replaces this region's body with the full header and badge row. -->
-            <section #header class="flex flex-col gap-3" data-testid="meeting-header-section">
-              <h1 class="text-[34px] font-bold leading-[1.15] tracking-[-0.022em] text-[var(--md-text-heading)]">{{ meeting.title }}</h1>
+          @if (state.meeting()) {
+            <!-- Observed by the identity bar's fade (see the constructor), so it stays the page's own element. -->
+            <section #header data-testid="meeting-header-section">
+              <lfx-meeting-header />
             </section>
             <ng-container [ngTemplateOutlet]="columns" />
           }
