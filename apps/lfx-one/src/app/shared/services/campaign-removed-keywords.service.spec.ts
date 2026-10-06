@@ -15,34 +15,56 @@ describe('CampaignRemovedKeywordsService', () => {
   });
 
   it('remembers a confirmed removal', () => {
-    service.markRemoved('microsoft-ads|c1|ag1|k1');
+    service.markRemoved('tlf', 'b1', 'microsoft-ads|c1|ag1|k1');
     expect(service.removed().has('microsoft-ads|c1|ag1|k1')).toBe(true);
   });
 
   it('keeps removals when the same scope is reported again', () => {
     service.setScope('tlf', 'b1');
-    service.markRemoved('k1');
+    service.markRemoved('tlf', 'b1', 'k1');
     service.setScope('tlf', 'b1');
     expect(service.removed().has('k1')).toBe(true);
   });
 
   it('keeps removals recorded before the first scope is reported', () => {
-    service.markRemoved('k1');
+    service.markRemoved('tlf', 'b1', 'k1');
     service.setScope('tlf', 'b1');
     expect(service.removed().has('k1')).toBe(true);
   });
 
   it('forgets removals on a project or brief change', () => {
     service.setScope('tlf', 'b1');
-    service.markRemoved('k1');
+    service.markRemoved('tlf', 'b1', 'k1');
     service.setScope('tlf', 'b2');
     expect(service.removed().size).toBe(0);
   });
 
   it('forgets removals when the campaigns page is released', () => {
     service.setScope('tlf', 'b1');
-    service.markRemoved('k1');
+    service.markRemoved('tlf', 'b1', 'k1');
     service.releaseScope();
     expect(service.removed().size).toBe(0);
+  });
+
+  it('drops a removal that lands after the page moved to another project or brief', () => {
+    service.setScope('tlf', 'b1');
+    service.setScope('tlf', 'b2');
+    service.markRemoved('tlf', 'b1', 'k1');
+    service.setScope('cncf', 'b2');
+    service.markRemoved('tlf', 'b2', 'k2');
+    expect(service.removed().size).toBe(0);
+  });
+
+  it('drops a removal that lands after the page was released', () => {
+    service.setScope('tlf', 'b1');
+    service.releaseScope();
+    service.markRemoved('tlf', 'b1', 'k1');
+    expect(service.removed().size).toBe(0);
+  });
+
+  it('records a removal sent while a save had blanked the brief id, on the same project', () => {
+    service.setScope('tlf', 'b1');
+    service.markRemoved('tlf', '', 'k1');
+    expect(service.removed().has('k1')).toBe(true);
   });
 });

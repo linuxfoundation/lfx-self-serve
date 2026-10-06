@@ -27,8 +27,23 @@ export class CampaignRemovedKeywordsService {
 
   public readonly removed: Signal<ReadonlySet<string>> = this.state.asReadonly();
 
-  /** Records a keyword a confirmed REMOVE deleted. */
-  public markRemoved(identity: string): void {
+  /**
+   * Records a keyword a confirmed REMOVE deleted, under the (project, brief) the request was SENT
+   * from. A response that lands after the page moved to another scope, or after it was released, is
+   * dropped: Microsoft ids are per ad account, so an old identity could otherwise match, and hide
+   * the controls of, a keyword in the new scope. A request sent while a save had blanked the brief id
+   * (`briefId` empty) is matched on the project alone, since the page keeps the brief's scope then.
+   */
+  public markRemoved(projectSlug: string, briefId: string, identity: string): void {
+    if (this.activeScope !== undefined) {
+      if (this.activeScope === null) {
+        return;
+      }
+      const [activeProject, activeBrief] = this.activeScope.split('\u0000');
+      if (projectSlug !== activeProject || (briefId !== '' && briefId !== activeBrief)) {
+        return;
+      }
+    }
     if (this.state().has(identity)) {
       return;
     }
