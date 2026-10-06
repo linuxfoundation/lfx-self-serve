@@ -257,9 +257,22 @@ export interface GetMyEventsParams {
   /** Filter events by country (e.g. "United States") */
   country?: string;
   isVisaRequestAccepted?: boolean;
-  isTravelFundRequestAccepted?: boolean;
-  /** Upcoming only: when true, a registration of any REGISTRATION_STATUS counts as registered (default requires Accepted) */
-  anyRegistrationStatus?: boolean;
+}
+
+/**
+ * Parameters for fetching upcoming events that accept travel fund applications
+ */
+export interface GetTravelFundEventsParams {
+  eventId?: string;
+  searchQuery?: string;
+  /** ISO 8601 date string — include only events starting on or after this date */
+  startDateFrom?: string;
+  /** ISO 8601 date string — include only events starting on or before this date */
+  startDateTo?: string;
+  /** Filter events by country (e.g. "United States") */
+  country?: string;
+  pageSize?: number;
+  offset?: number;
 }
 
 /**
@@ -523,10 +536,14 @@ export interface GetMyEventsOptions {
   affiliatedProjectSlugs?: string[];
   /** When true, only events that offer visa letters (IS_VISA_REQUEST_ACCEPTED) are returned */
   isVisaRequestAccepted?: boolean;
-  /** When true, only events that offer travel funding (IS_TRAVEL_FUND_ACCEPTED) are returned */
-  isTravelFundRequestAccepted?: boolean;
-  /** Upcoming only: when true, a registration of any REGISTRATION_STATUS counts as registered (default requires Accepted) */
-  anyRegistrationStatus?: boolean;
+}
+
+/**
+ * Server-side options for fetching travel fund events (required pagination fields)
+ */
+export interface GetTravelFundEventsOptions extends GetTravelFundEventsParams {
+  pageSize: number;
+  offset: number;
 }
 
 /**

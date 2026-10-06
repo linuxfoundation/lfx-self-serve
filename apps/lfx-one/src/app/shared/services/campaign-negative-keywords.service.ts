@@ -122,26 +122,6 @@ export class CampaignNegativeKeywordsService {
     this.dropSettled((key) => !this.inScope(key));
   }
 
-  /**
-   * Whether a request key belongs to the active scope. An EMPTY brief id on either side matches any
-   * brief of the same project: the page's brief id goes empty while a Proceed save runs, and stays
-   * empty after a failed one, and neither is a switch to another brief — so they must not drop the
-   * brief's results, nor a request the tab sent meanwhile under the empty id. Only a different
-   * project, or a different real brief id, is out of scope.
-   */
-  private inScope(key: string): boolean {
-    const scope = this.activeScope;
-    if (scope === undefined) {
-      return true;
-    }
-    if (scope === null) {
-      return false;
-    }
-    const [activeProject, activeBrief] = scope.split('|');
-    const [project, brief] = key.split('|');
-    return project === activeProject && (activeBrief === '' || brief === '' || brief === activeBrief);
-  }
-
   /** The campaigns page is gone: drops every settled request. Ones in flight are dropped as they settle. */
   public releaseScope(): void {
     this.activeScope = null;
@@ -165,6 +145,26 @@ export class CampaignNegativeKeywordsService {
       delete next[key];
       return next;
     });
+  }
+
+  /**
+   * Whether a request key belongs to the active scope. An EMPTY brief id on either side matches any
+   * brief of the same project: the page's brief id goes empty while a Proceed save runs, and stays
+   * empty after a failed one, and neither is a switch to another brief — so they must not drop the
+   * brief's results, nor a request the tab sent meanwhile under the empty id. Only a different
+   * project, or a different real brief id, is out of scope.
+   */
+  private inScope(key: string): boolean {
+    const scope = this.activeScope;
+    if (scope === undefined) {
+      return true;
+    }
+    if (scope === null) {
+      return false;
+    }
+    const [activeProject, activeBrief] = scope.split('|');
+    const [project, brief] = key.split('|');
+    return project === activeProject && (activeBrief === '' || brief === '' || brief === activeBrief);
   }
 
   private set(key: string, request: CampaignNegativeKeywordsRequestState): void {
