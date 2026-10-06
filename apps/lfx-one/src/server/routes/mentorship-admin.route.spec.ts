@@ -19,6 +19,10 @@ const noteHandler = vi.fn((_req: express.Request, res: express.Response) => {
   res.status(204).end();
 });
 
+const taskUpdateHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.json({ id: 'task' });
+});
+
 const mentorHandler = vi.fn((_req: express.Request, res: express.Response) => {
   res.status(204).end();
 });
@@ -31,6 +35,7 @@ vi.mock('../controllers/mentorship-admin.controller', () => ({
   MentorshipAdminController: class {
     public updateApplicationNote = noteHandler;
     public createTasks = tasksHandler;
+    public updateTask = taskUpdateHandler;
     public updateProgramMentor = mentorHandler;
   },
 }));
@@ -131,6 +136,31 @@ describe('mentorship admin router — task create impersonation gate', () => {
 
     expect(res.status).toBe(200);
     expect(tasksHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mentorship admin router — task edit impersonation gate', () => {
+  const patchTask = (): Promise<Response> =>
+    fetch(`${baseUrl}/api/mentorship/admin/tasks/${APPLICATION_ID}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'completed' }),
+    });
+
+  it('refuses the task edit with 403 while impersonating and never reaches the controller', async () => {
+    const res = await patchTask();
+
+    expect(res.status).toBe(403);
+    expect(taskUpdateHandler).not.toHaveBeenCalled();
+  });
+
+  it('admits the task edit when not impersonating', async () => {
+    impersonatingStub = false;
+
+    const res = await patchTask();
+
+    expect(res.status).toBe(200);
+    expect(taskUpdateHandler).toHaveBeenCalledTimes(1);
   });
 });
 

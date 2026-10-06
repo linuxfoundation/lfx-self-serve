@@ -403,6 +403,73 @@ describe('MentorshipAdminService.getApplicationTasks', () => {
   });
 });
 
+describe('MentorshipAdminService.updateTask', () => {
+  const TASK_ID = '8b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e';
+  const upstreamTask = {
+    id: TASK_ID,
+    application_id: APPLICATION_ID,
+    assignee_id: 'mentee',
+    status: 'complete',
+    name: 'Read the guide',
+    description: 'private-task-text',
+    category: 'non_prerequisite',
+    custom: true,
+    submit_file: 'required',
+    due_date: '2030-01-31',
+    created_on: '2026-08-01T00:00:00Z',
+    updated_on: '2026-08-02T00:00:00Z',
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(logger.debug).mockClear();
+  });
+
+  it('patches the task upstream with the upstream spelling and returns the mapped task', async () => {
+    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue(upstreamTask as never);
+
+    const task = await new MentorshipAdminService().updateTask(buildReq(), TASK_ID, {
+      name: 'Read the guide',
+      status: 'completed',
+      dueDate: '',
+      requiresFileSubmission: true,
+    });
+
+    expect(task).toMatchObject({ id: TASK_ID, status: 'completed', requiresFileSubmission: true, dueOn: '2030-01-31' });
+    expect(spy).toHaveBeenCalledTimes(1);
+    const [, , path, method, , body] = spy.mock.calls[0];
+    expect(path).toBe(`/mentorship/v1/tasks/${TASK_ID}`);
+    expect(method).toBe('PATCH');
+    expect(body).toEqual({ name: 'Read the guide', status: 'complete', due_date: '', submit_file: 'required' });
+  });
+
+  it('makes no other upstream call, so the task list is not read again', async () => {
+    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue(upstreamTask as never);
+
+    await new MentorshipAdminService().updateTask(buildReq(), TASK_ID, { status: 'pending' });
+
+    expect(spy.mock.calls.map((call) => call[3])).toEqual(['PATCH']);
+  });
+
+  it.each([400, 403, 404])('passes an upstream %i on', async (status) => {
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockRejectedValue(new MicroserviceError('upstream', status, 'UPSTREAM'));
+
+    await expect(new MentorshipAdminService().updateTask(buildReq(), TASK_ID, { status: 'submitted' })).rejects.toMatchObject({ statusCode: status });
+  });
+
+  it('logs the task id and the field names, never the task text', async () => {
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue(upstreamTask as never);
+
+    await new MentorshipAdminService().updateTask(buildReq(), TASK_ID, { name: 'private-task-name', description: 'private-task-text' });
+
+    const logged = JSON.stringify(vi.mocked(logger.debug).mock.calls.map((call) => call.slice(1)));
+    expect(logged).toContain(TASK_ID);
+    expect(logged).toContain('"fields":["name","description"]');
+    expect(logged).not.toContain('private-task-name');
+    expect(logged).not.toContain('private-task-text');
+  });
+});
+
 const memberRow = (id: string, overrides: Record<string, unknown> = {}) => ({
   id,
   user_id: `u-${id}`,

@@ -28,6 +28,7 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { parseMentorshipAdminTaskUpdate } from '../helpers/mentorship-admin-task.helper';
 import { parseMentorshipAdminTermInput } from '../helpers/mentorship-admin-term.helper';
 import { parseMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
 import { parseMentorshipMentorTaskCreateRequest } from '../helpers/mentorship-mentor-task.helper';
@@ -311,6 +312,31 @@ export class MentorshipAdminController {
     }
   }
 
+  // PATCH /api/mentorship/admin/tasks/:taskId
+  // Auth: logged-in user required (401 otherwise). The id must be a UUID and the body is validated (400) before any upstream
+  // call. Returns the updated task so the page patches its row without reading the list again. Upstream checks the caller
+  // mentors or manages the program and is not the assignee; its 403, 404 and 400 pass through. Only the task id and the
+  // names of the fields changed are logged, never the task's text.
+  public async updateTask(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'update_mentorship_admin_task';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const taskId = this.requireUuidParam(req, 'taskId', operation);
+      const update = parseMentorshipAdminTaskUpdate(req.body, operation);
+      const task = await this.mentorshipAdminService.updateTask(req, taskId, update);
+
+      logger.success(req, operation, startTime, { taskId, fields: Object.keys(update) });
+      res.json(task);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // POST /api/mentorship/admin/programs/:programId/terms/:termId/decline-pending
   public async declinePendingForTerm(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'decline_mentorship_admin_pending_for_term';
@@ -479,7 +505,7 @@ export class MentorshipAdminController {
     return { status, attendanceType: attendanceType as MentorshipAttendanceType };
   }
 
-  private requireUuidParam(req: Request, name: 'programId' | 'applicationId' | 'termId' | 'memberId', operation: string): string {
+  private requireUuidParam(req: Request, name: 'programId' | 'applicationId' | 'termId' | 'memberId' | 'taskId', operation: string): string {
     const value = typeof req.params[name] === 'string' ? req.params[name].trim() : '';
     if (!isUuid(value)) {
       throw ServiceValidationError.forField(name, `${name} must be a UUID.`, { operation });

@@ -50,6 +50,7 @@ import {
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminTasksState,
   MentorshipAdminTermOption,
+  MentorshipApplicantTask,
   MentorshipCurrentMenteeAction,
   MentorshipAttendanceType,
   MentorshipMenteeStatus,
@@ -69,6 +70,7 @@ import {
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
   mentorshipRowActions,
+  mentorshipTaskSubmittedCount,
 } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
@@ -100,7 +102,8 @@ import { RowActionsComponent } from '../../../../components/row-actions/row-acti
  * opens the task form and then creates through the BFF like the other writes, reloading even on a failure, which may
  * still have created the task; an expanded row stays expanded across the reload and re-reads its tasks once, a
  * collapsed row reads none. The form stays shut while another write is in flight, or while a create is still running
- * for the mentee, even one a tab switch outlived. The status export still stubs to coming
+ * for the mentee, even one a tab switch outlived. Editing a task, or setting its status, saves through
+ * the BFF and writes the saved task into the cached list, so no task read follows. The status export still stubs to coming
  * soon. The reviewer note saves through the BFF too and is written into its row, so the table shows it without a
  * read; a later read brings the saved note back, and a read that was already in flight when the save landed keeps
  * the saved note over its older answer.
@@ -308,6 +311,28 @@ export class CurrentMenteesTabComponent {
 
   protected onRetryTasks(menteeId: string): void {
     this.loadTasks(menteeId);
+  }
+
+  /**
+   * Writes a saved task into its row's cached list, so the row shows it without reading the list again (R4a). Passed to
+   * the panel as a callback, an arrow so it keeps this tab: the panel may be destroyed by a collapse before its save
+   * lands. A row whose tasks were cleared by a reload, or are being read again, has no loaded list to patch, and the
+   * read that fills it brings the saved task.
+   */
+  protected readonly patchSavedTask = (applicationId: string, task: MentorshipApplicantTask): void => {
+    const state = this.tasksByApplication().get(applicationId);
+    if (state?.status !== 'loaded') return;
+    const previous = state.tasks.find((current) => current.id === task.id);
+    this.setTasksState(applicationId, { status: 'loaded', tasks: state.tasks.map((current) => (current.id === task.id ? task : current)) });
+    if (previous) this.shiftSubmittedCount(applicationId, mentorshipTaskSubmittedCount(task.status) - mentorshipTaskSubmittedCount(previous.status));
+  };
+
+  /** Keeps the row's submitted count, which Graduate's warning reads, in step with a status change, without reading the page again. */
+  private shiftSubmittedCount(applicationId: string, delta: number): void {
+    if (delta === 0) return;
+    this.applications.update((applications) =>
+      applications.map((row) => (row.id === applicationId ? { ...row, tasksSubmitted: Math.max((row.tasksSubmitted ?? 0) + delta, 0) } : row))
+    );
   }
 
   private loadTasks(applicationId: string): void {

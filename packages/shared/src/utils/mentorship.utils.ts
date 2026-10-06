@@ -66,6 +66,7 @@ import type {
   MentorshipApplicantDisplayStatus,
   MentorshipApplicantTask,
   MentorshipApplicantTaskRow,
+  MentorshipApplicantTaskStatus,
   MentorshipApplicationProgress,
   MentorshipEnrollFieldErrors,
   MentorshipEnrollStep,
@@ -76,9 +77,10 @@ import type {
   MentorshipRegisterFailureOptions,
   MentorshipRegisterSubmitFailure,
   MentorshipRowAction,
+  MentorshipTaskFormValue,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
-import type { MentorshipProgramMentor, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
+import type { MentorshipAdminTaskUpdate, MentorshipProgramMentor, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
 import type {
   MentorshipMentorProfileDetails,
   MentorshipMentorProfileFieldErrors,
@@ -998,6 +1000,26 @@ export function mentorshipApplicantTaskRows(tasks: ReadonlyArray<MentorshipAppli
     canView: !!task.hasSubmission,
     canDownload: !!task.hasSubmission,
   }));
+}
+
+/** 1 when the status counts toward upstream's `tasks_submitted` (Submitted or Completed), else 0, so a status change can shift that count by a difference. */
+export function mentorshipTaskSubmittedCount(status: MentorshipApplicantTaskStatus): number {
+  return status === 'submitted' || status === 'completed' ? 1 : 0;
+}
+
+/**
+ * The fields the task-edit dialog changed on a task, as the admin task update body: a field that still reads as it did is
+ * left out, so saving one change never re-sends (and so never re-validates upstream) the rest. A cleared due date goes as
+ * `''`, which upstream reads as clear it. Empty when nothing changed.
+ */
+export function buildMentorshipAdminTaskUpdate(task: MentorshipApplicantTask, value: MentorshipTaskFormValue): MentorshipAdminTaskUpdate {
+  const update: MentorshipAdminTaskUpdate = {};
+  if (value.name !== task.name) update.name = value.name;
+  if (value.description !== task.description) update.description = value.description;
+  if ((value.dueOn ?? '') !== (task.dueOn ?? '')) update.dueDate = value.dueOn ?? '';
+  if (value.requiresFileSubmission !== !!task.requiresFileSubmission) update.requiresFileSubmission = value.requiresFileSubmission;
+  if (value.status !== undefined && value.status !== task.status) update.status = value.status;
+  return update;
 }
 
 /** Inclusive UTC date range for term / invitation columns, e.g. `Jul 1, 2026 – Aug 31, 2026`. */

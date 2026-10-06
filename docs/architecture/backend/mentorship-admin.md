@@ -22,6 +22,7 @@ The program list and the program page (header, tab counts and all four tabs) rea
 | POST   | `/api/mentorship/admin/programs/:programId/terms/:termId/decline-pending` | `declinePendingForTerm`   | Decline by Term on the Current Mentees toolbar        |
 | PUT    | `/api/mentorship/admin/applications/:applicationId/note`                  | `updateApplicationNote`   | Note on a Current Mentees row                         |
 | POST   | `/api/mentorship/admin/tasks`                                             | `createTasks`             | Create task on an accepted Current Mentees row        |
+| PATCH  | `/api/mentorship/admin/tasks/:taskId`                                     | `updateTask`              | Edit and the status select on an expanded task row    |
 | PATCH  | `/api/mentorship/admin/programs/:programId/mentors/:memberId`             | `updateProgramMentor`     | Accept, Decline, Revoke invite and Remove on a mentor |
 | POST   | `/api/mentorship/admin/programs/:programId/terms`                         | `createTerm`              | Add Term on the Terms tab                             |
 | PATCH  | `/api/mentorship/admin/programs/:programId/terms/:termId`                 | `updateTerm`              | Edit on a term row                                    |
@@ -118,6 +119,17 @@ Create, edit, close, re-open and delete a term, each behind `blockDuringImperson
 - A create that settles, created or not, reloads the current page and has the program page read its tab counts again, as every decision does: a failure may still have created the task, and its message sends the admin to the mentee's row. The tasks cache is cleared with the reload, so a row that was collapsed reads no tasks. A row that was expanded stays expanded and reads its tasks once, after the reload lands; every other row collapses.
 - The create runs in `AdminTaskCreateService` and is not cancelled by the tab going away. While another write is in flight the tab shows "Please wait", opens no form and sends nothing. The service also tracks the mentees getting a task (`isCreating(id)`), so a tab rebuilt by a switch while a create is still running keeps that mentee's form shut and sends nothing for them.
 - Logs carry the application count and the created and failed counts only, never the task's name or description.
+
+## Edit task and set status
+
+`PATCH …/tasks/:taskId` changes one task, behind `blockDuringImpersonation`, with the caller's bearer token so upstream decides who may edit. Upstream is `PATCH /mentorship/v1/tasks/{id}` (lfx-mentorship#227).
+
+- The body is `MentorshipAdminTaskUpdate`: every field is optional and an absent one is left unchanged, but at least one is required. The status select sends `status` alone; the edit dialog sends only what it changed, diffed against the row by `buildMentorshipAdminTaskUpdate` in `@lfx-one/shared/utils`. The body check is `parseMentorshipAdminTaskUpdate` and the upstream body is `buildMentorshipUpstreamTaskUpdate`, both in `mentorship-admin-task.helper.ts`. `status` goes through `MENTORSHIP_ADMIN_TASK_STATUS_TO_UPSTREAM`, `requiresFileSubmission` maps to `submit_file` (`required`, or `''` to clear it) and an empty `dueDate` clears the due date.
+- Upstream lets a status move to any other status. A task that requires a file cannot be Submitted without an uploaded file, whether it is moving to Submitted or gaining the file requirement, and upstream answers that with a 400. That 400 gets its own copy only for a change that can trip the guard (a move to Submitted or a change to the file requirement); any other 400 shows the generic copy. A 403 and a 404 each have their own copy, and any other failure shows the generic one. A failed change leaves the row as it was.
+- The answer is 200 with the task as the row reads it. The Current Mentees tab writes it into that row's cached tasks (`patchSavedTask`), so an edit or status change reads no list again. It also moves the row's `tasksSubmitted` by the change in submitted or completed tasks, because Graduate's warning reads that count and a reload is not made.
+- The save runs in `AdminTaskUpdateService`, which tracks the tasks being saved: a task with a change in flight takes no second change, and its select and Edit are disabled. The in-flight ids are a signal, so a panel rebuilt mid-save keeps both disabled and re-enables them when the save settles, whether it succeeded or failed. The save is not cancelled by a row collapsing, so it lands in the cache even if the panel was destroyed. One that lands while the row's tasks are cleared or being re-read after a table reload is dropped, since that read brings the newer tasks.
+- Only the admin Current Mentees tab sets `editable` on the task panel. The mentor tabs use the same panel but have no BFF route, so they still show the "coming soon" toast.
+- Logs carry the task id and the names of the fields changed, never the task's text.
 
 ## Program list sourcing
 

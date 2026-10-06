@@ -222,6 +222,30 @@ describe('MentorshipAdminService', () => {
     expect(result).toEqual({ created: ['app_1'], failed: [] });
   });
 
+  it('patches one task and returns the updated task', () => {
+    const body = { name: 'Read the guide', status: 'completed' } as const;
+    const updated = { id: 'task_1', name: 'Read the guide', status: 'completed' } as MentorshipApplicantTask;
+    let result: MentorshipApplicantTask | undefined;
+    service.updateTask('task_1', body).subscribe((response) => (result = response));
+
+    const req = http.expectOne('/api/mentorship/admin/tasks/task_1');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual(body);
+    req.flush(updated);
+    expect(result).toEqual(updated);
+  });
+
+  it('logs a failed task edit by status only and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.updateTask('task_1', { status: 'submitted' }).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/admin/tasks/task_1').flush({ message: 'private-task-text' }, { status: 400, statusText: 'Bad Request' });
+
+    expect(status).toBe(400);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] updateTask failed', { status: 400, statusText: 'Bad Request' });
+  });
+
   it('declines the pending applications of a term and returns the count', () => {
     let declined = -1;
     service.declinePendingForTerm('prog_1', 'trm_1').subscribe((response) => (declined = response.declinedCount));

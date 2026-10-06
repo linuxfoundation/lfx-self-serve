@@ -169,6 +169,14 @@ export const MENTORSHIP_MENTOR_PROGRAM_TASK_STATUS_MAP: Readonly<Record<Mentorsh
   complete: 'completed',
 };
 
+/** How a task status the admin picks is written upstream: the reverse of `MENTORSHIP_MENTOR_PROGRAM_TASK_STATUS_MAP`. */
+export const MENTORSHIP_ADMIN_TASK_STATUS_TO_UPSTREAM: Readonly<Record<MentorshipApplicantTaskStatus, MentorshipUpstreamTaskStatus>> = {
+  pending: 'incomplete',
+  'in-progress': 'in_progress',
+  submitted: 'submitted',
+  completed: 'complete',
+};
+
 /** Application statuses whose tasks the mentee views track; every other status is a past application. */
 export const MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES: readonly MentorshipUpstreamApplicationStatus[] = ['pending', 'accepted', 'graduated'];
 

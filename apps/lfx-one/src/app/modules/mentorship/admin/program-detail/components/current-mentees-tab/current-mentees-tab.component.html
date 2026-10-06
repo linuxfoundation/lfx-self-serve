@@ -198,7 +198,12 @@
                       [attr.data-testid]="'mentorship-admin-current-mentees-tasks-retry-' + row.id" />
                   </div>
                 } @else if (row.tasksStatus === 'loaded') {
-                  <lfx-mentorship-applicant-tasks-panel [applicantId]="row.id" [applicantName]="row.name" [tasks]="row.taskRows" />
+                  <lfx-mentorship-applicant-tasks-panel
+                    [applicantId]="row.id"
+                    [applicantName]="row.name"
+                    [tasks]="row.taskRows"
+                    [editable]="true"
+                    [taskSaved]="patchSavedTask" />
                 } @else {
                   <p class="text-sm text-gray-500" data-testid="mentorship-admin-current-mentees-tasks-loading">Loading tasks…</p>
                 }
