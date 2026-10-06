@@ -25,14 +25,22 @@
         <ng-container [ngTemplateOutlet]="signIn" />
       }
       @case ('register') {
-        <!-- E2-02 adds the registration control. -->
+        <!-- E2-02 (FR-021): registration needs a session, so a visitor signs in first. -->
         @if (viewerRole() === 'visitor') {
           <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">
             This meeting is open for registration. Sign in with your LFX account to register.
           </p>
           <ng-container [ngTemplateOutlet]="signIn" />
         } @else {
-          <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">This meeting is open for registration.</p>
+          <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">
+            Register to add yourself to the guest list. You'll get the invitation and can RSVP.
+          </p>
+          <lfx-button
+            label="Register for meeting"
+            icon="fa-light fa-user-plus"
+            [styleClass]="primaryButtonClass"
+            (onClick)="register()"
+            data-testid="meeting-action-register-button" />
         }
       }
       @case ('invitation-required') {

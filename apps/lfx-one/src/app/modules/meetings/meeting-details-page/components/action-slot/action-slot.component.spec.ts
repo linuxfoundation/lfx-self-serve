@@ -5,8 +5,12 @@ import { Component, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { ActionSlotKind, Meeting, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { UserService } from '@services/user.service';
+import { DialogService } from 'primeng/dynamicdialog';
+import { Subject } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { PublicRegistrationModalComponent } from '../../../components/public-registration-modal/public-registration-modal.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingJoinActionComponent } from '../join-action/join-action.component';
 import { MeetingActionSlotComponent } from './action-slot.component';
@@ -29,6 +33,9 @@ describe('MeetingActionSlotComponent', () => {
   let joinsInWindow: WritableSignal<boolean>;
   let meeting: WritableSignal<Meeting | undefined>;
   let pastAccessKnown: WritableSignal<boolean>;
+  let markRegistered: ReturnType<typeof vi.fn>;
+  let dialogClose: Subject<{ registered: boolean } | undefined>;
+  let openDialog: ReturnType<typeof vi.fn>;
 
   const open: MeetingPrivacyState = { icon: '', label: 'Public', openToPublic: true, restricted: false, visibility: MeetingVisibility.PUBLIC };
   const restricted: MeetingPrivacyState = {
@@ -47,17 +54,22 @@ describe('MeetingActionSlotComponent', () => {
     joinsInWindow = signal(true);
     meeting = signal<Meeting | undefined>({ id: 'meeting-1', early_join_time_minutes: 15 } as Meeting);
     pastAccessKnown = signal(true);
+    markRegistered = vi.fn();
+    dialogClose = new Subject();
+    openDialog = vi.fn().mockReturnValue({ onClose: dialogClose.asObservable() });
 
     await TestBed.configureTestingModule({
       imports: [MeetingActionSlotComponent],
       providers: [
         {
           provide: MeetingDetailsStateService,
-          useValue: { actionSlot, viewerRole, privacy, timeState, joinsInWindow, meeting, pastAccessKnown, signInHref: signal(SIGN_IN_HREF) },
+          useValue: { actionSlot, viewerRole, privacy, timeState, joinsInWindow, meeting, pastAccessKnown, markRegistered, signInHref: signal(SIGN_IN_HREF) },
         },
+        { provide: UserService, useValue: { user: signal({ name: 'Ada Example', email: 'ada@acme-motors.example' }) } },
       ],
     })
       .overrideComponent(MeetingActionSlotComponent, { remove: { imports: [MeetingJoinActionComponent] }, add: { imports: [JoinActionStubComponent] } })
+      .overrideComponent(MeetingActionSlotComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
       .compileComponents();
 
     fixture = TestBed.createComponent(MeetingActionSlotComponent);
@@ -163,6 +175,51 @@ describe('MeetingActionSlotComponent', () => {
 
       expect(text('meeting-action-message')).toBe('This meeting has ended.');
       expect(query('meeting-action-slot')?.textContent).not.toContain('private');
+    });
+  });
+
+  // E2-02 (FR-021).
+  describe('register', () => {
+    beforeEach(() => {
+      meeting.set({ id: 'meeting-1', title: 'Acme Weekly Sync' } as Meeting);
+      render('register', 'outsider');
+    });
+
+    it('says what registering gets the viewer', () => {
+      expect(text('meeting-action-message')).toBe("Register to add yourself to the guest list. You'll get the invitation and can RSVP.");
+    });
+
+    it('opens the shared registration dialog for this meeting', () => {
+      query('meeting-action-register-button')?.querySelector('button')?.click();
+
+      expect(openDialog).toHaveBeenCalledWith(
+        PublicRegistrationModalComponent,
+        expect.objectContaining({
+          header: 'Register for Meeting',
+          data: expect.objectContaining({ meetingId: 'meeting-1', meetingTitle: 'Acme Weekly Sync' }),
+        })
+      );
+    });
+
+    it('moves the page to the registrant state once registered', () => {
+      query('meeting-action-register-button')?.querySelector('button')?.click();
+      dialogClose.next({ registered: true });
+
+      expect(markRegistered).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the page alone when the dialog closes without registering', () => {
+      query('meeting-action-register-button')?.querySelector('button')?.click();
+      dialogClose.next(undefined);
+
+      expect(markRegistered).not.toHaveBeenCalled();
+    });
+
+    it('prompts a visitor to sign in instead', () => {
+      render('register', 'visitor');
+
+      expect(query('meeting-action-register-button')).toBeNull();
+      expect(query('meeting-action-sign-in')).not.toBeNull();
     });
   });
 

@@ -596,6 +596,36 @@ describe('MeetingDetailsStateService', () => {
       expect(state.claimAutoJoin('another-meeting')).toBe(true);
     });
 
+    // E2-02: V1's optimistic flip, then a lookup so the page catches up with the BFF.
+    it('moves a registering outsider to the registrant state at once, and looks the meeting up again', async () => {
+      const later = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+      getPublicMeeting.mockReturnValue(of({ meeting: live({ start_time: later, is_invite_responses_enabled: true }), project }));
+      const state = create();
+      await settle();
+      expect(state.actionSlot()).toBe('register');
+
+      state.markRegistered();
+      await settle();
+
+      expect(state.viewerRole()).toBe('registrant');
+      expect(state.actionSlot()).toBe('rsvp');
+      expect(getPublicMeeting).toHaveBeenCalledTimes(2);
+    });
+
+    it('forgets a registration from this page when the route moves to another meeting', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: live(), project }));
+      const state = create();
+      await settle();
+      state.markRegistered();
+      await settle();
+
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      getPublicMeeting.mockReturnValue(of({ meeting: live({ id: 'meeting-2' }), project }));
+      await settle();
+
+      expect(state.viewerRole()).toBe('outsider');
+    });
+
     it('has no slot before the meeting loads', () => {
       getPublicMeeting.mockReturnValue(new Subject());
       const state = create();

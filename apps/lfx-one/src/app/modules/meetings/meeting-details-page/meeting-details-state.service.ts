@@ -76,6 +76,12 @@ export class MeetingDetailsStateService {
    * the upcoming endpoint still serves, has never been asked, so the slot must not call it private.
    */
   public readonly pastAccessKnown = computed(() => this.loadedViaPastMeetingId());
+  /**
+   * Set once the viewer registers from the page (E2-02), until the lookup reflects it or the route
+   * changes: the slot moves to the registrant's state at once, as V1's optimistic flip does, rather
+   * than waiting on the indexer.
+   */
+  private readonly optimisticInvited = signal(false);
   /** Meetings this page has auto-joined, so a remounted Join control does not open them again. */
   private readonly autoJoinedMeetingIds = new Set<string>();
   /** The meeting password for lookups: `?password=`, or else the composer's navigation state. */
@@ -176,6 +182,15 @@ export class MeetingDetailsStateService {
     return true;
   }
 
+  /**
+   * Records a successful self-registration (E2-02, FR-021): the viewer is on the invite list from now
+   * on, and the lookup runs again so the page catches up with the BFF.
+   */
+  public markRegistered(): void {
+    this.optimisticInvited.set(true);
+    this.refresh$.next();
+  }
+
   /** Re-runs the lookup for the current route, e.g. from the error state's retry. */
   public refresh(): void {
     this.retrying.set(true);
@@ -231,7 +246,7 @@ export class MeetingDetailsStateService {
       if (!meeting) {
         return null;
       }
-      return resolveViewerRole({ authenticated: this.userService.authenticated(), invited: meeting.invited === true, organizer: meeting.organizer === true });
+      return resolveViewerRole({ authenticated: this.userService.authenticated(), invited: this.isInvited(meeting), organizer: meeting.organizer === true });
     });
   }
 
@@ -277,7 +292,7 @@ export class MeetingDetailsStateService {
       return resolveMeetingStatus({
         timeState,
         hasStarted: this.now().getTime() >= start,
-        invited: meeting.invited === true,
+        invited: this.isInvited(meeting),
         inviteResponsesEnabled: isMeetingInviteResponsesEnabled(meeting),
         myRsvp: undefined,
       });
@@ -311,6 +326,7 @@ export class MeetingDetailsStateService {
         if (meetingId !== this.routeId()) {
           this.loadFailed.set(false);
           this.failureCount.set(0);
+          this.optimisticInvited.set(false);
         }
         this.routeId.set(meetingId);
       }),
@@ -428,6 +444,11 @@ export class MeetingDetailsStateService {
       (last, occurrence) => (!last || new Date(occurrence.start_time) > new Date(last.start_time) ? occurrence : last),
       null
     );
+  }
+
+  /** On the invite list, per the payload or a registration made from this page. */
+  private isInvited(meeting: Meeting): boolean {
+    return meeting.invited === true || this.optimisticInvited();
   }
 
   /** The action slot this viewer gets at the given time state, or `null` before the meeting loads. */
