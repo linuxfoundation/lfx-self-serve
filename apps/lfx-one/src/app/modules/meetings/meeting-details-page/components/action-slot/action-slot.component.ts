@@ -4,8 +4,11 @@
 import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
+import { environment } from '@environments/environment';
 import { DEFAULT_EARLY_JOIN_TIME } from '@lfx-one/shared/constants';
 import { ActionSlotKind, MeetingViewerRole } from '@lfx-one/shared/interfaces';
+import { buildMeetingOrganizerMailto, formatMeetingMailtoDate, resolveMeetingOrganizer } from '@lfx-one/shared/utils';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingJoinActionComponent } from '../join-action/join-action.component';
@@ -16,9 +19,9 @@ import { MeetingJoinActionComponent } from '../join-action/join-action.component
  * always carries it as `data-kind`. `none` is a decision ("nothing to offer this viewer") and
  * renders an empty slot, never a missing one (SC-004).
  *
- * `join` is complete here (FR-027). The other kinds carry one line of copy until the issue that
- * owns each one builds its full design, so no viewer meets an empty rail meanwhile: `register`
- * E2-02, `invitation-required` E2-03, `rsvp` E2-04 and E2-05, `guest-join` E2-06,
+ * `join` (FR-027) and `invitation-required` (E2-03, FR-022) are complete here. The other kinds carry
+ * one line of copy until the issue that owns each one builds its full design, so no viewer meets an
+ * empty rail meanwhile: `register` E2-02, `rsvp` E2-04 and E2-05, `guest-join` E2-06,
  * `rsvp-unavailable` N-01, and `tools` E4.
  *
  * Inside the join window the slot is Join only, as in V1 (FR-029, decided 2026-10-06). Before the
@@ -27,7 +30,7 @@ import { MeetingJoinActionComponent } from '../join-action/join-action.component
  */
 @Component({
   selector: 'lfx-meeting-action-slot',
-  imports: [ButtonComponent, MeetingJoinActionComponent, NgTemplateOutlet],
+  imports: [ButtonComponent, MeetingJoinActionComponent, NgTemplateOutlet, OpenIntercomDirective],
   templateUrl: './action-slot.component.html',
 })
 export class MeetingActionSlotComponent {
@@ -49,6 +52,29 @@ export class MeetingActionSlotComponent {
    * it. Moved here from the time banner (decided on #3297).
    */
   protected readonly joinHint: Signal<string> = this.initJoinHint();
+  /**
+   * `invitation-required`'s "Contact the organizer": a pre-filled `mailto:` to the organizer V1's
+   * chip names (owner, else creator), with the same subject and body. `null` when there is no
+   * usable email, and the slot offers the support chat instead.
+   */
+  protected readonly organizerMailto: Signal<string | null> = this.initOrganizerMailto();
+
+  private initOrganizerMailto(): Signal<string | null> {
+    return computed(() => {
+      const meeting = this.state.meeting();
+      if (!meeting || this.kind() !== 'invitation-required') {
+        return null;
+      }
+      // The selected occurrence's date, so a series' email names the occurrence the page is about, in
+      // the meeting's own timezone so the server render and the browser agree.
+      return buildMeetingOrganizerMailto({
+        email: resolveMeetingOrganizer(meeting)?.email,
+        meetingTitle: meeting.title,
+        meetingDate: formatMeetingMailtoDate(this.state.selectedOccurrence()?.start_time ?? meeting.start_time, meeting.timezone),
+        detailUrl: `${environment.urls.home}/meetings/${encodeURIComponent(meeting.id)}`,
+      });
+    });
+  }
 
   private initJoinHint(): Signal<string> {
     return computed(() => {
