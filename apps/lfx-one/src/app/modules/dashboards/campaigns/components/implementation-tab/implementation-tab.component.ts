@@ -35,6 +35,8 @@ import {
   normalizeMicrosoftGeoTargets,
   CAMPAIGN_PLATFORMS,
   GOOGLE_CAMPAIGN_NAME_TOKENS,
+  GOOGLE_VIDEO_CREATE_SUPPORTED,
+  GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   REDDIT_MAX_BUDGET_USD,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
@@ -262,6 +264,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaPlacementLabels = META_PLACEMENT_LABELS;
   protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
+  protected readonly videoCreateUnsupportedReason = GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON;
   protected readonly redditMaxBudget = REDDIT_MAX_BUDGET_USD;
   protected readonly allKnownGeos: LinkedInGeoTarget[] = [...new Map(Object.values(LINKEDIN_GEO_RESOLVE_MAP).map((g) => [g.urn, g])).values()];
   protected readonly todayDate = new Date().toISOString().split('T')[0];
@@ -292,7 +295,12 @@ export class ImplementationTabComponent implements OnInit {
     // reason Demand Gen is: the BFF emits ONE `googleAdsConfig` with ONE `channel`, so any pair is
     // refused. These three are withheld entirely unless the deployment reports the capability.
     includePerformanceMax: [false],
-    includeVideo: [false],
+    // DISABLED at construction, not merely unchecked: Google cannot create a Video campaign at
+    // all, so there is no deployment and no capability answer that makes this box actionable.
+    // The control itself stays — the draft round-trip, the restore and the emit all still name it,
+    // so a saved selection survives untouched and flipping GOOGLE_VIDEO_CREATE_SUPPORTED is the
+    // whole change the day Google ships the API.
+    includeVideo: [{ value: false, disabled: !GOOGLE_VIDEO_CREATE_SUPPORTED }],
     includeDisplay: [false],
     headlines: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)])]),
     descriptions: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)])]),
@@ -1081,7 +1089,12 @@ export class ImplementationTabComponent implements OnInit {
     if (this.demandGenAvailable() && form.includeDemandGen) channels.push('demand-gen');
     if (this.googleChannelsAvailable()) {
       if (form.includePerformanceMax) channels.push('performance-max');
-      if (form.includeVideo) channels.push('video');
+      // The capability gate is not enough for Video, and `getRawValue()` is why: it reports
+      // DISABLED controls too, so a draft saved before this box was disabled still carries a
+      // `true` here and would dispatch a create Google refuses outright. The control is left
+      // holding that value deliberately — see the form declaration — so this is the one place
+      // that has to drop it.
+      if (GOOGLE_VIDEO_CREATE_SUPPORTED && form.includeVideo) channels.push('video');
       if (form.includeDisplay) channels.push('display');
     }
     return channels;
