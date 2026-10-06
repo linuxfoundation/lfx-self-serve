@@ -35,8 +35,10 @@ import type {
 } from '../interfaces';
 import {
   buildCommitteeCadenceSummary,
+  buildMeetingOccurrenceOptions,
   buildMeetingOccurrenceRoute,
   buildOccurrenceNavTimeline,
+  formatMeetingOccurrenceLabel,
   getMeetingSeriesUid,
   buildMeetingOrganizerChip,
   buildMeetingOrganizerMailto,
@@ -1788,5 +1790,55 @@ describe('countMeetingDatesBefore', () => {
     const inside = buildMeetingFixture({ start_time: iso(NOW + 2 * HOUR), duration: 60 });
     const outside = buildMeetingFixture({ start_time: iso(NOW + 9 * DAY), duration: 60 });
     expect(countMeetingDatesBefore([inside, outside], NOW + 7 * DAY)).toBe(1);
+  });
+});
+
+describe('formatMeetingOccurrenceLabel', () => {
+  it('formats the start in the series timezone, naming the zone', () => {
+    const fixture = occurrence({ occurrence_id: '1894114800', start_time: '2030-01-09T15:00:00Z', duration: 60 });
+
+    expect(formatMeetingOccurrenceLabel(fixture, 'America/New_York')).toBe('Wed, Jan 9, 2030 · 10:00 AM EST');
+  });
+
+  it('falls back to the occurrence id for an unparseable start', () => {
+    expect(formatMeetingOccurrenceLabel(occurrence({ occurrence_id: '42', start_time: 'nope', duration: 30 }), 'UTC')).toBe('42');
+  });
+});
+
+describe('buildMeetingOccurrenceOptions', () => {
+  const NOW = new Date('2030-01-05T12:00:00Z');
+  const ended = occurrence({ occurrence_id: '1893494400', start_time: '2030-01-01T09:00:00Z', duration: 30 });
+  const upcomingLater = occurrence({ occurrence_id: '1894608000', start_time: '2030-01-15T09:00:00Z', duration: 30 });
+  const upcoming = occurrence({ occurrence_id: '1894006800', start_time: '2030-01-08T09:00:00Z', duration: 30 });
+  const cancelled = occurrence({ occurrence_id: '1894611600', start_time: '2030-01-22T09:00:00Z', duration: 30 });
+  const meeting = buildMeetingFixture({
+    id: 'meeting-1',
+    timezone: 'UTC',
+    occurrences: [ended, upcomingLater, upcoming, cancelled],
+    cancelled_occurrences: [cancelled.occurrence_id],
+  });
+
+  it('lists active occurrences that have not ended, earliest first', () => {
+    expect(buildMeetingOccurrenceOptions(meeting, null, NOW).map((option) => option.value)).toEqual([upcoming.occurrence_id, upcomingLater.occurrence_id]);
+  });
+
+  it('keeps the included occurrence even when it has ended', () => {
+    expect(buildMeetingOccurrenceOptions(meeting, ended.occurrence_id, NOW).map((option) => option.value)).toEqual([
+      ended.occurrence_id,
+      upcoming.occurrence_id,
+      upcomingLater.occurrence_id,
+    ]);
+  });
+
+  it('never brings back a cancelled occurrence', () => {
+    expect(buildMeetingOccurrenceOptions(meeting, cancelled.occurrence_id, NOW).map((option) => option.value)).not.toContain(cancelled.occurrence_id);
+  });
+
+  it('keeps a running occurrence that inherits the series duration', () => {
+    // Started 30 minutes before NOW, no duration of its own, series runs 60 minutes — still in progress.
+    const running = occurrence({ occurrence_id: '1893841200', start_time: '2030-01-05T11:30:00Z', duration: 0 });
+    const series = buildMeetingFixture({ id: 'meeting-2', timezone: 'UTC', duration: 60, occurrences: [running] });
+
+    expect(buildMeetingOccurrenceOptions(series, null, NOW).map((option) => option.value)).toEqual([running.occurrence_id]);
   });
 });
