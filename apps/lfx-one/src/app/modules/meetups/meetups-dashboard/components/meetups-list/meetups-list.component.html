@@ -9,7 +9,7 @@
         <lfx-filter-pills [options]="upcomingViewOptions" [selectedFilter]="upcomingView()" (filterChange)="onUpcomingViewChange($event)" />
       </div>
     }
-    @if (upcomingView() === 'all') {
+    @if (upcomingRegisteredOnly() === false) {
       <p class="text-xs text-gray-500 mb-3" data-testid="meetups-all-caption">
         The next {{ discoverableLimit }} upcoming meetups across Open Community Groups, plus any you're registered for.
       </p>

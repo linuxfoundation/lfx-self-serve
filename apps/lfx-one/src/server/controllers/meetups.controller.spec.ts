@@ -85,6 +85,23 @@ describe('MeetupsController filter scopes and errors', () => {
     expect(next).toHaveBeenCalledWith(error);
     expect(json).not.toHaveBeenCalled();
   });
+
+  it.each(['false', 'true'])('matches padded Community selections with normalized SQL for isPast=%s', async (isPast) => {
+    const next = vi.fn();
+    await new MeetupsController().getMyMeetups(
+      { query: { isPast, community: ' Example Community ', searchQuery: 'Example', role: 'Attendee', status: 'registered' } } as never,
+      { json: vi.fn() } as never,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledTimes(1);
+    const [sql, binds] = execute.mock.calls[0];
+    expect(sql).toContain('AND TRIM(COMMUNITY) = ?');
+    expect(sql).toContain(isPast === 'true' ? 'OCG_PAST_MEETUPS' : 'OCG_UPCOMING_MEETUPS');
+    expect(binds).toEqual(['user@example.com', '%Example%', 'Example Community', ',Attendee,']);
+    expect((sql.match(/\?/g) ?? []).length).toBe(binds.length);
+  });
 });
 
 describe('MeetupsController.getMyMeetups pagination literals', () => {

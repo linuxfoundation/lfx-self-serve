@@ -46,10 +46,9 @@ describe('MeetupsService', () => {
     'scopes communities while keeping roles global for %j',
     async (scope) => {
       execute.mockImplementation(async (sql: string) => ({
-        rows: sql.includes('OCG_MEETUPS_FILTERS') ? [{ FILTER_NAME: 'role', FILTER_VALUE: 'Attendee' }] : [{ COMMUNITY: ' Example Community ' }],
+        rows: sql.includes('OCG_MEETUPS_FILTERS') ? [{ FILTER_NAME: 'role', FILTER_VALUE: 'Attendee' }] : [{ COMMUNITY: 'Example Community' }],
       }));
-      // Preserve nonblank values so selecting an option still matches the list's raw COMMUNITY predicate.
-      await expect(service.getMeetupFilters(request, email, scope)).resolves.toEqual({ communities: [' Example Community '], roles: ['Attendee'] });
+      await expect(service.getMeetupFilters(request, email, scope)).resolves.toEqual({ communities: ['Example Community'], roles: ['Attendee'] });
       expect(execute).toHaveBeenCalledTimes(2);
       const communityCall = execute.mock.calls.find(([sql]) => !sql.includes('OCG_MEETUPS_FILTERS'))!;
       expect(communityCall[1]).toEqual([email]);
@@ -58,16 +57,17 @@ describe('MeetupsService', () => {
         expect(communityCall[0]).toContain('OCG_PAST_MEETUPS');
         expect(communityCall[0]).toContain('WHERE EMAIL = ?');
         expect(communityCall[0]).toContain("AND NULLIF(TRIM(COMMUNITY), '') IS NOT NULL");
-        expect(communityCall[0]).toContain('SELECT DISTINCT COMMUNITY');
+        expect(communityCall[0]).toContain('SELECT DISTINCT TRIM(COMMUNITY) AS COMMUNITY');
       } else {
         expect(communityCall[0]).toContain('OCG_UPCOMING_MEETUPS');
         expect(communityCall[0]).toContain('OCG_UPCOMING_MEETUPS_ROLES');
         expect(communityCall[0]).toContain('r.EMAIL = ?');
         expect(communityCall[0]).toContain('r.EVENT_ID = m.EVENT_ID');
         expect(communityCall[0]).toContain("WHERE NULLIF(TRIM(m.COMMUNITY), '') IS NOT NULL");
-        expect(communityCall[0]).toContain('SELECT DISTINCT m.COMMUNITY');
+        expect(communityCall[0]).toContain('SELECT DISTINCT TRIM(m.COMMUNITY) AS COMMUNITY');
       }
       const roleCall = execute.mock.calls.find(([sql]) => sql.includes('OCG_MEETUPS_FILTERS'))!;
+      expect(communityCall[0]).toContain('ORDER BY COMMUNITY');
       expect(roleCall[0]).toContain("FILTER_NAME = 'role'");
       expect(roleCall[1]).toEqual([]);
       for (const [sql, binds] of execute.mock.calls) expect((sql.match(/\?/g) ?? []).length).toBe(binds.length);

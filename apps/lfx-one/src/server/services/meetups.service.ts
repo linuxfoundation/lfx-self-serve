@@ -102,14 +102,14 @@ export class MeetupsService {
     try {
       if (scoped) {
         const communitySql = isPast
-          ? `SELECT DISTINCT COMMUNITY FROM ${this.table('OCG_PAST_MEETUPS')}
+          ? `SELECT DISTINCT TRIM(COMMUNITY) AS COMMUNITY FROM ${this.table('OCG_PAST_MEETUPS')}
              WHERE EMAIL = ? AND NULLIF(TRIM(COMMUNITY), '') IS NOT NULL
              ORDER BY COMMUNITY`
-          : `SELECT DISTINCT m.COMMUNITY
+          : `SELECT DISTINCT TRIM(m.COMMUNITY) AS COMMUNITY
              FROM ${this.table('OCG_UPCOMING_MEETUPS')} m
              JOIN ${this.table('OCG_UPCOMING_MEETUPS_ROLES')} r ON r.EMAIL = ? AND r.EVENT_ID = m.EVENT_ID
              WHERE NULLIF(TRIM(m.COMMUNITY), '') IS NOT NULL
-             ORDER BY m.COMMUNITY`;
+             ORDER BY COMMUNITY`;
         const [communityResult, roleResult] = await Promise.all([
           this.snowflakeService.execute<Pick<MeetupRow, 'COMMUNITY'>>(communitySql, [userEmail]),
           this.snowflakeService.execute<MeetupFilterRow>(
@@ -159,7 +159,7 @@ export class MeetupsService {
     offset: number
   ): { sql: string; binds: string[] } {
     const searchQueryFilter = searchQuery ? 'AND EVENT_NAME ILIKE ?' : '';
-    const communityFilter = community ? 'AND COMMUNITY = ?' : '';
+    const communityFilter = community ? 'AND TRIM(COMMUNITY) = ?' : '';
     const roleFilterResult = role ? this.buildRoleFilter(role) : { filter: '', binds: [] as string[] };
     let statusFilter = '';
     if (status === 'registered') {
@@ -234,7 +234,7 @@ export class MeetupsService {
     offset: number
   ): { sql: string; binds: string[] } {
     const searchQueryFilter = searchQuery ? 'AND EVENT_NAME ILIKE ?' : '';
-    const communityFilter = community ? 'AND COMMUNITY = ?' : '';
+    const communityFilter = community ? 'AND TRIM(COMMUNITY) = ?' : '';
     const roleFilterResult = role ? this.buildRoleFilter(role) : { filter: '', binds: [] as string[] };
 
     const sql = `

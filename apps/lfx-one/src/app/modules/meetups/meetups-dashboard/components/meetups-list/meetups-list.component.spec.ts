@@ -98,18 +98,20 @@ describe('MeetupsListComponent registration views', () => {
     expect(service.getMyMeetups.mock.calls[0][0]).toEqual({ isPast: false, offset: 0, pageSize: 1, status: 'registered' });
     expect(calls()).toHaveLength(0);
     expect(root.querySelector('[data-testid="meetups-upcoming-view-pills"]')).toBeNull();
+    expect(root.querySelector('[data-testid="meetups-all-caption"]')).toBeNull();
   });
 
   it.each([
     { total: 0, view: 'all', status: undefined },
     { total: 2, view: 'registered', status: 'registered' },
   ])('defaults to $view for count=$total with one list fetch', async ({ total, view, status }) => {
-    const { calls, pill, messages, resolveCount } = await render();
+    const { root, calls, pill, messages, resolveCount } = await render();
     await resolveCount(total);
     expect(calls()).toHaveLength(1);
     expect(calls()[0].status).toBe(status);
     expect(pill(view).getAttribute('aria-pressed')).toBe('true');
     expect(messages.add).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-testid="meetups-all-caption"]') !== null).toBe(view === 'all');
   });
 
   it.each(['zero', 'unavailable'])('keeps view switching available on filtered empty registrations with a %s count', async (countState) => {
@@ -143,6 +145,7 @@ describe('MeetupsListComponent registration views', () => {
     await failCount();
     expect(calls()[0].status).toBe('registered');
     expect(root.querySelector('[data-testid="meetups-upcoming-error-state"]')).toBeNull();
+    expect(root.querySelector('[data-testid="meetups-all-caption"]')).toBeNull();
     expect(messages.add).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'error', detail: 'Failed to load registration totals. Upcoming defaults to My Registrations.' })
     );
