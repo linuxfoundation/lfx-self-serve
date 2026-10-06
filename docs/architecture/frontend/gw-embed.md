@@ -6,18 +6,19 @@ The server half â€” the `/api/gw/*` proxy, its authorization and header policy â
 
 ## Files
 
-| File                                                       | Role                                                       |
-| ---------------------------------------------------------- | ---------------------------------------------------------- |
-| `src/app/modules/gw/gw-module-outlet/`                     | The outlet component, template and spec                    |
-| `src/app/modules/gw/gw.routes.ts`                          | Route definitions for both mounts                          |
-| `src/app/shared/guards/gatewaze-embed-enabled.guard.ts`    | `CanMatch` flag gate                                       |
-| `src/app/shared/guards/gw-embed-tenant.guard.ts`           | `CanActivate` tenant allowlist gate                        |
-| `packages/shared/src/constants/gw-embed.constants.ts`      | Mount prefixes, enabled modules/features, storage keys     |
-| `packages/shared/src/utils/gw-embed.utils.ts`              | Route-prefix resolution and the tenant allowlist test      |
-| `packages/shared/src/utils/auth-fragment.utils.ts`         | Redacting the auth fragment before it reaches RUM          |
-| `packages/shared/src/interfaces/gw-embed.interface.ts`     | The `GwHostContext` mount contract                         |
-| `apps/lfx-one/scripts/lib/contain-gw-embed-css.mjs`        | Stylesheet containment transform                           |
-| `src/server/controllers/gw-embed-stylesheet.controller.ts` | Serves the scoped stylesheet (`GW_EMBED_STYLESHEET_ROUTE`) |
+| File                                                       | Role                                                   |
+| ---------------------------------------------------------- | ------------------------------------------------------ |
+| `src/app/modules/gw/gw-module-outlet/`                     | The outlet component, template and spec                |
+| `src/app/modules/gw/gw.routes.ts`                          | Route definitions for both mounts                      |
+| `src/app/shared/guards/gatewaze-embed-enabled.guard.ts`    | `CanMatch` flag gate                                   |
+| `src/app/shared/guards/gw-embed-tenant.guard.ts`           | `CanActivate` tenant allowlist gate                    |
+| `packages/shared/src/constants/gw-embed.constants.ts`      | Mount prefixes, enabled modules/features, storage keys |
+| `packages/shared/src/utils/gw-embed.utils.ts`              | Route-prefix resolution and the tenant allowlist test  |
+| `packages/shared/src/utils/auth-fragment.utils.ts`         | Redacting the auth fragment before it reaches RUM      |
+| `packages/shared/src/interfaces/gw-embed.interface.ts`     | The `GwHostContext` mount contract                     |
+| `apps/lfx-one/scripts/lib/contain-gw-embed-css.mjs`        | Stylesheet containment transform                       |
+| `src/server/services/gw-embed-stylesheet.service.ts`       | Fetches, scopes, themes and caches the stylesheet      |
+| `src/server/controllers/gw-embed-stylesheet.controller.ts` | HTTP boundary for it (`GW_EMBED_STYLESHEET_ROUTE`)     |
 
 ## Why embed rather than port
 
@@ -70,7 +71,7 @@ The guard must be durable, not a synchronous re-entrancy flag. Angular wraps its
 
 The embed ships one large stylesheet. Loaded as-is it would restyle the host.
 
-The loader lets the host swap the stylesheet URL it fetches (`GwEmbedSource.resolveStylesheetUrl`). The outlet points it at `GW_EMBED_STYLESHEET_ROUTE` with the hashed file name, and `gw-embed-stylesheet.controller.ts` fetches that file from `GW_EMBED_URL`, runs `scripts/lib/contain-gw-embed-css.mjs` over it, appends the theme layer and caches the result by name (the name is content-hashed on the Gatewaze side, so the server cache never goes stale). Browsers get a short `max-age` with `stale-while-revalidate` and an `ETag` rather than an immutable year: the body is LFX output under an upstream-hashed name, so a theme or transform fix must reach users without a URL change. The route is anonymous, so it brakes itself: failed names are remembered for a minute, only a few upstream fetches run at once, the upstream must answer `text/css` within the size cap, and a body with no rules is refused. The transform therefore runs once per Gatewaze release per pod, not in every browser, and no CSS parser ships to the client. It:
+The loader lets the host swap the stylesheet URL it fetches (`GwEmbedSource.resolveStylesheetUrl`). The outlet points it at `GW_EMBED_STYLESHEET_ROUTE` with the hashed file name, and `gw-embed-stylesheet.service.ts` fetches that file from `GW_EMBED_URL`, runs `scripts/lib/contain-gw-embed-css.mjs` over it, appends the theme layer and caches the result by name (the name is content-hashed on the Gatewaze side, so the server cache never goes stale). Browsers get a short `max-age` with `stale-while-revalidate` and an `ETag` rather than an immutable year: the body is LFX output under an upstream-hashed name, so a theme or transform fix must reach users without a URL change. The route is anonymous, so it brakes itself: failed names are remembered for a minute, only a few upstream fetches run at once, the upstream must answer `text/css` within the size cap, and a body with no rules is refused. The transform therefore runs once per Gatewaze release per pod, not in every browser, and no CSS parser ships to the client. It:
 
 - scopes every selector under the embed containers,
 - remaps root-element rules (`:root`/`html`/`body`) onto the embed containers so their declarations survive,
@@ -108,7 +109,7 @@ Two rules about that fragment, both learned the hard way:
 
 ## Enablement
 
-**Three** gates, all of which must pass:
+**Four** gates, all of which must pass:
 
 | Gate                             | Kind                                                                                     |
 | -------------------------------- | ---------------------------------------------------------------------------------------- |

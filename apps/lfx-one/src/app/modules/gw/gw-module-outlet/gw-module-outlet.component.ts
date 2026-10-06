@@ -290,6 +290,12 @@ export class GwModuleOutletComponent {
       const manifest = await this.mountHandle.ready;
       if (manifest) {
         console.info(`[GwModuleOutlet] Gatewaze embed ${manifest.version} mounted (contract ${manifest.contract})`);
+      } else if (!this.destroyed && !this.hostPanelShowing()) {
+        // Nothing mounted. The loader has already said why through `onFatal`, but it marks a
+        // manifest or bundle fetch failure as recoverable (a retry may work), which `onFatal`
+        // surfaces as a toast and nothing else — and a toast over an empty outlet reads as a
+        // hang. Unless teardown cancelled the mount or a panel is already up, this is terminal.
+        this.showErrorPanel('The embedded admin module could not be loaded. Reload the page to try again.');
       }
     } catch (error) {
       // No client-side error-reporting service exists yet; console.error is the established

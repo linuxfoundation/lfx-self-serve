@@ -13,8 +13,9 @@ export const REM_BASELINE_PX: number;
 export interface ContainCssResult {
   css: string;
   stats: { rules: number; keyframes: number; dropped: number; remValues: number };
-  keyframeNames: Set<string>;
-  compoundRootSelectors: Set<string>;
+  /** Spread from the transform's working sets, so arrays, not Sets (contain-gw-embed-css.mjs, the return statement). */
+  keyframeNames: string[];
+  compoundRootSelectors: string[];
 }
 
 export function containCss(css: string): ContainCssResult;

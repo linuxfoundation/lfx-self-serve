@@ -143,7 +143,14 @@ export const GW_EMBED_STYLESHEET_CACHE_MAX_ENTRIES = 4;
  */
 export const GW_EMBED_STYLESHEET_NEGATIVE_CACHE_MS = 60_000;
 
-/** Upstream fetches allowed at once across all names; requests beyond this get a 503 with Retry-After. */
+/**
+ * Failed names remembered at once. The route is anonymous and any regex-valid name can be asked
+ * for, so without a cap the failure memory would grow with every distinct bad name for the life
+ * of the process. Oldest entries go first.
+ */
+export const GW_EMBED_STYLESHEET_FAILURE_CACHE_MAX_ENTRIES = 64;
+
+/** Upstream fetches allowed at once across all names; requests beyond this get a 503. */
 export const GW_EMBED_STYLESHEET_MAX_IN_FLIGHT = 2;
 
 /**

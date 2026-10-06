@@ -76,6 +76,15 @@ export interface GwEmbedSource {
   resolveStylesheetUrl?: (url: string) => string;
 }
 
+/**
+ * One scoped embed stylesheet as the server caches and serves it (`GwEmbedStylesheetService`):
+ * the contained Gatewaze CSS with the LFX theme layer appended, and the ETag derived from it.
+ */
+export interface GwEmbedScopedStylesheet {
+  css: string;
+  etag: string;
+}
+
 /** Fatal error shape reported by `@gatewaze/admin-embed` via `GwHostContext.onFatal`. */
 export interface GwEmbedFatalError {
   error_type: 'config_invalid' | 'import_failed' | 'mount_aborted' | 'render_crash';
