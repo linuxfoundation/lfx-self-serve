@@ -3,7 +3,6 @@
 
 import { DatePipe } from '@angular/common';
 import { afterNextRender, Component, computed, inject, Signal, signal } from '@angular/core';
-import { DEFAULT_EARLY_JOIN_TIME } from '@lfx-one/shared/constants';
 import { Meeting, MeetingTimeState, MeetingTimeWindow, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { formatDisplayTimeInTimezone, formatFutureRelativeTime, getLongTimezoneName, getUserTimezone, toZonedDateCarrier } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -14,8 +13,8 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * The meeting's date, time and phase, at the top of the V2 rail card (E1-06, #1774, FR-012).
  * @description Replaces V1's three alert banners with one block whose `data-state` is the time state:
  * the occurrence's date, start-end time and timezone in the viewer's own zone (the prototype's rail
- * card), then one line for the phase — the relative start and the early-join rule before, "in
- * progress" during the join window, "ended" after. It moves on with the state service's clock, so a
+ * card), then one line for the phase — the relative start before, "in progress" during the join
+ * window, "ended" after. The early-join rule is the action slot's (E2-01), under Join's place. It moves on with the state service's clock, so a
  * page left open crosses from before to live to ended without a reload.
  *
  * The viewer's timezone is read after the first render, so the server render and hydration agree;
@@ -121,17 +120,12 @@ export class MeetingTimeBannerComponent {
 
   private initPhaseMessage(): Signal<string> {
     return computed(() => {
-      const meeting = this.meeting();
       switch (this.timeState()) {
         case 'ended':
           return 'This meeting has ended.';
         case 'live':
           return this.startingSoon() ? 'The meeting is starting soon. You can join now.' : 'The meeting is in progress.';
-        case 'before': {
-          // The issue's (and v1's) early-join copy.
-          const earlyJoinMinutes = meeting?.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME;
-          return `You may only join up to ${earlyJoinMinutes} minutes before the start time.`;
-        }
+        // Before the window the relative start says it all; the action slot states the early-join rule.
         default:
           return '';
       }

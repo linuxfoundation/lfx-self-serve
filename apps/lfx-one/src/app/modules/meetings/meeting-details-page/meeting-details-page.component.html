@@ -79,13 +79,17 @@
       aria-label="Meeting actions"
       data-testid="meeting-rail">
       @if (state.status() === 'ready') {
-        <!-- The rail card: the time banner on top (E1-06); the action slot (E2-01) takes the placeholder below. -->
+        <!-- The rail card: the time banner (E1-06) and the action slot (E2-01) on top, then "Organized
+             by" under a divider, as in the prototype. -->
         <div
-          class="flex flex-col gap-[18px] rounded-[var(--md-radius-lg)] border border-[var(--md-border)] bg-[var(--md-surface-card)] p-[20px] shadow-[0_1px_2px_var(--md-shadow-color)]">
-          <lfx-meeting-time-banner />
+          class="flex flex-col overflow-hidden rounded-[var(--md-radius-lg)] border border-[var(--md-border)] bg-[var(--md-surface-card)] shadow-[0_1px_2px_var(--md-shadow-color)]">
+          <div class="flex flex-col gap-[16px] p-[20px]">
+            <lfx-meeting-time-banner />
+            <lfx-meeting-action-slot />
+          </div>
+          <lfx-meeting-organizer class="block border-t border-[var(--md-divider)] px-[20px] py-[18px] empty:hidden" />
         </div>
       }
-      <p-skeleton height="220px" aria-hidden="true" data-testid="meeting-section-placeholder-rail" />
     </aside>
   </div>
 </ng-template>

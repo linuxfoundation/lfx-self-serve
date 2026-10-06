@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { makeStateKey, PLATFORM_ID, TransferState } from '@angular/core';
+import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
+import { environment } from '@environments/environment';
 import { MEETING_JOIN_STATE_KEY } from '@lfx-one/shared/constants';
 import { Meeting, MeetingJoinPageState, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
+import { UserService } from '@services/user.service';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -28,6 +31,7 @@ describe('MeetingDetailsStateService', () => {
   let getPublicPastMeeting: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let seed: MeetingJoinPageState | null;
+  let authenticated: WritableSignal<boolean>;
 
   function create(platform: 'browser' | 'server' = 'browser'): MeetingDetailsStateService {
     TestBed.configureTestingModule({
@@ -51,6 +55,7 @@ describe('MeetingDetailsStateService', () => {
         },
         { provide: Router, useValue: { navigate } },
         { provide: MeetingService, useValue: { getPublicMeeting, getPublicPastMeeting } },
+        { provide: UserService, useValue: { authenticated } },
         { provide: MeetingDetailsSeedService, useValue: { take: (routeId: string | null) => (routeId === MEETING_ID ? seed : null) } },
       ],
     });
@@ -64,6 +69,7 @@ describe('MeetingDetailsStateService', () => {
     getPublicPastMeeting = vi.fn().mockReturnValue(throwError(() => ({ status: 404 })));
     navigate = vi.fn().mockResolvedValue(true);
     seed = null;
+    authenticated = signal(true);
     // Lookup failures are logged on purpose; keep the test output readable.
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
@@ -488,6 +494,101 @@ describe('MeetingDetailsStateService', () => {
       const state = create();
 
       expect(state.timeState()).toBeNull();
+    });
+  });
+
+  // The resolver's own table is in `meeting-view-model.utils.spec.ts`; these check the inputs the
+  // service feeds it.
+  describe('action slot', () => {
+    const live = (overrides: Partial<Meeting> = {}) =>
+      ({
+        ...buildMeeting(),
+        start_time: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+        duration: 60,
+        occurrences: [],
+        visibility: 'public',
+        restricted: false,
+        ...overrides,
+      }) as unknown as Meeting;
+
+    it('offers Join to a registrant inside the window', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: live({ invited: true }), project }));
+      const state = create();
+      await settle();
+
+      expect(state.viewerRole()).toBe('registrant');
+      expect(state.actionSlot()).toBe('join');
+    });
+
+    it('offers the guest form to an anonymous visitor inside the window', async () => {
+      authenticated.set(false);
+      getPublicMeeting.mockReturnValue(of({ meeting: live({ invited: true, organizer: true }), project }));
+      const state = create();
+      await settle();
+
+      expect(state.viewerRole()).toBe('visitor');
+      expect(state.actionSlot()).toBe('guest-join');
+    });
+
+    it('tells a signed-in outsider on a restricted meeting that an invitation is required', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: live({ restricted: true }), project }));
+      const state = create();
+      await settle();
+
+      expect(state.actionSlot()).toBe('invitation-required');
+      expect(state.joinsInWindow()).toBe(false);
+    });
+
+    it('reads an ended past-id load through its full_access', async () => {
+      const pastId = '99152950841-1700000000000';
+      paramMap$.next(convertToParamMap({ id: pastId }));
+      getPublicPastMeeting.mockReturnValue(of({ meeting: live({ start_time: '2023-11-14T22:13:20Z' }), project, full_access: false }));
+      const state = create();
+      await settle();
+
+      expect(state.actionSlot()).toBe('no-access');
+    });
+
+    // Before the window the slot is RSVP, but the viewer will be able to join once it opens.
+    it('knows, before the window, that the viewer will be able to join in it', async () => {
+      const later = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+      getPublicMeeting.mockReturnValue(of({ meeting: live({ start_time: later, invited: true, is_invite_responses_enabled: true }), project }));
+      const state = create();
+      await settle();
+
+      expect(state.actionSlot()).toBe('rsvp');
+      expect(state.joinsInWindow()).toBe(true);
+    });
+
+    it('has no slot before the meeting loads', () => {
+      getPublicMeeting.mockReturnValue(new Subject());
+      const state = create();
+
+      expect(state.actionSlot()).toBeNull();
+      expect(state.joinsInWindow()).toBe(false);
+    });
+  });
+
+  describe('sign-in link', () => {
+    it('signs in back to this meeting', () => {
+      getPublicMeeting.mockReturnValue(new Subject());
+      const state = create();
+
+      expect(state.signInHref()).toBe(`/login?returnTo=${encodeURIComponent(`${environment.urls.home}/meetings/${MEETING_ID}`)}`);
+    });
+
+    // FR-013: the password and the selected occurrence both survive the round trip through login.
+    it('keeps the query string, ?password= included, in returnTo', () => {
+      queryParamMap$.next(convertToParamMap({ password: 'a&b c', occurrence: '1700000000000' }));
+      getPublicMeeting.mockReturnValue(new Subject());
+      const state = create();
+
+      const returnTo = new URL(state.signInHref(), 'http://localhost').searchParams.get('returnTo') ?? '';
+      const target = new URL(returnTo);
+
+      expect(target.pathname).toBe(`/meetings/${MEETING_ID}`);
+      expect(target.searchParams.get('password')).toBe('a&b c');
+      expect(target.searchParams.get('occurrence')).toBe('1700000000000');
     });
   });
 

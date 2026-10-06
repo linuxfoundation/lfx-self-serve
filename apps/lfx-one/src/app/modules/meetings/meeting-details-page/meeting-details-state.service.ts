@@ -5,14 +5,18 @@ import { isPlatformBrowser, isPlatformServer } from '@angular/common';
 import { computed, inject, Injectable, makeStateKey, PLATFORM_ID, Signal, signal, TransferState } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
+import { environment } from '@environments/environment';
 import { MEETING_JOIN_STATE_KEY } from '@lfx-one/shared/constants';
 import {
+  ActionSlotKind,
   Meeting,
   MeetingDetailsLoadStatus,
   MeetingJoinPageState,
   MeetingOccurrence,
+  MeetingPrivacyState,
   MeetingStatusKind,
   MeetingTimeState,
+  MeetingViewerRole,
   PublicMeetingProject,
   PublicPastMeetingResponse,
 } from '@lfx-one/shared/interfaces';
@@ -21,10 +25,14 @@ import {
   getCurrentOrNextOccurrence,
   isMeetingInviteResponsesEnabled,
   isPastMeetingCompositeId,
+  resolveActionSlot,
   resolveMeetingStatus,
+  resolvePrivacy,
   resolveTimeState,
+  resolveViewerRole,
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
+import { UserService } from '@services/user.service';
 import { BehaviorSubject, catchError, combineLatest, EMPTY, interval, map, Observable, switchMap, tap, timer } from 'rxjs';
 
 import { MeetingDetailsSeedService } from '../meeting-details-gate/meeting-details-seed.service';
@@ -55,6 +63,7 @@ export class MeetingDetailsStateService {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly transferState = inject(TransferState);
   private readonly seedService = inject(MeetingDetailsSeedService, { optional: true });
+  private readonly userService = inject(UserService);
   private readonly stateKey = makeStateKey<MeetingJoinPageState>(MEETING_JOIN_STATE_KEY);
 
   /** True when the page was reached through a past-meeting composite id (`meetingId-timestamp`). */
@@ -93,8 +102,8 @@ export class MeetingDetailsStateService {
    * The occurrence the page is about, for every section to share (data-model.md § View-scoped state).
    * @description `?occurrence=<start ms>` first, among active (non-cancelled) occurrences; otherwise the
    * current or next one, re-selected on each clock tick so a series left open moves on; once a series
-   * is exhausted, its last occurrence. `null` for a one-off meeting and for a past occurrence opened by its composite id, where the meeting payload is
-   * the occurrence itself.
+   * is exhausted, its last occurrence. `null` for a one-off meeting and for a past occurrence opened
+   * by its composite id, where the meeting payload is the occurrence itself.
    */
   public readonly selectedOccurrence: Signal<MeetingOccurrence | null> = this.initSelectedOccurrence();
   /** The selected occurrence's time state on the clock; `null` until the meeting has loaded. */
@@ -106,6 +115,27 @@ export class MeetingDetailsStateService {
    */
   public readonly meetingStatus: Signal<MeetingStatusKind | null> = this.initMeetingStatus();
   public readonly status: Signal<MeetingDetailsLoadStatus> = this.initStatus();
+  /** The meeting's privacy (E1-04), for the header chip and the action slot alike. */
+  public readonly privacy: Signal<MeetingPrivacyState | null> = this.initPrivacy();
+  /** Who the viewer is to this meeting; `visitor` whenever there is no session (E0-02). */
+  public readonly viewerRole: Signal<MeetingViewerRole | null> = this.initViewerRole();
+  /**
+   * The one control the rail offers this viewer (E2-01, FR-020), from `resolveActionSlot`; `null`
+   * until the meeting has loaded. Inside the join window it is Join only, as in V1: whether RSVP
+   * stays beside it was decided against for now (FR-029).
+   */
+  public readonly actionSlot: Signal<ActionSlotKind | null> = this.initActionSlot();
+  /**
+   * Whether this viewer will be offered a way in once the join window opens (`join` or
+   * `guest-join`), so the slot can state the early-join rule before then.
+   */
+  public readonly joinsInWindow: Signal<boolean> = this.initJoinsInWindow();
+  /**
+   * The sign-in link: `/login` with this page's own URL, query string included, as `returnTo`
+   * (FR-013). That puts `?password=` in the link only when it is already in the address bar; the
+   * composer's navigation-state password never appears in a URL.
+   */
+  public readonly signInHref: Signal<string> = this.initSignInHref();
 
   public constructor() {
     const routeId = this.activatedRoute.snapshot.paramMap.get('id');
@@ -160,6 +190,54 @@ export class MeetingDetailsStateService {
     return computed(() => {
       const meeting = this.meeting();
       return meeting ? resolveTimeState(meeting, this.selectedOccurrence(), this.now()) : null;
+    });
+  }
+
+  private initPrivacy(): Signal<MeetingPrivacyState | null> {
+    return computed(() => {
+      const meeting = this.meeting();
+      return meeting ? resolvePrivacy(meeting.visibility, meeting.restricted) : null;
+    });
+  }
+
+  private initViewerRole(): Signal<MeetingViewerRole | null> {
+    return computed(() => {
+      const meeting = this.meeting();
+      if (!meeting) {
+        return null;
+      }
+      return resolveViewerRole({ authenticated: this.userService.authenticated(), invited: meeting.invited === true, organizer: meeting.organizer === true });
+    });
+  }
+
+  private initActionSlot(): Signal<ActionSlotKind | null> {
+    return computed(() => {
+      const timeState = this.timeState();
+      return timeState ? this.resolveSlotAt(timeState) : null;
+    });
+  }
+
+  private initJoinsInWindow(): Signal<boolean> {
+    return computed(() => {
+      const kind = this.resolveSlotAt('live');
+      return kind === 'join' || kind === 'guest-join';
+    });
+  }
+
+  private initSignInHref(): Signal<string> {
+    const params = toSignal(this.activatedRoute.paramMap, { initialValue: this.activatedRoute.snapshot.paramMap });
+    const query = toSignal(this.activatedRoute.queryParamMap, { initialValue: this.activatedRoute.snapshot.queryParamMap });
+    return computed(() => {
+      const search = new URLSearchParams();
+      const queryParams = query();
+      for (const key of queryParams.keys) {
+        for (const value of queryParams.getAll(key)) {
+          search.append(key, value);
+        }
+      }
+      const queryString = search.toString();
+      const returnTo = `${environment.urls.home}/meetings/${encodeURIComponent(params().get('id') ?? '')}${queryString ? `?${queryString}` : ''}`;
+      return `/login?returnTo=${encodeURIComponent(returnTo)}`;
     });
   }
 
@@ -325,5 +403,22 @@ export class MeetingDetailsStateService {
       (last, occurrence) => (!last || new Date(occurrence.start_time) > new Date(last.start_time) ? occurrence : last),
       null
     );
+  }
+
+  /** The action slot this viewer gets at the given time state, or `null` before the meeting loads. */
+  private resolveSlotAt(timeState: MeetingTimeState): ActionSlotKind | null {
+    const meeting = this.meeting();
+    const privacy = this.privacy();
+    const viewerRole = this.viewerRole();
+    if (!meeting || !privacy || !viewerRole) {
+      return null;
+    }
+    return resolveActionSlot({
+      fullAccess: this.pastMeetingFullAccess(),
+      inviteResponsesEnabled: isMeetingInviteResponsesEnabled(meeting),
+      privacy,
+      timeState,
+      viewerRole,
+    });
   }
 }

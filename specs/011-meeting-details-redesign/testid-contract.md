@@ -67,13 +67,22 @@ own namespace; the two never share a value.
 | `meeting-time-banner-relative`          | Before the meeting, the ticking relative start (not announced)                                                    |
 | `meeting-time-banner-phase`             | The phase sentence, a polite atomic live region that stays mounted                                                |
 | `meeting-action-slot`                   | The action slot inside the rail (see below)                                                                       |
+| `meeting-action-join-button`            | The Join control in the `join` kind (see below)                                                                   |
+| `meeting-action-join-error`             | Its error message (`role="alert"`)                                                                                |
+| `meeting-action-join-retry`             | Its error's "Try again" control                                                                                   |
+| `meeting-action-join-explainer`         | "Public meeting. Anyone with this link can join." under Join                                                      |
+| `meeting-action-join-hint`              | Before the window, the early-join rule for a viewer who will be able to join                                      |
+| `meeting-action-sign-in`                | The slot's sign-in control (`guest-join`, and `register` / `tools` for a visitor)                                 |
+| `meeting-action-message`                | The slot's one line of copy, for a kind whose full design is still to come                                        |
+| `meeting-organizer`                     | "Organized by" in the rail card                                                                                   |
+| `meeting-organizer-name`                | The organizer's display name                                                                                      |
 | `meeting-error-state`                   | Terminal error state                                                                                              |
 | `meeting-error-retry-button`            | The error state's "Try again" control                                                                             |
 | `meeting-invitation-required-state`     | The signed-in-outsider / invitation-required state                                                                |
 | `meeting-occurrence-edit-button`        | Organizer's "Edit this occurrence" control                                                                        |
 | `meeting-occurrence-cancel-button`      | Organizer's "Cancel this occurrence" control                                                                      |
 
-`meeting-section-placeholder-${section}` (`occurrences`, `agenda`, `materials`, `discover`, `rail`) marks
+`meeting-section-placeholder-${section}` (`occurrences`, `agenda`, `materials`, `discover`) marks
 the shell's stand-in for a section not built yet (E1-01). Each is temporary: the PR that builds the
 section deletes its placeholder and its row here. A test must never assert on one.
 
@@ -167,6 +176,19 @@ join | rsvp | register | invitation-required | guest-join | tools | no-access | 
 The attribute is always present and always carries one of the nine values; `none` is a rendered
 kind, not an absent attribute. A test asserting "no action is offered" asserts
 `[data-kind="none"]`, which distinguishes _deliberately nothing_ from _the slot failed to render_.
+
+### `meeting-action-join-button[data-state]`
+
+One element in three states, rather than V1's three testids
+(`join-meeting-button-immediate` / `-error` / `-loading`, which stay V1's and are never reused here):
+
+```text
+data-state: loading | ready | error
+```
+
+`loading` is also the server render, since the join URL is fetched in the browser only. Issue
+#1775's criterion to keep V1's testids predates this contract; the rule above that V2 never shares a
+V1 value wins.
 
 ## Occurrences
 

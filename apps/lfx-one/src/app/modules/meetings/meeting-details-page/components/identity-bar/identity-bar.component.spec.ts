@@ -16,6 +16,7 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
 import { MeetingIdentityBarComponent } from './identity-bar.component';
 
 const MEETING_ID = '99152950841';
+const SIGN_IN_HREF = `/login?returnTo=${encodeURIComponent(`${environment.urls.home}/meetings/${MEETING_ID}`)}`;
 
 describe('MeetingIdentityBarComponent', () => {
   let fixture: ComponentFixture<MeetingIdentityBarComponent>;
@@ -43,7 +44,10 @@ describe('MeetingIdentityBarComponent', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: MeetingDetailsStateService, useValue: { status, meeting: signal(meeting), meetingStatus, selectedOccurrence } },
+        {
+          provide: MeetingDetailsStateService,
+          useValue: { status, meeting: signal(meeting), meetingStatus, selectedOccurrence, signInHref: signal(SIGN_IN_HREF) },
+        },
         {
           provide: UserService,
           useValue: {
@@ -130,26 +134,11 @@ describe('MeetingIdentityBarComponent', () => {
       expect(query('meeting-identity-bar-account')).toBeNull();
     });
 
-    it('signs in back to this meeting', async () => {
+    // The link itself, query string and password included, is the state service's (FR-013).
+    it("signs in through the page's sign-in link", async () => {
       await create();
 
-      expect(query('meeting-identity-bar-sign-in')?.getAttribute('href')).toBe(
-        `/login?returnTo=${encodeURIComponent(`${environment.urls.home}/meetings/${MEETING_ID}`)}`
-      );
-    });
-
-    // FR-013: the password and the selected occurrence both survive the round trip through login.
-    it('keeps the query string, ?password= included, in returnTo', async () => {
-      queryParamMap$.next(convertToParamMap({ password: 'a&b c', occurrence: '1700000000000' }));
-      await create();
-
-      const href = query('meeting-identity-bar-sign-in')?.getAttribute('href') ?? '';
-      const returnTo = new URL(href, 'http://localhost').searchParams.get('returnTo') ?? '';
-      const target = new URL(returnTo);
-
-      expect(target.pathname).toBe(`/meetings/${MEETING_ID}`);
-      expect(target.searchParams.get('password')).toBe('a&b c');
-      expect(target.searchParams.get('occurrence')).toBe('1700000000000');
+      expect(query('meeting-identity-bar-sign-in')?.getAttribute('href')).toBe(SIGN_IN_HREF);
     });
 
     it('hides the sign-in prompt once the meeting identity takes over', async () => {

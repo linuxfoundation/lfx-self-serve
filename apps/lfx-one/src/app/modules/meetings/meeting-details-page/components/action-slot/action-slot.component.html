@@ -1,0 +1,106 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities). `empty:hidden`
+     collapses the `none` slot so it adds no gap to the card, while the element and its data-kind stay. -->
+@if (kind(); as kind) {
+  <div class="flex flex-col gap-[10px] empty:hidden" data-testid="meeting-action-slot" [attr.data-kind]="kind">
+    @switch (kind) {
+      @case ('join') {
+        <lfx-meeting-join-action />
+        @if (openToPublic()) {
+          <p
+            class="m-0 flex items-center justify-center gap-[7px] text-center text-[12px] leading-[1.4] text-[var(--md-accent-ink)]"
+            data-testid="meeting-action-join-explainer">
+            <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+            Public meeting. Anyone with this link can join.
+          </p>
+        }
+      }
+      @case ('guest-join') {
+        <!-- E2-06 adds the guest form beside sign-in. -->
+        <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">
+          The meeting is open. Sign in with your LFX account to join.
+        </p>
+        <ng-container [ngTemplateOutlet]="signIn" />
+      }
+      @case ('register') {
+        <!-- E2-02 adds the registration control. -->
+        @if (viewerRole() === 'visitor') {
+          <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">
+            This meeting is open for registration. Sign in with your LFX account to register.
+          </p>
+          <ng-container [ngTemplateOutlet]="signIn" />
+        } @else {
+          <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">This meeting is open for registration.</p>
+        }
+      }
+      @case ('invitation-required') {
+        <!-- E2-03 adds contacting the organizer. -->
+        <div class="flex items-start gap-[10px]" data-testid="meeting-invitation-required-state">
+          <i class="fa-light fa-lock mt-[2px] text-[var(--md-text-muted)]" aria-hidden="true"></i>
+          <div class="flex flex-col gap-[2px] text-[13px] leading-[1.45]">
+            <span class="font-semibold text-[var(--md-text-heading)]">Invitation required</span>
+            <span class="text-[var(--md-text-body)]" data-testid="meeting-action-message">This meeting is limited to invited guests.</span>
+          </div>
+        </div>
+      }
+      @case ('rsvp') {
+        <!-- E2-04 and E2-05 add the RSVP card. -->
+        <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">You're invited to this meeting.</p>
+      }
+      @case ('rsvp-unavailable') {
+        <!-- N-01 designs this state. -->
+        <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">
+          You're invited to this meeting. It was scheduled before RSVP tracking, so there's nothing to answer.
+        </p>
+      }
+      @case ('tools') {
+        <!-- E4 adds the recording, transcript and summary; until public artifact routes exist (E4-04),
+             an anonymous viewer with access signs in first (FR-028). -->
+        @if (viewerRole() === 'visitor') {
+          <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">
+            This meeting has ended. Sign in to see its recording and summary.
+          </p>
+          <ng-container [ngTemplateOutlet]="signIn" />
+        } @else {
+          <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">
+            This meeting has ended. Its recording and summary appear on this page once they are ready.
+          </p>
+        }
+      }
+      @case ('no-access') {
+        <div class="flex items-start gap-[10px]">
+          <i class="fa-light fa-lock mt-[2px] text-[var(--md-text-muted)]" aria-hidden="true"></i>
+          <div class="flex flex-col gap-[2px] text-[13px] leading-[1.45]">
+            <span class="font-semibold text-[var(--md-text-heading)]">This meeting's details are private</span>
+            <span class="text-[var(--md-text-body)]" data-testid="meeting-action-message">
+              Recordings and summaries are only available to meeting participants and committee members. If you believe you should have access, please contact
+              the meeting organizer.
+            </span>
+          </div>
+        </div>
+      }
+      @case ('none') {
+        <!-- Deliberately nothing to offer (the resolver's decision); the hint below may still apply. -->
+      }
+    }
+    @if (joinHint(); as hint) {
+      <p class="m-0 flex items-start gap-[7px] text-[12px] leading-[1.4] text-[var(--md-text-muted)]" data-testid="meeting-action-join-hint">
+        <i class="fa-light fa-clock mt-[2px]" aria-hidden="true"></i>
+        {{ hint }}
+      </p>
+    }
+  </div>
+}
+
+<ng-template #signIn>
+  <!-- data-dd-privacy="mask": returnTo can carry the meeting password; keep it out of Session Replay. -->
+  <lfx-button
+    label="Sign in"
+    icon="fa-light fa-arrow-right-to-bracket"
+    [href]="state.signInHref()"
+    [styleClass]="secondaryButtonClass"
+    data-dd-privacy="mask"
+    data-testid="meeting-action-sign-in" />
+</ng-template>

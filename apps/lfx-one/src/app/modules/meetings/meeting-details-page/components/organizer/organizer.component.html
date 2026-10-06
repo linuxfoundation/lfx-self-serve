@@ -1,0 +1,15 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities). -->
+@if (organizer(); as organizer) {
+  <section class="flex flex-col gap-[14px]" aria-labelledby="meeting-organizer-heading" data-testid="meeting-organizer">
+    <h3 id="meeting-organizer-heading" class="m-0 text-[14px] font-bold text-[var(--md-text-heading)]">Organized by</h3>
+    <div class="flex min-w-0 items-center gap-[12px]">
+      <lfx-avatar [image]="organizer.profile_picture ?? ''" icon="fa-light fa-user" [label]="name()" shape="circle" />
+      <span class="min-w-0 truncate text-[13px] font-semibold text-[var(--md-text-heading)]" [attr.title]="name()" data-testid="meeting-organizer-name">{{
+        name()
+      }}</span>
+    </div>
+  </section>
+}
