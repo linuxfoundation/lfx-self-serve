@@ -185,10 +185,15 @@ export class MeetingDetailsStateService {
   }
 
   /**
-   * Records a successful self-registration (E2-02, FR-021): the viewer is on the invite list from now
-   * on, and the lookup runs again so the page catches up with the BFF.
+   * Records a successful self-registration (E2-02, FR-021) for the meeting the page shows: the viewer
+   * is on the invite list from now on, and the lookup runs again so the page catches up with the BFF.
+   * Ignored when `meetingId` is no longer the page's meeting.
    */
-  public markRegistered(): void {
+  public markRegistered(meetingId: string): void {
+    // A registration for a meeting the page has since left says nothing about the current one.
+    if (this.meeting()?.id !== meetingId) {
+      return;
+    }
     this.optimisticInvited.set(true);
     this.refresh$.next();
   }

@@ -604,7 +604,7 @@ describe('MeetingDetailsStateService', () => {
       await settle();
       expect(state.actionSlot()).toBe('register');
 
-      state.markRegistered();
+      state.markRegistered(MEETING_ID);
       await settle();
 
       expect(state.viewerRole()).toBe('registrant');
@@ -612,11 +612,23 @@ describe('MeetingDetailsStateService', () => {
       expect(getPublicMeeting).toHaveBeenCalledTimes(2);
     });
 
+    it('ignores a registration for a meeting the page has since left', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: live(), project }));
+      const state = create();
+      await settle();
+
+      state.markRegistered('another-meeting');
+      await settle();
+
+      expect(state.viewerRole()).toBe('outsider');
+      expect(getPublicMeeting).toHaveBeenCalledTimes(1);
+    });
+
     it('forgets a registration from this page when the route moves to another meeting', async () => {
       getPublicMeeting.mockReturnValue(of({ meeting: live(), project }));
       const state = create();
       await settle();
-      state.markRegistered();
+      state.markRegistered(MEETING_ID);
       await settle();
 
       paramMap$.next(convertToParamMap({ id: 'meeting-2' }));

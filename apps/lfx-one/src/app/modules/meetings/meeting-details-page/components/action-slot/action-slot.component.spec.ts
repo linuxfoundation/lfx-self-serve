@@ -209,7 +209,21 @@ describe('MeetingActionSlotComponent', () => {
       query('meeting-action-register-button')?.querySelector('button')?.click();
       dialogClose.next({ registered: true });
 
-      expect(markRegistered).toHaveBeenCalledTimes(1);
+      expect(markRegistered).toHaveBeenCalledWith('meeting-1');
+    });
+
+    it('keeps the open dialog when PrimeNG refuses a duplicate', () => {
+      openDialog.mockReturnValue(null);
+
+      expect(() => query('meeting-action-register-button')?.querySelector('button')?.click()).not.toThrow();
+    });
+
+    it('ignores a registration that completes after the slot has gone', () => {
+      query('meeting-action-register-button')?.querySelector('button')?.click();
+      fixture.destroy();
+      dialogClose.next({ registered: true });
+
+      expect(markRegistered).not.toHaveBeenCalled();
     });
 
     it('leaves the page alone when the dialog closes without registering', () => {

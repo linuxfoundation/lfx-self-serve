@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { DEFAULT_EARLY_JOIN_TIME } from '@lfx-one/shared/constants';
-import { UserService } from '@services/user.service';
-import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { take } from 'rxjs';
-
 import { ActionSlotKind, MeetingViewerRole } from '@lfx-one/shared/interfaces';
+import { UserService } from '@services/user.service';
+import { DialogService } from 'primeng/dynamicdialog';
+import { take } from 'rxjs';
 
 import { PublicRegistrationModalComponent } from '../../../components/public-registration-modal/public-registration-modal.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
@@ -40,6 +40,7 @@ export class MeetingActionSlotComponent {
   protected readonly state = inject(MeetingDetailsStateService);
   private readonly userService = inject(UserService);
   private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
 
   /**
    * The prototype's primary rail button on `lfx-button`, as Join's: a 42px pill on the accent.
@@ -75,6 +76,8 @@ export class MeetingActionSlotComponent {
     if (!meeting) {
       return;
     }
+    // `open` returns null when this dialog is already open (PrimeNG blocks the duplicate), so a quick
+    // second click leaves the open dialog alone.
     const dialogRef = this.dialogService.open(PublicRegistrationModalComponent, {
       header: 'Register for Meeting',
       width: '500px',
@@ -82,11 +85,13 @@ export class MeetingActionSlotComponent {
       closable: true,
       dismissableMask: true,
       data: { meetingId: meeting.id, meetingTitle: meeting.title, user: this.userService.user() },
-    }) as DynamicDialogRef;
+    });
 
-    dialogRef.onClose.pipe(take(1)).subscribe((result: { registered: boolean } | undefined) => {
+    // Torn down with the slot, and keyed to this meeting: a registration that completes after the
+    // page has moved on to another meeting must not mark that one as invited.
+    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
-        this.state.markRegistered();
+        this.state.markRegistered(meeting.id);
       }
     });
   }
