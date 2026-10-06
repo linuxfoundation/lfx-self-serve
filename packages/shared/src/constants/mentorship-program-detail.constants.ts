@@ -29,12 +29,10 @@ export const MENTORSHIP_MENTEE_NOTE_MAX = 2000;
 export const MENTORSHIP_MENTEE_NOTE_PLACEHOLDER = 'Add context for the other reviewers — screening outcome, strengths, concerns.';
 
 /**
- * Trailing half of the dialog's subtitle; the leading half names the mentee.
- * States the present truth rather than the intended one: the note lives only in
- * this browser session until the mentorship service can store it. Update this
- * the moment a write endpoint exists — not before.
+ * Trailing half of the dialog's subtitle; the leading half names the mentee. The note is the application's
+ * own: the mentor and admin pages both save it upstream, and every admin and mentor of the program sees it.
  */
-export const MENTORSHIP_MENTEE_NOTE_VISIBILITY = 'Kept on this page for now — saving and sharing with admins and mentors is coming soon.';
+export const MENTORSHIP_MENTEE_NOTE_VISIBILITY = "Saved to the application and visible to the program's admins and mentors.";
 
 /**
  * Task-form dialog copy. Grouped here rather than at the call site so `Create Task`

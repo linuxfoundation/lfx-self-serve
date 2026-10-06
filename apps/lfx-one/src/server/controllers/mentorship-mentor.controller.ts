@@ -1,12 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_MENTEE_NOTE_MAX } from '@lfx-one/shared/constants';
 import { MentorshipMentorInviteDecision } from '@lfx-one/shared/interfaces';
 import { isMentorshipMentorInviteToken, isMentorshipMentorTaskReviewDecision, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { parseMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
 import { parseMentorshipMentorProfileUpdate } from '../helpers/mentorship-mentor-profile-update.helper';
 import { parseMentorshipMentorRegisterRequest } from '../helpers/mentorship-mentor-register.helper';
 import { parseMentorshipMentorOpenProgramsQuery } from '../helpers/mentorship-mentor-request.helper';
@@ -215,16 +215,7 @@ export class MentorshipMentorController {
         });
       }
 
-      const raw: unknown = req.body?.note;
-      if (typeof raw !== 'string') {
-        throw ServiceValidationError.forField('note', 'note must be a string', { operation: 'update_mentorship_application_note' });
-      }
-      const note = raw.trim();
-      if (note.length > MENTORSHIP_MENTEE_NOTE_MAX) {
-        throw ServiceValidationError.forField('note', `note must be at most ${MENTORSHIP_MENTEE_NOTE_MAX} characters`, {
-          operation: 'update_mentorship_application_note',
-        });
-      }
+      const note = parseMentorshipApplicationNote(req.body, 'update_mentorship_application_note');
 
       await this.mentorService.updateApplicationNote(req, applicationId, { note });
       logger.success(req, 'update_mentorship_application_note', startTime, { applicationId, cleared: note === '' });

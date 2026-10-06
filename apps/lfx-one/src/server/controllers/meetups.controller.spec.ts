@@ -13,6 +13,7 @@ vi.mock('../services/logger.service', () => ({
 }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: () => 'user@example.com' }));
 
+import { MeetupsService } from '../services/meetups.service';
 import { MeetupsController } from './meetups.controller';
 
 async function limitAndOffsetFor(query: Record<string, unknown>): Promise<{ limit: string; offset: string }> {
@@ -50,6 +51,58 @@ const hostileQueries: Record<string, unknown>[] = [
   { offset: '9999999999999999999999999', isPast: 'true' },
   { offset: '9999999999999999999999999', isPast: 'true', pageSize: '100' },
 ];
+
+describe('MeetupsController filter scopes and errors', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [] });
+  });
+
+  it.each([
+    { query: {}, options: { isPast: undefined, registeredOnly: false } },
+    { query: { isPast: 'false', registeredOnly: 'true' }, options: { isPast: false, registeredOnly: true } },
+    { query: { isPast: 'true', registeredOnly: 'true' }, options: { isPast: true, registeredOnly: false } },
+    { query: { isPast: 'invalid', registeredOnly: 'false' }, options: { isPast: undefined, registeredOnly: false } },
+    { query: { isPast: ['true'], registeredOnly: ['true'] }, options: { isPast: undefined, registeredOnly: false } },
+  ])('forwards the normalized scope for $query', async ({ query, options }) => {
+    const spy = vi.spyOn(MeetupsService.prototype, 'getMeetupFilters').mockResolvedValue({ communities: [], roles: [] });
+    const req = { query } as never;
+    const json = vi.fn();
+    const next = vi.fn();
+    await new MeetupsController().getMeetupFilters(req, { json } as never, next);
+    expect(spy).toHaveBeenCalledWith(req, 'user@example.com', options);
+    expect(next).not.toHaveBeenCalled();
+    expect(json).toHaveBeenCalledWith({ communities: [], roles: [] });
+  });
+
+  it.each(['getMyMeetups', 'getMeetupFilters'] as const)('forwards %s service rejections to next', async (endpoint) => {
+    const error = new Error('Service unavailable');
+    vi.spyOn(MeetupsService.prototype, endpoint).mockRejectedValueOnce(error);
+    const next = vi.fn();
+    const json = vi.fn();
+    await new MeetupsController()[endpoint]({ query: {} } as never, { json } as never, next);
+    expect(next).toHaveBeenCalledWith(error);
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it.each(['false', 'true'])('matches padded Community selections with normalized SQL for isPast=%s', async (isPast) => {
+    const next = vi.fn();
+    await new MeetupsController().getMyMeetups(
+      { query: { isPast, community: ' Example Community ', searchQuery: 'Example', role: 'Attendee', status: 'registered' } } as never,
+      { json: vi.fn() } as never,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledTimes(1);
+    const [sql, binds] = execute.mock.calls[0];
+    expect(sql).toContain('AND TRIM(COMMUNITY) = ?');
+    expect(sql).toContain(isPast === 'true' ? 'OCG_PAST_MEETUPS' : 'OCG_UPCOMING_MEETUPS');
+    expect(binds).toEqual(['user@example.com', '%Example%', 'Example Community', ',Attendee,']);
+    expect((sql.match(/\?/g) ?? []).length).toBe(binds.length);
+  });
+});
 
 describe('MeetupsController.getMyMeetups pagination literals', () => {
   beforeEach(() => {

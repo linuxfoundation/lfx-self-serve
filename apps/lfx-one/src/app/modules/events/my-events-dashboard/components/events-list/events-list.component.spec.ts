@@ -131,22 +131,25 @@ describe('EventsListComponent registered-count default', () => {
     const { fixture, upcomingCalls } = await render();
     expect(fixture.componentInstance.upcomingRegisteredOnly()).toBeNull();
     expect(upcomingCalls()).toHaveLength(0);
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="events-all-caption"]')).toBeNull();
   });
 
   it('defaults to My Registrations after a successful positive count', async () => {
-    const { upcomingCalls, pill, messages, resolveCount } = await render();
+    const { fixture, upcomingCalls, pill, messages, resolveCount } = await render();
     await resolveCount(2);
     expect(upcomingCalls()[0].registeredOnly).toBe(true);
     expect(pill('registered').getAttribute('aria-pressed')).toBe('true');
     expect(messages.add).not.toHaveBeenCalled();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="events-all-caption"]')).toBeNull();
   });
 
   it('defaults to All Events only after a successful zero count', async () => {
-    const { upcomingCalls, pill, messages, resolveCount } = await render();
+    const { fixture, upcomingCalls, pill, messages, resolveCount } = await render();
     await resolveCount(0);
     expect(upcomingCalls()[0].registeredOnly).toBeUndefined();
     expect(pill('all').getAttribute('aria-pressed')).toBe('true');
     expect(messages.add).not.toHaveBeenCalled();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="events-all-caption"]')).not.toBeNull();
   });
 
   it('retains My Registrations and requests registered rows when the count fails', async () => {
@@ -155,6 +158,7 @@ describe('EventsListComponent registered-count default', () => {
     expect(fixture.componentInstance.upcomingRegisteredOnly()).toBe(true);
     expect(upcomingCalls()[0].registeredOnly).toBe(true);
     expect(pill('registered').getAttribute('aria-pressed')).toBe('true');
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="events-all-caption"]')).toBeNull();
   });
 
   it('notifies the user when registration totals could not be loaded', async () => {
@@ -187,11 +191,13 @@ describe('EventsListComponent registered-count default', () => {
     await vi.waitFor(() => expect(upcomingCalls().at(-1)?.registeredOnly).toBeUndefined());
     expect(pill('all').getAttribute('aria-pressed')).toBe('true');
 
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="events-all-caption"]')).not.toBeNull();
     fixture.componentRef.setInput('activeTab', 'past');
     await fixture.whenStable();
     fixture.componentRef.setInput('activeTab', 'upcoming');
     await fixture.whenStable();
     await vi.waitFor(() => expect(upcomingCalls().at(-1)?.registeredOnly).toBe(true));
     expect(pill('registered').getAttribute('aria-pressed')).toBe('true');
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="events-all-caption"]')).toBeNull();
   });
 });

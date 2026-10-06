@@ -194,7 +194,7 @@ const termRow = (overrides: Partial<MentorshipUpstreamTermManagementRow> = {}): 
   start_date_time: '2026-03-01T00:00:00Z',
   end_date_time: '2026-05-31T00:00:00Z',
   application_start_date: '2026-01-05T00:00:00Z',
-  application_end_date: '2026-02-15T00:00:00Z',
+  application_end_date: '2026-02-15T23:59:59Z',
   created_on: '2025-12-01T00:00:00Z',
   updated_on: '2025-12-02T00:00:00Z',
   pending: 1,

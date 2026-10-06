@@ -2,13 +2,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4" data-testid="composer-details-access">
-  @if (showHeading()) {
-    <div class="flex flex-col gap-1">
-      <h2 class="text-base font-semibold text-gray-900">Details &amp; Access</h2>
-      <p class="text-sm text-gray-500">Name the meeting and set who it's for.</p>
-    </div>
-  }
-
   <!-- Meeting title -->
   <div class="flex flex-col gap-1.5">
     <label for="composer-meeting-title" class="text-sm font-medium text-gray-900"> Meeting title <span class="text-red-500">*</span> </label>
@@ -205,65 +198,67 @@
 
   <!-- Visibility + join restriction: two independent API fields, so two labelled cards rather than one
        card with internal legends — the heading reads as the question and the card as its answers. -->
-  <fieldset>
-    <legend class="mb-1.5 text-sm font-medium text-gray-900">Visibility</legend>
-    <div class="overflow-hidden rounded-xl border border-gray-200">
-      @for (option of visibilityOptions; track option.value; let last = $last) {
-        <label
-          [for]="'composer-visibility-' + option.value"
-          class="flex cursor-pointer items-center gap-3 px-3 py-2.5"
-          [class.border-b]="!last"
-          [class.border-gray-200]="!last">
-          <span
-            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs"
-            [class]="option.value === selectedVisibility() ? iconChipSelectedClass : iconChipClass"
-            [style.background-color]="option.value === selectedVisibility() ? option.info.color : null">
-            <i [class]="option.info.icon" aria-hidden="true"></i>
-          </span>
-          <span class="flex min-w-0 flex-1 flex-col">
-            <span class="text-sm font-semibold text-gray-900">{{ option.label }}</span>
-            <span class="text-xs text-gray-500">{{ option.info.description }}</span>
-          </span>
-          <lfx-radio-button
-            [form]="form()"
-            control="visibility"
-            name="composer-visibility"
-            [value]="option.value"
-            [inputId]="'composer-visibility-' + option.value"
-            [attr.data-testid]="'composer-visibility-' + option.value + '-radio'" />
-        </label>
-      }
-    </div>
-  </fieldset>
+  @if (showAccess()) {
+    <fieldset>
+      <legend class="mb-1.5 text-sm font-medium text-gray-900">Visibility</legend>
+      <div class="overflow-hidden rounded-xl border border-gray-200">
+        @for (option of visibilityOptions; track option.value; let last = $last) {
+          <label
+            [for]="'composer-visibility-' + option.value"
+            class="flex cursor-pointer items-center gap-3 px-3 py-2.5"
+            [class.border-b]="!last"
+            [class.border-gray-200]="!last">
+            <span
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs"
+              [class]="option.value === selectedVisibility() ? iconChipSelectedClass : iconChipClass"
+              [style.background-color]="option.value === selectedVisibility() ? option.info.color : null">
+              <i [class]="option.info.icon" aria-hidden="true"></i>
+            </span>
+            <span class="flex min-w-0 flex-1 flex-col">
+              <span class="text-sm font-semibold text-gray-900">{{ option.label }}</span>
+              <span class="text-xs text-gray-500">{{ option.info.description }}</span>
+            </span>
+            <lfx-radio-button
+              [form]="form()"
+              control="visibility"
+              name="composer-visibility"
+              [value]="option.value"
+              [inputId]="'composer-visibility-' + option.value"
+              [attr.data-testid]="'composer-visibility-' + option.value + '-radio'" />
+          </label>
+        }
+      </div>
+    </fieldset>
 
-  <fieldset>
-    <legend class="mb-1.5 text-sm font-medium text-gray-900">Join Restriction</legend>
-    <div class="overflow-hidden rounded-xl border border-gray-200">
-      @for (option of joinRestrictionOptions; track option.value; let last = $last) {
-        <label
-          [for]="'composer-restricted-' + option.value"
-          class="flex cursor-pointer items-center gap-3 px-3 py-2.5"
-          [class.border-b]="!last"
-          [class.border-gray-200]="!last">
-          <span
-            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs"
-            [class]="option.value === selectedRestricted() ? iconChipSelectedClass : iconChipClass"
-            [style.background-color]="option.value === selectedRestricted() ? option.info.color : null">
-            <i [class]="option.info.icon" aria-hidden="true"></i>
-          </span>
-          <span class="flex min-w-0 flex-1 flex-col">
-            <span class="text-sm font-semibold text-gray-900">{{ option.label }}</span>
-            <span class="text-xs text-gray-500">{{ option.info.description }}</span>
-          </span>
-          <lfx-radio-button
-            [form]="form()"
-            control="restricted"
-            name="composer-restricted"
-            [value]="option.value"
-            [inputId]="'composer-restricted-' + option.value"
-            [attr.data-testid]="'composer-restricted-' + option.value + '-radio'" />
-        </label>
-      }
-    </div>
-  </fieldset>
+    <fieldset>
+      <legend class="mb-1.5 text-sm font-medium text-gray-900">Join Restriction</legend>
+      <div class="overflow-hidden rounded-xl border border-gray-200">
+        @for (option of joinRestrictionOptions; track option.value; let last = $last) {
+          <label
+            [for]="'composer-restricted-' + option.value"
+            class="flex cursor-pointer items-center gap-3 px-3 py-2.5"
+            [class.border-b]="!last"
+            [class.border-gray-200]="!last">
+            <span
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs"
+              [class]="option.value === selectedRestricted() ? iconChipSelectedClass : iconChipClass"
+              [style.background-color]="option.value === selectedRestricted() ? option.info.color : null">
+              <i [class]="option.info.icon" aria-hidden="true"></i>
+            </span>
+            <span class="flex min-w-0 flex-1 flex-col">
+              <span class="text-sm font-semibold text-gray-900">{{ option.label }}</span>
+              <span class="text-xs text-gray-500">{{ option.info.description }}</span>
+            </span>
+            <lfx-radio-button
+              [form]="form()"
+              control="restricted"
+              name="composer-restricted"
+              [value]="option.value"
+              [inputId]="'composer-restricted-' + option.value"
+              [attr.data-testid]="'composer-restricted-' + option.value + '-radio'" />
+          </label>
+        }
+      </div>
+    </fieldset>
+  }
 </div>

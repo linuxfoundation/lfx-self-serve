@@ -484,12 +484,12 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
         if (removeApprovalEntries.length > 0) {
           this.removeApprovalEntries(orgUid, claSignatureId, removeApprovalEntries, () => {
             settlePending();
-            this.refreshAfterInvalidate(signatureId, orgUid, claSignatureId);
+            this.refreshLoadedRows(signatureId, orgUid, claSignatureId);
           });
           return;
         }
         settlePending();
-        this.refreshAfterInvalidate(signatureId, orgUid, claSignatureId);
+        this.refreshLoadedRows(signatureId, orgUid, claSignatureId);
       },
       error: (error: unknown) => {
         settlePending();
@@ -498,17 +498,12 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
           summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.failureSummary,
           detail: this.invalidateFailureDetail(error),
         });
+        if (error instanceof HttpErrorResponse && error.status === 409) this.refreshLoadedRows(null, orgUid, claSignatureId);
       },
     });
   }
 
-  /**
-   * Refreshes the loaded rows after a successful invalidate. A loaded span of more than one page is
-   * marked Invalidated in place first, so the state does not flicker while the span refetches; a
-   * single page just retriggers its resource. Guards the pair, so a confirm that outran a CCLA
-   * change refreshes nothing it no longer owns.
-   */
-  private refreshAfterInvalidate(signatureId: string, orgUid: string, claSignatureId: string): void {
+  private refreshLoadedRows(invalidatedId: string | null, orgUid: string, claSignatureId: string): void {
     if (this.destroyed) return;
     if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
     if (this.pagesLoaded > 1) {
@@ -516,8 +511,8 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       this.fetchGeneration.set(generation);
       this.loadingMore.set(true);
       const search = (this.searchTerm() ?? '').trim();
-      this.markInvalidatedInPlace(signatureId);
-      this.refreshLoadedSpan(orgUid, claSignatureId, search, this.pagesLoaded, generation);
+      if (invalidatedId) this.markInvalidatedInPlace(invalidatedId);
+      this.refreshLoadedSpan(orgUid, claSignatureId, search, this.pagesLoaded, generation, invalidatedId !== null);
       return;
     }
     this.reloadTrigger.update((value) => value + 1);
@@ -546,7 +541,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     });
   }
 
-  private refreshLoadedSpan(orgUid: string, claSignatureId: string, search: string, pages: number, generation: number): void {
+  private refreshLoadedSpan(orgUid: string, claSignatureId: string, search: string, pages: number, generation: number, afterInvalidate: boolean): void {
     let remaining = pages;
     this.claService
       .getContributorAcknowledgments(orgUid, claSignatureId, { search })
@@ -557,8 +552,19 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
           return this.claService.getContributorAcknowledgments(orgUid, claSignatureId, { search, nextKey: list.nextKey });
         }),
         reduce((acc, list) => this.mergeAcknowledgmentPage(acc, list), null as OrgClaContributorAcknowledgmentList | null),
-        catchError(() => {
-          if (!this.destroyed && this.fetchGeneration() === generation && orgUid === this.orgUid() && claSignatureId === this.signatureId()) {
+        catchError((error: unknown) => {
+          console.warn(
+            'Failed to refresh the loaded acknowledgments after an invalidate:',
+            (error as HttpErrorResponse)?.status,
+            (error as HttpErrorResponse)?.statusText
+          );
+          if (
+            afterInvalidate &&
+            !this.destroyed &&
+            this.fetchGeneration() === generation &&
+            orgUid === this.orgUid() &&
+            claSignatureId === this.signatureId()
+          ) {
             this.messageService.add({
               severity: 'warn',
               summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.successSummary,

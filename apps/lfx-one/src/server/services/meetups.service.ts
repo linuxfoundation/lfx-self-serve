@@ -13,6 +13,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   GetMyMeetupsOptions,
+  GetMeetupFiltersOptions,
   MeetupFilterOptionsResponse,
   MeetupFilterRow,
   MeetupRow,
@@ -64,6 +65,10 @@ export class MeetupsService {
     try {
       result = await this.snowflakeService.execute<MeetupRow>(query.sql, query.binds);
     } catch (error) {
+      // Registered-only counts must distinguish an unavailable query from a confirmed zero.
+      if (!isPast && status === 'registered') {
+        throw error;
+      }
       logger.warning(req, 'get_my_meetups', 'Snowflake query failed, returning empty meetups', {
         error: error instanceof Error ? error.message : String(error),
         page_size: normalizedPageSize,
@@ -82,8 +87,10 @@ export class MeetupsService {
     return { data, total, pageSize: normalizedPageSize, offset: normalizedOffset };
   }
 
-  public async getMeetupFilters(req: Request): Promise<MeetupFilterOptionsResponse> {
-    logger.debug(req, 'get_meetup_filters', 'Fetching meetup filters');
+  public async getMeetupFilters(req: Request, userEmail: string, options: GetMeetupFiltersOptions): Promise<MeetupFilterOptionsResponse> {
+    const { isPast, registeredOnly } = options;
+    const scoped = !!isPast || !!registeredOnly;
+    logger.debug(req, 'get_meetup_filters', 'Fetching meetup filters', { is_past: isPast, registered_only: registeredOnly });
 
     const sql = `
       SELECT FILTER_NAME, FILTER_VALUE
@@ -93,8 +100,33 @@ export class MeetupsService {
 
     let result;
     try {
+      if (scoped) {
+        const communitySql = isPast
+          ? `SELECT DISTINCT TRIM(COMMUNITY) AS COMMUNITY FROM ${this.table('OCG_PAST_MEETUPS')}
+             WHERE EMAIL = ? AND NULLIF(TRIM(COMMUNITY), '') IS NOT NULL
+             ORDER BY COMMUNITY`
+          : `SELECT DISTINCT TRIM(m.COMMUNITY) AS COMMUNITY
+             FROM ${this.table('OCG_UPCOMING_MEETUPS')} m
+             JOIN ${this.table('OCG_UPCOMING_MEETUPS_ROLES')} r ON r.EMAIL = ? AND r.EVENT_ID = m.EVENT_ID
+             WHERE NULLIF(TRIM(m.COMMUNITY), '') IS NOT NULL
+             ORDER BY COMMUNITY`;
+        const [communityResult, roleResult] = await Promise.all([
+          this.snowflakeService.execute<Pick<MeetupRow, 'COMMUNITY'>>(communitySql, [userEmail]),
+          this.snowflakeService.execute<MeetupFilterRow>(
+            `SELECT FILTER_NAME, FILTER_VALUE FROM ${this.table('OCG_MEETUPS_FILTERS')} WHERE FILTER_NAME = 'role' ORDER BY FILTER_VALUE`,
+            []
+          ),
+        ]);
+        return {
+          communities: communityResult.rows.map((row) => row.COMMUNITY),
+          roles: roleResult.rows.map((row) => row.FILTER_VALUE),
+        };
+      }
       result = await this.snowflakeService.execute<MeetupFilterRow>(sql, []);
     } catch (error) {
+      if (scoped) {
+        throw error;
+      }
       logger.warning(req, 'get_meetup_filters', 'Snowflake query failed, returning empty filters', {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -127,7 +159,7 @@ export class MeetupsService {
     offset: number
   ): { sql: string; binds: string[] } {
     const searchQueryFilter = searchQuery ? 'AND EVENT_NAME ILIKE ?' : '';
-    const communityFilter = community ? 'AND COMMUNITY = ?' : '';
+    const communityFilter = community ? 'AND TRIM(COMMUNITY) = ?' : '';
     const roleFilterResult = role ? this.buildRoleFilter(role) : { filter: '', binds: [] as string[] };
     let statusFilter = '';
     if (status === 'registered') {
@@ -202,7 +234,7 @@ export class MeetupsService {
     offset: number
   ): { sql: string; binds: string[] } {
     const searchQueryFilter = searchQuery ? 'AND EVENT_NAME ILIKE ?' : '';
-    const communityFilter = community ? 'AND COMMUNITY = ?' : '';
+    const communityFilter = community ? 'AND TRIM(COMMUNITY) = ?' : '';
     const roleFilterResult = role ? this.buildRoleFilter(role) : { filter: '', binds: [] as string[] };
 
     const sql = `
