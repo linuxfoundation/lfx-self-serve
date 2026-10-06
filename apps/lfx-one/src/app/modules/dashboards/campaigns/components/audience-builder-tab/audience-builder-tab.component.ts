@@ -78,6 +78,14 @@ export class AudienceBuilderTabComponent {
   /** Seeded from the brief's event details when it has them, so the field is rarely empty. */
   public readonly initialEventUrl = input('');
   /**
+   * The identity of the event the parent's brief is for (slug, then name, then URL), normalized.
+   *
+   * The advertised URL alone could not tell events apart: two briefs with no registration URL, or two
+   * events sharing one, looked identical, so event A's lists survived into event B's brief. Falls
+   * back to the URL when the parent passes no key.
+   */
+  public readonly eventKey = input('');
+  /**
    * The brief a composed master should be attached to, empty when there is none yet.
    *
    * Empty does NOT disable compose, and that is deliberate rather than an omission. These routes
@@ -842,10 +850,10 @@ export class AudienceBuilderTabComponent {
   );
 
   public constructor() {
-    // The last NON-empty advertised event URL; see the `initialEventUrl` reset below. Declared here
+    // The last NON-empty event key (see `eventKey`); used by the reset below. Declared here
     // because a project switch must clear it too: carried over, project A's last event made a
     // brief for project B's event read as a CHANGE, wiping work the operator started by hand in B.
-    let lastEventUrl = '';
+    let lastEventKey = '';
 
     // A project switch must drop the previous portal's audience state, not just refetch
     // capabilities. The campaigns component stays mounted across `activeFoundationSlug`
@@ -859,7 +867,7 @@ export class AudienceBuilderTabComponent {
       .pipe(distinctUntilChanged(), pairwise(), takeUntilDestroyed(this.destroyRef))
       .subscribe(([previousProject]) => {
         this.resetForNewContext(previousProject);
-        lastEventUrl = '';
+        lastEventKey = '';
         this.capabilitiesFailed.set(false);
         // reset(), not setValue(''): the dirty flag is project-scoped state too. setValue leaves
         // the control dirty, and the `initialEventUrl` seed below only fires while it is pristine
@@ -909,20 +917,30 @@ export class AudienceBuilderTabComponent {
     // advertised URL only while it is pristine. Comparing advertised URLs alone missed an edit:
     // advertised A, discovered B by hand, A handed back -- "A -> A" -- and B's lists were composed
     // with A's brief.
-    toObservable(this.initialEventUrl)
+    //
+    // The EVENT is identified by `eventKey` (slug, then name, then URL), not by URL alone: two events
+    // with no registration URL, or sharing one, otherwise looked identical.
+    toObservable(computed(() => this.eventKey().trim().toLowerCase() || this.initialEventUrl()))
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((next) => {
-        if (next === '') {
+      .subscribe((nextKey) => {
+        if (nextKey === '') {
           return;
         }
-        const previous = lastEventUrl;
-        lastEventUrl = next;
-        const workUrl = this.eventUrlControl.dirty ? this.discoveredEventUrl() : previous;
-        if (workUrl === '' || workUrl === next || !(this.hasDiscovered() || this.discovering())) {
+        const previousKey = lastEventKey;
+        lastEventKey = nextKey;
+        if (!(this.hasDiscovered() || this.discovering())) {
+          return;
+        }
+        const advertised = this.initialEventUrl();
+        // Edited work is identified by what was DISCOVERED, compared with the URL the new brief
+        // advertises; with no advertised URL there is nothing to compare, so the event key decides.
+        const differentEvent =
+          this.eventUrlControl.dirty && advertised !== '' ? this.discoveredEventUrl() !== advertised : previousKey !== '' && previousKey !== nextKey;
+        if (!differentEvent) {
           return;
         }
         this.resetForNewContext(this.projectSlug());
-        this.eventUrlControl.reset(next, { emitEvent: false });
+        this.eventUrlControl.reset(advertised, { emitEvent: false });
       });
 
     // Disabling a reactive control has to go through the control, not a `[disabled]` binding on the

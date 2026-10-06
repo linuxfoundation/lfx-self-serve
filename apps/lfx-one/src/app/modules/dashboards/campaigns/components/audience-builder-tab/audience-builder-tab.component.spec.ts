@@ -987,6 +987,28 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="audience-card-grid-toggle-101"]'), "event A's late frames landed under event B").toBeNull();
     });
 
+    it.each([
+      ['both events have no registration URL', '', ''],
+      ['both events advertise the same registration URL', 'https://events.example.org/register', 'https://events.example.org/register'],
+    ])("resets when a different event's brief arrives and %s", async (_label, urlA, urlB) => {
+      // Identified by URL alone, two different events looked identical and A's lists were composed
+      // with B's brief.
+      await render({ initialEventUrl: urlA, briefId: 'brief-a' });
+      fixture.componentRef.setInput('eventKey', 'kubecon-eu');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/kubecon-eu');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('eventKey', 'open-source-summit');
+      fixture.componentRef.setInput('initialEventUrl', urlB);
+      fixture.componentRef.setInput('briefId', 'brief-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "event A's selection survived into event B").toBeNull();
+    });
+
     it('keeps the selection when the SAME event is handed back (another stage, or a re-proceed)', async () => {
       await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
       click('campaigns-audience-discover');

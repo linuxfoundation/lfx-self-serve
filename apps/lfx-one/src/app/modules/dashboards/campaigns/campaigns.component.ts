@@ -1129,6 +1129,14 @@ export class CampaignsComponent {
    * replaced. The Audience tab sees it as part of `audienceReadPending`.
    */
   protected readonly emailBriefResolving = signal(false);
+  /**
+   * The event the email brief is for, as the Audience tab tells events apart: slug, then name, then
+   * registration URL. See the tab's `eventKey`.
+   */
+  protected readonly emailEventKey = computed(() => {
+    const details = this.emailBriefOutput()?.eventDetails;
+    return (details?.slug || details?.name || details?.registrationUrl || '').trim().toLowerCase();
+  });
   /** The Audience tab is writing this brief's send audience. See its `audienceWriteInFlight`. */
   protected readonly emailAudienceWriteInFlight = signal(false);
   /**
