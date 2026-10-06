@@ -70,9 +70,23 @@ describe('campaignBudgetFailureOutcome', () => {
   });
 
   it('falls back to a generic failure for a refusal with no readable message', () => {
-    expect(campaignBudgetFailureOutcome(httpError(500, '<html><body>Internal error</body></html>'))).toEqual({
-      state: 'failed',
-      message: CAMPAIGN_BUDGET_FAILURE_FALLBACK,
-    });
+    expect(campaignBudgetFailureOutcome(httpError(400, null))).toEqual({ state: 'failed', message: CAMPAIGN_BUDGET_FAILURE_FALLBACK });
+  });
+
+  // The BFF answers every error with its JSON `{ error, code }` envelope. A body without it came from
+  // a proxy or gateway in front of the BFF, which cannot know whether the budget write applied.
+  it.each([
+    ['a 504 with proxy text', 504, 'upstream request timeout'],
+    ['a 502 with proxy text', 502, 'Bad Gateway'],
+    ['a 500 with an HTML page', 500, '<html><body>Internal error</body></html>'],
+    ['a 503 with a JSON body that is not the envelope', 503, { message: 'no healthy upstream' }],
+  ])('reports %s as unconfirmed, never as a plain failure', (_label, status, body) => {
+    expect(campaignBudgetFailureOutcome(httpError(status, body))).toEqual({ state: 'unconfirmed', message: CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED });
+  });
+
+  // Aligned with the bid lever: a 4xx other than 408 is a refusal before its wording is read.
+  it('keeps a 409 a failure even though its wording mentions confirmation', () => {
+    const message = 'the budget this service created for it could not be confirmed';
+    expect(campaignBudgetFailureOutcome(httpError(409, { error: message, code: 'CONFLICT' }))).toEqual({ state: 'failed', message });
   });
 });

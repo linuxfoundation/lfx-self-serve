@@ -8,7 +8,7 @@ import { CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED, MAX_NEGATIVE_KEYWORDS_P
 import { CampaignNegativeKeywordsResult } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CampaignNegativeKeywordsFormComponent } from './campaign-negative-keywords-form.component';
@@ -172,5 +172,22 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
 
     expect(q('optimization-campaign-negatives-failed-c-1')!.textContent!.trim()).toBe(message);
     expect(q('optimization-campaign-negatives-unconfirmed-c-1')).toBeNull();
+  });
+
+  it('reports pending to the parent when a request starts and when it settles', () => {
+    const response = new Subject<CampaignNegativeKeywordsResult>();
+    addNegativeKeywords.mockReturnValue(response);
+    const emitted: boolean[] = [];
+    fixture.componentInstance.pendingChange.subscribe((value) => emitted.push(value));
+    typeKeywords('alpha');
+    submit();
+
+    expect(emitted).toEqual([true]);
+    response.error(new HttpErrorResponse({ status: 504, error: 'upstream request timeout' }));
+    fixture.detectChanges();
+
+    expect(emitted).toEqual([true, false]);
+    // A proxy's plain-text timeout is not the BFF's envelope: the keywords may have been added.
+    expect(q('optimization-campaign-negatives-unconfirmed-c-1')!.textContent).toContain('alpha');
   });
 });

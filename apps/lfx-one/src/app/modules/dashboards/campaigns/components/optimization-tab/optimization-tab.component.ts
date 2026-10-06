@@ -50,6 +50,7 @@ import {
   CAMPAIGN_BUDGET_CONFLICT_MESSAGE,
   CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_FINDING_ALREADY_PAUSED_REASON,
   CAMPAIGN_NEGATIVE_KEYWORDS_UNAVAILABLE_UNPROVISIONED_REASON,
   CAMPAIGN_OPTIMIZE_LEVER_LABELS,
   CAMPAIGN_PLATFORMS,
@@ -63,6 +64,8 @@ import {
   CAMPAIGN_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_UNAVAILABLE_REASONS,
   DEFAULT_CAMPAIGN_BID_TYPE,
+  KEYWORD_ACTION_OUTCOME_CLASSES,
+  KEYWORD_ACTION_OUTCOME_LABELS,
   NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS,
   PLATFORM_BRAND_COLORS,
   TOGGLEABLE_CAMPAIGN_PLATFORMS,
@@ -217,6 +220,12 @@ export class OptimizationTabComponent implements OnInit {
 
   /** Which Microsoft rows have their negative-keyword editor open. The editor owns its own request. */
   protected readonly negativesEditorOpen = signal<Record<string, boolean>>({});
+  /**
+   * Which rows' negative-keyword request is in flight, as the editor reports it (`pendingChange`).
+   * The editor owns the request; this only holds it open, like the budget and bid editors, because
+   * closing it would destroy the form and lose the per-keyword outcomes.
+   */
+  protected readonly negativesPending = signal<Record<string, boolean>>({});
 
   /** Bumped by Refresh to re-read the Microsoft keyword table, which owns its own read. */
   protected readonly microsoftKeywordsReload = signal(0);
@@ -629,16 +638,8 @@ export class OptimizationTabComponent implements OnInit {
    * The three states are not two with a variant: an UNCONFIRMED action may already have applied,
    * and a retried REMOVE is irreversible, so it must never read as "Failed".
    */
-  protected readonly OUTCOME_LABEL: Record<KeywordActionOutcome['state'], string> = {
-    done: 'Done',
-    unconfirmed: 'Unconfirmed',
-    failed: 'Failed',
-  };
-  protected readonly OUTCOME_CLASS: Record<KeywordActionOutcome['state'], string> = {
-    done: 'text-green-600',
-    unconfirmed: 'text-amber-600',
-    failed: 'text-red-600',
-  };
+  protected readonly OUTCOME_LABEL = KEYWORD_ACTION_OUTCOME_LABELS;
+  protected readonly OUTCOME_CLASS = KEYWORD_ACTION_OUTCOME_CLASSES;
 
   protected readonly activeFoundationSlug = computed(() => this.projectSlug());
 
@@ -858,6 +859,15 @@ export class OptimizationTabComponent implements OnInit {
     this.budgetEditorOpen.update((open) => this.omitKeys(open, [campaignId]));
   }
 
+  /** The editor's Cancel: closes it and returns focus to the row's disclosure button. */
+  protected cancelBudgetEditor(campaignId: string): void {
+    if (this.budgetPending()[campaignId]) {
+      return;
+    }
+    this.returnFocusToDisclosure(`campaign-budget-edit-${campaignId}`, `campaign-budget-panel-${campaignId}`);
+    this.closeBudgetEditor(campaignId);
+  }
+
   /**
    * Hands the operator the ONE control that resolves a monitor finding, reusing that control's
    * own method and guards rather than a second copy of its logic.
@@ -865,7 +875,7 @@ export class OptimizationTabComponent implements OnInit {
    * - `budget` opens the row's editor (or leaves it open) and focuses its amount. It never submits:
    *   the change still needs the operator's own Save.
    * - `pause_resume` runs the row toggle's own `toggleCampaign`, so the pending, conflict, platform
-   *   and deployment guards are the toggle's, unchanged.
+   *   and deployment guards are the toggle's, unchanged — and only to PAUSE an active campaign.
    * - `keywords` moves focus to the keyword actions of the campaign's platform (Google or Microsoft).
    */
   protected resolveFinding(finding: CampaignOptimizeFinding): void {
@@ -878,7 +888,10 @@ export class OptimizationTabComponent implements OnInit {
         this.openBudgetEditorFor(row);
         return;
       case 'pause_resume':
-        this.toggleCampaign(row);
+        // Pause only: a finding never resumes spend, whatever the row's toggle offers right now.
+        if (row.action === 'pause') {
+          this.toggleCampaign(row);
+        }
         return;
       case 'keywords':
         // The keyword table of the campaign's own platform: Microsoft keywords are their own table.
@@ -957,6 +970,7 @@ export class OptimizationTabComponent implements OnInit {
           }
           this.budgetPending.update((p) => this.omitKeys(p, [id]));
           this.confirmedBudget.update((c) => ({ ...c, [id]: { budget: result.budget, budgetType: result.budgetType } }));
+          this.returnFocusToDisclosure(`campaign-budget-edit-${id}`, `campaign-budget-panel-${id}`);
           this.budgetEditorOpen.update((open) => this.omitKeys(open, [id]));
           // The change bumped the row's version upstream. Without the fresh etag the next write on
           // this row — another budget change, or a pause — would replay a dead validator and 412.
@@ -1011,9 +1025,21 @@ export class OptimizationTabComponent implements OnInit {
     this.bidEditorOpen.update((open) => this.omitKeys(open, [campaignId]));
   }
 
-  /** Opens or closes one Microsoft row's negative-keyword editor. */
+  /** The editor's Cancel: closes it and returns focus to the row's disclosure button. */
+  protected cancelBidEditor(campaignId: string): void {
+    if (this.bidPending()[campaignId]) {
+      return;
+    }
+    this.returnFocusToDisclosure(`campaign-bid-edit-${campaignId}`, `campaign-bid-panel-${campaignId}`);
+    this.closeBidEditor(campaignId);
+  }
+
+  /** Opens or closes one Microsoft row's negative-keyword editor. A request in flight keeps it open. */
   protected toggleNegativesEditor(row: CampaignRow): void {
     const id = row.campaign.id;
+    if (this.negativesPending()[id]) {
+      return;
+    }
     if (this.negativesEditorOpen()[id]) {
       this.closeNegativesEditor(id);
       return;
@@ -1025,7 +1051,14 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   protected closeNegativesEditor(campaignId: string): void {
+    if (this.negativesPending()[campaignId]) {
+      return;
+    }
     this.negativesEditorOpen.update((open) => this.omitKeys(open, [campaignId]));
+  }
+
+  protected setNegativesPending(campaignId: string, pending: boolean): void {
+    this.negativesPending.update((p) => (pending ? { ...p, [campaignId]: true } : this.omitKeys(p, [campaignId])));
   }
 
   /**
@@ -1086,6 +1119,7 @@ export class OptimizationTabComponent implements OnInit {
           }
           this.bidPending.update((p) => this.omitKeys(p, [id]));
           this.confirmedBid.update((c) => ({ ...c, [id]: { bid: result.bid } }));
+          this.returnFocusToDisclosure(`campaign-bid-edit-${id}`, `campaign-bid-panel-${id}`);
           this.bidEditorOpen.update((open) => this.omitKeys(open, [id]));
           // The change bumped the row's version upstream; the next write on the row needs this one.
           if (result.etag) {
@@ -1657,7 +1691,10 @@ export class OptimizationTabComponent implements OnInit {
           this.briefMetricsState.set('loading');
           return this.campaignService.getBriefMetrics(projectSlug, briefId).pipe(
             map((metrics): BriefMetrics | null => metrics),
-            catchError(() => of(null))
+            catchError((error: unknown) => {
+              console.error('Failed to load brief metrics for the Optimize tab findings:', error);
+              return of(null);
+            })
           );
         }),
         takeUntilDestroyed()
@@ -1678,7 +1715,7 @@ export class OptimizationTabComponent implements OnInit {
       return items.map((item) => {
         const row = rowsById.get(item.campaign_id) ?? null;
         // The row's platform when the row is known: it is what the control itself is gated on.
-        const lever: CampaignOptimizeLever = row === null ? 'none' : campaignActionItemLever(item.rule, row.campaign.platform);
+        let lever: CampaignOptimizeLever = row === null ? 'none' : campaignActionItemLever(item.rule, row.campaign.platform);
         const campaignName = row?.campaign.campaign_name ?? 'A campaign not in the list below';
         let leverLabel = '';
         let leverBlockedReason = '';
@@ -1688,8 +1725,16 @@ export class OptimizationTabComponent implements OnInit {
           if (leverBlockedReason === '' && budgetPending[row.campaign.id]) {
             leverBlockedReason = 'A budget change for this campaign is in progress.';
           }
+        } else if (row !== null && lever === 'pause_resume' && row.action === 'resume') {
+          // A `zero_delivery` finding only ever offers PAUSE. Offering the row's current toggle
+          // label meant that once the finding had paused the campaign it offered "Resume", and one
+          // more click restarted spend on a campaign flagged for delivering nothing.
+          lever = 'none';
+          leverBlockedReason = CAMPAIGN_FINDING_ALREADY_PAUSED_REASON;
         } else if (row !== null && lever === 'pause_resume') {
-          leverLabel = row.toggleLabel;
+          // `pause`, or `unavailable` (shown disabled with the row's reason): the label is always
+          // Pause, never the row's toggle word.
+          leverLabel = CAMPAIGN_TOGGLE_LABELS.pause;
           leverBlockedReason = this.toggleBlockedReasonFor(
             row,
             !!togglePending[row.campaign.id] || !!budgetPending[row.campaign.id] || !!bidPending[row.campaign.id]
@@ -1805,6 +1850,7 @@ export class OptimizationTabComponent implements OnInit {
         this.bidOutcome.set({});
         this.confirmedBid.set({});
         this.negativesEditorOpen.set({});
+        this.negativesPending.set({});
         this.lastDeliveredEtags = {};
         this.hasDeliveredList = false;
         this.etagsWrittenDuringRead.clear();
@@ -2074,6 +2120,19 @@ export class OptimizationTabComponent implements OnInit {
       },
       { injector: this.injector }
     );
+  }
+
+  /**
+   * Returns focus to a row's editor disclosure once its panel closes, so a keyboard user is not
+   * dropped to the top of the page. Only when focus is still in the panel (or was lost to the body):
+   * a save that lands after the operator moved on must not pull focus back.
+   */
+  private returnFocusToDisclosure(disclosureId: string, panelId: string): void {
+    const active = this.document.activeElement;
+    if (active && active !== this.document.body && !this.document.getElementById(panelId)?.contains(active)) {
+      return;
+    }
+    this.focusAfterRender(disclosureId);
   }
 
   /**

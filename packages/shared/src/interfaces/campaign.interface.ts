@@ -2455,6 +2455,24 @@ export interface CampaignBudgetOutcome {
   message: string;
 }
 
+/**
+ * The per-lever wording `classifyCampaignWriteFailure` reports an Optimize-tab write failure with.
+ * The classification itself is shared, so the budget, bid and negative-keyword levers cannot drift.
+ */
+export interface CampaignWriteFailureMessages {
+  /** What a 412 says. Omitted for a write sent without a validator, where a 412 is a plain refusal. */
+  conflict?: string;
+  /** What an outcome nobody could confirm says when the response carried no usable message. */
+  unconfirmed: string;
+  /** What a refusal says when the response carried no readable message. */
+  failureFallback: string;
+  /**
+   * When set, a BFF-relayed 503 is `failed` only when its message contains this wording; every other
+   * 503 is unconfirmed (the bid lever, whose unconfirmed and definite 503s share a status).
+   */
+  definiteFailureMarker?: string;
+}
+
 /** One pacing choice offered by the budget editor. */
 export interface CampaignBudgetTypeOption {
   value: CampaignBudgetType;

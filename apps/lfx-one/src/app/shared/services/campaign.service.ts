@@ -69,7 +69,7 @@ import {
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
-import { exhaustMap, last, map, Observable, of, take, takeWhile, timer } from 'rxjs';
+import { catchError, exhaustMap, last, map, Observable, of, take, takeWhile, throwError, timer } from 'rxjs';
 
 import { SseService } from './sse.service';
 
@@ -329,7 +329,14 @@ export class CampaignService {
    * the response's `metricsAsOf` / `metricsPending` say how fresh they are and must be shown.
    */
   public getMicrosoftKeywords(projectSlug: string, window: MicrosoftKeywordsWindow): Observable<MicrosoftKeywordMetricsResponse> {
-    return this.http.get<MicrosoftKeywordMetricsResponse>('/api/campaigns/microsoft/keywords', { params: { project: projectSlug, window } });
+    // Logged and rethrown, never defaulted: an empty keyword list would read as "no keywords", and the
+    // table states a failed read (or a missing connection) as such (frontend-checklist §13).
+    return this.http.get<MicrosoftKeywordMetricsResponse>('/api/campaigns/microsoft/keywords', { params: { project: projectSlug, window } }).pipe(
+      catchError((error: unknown) => {
+        console.error('Failed to load Microsoft keyword metrics:', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   public getAudience(projectSlug: string, days: number = 30): Observable<AudienceDemographics> {

@@ -91,6 +91,22 @@ describe('campaignNegativeKeywordsFailureOutcome', () => {
     });
   });
 
+  it.each([
+    ['a 504 with proxy text', 504, 'upstream request timeout'],
+    ['a 502 with proxy text', 502, 'Bad Gateway'],
+    ['a 500 with an HTML page', 500, '<html><body>Internal error</body></html>'],
+  ])('reports %s as unconfirmed: any keyword may have been added', (_label, status, body) => {
+    expect(campaignNegativeKeywordsFailureOutcome(httpError(status, body))).toEqual({
+      state: 'unconfirmed',
+      message: CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+    });
+  });
+
+  it('reports a BFF definite 503 as a failure, verbatim', () => {
+    const message = 'the negative keywords could not be added on the ad platform; the campaign was not modified';
+    expect(campaignNegativeKeywordsFailureOutcome(httpError(503, { error: message, code: 'SERVICE_UNAVAILABLE' }))).toEqual({ state: 'failed', message });
+  });
+
   it('passes a refusal through verbatim', () => {
     const message = 'negative keywords can be added to Microsoft Advertising campaigns only';
     expect(campaignNegativeKeywordsFailureOutcome(httpError(400, { error: message }))).toEqual({ state: 'failed', message });

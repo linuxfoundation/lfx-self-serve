@@ -4,7 +4,12 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, inject, input, output, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { DEFAULT_MICROSOFT_KEYWORDS_WINDOW, MICROSOFT_KEYWORDS_WINDOW_OPTIONS } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_MICROSOFT_KEYWORDS_WINDOW,
+  KEYWORD_ACTION_OUTCOME_CLASSES,
+  KEYWORD_ACTION_OUTCOME_LABELS,
+  MICROSOFT_KEYWORDS_WINDOW_OPTIONS,
+} from '@lfx-one/shared/constants';
 import type {
   KeywordActionOutcome,
   KeywordActionType,
@@ -67,16 +72,8 @@ export class MicrosoftKeywordsTableComponent {
   protected readonly data = signal<MicrosoftKeywordMetricsResponse | null>(null);
   protected readonly errorMessage = signal('');
 
-  protected readonly OUTCOME_LABEL: Record<KeywordActionOutcome['state'], string> = {
-    done: 'Done',
-    unconfirmed: 'Unconfirmed',
-    failed: 'Failed',
-  };
-  protected readonly OUTCOME_CLASS: Record<KeywordActionOutcome['state'], string> = {
-    done: 'text-green-600',
-    unconfirmed: 'text-amber-600',
-    failed: 'text-red-600',
-  };
+  protected readonly OUTCOME_LABEL = KEYWORD_ACTION_OUTCOME_LABELS;
+  protected readonly OUTCOME_CLASS = KEYWORD_ACTION_OUTCOME_CLASSES;
 
   /** True when no finished report covers the project yet: the rows are empty because it is building. */
   protected readonly reportBuilding: Signal<boolean> = computed(() => {

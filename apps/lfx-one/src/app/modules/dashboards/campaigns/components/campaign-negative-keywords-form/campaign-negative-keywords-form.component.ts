@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, output, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, Signal, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
@@ -46,6 +46,7 @@ export class CampaignNegativeKeywordsFormComponent {
   private readonly campaignService = inject(CampaignService);
   // App-root: the toast is what carries an outcome past this component's destruction.
   private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly projectSlug = input.required<string>();
   public readonly briefId = input.required<string>();
@@ -53,6 +54,11 @@ export class CampaignNegativeKeywordsFormComponent {
   public readonly campaignName = input.required<string>();
 
   public readonly cancelEdit = output<void>();
+  /**
+   * Whether a request is in flight. The parent holds the editor open (and its disclosure disabled)
+   * while it is, because closing it would destroy the form and lose the per-keyword outcomes.
+   */
+  public readonly pendingChange = output<boolean>();
 
   public readonly form = new FormGroup({
     keywords: new FormControl<string>('', { nonNullable: true, validators: [campaignNegativeKeywordsValidator()] }),
@@ -70,6 +76,7 @@ export class CampaignNegativeKeywordsFormComponent {
   protected readonly batchOutcome = signal<CampaignNegativeKeywordsBatchOutcome | null>(null);
   /** The keywords of the request the batch outcome is about, so an unconfirmed batch can name them. */
   protected readonly batchKeywords = signal<string[]>([]);
+  protected readonly batchKeywordsText: Signal<string> = computed(() => this.batchKeywords().join(', '));
 
   protected readonly ids = computed(() => {
     const id = this.campaignId();
@@ -129,7 +136,7 @@ export class CampaignNegativeKeywordsFormComponent {
     const sent = parseNegativeKeywordInput(text).keywords;
     const campaignName = this.campaignName();
 
-    this.pending.set(true);
+    this.setPending(true);
     this.outcomeRows.set([]);
     this.batchOutcome.set(null);
     this.batchKeywords.set([]);
@@ -147,7 +154,7 @@ export class CampaignNegativeKeywordsFormComponent {
       .subscribe({
         next: (result) => {
           const rows = negativeKeywordOutcomeRows(sent, matchType, result);
-          this.pending.set(false);
+          this.setPending(false);
           this.outcomeRows.set(rows);
           if (!rows.some((row) => row.outcome === 'FAILED' || row.outcome === 'UNCONFIRMED')) {
             this.form.controls.keywords.reset('');
@@ -156,7 +163,7 @@ export class CampaignNegativeKeywordsFormComponent {
         },
         error: (err: unknown) => {
           const outcome = campaignNegativeKeywordsFailureOutcome(err);
-          this.pending.set(false);
+          this.setPending(false);
           this.batchOutcome.set(outcome);
           this.batchKeywords.set(sent);
           this.messageService.add({
@@ -167,6 +174,17 @@ export class CampaignNegativeKeywordsFormComponent {
           });
         },
       });
+  }
+
+  /**
+   * Sets `pending` and tells the parent. Not emitted once destroyed: the request outlives the form
+   * (`take(1)`), and an output must not emit after its component is gone.
+   */
+  private setPending(value: boolean): void {
+    this.pending.set(value);
+    if (!this.destroyRef.destroyed) {
+      this.pendingChange.emit(value);
+    }
   }
 
   /** One toast for the whole request; the per-keyword detail stays in the list. */

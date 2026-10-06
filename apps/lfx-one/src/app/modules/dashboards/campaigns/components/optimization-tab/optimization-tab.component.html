@@ -161,7 +161,7 @@
                       {{ finding.item.priority }}
                     </span>
                     <div class="flex min-w-0 flex-col gap-0.5">
-                      <span class="truncate text-sm font-medium text-gray-900">{{ finding.campaignName }}</span>
+                      <span class="whitespace-normal break-words text-sm font-medium text-gray-900 lg:truncate">{{ finding.campaignName }}</span>
                       <span class="text-xs text-gray-500">{{ finding.platformLabel }}</span>
                       <span class="text-xs text-gray-700">{{ finding.item.issue }}</span>
                       <span class="text-xs text-blue-600">→ {{ finding.item.action }}</span>
@@ -349,6 +349,7 @@
                   <button
                     type="button"
                     (click)="toggleBudgetEditor(row)"
+                    [id]="'campaign-budget-edit-' + row.campaign.id"
                     [disabled]="!row.budgetAvailable || budgetPending()[row.campaign.id]"
                     [attr.aria-expanded]="row.budgetAvailable ? !!budgetEditorOpen()[row.campaign.id] : null"
                     [attr.aria-controls]="budgetEditorOpen()[row.campaign.id] ? 'campaign-budget-panel-' + row.campaign.id : null"
@@ -362,6 +363,7 @@
                   <button
                     type="button"
                     (click)="toggleBidEditor(row)"
+                    [id]="'campaign-bid-edit-' + row.campaign.id"
                     [disabled]="!row.bidAvailable || bidPending()[row.campaign.id]"
                     [attr.aria-expanded]="row.bidAvailable ? !!bidEditorOpen()[row.campaign.id] : null"
                     [attr.aria-controls]="bidEditorOpen()[row.campaign.id] ? 'campaign-bid-panel-' + row.campaign.id : null"
@@ -376,7 +378,7 @@
                     <button
                       type="button"
                       (click)="toggleNegativesEditor(row)"
-                      [disabled]="!row.negativeKeywordsAvailable"
+                      [disabled]="!row.negativeKeywordsAvailable || negativesPending()[row.campaign.id]"
                       [attr.aria-expanded]="row.negativeKeywordsAvailable ? !!negativesEditorOpen()[row.campaign.id] : null"
                       [attr.aria-controls]="negativesEditorOpen()[row.campaign.id] ? 'campaign-negatives-panel-' + row.campaign.id : null"
                       [attr.aria-describedby]="row.negativeKeywordsAvailable ? null : 'campaign-negatives-unavailable-' + row.campaign.id"
@@ -437,7 +439,7 @@
                   [blockedReason]="row.budgetBlockedReason"
                   [outcome]="budgetOutcome()[row.campaign.id] ?? null"
                   (submitBudget)="changeCampaignBudget(row, $event)"
-                  (cancelEdit)="closeBudgetEditor(row.campaign.id)" />
+                  (cancelEdit)="cancelBudgetEditor(row.campaign.id)" />
               }
               @if (bidEditorOpen()[row.campaign.id]) {
                 <lfx-campaign-bid-form
@@ -449,7 +451,7 @@
                   [blockedReason]="row.bidBlockedReason"
                   [outcome]="bidOutcome()[row.campaign.id] ?? null"
                   (submitBid)="changeCampaignBid(row, $event)"
-                  (cancelEdit)="closeBidEditor(row.campaign.id)" />
+                  (cancelEdit)="cancelBidEditor(row.campaign.id)" />
               }
               @if (negativesEditorOpen()[row.campaign.id]) {
                 <lfx-campaign-negative-keywords-form
@@ -458,6 +460,7 @@
                   [briefId]="briefId()"
                   [campaignId]="row.campaign.id"
                   [campaignName]="row.campaign.campaign_name"
+                  (pendingChange)="setNegativesPending(row.campaign.id, $event)"
                   (cancelEdit)="closeNegativesEditor(row.campaign.id)" />
               }
             </li>
@@ -682,7 +685,7 @@
                         <span class="flex flex-col items-center gap-0.5">
                           <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
                           @if (!result.success) {
-                            <span class="max-w-[16rem] text-[11px] leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                            <span class="max-w-64 text-xs leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
                           }
                         </span>
                       } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
@@ -780,7 +783,7 @@
                         <span class="flex flex-col items-center gap-0.5">
                           <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
                           @if (!result.success) {
-                            <span class="max-w-[16rem] text-[11px] leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                            <span class="max-w-64 text-xs leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
                           }
                         </span>
                       } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {

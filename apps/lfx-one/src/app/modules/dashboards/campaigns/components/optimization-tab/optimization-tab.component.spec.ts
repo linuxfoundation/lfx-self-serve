@@ -13,6 +13,7 @@ import {
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_FINDING_ALREADY_PAUSED_REASON,
   CAMPAIGN_TOGGLE_FAILURE_MESSAGES,
 } from '@lfx-one/shared/constants';
 import {
@@ -21,6 +22,7 @@ import {
   CampaignBidUpdateResult,
   CampaignBudgetUpdateResult,
   CampaignIndexDoc,
+  CampaignNegativeKeywordsResult,
   CampaignRow,
   CampaignStatusUpdateResult,
 } from '@lfx-one/shared/interfaces';
@@ -31,6 +33,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
+import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
 import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/microsoft-keywords-table.component';
 import { OptimizationTabComponent } from './optimization-tab.component';
 
@@ -2891,6 +2894,33 @@ describe('OptimizationTabComponent — monitor findings and their levers', () =>
     expect(updateCampaignStatus).toHaveBeenCalledWith(expect.objectContaining({ campaignId: 'c-1', status: 'PAUSED', etag: '"3"', platform: 'google-ads' }));
   });
 
+  // Money safety: once the finding has paused the campaign it must not turn into a Resume button,
+  // because one more click would restart spend on a campaign flagged for delivering nothing.
+  it('stops offering the toggle once the finding has paused the campaign, and never offers Resume', async () => {
+    await render([doc()], [item({ rule: 'zero_delivery', priority: 'HIGH' })]);
+
+    lever('c-1-zero_delivery')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(updateCampaignStatus).toHaveBeenCalledTimes(1);
+    expect(q('optimization-campaign-toggle-c-1')!.textContent).toContain('Resume');
+    expect(lever('c-1-zero_delivery')).toBeNull();
+    expect(q('optimization-finding-no-lever-c-1-zero_delivery')).not.toBeNull();
+    expect(q('optimization-finding-c-1-zero_delivery')!.textContent).not.toContain('Resume');
+    expect(q('optimization-finding-blocked-c-1-zero_delivery')!.textContent).toContain(CAMPAIGN_FINDING_ALREADY_PAUSED_REASON);
+  });
+
+  it('never offers Resume for a finding about a campaign that is already paused', async () => {
+    await render([doc({ status: 'paused' })], [item({ rule: 'zero_delivery' })]);
+
+    expect(q('optimization-campaign-toggle-c-1')!.textContent).toContain('Resume');
+    expect(lever('c-1-zero_delivery')).toBeNull();
+    expect(q('optimization-finding-blocked-c-1-zero_delivery')!.textContent).toContain(CAMPAIGN_FINDING_ALREADY_PAUSED_REASON);
+    expect(updateCampaignStatus).not.toHaveBeenCalled();
+  });
+
   it('withholds the toggle lever, with the row reason, when the toggle itself is unavailable', async () => {
     await render([doc()], [item({ rule: 'zero_delivery' })], false);
 
@@ -3190,6 +3220,36 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     fixture.detectChanges();
     expect(q('optimization-campaign-negatives-form-c-1')).not.toBeNull();
     expect(q('optimization-campaign-negatives-edit-c-1')!.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  // Closing the editor mid-request would destroy the form and lose the per-keyword outcomes.
+  it('holds the negative-keyword editor open, its disclosure disabled, while a request is in flight', () => {
+    const response = new Subject<CampaignNegativeKeywordsResult>();
+    (TestBed.inject(CampaignService).addNegativeKeywords as ReturnType<typeof vi.fn>).mockReturnValue(response);
+    render([doc()]);
+    (q('optimization-campaign-negatives-edit-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const formDe = fixture.debugElement.query(By.directive(CampaignNegativeKeywordsFormComponent));
+    const form = formDe.componentInstance as CampaignNegativeKeywordsFormComponent;
+    form.form.setValue({ keywords: 'free', matchType: 'Exact' });
+    q('optimization-campaign-negatives-form-c-1')!.dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+
+    const disclosure = q('optimization-campaign-negatives-edit-c-1') as HTMLButtonElement;
+    expect(disclosure.disabled).toBe(true);
+    form.cancelEdit.emit();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-negatives-form-c-1')).not.toBeNull();
+
+    response.next({ campaignId: 'c-1', results: [{ text: 'free', matchType: 'Exact', outcome: 'APPLIED' }], appliedCount: 1 });
+    response.complete();
+    fixture.detectChanges();
+    expect(disclosure.disabled).toBe(false);
+    expect(q('optimization-campaign-negatives-results-c-1')).not.toBeNull();
+
+    form.cancelEdit.emit();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-negatives-form-c-1')).toBeNull();
   });
 
   it('disables negative keywords for a Microsoft campaign never created on the platform', () => {

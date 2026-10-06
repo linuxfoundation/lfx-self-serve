@@ -71,7 +71,7 @@
           Not confirmed: these negative keywords may have been added
         </p>
         <p class="text-xs text-amber-800">{{ outcome.message }}</p>
-        <p class="text-xs text-amber-800">Sent: {{ batchKeywords().join(', ') }}</p>
+        <p class="text-xs text-amber-800">Sent: {{ batchKeywordsText() }}</p>
       </div>
     } @else {
       <p class="text-xs text-red-600" [attr.data-testid]="'optimization-campaign-negatives-failed-' + campaignId()">{{ outcome.message }}</p>

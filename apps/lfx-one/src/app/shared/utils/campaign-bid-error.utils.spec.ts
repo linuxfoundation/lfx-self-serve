@@ -55,6 +55,7 @@ describe('campaignBidFailureOutcome', () => {
     ['no body', null],
     ['a gateway page', '<html>Service Unavailable</html>'],
     ['an unrecognised message', { error: 'Service Unavailable' }],
+    ['an unrecognised BFF envelope', { error: 'Service Unavailable', code: 'SERVICE_UNAVAILABLE' }],
   ])('reports a 503 with %s as unconfirmed, never as a plain failure', (_label, body) => {
     expect(campaignBidFailureOutcome(httpError(503, body))).toEqual({ state: 'unconfirmed', message: CAMPAIGN_BID_OUTCOME_UNCONFIRMED });
   });
@@ -66,6 +67,14 @@ describe('campaignBidFailureOutcome', () => {
 
   it.each([0, 408, 502, 504])('reports a message-less %i as unconfirmed', (status) => {
     expect(campaignBidFailureOutcome(httpError(status, null)).state).toBe('unconfirmed');
+  });
+
+  it.each([
+    ['a 504 with proxy text', 504, 'upstream request timeout'],
+    ['a 502 with proxy text', 502, 'Bad Gateway'],
+    ['a 500 with an HTML page', 500, '<html><body>Internal error</body></html>'],
+  ])('reports %s as unconfirmed, never as a plain failure', (_label, status, body) => {
+    expect(campaignBidFailureOutcome(httpError(status, body))).toEqual({ state: 'unconfirmed', message: CAMPAIGN_BID_OUTCOME_UNCONFIRMED });
   });
 
   it('falls back to a generic failure for a message-less refusal', () => {

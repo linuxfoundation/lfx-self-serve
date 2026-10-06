@@ -136,7 +136,7 @@
                             <span class="flex flex-col items-center gap-0.5" [attr.data-testid]="'microsoft-keyword-outcome-' + row.key">
                               <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
                               @if (!result.success) {
-                                <span class="max-w-[16rem] text-[11px] leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                                <span class="max-w-64 text-xs leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
                               }
                             </span>
                           } @else if (row.inProgress) {

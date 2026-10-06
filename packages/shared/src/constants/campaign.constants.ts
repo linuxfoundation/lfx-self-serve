@@ -25,6 +25,7 @@ import type {
   CampaignTabOption,
   CampaignToggleAction,
   CampaignToggleStatus,
+  KeywordActionOutcome,
   KeywordActionPlatform,
   LinkedInGeoTarget,
   MetaObjective,
@@ -416,6 +417,30 @@ export const CAMPAIGN_TOGGLE_LABELS: Readonly<Record<CampaignToggleAction, strin
   pause: 'Pause',
   resume: 'Resume',
   unavailable: 'Unavailable',
+};
+
+/**
+ * Why a `zero_delivery` finding offers no lever for a campaign that is already paused. The finding
+ * only ever offers Pause: resuming a campaign from a "not delivering" finding would restart spend.
+ */
+export const CAMPAIGN_FINDING_ALREADY_PAUSED_REASON = 'This campaign is already paused.';
+
+/**
+ * Visible label of each keyword action outcome state, shared by the Google and Microsoft keyword
+ * tables. An UNCONFIRMED action may already have applied, and a retried REMOVE is irreversible, so
+ * it is never worded as a failure.
+ */
+export const KEYWORD_ACTION_OUTCOME_LABELS: Readonly<Record<KeywordActionOutcome['state'], string>> = {
+  done: 'Done',
+  unconfirmed: 'Unconfirmed',
+  failed: 'Failed',
+};
+
+/** Text colour of each keyword action outcome state, on the brand scales. */
+export const KEYWORD_ACTION_OUTCOME_CLASSES: Readonly<Record<KeywordActionOutcome['state'], string>> = {
+  done: 'text-emerald-600',
+  unconfirmed: 'text-amber-600',
+  failed: 'text-red-600',
 };
 
 /**
