@@ -79,6 +79,8 @@ own namespace; the two never share a value.
 | `meeting-error-state`                   | Terminal error state                                                                                              |
 | `meeting-error-retry-button`            | The error state's "Try again" control                                                                             |
 | `meeting-invitation-required-state`     | The signed-in-outsider / invitation-required state                                                                |
+| `meeting-invitation-required-contact`   | Its "Contact the organizer" `mailto:` control                                                                     |
+| `meeting-invitation-required-support`   | Its "Contact support" control, when the organizer has no usable email                                             |
 | `meeting-occurrence-edit-button`        | Organizer's "Edit this occurrence" control                                                                        |
 | `meeting-occurrence-cancel-button`      | Organizer's "Cancel this occurrence" control                                                                      |
 

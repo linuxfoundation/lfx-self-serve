@@ -5,7 +5,9 @@ import { Component, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { ActionSlotKind, Meeting, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { IntercomService } from '@services/intercom.service';
+import { MessageService } from 'primeng/api';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingJoinActionComponent } from '../join-action/join-action.component';
@@ -29,6 +31,7 @@ describe('MeetingActionSlotComponent', () => {
   let joinsInWindow: WritableSignal<boolean>;
   let meeting: WritableSignal<Meeting | undefined>;
   let pastAccessKnown: WritableSignal<boolean>;
+  let add: ReturnType<typeof vi.fn>;
 
   const open: MeetingPrivacyState = { icon: '', label: 'Public', openToPublic: true, restricted: false, visibility: MeetingVisibility.PUBLIC };
   const restricted: MeetingPrivacyState = {
@@ -47,14 +50,27 @@ describe('MeetingActionSlotComponent', () => {
     joinsInWindow = signal(true);
     meeting = signal<Meeting | undefined>({ id: 'meeting-1', early_join_time_minutes: 15 } as Meeting);
     pastAccessKnown = signal(true);
+    add = vi.fn();
 
     await TestBed.configureTestingModule({
       imports: [MeetingActionSlotComponent],
       providers: [
         {
           provide: MeetingDetailsStateService,
-          useValue: { actionSlot, viewerRole, privacy, timeState, joinsInWindow, meeting, pastAccessKnown, signInHref: signal(SIGN_IN_HREF) },
+          useValue: {
+            actionSlot,
+            viewerRole,
+            privacy,
+            timeState,
+            joinsInWindow,
+            meeting,
+            pastAccessKnown,
+            selectedOccurrence: signal(null),
+            signInHref: signal(SIGN_IN_HREF),
+          },
         },
+        { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
+        { provide: MessageService, useValue: { add } },
       ],
     })
       .overrideComponent(MeetingActionSlotComponent, { remove: { imports: [MeetingJoinActionComponent] }, add: { imports: [JoinActionStubComponent] } })
@@ -166,10 +182,42 @@ describe('MeetingActionSlotComponent', () => {
     });
   });
 
-  it('marks the invitation-required state with its contract testid', () => {
-    render('invitation-required', 'outsider');
+  // E2-03 (FR-022).
+  describe('invitation required', () => {
+    beforeEach(() => {
+      meeting.set({
+        id: 'meeting-1',
+        title: 'Acme Weekly Sync',
+        start_time: '2026-10-09T17:00:00Z',
+        owner: { username: 'ada', email: 'ada@acme-motors.example', name: 'Ada Example' },
+      } as Meeting);
+      privacy.set(restricted);
+      render('invitation-required', 'outsider');
+    });
 
-    expect(query('meeting-invitation-required-state')?.textContent).toContain('Invitation required');
+    it('says an invitation is needed, with its contract testid', () => {
+      expect(query('meeting-invitation-required-state')?.textContent).toContain('Invitation required');
+      expect(text('meeting-action-message')).toBe('This meeting is limited to invited guests. Ask the organizer for an invitation to join.');
+    });
+
+    it('lets the viewer email the organizer about this meeting', () => {
+      const href = query('meeting-invitation-required-contact')?.querySelector('a')?.getAttribute('href') ?? '';
+
+      expect(href.startsWith('mailto:ada@acme-motors.example?')).toBe(true);
+      expect(decodeURIComponent(href)).toContain('Acme Weekly Sync');
+      expect(decodeURIComponent(href)).toContain('/meetings/meeting-1');
+      expect(query('meeting-invitation-required-support')).toBeNull();
+    });
+
+    it('offers the support chat when the organizer has no usable email', () => {
+      meeting.set({ id: 'meeting-1', title: 'Acme Weekly Sync', owner: { username: 'ada', name: 'Ada Example' } } as Meeting);
+      fixture.detectChanges();
+
+      expect(query('meeting-invitation-required-contact')).toBeNull();
+      query('meeting-invitation-required-support')?.click();
+      // No Intercom app id in the test runtime config, so the directive reports support as unavailable.
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Support Unavailable' }));
+    });
   });
 
   // The early-join rule, moved from the time banner (decided on #3297).
