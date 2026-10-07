@@ -42,8 +42,8 @@
   } @else if (!loading() && scopeEmpty()) {
     <lfx-empty-state
       icon="fa-light fa-user"
-      title="No representatives recorded for this foundation"
-      subtitle="The analytics model has no representative records for this foundation."
+      title="No representatives recorded for this scope"
+      subtitle="The analytics model has no representative records for this foundation or project."
       data-testid="engagement-representatives-empty" />
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state
@@ -67,6 +67,7 @@
       <ng-template #header>
         <tr>
           <th scope="col"><span class="text-xs font-medium text-gray-500">Representative</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
           <th scope="col"><span class="text-xs font-medium text-gray-500">Group</span></th>
           <th scope="col"><span class="text-xs font-medium text-gray-500">Attended</span></th>
           <th scope="col"><span class="text-xs font-medium text-gray-500">Last attended</span></th>
@@ -79,9 +80,14 @@
         <tr [attr.data-testid]="'engagement-representatives-row-' + row.key">
           <td>
             <div class="flex flex-col">
-              <span class="text-sm font-medium text-gray-900">{{ row.personName }}</span>
-              <span class="text-xs text-gray-500">{{ row.accountName }}</span>
+              <span class="text-sm font-medium" [class]="row.identityUnresolved ? 'italic text-gray-500' : 'text-gray-900'">{{ view.displayName }}</span>
+              @if (view.roleLabel) {
+                <span class="text-xs text-gray-500">{{ view.roleLabel }}</span>
+              }
             </div>
+          </td>
+          <td>
+            <span class="text-sm text-gray-800">{{ view.orgLabel }}</span>
           </td>
           <td>
             <span class="text-sm text-gray-800">{{ row.committeeName }}</span>
@@ -92,14 +98,25 @@
           <td>
             <!-- Never-attended and lapsed are the view's own per-period flags, so the styling never
                  disagrees with the segment the reader picked. -->
-            <span class="text-sm" [class]="period?.neverAttended || period?.lapsed ? 'text-amber-700' : 'text-gray-800'">
-              {{ view.lastAttendedLabel }}
-              @if (period?.neverAttended) {
-                <span class="sr-only">— never attended</span>
-              } @else if (period?.lapsed) {
-                <span class="sr-only">— lapsed</span>
+            <div class="flex flex-col">
+              <span class="text-sm" [class]="period?.neverAttended || period?.lapsed ? 'text-amber-700' : 'text-gray-800'">
+                {{ view.lastAttendedLabel }}
+                @if (period?.neverAttended) {
+                  <span class="sr-only">— never attended</span>
+                } @else if (period?.lapsed) {
+                  <span class="sr-only">— lapsed</span>
+                }
+              </span>
+              <!-- The 180-day lapse is the view's all-time flag, independent of the period pill. -->
+              @if (view.daysAgoLabel) {
+                <span class="text-xs" [class]="row.lapsed180d ? 'text-amber-700' : 'text-gray-500'" data-testid="engagement-representatives-days-ago">
+                  {{ view.daysAgoLabel }}
+                  @if (row.lapsed180d) {
+                    <span class="sr-only">— lapsed over 180 days</span>
+                  }
+                </span>
               }
-            </span>
+            </div>
           </td>
         </tr>
       </ng-template>

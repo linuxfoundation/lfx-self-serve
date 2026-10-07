@@ -3390,10 +3390,7 @@ export class AnalyticsController {
         throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', { operation: 'get_engagement_group_attendance' });
       }
 
-      const projectSlug = getStringQueryParam(req, 'projectSlug');
-      if (projectSlug && !SLUG_PATTERN.test(projectSlug)) {
-        throw ServiceValidationError.forField('projectSlug', 'Invalid projectSlug format', { operation: 'get_engagement_group_attendance' });
-      }
+      const projectSlug = this.getOptionalProjectSlug(req, 'get_engagement_group_attendance');
 
       const groupType = getStringQueryParam(req, 'groupType') || 'all';
       if (!ENGAGEMENT_GROUP_TYPES.has(groupType)) {
@@ -3411,7 +3408,7 @@ export class AnalyticsController {
 
       const response = await this.healthMetricsEngagementService.getGroupAttendance(req, {
         foundationSlug,
-        projectSlug: projectSlug || null,
+        projectSlug,
         groupType: groupType as HealthMetricsEngagementGroupTypeFilter,
         range,
         page: Number(getStringQueryParam(req, 'page')) || 1,
@@ -3420,6 +3417,7 @@ export class AnalyticsController {
 
       logger.success(req, 'get_engagement_group_attendance', startTime, {
         foundation_slug: foundationSlug,
+        project_slug: projectSlug,
         group_type: groupType,
         range,
         total_records: response.totalRecords,
@@ -3460,10 +3458,12 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.healthMetricsEngagementService.getMeetingParticipation(req, { foundationSlug, range });
+      const projectSlug = this.getOptionalProjectSlug(req, 'get_engagement_meeting_participation');
+      const response = await this.healthMetricsEngagementService.getMeetingParticipation(req, { foundationSlug, projectSlug, range });
 
       logger.success(req, 'get_engagement_meeting_participation', startTime, {
         foundation_slug: foundationSlug,
+        project_slug: projectSlug,
         range,
         row_count: response.rows.length,
       });
@@ -3494,10 +3494,12 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.healthMetricsEngagementService.getOrgParticipation(req, { foundationSlug });
+      const projectSlug = this.getOptionalProjectSlug(req, 'get_engagement_org_participation');
+      const response = await this.healthMetricsEngagementService.getOrgParticipation(req, { foundationSlug, projectSlug });
 
       logger.success(req, 'get_engagement_org_participation', startTime, {
         foundation_slug: foundationSlug,
+        project_slug: projectSlug,
         row_count: response.rows.length,
       });
 
@@ -3560,10 +3562,12 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.healthMetricsEngagementService.getRepresentatives(req, { foundationSlug });
+      const projectSlug = this.getOptionalProjectSlug(req, 'get_engagement_representatives');
+      const response = await this.healthMetricsEngagementService.getRepresentatives(req, { foundationSlug, projectSlug });
 
       logger.success(req, 'get_engagement_representatives', startTime, {
         foundation_slug: foundationSlug,
+        project_slug: projectSlug,
         row_count: response.rows.length,
       });
 
@@ -4385,6 +4389,16 @@ export class AnalyticsController {
     }
 
     return foundationSlug;
+  }
+
+  /** An optional, well-formed `projectSlug` query param; `null` is the all-projects scope. */
+  private getOptionalProjectSlug(req: Request, operation: string): string | null {
+    const projectSlug = getStringQueryParam(req, 'projectSlug');
+    if (projectSlug && !SLUG_PATTERN.test(projectSlug)) {
+      throw ServiceValidationError.forField('projectSlug', 'Invalid projectSlug format', { operation });
+    }
+
+    return projectSlug || null;
   }
 
   /**

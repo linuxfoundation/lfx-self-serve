@@ -22,6 +22,8 @@ function nonMemberRow(overrides: Partial<HealthMetricsEngagementNonMemberRow> = 
     accountId: 'a-1',
     accountName: 'Acme Motors',
     membershipStatus: 'Non-member',
+    firstSeenDate: '2024-03-02',
+    lastAttendedDate: '2026-08-14',
     periods: [
       { range: 'COMPLETED_YEAR_3', meetingsAttended: 3, distinctPeople: 1, sortRank: 4 },
       { range: 'COMPLETED_YEAR_2', meetingsAttended: 5, distinctPeople: 2, sortRank: 3 },
@@ -84,6 +86,26 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(row.textContent).toContain('Acme Motors');
     expect(row.textContent).toContain('12');
     expect(row.textContent).toContain('Non-member');
+    expect(row.textContent).toContain('Mar 2, 2024');
+    expect(row.textContent).toContain('Aug 14, 2026');
+  });
+
+  it('renders a missing first-seen or last-attended date as an em dash', async () => {
+    await render(response({ rows: [nonMemberRow({ firstSeenDate: null, lastAttendedDate: null })] }));
+
+    expect(fixture.componentInstance['rowViews']()[0]).toEqual(expect.objectContaining({ firstSeenLabel: '\u2014', lastAttendedLabel: '\u2014' }));
+  });
+
+  // The view carries no project key, so the section stays on the foundation whatever project is picked.
+  it('does not re-read when a project is selected', async () => {
+    await render();
+    getEngagementNonMemberParticipation.mockClear();
+
+    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
   });
 
   // The period pill re-projects the loaded rows, so switching it must not cost another request.

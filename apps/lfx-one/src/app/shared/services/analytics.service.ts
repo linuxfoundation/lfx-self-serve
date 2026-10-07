@@ -1175,7 +1175,7 @@ export class AnalyticsService {
 
   /**
    * Get the Health Metrics Engagement "Meeting participation" roll-up and meeting-type table
-   * @param query - Foundation and period
+   * @param query - Foundation, project scope and period
    * @returns Observable of the roll-up row plus one row per meeting-type group
    */
   public getEngagementMeetingParticipation(query: HealthMetricsEngagementParticipationQuery): Observable<HealthMetricsEngagementMeetingParticipation> {
@@ -1183,6 +1183,9 @@ export class AnalyticsService {
       foundationSlug: query.foundationSlug,
       range: query.range,
     };
+    if (query.projectSlug) {
+      params['projectSlug'] = query.projectSlug;
+    }
 
     // Errors propagate: a null total renders "no participation data for this foundation", so a
     // swallowed failure would state that as measured fact. See `analytics-error-propagation.spec.ts`.
@@ -1196,11 +1199,14 @@ export class AnalyticsService {
 
   /**
    * Get the Health Metrics Engagement "Organization participation" table
-   * @param query - Foundation scope; the period, search and lapsed cut all resolve client-side
+   * @param query - Foundation and project scope; the period, search and lapsed cut all resolve client-side
    * @returns Observable of every organization with all four periods and the caption counts
    */
   public getEngagementOrgParticipation(query: HealthMetricsEngagementOrgQuery): Observable<HealthMetricsEngagementOrgParticipation> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+    if (query.projectSlug) {
+      params['projectSlug'] = query.projectSlug;
+    }
 
     // Errors propagate: an empty table renders "no organizations", so a swallowed failure would
     // state that as measured fact. See `analytics-error-propagation.spec.ts`.
@@ -1232,11 +1238,14 @@ export class AnalyticsService {
 
   /**
    * Get the Health Metrics Engagement "Representatives" table
-   * @param query - Foundation scope; the period pill, the filter cut and search all resolve client-side
+   * @param query - Foundation and project scope; the period pill, the filter cut and search all resolve client-side
    * @returns Observable of every representative with all four periods and the per-period caption counts
    */
   public getEngagementRepresentatives(query: HealthMetricsEngagementRepQuery): Observable<HealthMetricsEngagementRepresentatives> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+    if (query.projectSlug) {
+      params['projectSlug'] = query.projectSlug;
+    }
 
     // Errors propagate: an empty table renders "no representatives", so a swallowed failure would
     // state that as measured fact. See `analytics-error-propagation.spec.ts`.

@@ -51,7 +51,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getEngagementOrgParticipation',
       url: '/api/analytics/engagement-org-participation',
       // An empty table renders "no organizations", which would state a failed read as measured fact.
-      call: () => service.getEngagementOrgParticipation({ foundationSlug: 'aaif' }),
+      call: () => service.getEngagementOrgParticipation({ foundationSlug: 'aaif', projectSlug: null }),
     },
     {
       name: 'getEngagementNonMemberParticipation',
@@ -65,7 +65,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       url: '/api/analytics/engagement-representatives',
       // Its empty table renders "no representatives match this filter", so a swallowed failure would
       // read as a foundation where nobody is in that group.
-      call: () => service.getEngagementRepresentatives({ foundationSlug: 'aaif' }),
+      call: () => service.getEngagementRepresentatives({ foundationSlug: 'aaif', projectSlug: null }),
     },
     {
       name: 'getEventsRegistrationForecast',

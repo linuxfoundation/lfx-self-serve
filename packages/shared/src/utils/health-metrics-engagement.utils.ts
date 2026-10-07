@@ -6,7 +6,9 @@ import {
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
+  HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL,
 } from '../constants/health-metrics-engagement.constants';
+import { formatIsoDateLabel } from './date-time.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
@@ -22,6 +24,7 @@ import type {
   HealthMetricsEngagementRepPeriod,
   HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementRepRow,
+  HealthMetricsEngagementRepRowLabels,
   HealthMetricsEngagementParticipationPeriod,
   HealthMetricsEngagementParticipationRow,
   HealthMetricsEngagementSectionKey,
@@ -185,7 +188,7 @@ export function filterHealthMetricsEngagementOrgRows(
     return term === '' || row.accountName.toLowerCase().includes(term);
   });
 
-  return matched.sort((a, b) => compareByPeriodRank(a, b, range));
+  return matched.sort((a, b) => compareByPeriodRank(a, b, range, accountNameOf));
 }
 
 /** The selected period's numbers for one non-member row, falling back to the newest period held. */
@@ -201,7 +204,7 @@ export function sortHealthMetricsEngagementNonMemberRows(
   rows: readonly HealthMetricsEngagementNonMemberRow[],
   range: HealthMetricsRange
 ): HealthMetricsEngagementNonMemberRow[] {
-  return [...rows].sort((a, b) => compareByPeriodRank(a, b, range));
+  return [...rows].sort((a, b) => compareByPeriodRank(a, b, range, accountNameOf));
 }
 
 /** The selected period's numbers for one representative, falling back to the newest period held. */
@@ -220,8 +223,7 @@ export function selectHealthMetricsEngagementRepCounts(
 /**
  * The representatives table's client-side cut. Every cut starts from the people invited in the
  * selected period — the population the view's own caption counts — so the table and its caption
- * cannot disagree. Read order is already last-attended-first and period-independent, so the pill
- * re-filters without re-sorting.
+ * cannot disagree. The view's rank is per period, so the pill re-sorts the cut as well.
  */
 export function filterHealthMetricsEngagementRepRows(
   rows: readonly HealthMetricsEngagementRepRow[],
@@ -231,7 +233,7 @@ export function filterHealthMetricsEngagementRepRows(
 ): HealthMetricsEngagementRepRow[] {
   const term = search.trim().toLowerCase();
 
-  return rows.filter((row) => {
+  const matched = rows.filter((row) => {
     const period = selectPeriod(row.periods, range);
     // Null is unmeasured, like a real 0 invited — the population the caption counts is missing either way.
     if (!period || !period.meetingsInvited) return false;
@@ -239,21 +241,50 @@ export function filterHealthMetricsEngagementRepRows(
     if (filter === 'lapsed' && !period.lapsed) return false;
 
     // Searched together because the name and its organization sub-line read as one cell.
-    return term === '' || row.personName.toLowerCase().includes(term) || row.accountName.toLowerCase().includes(term);
+    return term === '' || repDisplayName(row).toLowerCase().includes(term) || row.accountName.toLowerCase().includes(term);
   });
+
+  // The key breaks name ties so one person on two groups keeps a stable order across pills.
+  return matched.sort((a, b) => compareByPeriodRank(a, b, range, repDisplayName) || a.key.localeCompare(b.key, 'en-US'));
 }
 
-/** One rank order for both organization tables: a divergent copy would sort them differently. */
-function compareByPeriodRank<T extends { accountName: string; periods: readonly { range: HealthMetricsRange; sortRank: number | null }[] }>(
+/** The labels a representatives row renders; every unknown piece drops out rather than printing "null". */
+export function buildHealthMetricsEngagementRepLabels(row: HealthMetricsEngagementRepRow): HealthMetricsEngagementRepRowLabels {
+  const role = [row.personRole, row.jobTitle].filter((part): part is string => !!part?.trim()).join(' · ');
+  const org = [row.accountName, row.membershipTier].filter((part): part is string => !!part?.trim()).join(' · ');
+  const days = row.daysSinceLastAttended;
+
+  return {
+    displayName: repDisplayName(row),
+    roleLabel: role || null,
+    orgLabel: org || '—',
+    daysAgoLabel: days === null ? null : `${days.toLocaleString('en-US')} ${days === 1 ? 'day' : 'days'} ago`,
+    // Pre-rendered off a UTC-anchored parse: a `DatePipe` render reads a date-only value a day early west of UTC.
+    lastAttendedLabel: row.lastAttendedDate ? formatIsoDateLabel(row.lastAttendedDate) : '—',
+  };
+}
+
+/** One rank order for every engagement table: a divergent copy would sort them differently. */
+function compareByPeriodRank<T extends { periods: readonly { range: HealthMetricsRange; sortRank: number | null }[] }>(
   a: T,
   b: T,
-  range: HealthMetricsRange
+  range: HealthMetricsRange,
+  name: (row: T) => string
 ): number {
-  // A row the view left unranked sorts last rather than ahead of every ranked org.
+  // A row the view left unranked sorts last rather than ahead of every ranked row.
   const rankA = selectPeriod(a.periods, range)?.sortRank ?? Number.MAX_SAFE_INTEGER;
   const rankB = selectPeriod(b.periods, range)?.sortRank ?? Number.MAX_SAFE_INTEGER;
   // Locale pinned: an unpinned compare can order same-rank rows differently on SSR and the client.
-  return rankA === rankB ? a.accountName.localeCompare(b.accountName, 'en-US') : rankA - rankB;
+  return rankA === rankB ? name(a).localeCompare(name(b), 'en-US') : rankA - rankB;
+}
+
+/** An unresolved identity's name is a source placeholder, and two of them would read as one person. */
+function repDisplayName(row: HealthMetricsEngagementRepRow): string {
+  return row.identityUnresolved || !row.personName.trim() ? HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL : row.personName;
+}
+
+function accountNameOf(row: { accountName: string }): string {
+  return row.accountName;
 }
 
 /** Both views carry the same four periods, so the same fallback serves either row shape. */

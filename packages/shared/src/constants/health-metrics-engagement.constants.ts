@@ -171,6 +171,7 @@ export const HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED: HealthMetric
   rows: [],
   totalRecords: 0,
   counts: null,
+  typeCounts: [],
 };
 
 /** Inline sparkline viewBox, in px — a 60px trend cell is the design's column width. */
@@ -319,6 +320,9 @@ export const HEALTH_METRICS_ENGAGEMENT_REP_FILTERS = [
   { key: 'never', label: 'Never attended' },
   { key: 'lapsed', label: 'Lapsed' },
 ] as const;
+
+/** Shown in place of a name the view flags as an unresolved identity. */
+export const HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL = 'Unresolved identity';
 
 /**
  * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.

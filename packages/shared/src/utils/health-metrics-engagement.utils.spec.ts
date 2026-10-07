@@ -25,6 +25,7 @@ import {
 } from '../interfaces/health-metrics-engagement.interface';
 import {
   buildHealthMetricsEngagementGroupTrend,
+  buildHealthMetricsEngagementRepLabels,
   buildHealthMetricsEngagementSubNavItems,
   filterHealthMetricsEngagementOrgRows,
   filterHealthMetricsEngagementRepRows,
@@ -170,6 +171,7 @@ describe('selectHealthMetricsEngagementGroupPeriod / buildHealthMetricsEngagemen
   const row: HealthMetricsEngagementGroupRow = {
     committeeId: 'c-1',
     committeeName: 'Technical Steering Committee',
+    projectId: 'p-1',
     projectSlug: 'acme-core',
     projectName: 'Acme Core',
     groupTypeLabel: 'Technical Steering Committee',
@@ -401,6 +403,8 @@ describe('non-member participation rules', () => {
       accountId: name.toLowerCase().replace(/\s+/g, '-'),
       accountName: name,
       membershipStatus: 'Non-member',
+      firstSeenDate: '2024-02-01',
+      lastAttendedDate: '2026-08-14',
       // Oldest-first, as the server builds them from `HEALTH_METRICS_ENGAGEMENT_RANGES`.
       periods: [
         { range: 'COMPLETED_YEAR', meetingsAttended: 8, distinctPeople: 3, sortRank: sortRank === null ? null : 10 - sortRank },
@@ -445,13 +449,19 @@ describe('representatives rules', () => {
     return {
       key: `${personName}|${accountName}`.toLowerCase(),
       personName,
+      identityUnresolved: false,
+      personRole: null,
+      jobTitle: null,
       accountName,
+      membershipTier: null,
       committeeName: 'Technical Steering Committee',
       lastAttendedDate: '2026-08-14',
+      daysSinceLastAttended: 54,
+      lapsed180d: false,
       // Oldest-first, as the server builds them from `HEALTH_METRICS_ENGAGEMENT_RANGES`.
       periods: [
-        { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false },
-        { range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false },
+        { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: null },
+        { range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false, sortRank: null },
       ],
       ...overrides,
     };
@@ -482,8 +492,8 @@ describe('representatives rules', () => {
   it('drops rows that were not invited in the selected period, on every cut', () => {
     const invitedLater = repRow('Sam Rivera', 'Vendor Corp', {
       periods: [
-        { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false },
-        { range: 'YTD', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false },
+        { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: null },
+        { range: 'YTD', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false, sortRank: null },
       ],
     });
     const rows = [repRow('Dana Fields', 'Acme Motors'), invitedLater];
@@ -496,8 +506,8 @@ describe('representatives rules', () => {
   it('drops a row whose invited count is unmeasured for the selected period', () => {
     const unmeasured = repRow('Sam Rivera', 'Vendor Corp', {
       periods: [
-        { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false },
-        { range: 'YTD', meetingsInvited: null, meetingsAttended: null, neverAttended: false, lapsed: false },
+        { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: null },
+        { range: 'YTD', meetingsInvited: null, meetingsAttended: null, neverAttended: false, lapsed: false, sortRank: null },
       ],
     });
     const rows = [repRow('Dana Fields', 'Acme Motors'), unmeasured];
@@ -508,8 +518,8 @@ describe('representatives rules', () => {
   it('cuts on the selected period own flags rather than a client-side date comparison', () => {
     const lapsed = repRow('Sam Rivera', 'Vendor Corp', {
       periods: [
-        { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 1, neverAttended: false, lapsed: false },
-        { range: 'YTD', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: true },
+        { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 1, neverAttended: false, lapsed: false, sortRank: null },
+        { range: 'YTD', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: true, sortRank: null },
       ],
     });
     const rows = [repRow('Dana Fields', 'Acme Motors'), lapsed];
@@ -534,5 +544,81 @@ describe('representatives rules', () => {
     filterHealthMetricsEngagementRepRows(rows, 'all', '', 'YTD');
 
     expect(rows.map((row) => row.personName)).toEqual(['Zeta Labs', 'Alpha Works']);
+  });
+
+  // The view ranks each period on its own, so the period pill re-sorts the cut.
+  it('orders by the selected period rank, unranked last, ties by name', () => {
+    const ranked = (name: string, completedYear: number | null, ytd: number | null): HealthMetricsEngagementRepRow =>
+      repRow(name, 'Acme Motors', {
+        periods: [
+          { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 1, neverAttended: false, lapsed: false, sortRank: completedYear },
+          { range: 'YTD', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: false, sortRank: ytd },
+        ],
+      });
+    const rows = [ranked('Unranked Rep', null, null), ranked('Sam Rivera', 1, 2), ranked('Dana Fields', 2, 1), ranked('Alex Kim', 2, 1)];
+
+    expect(filterHealthMetricsEngagementRepRows(rows, 'all', '', 'YTD').map((row) => row.personName)).toEqual([
+      'Alex Kim',
+      'Dana Fields',
+      'Sam Rivera',
+      'Unranked Rep',
+    ]);
+    expect(filterHealthMetricsEngagementRepRows(rows, 'all', '', 'COMPLETED_YEAR').map((row) => row.personName)).toEqual([
+      'Sam Rivera',
+      'Alex Kim',
+      'Dana Fields',
+      'Unranked Rep',
+    ]);
+  });
+
+  // The placeholder name of an unresolved identity is not a person, so it is neither shown nor searched.
+  it('searches an unresolved identity by its label rather than its placeholder name', () => {
+    const rows = [repRow('Dana Fields', 'Acme Motors'), repRow('Placeholder', 'Vendor Corp', { identityUnresolved: true })];
+
+    expect(filterHealthMetricsEngagementRepRows(rows, 'all', 'placeholder', 'YTD')).toEqual([]);
+    expect(filterHealthMetricsEngagementRepRows(rows, 'all', 'unresolved', 'YTD').map((row) => row.accountName)).toEqual(['Vendor Corp']);
+  });
+});
+
+describe('buildHealthMetricsEngagementRepLabels', () => {
+  const base: HealthMetricsEngagementRepRow = {
+    key: 'rep-1',
+    personName: 'Dana Fields',
+    identityUnresolved: false,
+    personRole: 'Voting Rep',
+    jobTitle: 'Engineer',
+    accountName: 'Acme Motors',
+    membershipTier: 'Gold',
+    committeeName: 'Governing Board',
+    lastAttendedDate: '2026-08-14',
+    daysSinceLastAttended: 12,
+    lapsed180d: false,
+    periods: [],
+  };
+
+  it('joins role with title and organization with tier', () => {
+    expect(buildHealthMetricsEngagementRepLabels(base)).toEqual({
+      displayName: 'Dana Fields',
+      roleLabel: 'Voting Rep · Engineer',
+      orgLabel: 'Acme Motors · Gold',
+      daysAgoLabel: '12 days ago',
+      lastAttendedLabel: 'Aug 14, 2026',
+    });
+  });
+
+  it('drops the missing pieces rather than printing them, and renders an unresolved identity as such', () => {
+    const labels = buildHealthMetricsEngagementRepLabels({
+      ...base,
+      identityUnresolved: true,
+      personRole: null,
+      jobTitle: ' ',
+      accountName: '',
+      membershipTier: null,
+      lastAttendedDate: null,
+      daysSinceLastAttended: 1,
+    });
+
+    expect(labels).toEqual({ displayName: 'Unresolved identity', roleLabel: null, orgLabel: '—', daysAgoLabel: '1 day ago', lastAttendedLabel: '—' });
+    expect(buildHealthMetricsEngagementRepLabels({ ...base, daysSinceLastAttended: null }).daysAgoLabel).toBeNull();
   });
 });
