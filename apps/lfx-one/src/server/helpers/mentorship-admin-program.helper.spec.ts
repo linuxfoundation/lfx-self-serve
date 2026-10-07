@@ -97,7 +97,6 @@ describe('mapMentorshipAdminHeaderProgram', () => {
   });
 
   it.each([
-    ['draft', 'pending-review'],
     ['submitted', 'pending-review'],
     ['pending', 'pending-review'],
     ['rejected', 'rejected'],

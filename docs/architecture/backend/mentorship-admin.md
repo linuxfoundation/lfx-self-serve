@@ -146,32 +146,34 @@ Create, edit, close, re-open and delete a term, each behind `blockDuringImperson
 
 ### Status mapping
 
+A program's status is one of `pending`, `published`, `rejected` or `hidden`. Create leaves it `pending`; from there it moves to `published`, `rejected` or `hidden`, and a `published` program can later be `hidden`. There is no submit step.
+
 Upstream works out `admin_status` from the program status and its terms. The BFF renames it (`_` to `-`):
 
 | Upstream `admin_status` | Shown as       | Upstream program status                         |
 | ----------------------- | -------------- | ----------------------------------------------- |
-| `pending_review`        | Pending Review | `draft`, `submitted`                            |
+| `pending_review`        | Pending Review | `pending`                                       |
 | `open`                  | Open           | `published` with an open term, or with no terms |
 | `completed`             | Completed      | `published` with only closed terms              |
 | `rejected`              | Rejected       | `rejected`                                      |
-| `hidden`                | Hidden         | `archived`, `hidden`                            |
+| `hidden`                | Hidden         | `hidden`                                        |
 
-An unrecognised `admin_status` is shown as Pending Review and logged (program id and value only).
+An unrecognised `admin_status` is shown as Pending Review and logged (program id and value only). The program header reads the program status itself (`MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS`), and it still maps `submitted` to Pending Review and `archived` to Hidden, because upstream's program status enum still holds both.
 
 ## Program create and logo upload
 
 Two writes behind the Enroll wizard, each behind `blockDuringImpersonation` and with the caller's bearer token through `proxyMentorshipRequest`, so a first-time caller is provisioned and retried.
 
 - `POST /api/mentorship/admin/programs` takes `MentorshipEnrollCreateRequest` (camelCase) and answers 201 with `{ id, slug, status }`. `parseMentorshipEnrollCreateRequest` in `mentorship-enroll.helper.ts` rebuilds the body from known keys only and answers 400 on the failing field: a UUID `projectId`, non-empty `projectSlug`, `projectName`, `name`, `description` and `repositoryUrl`, a non-empty `skills` list, 1–`MENTORSHIP_MAX_OPEN_TERMS` terms with five date and name fields, a `prerequisites` list whose `required` and `requireFile` are booleans when sent (left out means `false`) and whose `description` and `dueDate` are text when sent (left out or `null` means empty), and `termsAccepted: true`. A prerequisite's `required` means the admin picked it; upstream saves only picked ones. The dates are date-only `YYYY-MM-DD` and go upstream as sent: the wizard sends a term's `endDate` as the last day of its end month and folds a coding challenge's URL into the prerequisite description, since upstream has no field for it. A field inside a list is named by its index (`terms[1].startDate`, `prerequisites[0].name`). Every text field but a prerequisite description is trimmed, and the optional ones are kept only when not blank. The optional `industry` holds the wizard's Technologies as one string joined with a comma and a space; upstream keeps it apart from `skills`. `logo_url`, `logoUrl`, `status`, a term `id` and `logoFileName` are never forwarded.
-- Upstream `POST /mentorship/v1/programs` leaves the program `pending`, which is "in review". There is no submit route and no publish call, so creating the program is what sends it to review. `slug` falls back to the id when upstream returns none.
+- Upstream `POST /mentorship/v1/programs` leaves the program `pending`, which is "in review". There is no submit route and no publish call, so creating the program is what sends it to review; a reviewer then publishes, rejects or hides it. `slug` falls back to the id when upstream returns none.
 - `POST /api/mentorship/admin/programs/:programId/logo` takes the raw file as the body with `Content-Type: image/png` or `image/jpeg` (`MENTORSHIP_ENROLL_LOGO_MIME_TYPES`) and answers 201 with `{ logoUrl }`, upstream's `public_url`. The BFF forwards the buffer and its content type to `POST /mentorship/v1/programs/{id}/logo-upload`. The wizard calls it after create, with the new program id, and then keeps the returned URL.
 - `express.raw` runs on this route only, limited to `MENTORSHIP_ENROLL_LOGO_MAX_BYTES`. A larger body is a 413 (`PAYLOAD_TOO_LARGE`), converted from the parser's `entity.too.large` before the error handler flattens it to a 500. `express.raw` skips a type that is not on the list, so the controller answers 415 (`UNSUPPORTED_MEDIA_TYPE`) for it first and 400 on the `logo` field for an empty body.
 - Logs carry the program id, status, term count, size in bytes and content type only, never a name, description, URL or file name.
-- **Known gaps.** A dev environment without object storage answers the logo upload with a 503. A user who has just created a program can get a 403 on the upload until the permission grant lands; the app service's `uploadProgramLogo` retries that 403 up to 3 times, after 1, 2 and 4 seconds (see [Wizard submit flow](#wizard-submit-flow)). The create call is never retried. Upstream stores the date-only term dates at 00:00 UTC, refuses a term whose application window is a single day (application end must fall strictly after application start, and before the term starts), and drops any prerequisite sent with `required: false` without an error; the BFF passes all three through unchecked, so the wizard has to match them. The wizard's setup step refuses those two application windows; the program-detail Terms tab edits through a separate BFF route and keeps its own date rules.
+- **Known gaps.** A dev environment without object storage answers the logo upload with a 503. A user who has just created a program can get a 403 on the upload until the permission grant lands; the app service's `uploadProgramLogo` retries that 403 up to 3 times, after 1, 2 and 4 seconds (see [Wizard create flow](#wizard-create-flow)). The create call is never retried. Upstream stores the date-only term dates at 00:00 UTC, refuses a term whose application window is a single day (application end must fall strictly after application start, and before the term starts), and drops any prerequisite sent with `required: false` without an error; the BFF passes all three through unchecked, so the wizard has to match them. The wizard's setup step refuses those two application windows; the program-detail Terms tab edits through a separate BFF route and keeps its own date rules.
 
-## Wizard submit flow
+## Wizard create flow
 
-`EnrollProgramComponent` sends the two writes above in order: create, then the logo. There is no submit step, so a created program is already in review.
+`EnrollProgramComponent` sends the two writes above in order: create, then the logo. There is no submit step, so a created program is already `pending` (in review). The wizard's `submitPhase` tracks those two requests only; it is not a program status.
 
 - **Request mapping.** `toMentorshipEnrollCreateRequest` (`@lfx-one/shared/utils`) builds the body from the form and the picked `MentorshipLfProject`. It trims text, leaves out empty optional fields, de-duplicates Technologies and Skills, sets a term's `endDate` to the last day of its end month, and appends a coding challenge's URL to its prerequisite description as `Challenge: <url>`.
 
