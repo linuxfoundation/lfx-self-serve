@@ -11,7 +11,7 @@ import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { Observable, of, Subject, throwError } from 'rxjs';
+import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProgramDetailComponent } from './program-detail.component';
@@ -53,10 +53,12 @@ describe('ProgramDetailComponent', () => {
   let fixture: ComponentFixture<ProgramDetailComponent>;
   let getProgram: ReturnType<typeof vi.fn<(programId: string) => Observable<MentorshipAdminProgramPage>>>;
   let getProgramMentees: ReturnType<typeof vi.fn>;
+  let routeParams: BehaviorSubject<Map<string, string>>;
 
   const buildWith = (options: { page?: Observable<MentorshipAdminProgramPage> } = {}): void => {
     getProgram = vi.fn().mockReturnValue(options.page ?? of(programPage()));
     getProgramMentees = vi.fn().mockReturnValue(of(menteesPage()));
+    routeParams = new BehaviorSubject(new Map([['programId', 'mp_example_fall26']]));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -81,7 +83,7 @@ describe('ProgramDetailComponent', () => {
           // The Mentors tab loads its invite picker on construction, and the counts refresh test renders that tab.
           useValue: { getInvitableUsers: () => of(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE) },
         },
-        { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_example_fall26']]) as never) } },
+        { provide: ActivatedRoute, useValue: { paramMap: routeParams as never } },
       ],
     });
 
@@ -99,7 +101,7 @@ describe('ProgramDetailComponent', () => {
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const showTab = (tab: string): void => {
-    fixture.componentInstance['activeTab'].set(tab as never);
+    fixture.componentInstance['onTabChange'](tab as never);
     settle();
   };
   const tabText = (value: string): string =>
@@ -199,6 +201,61 @@ describe('ProgramDetailComponent', () => {
 
       expect(tabText('current-mentees')).toBe('Current Mentees 1');
     });
+  });
+
+  describe('with a pending program', () => {
+    const pendingPage = (): MentorshipAdminProgramPage => {
+      const page = programPage();
+      page.program.status = 'pending-review';
+      return page;
+    };
+
+    beforeEach(() => buildWith({ page: of(pendingPage()) }));
+
+    it('shows the Terms tab only and opens on it, reading no mentees', () => {
+      expect(tabText('terms')).toBe('Terms 1');
+      expect(element().querySelectorAll('[role="tab"]')).toHaveLength(1);
+      expect(element().querySelector('[data-testid="mentorship-current-mentees-tab"]')).toBeNull();
+      expect(element().querySelector('[role="tabpanel"]')?.id).toBe('mentorship-program-detail-tab-panel-terms');
+      expect(getProgramMentees).not.toHaveBeenCalled();
+    });
+
+    it('shows all four tabs once a refresh reads the program as published, staying on Terms', () => {
+      getProgram.mockReturnValue(of(programPage()));
+
+      fixture.componentInstance['refreshCounts']();
+      settle();
+
+      expect(element().querySelectorAll('[role="tab"]')).toHaveLength(4);
+      expect(fixture.componentInstance['activeTab']()).toBe('terms');
+    });
+  });
+
+  it('opens another program on its own first tab when the route reuses the page', () => {
+    buildWith({ page: of({ ...programPage(), program: { ...programPage().program, status: 'pending-review' } }) });
+    expect(fixture.componentInstance['activeTab']()).toBe('terms');
+    getProgram.mockReturnValue(of({ ...programPage(), program: { ...programPage().program, id: 'mp_other' } }));
+
+    routeParams.next(new Map([['programId', 'mp_other']]));
+    settle();
+
+    expect(getProgram).toHaveBeenLastCalledWith('mp_other');
+    expect(fixture.componentInstance['activeTab']()).toBe('current-mentees');
+    expect(element().querySelector('[data-testid="mentorship-current-mentees-tab"]')).not.toBeNull();
+  });
+
+  it('falls back to the first tab when a refresh hides the open one', () => {
+    build();
+    showTab('mentors');
+    const pending = programPage();
+    pending.program.status = 'pending-review';
+    getProgram.mockReturnValue(of(pending));
+
+    fixture.componentInstance['refreshCounts']();
+    settle();
+
+    expect(fixture.componentInstance['activeTab']()).toBe('terms');
+    expect(element().querySelector('[data-testid="mentorship-mentors-tab"]')).toBeNull();
   });
 
   describe('when the page cannot be shown', () => {

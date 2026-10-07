@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MentorshipProgram, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
+import { MentorshipProgram, MentorshipProgramDetailTab, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { ProgramDetailHeaderComponent } from './program-detail-header.component';
@@ -23,11 +23,11 @@ describe('ProgramDetailHeaderComponent — tabs', () => {
 
   let fixture: ComponentFixture<ProgramDetailHeaderComponent>;
 
-  const render = (status: MentorshipProgramStatus): void => {
+  const render = (status: MentorshipProgramStatus, activeTab: MentorshipProgramDetailTab = 'current-mentees'): void => {
     fixture = TestBed.createComponent(ProgramDetailHeaderComponent);
     fixture.componentRef.setInput('program', program(status));
     fixture.componentRef.setInput('tabCounts', { currentMentees: 4, pastMentees: 7, mentors: 2, terms: 3 });
-    fixture.componentRef.setInput('activeTab', 'current-mentees');
+    fixture.componentRef.setInput('activeTab', activeTab);
     fixture.detectChanges();
   };
 
@@ -61,6 +61,36 @@ describe('ProgramDetailHeaderComponent — tabs', () => {
     expect(tabText('current-mentees')).toBe('Current Mentees –');
     expect(tabText('past-mentees')).toBe('Past Mentees 7');
     expect(tabText('mentors')).toBe('Mentors –');
+  });
+
+  const tabValues = (): (string | null)[] =>
+    Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('[role="tab"]')).map(
+      (tab) => tab.getAttribute('data-testid')?.replace('mentorship-program-detail-tab-', '') ?? null
+    );
+
+  it('shows a pending program the Terms tab only, with its count', () => {
+    render('pending-review', 'terms');
+
+    expect(tabValues()).toEqual(['terms']);
+    expect(tabText('terms')).toBe('Terms 3');
+  });
+
+  it.each(['open', 'completed', 'rejected', 'hidden'] as const)('shows a %s program all four tabs', (status) => {
+    render(status);
+
+    expect(tabValues()).toEqual(['current-mentees', 'past-mentees', 'mentors', 'terms']);
+  });
+
+  it.each(['ArrowRight', 'ArrowLeft', 'Home', 'End'])('keeps a pending program on Terms on %s', (key) => {
+    render('pending-review', 'terms');
+    const emitted: MentorshipProgramDetailTab[] = [];
+    fixture.componentInstance.tabChange.subscribe((tab) => emitted.push(tab));
+
+    (fixture.nativeElement as HTMLElement)
+      .querySelector('[data-testid="mentorship-program-detail-tabs"]')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+
+    expect(emitted).toEqual(['terms']);
   });
 
   it('keeps the same labels once the program is completed', () => {

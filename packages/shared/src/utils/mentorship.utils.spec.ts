@@ -84,6 +84,7 @@ import {
   formatMentorshipDateRange,
   formatMentorshipMonthYear,
   getMentorshipMenteeTaskStatusOptions,
+  getMentorshipProgramDetailTabs,
   isMentorshipMenteeUpdatableTaskStatus,
   isMentorshipMentorTaskReviewDecision,
   mentorshipMenteeTaskStatusFields,
@@ -819,6 +820,16 @@ describe('buildMentorshipProgramsUrl', () => {
   it("links one program's page, URL-encoding its id", () => {
     expect(buildMentorshipProgramsUrl('https://mentorship.example.org/', 'prog_gridflow')).toBe('https://mentorship.example.org/programs/prog_gridflow');
     expect(buildMentorshipProgramsUrl('https://mentorship.example.org', 'prog/with space')).toBe('https://mentorship.example.org/programs/prog%2Fwith%20space');
+  });
+});
+
+describe('getMentorshipProgramDetailTabs', () => {
+  it('shows a pending program the Terms tab only', () => {
+    expect(getMentorshipProgramDetailTabs('pending-review').map((tab) => tab.value)).toEqual(['terms']);
+  });
+
+  it.each(['open', 'completed', 'rejected', 'hidden'] as const)('shows a %s program all four tabs in order', (status) => {
+    expect(getMentorshipProgramDetailTabs(status).map((tab) => tab.value)).toEqual(['current-mentees', 'past-mentees', 'mentors', 'terms']);
   });
 });
 

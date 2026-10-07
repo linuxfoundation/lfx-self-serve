@@ -68,6 +68,7 @@ import {
   MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_TASK_STATUS_LABELS,
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
+  MENTORSHIP_PROGRAM_DETAIL_TABS,
   MENTORSHIP_REGISTER_ERROR_CONFLICT,
   MENTORSHIP_REGISTER_ERROR_FALLBACK,
   MENTORSHIP_REGISTER_ERROR_READ_ONLY,
@@ -100,7 +101,13 @@ import type {
   MentorshipTaskFormValue,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
-import type { MentorshipAdminTaskUpdate, MentorshipProgramMentor, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
+import type {
+  MentorshipAdminTaskUpdate,
+  MentorshipProgramDetailTabDefinition,
+  MentorshipProgramMentor,
+  MentorshipProgramStatus,
+  MentorshipProgramTermRow,
+} from '../interfaces/mentorship-admin.interface';
 import type {
   MentorshipMentorProfileDetails,
   MentorshipMentorProfileFieldErrors,
@@ -216,6 +223,11 @@ export function buildMentorshipProgramsUrl(base: string, programId?: string): st
   while (end > 0 && base[end - 1] === '/') end--;
   const programs = `${base.slice(0, end)}/programs`;
   return programId ? `${programs}/${encodeURIComponent(programId)}` : programs;
+}
+
+/** The admin program-detail tabs a program shows: a pending program has no mentees or mentors yet, so only Terms. */
+export function getMentorshipProgramDetailTabs(status: MentorshipProgramStatus): readonly MentorshipProgramDetailTabDefinition[] {
+  return status === 'pending-review' ? MENTORSHIP_PROGRAM_DETAIL_TABS.filter((tab) => tab.value === 'terms') : MENTORSHIP_PROGRAM_DETAIL_TABS;
 }
 
 export function isMentorshipLogoFileName(fileName: string): boolean {
