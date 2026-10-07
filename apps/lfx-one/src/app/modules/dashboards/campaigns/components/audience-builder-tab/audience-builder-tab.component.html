@@ -610,6 +610,9 @@
             }
           </button>
           <p class="mt-2 text-xs text-gray-500">This creates real contact lists in HubSpot. Review the selection above before continuing.</p>
+          @if (listLimitMessage(); as limit) {
+            <p class="mt-1 text-xs text-amber-700" data-testid="campaigns-audience-compose-limit">{{ limit }}</p>
+          }
           <!-- The selected lists need no master: a HubSpot email takes several include lists, so the
                email can send to them as they are, with the exclusions above, and nothing new is
                created in HubSpot. -->

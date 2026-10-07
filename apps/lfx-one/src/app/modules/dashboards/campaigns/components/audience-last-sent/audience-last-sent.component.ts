@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { AUDIENCE_ATTACH_MAX_LIST_IDS } from '@lfx-one/shared/constants';
 import { DatePipe } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
 
@@ -279,6 +280,11 @@ export class AudienceLastSentComponent {
     }
     if (email.suppressionLists.some((list) => list.missing)) {
       return 'A suppression list this send used no longer resolves. Copy the selection and review suppression instead.';
+    }
+    // The BFF refuses more than AUDIENCE_ATTACH_MAX_LIST_IDS ids per array, while campaign-service
+    // can record a send with up to 200 include lists; reusing such a send always ended in a 400.
+    if (usable.length > AUDIENCE_ATTACH_MAX_LIST_IDS || email.suppressionLists.length > AUDIENCE_ATTACH_MAX_LIST_IDS) {
+      return `This send used more than ${AUDIENCE_ATTACH_MAX_LIST_IDS} lists, more than one attach can carry. Copy the selection and narrow it instead.`;
     }
     return null;
   }

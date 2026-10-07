@@ -742,6 +742,44 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-use-direct-limit"]')).not.toBeNull();
     });
 
+    it('does not offer compose past the BFF cap on selected or excluded lists, and says why', async () => {
+      // The over-cap copy used to steer the operator into compose, which the BFF refused the same way
+      // and `composeAttempted` then locked until reload.
+      await renderWithDiscovery({ briefId: 'brief-1' });
+      const tab = fixture.componentInstance as unknown as {
+        inclusion: { set: (m: ReadonlyMap<string, string>) => void };
+        exclusion: { set: (m: ReadonlyMap<string, string>) => void };
+        canCompose: () => boolean;
+      };
+      const many = (from: number): ReadonlyMap<string, string> =>
+        new Map(Array.from({ length: AUDIENCE_ATTACH_MAX_LIST_IDS + 1 }, (_, i) => [String(from + i), `List ${i}`] as [string, string]));
+
+      tab.inclusion.set(many(3000));
+      fixture.detectChanges();
+      expect(tab.canCompose(), 'compose offered for a selection the BFF refuses').toBe(false);
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-limit"]')?.textContent).toContain(
+        `Select at most ${AUDIENCE_ATTACH_MAX_LIST_IDS} lists`
+      );
+
+      tab.inclusion.set(new Map([['101', 'One list']]));
+      tab.exclusion.set(many(4000));
+      fixture.detectChanges();
+      expect(tab.canCompose(), 'compose offered with more exclusions than the BFF accepts').toBe(false);
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-limit"]')?.textContent).toContain(
+        `Exclude at most ${AUDIENCE_ATTACH_MAX_LIST_IDS} lists`
+      );
+    });
+
+    it("shows the parent's conflict-specific recovery for a failed save instead of the generic copy", async () => {
+      await render({ briefId: '' });
+      fixture.componentRef.setInput('briefState', 'failed');
+      fixture.componentRef.setInput('briefSaveMessage', 'This plan was changed in another session. Reload it first, so no lists can be attached yet.');
+      fixture.detectChanges();
+      const tab = fixture.componentInstance as unknown as { briefStateMessage: () => string };
+
+      expect(tab.briefStateMessage()).toContain('changed in another session');
+    });
+
     it('keeps a direct-use summary within the BFF length cap', async () => {
       await renderWithDiscovery({ briefId: 'brief-1' });
       const tab = fixture.componentInstance as unknown as {

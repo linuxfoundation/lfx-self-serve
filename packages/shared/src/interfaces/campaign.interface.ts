@@ -3553,17 +3553,29 @@ export interface AudienceComposeMasterPartial {
  * Nothing is created in HubSpot. Upstream reads every id back from the project's portal before
  * recording it, so a mistyped or foreign id is a 404 rather than a send that fails at dispatch.
  */
-export interface AudienceAttachExistingRequest {
+export type AudienceAttachExistingRequest = AudienceAttachExistingRequestBase &
+  (
+    | {
+        /** A single include list the send goes to. */
+        masterListId: string;
+        includeListIds?: never;
+      }
+    | {
+        /** Several existing include lists the send goes to directly — no master list is composed. */
+        includeListIds: string[];
+        masterListId?: never;
+      }
+  );
+
+/**
+ * The fields every attach carries. The BFF refuses a request with both include forms or neither,
+ * and one with no suppression list, so the type states the same contract: exactly one of
+ * `masterListId` / `includeListIds`, and `suppressionListIds` always present.
+ */
+export interface AudienceAttachExistingRequestBase {
   briefId: string;
-  /** A single include list the send goes to. Exactly one of this or `includeListIds` is sent. */
-  masterListId?: string;
-  /**
-   * Several existing include lists the send goes to directly — no master list is composed.
-   * Exactly one of this or `masterListId` is sent.
-   */
-  includeListIds?: string[];
-  /** Existing lists the send suppresses. */
-  suppressionListIds?: string[];
+  /** Existing lists the send suppresses. At least one: every send keeps a suppression list. */
+  suppressionListIds: string[];
   /** Human-readable note recorded on the audience row; upstream derives one when omitted. */
   inclusionSummary?: string;
 }

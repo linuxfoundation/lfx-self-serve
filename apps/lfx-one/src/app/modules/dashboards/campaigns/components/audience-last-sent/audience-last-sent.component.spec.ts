@@ -230,6 +230,16 @@ describe('AudienceLastSentComponent', () => {
       expect(host().textContent ?? '').toContain('Same lists used for this email');
     });
 
+    it('blocks reusing a send with more include lists than one attach can carry', () => {
+      // campaign-service can record up to 200 include lists; the BFF refuses more than 50 per array.
+      const lists = Array.from({ length: 51 }, (_, i) => brief({ listId: String(600 + i), name: `List ${i}` }));
+      render({ emails: [email({ includedLists: lists })], canAttach: true });
+
+      const button = host().querySelector<HTMLButtonElement>('[data-testid="audience-last-sent-use-' + email({}).emailId + '"]');
+      expect(button?.disabled).toBe(true);
+      expect(host().textContent ?? '').toContain('more than one attach can carry');
+    });
+
     it('stops marking a send attached once a new exclusion is ticked, so it can be recorded', () => {
       // A recorded set that merely CONTAINED the send's own suppressions kept "Use these lists"
       // disabled after the step-3 ticks changed, with no way to record the new exclusion.

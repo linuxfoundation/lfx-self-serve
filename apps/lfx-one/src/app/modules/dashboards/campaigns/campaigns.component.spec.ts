@@ -3143,6 +3143,40 @@ describe('CampaignsComponent — email delivery channel', () => {
     // persist is still current by its own generation while its caller has already returned early
     // and rendered NO banner. Promoting there would hand out overwrite permission for a refusal
     // the operator was never shown.
+    it('shows a warm-up conflict on the Audience tab and grants its overwrite only on Retry', async () => {
+      // A conflict carrying an id used to read as "unapproved": no Retry, and the conflict message
+      // whose render grants the overwrite never appeared, so proceeding repeated the conflict.
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+      persist.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: '"1"', approved: true }));
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+      await internals().onGenerateEmailCopy();
+
+      persist.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null, approved: false, conflict: 'stale-brief' }));
+      internals().emailBriefId.set('');
+      const warm = internals() as unknown as { warmEmailBriefId(): void; emailBriefSaveMessage: () => string; onRetryEmailBrief(): void };
+      warm.warmEmailBriefId();
+      await fixture.whenStable();
+
+      expect((internals() as unknown as { emailBriefState: () => string }).emailBriefState()).toBe('failed');
+      expect(warm.emailBriefSaveMessage(), 'the conflict recovery never reached the Audience tab').not.toBe('');
+
+      // Not granted by the warm-up alone: the next save still addresses the row with its validator.
+      persist.mockClear();
+      persist.mockReturnValue(NEVER);
+      warm.onRetryEmailBrief();
+      await fixture.whenStable();
+
+      expect(persist, 'Retry after the shown conflict did not carry the overwrite').toHaveBeenLastCalledWith(
+        emailBrief,
+        expect.anything(),
+        'brief-77',
+        null,
+        true
+      );
+    });
+
     it('withholds the overwrite until the conflict warning is actually rendered', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
@@ -4274,6 +4308,10 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(outcome('', 'unowned-brief-exists')).toBe('unopened');
       expect(outcome('', undefined)).toBe('failed');
       expect(outcome('brief-9', undefined)).toBe('unapproved');
+      // A conflict carrying an id is still a failed save with its own recovery, not "unapproved".
+      for (const conflict of ['stale-brief', 'unverified-validator', 'superseded-after-write']) {
+        expect(outcome('brief-9', conflict), `${conflict} with an id read as unapproved`).toBe('failed');
+      }
 
       // A brief id wins over any recorded outcome: the plan is saved and approved.
       internals().emailBriefId.set('brief-77');

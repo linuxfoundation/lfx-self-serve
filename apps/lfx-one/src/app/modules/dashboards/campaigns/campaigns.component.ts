@@ -1151,6 +1151,8 @@ export class CampaignsComponent {
    * `'failed'` or `'unopened'`.
    */
   private readonly emailBriefSaveOutcome = signal<AudienceBriefState>('none');
+  /** The conflict-specific recovery for a failed warm-up save, shown by the Audience tab; '' otherwise. */
+  protected readonly emailBriefSaveMessage = signal('');
   /**
    * Why the Audience tab has (or has no) brief to attach to. An empty `emailBriefId` used to read
    * as "save the plan first" in every case, though the tab saves it itself on open -- so the real
@@ -2721,6 +2723,13 @@ export class CampaignsComponent {
 
   /** The Audience tab asked to retry the brief save. It offers Retry only after a failed save. */
   protected onRetryEmailBrief(): void {
+    // The Audience tab showed this conflict's recovery (`emailBriefSaveMessage`) beside the Retry
+    // being clicked, so the overwrite that message promises is granted now -- through the one
+    // function that pairs a promotion with its warning -- and the retry can actually succeed rather
+    // than repeat the same conflict.
+    if (this.emailBriefSaveMessage() !== '') {
+      this.emailSaveFailureMessage('');
+    }
     this.warmEmailBriefId();
   }
 
@@ -2891,6 +2900,7 @@ export class CampaignsComponent {
       this.emailAudienceReadUnavailable.set(false);
       this.emailBriefResolving.set(false);
       this.emailBriefSaveOutcome.set('none');
+      this.emailBriefSaveMessage.set('');
       this.emailAudienceReadBriefId = '';
       this.emailAudienceScope.update((n) => n + 1);
       this.emailAudienceGeneration++;
@@ -3733,6 +3743,7 @@ export class CampaignsComponent {
       .catch(() => {
         if (scope === this.emailAudienceScope()) {
           this.emailBriefSaveOutcome.set('failed');
+          this.emailBriefSaveMessage.set('');
         }
       })
       .finally(() => {
@@ -4638,16 +4649,25 @@ export class CampaignsComponent {
     if (pending !== null && pending.generation === this.emailBriefPersistGeneration && pending.conflict === conflict) {
       this.rememberBriefId(pending.key, { id: pending.id, etag: null, absence: 'overwrite' });
     }
+    return this.emailConflictText(conflict, consequence);
+  }
+
+  /**
+   * The conflict's message plus the consequence, with NO side effect. `emailSaveFailureMessage`
+   * renders through it after granting the staged overwrite; the Audience tab's brief banner uses it
+   * directly, because nothing has shown the warning at the point that text is recorded.
+   */
+  private emailConflictText(conflict: NonNullable<CampaignBriefPersistResult['conflict']>, consequence: string): string {
     // Capitalised, because the conflict message is a COMPLETE sentence ending in a period while
     // each consequence is a lowercase clause written to follow a comma. Joining them raw produced
     // "...re-enter the event URL to open it. so no audience was built."
-    const [first, ...rest] = consequence;
+    const [first = '', ...rest] = consequence;
     // The re-select step is appended HERE rather than in `conflictMessages`, which the paid
     // surface shares: a reload resets `selectedEmailTypeId` to the default, so under a non-default
     // stage re-entering the URL finds nothing until the operator picks the type back. That advice
     // is meaningless on paid, which has no type selector.
     const reselect = conflict === 'unowned-brief-exists' ? ' Re-select this email type first.' : '';
-    return `${this.conflictMessages[conflict]}${reselect} ${first.toUpperCase()}${rest.join('')}`;
+    return `${this.conflictMessages[conflict]}${reselect} ${first.toUpperCase()}${rest.join('')}`.trimEnd();
   }
 
   /**
@@ -4657,10 +4677,18 @@ export class CampaignsComponent {
    * same save is refused again for as long as the page has not loaded the existing row.
    */
   private emailBriefOutcome(briefId: string, conflict: CampaignBriefPersistResult['conflict']): AudienceBriefState {
-    if (briefId !== '') {
-      return 'unapproved';
+    if (conflict === 'unowned-brief-exists') {
+      return 'unopened';
     }
-    return conflict === 'unowned-brief-exists' ? 'unopened' : 'failed';
+    // A conflict is NOT "saved but unapproved" even when it carries an id: `stale-brief`,
+    // `unverified-validator` and `superseded-after-write` can return one with `approved: false`.
+    // Reading those as unapproved sent the operator to the Plan tab, and never surfaced the conflict
+    // message whose render is what grants the overwrite the retry needs -- so proceeding again hit
+    // the same conflict indefinitely.
+    if (conflict !== undefined) {
+      return 'failed';
+    }
+    return briefId !== '' ? 'unapproved' : 'failed';
   }
 
   /** The persist itself, wrapped by `ensureEmailBriefId`'s in-flight dedup. */
@@ -4766,6 +4794,7 @@ export class CampaignsComponent {
       }
       this.emailBriefConflict = null;
       this.emailBriefSaveOutcome.set('none');
+      this.emailBriefSaveMessage.set('');
       this.emailBriefId.set(briefId);
       // Re-read the brief's audience whenever an id lands with none known. A reset (re-proceeding
       // from Plan) clears `emailAudience` while this resolves the SAME brief through the ownership
@@ -4796,6 +4825,15 @@ export class CampaignsComponent {
     // failed save -- both return ''. Generation-guarded like every other write on this path.
     if (generation === this.emailBriefPersistGeneration) {
       this.emailBriefSaveOutcome.set(this.emailBriefOutcome(briefId, persisted.conflict));
+      // The conflict's own recovery, rendered on the Audience tab. Text only: the staged overwrite
+      // is NOT granted here, because nothing has shown the warning yet. `onRetryEmailBrief` grants
+      // it, from the Retry the operator clicks beside this message. `unowned-brief-exists` has its
+      // own fixed copy on the tab.
+      this.emailBriefSaveMessage.set(
+        persisted.conflict !== undefined && persisted.conflict !== 'unowned-brief-exists'
+          ? this.emailConflictText(persisted.conflict, 'so no lists can be attached yet. Use Retry at the top of this tab.')
+          : ''
+      );
     }
     return '';
   }
@@ -5252,6 +5290,7 @@ export class CampaignsComponent {
     this.emailAudienceReadUnavailable.set(false);
     this.emailBriefResolving.set(false);
     this.emailBriefSaveOutcome.set('none');
+    this.emailBriefSaveMessage.set('');
     this.emailAudienceReadBriefId = '';
     this.emailAudienceScope.update((n) => n + 1);
     this.emailCopy.set(null);

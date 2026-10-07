@@ -148,6 +148,8 @@ export class AudienceBuilderTabComponent {
    * had already done, with no way to recover.
    */
   public readonly briefState = input<AudienceBriefState>('none');
+  /** The parent's conflict-specific recovery for a failed save; replaces the generic failure copy. */
+  public readonly briefSaveMessage = input('');
 
   // === Outputs ===
   /**
@@ -857,20 +859,30 @@ export class AudienceBuilderTabComponent {
    * exclusions this attach records are the ones ticked from that fetch, so attaching while it is in
    * flight or failed records a send with no GDPR/CASL suppression.
    */
-  protected readonly canUseSelectionDirectly = computed(
-    () => this.canUseExistingMaster() && this.inclusion().size > 0 && this.inclusion().size <= AUDIENCE_ATTACH_MAX_LIST_IDS
-  );
+  protected readonly canUseSelectionDirectly = computed(() => this.canUseExistingMaster() && this.inclusion().size > 0 && this.listLimitMessage() === '');
 
   /**
    * Why direct use is off when the only obstacle is the selection's size; '' otherwise. The BFF
    * refuses more than AUDIENCE_ATTACH_MAX_LIST_IDS include ids, so offering the action past that
    * only produced a failed attach.
    */
-  protected readonly directUseLimitMessage = computed(() =>
-    this.inclusion().size > AUDIENCE_ATTACH_MAX_LIST_IDS
-      ? `Select at most ${AUDIENCE_ATTACH_MAX_LIST_IDS} lists to send to directly, or compose a master list from them.`
-      : ''
-  );
+  protected readonly directUseLimitMessage = computed(() => this.listLimitMessage());
+
+  /**
+   * Why a compose or a direct attach of the current selection would be refused by the BFF's
+   * per-request cap: more than AUDIENCE_ATTACH_MAX_LIST_IDS lists selected, or excluded. '' when
+   * within it. Both actions send these arrays, so both are gated on it; telling the operator to
+   * compose instead steered them into a compose that failed the same way and then locked.
+   */
+  protected readonly listLimitMessage = computed(() => {
+    if (this.inclusion().size > AUDIENCE_ATTACH_MAX_LIST_IDS) {
+      return `Select at most ${AUDIENCE_ATTACH_MAX_LIST_IDS} lists. One request can carry at most ${AUDIENCE_ATTACH_MAX_LIST_IDS}.`;
+    }
+    if (this.excludeIds().length > AUDIENCE_ATTACH_MAX_LIST_IDS) {
+      return `Exclude at most ${AUDIENCE_ATTACH_MAX_LIST_IDS} lists. One request can carry at most ${AUDIENCE_ATTACH_MAX_LIST_IDS}.`;
+    }
+    return '';
+  });
 
   /**
    * Why "Use for this email" cannot run, in the operator's terms. Empty when it can.
@@ -911,7 +923,9 @@ export class AudienceBuilderTabComponent {
       case 'unopened':
         return 'This email already has a saved plan from an earlier session that was not opened here, so it was not saved over. Open it from the Plan tab: pick this email type, then re-enter the event URL to restore it. Lists can be attached once it is loaded.';
       case 'failed':
-        return 'Saving the plan for this email failed, so there is nothing to attach lists to yet. Use Retry at the top of this tab.';
+        return (
+          this.briefSaveMessage() || 'Saving the plan for this email failed, so there is nothing to attach lists to yet. Use Retry at the top of this tab.'
+        );
       default:
         return 'This email has no saved plan yet. Fill in the Plan tab and continue to save it, then come back to attach lists.';
     }
@@ -956,6 +970,8 @@ export class AudienceBuilderTabComponent {
       this.conflictingIds().length === 0 &&
       // At least one suppression list, always. See `suppressionMissing`.
       !this.suppressionMissing() &&
+      // Within the BFF's per-request cap, or the compose is refused and then locks. See `listLimitMessage`.
+      this.listLimitMessage() === '' &&
       this.inclusion().size > 0
   );
 
@@ -1679,18 +1695,13 @@ export class AudienceBuilderTabComponent {
       return;
     }
     const run = this.runGeneration;
-    const target: Pick<AudienceAttachExistingRequest, 'masterListId' | 'includeListIds'> =
-      includes.length === 1 ? { masterListId: includes[0] } : { includeListIds: includes };
+    const base = { briefId, suppressionListIds: sentExclusions, ...(summary ? { inclusionSummary: summary } : {}) };
+    const request: AudienceAttachExistingRequest = includes.length === 1 ? { ...base, masterListId: includes[0] } : { ...base, includeListIds: includes };
     this.attachInFlight.set(true);
     this.attachingId.set(busyId);
     this.attachError.set(null);
     this.campaignService
-      .attachExistingAudience(this.projectSlug(), {
-        briefId,
-        ...target,
-        suppressionListIds: sentExclusions,
-        ...(summary ? { inclusionSummary: summary } : {}),
-      })
+      .attachExistingAudience(this.projectSlug(), request)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
