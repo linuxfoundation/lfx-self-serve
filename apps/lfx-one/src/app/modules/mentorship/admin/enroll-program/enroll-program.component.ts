@@ -117,10 +117,13 @@ export class EnrollProgramComponent {
   protected readonly submitPhase = signal<MentorshipEnrollSubmitPhase>('idle');
   protected readonly createdProgram = signal<MentorshipEnrollProgramRef | null>(null);
   protected readonly logoUploaded = signal(false);
+  protected readonly logoUploadFailed = signal(false);
   protected readonly submitFailure = signal<MentorshipEnrollSubmitFailure | null>(null);
   protected readonly submitting = computed(() => this.submitPhase() === 'creating' || this.submitPhase() === 'uploading-logo');
-  /** The program exists but its logo is not up: the banner offers Retry and a replacement logo. */
-  protected readonly partialSave = computed(() => this.createdProgram() !== null && this.submitPhase() !== 'done');
+  /** Once the program is saved, its answers can no longer change. */
+  protected readonly programSaved = computed(() => this.createdProgram() !== null);
+  /** The program is saved but a logo upload failed: the banner offers Retry and a replacement logo. */
+  protected readonly partialSave = computed(() => this.logoUploadFailed() && this.submitPhase() !== 'done');
   protected readonly logoAccept = MENTORSHIP_ENROLL_LOGO_ACCEPT;
   protected readonly retryLabel = MENTORSHIP_ENROLL_RETRY_LABEL;
   protected readonly logoNotUploaded = MENTORSHIP_ENROLL_LOGO_NOT_UPLOADED;
@@ -174,6 +177,8 @@ export class EnrollProgramComponent {
   /** Route guard hook: asks before the admin leaves with unsaved answers, or after a save that is missing its logo. */
   public canLeave(): boolean | Promise<boolean> {
     if (this.submitPhase() === 'done') return true;
+    // A save in flight decides which prompt is true, so the admin waits for it.
+    if (this.submitting()) return false;
     if (this.createdProgram() && !this.logoUploaded()) {
       return this.askToLeave('Logo missing', MENTORSHIP_ENROLL_LEAVE_LOGO_MISSING_CONFIRM, 'Leave');
     }
@@ -209,7 +214,8 @@ export class EnrollProgramComponent {
     const nameUnavailable = this.nameLookupStatus() !== 'available' || this.nameTakenOnCreate();
     if (current === 'details' && programName.length >= MENTORSHIP_ENROLL_NAME_MIN && nameUnavailable) {
       this.showErrors.set(true);
-      this.messageService.add({ severity: 'warn', summary: 'Check this step', detail: this.nameLookupMessage(this.nameLookupStatus()), life: 4000 });
+      const detail = this.nameTakenOnCreate() ? MENTORSHIP_ENROLL_NAME_TAKEN : this.nameLookupMessage(this.nameLookupStatus());
+      this.messageService.add({ severity: 'warn', summary: 'Check this step', detail, life: 4000 });
       return;
     }
 
@@ -301,7 +307,8 @@ export class EnrollProgramComponent {
             this.submitPhase.set('uploading-logo');
             return this.mentorshipAdminService.uploadProgramLogo(program.id, logo).pipe(tap(() => this.logoUploaded.set(true)));
           })
-        )
+        ),
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
         next: () => this.finishSubmit(),
@@ -340,6 +347,7 @@ export class EnrollProgramComponent {
   }
 
   private failLogoUpload(status: number): void {
+    this.logoUploadFailed.set(true);
     this.logoFieldError.set(MENTORSHIP_ENROLL_LOGO_FAILURE_FIELD_ERRORS[status] ?? '');
     this.submitFailure.set({ step: 'logo', message: MENTORSHIP_ENROLL_LOGO_NOT_UPLOADED });
   }

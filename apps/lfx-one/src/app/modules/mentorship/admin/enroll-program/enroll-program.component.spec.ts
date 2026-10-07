@@ -31,7 +31,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
-import { NEVER, of, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EnrollDetailsStepComponent } from './components/enroll-details-step/enroll-details-step.component';
@@ -200,6 +200,31 @@ describe('EnrollProgramComponent', () => {
       expect(element().querySelector('[data-testid="mentorship-enroll-next"] button')?.hasAttribute('disabled')).toBe(true);
     });
 
+    it('locks the answers but shows no partial-save banner while the first logo upload runs', () => {
+      uploadProgramLogo.mockReturnValue(NEVER);
+      setPrerequisitesStep();
+
+      clickSubmit();
+
+      expect(component['submitPhase']()).toBe('uploading-logo');
+      expect(component['programSaved']()).toBe(true);
+      expect(byTestId('mentorship-enroll-partial-save')).toBeNull();
+    });
+
+    it('drops a submit still in flight when the wizard is destroyed', () => {
+      const upload = new Subject<{ logoUrl: string }>();
+      uploadProgramLogo.mockReturnValue(upload);
+      setPrerequisitesStep();
+      clickSubmit();
+
+      fixture.destroy();
+      upload.next({ logoUrl: 'https://cdn.example/logo.png' });
+
+      expect(upload.observed).toBe(false);
+      expect(router.navigate).not.toHaveBeenCalled();
+      expect(toast).not.toHaveBeenCalled();
+    });
+
     it('sends the admin back to the details step when the logo or project is missing', () => {
       setPrerequisitesStep();
       component['logoFile'].set(null);
@@ -234,6 +259,7 @@ describe('EnrollProgramComponent', () => {
 
       component['onNext']();
       expect(component['step']()).toBe('details');
+      expect(toast).toHaveBeenLastCalledWith(expect.objectContaining({ severity: 'warn', detail: MENTORSHIP_ENROLL_NAME_TAKEN }));
 
       component['form'].controls.name.setValue('GridFlow Mentorship Program 2');
       expect(component['nameTakenOnCreate']()).toBe(false);
@@ -411,6 +437,20 @@ describe('EnrollProgramComponent', () => {
       expect(confirm).toHaveBeenCalledWith(
         expect.objectContaining({ header: 'Logo missing', message: MENTORSHIP_ENROLL_LEAVE_LOGO_MISSING_CONFIRM, acceptLabel: 'Leave', rejectLabel: 'Stay' })
       );
+    });
+
+    it.each([
+      ['the create', 'creating'],
+      ['the logo upload', 'uploading-logo'],
+    ])('holds the admin on the wizard without asking while %s is in flight', async (_label, phase) => {
+      if (phase === 'creating') createProgram.mockReturnValue(NEVER);
+      else uploadProgramLogo.mockReturnValue(NEVER);
+      setPrerequisitesStep();
+      clickSubmit();
+
+      expect(component['submitPhase']()).toBe(phase);
+      expect(await component.canLeave()).toBe(false);
+      expect(confirm).not.toHaveBeenCalled();
     });
 
     it('does not ask after a complete submit', async () => {

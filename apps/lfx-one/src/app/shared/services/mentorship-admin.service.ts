@@ -174,7 +174,7 @@ export class MentorshipAdminService {
    *
    * A 403 right after the create can be the permission grant not having landed yet, so it is retried with a back-off (1 s, 2 s, 4 s)
    * unless it is the impersonation read-only refusal; `retryForbidden = false` turns that back-off off. Any other failure except a
-   * file the server refuses (400, 401, 413, 415) is retried once after a short delay.
+   * refused file or sign-in (400, 401, 413, 415) is retried once after a short delay.
    */
   public uploadProgramLogo(programId: string, file: File, retryForbidden = true): Observable<MentorshipProgramLogoUploadResult> {
     return this.http

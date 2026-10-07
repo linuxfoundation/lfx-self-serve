@@ -36,7 +36,7 @@
         <lfx-mentorship-enroll-setup-step [form]="form" [errors]="stepErrors()" />
       }
       @case ('prerequisites') {
-        <lfx-mentorship-enroll-prerequisites-step [form]="form" [errors]="stepErrors()" [locked]="partialSave()" />
+        <lfx-mentorship-enroll-prerequisites-step [form]="form" [errors]="stepErrors()" [locked]="programSaved()" />
       }
     }
 
@@ -88,7 +88,7 @@
         severity="secondary"
         [text]="true"
         size="small"
-        [disabled]="submitting() || partialSave()"
+        [disabled]="submitting() || programSaved()"
         (onClick)="onBack()"
         data-testid="mentorship-enroll-back" />
       <lfx-button

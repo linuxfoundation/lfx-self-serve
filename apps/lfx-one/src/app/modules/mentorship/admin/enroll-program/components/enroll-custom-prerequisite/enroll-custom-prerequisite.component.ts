@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, effect, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -79,13 +79,15 @@ export class EnrollCustomPrerequisiteComponent {
       this.formSnapshot.set(this.form.getRawValue());
     });
 
-    effect(() => {
-      if (this.locked()) {
-        this.form.disable({ emitEvent: false });
-      } else {
-        this.form.enable({ emitEvent: false });
-      }
-    });
+    toObservable(this.locked)
+      .pipe(takeUntilDestroyed())
+      .subscribe((locked) => {
+        if (locked) {
+          this.form.disable({ emitEvent: false });
+        } else {
+          this.form.enable({ emitEvent: false });
+        }
+      });
   }
 
   protected onDelete(): void {

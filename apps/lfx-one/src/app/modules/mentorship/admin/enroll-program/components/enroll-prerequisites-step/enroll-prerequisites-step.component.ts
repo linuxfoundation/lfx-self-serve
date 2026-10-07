@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, effect, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -69,13 +69,15 @@ export class EnrollPrerequisitesStepComponent {
       if (item) this.updateChallengeUrl(item.id, challengeUrl);
     });
 
-    effect(() => {
-      if (this.locked()) {
-        this.challengeForm.disable({ emitEvent: false });
-      } else {
-        this.challengeForm.enable({ emitEvent: false });
-      }
-    });
+    toObservable(this.locked)
+      .pipe(takeUntilDestroyed())
+      .subscribe((locked) => {
+        if (locked) {
+          this.challengeForm.disable({ emitEvent: false });
+        } else {
+          this.challengeForm.enable({ emitEvent: false });
+        }
+      });
   }
 
   protected toggleRequired(id: string): void {

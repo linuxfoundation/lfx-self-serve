@@ -496,7 +496,7 @@ export type MentorshipEnrollSubmitStep = 'create' | 'logo';
 
 export type MentorshipEnrollSubmitPhase = 'idle' | 'creating' | 'uploading-logo' | 'failed' | 'done';
 
-/** Shown in the wizard after a failed submit. `field` points the error at one input. */
+/** Shown in the wizard after a failed submit. `step` says which write failed; `message` is the banner text. */
 export interface MentorshipEnrollSubmitFailure {
   step: MentorshipEnrollSubmitStep;
   message: string;
