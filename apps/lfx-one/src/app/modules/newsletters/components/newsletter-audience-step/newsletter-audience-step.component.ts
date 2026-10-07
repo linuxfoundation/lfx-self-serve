@@ -92,7 +92,10 @@ export class NewsletterAudienceStepComponent {
   // Setup links target the active context, so they're withheld when it isn't the newsletter's owner.
   protected readonly setupContext: Signal<ProjectContext | null> = this.initSetupContext();
   protected readonly setupContextName = computed(() => this.setupContext()?.name || 'this project');
-  protected readonly canCreateGroup = computed(() => !!this.setupContext() && this.projectContextService.canWrite());
+  // activeProject retains the previous project while context details load; never reuse its permission for a new owner.
+  protected readonly canCreateGroup = computed(
+    () => !!this.setupContext() && this.projectContextService.activeProject()?.uid === this.projectUid() && this.projectContextService.canWrite()
+  );
   protected readonly groupsRoute: Signal<string[]> = this.initGroupsRoute();
   protected readonly createGroupRoute: Signal<string[]> = computed(() => [...this.groupsRoute(), 'create']);
   protected readonly groupsQueryParams: Signal<Record<string, string>> = computed(() => ({ project: this.setupContext()?.slug ?? '' }));
