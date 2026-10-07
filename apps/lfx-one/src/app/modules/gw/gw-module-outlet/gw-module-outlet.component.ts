@@ -279,8 +279,8 @@ export class GwModuleOutletComponent {
       }
 
       // Returns at once; the loader fetches the manifest, stylesheet and bundle, then mounts.
-      // Failures on that path come back through `onFatal` (and `ready` resolves null), and an
-      // `unmount()` before `ready` cancels the mount, so teardown needs no extra bookkeeping.
+      // Failures on that path come back through `onFatal`; calling `unmount()` cancels the mount
+      // and no extra teardown bookkeeping is needed.
       this.mountHandle = mod.mount(this.embedRoot().nativeElement, ctx);
       this.lastSyncedUrl = `${window.location.pathname}${window.location.search}`;
       this.watchHostNavigation();
