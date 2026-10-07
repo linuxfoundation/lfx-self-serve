@@ -1993,6 +1993,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailCtaIsStageable: Signal<boolean>;
     emailCtaLabel: Signal<string>;
     emailHeroImageUrl: Signal<string>;
+    emailHeroPreviewUrl: Signal<string>;
     emailRegistrationUrl: Signal<string>;
     emailSponsors: Signal<CampaignEventSponsor[]>;
     emailBodyIsStageable: Signal<boolean>;
@@ -5778,6 +5779,35 @@ describe('CampaignsComponent — email delivery channel', () => {
       // canonicalHttpUrl, so the two cannot restate the rule differently.
       expect(internals().emailHeroImageUrl()).toBe('https://cdn.example.com/hero.png');
       expect(internals().emailSponsors()).toEqual([{ name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' }]);
+    });
+
+    it('loads the preview hero only for https linuxfoundation.org hosts', () => {
+      selectEmail();
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
+      const previewFor = (heroImageUrl: string): string => {
+        internals().emailBriefOutput.set({
+          eventDetails: {
+            name: 'KubeCon EU 2026',
+            slug: 'kubecon-eu-2026',
+            countryCode: 'NL',
+            registrationUrl: 'https://events.example/register',
+            heroImageUrl,
+          },
+        } as unknown as CampaignBriefOutput);
+        fixture.detectChanges();
+        return internals().emailHeroPreviewUrl();
+      };
+
+      expect(previewFor('https://events.linuxfoundation.org/hero.png')).toBe('https://events.linuxfoundation.org/hero.png');
+      expect(previewFor('https://linuxfoundation.org/hero.png')).toBe('https://linuxfoundation.org/hero.png');
+      // Parsed-hostname match, not a string suffix: the lookalikes below all END in the trusted name.
+      expect(previewFor('https://evil.com/?.linuxfoundation.org')).toBe('');
+      expect(previewFor('https://notlinuxfoundation.org/hero.png')).toBe('');
+      expect(previewFor('https://linuxfoundation.org.evil.com/hero.png')).toBe('');
+      expect(previewFor('http://events.linuxfoundation.org/hero.png')).toBe('');
+      expect(previewFor('https://cdn.example.com/hero.png')).toBe('');
     });
 
     it('stages the call to action whose destination was refused, as text', async () => {

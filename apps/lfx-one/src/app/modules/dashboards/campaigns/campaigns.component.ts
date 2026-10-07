@@ -67,7 +67,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { EmailBodyPreviewComponent } from '@components/email-body-preview/email-body-preview.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { TextareaComponent } from '@components/textarea/textarea.component';
+import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywords.service';
 import { CampaignService } from '@services/campaign.service';
@@ -135,7 +135,7 @@ function withUnlinkedCta(body: string, unlinkedLabel: string): string {
     CheckboxComponent,
     EmailBodyPreviewComponent,
     InputTextComponent,
-    TextareaComponent,
+    RichEditorComponent,
     SelectComponent,
     PlanningTabComponent,
     ImplementationTabComponent,
@@ -1647,6 +1647,25 @@ export class CampaignsComponent {
   });
 
   /**
+   * The hero URL, but ONLY when it is safe to let the operator's browser fetch it; '' otherwise.
+   *
+   * The "name, never load" rule above exists because a scraped hostname can resolve to a private
+   * address. That risk does not apply to the Foundation's own event sites, so an https URL whose
+   * host is `linuxfoundation.org` or a subdomain of it is rendered as the real banner. The match
+   * is on the parsed hostname (a suffix test on the raw string would accept
+   * `evil.com/?.linuxfoundation.org`), and any other host keeps the named-only note.
+   */
+  protected readonly emailHeroPreviewUrl = computed<string>(() => {
+    try {
+      const url = new URL(this.emailHeroImageUrl());
+      const trusted = url.hostname === 'linuxfoundation.org' || url.hostname.endsWith('.linuxfoundation.org');
+      return url.protocol === 'https:' && trusted ? url.href : '';
+    } catch {
+      return '';
+    }
+  });
+
+  /**
    * Whether a generated CTA will actually reach the staged draft.
    *
    * The label alone is not enough: `onStageEmailSend` withholds buttonText/buttonUrl when the
@@ -1740,6 +1759,8 @@ export class CampaignsComponent {
 
   /** Terminal message for the staging attempt — empty while idle or in flight. */
   protected readonly emailStagingMessage = signal<string>('');
+  /** HubSpot link to the staged draft; '' when the service sent none or it is not an http(s) URL. */
+  protected readonly emailStagingDraftUrl = signal<string>('');
 
   /**
    * Whether a send can be staged right now.
@@ -3109,6 +3130,7 @@ export class CampaignsComponent {
 
     this.emailStaging.set('staging');
     this.emailStagingMessage.set('');
+    this.emailStagingDraftUrl.set('');
 
     // Bumped BEFORE the await below; the reset bumps the same counter to invalidate it.
     const generation = ++this.emailStagingGeneration;
@@ -3622,6 +3644,7 @@ export class CampaignsComponent {
     this.stagingJobSubscription = null;
     this.emailStaging.set('idle');
     this.emailStagingMessage.set('');
+    this.emailStagingDraftUrl.set('');
   }
 
   /**
@@ -4044,13 +4067,14 @@ export class CampaignsComponent {
           this.emailStaging.set('done');
           // The id is INCLUDED, because without it this message sends the user to hunt for one
           // draft among the hundreds the portal lists — the picker above says "Showing 100 of 500".
-          // `campaignId` is already on the result and was simply discarded here.
           //
-          // The id is shown rather than linked: a HubSpot deep link needs the PORTAL id, which the
-          // connection row does not reliably carry (it is empty for `tlf` today), and a link built
-          // without it points at whichever portal the reader happens to be signed into. An id the
-          // user can paste into HubSpot's own search is worth more than a link that may 404.
+          // It is also LINKED when campaign-service sent a link. That link is built upstream from
+          // the connection's portal id, so it targets the right portal instead of whichever one the
+          // reader is signed into; it is absent when the portal id is unknown, and the id alone is
+          // then what the operator pastes into HubSpot's search. `canonicalHttpUrl` keeps a
+          // non-http(s) value out of the `[href]`.
           const draftId = hubspotResult?.campaignId ?? '';
+          this.emailStagingDraftUrl.set(canonicalHttpUrl(hubspotResult?.hubspotUrl));
           this.emailStagingMessage.set(
             draftId === ''
               ? 'Draft created in HubSpot. Review and send it from there.'

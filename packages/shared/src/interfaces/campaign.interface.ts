@@ -1395,6 +1395,8 @@ export interface CampaignPlatformResult {
   ok: boolean;
   /** Upstream platform campaign id. Present when ok, and also when the create succeeded but recording it did not — so the orphaned id is not lost. */
   campaignId?: string;
+  /** HubSpot app link to the created draft. Absent when campaign-service could not build one (unknown portal id). */
+  hubspotUrl?: string;
   error?: string;
 }
 
