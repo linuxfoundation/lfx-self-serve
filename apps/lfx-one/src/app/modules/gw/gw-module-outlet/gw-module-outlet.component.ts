@@ -102,11 +102,6 @@ export class GwModuleOutletComponent {
   // Plain (non-signal) mount bookkeeping — not template-bound, so no need for reactivity here.
   private destroyed = false;
   private mountHandle: GwEmbedMountHandle | null = null;
-  /**
-   * The dynamic import of the loader, as a property so the spec can stand it in: the unit-test
-   * builder bundles the dependency, so `vi.mock('@gatewaze/admin-embed')` cannot intercept it.
-   */
-  private loadEmbedLoader = (): Promise<typeof import('@gatewaze/admin-embed')> => import('@gatewaze/admin-embed');
   /** Last URL the embed's router has been told about — see syncEmbedToHostUrl. */
   private lastSyncedUrl: string | null = null;
   /** Which mount path this instance is serving; see resolveGwEmbedRoutePrefix. */
@@ -819,6 +814,12 @@ export class GwModuleOutletComponent {
       life: notification.durationMs ?? GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS,
     });
   }
+
+  /**
+   * The dynamic import of the loader, as a property so the spec can stand it in: the unit-test
+   * builder bundles the dependency, so `vi.mock('@gatewaze/admin-embed')` cannot intercept it.
+   */
+  private loadEmbedLoader = (): Promise<typeof import('@gatewaze/admin-embed')> => import('@gatewaze/admin-embed');
 
   private onFatal(err: GwEmbedFatalError): void {
     // A recoverable fatal is one the embed handled and kept running through, so blanking it behind
