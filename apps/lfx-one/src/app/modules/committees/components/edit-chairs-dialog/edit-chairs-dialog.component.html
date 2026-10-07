@@ -19,7 +19,7 @@
               [attr.aria-label]="'Remove ' + row.label + ' as chair'"
               data-testid="remove-chair-btn"
               (click)="removeChair(row.uid)">
-              <i class="pi pi-times text-[10px]"></i>
+              <span aria-hidden="true" class="text-xs leading-none">&times;</span>
             </button>
           </span>
         }
@@ -56,7 +56,7 @@
               [attr.aria-label]="'Remove ' + row.label + ' as vice chair'"
               data-testid="remove-vice-chair-btn"
               (click)="removeViceChair(row.uid)">
-              <i class="pi pi-times text-[10px]"></i>
+              <span aria-hidden="true" class="text-xs leading-none">&times;</span>
             </button>
           </span>
         }
