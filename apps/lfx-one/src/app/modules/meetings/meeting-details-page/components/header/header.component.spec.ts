@@ -22,6 +22,7 @@ describe('MeetingHeaderComponent', () => {
   let copyLink: ReturnType<typeof vi.fn>;
   let timeState: WritableSignal<MeetingTimeState | null>;
   let meetingStatus: WritableSignal<MeetingStatusKind | null>;
+  let myRsvpAttr: WritableSignal<string | null>;
 
   const project: PublicMeetingProject = {
     uid: 'project-1',
@@ -60,6 +61,7 @@ describe('MeetingHeaderComponent', () => {
             timeState,
             meetingStatus,
             selectedOccurrence: signal(null),
+            myRsvpAttr,
             privacy: computed(() => {
               const current = meeting();
               return current ? resolvePrivacy(current.visibility, current.restricted) : null;
@@ -81,6 +83,7 @@ describe('MeetingHeaderComponent', () => {
     copyLink = vi.fn();
     timeState = signal<MeetingTimeState | null>('before');
     meetingStatus = signal<MeetingStatusKind | null>('upcoming');
+    myRsvpAttr = signal<string | null>(null);
     await create();
   });
 
@@ -178,9 +181,19 @@ describe('MeetingHeaderComponent', () => {
       expect(pill()?.getAttribute('data-status')).toBe(kind);
     });
 
-    // E2-04 has not loaded the viewer's RSVP yet, so data-my-rsvp is absent rather than a wrong "none".
-    it('leaves data-my-rsvp off until the RSVP is loaded', () => {
+    // Absent while the viewer's own RSVP is unknown (not loaded, or not theirs to give), never a wrong "none".
+    it('leaves data-my-rsvp off while the RSVP is unknown', () => {
       expect(pill()?.hasAttribute('data-my-rsvp')).toBe(false);
+    });
+
+    it("carries the viewer's own RSVP once it has loaded (E2-04)", () => {
+      myRsvpAttr.set('none');
+      fixture.detectChanges();
+      expect(pill()?.getAttribute('data-my-rsvp')).toBe('none');
+
+      myRsvpAttr.set('accepted');
+      fixture.detectChanges();
+      expect(pill()?.getAttribute('data-my-rsvp')).toBe('accepted');
     });
   });
 

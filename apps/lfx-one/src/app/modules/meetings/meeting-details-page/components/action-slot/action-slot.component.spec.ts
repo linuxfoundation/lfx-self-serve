@@ -4,7 +4,7 @@
 import { Component, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
-import { ActionSlotKind, Meeting, MeetingOccurrence, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole } from '@lfx-one/shared/interfaces';
+import { ActionSlotKind, Meeting, MeetingOccurrence, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole, RsvpResponse } from '@lfx-one/shared/interfaces';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -39,6 +39,8 @@ describe('MeetingActionSlotComponent', () => {
   let joinsInWindow: WritableSignal<boolean>;
   let meeting: WritableSignal<Meeting | undefined>;
   let pastAccessKnown: WritableSignal<boolean>;
+  let myRsvp: WritableSignal<RsvpResponse | null | undefined>;
+  let myRsvpAttr: WritableSignal<string | null>;
   let markRegistered: ReturnType<typeof vi.fn>;
   let dialogClose: Subject<{ registered: boolean } | undefined>;
   let openDialog: ReturnType<typeof vi.fn>;
@@ -62,6 +64,8 @@ describe('MeetingActionSlotComponent', () => {
     joinsInWindow = signal(true);
     meeting = signal<Meeting | undefined>({ id: 'meeting-1', early_join_time_minutes: 15 } as Meeting);
     pastAccessKnown = signal(true);
+    myRsvp = signal<RsvpResponse | null | undefined>(undefined);
+    myRsvpAttr = signal<string | null>(null);
     markRegistered = vi.fn();
     dialogClose = new Subject();
     openDialog = vi.fn().mockReturnValue({ onClose: dialogClose.asObservable() });
@@ -81,6 +85,8 @@ describe('MeetingActionSlotComponent', () => {
             joinsInWindow,
             meeting,
             pastAccessKnown,
+            myRsvp,
+            myRsvpAttr,
             markRegistered,
             selectedOccurrence,
             signInHref: signal(SIGN_IN_HREF),
@@ -202,6 +208,20 @@ describe('MeetingActionSlotComponent', () => {
       expect(text('meeting-action-message')).toBe('This meeting has ended.');
       expect(query('meeting-action-slot')?.textContent).not.toContain('private');
     });
+  });
+
+  // E2-04 (FR-023): until E2-05's card, the rsvp kind's line names the viewer's own answer.
+  it.each([
+    [undefined, "You're invited to this meeting."],
+    [null, "You're invited to this meeting. You haven't replied yet."],
+    ['accepted', "You're going."],
+    ['maybe', 'You replied maybe.'],
+    ['declined', "You can't attend."],
+  ] as [RsvpResponse | null | undefined, string][])('says the RSVP is %s', (answer, message) => {
+    myRsvp.set(answer);
+    render('rsvp');
+
+    expect(text('meeting-action-message')).toBe(message);
   });
 
   // E2-06 (FR-025).

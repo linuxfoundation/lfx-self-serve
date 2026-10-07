@@ -70,6 +70,13 @@ export class MeetingActionSlotComponent {
    */
   protected readonly joinHint: Signal<string> = this.initJoinHint();
   /**
+   * The `rsvp` kind's line until E2-05's card: the viewer's own answer once it has loaded (E2-04), in
+   * the prototype's confirmation words, else that they are invited.
+   */
+  protected readonly rsvpMessage: Signal<string> = this.initRsvpMessage();
+  /** The same answer for `data-my-rsvp`, absent while unknown (testid-contract.md). */
+  protected readonly myRsvpAttr: Signal<string | null> = this.state.myRsvpAttr;
+  /**
    * `invitation-required`'s "Contact the organizer": a pre-filled `mailto:` to the organizer V1's
    * chip names (owner, else creator), with the same subject and body. `null` when there is no
    * usable email, and the slot offers the support chat instead.
@@ -102,6 +109,23 @@ export class MeetingActionSlotComponent {
     dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
         this.state.markRegistered(meeting.id);
+      }
+    });
+  }
+
+  private initRsvpMessage(): Signal<string> {
+    return computed(() => {
+      switch (this.state.myRsvp()) {
+        case 'accepted':
+          return "You're going.";
+        case 'maybe':
+          return 'You replied maybe.';
+        case 'declined':
+          return "You can't attend.";
+        case null:
+          return "You're invited to this meeting. You haven't replied yet.";
+        default:
+          return "You're invited to this meeting.";
       }
     });
   }

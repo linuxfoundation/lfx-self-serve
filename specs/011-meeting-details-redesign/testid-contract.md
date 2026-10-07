@@ -145,9 +145,11 @@ resolves that organizer as the `organizer` role, and the action slot still retur
 as V1 lets an invited organizer set and see their own RSVP. Key the attribute on `invited`, not on
 the role. Everywhere else it is absent, for the same reason `data-attendance` is (see People).
 
-Until E2-04 (#2880) loads the viewer's own RSVP (the public payload does not carry it), the
-attribute is absent for that viewer too, and `data-status` shows the time state. Absent therefore
-never means `none`: a test asserts `data-my-rsvp` only once the RSVP has loaded.
+The public payload does not carry the viewer's own RSVP, so the page fetches it (E2-04, #2880).
+Until it has loaded, and whenever the fetch fails, the attribute is absent for that viewer too and
+`data-status` shows the time state. Absent therefore never means `none`: a test asserts
+`data-my-rsvp` only once the RSVP has loaded. The `rsvp` slot's `meeting-action-message` carries the
+same attribute with the same values, until E2-05's card replaces that line.
 
 ### `meeting-privacy-chip[data-visibility]` and `[data-restricted]`
 

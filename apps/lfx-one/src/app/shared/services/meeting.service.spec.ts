@@ -4,7 +4,7 @@
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import type { MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
-import { of } from 'rxjs';
+import { firstValueFrom, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingService } from './meeting.service';
@@ -190,5 +190,40 @@ describe('MeetingService public meeting passcode transport', () => {
     service.getPublicMeeting(MEETING_UID, null).subscribe();
 
     expect(get.mock.calls[0][1].headers).toBeUndefined();
+  });
+});
+
+// "Could not load" and "has not answered" are different answers for the V2 status pill (E2-04).
+describe('MeetingService own RSVP', () => {
+  let service: MeetingService;
+  let get: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    get = vi.fn();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get } }] });
+    service = TestBed.inject(MeetingService);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  it('scopes the request to an occurrence when one is given', async () => {
+    get.mockReturnValue(of(null));
+
+    await firstValueFrom(service.getMeetingRsvpForCurrentUserOrFail(MEETING_UID, '1760000000'));
+
+    expect(get).toHaveBeenCalledWith(`/api/meetings/${MEETING_UID}/rsvp/me`, { params: { occurrenceId: '1760000000' } });
+  });
+
+  it('rethrows a failure from the strict variant', async () => {
+    get.mockReturnValue(throwError(() => ({ status: 500 })));
+
+    await expect(firstValueFrom(service.getMeetingRsvpForCurrentUserOrFail(MEETING_UID))).rejects.toEqual({ status: 500 });
+    expect(console.error).toHaveBeenCalled();
+  });
+
+  it('keeps reading a failure as null in the original method', async () => {
+    get.mockReturnValue(throwError(() => ({ status: 500 })));
+
+    await expect(firstValueFrom(service.getMeetingRsvpForCurrentUser(MEETING_UID))).resolves.toBeNull();
   });
 });
