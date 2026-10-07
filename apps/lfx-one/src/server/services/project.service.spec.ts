@@ -102,6 +102,12 @@ vi.mock('@lfx-one/shared/constants', async () => {
     HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: dashboardMetricsConstants.HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
     HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
     HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
+    HEALTH_METRICS_OVERVIEW_TILE_LINKS: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_TILE_LINKS,
+    // Real maps: getHealthOverviewSignals drops any row these don't cover, and the tests assert on that.
+    HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS: healthMetricsOverviewConstants.HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS,
+    HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS: healthMetricsOverviewConstants.HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS,
+    HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS: healthMetricsOverviewConstants.HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS,
+    HEALTH_OVERVIEW_SIGNAL_PERIOD_RANGES: healthMetricsOverviewConstants.HEALTH_OVERVIEW_SIGNAL_PERIOD_RANGES,
     // Real values (3 / 0.5): the Engagement tile read binds both, and the tests assert the binds.
     HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE: healthMetricsEngagementConstants.HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
     HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD: healthMetricsEngagementConstants.HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
@@ -2643,6 +2649,100 @@ describe('ProjectService — getHealthOverviewKpis', () => {
 
     expect(result?.find((state) => state.area === 'evt')?.statDetail).toBeUndefined();
     expect(result?.find((state) => state.area === 'mem')?.statDetail).toBeUndefined();
+  });
+});
+
+describe('ProjectService — getHealthOverviewSignals', () => {
+  let service: ProjectService;
+
+  const signalRow = (overrides: Record<string, string | null> = {}): Record<string, string | null> => ({
+    PERIOD_SLUG: 'ytd',
+    SIGNAL_KEY: 'members_renewals_with_overdue',
+    SEVERITY_BAND: 'needs_action',
+    CATEGORY: 'MEMBERS',
+    HEADLINE: 'Renewals are overdue',
+    BODY: 'Two renewals are past due.',
+    METRIC_VALUE: '2',
+    METRIC_CAPTION: 'overdue renewals',
+    METRIC_SECONDARY: null,
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    execute.mockReset();
+    vi.mocked(SnowflakeService.isMissingObjectError).mockReturnValue(false);
+    service = new ProjectService();
+  });
+
+  it('reads every period in one ordered, one-bind query', async () => {
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    await service.getHealthOverviewSignals('cncf');
+
+    const [query, binds] = execute.mock.calls[0];
+    expect(binds).toEqual(['cncf']);
+    expect((query as string).match(/\?/g)).toHaveLength(1);
+    expect(query).toContain('HEALTH_OVERVIEW_SIGNALS');
+    expect(query).toContain('ORDER BY period_slug, severity_rank, sort_rank');
+  });
+
+  it('maps rows onto findings keyed by range, ranked in arrival order within each period', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        signalRow({ PERIOD_SLUG: 'last_completed_year' }),
+        signalRow(),
+        signalRow({ SIGNAL_KEY: 'members_board_reps_never_attended', SEVERITY_BAND: 'needs_attention', METRIC_SECONDARY: 'of 9 seats' }),
+      ],
+    });
+
+    const result = await service.getHealthOverviewSignals('cncf');
+
+    expect(result['COMPLETED_YEAR']).toHaveLength(1);
+    expect(result['YTD']).toEqual([
+      {
+        classification: 'act',
+        area: 'mem',
+        title: 'Renewals are overdue',
+        sentence: 'Two renewals are past due.',
+        keyValue: '2',
+        keyLabel: 'overdue renewals',
+        linkTarget: 'mem.renewals',
+        sortRank: 0,
+        evaluatedAt: '',
+      },
+      expect.objectContaining({ classification: 'watch', linkTarget: 'mem.board', keySecondary: 'of 9 seats', sortRank: 1 }),
+    ]);
+  });
+
+  it("falls back to the area's tile link for an unmapped signal key", async () => {
+    execute.mockResolvedValueOnce({ rows: [signalRow({ SIGNAL_KEY: 'engagement_new_signal', CATEGORY: 'ENGAGEMENT', SEVERITY_BAND: 'opportunity' })] });
+
+    const result = await service.getHealthOverviewSignals('cncf');
+
+    expect(result['YTD']).toEqual([expect.objectContaining({ area: 'eng', classification: 'opp', linkTarget: 'eng.groups' })]);
+  });
+
+  it('drops a row whose period, band or category has no mapping instead of misfiling it', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [signalRow({ PERIOD_SLUG: '4th_last_completed_year' }), signalRow({ SEVERITY_BAND: 'unknown' }), signalRow({ CATEGORY: 'CODE' })],
+    });
+
+    const result = await service.getHealthOverviewSignals('cncf');
+
+    expect(result).toEqual({});
+  });
+
+  it('returns no findings instead of a 5xx when the table is not deployed yet', async () => {
+    vi.mocked(SnowflakeService.isMissingObjectError).mockReturnValue(true);
+    execute.mockRejectedValueOnce(new Error('Object does not exist'));
+
+    await expect(service.getHealthOverviewSignals('cncf')).resolves.toEqual({});
+  });
+
+  it('rethrows any other read failure', async () => {
+    execute.mockRejectedValueOnce(new Error('warehouse suspended'));
+
+    await expect(service.getHealthOverviewSignals('cncf')).rejects.toThrow('warehouse suspended');
   });
 });
 

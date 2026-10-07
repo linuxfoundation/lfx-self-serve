@@ -29,6 +29,7 @@ import {
   FoundationTotalProjectsResponse,
   HealthEventsMonthlyResponse,
   HealthMetricsDailyResponse,
+  HealthMetricsOverviewFindingsByRange,
   HealthMetricsOverviewKpisByRange,
   HealthMetricsOverviewRevenueByRange,
   MembershipTierResponse,
@@ -1887,6 +1888,20 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsOverviewKpisByRange>('/api/analytics/health-overview-kpis', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] health-overview-kpis failed', { foundationSlug, error });
+        return of({});
+      })
+    );
+  }
+
+  /**
+   * Fetches the Overview findings for every selectable period in one call. Degrades to an empty map on
+   * failure, which the list renders as "not available yet" rather than an all-clear.
+   */
+  public getHealthOverviewSignals(foundationSlug: string): Observable<HealthMetricsOverviewFindingsByRange> {
+    const params = { foundationSlug };
+    return this.http.get<HealthMetricsOverviewFindingsByRange>('/api/analytics/health-overview-signals', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] health-overview-signals failed', { foundationSlug, error });
         return of({});
       })
     );

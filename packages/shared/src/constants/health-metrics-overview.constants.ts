@@ -3,11 +3,13 @@
 
 import { buildHealthMetricsYearOptions } from './dashboard-metrics.constants';
 
-import type { HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
+import type { HealthMetricsRange, HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
 import type {
   HealthMetricsOverviewArea,
+  HealthMetricsOverviewClassification,
   HealthMetricsOverviewEngagementLinkSpec,
   HealthMetricsOverviewEventsLinkSpec,
+  HealthMetricsOverviewLinkTarget,
   HealthMetricsOverviewMembersLinkSpec,
   HealthMetricsOverviewNonMembersLinkSpec,
   HealthMetricsOverviewTileLinkSpec,
@@ -196,6 +198,39 @@ export const HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS = [
   'REVENUE_SHARE_PCT',
   'FOUNDATION_TOTAL_REVENUE_USD',
 ] as const satisfies readonly (keyof HealthOverviewRevenueRow)[];
+
+/** `HEALTH_OVERVIEW_SIGNALS.severity_band` → finding classification; an unknown band degrades to `'none'`. */
+export const HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS: Readonly<Record<string, HealthMetricsOverviewClassification>> = {
+  needs_action: 'act',
+  needs_attention: 'watch',
+  opportunity: 'opp',
+  going_well: 'ok',
+};
+
+/** `HEALTH_OVERVIEW_SIGNALS.category` → Overview area. A row whose category isn't listed is dropped from the feed. */
+export const HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS: Readonly<Record<string, keyof typeof HEALTH_METRICS_OVERVIEW_TILE_LINKS>> = {
+  ENGAGEMENT: 'eng',
+  MEMBERS: 'mem',
+  'NON-MEMBERS': 'non',
+};
+
+/** `signal_key` → the Level 2 section its finding opens; the table carries no link column, so an unknown key falls back to its area's tile link. */
+export const HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS: Readonly<Record<string, HealthMetricsOverviewLinkTarget>> = {
+  engagement_dormant_groups: 'eng.groups',
+  engagement_tsc_steady: 'eng.groups',
+  members_board_reps_never_attended: 'mem.board',
+  members_renewals_with_overdue: 'mem.renewals',
+  members_revenue_growing: 'mem.list',
+  non_members_high_fit: 'non.orgs',
+};
+
+/** `HEALTH_OVERVIEW_SIGNALS.period_slug` → the selector range it backs; the same four periods the KPI and revenue suffixes cover. */
+export const HEALTH_OVERVIEW_SIGNAL_PERIOD_RANGES: Readonly<Record<string, HealthMetricsRange>> = {
+  ytd: 'YTD',
+  last_completed_year: 'COMPLETED_YEAR',
+  prev_completed_year: 'COMPLETED_YEAR_2',
+  '3rd_last_completed_year': 'COMPLETED_YEAR_3',
+};
 
 /**
  * Rail revenue-stream metadata, keyed to match `railHTML()`'s fixed 3-stream legend. Colors mirror

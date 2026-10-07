@@ -194,6 +194,22 @@ export type HealthOverviewAllPeriodsRow = Record<string, number | string | null>
  */
 export type HealthMetricsOverviewKpisByRange = Partial<Record<HealthMetricsRange, HealthMetricsAreaState[]>>;
 
+/** Per-range signal-feed findings from one all-periods `HEALTH_OVERVIEW_SIGNALS` read, in model order. Same partial-key caveat. */
+export type HealthMetricsOverviewFindingsByRange = Partial<Record<HealthMetricsRange, HealthMetricsFinding[]>>;
+
+/** One `HEALTH_OVERVIEW_SIGNALS` row as selected — uppercase aliases, one row per signal per period. */
+export interface HealthOverviewSignalRow {
+  PERIOD_SLUG: string | null;
+  SIGNAL_KEY: string | null;
+  SEVERITY_BAND: string | null;
+  CATEGORY: string | null;
+  HEADLINE: string | null;
+  BODY: string | null;
+  METRIC_VALUE: string | null;
+  METRIC_CAPTION: string | null;
+  METRIC_SECONDARY: string | null;
+}
+
 /** Per-range revenue summaries from one all-periods read. Same partial-key caveat as {@link HealthMetricsOverviewKpisByRange}. */
 export type HealthMetricsOverviewRevenueByRange = Partial<Record<HealthMetricsRange, HealthMetricsOverviewRevenue>>;
 
@@ -213,6 +229,8 @@ export interface HealthMetricsFinding {
   emphasis?: string;
   keyValue: string;
   keyLabel: string;
+  /** Optional caption under {@link keyLabel} — the model's `metric_secondary`. */
+  keySecondary?: string;
   linkTarget: HealthMetricsOverviewLinkTarget;
   /**
    * Display order. Must be unique across the whole findings set (page-wide, not just within one
@@ -285,6 +303,7 @@ export interface HealthMetricsOverviewFindingViewModel {
   emphasis?: string;
   keyValue: string;
   keyLabel: string;
+  keySecondary?: string;
   /** Carried through from {@link HealthMetricsFinding.sortRank} — display order and, since it's unique per row, also this row's `@for` track key and `data-testid` suffix. */
   sortRank: number;
   evaluatedAt: string;

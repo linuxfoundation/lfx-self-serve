@@ -14,9 +14,14 @@ import {
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
   HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
+  HEALTH_METRICS_OVERVIEW_TILE_LINKS,
   HEALTH_METRICS_RANGES,
   HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
   HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS,
+  HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS,
+  HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS,
+  HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS,
+  HEALTH_OVERVIEW_SIGNAL_PERIOD_RANGES,
   NATS_CONFIG,
   PAID_CAMPAIGN_LIMIT,
   PENDING_ACTION_SEVERITY,
@@ -100,7 +105,9 @@ import {
   HealthMetricsAreaState,
   HealthMetricsAreaStateDetail,
   HealthMetricsDailyResponse,
+  HealthMetricsFinding,
   HealthMetricsOverviewArea,
+  HealthMetricsOverviewFindingsByRange,
   HealthMetricsOverviewFoundationSummary,
   HealthMetricsOverviewKpisByRange,
   HealthMetricsOverviewRevenueByRange,
@@ -108,6 +115,7 @@ import {
   HealthOverviewAllPeriodsRow,
   HealthOverviewEngagementCounts,
   HealthOverviewKpisRow,
+  HealthOverviewSignalRow,
   KeywordAttributionRow,
   KeywordPerformanceResponse,
   KeywordPerformanceRow,
@@ -6349,6 +6357,64 @@ export class ProjectService {
   }
 
   /**
+   * Get the Overview findings list from `HEALTH_OVERVIEW_SIGNALS`, for every period in one read. Rows
+   * already carry their copy; this maps band, category and signal key onto the finding's classification,
+   * area and drill-in. A row with an unknown period, band or category is dropped rather than misfiled.
+   */
+  public async getHealthOverviewSignals(foundationSlug: string): Promise<HealthMetricsOverviewFindingsByRange> {
+    logger.debug(undefined, 'get_health_overview_signals', 'Fetching health overview signals', { foundation_slug: foundationSlug });
+
+    const query = `
+      SELECT
+        period_slug AS PERIOD_SLUG,
+        signal_key AS SIGNAL_KEY,
+        severity_band AS SEVERITY_BAND,
+        category AS CATEGORY,
+        headline AS HEADLINE,
+        body AS BODY,
+        metric_value AS METRIC_VALUE,
+        metric_caption AS METRIC_CAPTION,
+        metric_secondary AS METRIC_SECONDARY
+      FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_SIGNALS
+      WHERE foundation_slug = ?
+      ORDER BY period_slug, severity_rank, sort_rank
+    `;
+
+    let result: SnowflakeQueryResult<HealthOverviewSignalRow>;
+    try {
+      result = await this.snowflakeService.execute<HealthOverviewSignalRow>(query, [foundationSlug], { expectMissingObject: true });
+    } catch (error) {
+      if (!SnowflakeService.isMissingObjectError(error)) throw error;
+      logger.warning(
+        undefined,
+        'get_health_overview_signals',
+        'Health overview signals query hit a missing-object/not-authorized error; returning no findings',
+        {
+          foundation_slug: foundationSlug,
+          err: error,
+        }
+      );
+      return {};
+    }
+
+    const byRange: HealthMetricsOverviewFindingsByRange = {};
+    for (const row of result.rows ?? []) {
+      const finding = ProjectService.toHealthOverviewFinding(row);
+      if (!finding) continue;
+      const findings = (byRange[finding.range] ??= []);
+      // Rows arrive ordered, so the index within the period is its display rank.
+      findings.push({ ...finding.finding, sortRank: findings.length });
+    }
+
+    logger.debug(undefined, 'get_health_overview_signals', 'Fetched health overview signals', {
+      foundation_slug: foundationSlug,
+      row_count: result.rows?.length ?? 0,
+    });
+
+    return byRange;
+  }
+
+  /**
    * Get event growth metrics from Snowflake
    * Queries ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS (row-level, authoritative source)
    * instead of the pre-aggregated NORTH_STAR_EVENT_GROWTH / EVENT_GROWTH_TOP_EVENTS views.
@@ -9154,6 +9220,33 @@ export class ProjectService {
     return Array.from(HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS)
       .map((area) => areaStateBuilders[area]?.())
       .filter((state): state is HealthMetricsAreaState => state !== undefined);
+  }
+
+  /** One signal row as a finding, or null when its period, band or category has no mapping. */
+  private static toHealthOverviewFinding(row: HealthOverviewSignalRow): { range: HealthMetricsRange; finding: Omit<HealthMetricsFinding, 'sortRank'> } | null {
+    const range = HEALTH_OVERVIEW_SIGNAL_PERIOD_RANGES[row.PERIOD_SLUG as keyof typeof HEALTH_OVERVIEW_SIGNAL_PERIOD_RANGES];
+    const classification = HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS[row.SEVERITY_BAND as keyof typeof HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS];
+    const area = HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS[row.CATEGORY as keyof typeof HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS];
+    if (!range || !classification || !area) return null;
+
+    const linkTarget =
+      HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS[row.SIGNAL_KEY as keyof typeof HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS] ??
+      HEALTH_METRICS_OVERVIEW_TILE_LINKS[area].linkTarget;
+    return {
+      range,
+      finding: {
+        classification,
+        area,
+        title: row.HEADLINE ?? '',
+        sentence: row.BODY ?? '',
+        keyValue: row.METRIC_VALUE ?? HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
+        keyLabel: row.METRIC_CAPTION ?? '',
+        ...(row.METRIC_SECONDARY ? { keySecondary: row.METRIC_SECONDARY } : {}),
+        linkTarget,
+        // The model carries no evaluation timestamp for a signal.
+        evaluatedAt: '',
+      },
+    };
   }
 
   /** Exact, grouped count ("1,234"); the compact form would turn a registration total into "1.2K". */
