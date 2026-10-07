@@ -47,6 +47,7 @@ import {
   committeeRequiresOrganization,
   committeeRouteIdMatches,
   findPendingInvitationForCommittee,
+  hasMeetingEnded,
   invitationRequiresOrganization,
 } from '@lfx-one/shared/utils';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
@@ -414,8 +415,18 @@ export class CommitteeViewComponent {
       label: 'Meetings',
       icon: 'fa-calendar',
       visible: () => this.isMemberOrAdmin() || !!this.committee()?.calendar?.public,
-      // Show upcoming meetings count — the tab defaults to the "upcoming" view.
-      badge: () => (this.meetingsLoading() ? null : this.upcomingMeetings().length),
+      // Count only meetings the tab's Upcoming view would actually show — same predicate
+      // committee-meetings uses: exclude ended non-recurring meetings and recurring meetings
+      // where all remaining occurrences are cancelled or ended.
+      badge: () => {
+        if (this.meetingsLoading()) return null;
+        return this.upcomingMeetings().filter((m) => {
+          if (m.occurrences?.length) {
+            return m.occurrences.some((o) => o.status !== 'cancel' && !hasMeetingEnded(m, o));
+          }
+          return !hasMeetingEnded(m);
+        }).length;
+      },
     },
     {
       key: 'surveys',
