@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, linkedSignal, Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { CreateMeetingRsvpRequest, MeetingRsvp, RsvpResponse, RsvpScope } from '@lfx-one/shared/interfaces';
 import { resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
@@ -16,14 +18,20 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
 /**
  * The V2 RSVP card, the `rsvp` kind of the action slot (E2-05, #2881, FR-023 / FR-024).
  * @description The prototype's "Will you attend?" card: Yes, I'll attend / Maybe / Can't attend.
- * Once answered it shows the answer, with Change to answer again. On a series it asks which
- * occurrences the answer covers (all / this occurrence only / this and following) before saving;
- * a single meeting saves `all` silently. RSVP is a three-value enum; "pending" is the absence of
- * one.
+ * Once answered it shows the answer, with Change to answer again (and Keep my answer to back out).
+ * On a series it asks which occurrences the answer covers (all / this occurrence only / this and
+ * following) before saving; a single meeting saves `all` silently. RSVP is a three-value enum;
+ * "pending" is the absence of one.
  *
  * It saves as V1's `lfx-rsvp-button-group` does (same request, `occurrence_id` for `single` and
  * `this_and_following`, same toasts and 404 copy) and hands the saved RSVP to the state service
- * (`setMyRsvp`), so the pill and the card show it at once, ahead of the indexer.
+ * (`setMyRsvp`), so the pill and the card show it at once, ahead of the indexer. The card also keeps
+ * the answer it saved: the state service only loads an invitee's own answer, and an organizer gets
+ * this card too, invited or not.
+ *
+ * Each step swaps what is on screen, so focus moves to the step's control, and a save is announced
+ * through one live region that stays mounted. The step state resets when the page moves to another
+ * meeting or occurrence.
  *
  * The scope question is a step inside the card, not V1's dialog: that dialog is shared with V1 and
  * the meeting cards (and carries V1's testids), and a V2 dialog would render outside the page's
@@ -31,6 +39,7 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  */
 @Component({
   selector: 'lfx-meeting-rsvp-card',
+  imports: [ReactiveFormsModule, RadioButtonComponent],
   templateUrl: './rsvp-card.component.html',
 })
 export class MeetingRsvpCardComponent {
@@ -39,6 +48,8 @@ export class MeetingRsvpCardComponent {
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
+  private readonly elementRef: ElementRef<HTMLElement> = inject(ElementRef);
 
   /** The three answers, in the prototype's order, with its words and colours (V2 tokens). */
   protected readonly options: { response: RsvpResponse; label: string; icon: string; tone: string }[] = [
@@ -59,18 +70,26 @@ export class MeetingRsvpCardComponent {
     declined: { label: "You can't attend", icon: 'fa-solid fa-xmark', classes: 'bg-[var(--md-surface-hover)] text-[var(--md-text-muted)]' },
   };
 
-  /** True while the viewer is changing an existing answer (Change). */
-  protected readonly changing = signal(false);
-  /** The answer chosen on a series, waiting for its scope. */
-  protected readonly pendingResponse = signal<RsvpResponse | null>(null);
-  protected readonly selectedScope = signal<RsvpScope>('all');
-  protected readonly saving = signal<RsvpResponse | null>(null);
-  protected readonly error = signal<string | null>(null);
+  protected readonly scopeForm = new FormGroup({ scope: new FormControl<RsvpScope>('all', { nonNullable: true }) });
 
-  protected readonly myRsvp: Signal<RsvpResponse | null | undefined> = this.state.myRsvp;
+  /** The meeting and occurrence the card answers for; the step state below resets when it changes. */
+  private readonly rsvpKey: Signal<string> = this.initRsvpKey();
+  /** True while the viewer is changing an existing answer (Change). */
+  protected readonly changing = linkedSignal({ source: this.rsvpKey, computation: () => false });
+  /** The answer chosen on a series, waiting for its scope. */
+  protected readonly pendingResponse = linkedSignal<string, RsvpResponse | null>({ source: this.rsvpKey, computation: () => null });
+  /** The answer this card last saved, for a viewer whose own answer the state service does not load. */
+  private readonly savedResponse = linkedSignal<string, RsvpResponse | null>({ source: this.rsvpKey, computation: () => null });
+  protected readonly saving = linkedSignal<string, RsvpResponse | null>({ source: this.rsvpKey, computation: () => null });
+  protected readonly error = linkedSignal<string, string | null>({ source: this.rsvpKey, computation: () => null });
+  /** The live region's text: set after a save, so the result is announced once. */
+  protected readonly announcement = linkedSignal({ source: this.rsvpKey, computation: () => '' });
+
+  /** The answer to show: the page's own once loaded, else what this card saved. */
+  protected readonly answer: Signal<RsvpResponse | null> = computed(() => this.state.myRsvp() ?? this.savedResponse());
   protected readonly myRsvpAttr: Signal<string | null> = this.state.myRsvpAttr;
   /** Answered, and not changing it: the confirmation shows instead of the buttons. */
-  protected readonly confirmed = computed(() => !!this.myRsvp() && !this.changing() && !this.pendingResponse());
+  protected readonly confirmed = computed(() => !!this.answer() && !this.changing() && !this.pendingResponse());
   protected readonly recurring = computed(() => !!this.state.meeting()?.recurrence);
 
   protected choose(response: RsvpResponse): void {
@@ -80,8 +99,9 @@ export class MeetingRsvpCardComponent {
     this.error.set(null);
     // FR-024: a series asks for a scope first; a single meeting saves `all` silently.
     if (this.recurring()) {
-      this.selectedScope.set('all');
+      this.scopeForm.reset({ scope: 'all' });
       this.pendingResponse.set(response);
+      this.focusAfterRender('#meeting-rsvp-card-scope-all');
       return;
     }
     this.save(response, 'all');
@@ -90,17 +110,32 @@ export class MeetingRsvpCardComponent {
   protected confirmScope(): void {
     const response = this.pendingResponse();
     if (response) {
-      this.save(response, this.selectedScope());
+      this.save(response, this.scopeForm.controls.scope.value);
     }
   }
 
   protected cancelScope(): void {
+    const response = this.pendingResponse();
     this.pendingResponse.set(null);
+    this.focusAfterRender(`[data-testid="meeting-rsvp-card-${response}"]`);
   }
 
   protected change(): void {
     this.error.set(null);
     this.changing.set(true);
+    this.focusAfterRender('[data-testid^="meeting-rsvp-card-"][aria-pressed="true"]');
+  }
+
+  protected keepAnswer(): void {
+    this.changing.set(false);
+    this.focusAfterRender('[data-testid="meeting-rsvp-card-change"]');
+  }
+
+  private initRsvpKey(): Signal<string> {
+    return computed(() => {
+      const meeting = this.state.meeting();
+      return meeting ? `${meeting.id}|${resolveRsvpOccurrenceId(meeting, { occurrence: this.state.selectedOccurrence() }) ?? ''}` : '';
+    });
   }
 
   private save(response: RsvpResponse, scope: RsvpScope): void {
@@ -117,17 +152,24 @@ export class MeetingRsvpCardComponent {
     }
 
     this.saving.set(response);
+    this.scopeForm.disable();
     this.meetingService
       .createMeetingRsvp(meeting.id, request)
       .pipe(
-        finalize(() => this.saving.set(null)),
+        finalize(() => {
+          this.saving.set(null);
+          this.scopeForm.enable();
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
         next: (rsvp: MeetingRsvp) => {
           this.state.setMyRsvp(meeting.id, occurrenceId, rsvp);
+          this.savedResponse.set(rsvp.response_type);
           this.pendingResponse.set(null);
           this.changing.set(false);
+          this.announcement.set(`RSVP saved. ${this.confirmations[rsvp.response_type].label}.`);
+          this.focusAfterRender('[data-testid="meeting-rsvp-card-change"]');
           this.messageService.add({
             severity: 'success',
             summary: 'RSVP Updated',
@@ -141,6 +183,11 @@ export class MeetingRsvpCardComponent {
           this.messageService.add({ severity: 'error', summary: 'RSVP Failed', detail: message, life: 5000 });
         },
       });
+  }
+
+  /** Moves focus into the step just rendered, so keyboard and screen-reader users keep their place. */
+  private focusAfterRender(selector: string): void {
+    afterNextRender(() => this.elementRef.nativeElement.querySelector<HTMLElement>(selector)?.focus(), { injector: this.injector });
   }
 
   /** V1's words for the answer in the toast. */

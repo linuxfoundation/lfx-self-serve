@@ -4,12 +4,15 @@
 <!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities): 42px pill
      buttons, 8px apart, under a 13px semibold question. The answer is in data-my-rsvp. -->
 <section class="flex flex-col gap-[9px]" aria-labelledby="meeting-rsvp-card-heading" data-testid="meeting-rsvp-card" [attr.data-my-rsvp]="myRsvpAttr()">
-  @if (confirmed() && myRsvp(); as answer) {
+  <!-- One live region, mounted throughout, so a save is announced once rather than every time the
+       confirmation renders. -->
+  <p class="sr-only" role="status" aria-live="polite" data-testid="meeting-rsvp-card-announcement">{{ announcement() }}</p>
+
+  @if (confirmed() && answer(); as answer) {
     <h3 id="meeting-rsvp-card-heading" class="sr-only">Your RSVP</h3>
     <div
       class="flex items-center gap-[9px] rounded-[var(--md-radius-md)] px-[13px] py-[11px] text-[13.5px] font-semibold"
       [class]="confirmations[answer].classes"
-      role="status"
       data-testid="meeting-rsvp-card-confirmation">
       <i [class]="confirmations[answer].icon" aria-hidden="true"></i>
       <span class="flex-1">{{ confirmations[answer].label }}</span>
@@ -21,22 +24,21 @@
         Change
       </button>
     </div>
-  } @else if (pendingResponse(); as response) {
+  } @else if (pendingResponse()) {
     <!-- FR-024: on a series, which occurrences the answer covers. -->
     <h3 id="meeting-rsvp-card-heading" class="m-0 text-[13px] font-semibold text-[var(--md-text-heading)]">Apply your answer to</h3>
     <div class="flex flex-col gap-[8px]" role="radiogroup" aria-labelledby="meeting-rsvp-card-heading" data-testid="meeting-rsvp-card-scope">
       @for (option of scopes; track option.scope) {
-        <label class="flex cursor-pointer items-center gap-[9px] text-[13px] text-[var(--md-text-body)]">
-          <input
-            type="radio"
+        <div class="flex items-center gap-[9px]">
+          <lfx-radio-button
+            [form]="scopeForm"
+            control="scope"
             name="meeting-rsvp-card-scope"
-            class="accent-[var(--md-accent)]"
             [value]="option.scope"
-            [checked]="selectedScope() === option.scope"
-            (change)="selectedScope.set(option.scope)"
+            [inputId]="'meeting-rsvp-card-scope-' + option.scope"
             [attr.data-testid]="'meeting-rsvp-card-scope-' + option.scope" />
-          {{ option.label }}
-        </label>
+          <label [for]="'meeting-rsvp-card-scope-' + option.scope" class="cursor-pointer text-[13px] text-[var(--md-text-body)]">{{ option.label }}</label>
+        </div>
       }
     </div>
     <div class="flex gap-[8px]">
@@ -67,10 +69,10 @@
           type="button"
           class="inline-flex h-[42px] w-full items-center justify-center gap-[8px] rounded-full border text-[13.5px] font-semibold transition-colors focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none disabled:opacity-60"
           [style.border-color]="option.tone"
-          [style.color]="myRsvp() === option.response ? 'var(--md-surface-card)' : option.tone"
-          [style.background]="myRsvp() === option.response ? option.tone : 'var(--md-surface-card)'"
+          [style.color]="answer() === option.response ? 'var(--md-surface-card)' : option.tone"
+          [style.background]="answer() === option.response ? option.tone : 'var(--md-surface-card)'"
           [disabled]="!!saving()"
-          [attr.aria-pressed]="myRsvp() === option.response"
+          [attr.aria-pressed]="answer() === option.response"
           [attr.aria-busy]="saving() === option.response"
           (click)="choose(option.response)"
           [attr.data-testid]="'meeting-rsvp-card-' + option.response">
@@ -79,6 +81,15 @@
         </button>
       }
     </div>
+    @if (changing() && answer()) {
+      <button
+        type="button"
+        class="w-fit self-center rounded-[var(--md-radius-xs)] text-[12.5px] font-semibold text-[var(--md-text-muted)] underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+        (click)="keepAnswer()"
+        data-testid="meeting-rsvp-card-keep">
+        Keep my answer
+      </button>
+    }
   }
 
   @if (error(); as message) {

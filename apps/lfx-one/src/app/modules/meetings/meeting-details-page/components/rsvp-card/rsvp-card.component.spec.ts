@@ -8,6 +8,7 @@ import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { Observable, of, Subject, throwError } from 'rxjs';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
@@ -37,6 +38,7 @@ describe('MeetingRsvpCardComponent', () => {
     await TestBed.configureTestingModule({
       imports: [MeetingRsvpCardComponent],
       providers: [
+        provideNoopAnimations(),
         {
           provide: MeetingDetailsStateService,
           useValue: {
@@ -63,6 +65,7 @@ describe('MeetingRsvpCardComponent', () => {
     query(testId)?.click();
     fixture.detectChanges();
   };
+  const radio = (scope: string): HTMLInputElement => fixture.nativeElement.querySelector(`#meeting-rsvp-card-scope-${scope}`) as HTMLInputElement;
 
   it('asks "Will you attend?" with the three answers, none chosen yet', () => {
     expect(fixture.nativeElement.querySelector('h3')?.textContent?.trim()).toBe('Will you attend?');
@@ -83,6 +86,28 @@ describe('MeetingRsvpCardComponent', () => {
 
     expect(query('meeting-rsvp-card-accepted')?.getAttribute('aria-pressed')).toBe('true');
     expect(query('meeting-rsvp-card-maybe')?.getAttribute('aria-pressed')).toBe('false');
+    // Focus lands on the current answer, not on <body>.
+    expect(document.activeElement).toBe(query('meeting-rsvp-card-accepted'));
+  });
+
+  it('lets the viewer keep their answer after all', () => {
+    myRsvp.set('maybe');
+    fixture.detectChanges();
+    click('meeting-rsvp-card-change');
+
+    click('meeting-rsvp-card-keep');
+
+    expect(text('meeting-rsvp-card-confirmation')).toContain('You replied maybe');
+    expect(document.activeElement).toBe(query('meeting-rsvp-card-change'));
+    expect(createMeetingRsvp).not.toHaveBeenCalled();
+  });
+
+  it('shows unpressed answers while the answer is still loading', () => {
+    myRsvp.set(undefined);
+    fixture.detectChanges();
+
+    expect(query('meeting-rsvp-card-accepted')?.getAttribute('aria-pressed')).toBe('false');
+    expect(query('meeting-rsvp-card-keep')).toBeNull();
   });
 
   // FR-024: a single meeting saves `all` silently.
@@ -93,6 +118,43 @@ describe('MeetingRsvpCardComponent', () => {
     expect(setMyRsvp).toHaveBeenCalledWith('meeting-1', undefined, saved('maybe'));
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'RSVP Updated', detail: 'You have responded "Maybe" for this meeting.' }));
     expect(query('meeting-rsvp-card-scope')).toBeNull();
+  });
+
+  // The live region stays mounted, so the save is announced; focus moves to the confirmation's Change.
+  it('announces a saved answer and moves focus to Change', () => {
+    myRsvp.set(undefined);
+    fixture.detectChanges();
+    expect(text('meeting-rsvp-card-announcement')).toBe('');
+
+    click('meeting-rsvp-card-accepted');
+
+    expect(query('meeting-rsvp-card-announcement')?.getAttribute('role')).toBe('status');
+    expect(text('meeting-rsvp-card-announcement')).toBe("RSVP saved. You're going.");
+    expect(document.activeElement).toBe(query('meeting-rsvp-card-change'));
+  });
+
+  // An organizer gets this card whether or not they are invited, but the page only loads an
+  // invitee's own answer: the card keeps what it saved.
+  it("shows the answer it saved when the page's own answer is not loaded", () => {
+    myRsvp.set(undefined);
+    fixture.detectChanges();
+
+    click('meeting-rsvp-card-declined');
+
+    expect(text('meeting-rsvp-card-confirmation')).toContain("You can't attend");
+  });
+
+  it('starts over when the page moves to another occurrence', () => {
+    myRsvp.set('accepted');
+    fixture.detectChanges();
+    click('meeting-rsvp-card-change');
+    expect(query('meeting-rsvp-card-confirmation')).toBeNull();
+
+    meeting.set({ id: 'meeting-1', title: 'Acme Weekly Sync', recurrence: { type: 2 }, occurrences: [OCCURRENCE] } as unknown as Meeting);
+    selectedOccurrence.set(OCCURRENCE);
+    fixture.detectChanges();
+
+    expect(text('meeting-rsvp-card-confirmation')).toContain("You're going");
   });
 
   describe('on a series', () => {
@@ -110,12 +172,14 @@ describe('MeetingRsvpCardComponent', () => {
       expect(text('meeting-rsvp-card-scope')).toContain('All occurrences');
       expect(text('meeting-rsvp-card-scope')).toContain('This occurrence only');
       expect(text('meeting-rsvp-card-scope')).toContain('This and following occurrences');
-      expect((query('meeting-rsvp-card-scope-all') as HTMLInputElement).checked).toBe(true);
+      expect(radio('all').checked).toBe(true);
+      expect(document.activeElement).toBe(radio('all'));
     });
 
     it('sends the occurrence for this occurrence only, and keys the saved answer to it', () => {
       click('meeting-rsvp-card-declined');
-      query('meeting-rsvp-card-scope-single')?.dispatchEvent(new Event('change'));
+      radio('single').click();
+      fixture.detectChanges();
       click('meeting-rsvp-card-scope-save');
 
       expect(createMeetingRsvp).toHaveBeenCalledWith('meeting-1', {
@@ -126,6 +190,15 @@ describe('MeetingRsvpCardComponent', () => {
       });
       expect(setMyRsvp).toHaveBeenCalledWith('meeting-1', '1760000000', saved('declined'));
       expect(query('meeting-rsvp-card-scope')).toBeNull();
+    });
+
+    it('sends the occurrence for this and following occurrences', () => {
+      click('meeting-rsvp-card-maybe');
+      radio('this_and_following').click();
+      fixture.detectChanges();
+      click('meeting-rsvp-card-scope-save');
+
+      expect(createMeetingRsvp.mock.calls[0][1]).toMatchObject({ scope: 'this_and_following', occurrence_id: '1760000000' });
     });
 
     it('sends no occurrence for all occurrences', () => {
@@ -140,7 +213,7 @@ describe('MeetingRsvpCardComponent', () => {
       click('meeting-rsvp-card-scope-cancel');
 
       expect(query('meeting-rsvp-card-scope')).toBeNull();
-      expect(query('meeting-rsvp-card-accepted')).not.toBeNull();
+      expect(document.activeElement).toBe(query('meeting-rsvp-card-accepted'));
       expect(createMeetingRsvp).not.toHaveBeenCalled();
     });
   });

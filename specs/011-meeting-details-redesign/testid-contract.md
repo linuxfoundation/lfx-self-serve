@@ -88,6 +88,8 @@ own namespace; the two never share a value.
 | `meeting-rsvp-card-${response}`             | One answer button, `accepted` / `maybe` / `declined`; `aria-pressed` once it is the answer                            |
 | `meeting-rsvp-card-confirmation`            | The given answer ("You're going" …)                                                                                   |
 | `meeting-rsvp-card-change`                  | Its Change control                                                                                                    |
+| `meeting-rsvp-card-keep`                    | While changing an answer, "Keep my answer" to back out                                                                |
+| `meeting-rsvp-card-announcement`            | Its polite live region; announces a saved answer                                                                      |
 | `meeting-rsvp-card-scope`                   | On a series, the scope radio group                                                                                    |
 | `meeting-rsvp-card-scope-${scope}`          | One scope option, `all` / `single` / `this_and_following`                                                             |
 | `meeting-rsvp-card-scope-save`              | Saves the answer with the chosen scope                                                                                |
