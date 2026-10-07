@@ -2596,7 +2596,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
     }
     expect((query as string).match(/members_renewing_90d_value_usd/g)).toHaveLength(1);
     expect((query as string).match(/non_members_pipeline_value_usd/g)).toHaveLength(1);
-    expect((query as string).match(/members_renewing_90d_unsecured_org_pct/g)).toHaveLength(1);
+    expect(query).not.toContain('members_renewing_90d_unsecured_org_pct');
     expect(query).not.toContain('_4th_last_completed_year');
   });
 
@@ -2609,7 +2609,6 @@ describe('ProjectService — getHealthOverviewKpis', () => {
           MEMBERS_RENEWING_90D_ORG_COUNT: 7,
           MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT: 3,
           MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD: 185_000,
-          MEMBERS_RENEWING_90D_UNSECURED_ORG_PCT: 0.43,
         }),
       ],
     });
@@ -2629,7 +2628,6 @@ describe('ProjectService — getHealthOverviewKpis', () => {
           MEMBERS_RENEWING_90D_ORG_COUNT: 4,
           MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT: 0,
           MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD: null,
-          MEMBERS_RENEWING_90D_UNSECURED_ORG_PCT: 0,
         }),
       ],
     });
@@ -2722,9 +2720,16 @@ describe('ProjectService — getHealthOverviewSignals', () => {
     expect(result['YTD']).toEqual([expect.objectContaining({ area: 'eng', classification: 'opp', linkTarget: 'eng.groups' })]);
   });
 
-  it('drops a row whose period, band or category has no mapping instead of misfiling it', async () => {
+  it('drops a headless row or one whose period, band or category has no mapping instead of misfiling it', async () => {
     execute.mockResolvedValueOnce({
-      rows: [signalRow({ PERIOD_SLUG: '4th_last_completed_year' }), signalRow({ SEVERITY_BAND: 'unknown' }), signalRow({ CATEGORY: 'CODE' })],
+      rows: [
+        signalRow({ PERIOD_SLUG: '4th_last_completed_year' }),
+        signalRow({ SEVERITY_BAND: 'unknown' }),
+        signalRow({ CATEGORY: 'CODE' }),
+        signalRow({ CATEGORY: 'constructor' }),
+        signalRow({ HEADLINE: null }),
+        signalRow({ HEADLINE: '' }),
+      ],
     });
 
     const result = await service.getHealthOverviewSignals('cncf');

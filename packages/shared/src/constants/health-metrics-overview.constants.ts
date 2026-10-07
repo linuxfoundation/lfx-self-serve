@@ -179,7 +179,6 @@ export const HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS: ReadonlySet<(typeof HEALT
  */
 export const HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS = [
   'EVENTS_REGISTRATIONS_COUNT',
-  'EVENTS_REGISTRATIONS_ON_TARGETED_COUNT',
   'EVENTS_REGISTRATIONS_GOAL',
   'EVENTS_PCT_OF_REGISTRATION_GOAL',
   'EVENTS_STATUS',
@@ -199,7 +198,7 @@ export const HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS = [
   'FOUNDATION_TOTAL_REVENUE_USD',
 ] as const satisfies readonly (keyof HealthOverviewRevenueRow)[];
 
-/** `HEALTH_OVERVIEW_SIGNALS.severity_band` → finding classification; an unknown band degrades to `'none'`. */
+/** `HEALTH_OVERVIEW_SIGNALS.severity_band` → finding classification. A row whose band isn't listed is dropped from the feed. */
 export const HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS: Readonly<Record<string, HealthMetricsOverviewClassification>> = {
   needs_action: 'act',
   needs_attention: 'watch',

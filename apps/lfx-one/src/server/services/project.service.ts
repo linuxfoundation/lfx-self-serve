@@ -6312,7 +6312,6 @@ export class ProjectService {
         members_renewing_90d_org_count AS MEMBERS_RENEWING_90D_ORG_COUNT,
         members_renewing_90d_unsecured_org_count AS MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT,
         members_renewing_90d_unsecured_value_usd AS MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD,
-        members_renewing_90d_unsecured_org_pct AS MEMBERS_RENEWING_90D_UNSECURED_ORG_PCT,
         members_status AS MEMBERS_STATUS,
         non_members_pipeline_value_usd AS NON_MEMBERS_PIPELINE_VALUE_USD,
         non_members_status AS NON_MEMBERS_STATUS
@@ -9222,22 +9221,22 @@ export class ProjectService {
       .filter((state): state is HealthMetricsAreaState => state !== undefined);
   }
 
-  /** One signal row as a finding, or null when its period, band or category has no mapping. */
+  /** One signal row as a finding, or null when it has no headline or its period, band or category is unmapped. */
   private static toHealthOverviewFinding(row: HealthOverviewSignalRow): { range: HealthMetricsRange; finding: Omit<HealthMetricsFinding, 'sortRank'> } | null {
-    const range = HEALTH_OVERVIEW_SIGNAL_PERIOD_RANGES[row.PERIOD_SLUG as keyof typeof HEALTH_OVERVIEW_SIGNAL_PERIOD_RANGES];
-    const classification = HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS[row.SEVERITY_BAND as keyof typeof HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS];
-    const area = HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS[row.CATEGORY as keyof typeof HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS];
-    if (!range || !classification || !area) return null;
+    // Own-key lookups only: a model value like "constructor" must not resolve an inherited member.
+    const lookup = <T>(map: Readonly<Record<string, T>>, key: string | null): T | undefined => (key !== null && Object.hasOwn(map, key) ? map[key] : undefined);
+    const range = lookup(HEALTH_OVERVIEW_SIGNAL_PERIOD_RANGES, row.PERIOD_SLUG);
+    const classification = lookup(HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS, row.SEVERITY_BAND);
+    const area = lookup(HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS, row.CATEGORY);
+    if (!row.HEADLINE || !range || !classification || !area) return null;
 
-    const linkTarget =
-      HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS[row.SIGNAL_KEY as keyof typeof HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS] ??
-      HEALTH_METRICS_OVERVIEW_TILE_LINKS[area].linkTarget;
+    const linkTarget = lookup(HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS, row.SIGNAL_KEY) ?? HEALTH_METRICS_OVERVIEW_TILE_LINKS[area].linkTarget;
     return {
       range,
       finding: {
         classification,
         area,
-        title: row.HEADLINE ?? '',
+        title: row.HEADLINE,
         sentence: row.BODY ?? '',
         keyValue: row.METRIC_VALUE ?? HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
         keyLabel: row.METRIC_CAPTION ?? '',
@@ -9272,7 +9271,7 @@ export class ProjectService {
     const counts = `${ProjectService.formatExactCount(unsecuredCount)} of ${ProjectService.formatExactCount(orgCount)} unsecured`;
     return {
       text: unsecuredValue === null ? counts : `${counts} · ${formatCurrency(unsecuredValue)}`,
-      tone: (row.MEMBERS_RENEWING_90D_UNSECURED_ORG_PCT ?? 0) > 0 ? 'watch' : 'none',
+      tone: unsecuredCount > 0 ? 'watch' : 'none',
     };
   }
 
@@ -9340,7 +9339,6 @@ export class ProjectService {
 
     return {
       EVENTS_REGISTRATIONS_COUNT: ProjectService.toNullableNumber(period('EVENTS_REGISTRATIONS_COUNT')),
-      EVENTS_REGISTRATIONS_ON_TARGETED_COUNT: ProjectService.toNullableNumber(period('EVENTS_REGISTRATIONS_ON_TARGETED_COUNT')),
       EVENTS_REGISTRATIONS_GOAL: ProjectService.toNullableNumber(period('EVENTS_REGISTRATIONS_GOAL')),
       EVENTS_PCT_OF_REGISTRATION_GOAL: ProjectService.toNullableNumber(period('EVENTS_PCT_OF_REGISTRATION_GOAL')),
       EVENTS_STATUS: ProjectService.toNullableString(period('EVENTS_STATUS')),
@@ -9351,7 +9349,6 @@ export class ProjectService {
       MEMBERS_RENEWING_90D_ORG_COUNT: ProjectService.toNullableNumber(row['MEMBERS_RENEWING_90D_ORG_COUNT']),
       MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT: ProjectService.toNullableNumber(row['MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT']),
       MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD: ProjectService.toNullableNumber(row['MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD']),
-      MEMBERS_RENEWING_90D_UNSECURED_ORG_PCT: ProjectService.toNullableNumber(row['MEMBERS_RENEWING_90D_UNSECURED_ORG_PCT']),
       MEMBERS_STATUS: ProjectService.toNullableString(row['MEMBERS_STATUS']),
       NON_MEMBERS_PIPELINE_VALUE_USD: ProjectService.toNullableNumber(row['NON_MEMBERS_PIPELINE_VALUE_USD']),
       NON_MEMBERS_STATUS: ProjectService.toNullableString(row['NON_MEMBERS_STATUS']),

@@ -139,7 +139,6 @@ export interface HealthMetricsAreaStateDetail {
  */
 export interface HealthOverviewKpisRow {
   EVENTS_REGISTRATIONS_COUNT: number | null;
-  EVENTS_REGISTRATIONS_ON_TARGETED_COUNT: number | null;
   EVENTS_REGISTRATIONS_GOAL: number | null;
   EVENTS_PCT_OF_REGISTRATION_GOAL: number | null;
   EVENTS_STATUS: string | null;
@@ -150,7 +149,6 @@ export interface HealthOverviewKpisRow {
   MEMBERS_RENEWING_90D_ORG_COUNT: number | null;
   MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT: number | null;
   MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD: number | null;
-  MEMBERS_RENEWING_90D_UNSECURED_ORG_PCT: number | null;
   MEMBERS_STATUS: string | null;
   NON_MEMBERS_PIPELINE_VALUE_USD: number | null;
   NON_MEMBERS_STATUS: string | null;
@@ -233,10 +231,9 @@ export interface HealthMetricsFinding {
   keySecondary?: string;
   linkTarget: HealthMetricsOverviewLinkTarget;
   /**
-   * Display order. Must be unique across the whole findings set (page-wide, not just within one
-   * classification group) — {@link HealthMetricsOverviewFindingViewModel.sortRank} relies on this
-   * for row-scoped ids. Whatever service layer maps `hm_findings.sort_rank` into this field must
-   * preserve that global uniqueness.
+   * Display order: the row's index within its period in the ordered `HEALTH_OVERVIEW_SIGNALS` read,
+   * so unique across one range's findings — {@link HealthMetricsOverviewFindingViewModel.sortRank}
+   * relies on this for row-scoped ids.
    */
   sortRank: number;
   evaluatedAt: string;
