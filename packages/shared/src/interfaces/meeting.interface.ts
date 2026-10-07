@@ -299,9 +299,9 @@ export interface Meeting {
    * Share the guest list in calendar invites: when on, each guest's ICS lists the other
    * attendees and their last known RSVP instead of the recipient alone. Board meetings can never
    * opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF forces the field off on
-   * write. Restricted meetings can opt in only through the meeting v2 composer (`allowRestricted`),
-   * which sends an explicit `true` the BFF keeps; any other write is forced off, as is the pre-v2
-   * wizard's locked control. In LFX it also decides whether an invitee who is not an organizer can see
+   * write. A restricted meeting keeps any explicit `true` the BFF receives from a caller allowed to
+   * edit it — in practice only the meeting v2 composer (`allowRestricted`) sends one, since the pre-v2
+   * wizard locks the control off — and any other write is forced off. In LFX it also decides whether an invitee who is not an organizer can see
    * the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]` to them when it is
    * off — and always for Board and restricted meetings, whose lists stay hidden in LFX even when a
    * restricted meeting opted in (that opt-in reaches calendar invites only) — and the meeting card and
