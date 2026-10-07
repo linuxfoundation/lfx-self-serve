@@ -4,7 +4,7 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
 
-import type { AudienceLastSentEmail, AudienceListBrief, AudienceMasterListBrief } from '@lfx-one/shared/interfaces';
+import type { AudienceLastSentEmail, AudienceListBrief, AudienceListRef, AudienceMasterListBrief } from '@lfx-one/shared/interfaces';
 
 /**
  * What one prior send's included lists REPORT, or '' when nothing can be said.
@@ -50,6 +50,8 @@ export class AudienceLastSentComponent {
   public readonly emails = input<readonly AudienceLastSentEmail[]>([]);
   public readonly masterLists = input<readonly AudienceMasterListBrief[]>([]);
   public readonly selectedIds = input<ReadonlySet<string>>(new Set<string>());
+  /** Lists the operator marked as exclusions, so their Exclude buttons read as on. */
+  public readonly excludedIds = input<ReadonlySet<string>>(new Set<string>());
   public readonly loading = input(false);
   public readonly disabled = input(false);
   /**
@@ -66,10 +68,18 @@ export class AudienceLastSentComponent {
   public readonly mastersFailed = input(false);
   public readonly emailsFailed = input(false);
   /**
-   * Whether lists can be attached to the current email directly. False with no saved plan (there
-   * is no brief to attach to) or while HubSpot is unusable; the attach buttons then explain why.
+   * Whether lists can be attached to the current email directly. False while the plan is still
+   * saving, failed to save or is unapproved, or while HubSpot is unusable; the attach buttons then
+   * explain why via `attachUnavailableMessage`.
    */
   public readonly canAttach = input(false);
+  /**
+   * Why attaching is unavailable, stated by the container from the brief's REAL state. This used
+   * to be a fixed "Save the plan on the Plan tab first", which was wrong whenever the plan had been
+   * saved: the brief is saved automatically when this tab opens, so an empty brief id usually means
+   * that save is still running, failed, or is waiting on approval. Empty when nothing needs saying.
+   */
+  public readonly attachUnavailableMessage = input('');
   /**
    * Whether an EXISTING master list may be reused, which needs more than `canAttach`.
    *
@@ -102,6 +112,11 @@ export class AudienceLastSentComponent {
    * send's exclusions. The full selection is what identifies a send.
    */
   public readonly attachedExclusionIds = input<readonly string[]>([]);
+  /**
+   * The include lists behind the current attachment -- several when lists were attached directly
+   * without a master. A prior send is "the same lists" only when its whole include set matches.
+   */
+  public readonly attachedIncludeIds = input<readonly string[]>([]);
 
   // === Outputs ===
   /** Add one of a past send's lists to the inclusion set. */
@@ -110,10 +125,12 @@ export class AudienceLastSentComponent {
   public readonly addMasterList = output<AudienceMasterListBrief>();
   /** Copy a past send's whole selection — its inclusions AND suppressions — into steps 2-3. */
   public readonly copySelection = output<AudienceLastSentEmail>();
-  /** Attach a past send's include list and suppressions to this email, composing nothing. */
+  /** Attach a past send's include lists and suppressions to this email, composing nothing. */
   public readonly useSendLists = output<AudienceLastSentEmail>();
   /** Attach an already-built master list to this email as its send list, composing nothing. */
   public readonly useMasterList = output<AudienceMasterListBrief>();
+  /** Mark (or unmark) a list as an exclusion: its contacts are kept off this send. */
+  public readonly excludeList = output<AudienceListRef>();
 
   // === Protected Methods ===
   /**
@@ -123,11 +140,13 @@ export class AudienceLastSentComponent {
    */
   protected readonly masterRows = computed(() => {
     const selected = this.selectedIds();
+    const excluded = this.excludedIds();
     const attached = this.attachedListId();
     const current = this.attachedMasterId();
     return this.masterLists().map((list) => ({
       ...list,
       selected: selected.has(list.listId),
+      excluded: excluded.has(list.listId),
       // The badge says what the brief POINTS AT, which the exclusion ticks do not change.
       attached: attached === list.listId,
       // Whether re-using it would record nothing new: same master AND the same exclusions.
@@ -138,12 +157,15 @@ export class AudienceLastSentComponent {
 
   protected readonly emailRows = computed(() => {
     const selected = this.selectedIds();
-    const attached = this.attachedListId();
+    const excluded = this.excludedIds();
+    const attachedIncludes = new Set(this.attachedIncludeIds());
+    const recordedExclusions = new Set(this.attachedExclusionIds());
     // Generic so the decorated row keeps every field of the original — narrowing the parameter
     // type here silently drops `name`, `missing` and anything else the template reads.
     const decorate = <T extends { listId: string; size?: number }>(list: T) => ({
       ...list,
       selected: selected.has(list.listId),
+      excluded: excluded.has(list.listId),
       sizeText: this.sizeLabel(list.size),
     });
     return this.emails().map((email) => {
@@ -161,19 +183,18 @@ export class AudienceLastSentComponent {
       const accountedFor = email.includedLists.length;
       const blocked = this.attachBlockedReason(email);
       // Compared as SETS: order is the portal's, not the operator's, and a different order is
-      // the same selection.
-      const sameExclusions = (lists: readonly AudienceListBrief[]): boolean => {
-        const sent = new Set(this.attachedExclusionIds());
-        const theirs = new Set(lists.map((list) => list.listId));
-        return sent.size === theirs.size && [...theirs].every((id) => sent.has(id));
-      };
+      // the same selection. The includes must match exactly; the send's suppressions need only be
+      // CONTAINED in what was recorded, because reusing a send also applies the exclusions ticked
+      // here (the mandatory suppressions among them) on top of the send's own.
+      const sameIncludes = usable.length > 0 && usable.length === attachedIncludes.size && usable.every((list) => attachedIncludes.has(list.listId));
+      const exclusionsCovered = email.suppressionLists.every((list) => recordedExclusions.has(list.listId));
       return {
         ...email,
         includedLists: email.includedLists.map(decorate),
         suppressionLists: email.suppressionLists.map(decorate),
         copyable: !email.listsUnavailable && usable.length > 0,
         attachBlocked: blocked,
-        attached: blocked === null && attached !== null && usable[0]?.listId === attached && sameExclusions(email.suppressionLists),
+        attached: blocked === null && sameIncludes && exclusionsCovered,
         reachText: reportedMembershipsLabel(sized.length, accountedFor, knownMemberships),
       };
     });
@@ -219,13 +240,20 @@ export class AudienceLastSentComponent {
     }
   }
 
+  protected onExcludeList(list: AudienceListRef & { missing?: boolean }): void {
+    if (!this.disabled() && !list.missing) {
+      this.excludeList.emit({ listId: list.listId, name: list.name });
+    }
+  }
+
   /**
    * Why a past send's lists cannot be attached as-is, or null when they can.
    *
-   * An email sends to ONE include list (dispatch sets a single send list plus suppressions), so a
-   * send that included several lists cannot be replayed without combining them — that is what
-   * "Copy selection" and a compose are for. A missing suppression is refused rather than skipped:
-   * attaching with less suppression than the earlier send used is a compliance regression.
+   * A send with several include lists is attached as it stands: the email draft carries every one
+   * of them, so no master list needs composing. A missing suppression is refused rather than
+   * skipped: attaching with less suppression than the earlier send used is a compliance regression.
+   * A missing INCLUDE list is refused for the same reason in the other direction -- the reuse would
+   * silently reach fewer people than the send it claims to repeat.
    */
   private attachBlockedReason(email: AudienceLastSentEmail): string | null {
     if (email.listsUnavailable) {
@@ -235,8 +263,8 @@ export class AudienceLastSentComponent {
     if (usable.length === 0) {
       return 'None of the lists this send included still exist.';
     }
-    if (email.includedLists.length > 1) {
-      return 'This send included several lists. Copy the selection, then compose one master list below.';
+    if (usable.length < email.includedLists.length) {
+      return 'An included list this send used no longer resolves. Copy the selection and review it instead.';
     }
     if (email.suppressionLists.some((list) => list.missing)) {
       return 'A suppression list this send used no longer resolves. Copy the selection and review suppression instead.';

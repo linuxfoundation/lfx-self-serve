@@ -176,6 +176,7 @@ interface CampaignServiceAudienceList {
   brief_id: string;
   platform: string;
   platform_master_list_id?: string;
+  include_list_ids?: string[];
   suppression_list_ids?: string[];
   inclusion_summary?: string;
   status: string;
@@ -2055,6 +2056,7 @@ export class CampaignServiceClient {
       briefId: row.brief_id,
       platform: row.platform,
       platformMasterListId: row.platform_master_list_id,
+      ...(row.include_list_ids?.length ? { includeListIds: row.include_list_ids } : {}),
       suppressionListIds: row.suppression_list_ids,
       inclusionSummary: row.inclusion_summary,
       status: toAudienceStatus(row.status),

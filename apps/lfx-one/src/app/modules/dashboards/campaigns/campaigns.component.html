@@ -327,7 +327,9 @@
           [audienceReadUnavailable]="emailAudienceReadUnavailable()"
           [audienceScope]="emailAudienceScope()"
           [existingAudience]="emailAudience()"
+          [briefState]="emailBriefState()"
           (retryAudienceRead)="onRetryAudienceRead()"
+          (retryBrief)="onRetryEmailBrief()"
           (audienceAttached)="onAudienceComposed($event)"
           (audienceComposeUnattached)="onAudienceComposeUnattached($event)"
           (continueToEmail)="onContinueToEmailStep()" />
@@ -656,14 +658,21 @@
                       <p class="text-sm text-gray-600" data-testid="campaigns-email-audience-summary">{{ summary }}</p>
                     }
                     @if (audience.suppressionListIds?.length) {
-                      <p class="text-xs text-gray-500">{{ audience.suppressionListIds?.length }} suppression list(s) applied</p>
+                      <p class="text-xs text-gray-500">{{ audience.suppressionListIds?.length }} exclusion list(s) applied</p>
                     }
-                    <!-- The master list id, shown rather than linked. Every HubSpot link in this
+                    <!-- Several lists attached directly, with no master combining them: the send
+                         goes to each of them, so they are listed rather than a single master id. -->
+                    @if ((audience.includeListIds?.length ?? 0) > 1) {
+                      <p class="text-xs text-gray-500" data-testid="campaigns-email-audience-include-lists">
+                        Sends to {{ audience.includeListIds?.length }} lists directly (no master list):
+                        <span class="font-mono">{{ audience.includeListIds?.join(', ') }}</span>
+                      </p>
+                    } @else if (audience.platformMasterListId; as masterListId) {
+                      <!-- The master list id, shown rather than linked. Every HubSpot link in this
                          app is built SERVER-side, where the portal id lives; assembling one here
                          would guess a portal and hand the operator a URL that resolves to the
                          wrong account's list -- worse than an id they can paste into search. The
                          id was recorded in the row and rendered nowhere until now. -->
-                    @if (audience.platformMasterListId; as masterListId) {
                       <p class="text-xs text-gray-500" data-testid="campaigns-email-audience-master-list">
                         Master list <span class="font-mono">{{ masterListId }}</span>
                       </p>

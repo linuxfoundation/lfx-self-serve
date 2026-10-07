@@ -37,6 +37,35 @@
       </div>
     </div>
   }
+  <!-- Why nothing can be attached yet. The parent saves this email's plan when the tab opens, so an
+       empty brief id is a save in flight, a save that failed, or a plan not yet approved -- never
+       "go and save it", which is what this used to say in every case. -->
+  @if (briefId() === '' && briefState() !== 'none' && briefState() !== 'ready') {
+    <div
+      class="flex items-start gap-3 rounded-lg border p-4"
+      [class]="briefState() === 'failed' || briefState() === 'unopened' ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50'"
+      [attr.role]="briefState() === 'failed' || briefState() === 'unopened' ? 'alert' : 'status'"
+      data-testid="campaigns-audience-brief-state">
+      @if (briefState() === 'resolving') {
+        <i class="fa-light fa-spinner-third fa-spin mt-0.5 text-gray-500" aria-hidden="true"></i>
+      } @else {
+        <i class="fa-light fa-triangle-exclamation mt-0.5 text-amber-600" aria-hidden="true"></i>
+      }
+      <div class="flex flex-col gap-2">
+        <p class="text-xs text-gray-700" data-testid="campaigns-audience-brief-state-message">{{ briefStateMessage() }}</p>
+        @if (briefState() === 'failed') {
+          <button
+            type="button"
+            (click)="retryBrief.emit()"
+            class="inline-flex w-fit items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
+            data-testid="campaigns-audience-brief-retry">
+            <i class="fa-light fa-arrows-rotate" aria-hidden="true"></i>
+            Retry
+          </button>
+        }
+      </div>
+    </div>
+  }
   @if (degraded()) {
     <div class="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4" role="status" data-testid="campaigns-audience-degraded-banner">
       <i class="fa-light fa-triangle-exclamation mt-0.5 text-amber-600" aria-hidden="true"></i>
@@ -181,9 +210,9 @@
             Attached to this email
           </span>
         } @else if (briefId() === '') {
-          <span class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700" data-testid="campaigns-audience-summary-no-plan"
-            >No saved plan to attach to</span
-          >
+          <span class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700" data-testid="campaigns-audience-summary-no-plan">{{
+            briefState() === 'resolving' ? 'Saving the plan…' : 'No saved plan to attach to'
+          }}</span>
         } @else {
           <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600" data-testid="campaigns-audience-summary-unattached"
             >Not attached yet</span
@@ -204,7 +233,7 @@
           <dd class="text-sm font-medium text-gray-900" data-testid="campaigns-audience-summary-included">{{ summary().included }}</dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-xs text-gray-500">Suppression lists</dt>
+          <dt class="text-xs text-gray-500">Excluded lists</dt>
           <dd class="text-sm font-medium text-gray-900" data-testid="campaigns-audience-summary-excluded">{{ summary().excluded }}</dd>
         </div>
         <div class="flex flex-col gap-0.5">
@@ -223,21 +252,30 @@
 
       @if (attachResult(); as attached) {
         <div class="flex flex-col gap-1 rounded-md border border-emerald-200 bg-emerald-50 p-3" role="status" data-testid="campaigns-audience-attach-result">
-          <p class="text-xs font-medium text-gray-900">
-            This email will send to
-            @if (attached.master.hubspotUrl) {
-              <a [href]="attached.master.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">{{
-                attached.master.name
-              }}</a>
-            } @else {
-              <span>{{ attached.master.name }}</span>
-            }
-          </p>
+          @if (attachedIncludeNames().length > 1) {
+            <p class="text-xs font-medium text-gray-900">This email will send to {{ attachedIncludeNames().length }} lists, with no master list:</p>
+            <ul class="list-inside list-disc text-xs text-gray-800" data-testid="campaigns-audience-attach-includes">
+              @for (name of attachedIncludeNames(); track $index) {
+                <li>{{ name }}</li>
+              }
+            </ul>
+          } @else {
+            <p class="text-xs font-medium text-gray-900">
+              This email will send to
+              @if (attached.master.hubspotUrl) {
+                <a [href]="attached.master.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">{{
+                  attached.master.name
+                }}</a>
+              } @else {
+                <span>{{ attached.master.name }}</span>
+              }
+            </p>
+          }
           <p class="text-xs text-gray-700" data-testid="campaigns-audience-attach-suppression">
             @if (attached.suppressionListIds.length > 0) {
-              Excluding {{ attached.suppressionListIds.length }} suppression list(s).
+              Excluding {{ attached.suppressionListIds.length }} list(s).
             } @else {
-              No suppression list is applied.
+              No exclusion list is applied.
             }
           </p>
           <p class="text-xs text-gray-600">
@@ -248,7 +286,7 @@
             (click)="continueToEmail.emit()"
             class="mt-1 inline-flex w-fit items-center gap-2 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
             data-testid="campaigns-audience-attach-continue">
-            Continue to the email
+            Continue to Implement
             <i class="fa-light fa-arrow-right" aria-hidden="true"></i>
           </button>
         </div>
@@ -268,14 +306,20 @@
       icon="fa-light fa-user-plus"
       [count]="inclusionEntries().length"
       testId="campaigns-audience-step-include">
-      <lfx-audience-card-grid [buckets]="buckets()" [selectedIds]="inclusionIds()" [disabled]="selectionLocked()" (toggleList)="onToggleDiscovered($event)" />
+      <lfx-audience-card-grid
+        [buckets]="buckets()"
+        [selectedIds]="inclusionIds()"
+        [excludedIds]="exclusionIds()"
+        [disabled]="selectionLocked()"
+        (toggleList)="onToggleDiscovered($event)"
+        (toggleExclude)="onToggleExclude($event)" />
     </lfx-audience-step-card>
 
     <!-- === 3. Exclude === -->
     <lfx-audience-step-card
       [step]="3"
       heading="Exclude suppression lists"
-      subheading="Standard hygiene lists every send should exclude. Rows not found in this portal cannot be applied."
+      subheading="Every list found is ticked by default, and at least one must stay ticked. Rows not found in this portal cannot be applied."
       icon="fa-light fa-user-slash"
       [count]="excludeIds().length"
       countLabel="excluded"
@@ -287,6 +331,11 @@
         [failed]="suppressionFailed()"
         [disabled]="selectionLocked()"
         (toggleList)="onToggleSuppression($event)" />
+      @if (suppressionMissing() && !suppressionLoading()) {
+        <p class="text-xs font-medium text-red-700" role="alert" data-testid="campaigns-audience-suppression-required">
+          Select at least one suppression list. Composing and attaching stay blocked until one is ticked.
+        </p>
+      }
     </lfx-audience-step-card>
 
     <!-- === 4. Reuse === -->
@@ -300,6 +349,7 @@
         [emails]="lastSentEmails()"
         [masterLists]="reuseMasterLists()"
         [selectedIds]="selectedIds()"
+        [excludedIds]="exclusionIds()"
         [loading]="reuseLoading()"
         [mastersLoading]="mastersLoading()"
         [mastersFailed]="mastersFailed()"
@@ -307,11 +357,14 @@
         [disabled]="selectionLocked()"
         [canAttach]="canAttach()"
         [canUseExistingMaster]="canUseExistingMaster()"
+        [attachUnavailableMessage]="attachUnavailableMessage()"
         [attachingId]="attachingId()"
         [attachedListId]="attachedListId()"
         [attachedMasterId]="attachedMasterId()"
         [attachedExclusionIds]="attachedExclusions()"
+        [attachedIncludeIds]="attachedIncludeIds()"
         (addList)="onAddListBrief($event)"
+        (excludeList)="onExcludeList($event)"
         (addMasterList)="onAddMasterList($event)"
         (copySelection)="onCopySelection($event)"
         (useSendLists)="onUseSendLists($event)"
@@ -332,16 +385,18 @@
         [searchResults]="searchResults()"
         [searching]="searching()"
         [selectedIds]="selectedIds()"
+        [excludedIds]="exclusionIds()"
         [disabled]="selectionLocked()"
         (search)="onSearch($event)"
-        (addList)="onAddSearchResult($event)" />
+        (addList)="onAddSearchResult($event)"
+        (excludeList)="onExcludeList($event)" />
     </lfx-audience-step-card>
 
     <!-- === 6. Review & compose === -->
     <lfx-audience-step-card
       [step]="6"
-      heading="Review and compose the master list"
-      subheading="Everything ticked in steps 2-5, combined into one HubSpot master list."
+      heading="Review, then use the lists or compose a master list"
+      subheading="Everything ticked in steps 2-5. Use the lists for this email as they are, or combine them into one HubSpot master list."
       icon="fa-light fa-layer-plus"
       [count]="inclusionEntries().length"
       testId="campaigns-audience-step-compose">
@@ -382,13 +437,13 @@
           </div>
         }
 
-        <h5 class="text-sm font-semibold text-gray-900">Excluded ({{ suppressionEntries().length }})</h5>
+        <h5 class="text-sm font-semibold text-gray-900">Suppression lists ({{ suppressionEntries().length }})</h5>
         @if (suppressionEntries().length === 0) {
-          <p class="text-xs text-amber-700" data-testid="campaigns-audience-exclude-none">
-            No suppression list is ticked. Tick the standard hygiene lists in step 3.
+          <p class="text-xs font-medium text-red-700" role="alert" data-testid="campaigns-audience-exclude-none">
+            Select at least one suppression list in step 3. Nothing can be composed or attached without one.
           </p>
         } @else {
-          <p class="text-xs text-gray-500" data-testid="campaigns-audience-exclude-summary">{{ excludeIds().length }} suppression list(s) will be excluded.</p>
+          <p class="text-xs text-gray-500" data-testid="campaigns-audience-exclude-summary">{{ excludeIds().length }} list(s) will be excluded in total.</p>
           <div class="flex flex-wrap gap-2">
             @for (entry of suppressionEntries(); track entry.key) {
               <span class="inline-flex items-center gap-2 rounded-full bg-gray-100 py-1 pr-1 pl-3 text-xs text-gray-700">
@@ -408,6 +463,44 @@
                 </button>
               </span>
             }
+          </div>
+        }
+
+        <!-- Lists marked Exclude in steps 2, 4 and 5: their contacts are kept off this send on top of
+             the suppression lists above. -->
+        @if (exclusionChips().length > 0) {
+          <div class="flex flex-col gap-2" data-testid="campaigns-audience-exclusions">
+            <h5 class="text-sm font-semibold text-gray-900">Excluded lists ({{ exclusionChips().length }})</h5>
+            <div class="flex flex-wrap gap-2">
+              @for (entry of exclusionChips(); track entry.listId) {
+                <span class="inline-flex items-center gap-2 rounded-full bg-red-50 py-1 pr-1 pl-3 text-xs text-red-800">
+                  @if (entry.hubspotUrl) {
+                    <a
+                      [href]="entry.hubspotUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="hover:underline"
+                      [attr.data-testid]="'campaigns-audience-exclusion-link-' + entry.listId"
+                      >{{ entry.name }}</a
+                    >
+                  } @else {
+                    {{ entry.name }}
+                  }
+                  @if (entry.sizeText) {
+                    <span class="text-red-600">· {{ entry.sizeText }}</span>
+                  }
+                  <button
+                    type="button"
+                    (click)="onRemoveExclusion(entry.listId)"
+                    [disabled]="selectionLocked()"
+                    class="rounded-full p-1 hover:bg-red-100 disabled:opacity-50"
+                    [attr.aria-label]="'Stop excluding ' + entry.name"
+                    [attr.data-testid]="'campaigns-audience-remove-exclusion-' + entry.listId">
+                    <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                  </button>
+                </span>
+              }
+            </div>
           </div>
         }
 
@@ -495,7 +588,7 @@
                 </p>
               } @else {
                 <p class="text-xs text-gray-600" data-testid="campaigns-audience-existing-replace-unavailable">
-                  A replacement cannot be attached until the plan is saved and approved on the Plan tab.
+                  {{ attachUnavailableMessage() || 'A replacement cannot be attached right now.' }}
                 </p>
               }
             </div>
@@ -515,9 +608,10 @@
             }
           </button>
           <p class="mt-2 text-xs text-gray-500">This creates real contact lists in HubSpot. Review the selection above before continuing.</p>
-          <!-- One included list needs no master: the email can send to it directly, with the
-               ticked suppression lists, and nothing new is created in HubSpot. -->
-          @if (inclusionEntries().length === 1 && briefId() !== '') {
+          <!-- The selected lists need no master: a HubSpot email takes several include lists, so the
+               email can send to them as they are, with the exclusions above, and nothing new is
+               created in HubSpot. -->
+          @if (inclusionEntries().length > 0) {
             <div class="mt-3 flex flex-col gap-1">
               <button
                 type="button"
@@ -525,15 +619,21 @@
                 [disabled]="!canUseSelectionDirectly()"
                 class="inline-flex w-fit items-center gap-2 rounded-md border border-blue-600 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
                 data-testid="campaigns-audience-use-direct">
-                @if (attachingId() !== null && attachingId() === inclusionEntries()[0].listId) {
+                @if (attachingId() === 'selection') {
                   <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
                   Attaching...
                 } @else {
                   <i class="fa-light fa-link" aria-hidden="true"></i>
-                  Use this list directly (no new list)
+                  Use selected lists for this email (no master list)
                 }
               </button>
-              <p class="text-xs text-gray-500">Only one list is selected, so composing a master list is optional.</p>
+              @if (attachUnavailableMessage(); as reason) {
+                <p class="text-xs text-amber-700" data-testid="campaigns-audience-use-direct-unavailable">{{ reason }}</p>
+              } @else {
+                <p class="text-xs text-gray-500">
+                  Sends to the {{ inclusionEntries().length }} selected list(s) directly. Composing a master list is optional.
+                </p>
+              }
             </div>
           }
         </div>
@@ -569,8 +669,8 @@
                    campaign-service omits the recording fields), so a re-save changes nothing. -->
               @if (composeBriefId() === '') {
                 <p class="text-xs font-medium text-amber-700" data-testid="campaigns-audience-compose-not-attached">
-                  Not attached to this email — no campaign plan was saved. Save the plan on the Plan tab, then choose "Use for this email" on this list under
-                  "Reuse a previous audience" → "Master lists already built" above; that creates nothing new.
+                  Not attached to this email — it had no saved plan when this list was composed. Once the plan is saved, choose "Use for this email" on this
+                  list under "Reuse a previous audience" → "Master lists already built" above; that creates nothing new.
                 </p>
               } @else {
                 <p class="text-xs font-medium text-amber-700" data-testid="campaigns-audience-compose-not-confirmed">
@@ -591,7 +691,7 @@
             (click)="continueToEmail.emit()"
             class="inline-flex w-fit items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
             data-testid="campaigns-audience-continue">
-            Continue to the email
+            Continue to Implement
             <i class="fa-light fa-arrow-right" aria-hidden="true"></i>
           </button>
         }
@@ -671,8 +771,8 @@
        the only point at which it is still free to act on. -->
   @if (briefId() === '') {
     <p class="rounded-md bg-amber-50 p-3 text-xs text-amber-800" data-testid="campaigns-audience-crosslink">
-      No campaign plan is saved yet, so a master list composed now will be created in HubSpot but <span class="font-medium">not attached</span> to the send.
-      Save the plan on the <span class="font-medium">Plan</span> tab first to have it attached automatically.
+      This email has no saved plan yet, so a master list composed now will be created in HubSpot but <span class="font-medium">not attached</span> to the send.
+      {{ briefStateMessage() }}
     </p>
   } @else {
     <p class="rounded-md bg-gray-50 p-3 text-xs text-gray-500" data-testid="campaigns-audience-crosslink">
