@@ -283,8 +283,12 @@ export class AudienceLastSentComponent {
     }
     // The BFF refuses more than AUDIENCE_ATTACH_MAX_LIST_IDS ids per array, while campaign-service
     // can record a send with up to 200 include lists; reusing such a send always ended in a 400.
-    if (usable.length > AUDIENCE_ATTACH_MAX_LIST_IDS || email.suppressionLists.length > AUDIENCE_ATTACH_MAX_LIST_IDS) {
-      return `This send used more than ${AUDIENCE_ATTACH_MAX_LIST_IDS} lists, more than one attach can carry. Copy the selection and narrow it instead.`;
+    // The exclusions counted are what the attach actually POSTS: the send's own suppressions plus
+    // every current tick and Exclude mark (`pendingExclusionIds`), minus the lists it sends to.
+    const includeIds = new Set(usable.map((list) => list.listId));
+    const sentExclusions = new Set([...email.suppressionLists.map((list) => list.listId), ...this.pendingExclusionIds()].filter((id) => !includeIds.has(id)));
+    if (usable.length > AUDIENCE_ATTACH_MAX_LIST_IDS || sentExclusions.size > AUDIENCE_ATTACH_MAX_LIST_IDS) {
+      return `This send's lists, with the exclusions ticked here, come to more than ${AUDIENCE_ATTACH_MAX_LIST_IDS} on one side, more than one attach can carry. Copy the selection and narrow it instead.`;
     }
     return null;
   }

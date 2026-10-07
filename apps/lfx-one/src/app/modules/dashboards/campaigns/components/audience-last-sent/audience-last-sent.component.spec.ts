@@ -240,6 +240,17 @@ describe('AudienceLastSentComponent', () => {
       expect(host().textContent ?? '').toContain('more than one attach can carry');
     });
 
+    it("counts the current ticks toward the reuse cap, as the attach posts them with the send's own", () => {
+      // Counting only the send's own suppressions offered a reuse the BFF then refused.
+      const own = Array.from({ length: 30 }, (_, i) => brief({ listId: String(700 + i), name: `Own ${i}` }));
+      const pending = Array.from({ length: 30 }, (_, i) => String(800 + i));
+      render({ emails: [email({ suppressionLists: own })], canAttach: true, pendingExclusionIds: pending });
+
+      const button = host().querySelector<HTMLButtonElement>('[data-testid="audience-last-sent-use-' + email({}).emailId + '"]');
+      expect(button?.disabled, '60 exclusions in all, over the cap of 50, were offered').toBe(true);
+      expect(host().textContent ?? '').toContain('more than one attach can carry');
+    });
+
     it('stops marking a send attached once a new exclusion is ticked, so it can be recorded', () => {
       // A recorded set that merely CONTAINED the send's own suppressions kept "Use these lists"
       // disabled after the step-3 ticks changed, with no way to record the new exclusion.
