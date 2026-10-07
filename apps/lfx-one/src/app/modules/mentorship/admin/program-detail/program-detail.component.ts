@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, linkedSignal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -14,6 +14,7 @@ import {
   MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_TITLE,
 } from '@lfx-one/shared/constants';
 import { MentorshipAdminProgramPage, MentorshipProgramDetailTab } from '@lfx-one/shared/interfaces';
+import { getMentorshipProgramDetailTabs } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { catchError, map, of, switchMap, take, tap } from 'rxjs';
 
@@ -28,7 +29,7 @@ type ProgramPageError = 'no-access' | 'not-found' | 'failed';
 
 /**
  * Admin program-detail page. Loads a program by id and hosts the four underline tabs (current mentees, past
- * mentees, mentors, terms). The header, the four counts and the term options come from one BFF read; Current
+ * mentees, mentors, terms); a pending program has no mentees or mentors yet, so it shows Terms only. The header, the four counts and the term options come from one BFF read; Current
  * Mentees then reads its own pages. A failed read shows an inline error with Retry, or a no-access or not-found
  * state for a 403 or a 404. Past Mentees, Mentors and Terms each read their own pages.
  */
@@ -54,7 +55,6 @@ export class ProgramDetailComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly isLoading = signal(true);
-  protected readonly activeTab = signal<MentorshipProgramDetailTab>('current-mentees');
   protected readonly page = signal<MentorshipAdminProgramPage | null>(null);
   protected readonly pageError = signal<ProgramPageError | null>(null);
   protected readonly noAccessTitle = MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_TITLE;
@@ -68,6 +68,16 @@ export class ProgramDetailComponent {
   protected readonly programId = toSignal(this.route.paramMap.pipe(map((params) => params.get('programId') ?? '')), { initialValue: '' });
   protected readonly terms = computed(() => this.page()?.terms ?? []);
   protected readonly tabCounts = computed(() => this.page()?.tabCounts ?? { currentMentees: null, pastMentees: null, mentors: null, terms: null });
+  /** The tabs the program shows: all four, or Terms only for a pending program. */
+  private readonly tabValues = computed(() => getMentorshipProgramDetailTabs(this.page()?.program.status ?? 'open').map((tab) => tab.value));
+  /**
+   * Opens on the program's first tab: Current Mentees, or Terms for a pending program. A page read keeps the open tab
+   * while the program still shows it, so a status change on refresh only moves the admin off a tab that is gone.
+   */
+  protected readonly activeTab = linkedSignal<MentorshipProgramDetailTab[], MentorshipProgramDetailTab>({
+    source: this.tabValues,
+    computation: (tabs, previous) => (previous && tabs.includes(previous.value) ? previous.value : tabs[0]),
+  });
   /** Handed to Current Mentees, which may call it after it has been destroyed; once this page is gone it reads nothing. */
   protected readonly countsRefresh: () => void = this.refreshCounts.bind(this);
 

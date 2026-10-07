@@ -4,18 +4,14 @@
 import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, output, PLATFORM_ID, viewChildren } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
-import {
-  MENTORSHIP_ADMIN_COUNT_UNAVAILABLE_LABEL,
-  MENTORSHIP_PROGRAM_DETAIL_TABS,
-  MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES,
-  MENTORSHIP_PROGRAM_STATUS_LABELS,
-} from '@lfx-one/shared/constants';
+import { MENTORSHIP_ADMIN_COUNT_UNAVAILABLE_LABEL, MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES, MENTORSHIP_PROGRAM_STATUS_LABELS } from '@lfx-one/shared/constants';
 import { MentorshipAdminProgramTabCounts, MentorshipProgram, MentorshipProgramDetailTab } from '@lfx-one/shared/interfaces';
+import { getMentorshipProgramDetailTabs } from '@lfx-one/shared/utils';
 
 /**
  * Admin program-detail header: title, season line, status, Edit Program, and
- * underline tabs with count badges. Visual spec matches the admin screenshot
- * and the crowdfunding underline-tab pattern.
+ * underline tabs with count badges; a pending program shows the Terms tab only.
+ * Visual spec matches the admin screenshot and the crowdfunding underline-tab pattern.
  */
 @Component({
   selector: 'lfx-mentorship-program-detail-header',
@@ -42,10 +38,13 @@ export class ProgramDetailHeaderComponent {
   protected readonly statusLabel = computed(() => MENTORSHIP_PROGRAM_STATUS_LABELS[this.program().status]);
   protected readonly statusBadgeClass = computed(() => MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES[this.program().status]);
 
-  /** Each tab names the count it shows, since tab values are kebab-case and count keys camelCase. */
+  /** Each tab the program shows names the count it reads, since tab values are kebab-case and count keys camelCase. */
   protected readonly tabItems = computed(() => {
     const counts = this.tabCounts();
-    return MENTORSHIP_PROGRAM_DETAIL_TABS.map((tab) => ({ ...tab, count: counts[tab.countKey] ?? MENTORSHIP_ADMIN_COUNT_UNAVAILABLE_LABEL }));
+    return getMentorshipProgramDetailTabs(this.program().status).map((tab) => ({
+      ...tab,
+      count: counts[tab.countKey] ?? MENTORSHIP_ADMIN_COUNT_UNAVAILABLE_LABEL,
+    }));
   });
 
   protected onTabClick(tab: MentorshipProgramDetailTab): void {

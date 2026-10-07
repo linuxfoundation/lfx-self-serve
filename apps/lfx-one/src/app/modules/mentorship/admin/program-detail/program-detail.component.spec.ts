@@ -99,7 +99,7 @@ describe('ProgramDetailComponent', () => {
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const showTab = (tab: string): void => {
-    fixture.componentInstance['activeTab'].set(tab as never);
+    fixture.componentInstance['onTabChange'](tab as never);
     settle();
   };
   const tabText = (value: string): string =>
@@ -199,6 +199,48 @@ describe('ProgramDetailComponent', () => {
 
       expect(tabText('current-mentees')).toBe('Current Mentees 1');
     });
+  });
+
+  describe('with a pending program', () => {
+    const pendingPage = (): MentorshipAdminProgramPage => {
+      const page = programPage();
+      page.program.status = 'pending-review';
+      return page;
+    };
+
+    beforeEach(() => buildWith({ page: of(pendingPage()) }));
+
+    it('shows the Terms tab only and opens on it, reading no mentees', () => {
+      expect(tabText('terms')).toBe('Terms 1');
+      expect(element().querySelectorAll('[role="tab"]')).toHaveLength(1);
+      expect(element().querySelector('[data-testid="mentorship-current-mentees-tab"]')).toBeNull();
+      expect(element().querySelector('[role="tabpanel"]')?.id).toBe('mentorship-program-detail-tab-panel-terms');
+      expect(getProgramMentees).not.toHaveBeenCalled();
+    });
+
+    it('shows all four tabs once a refresh reads the program as published, staying on Terms', () => {
+      getProgram.mockReturnValue(of(programPage()));
+
+      fixture.componentInstance['refreshCounts']();
+      settle();
+
+      expect(element().querySelectorAll('[role="tab"]')).toHaveLength(4);
+      expect(fixture.componentInstance['activeTab']()).toBe('terms');
+    });
+  });
+
+  it('falls back to the first tab when a refresh hides the open one', () => {
+    build();
+    showTab('mentors');
+    const pending = programPage();
+    pending.program.status = 'pending-review';
+    getProgram.mockReturnValue(of(pending));
+
+    fixture.componentInstance['refreshCounts']();
+    settle();
+
+    expect(fixture.componentInstance['activeTab']()).toBe('terms');
+    expect(element().querySelector('[data-testid="mentorship-mentors-tab"]')).toBeNull();
   });
 
   describe('when the page cannot be shown', () => {
