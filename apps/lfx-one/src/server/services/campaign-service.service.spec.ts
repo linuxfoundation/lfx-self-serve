@@ -39,6 +39,7 @@ import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+  GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   JOB_LOST_MESSAGE,
 } from '@lfx-one/shared/constants';
 import { readFileSync } from 'node:fs';
@@ -2283,8 +2284,13 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.jobId).toBeNull();
     // The message names the API limit, not a capability the administrator could switch on —
     // "ask an administrator" would send the operator somewhere that cannot help them.
-    expect(res.error).toContain('cannot be created through the Google Ads API yet');
+    //
+    // Pinned to the SHARED constant, not to a phrase: the legacy road, this road and the disabled
+    // tick-box must give one answer to one permanent limitation, and an exact match is what stops
+    // the three drifting into three wordings. `campaign.controller.spec.ts` pins the same value.
+    expect(res.error).toBe(GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON);
     expect(res.error).not.toContain('administrator');
+    expect(res.error).not.toContain('cutover');
   });
 
   it.each([
@@ -4096,9 +4102,10 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
    *
    * Performance Max, Video and Display exist only on the campaign-service create path. While the
    * cutover is dark the LEGACY creator owns creation, and it does not know them: its
-   * `normalizeBudgetSplit` maps `demand-gen` to `displayPct` and treats EVERY other type as
-   * Search, without rejecting the unknown one. So reporting these as available during the staged
-   * rollout offers a control whose only outcome is a Search campaign nobody asked for.
+   * `executeGoogleCampaignCreation` branches on `search` alone and sends EVERY other type to
+   * `createDemandGenCampaign`, without rejecting the unknown one. So reporting these as available
+   * during the staged rollout offers a control whose only outcome is a Demand Gen campaign nobody
+   * asked for.
    *
    * Every row below is the exact opposite of the demand-gen row above it — which is the assertion
    * that stops a later "simplification" from collapsing the two capabilities into one value.

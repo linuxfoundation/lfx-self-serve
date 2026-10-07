@@ -48,8 +48,9 @@ export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limit
  * The first five are GOOGLE ADS channels and map one-to-one onto `googleAdsConfig.channel`
  * upstream (`internal/dispatch/googleads.go`); `sponsored` and `social` name the LinkedIn and
  * Meta/Reddit shapes and never reach that field. `performance-max`, `video` and `display` are
- * servable only through campaign-service — the legacy in-process create path understands
- * `search` and `demand-gen` alone and would build a Search campaign for any other value.
+ * servable only through campaign-service — the legacy in-process create path branches on
+ * `search` alone (`executeGoogleCampaignCreation` in `campaign-proxy.service.ts`) and would
+ * build a DEMAND GEN campaign for any other value rather than rejecting it.
  */
 export type CampaignType = 'search' | 'demand-gen' | 'performance-max' | 'video' | 'display' | 'sponsored' | 'social';
 
