@@ -69,15 +69,20 @@ export class ProgramDetailComponent {
   protected readonly programId = toSignal(this.route.paramMap.pipe(map((params) => params.get('programId') ?? '')), { initialValue: '' });
   protected readonly terms = computed(() => this.page()?.terms ?? []);
   protected readonly tabCounts = computed(() => this.page()?.tabCounts ?? { currentMentees: null, pastMentees: null, mentors: null, terms: null });
-  /** The tabs the program shows: all four, or Terms only for a pending program. */
-  private readonly tabValues = computed(() => getMentorshipProgramDetailTabs(this.page()?.program.status ?? 'open').map((tab) => tab.value));
+  /** The loaded program and the tabs it shows: all four, or Terms only for a pending program. */
+  private readonly tabSource = computed(() => {
+    const page = this.page();
+    return { programId: page?.program.id ?? '', tabs: getMentorshipProgramDetailTabs(page?.program.status ?? 'open').map((tab) => tab.value) };
+  });
   /**
-   * Opens on the program's first tab: Current Mentees, or Terms for a pending program. A page read keeps the open tab
-   * while the program still shows it, so a status change on refresh only moves the admin off a tab that is gone.
+   * Opens on the program's first tab: Current Mentees, or Terms for a pending program. A read of the same program keeps
+   * the open tab while the program still shows it, so a status change on refresh only moves the admin off a tab that is
+   * gone. Another program, reached by a route change that reuses this page, opens on its own first tab.
    */
-  protected readonly activeTab = linkedSignal<MentorshipProgramDetailTab[], MentorshipProgramDetailTab>({
-    source: this.tabValues,
-    computation: (tabs, previous) => (previous && tabs.includes(previous.value) ? previous.value : tabs[0]),
+  protected readonly activeTab = linkedSignal({
+    source: this.tabSource,
+    computation: ({ programId, tabs }, previous): MentorshipProgramDetailTab =>
+      previous && previous.source.programId === programId && tabs.includes(previous.value) ? previous.value : tabs[0],
   });
   /** Handed to Current Mentees, which may call it after it has been destroyed; once this page is gone it reads nothing. */
   protected readonly countsRefresh: () => void = this.refreshCounts.bind(this);
