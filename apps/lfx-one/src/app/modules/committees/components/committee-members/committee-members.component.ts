@@ -1055,11 +1055,29 @@ export class CommitteeMembersComponent implements OnInit {
       if (!this.canManageMembers()) {
         return memberRows;
       }
-      const inviteRows: CommitteeTableRow[] = this.invites().map((invite) => ({ rowType: 'invite' as const, data: invite }));
+      const allInviteRows: CommitteeTableRow[] = this.invites().map((invite) => ({ rowType: 'invite' as const, data: invite }));
       if (this.activeTab() === 'pending' && this.showPendingInvites()) {
-        return inviteRows;
+        return allInviteRows;
       }
-      return [...memberRows, ...inviteRows];
+      const chip = this.memberFilterChip();
+      const roleFilter = this.roleFilter();
+      const filteredInviteRows: CommitteeTableRow[] = this.invites()
+        .filter((invite) => {
+          if (chip === 'chairs') {
+            if (invite.role !== CommitteeMemberRole.CHAIR && invite.role !== CommitteeMemberRole.VICE_CHAIR) {
+              return false;
+            }
+          } else if (chip !== 'all') {
+            // voting, observers, atRisk — invites carry no voting status or engagement data
+            return false;
+          }
+          if (roleFilter && invite.role !== roleFilter) {
+            return false;
+          }
+          return true;
+        })
+        .map((invite) => ({ rowType: 'invite' as const, data: invite }));
+      return [...memberRows, ...filteredInviteRows];
     });
   }
 
