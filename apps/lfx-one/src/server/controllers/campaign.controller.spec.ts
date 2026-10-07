@@ -1168,6 +1168,26 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(legacyCreate).not.toHaveBeenCalled();
   });
 
+  /**
+   * A body that is not a JSON object is a named 400, not a 500.
+   *
+   * `express.json()` leaves `req.body` undefined for a request that is not `application/json`, and
+   * passes an array body through intact — so both shapes reach this handler in production. The
+   * resource bound walks the body's keys, which throws on undefined, and the sibling write handlers
+   * on this controller all guard with exactly this check.
+   */
+  it.each([
+    ['undefined', undefined],
+    ['an array', [{ platforms: ['google-ads'] }]],
+    ['a string', 'platforms=google-ads'],
+  ])('refuses a body that is %s with a validation error rather than throwing', async (_label, body) => {
+    await controller.createCampaign(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+  });
+
   /** Exactly at each ceiling is accepted — the bound refuses what is above it, nothing else. */
   it('accepts a creative exactly at both caps', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });

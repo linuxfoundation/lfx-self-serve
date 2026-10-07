@@ -3600,7 +3600,10 @@ describe('ImplementationTabComponent google channels capability gate', () => {
    * assertion below pass without the channel guard existing at all. `allows a flagged channel on
    * its own` is the control that proves this seed really is submittable.
    */
-  function seedGoogleForm(patch: Record<string, unknown>, caps: { demandGen?: boolean | null; googleChannels?: boolean | null } = {}): Record<string, any> {
+  function seedGoogleForm(
+    patch: Record<string, unknown>,
+    caps: { demandGen?: boolean | null; googleChannels?: boolean | null; googleCreative?: boolean | null } = {}
+  ): Record<string, any> {
     fixture.componentRef.setInput('draft', {
       eventSlug: 'kubecon-eu-2026',
       eventName: 'KubeCon EU 2026',
@@ -3642,6 +3645,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
     // named failure rather than as every Google assertion in this file going red at once.
     if ('demandGen' in caps) fixture.componentRef.setInput('demandGenEnabled', caps.demandGen);
     if ('googleChannels' in caps) fixture.componentRef.setInput('googleChannelsEnabled', caps.googleChannels);
+    if ('googleCreative' in caps) fixture.componentRef.setInput('googleCreativeEnabled', caps.googleCreative);
     fixture.detectChanges();
     return c;
   }
@@ -3659,18 +3663,58 @@ describe('ImplementationTabComponent google channels capability gate', () => {
   });
 
   /**
-   * The narrowness of that refusal, which is the point of it. Search + Demand Gen is served by the
-   * LEGACY creator for the whole of the staged rollout, so blocking it would break a working
-   * capability — the mistake the server guard's own comments record.
+   * The narrowness of that refusal, which is the point of it. While the cutover is DARK, Search +
+   * Demand Gen is served by the LEGACY creator, so blocking it would break a working capability —
+   * the mistake the server guard's own comments record.
+   *
+   * `googleCreative: false` is what says "the cutover does not own this create"; it is the input
+   * the server derives from `cutoverOwnsCreate()`, and it is the only thing separating this case
+   * from the one below.
    */
-  it('still allows search combined with demand gen', () => {
-    const c = seedGoogleForm({ includeSearch: true, includeDemandGen: true }, { demandGen: true, googleChannels: true });
+  it('still allows search combined with demand gen while the cutover is dark', () => {
+    const c = seedGoogleForm({ includeSearch: true, includeDemandGen: true }, { demandGen: true, googleChannels: true, googleCreative: false });
 
     expect(c['canSubmit']()).toBe(true);
   });
 
+  /**
+   * An unresolved capability is treated as dark, like every other capability read on this form. A
+   * client that refuses a create the server would have accepted is the costlier mistake, and the
+   * window before the capability call returns is exactly where that would happen.
+   */
+  it('still allows search combined with demand gen while the capability is unknown', () => {
+    const c = seedGoogleForm({ includeSearch: true, includeDemandGen: true }, { demandGen: true, googleChannels: true, googleCreative: null });
+
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /**
+   * The other side of that narrowness, and the gap this closes.
+   *
+   * Once the cutover owns the create, `createCampaigns` refuses EVERY Google pair — its guard is
+   * `selectedGoogleChannels.length > 1` with no flag test, so Search + Demand Gen is refused
+   * exactly like the flagged ones. The legacy exception no longer applies, because the legacy
+   * creator is no longer the one that runs. Submitting is then a certain terminal refusal.
+   */
+  it('refuses search combined with demand gen once the cutover owns the create', () => {
+    const c = seedGoogleForm({ includeSearch: true, includeDemandGen: true }, { demandGen: true, googleChannels: true, googleCreative: true });
+
+    expect(c['canSubmit']()).toBe(false);
+  });
+
   it('allows a flagged channel on its own', () => {
     const c = seedGoogleForm({ includeDisplay: true }, { googleChannels: true });
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /**
+   * The control for the two refusals above: one channel is submittable in the very state that
+   * refuses two. Without it, a `canSubmit` that returned false for an unrelated reason once the
+   * cutover is on — a bidding plan that only renders there, say — would make them pass vacuously.
+   */
+  it('allows a single channel once the cutover owns the create', () => {
+    const c = seedGoogleForm({ includeSearch: true }, { demandGen: true, googleChannels: true, googleCreative: true });
+
     expect(c['canSubmit']()).toBe(true);
   });
 
@@ -4203,6 +4247,30 @@ describe('ImplementationTabComponent google creative sections', () => {
 
     headlines.setValue(Array.from({ length: spec.max + 1 }, () => 'ok').join('\n'));
     expect(headlines.errors?.['creativeListMax']).toEqual({ label: spec.label, max: spec.max, actual: spec.max + 1 });
+  });
+
+  /**
+   * The scalar bound is measured on the TRIMMED value, matching both the list bound beside it
+   * (`splitCreativeLines` trims every entry) and the payload builder, which trims before it sends.
+   *
+   * `Validators.maxLength` measured the raw control, so a value at exactly the width plus a
+   * trailing space was refused here while the string that would actually have gone upstream was
+   * inside the bound — a client refusing a create campaign-service would have accepted, which is
+   * the one thing no guard on this road may do. The second assertion is what keeps this from
+   * being a bound that no longer bounds anything.
+   */
+  it('bounds a text field on its trimmed value, not the raw control', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const spec = GOOGLE_CREATIVE_FIELD_SPECS.display[1];
+    const longHeadline = c['campaignForm'].controls.displayCreative.controls.longHeadline;
+
+    longHeadline.setValue(`  ${'a'.repeat(spec.width)}  `);
+    expect(longHeadline.valid).toBe(true);
+    // The value the wire would have carried, which is what the bound was applied to.
+    expect((c['googleCreativePayload']()['displayCreative'] as Record<string, unknown>)['longHeadline']).toBe('a'.repeat(spec.width));
+
+    longHeadline.setValue(`  ${'a'.repeat(spec.width + 1)}  `);
+    expect(longHeadline.errors?.['maxlength']).toEqual({ requiredLength: spec.width, actualLength: spec.width + 1 });
   });
 
   /**

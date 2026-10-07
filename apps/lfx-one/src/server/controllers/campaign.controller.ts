@@ -417,11 +417,32 @@ export class CampaignController {
       // create from it.
       const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
       const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+
+      // The same guard the other write handlers on this controller open with, and for the same
+      // reason: `express.json()` leaves `req.body` UNDEFINED for a request that is not
+      // `application/json` (and an array body survives it intact), so the cast below is a
+      // statement about a value nothing has checked. Everything downstream that reads a field
+      // off it is optional-chained, but the resource bound walks its keys — `Object.values(...)
+      // .map((key) => [key, raw[key]])` — and that throws on undefined, turning a malformed
+      // request into a 500 where every sibling returns a named 400. Not over-refusal: a body
+      // that is not an object carries no `platforms`, so neither the cutover nor the legacy path
+      // could have created anything from it.
+      if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+        next(
+          ServiceValidationError.forField('body', 'request body must be a JSON object', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
       const body = req.body as CampaignCreateRequest;
       const platforms = Array.isArray(body?.platforms) ? body.platforms : [];
 
       // BEFORE `createConfigEnvelope`, which sanitises both HubSpot bodies unconditionally. This
-      // route has no body validator, so the only other bound on that input is express.json's
+      // route validates the body's SHAPE only — no field schema — so the only other bound on that
+      // input is express.json's
       // 15 MB limit — refusing an oversized body here keeps the sanitiser's cost bounded
       // independently of it.
       for (const field of ['bodyHtml', 'bodyHtmlB'] as const) {
@@ -3052,30 +3073,6 @@ export class CampaignController {
   }
 
   /**
-   * The selected channel's creative, normalized and spread-ready, or `{}` when there is nothing to
-   * send.
-   *
-   * Three judgements, all of them the permissive one, and all of them for the same reason this
-   * file's geo normalizer gives: this route has no body validator, and a BFF that refuses a create
-   * campaign-service would have accepted is the costlier mistake of the two.
-   *
-   * 1. **Shape, never content.** Blank and non-string list entries are dropped and strings are
-   *    trimmed; nothing counts anything. Every count, width and aspect-ratio rule lives in the
-   *    upstream client's preflight (`internal/platform/googleads/*_creative.go`), which runs before
-   *    the budget mutate, so a creative that is short a headline is refused there with a message
-   *    naming the field — not here, where a second copy of those rules could only drift.
-   * 2. **A field that empties out is OMITTED, not sent empty.** Upstream distinguishes "no creative
-   *    asked for" (nil, the pre-existing shell behaviour) from "a creative with an empty logo
-   *    list" (a validation failure). Sending `[]` would convert an operator who left the section
-   *    alone into a refused create.
-   * 3. **The same applies to the whole creative.** If no field survives, no creative key is emitted
-   *    and the create behaves exactly as it did before this existed.
-   *
-   * Unknown channels — `search`, `video`, anything a future catalogue adds — return `{}` rather
-   * than throwing, so a channel gaining a creative upstream is one table entry here and not a
-   * crash in the meantime.
-   */
-  /**
    * The first Google creative or bidding field that breaks a resource bound, or null when none does.
    *
    * Walks the raw body rather than the normalised output, because the allocation this bounds happens
@@ -3128,6 +3125,30 @@ export class CampaignController {
     return Object.entries(source as Record<string, unknown>).map(([field, value]) => [`${key}.${field}`, value]);
   }
 
+  /**
+   * The selected channel's creative, normalized and spread-ready, or `{}` when there is nothing to
+   * send.
+   *
+   * Three judgements, all of them the permissive one, and all of them for the same reason this
+   * file's geo normalizer gives: this route has no body validator, and a BFF that refuses a create
+   * campaign-service would have accepted is the costlier mistake of the two.
+   *
+   * 1. **Shape, never content.** Blank and non-string list entries are dropped and strings are
+   *    trimmed; nothing counts anything. Every count, width and aspect-ratio rule lives in the
+   *    upstream client's preflight (`internal/platform/googleads/*_creative.go`), which runs before
+   *    the budget mutate, so a creative that is short a headline is refused there with a message
+   *    naming the field — not here, where a second copy of those rules could only drift.
+   * 2. **A field that empties out is OMITTED, not sent empty.** Upstream distinguishes "no creative
+   *    asked for" (nil, the pre-existing shell behaviour) from "a creative with an empty logo
+   *    list" (a validation failure). Sending `[]` would convert an operator who left the section
+   *    alone into a refused create.
+   * 3. **The same applies to the whole creative.** If no field survives, no creative key is emitted
+   *    and the create behaves exactly as it did before this existed.
+   *
+   * Unknown channels — `search`, `video`, anything a future catalogue adds — return `{}` rather
+   * than throwing, so a channel gaining a creative upstream is one table entry here and not a
+   * crash in the meantime.
+   */
   private googleCreative(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
     const spec = GOOGLE_CREATIVE_FIELDS[channel];
     if (!spec) return {};

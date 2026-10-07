@@ -1030,21 +1030,38 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected) {
       const channels = this.selectedGoogleChannels();
       if (channels.length === 0) return false;
-      // A Performance Max, Video or Display selection may not be combined with anything else.
+      // Which pairs of Google channels may be submitted, and the answer differs by WHICH CREATOR
+      // is going to run — because the two refuse different sets.
       //
-      // Narrower than "at most one channel", and the narrowness is the point. Search + Demand Gen
-      // together is still allowed through to the server, because with the create cutover DARK the
-      // LEGACY creator serves that pair perfectly well — blocking it here would break a working
-      // capability for the whole of the staged rollout, which is the mistake the server-side
-      // guard's own comments record. The three channels below cannot be reached at all unless the
-      // cutover owns creation (`canCreateGoogleChannels` upstream requires it), so for them the
-      // create is certain to be refused and stopping here saves the user a terminal failure.
-      // Derived from the shared constant, not an inverse literal. Both server consumers of this
-      // same policy read it (`campaign.controller.ts`, `campaign-service.service.ts`); a channel
-      // added to `GOOGLE_CAMPAIGN_CHANNELS` that does NOT require the flag would be misclassified
-      // here while those two stayed correct.
-      const flagged = channels.filter((c) => (GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG as readonly string[]).includes(c));
-      if (flagged.length > 0 && channels.length > 1) return false;
+      // Cutover owns create: `createCampaigns` refuses EVERY pair, unconditionally and with no
+      // flag test (`campaign-service.service.ts`, "cannot be created together"). Search + Demand
+      // Gen included. So in that state any second channel is a certain terminal refusal, and
+      // stopping here turns a failed create into a disabled button.
+      //
+      // Cutover dark: the LEGACY in-process creator serves Search + Demand Gen perfectly well, so
+      // refusing that pair here would break a working capability for the whole staged rollout —
+      // the mistake the server-side guard's own comments record. Only the flag-gated channels are
+      // refused, and they cannot be selected in that state anyway (`canCreateGoogleChannels`
+      // requires the cutover), so the filter below is a belt on a road that already has braces.
+      //
+      // UNKNOWN (`null`) is treated as dark, like every other capability read on this form: a
+      // client that refuses a create the server would have accepted is the costlier mistake, and
+      // withholding a working pair while the capability call is in flight is exactly that.
+      //
+      // `googleCreativeAvailable` rather than `googleChannelsAvailable`: the question is "does the
+      // campaign-service create path own this create", which is what that input answers
+      // (`googleCreativeEnabled: cutoverOwnsCreate()` server-side). `googleChannelsEnabled` adds
+      // the channel flag on top of it, so reading it here would miss the cutover-on deployment
+      // that has not enabled the new channels — where Search + Demand Gen is still refused.
+      if (channels.length > 1) {
+        if (this.googleCreativeAvailable()) return false;
+        // Derived from the shared constant, not an inverse literal. Both server consumers of this
+        // same policy read it (`campaign.controller.ts`, `campaign-service.service.ts`); a channel
+        // added to `GOOGLE_CAMPAIGN_CHANNELS` that does NOT require the flag would be misclassified
+        // here while those two stayed correct.
+        const flagged = channels.filter((c) => (GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG as readonly string[]).includes(c));
+        if (flagged.length > 0) return false;
+      }
     }
     if (googleSelected && this.campaignForm.invalid) return false;
     // The bidding plan's own checking, which is a computed rather than control validators — see the
@@ -2992,7 +3009,7 @@ export class ImplementationTabComponent implements OnInit {
    */
   private creativeFieldValidators(field: GoogleCreativeFieldSpec): ValidatorFn[] {
     if (field.kind === 'text') {
-      return field.width === undefined ? [] : [Validators.maxLength(field.width)];
+      return field.width === undefined ? [] : [this.creativeTextBounds(field.width)];
     }
     return [this.creativeListBounds(field)];
   }
@@ -3046,6 +3063,29 @@ export class ImplementationTabComponent implements OnInit {
     if (errors['creativeListWidth']) return `Each entry must be ${errors['creativeListWidth'].width} characters or fewer.`;
     if (errors['maxlength']) return `Must be ${errors['maxlength'].requiredLength} characters or fewer.`;
     return null;
+  }
+
+  /**
+   * The width bound for a scalar text field, measured on the TRIMMED value.
+   *
+   * `Validators.maxLength` would measure the raw control value, and the payload builder
+   * ({@link googleCreativePayload}) trims before it sends — so a value at exactly the width with a
+   * trailing space would be refused here while the string that would actually have gone upstream
+   * was inside the bound. That is a client refusing a create campaign-service would have accepted,
+   * which is the one thing no guard on this road may do. The list validator has always measured
+   * trimmed entries ({@link splitCreativeLines} trims each line); this makes the scalar fields
+   * agree with it and with the wire.
+   *
+   * Keeps Angular's own `maxlength` error shape — `{ requiredLength, actualLength }` — so the
+   * message in {@link creativeFieldError} reads the same key it always did. `actualLength` reports
+   * the trimmed length, which is the number the bound was actually applied to.
+   */
+  private creativeTextBounds(width: number): ValidatorFn {
+    return (control: AbstractControl): ValidationErrors | null => {
+      const text = typeof control.value === 'string' ? control.value.trim() : '';
+      if (text.length <= width) return null;
+      return { maxlength: { requiredLength: width, actualLength: text.length } };
+    };
   }
 
   /**
