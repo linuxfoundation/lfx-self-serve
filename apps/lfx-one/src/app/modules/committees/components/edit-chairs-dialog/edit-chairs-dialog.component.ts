@@ -31,9 +31,8 @@ export class EditChairsDialogComponent {
     return this.memberOptions.filter((m) => !assigned.has(m.value));
   });
 
-  public labelFor(uid: string): string {
-    return this.labelMap.get(uid) ?? uid;
-  }
+  public readonly chairRows = computed(() => this.chairUids().map((uid) => ({ uid, label: this.labelMap.get(uid) ?? uid })));
+  public readonly viceChairRows = computed(() => this.viceChairUids().map((uid) => ({ uid, label: this.labelMap.get(uid) ?? uid })));
 
   public removeChair(uid: string): void {
     this.chairUids.update((uids) => uids.filter((u) => u !== uid));

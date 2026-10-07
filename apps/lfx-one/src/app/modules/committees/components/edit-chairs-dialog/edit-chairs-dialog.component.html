@@ -4,17 +4,17 @@
 <div class="flex flex-col gap-6" data-testid="committee-edit-chairs-dialog">
   <div class="flex flex-col gap-2">
     <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Chair</label>
-    @for (uid of chairUids(); track uid) {
+    @for (row of chairRows(); track row.uid) {
       <div class="flex items-center justify-between gap-2 px-3 py-2 bg-gray-50 rounded-md" data-testid="chair-row">
-        <span class="text-sm text-gray-800">{{ labelFor(uid) }}</span>
+        <span class="text-sm text-gray-800">{{ row.label }}</span>
         <lfx-button
           icon="pi pi-times"
           severity="secondary"
           [text]="true"
           size="small"
-          ariaLabel="Remove chair"
+          [ariaLabel]="'Remove ' + row.label + ' as chair'"
           data-testid="remove-chair-btn"
-          (onClick)="removeChair(uid)"></lfx-button>
+          (onClick)="removeChair(row.uid)"></lfx-button>
       </div>
     }
     <lfx-select
@@ -32,17 +32,17 @@
   </div>
   <div class="flex flex-col gap-2">
     <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Vice Chair</label>
-    @for (uid of viceChairUids(); track uid) {
+    @for (row of viceChairRows(); track row.uid) {
       <div class="flex items-center justify-between gap-2 px-3 py-2 bg-gray-50 rounded-md" data-testid="vice-chair-row">
-        <span class="text-sm text-gray-800">{{ labelFor(uid) }}</span>
+        <span class="text-sm text-gray-800">{{ row.label }}</span>
         <lfx-button
           icon="pi pi-times"
           severity="secondary"
           [text]="true"
           size="small"
-          ariaLabel="Remove vice chair"
+          [ariaLabel]="'Remove ' + row.label + ' as vice chair'"
           data-testid="remove-vice-chair-btn"
-          (onClick)="removeViceChair(uid)"></lfx-button>
+          (onClick)="removeViceChair(row.uid)"></lfx-button>
       </div>
     }
     <lfx-select
