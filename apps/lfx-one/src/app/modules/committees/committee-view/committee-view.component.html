@@ -189,15 +189,22 @@
             <i class="fa-light fa-angle-left text-xs"></i>
             {{ backLabel() }}
           </button>
-          <div class="flex items-center gap-3">
-            <h1 class="font-display font-light text-[20px]" data-testid="committee-view-name">{{ committee()?.name }}</h1>
-            @if (!committee()?.public) {
-              <i class="fa-light fa-lock w-4 h-4 text-gray-400"></i>
-            }
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+              <h1 class="font-display font-light text-[20px]" data-testid="committee-view-name">{{ committee()?.name }}</h1>
+              @if (committee()?.public) {
+                <lfx-tag value="Public" severity="success" data-testid="committee-view-visibility-public"></lfx-tag>
+              } @else {
+                <lfx-tag value="Private" severity="secondary" data-testid="committee-view-visibility-private"></lfx-tag>
+              }
+              @if (membershipStatus(); as status) {
+                <lfx-tag [value]="status.label" [severity]="status.severity" data-testid="committee-view-membership-status"></lfx-tag>
+              }
+            </div>
             <!-- Join / Apply / Contact Admin / Leave actions.
                  Suppressed for an invited visitor — the Accept/Decline banner above is the action.
                  Invite-only visitors see no header action (must wait for invitation). -->
-            <div class="ml-auto flex items-center gap-2">
+            <div class="flex items-center gap-2 shrink-0">
               @if (isVisitor() && !pendingInvitation()) {
                 @if (committee()?.join_mode === 'open') {
                   <lfx-button

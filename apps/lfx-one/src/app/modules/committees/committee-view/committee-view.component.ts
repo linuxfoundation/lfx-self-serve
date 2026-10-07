@@ -326,6 +326,19 @@ export class CommitteeViewComponent {
     return 'member';
   });
 
+  /** Resolved membership status label + severity for display in the group header. Null while loading. */
+  public membershipStatus: Signal<{ label: string; severity: TagSeverity } | null> = computed(() => {
+    if (this.myRoleLoading()) return null;
+    if (this.canEdit()) return { label: 'Manager', severity: 'info' };
+    if (this.canReview()) return { label: 'Auditor', severity: 'secondary' };
+    const role = this.myRole();
+    if (role !== null) {
+      return { label: role === 'None' ? 'Member' : role, severity: 'success' };
+    }
+    if (this.hasPendingApplication()) return { label: 'Application Pending', severity: 'warn' };
+    return { label: 'Not a Member', severity: 'secondary' };
+  });
+
   public hasChannels: Signal<boolean> = computed(() => {
     const c = this.committee();
     // Visitors only see public mailing lists — don't show the card wrapper when a visitor
