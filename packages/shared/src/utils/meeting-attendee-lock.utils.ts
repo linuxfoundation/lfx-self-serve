@@ -14,15 +14,16 @@ import type { Meeting, ShowMeetingAttendeesLockOptions } from '../interfaces';
  * write; changing `meeting_type` away from Board lifts it.
  *
  * Both inputs are normalized, because neither is schema-validated on the way in: they reach us
- * from v1 through the ITX proxy, which does not normalize casing, trim, or coerce types. A
- * stored `"board"`, a request body carrying `"Board "`, and a stringified `"true"` for
- * `restricted` all have to lock the same as their canonical forms — failing open on any of
- * those differences would share exactly the guest list this guards.
+ * from v1 through the ITX proxy, which does not normalize casing, trim, or coerce types. A stored
+ * `"board"` or a request body carrying `"Board "` must lock the same as the canonical form — the
+ * Board check always applies. `restricted` only takes part under `restrictedLocks`, where a
+ * stringified `"true"` likewise locks the same as `true`; failing open on any of those
+ * differences would share exactly the guest list this guards.
  *
  * Values outside the declared contract come from an unvalidated request body, so they are read
  * defensively rather than trusted: a non-string `meeting_type` is compared as "not Board"
  * instead of being passed to `.trim()` (which would turn a malformed body into a 500 on the
- * BFF), and a non-string `restricted` locks on anything truthy.
+ * BFF), and, under `restrictedLocks`, a non-string `restricted` locks on anything truthy.
  *
  * This lives apart from the other meeting-privacy helpers because the BFF enforces the same
  * rule on write: everything here imports enums and constants only, so the server can load the
@@ -46,9 +47,10 @@ export function isShowMeetingAttendeesLocked(
 
 /**
  * The note explaining why the attendees toggle is unavailable, or `null` when it is available.
- * @description Both surfaces that render the toggle — the composer's Guests section and the
- * manage page's registrants manager — show the same note under the same condition, so the
- * condition and the copy live together here rather than being restated in each component.
+ * @description The condition and the copy live together here rather than being restated in each
+ * component. The two surfaces differ by rule: the v2 composer's Guests section locks board
+ * meetings only and shows {@link SHOW_MEETING_ATTENDEES_LOCKED_NOTE}; the pre-v2 wizard's
+ * registrants manager passes `restrictedLocks` and shows {@link SHOW_MEETING_ATTENDEES_LEGACY_LOCKED_NOTE}.
  */
 export function getShowMeetingAttendeesLockedNote(
   meetingType: string | null | undefined,

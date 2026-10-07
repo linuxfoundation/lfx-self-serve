@@ -1873,7 +1873,7 @@ describe('MeetingService.updateMeeting attendee visibility lock', () => {
     expect(payload.show_meeting_attendees).toBe(true);
   });
 
-  it('writes an explicit false for a restricted meeting saved without a choice, discarding a pre-v2 stale opt-in', async () => {
+  it('writes an explicit false for a restricted meeting saved without a choice (a partial body)', async () => {
     // Restricted meetings were locked under the pre-v2 rule, so a stored `true` can predate the
     // organizer ever being able to choose it. Upstream keeps what the body omits, so it is cleared here.
     proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, show_meeting_attendees: true, organizers: [] });

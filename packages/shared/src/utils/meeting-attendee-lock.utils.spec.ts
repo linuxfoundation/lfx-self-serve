@@ -3,9 +3,15 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { SHOW_MEETING_ATTENDEES_LEGACY_LOCKED_NOTE, SHOW_MEETING_ATTENDEES_LOCKED_NOTE } from '../constants/meeting.constants';
 import { MeetingType } from '../enums';
 import type { Meeting } from '../interfaces';
-import { getSavedAttendeeVisibility, isMeetingAttendeeListShared, isShowMeetingAttendeesLocked } from './meeting-attendee-lock.utils';
+import {
+  getSavedAttendeeVisibility,
+  getShowMeetingAttendeesLockedNote,
+  isMeetingAttendeeListShared,
+  isShowMeetingAttendeesLocked,
+} from './meeting-attendee-lock.utils';
 
 describe('isShowMeetingAttendeesLocked', () => {
   it('locks board meetings even when unrestricted', () => {
@@ -24,7 +30,7 @@ describe('isShowMeetingAttendeesLocked', () => {
     expect(isShowMeetingAttendeesLocked('  board\t', false)).toBe(true);
   });
 
-  it('leaves restricted meetings unlocked by default — sharing is the organizer\'s choice', () => {
+  it("leaves restricted meetings unlocked by default — sharing is the organizer's choice", () => {
     expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, true)).toBe(false);
   });
 
@@ -110,8 +116,20 @@ describe('isMeetingAttendeeListShared', () => {
     expect(isMeetingAttendeeListShared(meeting({ meeting_type: MeetingType.BOARD, show_meeting_attendees: true }))).toBe(false);
   });
 
-  it('shares a restricted meeting\'s guest list when its organizer opted in', () => {
+  it("shares a restricted meeting's guest list when its organizer opted in", () => {
     expect(isMeetingAttendeeListShared(meeting({ restricted: true, show_meeting_attendees: true }))).toBe(true);
     expect(isMeetingAttendeeListShared(meeting({ restricted: true, show_meeting_attendees: false }))).toBe(false);
+  });
+});
+
+describe('getShowMeetingAttendeesLockedNote', () => {
+  it('names board meetings only under the current rule', () => {
+    expect(getShowMeetingAttendeesLockedNote(MeetingType.BOARD, false)).toBe(SHOW_MEETING_ATTENDEES_LOCKED_NOTE);
+    expect(getShowMeetingAttendeesLockedNote(MeetingType.TECHNICAL, true)).toBeNull();
+  });
+
+  it("keeps the pre-v2 wizard's note, restricted meetings included", () => {
+    expect(getShowMeetingAttendeesLockedNote(MeetingType.TECHNICAL, true, { restrictedLocks: true })).toBe(SHOW_MEETING_ATTENDEES_LEGACY_LOCKED_NOTE);
+    expect(getShowMeetingAttendeesLockedNote(MeetingType.TECHNICAL, false, { restrictedLocks: true })).toBeNull();
   });
 });
