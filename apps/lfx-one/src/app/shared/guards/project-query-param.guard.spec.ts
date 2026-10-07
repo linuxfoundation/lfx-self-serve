@@ -1,12 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, RedirectCommand, Router, UrlTree } from '@angular/router';
+import { TRANSIENT_RETRY_DELAY_MS } from '@lfx-one/shared/constants';
 import { ProjectContextService } from '@shared/services/project-context.service';
 import { ProjectService } from '@shared/services/project.service';
-import { firstValueFrom, isObservable, Observable, of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { defer, firstValueFrom, isObservable, Observable, of, throwError } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { projectQueryParamGuard } from './project-query-param.guard';
 
@@ -51,7 +53,7 @@ const makeRoute = (slug: string | null, lens?: string): ActivatedRouteSnapshot =
   }) as unknown as ActivatedRouteSnapshot;
 
 describe('projectQueryParamGuard', () => {
-  let getProject: ReturnType<typeof vi.fn>;
+  let getProjectStrict: ReturnType<typeof vi.fn>;
   let setRouteLensKind: ReturnType<typeof vi.fn>;
   let setFoundation: ReturnType<typeof vi.fn>;
   let setProject: ReturnType<typeof vi.fn>;
@@ -69,7 +71,7 @@ describe('projectQueryParamGuard', () => {
   };
 
   beforeEach(() => {
-    getProject = vi.fn().mockReturnValue(of(REGULAR_PROJECT));
+    getProjectStrict = vi.fn().mockReturnValue(of(REGULAR_PROJECT));
     setRouteLensKind = vi.fn();
     setFoundation = vi.fn();
     setProject = vi.fn();
@@ -79,24 +81,26 @@ describe('projectQueryParamGuard', () => {
 
     TestBed.configureTestingModule({
       providers: [
-        { provide: ProjectService, useValue: { getProject } },
+        { provide: ProjectService, useValue: { getProjectStrict } },
         { provide: ProjectContextService, useValue: { setRouteLensKind, setFoundation, setProject } },
         { provide: Router, useValue: { parseUrl } },
       ],
     });
   });
 
+  afterEach(() => vi.useRealTimers());
+
   it('allows navigation immediately when no ?project= param is present', async () => {
     const result = await runGuard(makeRoute(null));
 
     expect(result).toBe(true);
-    expect(getProject).not.toHaveBeenCalled();
+    expect(getProjectStrict).not.toHaveBeenCalled();
   });
 
   it('sets the project context and allows navigation when the slug resolves (project lens)', async () => {
     const result = await runGuard(makeRoute('my-project', 'project'));
 
-    expect(getProject).toHaveBeenCalledWith('my-project', false);
+    expect(getProjectStrict).toHaveBeenCalledWith('my-project');
     expect(setProject).toHaveBeenCalledWith({
       uid: REGULAR_PROJECT.uid,
       name: REGULAR_PROJECT.name,
@@ -109,11 +113,11 @@ describe('projectQueryParamGuard', () => {
   });
 
   it('sets the foundation context and allows navigation when the slug resolves (foundation lens)', async () => {
-    getProject.mockReturnValue(of(FOUNDATION_PROJECT));
+    getProjectStrict.mockReturnValue(of(FOUNDATION_PROJECT));
 
     const result = await runGuard(makeRoute('my-foundation', 'foundation'));
 
-    expect(getProject).toHaveBeenCalledWith('my-foundation', false);
+    expect(getProjectStrict).toHaveBeenCalledWith('my-foundation');
     expect(setFoundation).toHaveBeenCalledWith({
       uid: FOUNDATION_PROJECT.uid,
       name: FOUNDATION_PROJECT.name,
@@ -126,7 +130,7 @@ describe('projectQueryParamGuard', () => {
   });
 
   it('derives foundation kind from the project when the route declares no lens and the project is a foundation', async () => {
-    getProject.mockReturnValue(of(FOUNDATION_PROJECT));
+    getProjectStrict.mockReturnValue(of(FOUNDATION_PROJECT));
 
     // No `lens` in route.data → effectiveKind is derived from computeIsFoundation
     const result = await runGuard(makeRoute('my-foundation'));
@@ -144,12 +148,12 @@ describe('projectQueryParamGuard', () => {
   // Regression: GH-2441 — unresolvable slug must NOT silently substitute a project
   // ---------------------------------------------------------------------------
 
-  it('activates the not-found view in-place when the slug is present but resolves to null (GH-2441 regression)', async () => {
-    getProject.mockReturnValue(of(null));
+  it.each([400, 401, 403, 404])('activates the not-found view in-place for HTTP %s (GH-2441 regression)', async (status) => {
+    getProjectStrict.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
 
     const result = await runGuard(makeRoute('s2c2f', 'project'));
 
-    expect(getProject).toHaveBeenCalledWith('s2c2f', false);
+    expect(getProjectStrict).toHaveBeenCalledWith('s2c2f');
     // Must use RedirectCommand with skipLocationChange so the browser retains the
     // original URL and the server emits HTTP 404 at the requested path — not a 302.
     expect(result).toBeInstanceOf(RedirectCommand);
@@ -161,15 +165,49 @@ describe('projectQueryParamGuard', () => {
     expect(setFoundation).not.toHaveBeenCalled();
   });
 
-  it('propagates an unexpected fetch error unchanged rather than silently swallowing it (defense-in-depth)', async () => {
-    // ProjectService.getProject maps all errors to null internally, so this branch
-    // is currently unreachable. The test documents the intended behavior if the
-    // service is ever refactored to propagate errors.
-    getProject.mockReturnValue(throwError(() => new Error('network error')));
+  it('allows the intended page after one silent retry succeeds', async () => {
+    vi.useFakeTimers();
+    const lookup = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
+      .mockReturnValueOnce(of(REGULAR_PROJECT));
+    getProjectStrict.mockReturnValue(defer(lookup));
+    const result = runGuard(makeRoute('my-project', 'project'));
 
-    // The Observable errors out; firstValueFrom rejects — guard emits no value.
-    // This is acceptable: Angular's error handler surfaces it rather than a silent miss.
-    await expect(runGuard(makeRoute('bad-slug', 'project'))).rejects.toThrow('network error');
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(setProject).not.toHaveBeenCalled();
+    expect(parseUrl).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+
+    expect(await result).toBe(true);
+    expect(lookup).toHaveBeenCalledTimes(2);
+    expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ uid: REGULAR_PROJECT.uid }));
+    expect(parseUrl).not.toHaveBeenCalled();
+  });
+
+  it.each([0, 408, 429, 500, 503])('shows the retry view in-place after HTTP %s persists through one retry', async (status) => {
+    vi.useFakeTimers();
+    const lookup = vi.fn(() => throwError(() => new HttpErrorResponse({ status })));
+    getProjectStrict.mockReturnValue(defer(lookup));
+    const result = runGuard(makeRoute('my-project', 'project'));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+
+    const cmd = (await result) as RedirectCommand;
+    expect(cmd).toBeInstanceOf(RedirectCommand);
+    expect(cmd.navigationBehaviorOptions?.skipLocationChange).toBe(true);
+    expect(parseUrl).toHaveBeenCalledWith('/unavailable');
+    expect(lookup).toHaveBeenCalledTimes(2);
+    expect(setProject).not.toHaveBeenCalled();
+    expect(setFoundation).not.toHaveBeenCalled();
+  });
+
+  it('keeps the not-found classification for non-HTTP errors', async () => {
+    getProjectStrict.mockReturnValue(throwError(() => new Error('unexpected error')));
+
+    const result = await runGuard(makeRoute('bad-slug', 'project'));
+    expect(result).toBeInstanceOf(RedirectCommand);
+    expect(parseUrl).toHaveBeenCalledWith('/not-found');
+    expect((result as RedirectCommand).navigationBehaviorOptions?.skipLocationChange).toBe(true);
 
     expect(setProject).not.toHaveBeenCalled();
     expect(setFoundation).not.toHaveBeenCalled();

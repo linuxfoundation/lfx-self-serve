@@ -862,6 +862,11 @@ export const routes: Routes = [
     loadComponent: () => import('./layouts/main-layout/main-layout.component').then((m) => m.MainLayoutComponent),
     children: [
       {
+        path: 'unavailable',
+        title: 'Temporarily Unavailable',
+        loadComponent: () => import('./modules/unavailable/unavailable.component').then((m) => m.UnavailableComponent),
+      },
+      {
         path: '**',
         title: 'Page Not Found',
         loadComponent: () => import('./modules/not-found/not-found.component').then((m) => m.NotFoundComponent),

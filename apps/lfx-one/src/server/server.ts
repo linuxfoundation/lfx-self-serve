@@ -583,6 +583,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     auth,
     runtimeConfig,
     notFound: false,
+    unavailable: false,
     providers: [
       { provide: APP_BASE_HREF, useValue: process.env['PCC_BASE_URL'] },
       { provide: REQUEST, useValue: req },
@@ -603,6 +604,10 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       if (renderContext.notFound && response.status === 200) {
         const body = await response.text();
         const finalResponse = new globalThis.Response(body, { status: 404, statusText: 'Not Found', headers: response.headers });
+        return writeResponseToNodeResponse(finalResponse, res);
+      } else if (renderContext.unavailable && response.status === 200) {
+        const body = await response.text();
+        const finalResponse = new globalThis.Response(body, { status: 503, statusText: 'Service Unavailable', headers: response.headers });
         return writeResponseToNodeResponse(finalResponse, res);
       }
 

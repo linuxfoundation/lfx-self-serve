@@ -117,28 +117,27 @@ public async getProjectIdBySlug(slug: string): Promise<ProjectSlugToIdResponse> 
 
 ### Project Service Integration
 
+Project detail lookup (`ProjectService.getProjectBySlug`, serving `/api/projects/:slug`)
+uses the authenticated HTTP resolver `GET /projects/slug-to-uid/{slug}?v=1` through
+`MicroserviceProxyService`, then the existing UID detail/access lookup. HTTP preserves
+404 for a confirmed miss and 500/503 for lookup failures, allowing deep-link guards
+to show a retry view rather than a false "Page not found".
+
+The legacy `ProjectService.getProjectIdBySlug` NATS helper remains available to its
+other callers. Its contract is ambiguous: the upstream responder sends an empty
+reply for both missing projects and internal failures, and the helper also maps
+timeouts/no responders to `exists: false`. That result is not proof of absence.
+
 ```typescript
 export class ProjectService {
-  private natsService: NatsService;
-
-  public constructor() {
-    this.natsService = new NatsService();
-  }
-
   public async getProjectBySlug(req: Request, slug: string): Promise<Project> {
-    // Use NATS to resolve project slug to ID
-    const { uid, exists } = await this.natsService.getProjectIdBySlug(slug);
-
-    if (!exists) {
-      throw createApiError({
-        message: 'Project not found',
-        status: 404,
-        code: 'PROJECT_NOT_FOUND',
-      });
-    }
-
-    // Use resolved ID to fetch project details
-    return this.getProjectById(req, uid);
+    const { uid } = await this.microserviceProxy.proxyRequest<{ uid: string }>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/slug-to-uid/${encodeURIComponent(slug)}`,
+      'GET'
+    );
+    return this.getProjectById(req, uid, true);
   }
 }
 ```

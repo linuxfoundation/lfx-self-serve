@@ -128,8 +128,15 @@ Angular's `AngularNodeAppEngine` receives the complete request context, includin
 The server implements **graceful degradation** for rendering errors:
 
 - **404 Not Found**: Proper HTTP status for missing routes
+- **503 Service Unavailable**: in-place retry view when a page's project couldn't be loaded (transient upstream failure)
 - **401 Unauthorized**: Authentication-required responses
 - **500 Internal Server Error**: Comprehensive error logging with fallback responses
+
+In-place not-found and unavailable views set `ServerRequestContext.notFound` or
+`ServerRequestContext.unavailable` during rendering. The SSR handler rewrites a
+200 response to 404 or 503 respectively, retaining the requested URL and rendered
+shell. The unavailable view's **Try again** action re-navigates to the original
+browser path, including its project query parameter.
 
 ## 🚀 Production Deployment Architecture
 
