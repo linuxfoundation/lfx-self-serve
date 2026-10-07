@@ -4,7 +4,11 @@
 <div class="flex flex-col gap-4" data-testid="newsletter-audience-step">
   <div>
     <h2 class="text-base font-semibold text-gray-900">Who's this for?</h2>
-    <p class="text-sm text-gray-500 mt-1">Pick the group that should receive this newsletter.</p>
+    @if (showGroupSetup()) {
+      <p class="text-sm text-gray-500 mt-1">Newsletters are sent to a group in the Newsletter category.</p>
+    } @else {
+      <p class="text-sm text-gray-500 mt-1">Pick the group that should receive this newsletter.</p>
+    }
   </div>
 
   <div class="flex flex-col gap-2">
@@ -43,9 +47,69 @@
           Retry
         </button>
       </div>
-    } @else if (!hasCommittees() && projectUid()) {
-      <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" data-testid="newsletter-audience-no-committees">
-        No newsletter groups available. Create a group with the Newsletter category first.
+    } @else if (showGroupSetup()) {
+      <div class="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4" data-testid="newsletter-audience-no-committees">
+        <div class="flex items-start gap-2">
+          <i class="fa-light fa-users mt-0.5 text-amber-600" aria-hidden="true"></i>
+          <div class="flex flex-col gap-1">
+            <p class="text-sm font-medium text-amber-900" data-testid="newsletter-audience-no-committees-title">
+              @if (hasIneligibleCommittees()) {
+                None of the groups in {{ setupContextName() }} are newsletter groups
+              } @else {
+                There are no groups in {{ setupContextName() }} yet
+              }
+            </p>
+            <p class="text-sm text-amber-800" data-testid="newsletter-audience-no-committees-guidance">
+              @if (canCreateGroup()) {
+                Create a group with the Newsletter category and add the people who should receive it. It opens in a new tab — come back here and refresh groups
+                when you're done.
+              } @else {
+                Ask a manager of {{ setupContextName() }} to create a group with the Newsletter category, then refresh groups.
+              }
+            </p>
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          @if (canCreateGroup()) {
+            <lfx-button
+              label="Create newsletter group"
+              icon="fa-light fa-plus"
+              severity="info"
+              size="small"
+              [routerLink]="createGroupRoute()"
+              [queryParams]="createGroupQueryParams()"
+              target="_blank"
+              rel="noopener"
+              ariaLabel="Create newsletter group (opens in a new tab)"
+              data-testid="newsletter-audience-create-group">
+            </lfx-button>
+          }
+          @if (setupContext()) {
+            <lfx-button
+              label="View groups"
+              icon="fa-light fa-arrow-up-right-from-square"
+              iconPos="right"
+              severity="secondary"
+              [outlined]="true"
+              size="small"
+              [routerLink]="groupsRoute()"
+              [queryParams]="groupsQueryParams()"
+              target="_blank"
+              rel="noopener"
+              ariaLabel="View groups (opens in a new tab)"
+              data-testid="newsletter-audience-view-groups">
+            </lfx-button>
+          }
+          <lfx-button
+            label="Refresh groups"
+            icon="fa-light fa-rotate-right"
+            severity="secondary"
+            [text]="true"
+            size="small"
+            (onClick)="retryCommittees.emit()"
+            data-testid="newsletter-audience-refresh-groups">
+          </lfx-button>
+        </div>
       </div>
     } @else {
       <lfx-select
