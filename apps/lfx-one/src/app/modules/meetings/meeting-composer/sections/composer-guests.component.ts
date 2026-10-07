@@ -9,7 +9,13 @@ import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggl
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import type { ComposerGuestRow, CommitteeMember, ManualGuestDialogResult, MeetingCommittee, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
-import { avatarInitials, getSavedAttendeeVisibility, getShowMeetingAttendeesLockedNote, isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
+import {
+  avatarInitials,
+  getSavedAttendeeVisibility,
+  getShowMeetingAttendeesLockedNote,
+  isMeetingInviteResponsesEnabled,
+  isSameOccurrenceId,
+} from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { controlValueSignal } from '@shared/utils/form-control-signals.util';
 import { MessageService } from 'primeng/api';
@@ -62,7 +68,15 @@ export class ComposerGuestsComponent {
   private readonly committeesValue: Signal<MeetingCommittee[] | null> = controlValueSignal<MeetingCommittee[]>(this.form, 'committees');
   protected readonly selectedCommittees: Signal<MeetingCommittee[]> = computed(() => this.committeesValue() ?? []);
 
-  protected readonly visibleGuests = computed(() => this.formService.guests().filter((guest) => guest.state !== 'deleted'));
+  protected readonly isOccurrenceEdit: Signal<boolean> = this.formService.isOccurrenceEdit;
+  /**
+   * Guests on screen: every live guest, or — editing one occurrence — those invited to every occurrence
+   * plus those invited to this one. Guests scoped to other occurrences are left out but stay in
+   * `formService.guests()`, so nothing is queued against them.
+   */
+  protected readonly visibleGuests = computed(() =>
+    this.formService.guests().filter((guest) => guest.state !== 'deleted' && this.appliesToEditedOccurrence(guest))
+  );
   protected readonly guestCount = computed(() => this.visibleGuests().length);
   protected readonly groupGuestCount = computed(() => this.visibleGuests().filter((guest) => guest.type === 'committee').length);
   protected readonly directGuestCount = computed(() => this.visibleGuests().filter((guest) => guest.type === 'direct').length);
@@ -136,7 +150,20 @@ export class ComposerGuestsComponent {
    */
   protected readonly guestRows: Signal<ComposerGuestRow[]> = this.initGuestRows();
 
-  private readonly invitedEmails: Signal<Set<string>> = computed(() => new Set(this.visibleGuests().map((guest) => guest.email?.toLowerCase() ?? '')));
+  /**
+   * Emails already on the meeting, for the duplicate guard.
+   * @description Built from every live guest, not just the visible ones: editing one occurrence hides guests
+   * scoped to other occurrences, and adding one of them here again could be rejected upstream at save time.
+   */
+  private readonly invitedEmails: Signal<Set<string>> = computed(
+    () =>
+      new Set(
+        this.formService
+          .guests()
+          .filter((guest) => guest.state !== 'deleted')
+          .map((guest) => guest.email?.toLowerCase() ?? '')
+      )
+  );
 
   /**
    * Adds the person picked from search, or falls back to the manual dialog.
@@ -231,9 +258,29 @@ export class ComposerGuestsComponent {
           // user to count rows to find out which guest they are about to drop — the email is what
           // identifies the row on screen in that case, so it identifies the button too.
           removeLabel: `Remove ${displayName || guest.email || 'guest'}`,
+          scopeLabel: this.scopeLabel(guest),
+          // Editing one occurrence, only guests invited to it alone can go: upstream can't drop a series
+          // guest from a single occurrence, so those rows are read-only.
+          removable: !this.isOccurrenceEdit() || !!guest.occurrence_id,
         };
       })
     );
+  }
+
+  private appliesToEditedOccurrence(guest: MeetingRegistrantWithState): boolean {
+    if (!this.isOccurrenceEdit() || !guest.occurrence_id) {
+      return true;
+    }
+
+    return isSameOccurrenceId(guest.occurrence_id, this.formService.occurrence()?.occurrence_id ?? this.formService.occurrenceId());
+  }
+
+  private scopeLabel(guest: MeetingRegistrantWithState): string | null {
+    if (!this.isOccurrenceEdit()) {
+      return null;
+    }
+
+    return guest.occurrence_id ? 'This occurrence' : 'All occurrences';
   }
 
   private openManualDialog(prefill: Record<string, unknown> | null): void {
@@ -257,7 +304,9 @@ export class ComposerGuestsComponent {
     const email = (formValue['email'] as string | null) ?? '';
 
     if (email && this.invitedEmails().has(email.toLowerCase())) {
-      this.messageService.add({ severity: 'warn', summary: 'Already invited', detail: `${email} is already on the guest list.` });
+      const onScreen = this.visibleGuests().some((guest) => guest.email?.toLowerCase() === email.toLowerCase());
+      const detail = onScreen ? `${email} is already on the guest list.` : `${email} is already invited to another occurrence of this meeting.`;
+      this.messageService.add({ severity: 'warn', summary: 'Already invited', detail });
       return;
     }
 
