@@ -10,6 +10,7 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ToastModule } from 'primeng/toast';
+import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -23,6 +24,7 @@ import {
   CommitteeTab,
   CommitteeUser,
   getCommitteeCategorySeverity,
+  MembershipTagDisplay,
   TagSeverity,
 } from '@lfx-one/shared';
 import {
@@ -121,6 +123,27 @@ const INVITE_TOAST_KEY = 'committee-view-invite';
 const ACCESS_RETRY_ATTEMPTS = 3;
 const ACCESS_RETRY_INTERVAL_MS = 400;
 
+const ROLE_DESCRIPTIONS: Record<string, string> = {
+  Chair: 'Leads the group and facilitates decisions',
+  'Vice Chair': 'Supports the Chair; acts in their absence',
+  Lead: 'Leads the technical direction of the group',
+  Secretary: 'Manages group records and communications',
+  Treasurer: 'Oversees group finances and reporting',
+  Director: 'Serves on the governing board',
+  'TAC/TOC Representative': 'Represents the group on the advisory council',
+  'Developer Seat': 'Represents the developer community in governance',
+  'LF Staff': 'Linux Foundation staff supporting the group',
+};
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function buildTooltipHtml(title: string, bullets: string[]): string {
+  const items = bullets.map((b) => `<div class="flex gap-1"><span>•</span><span>${b}</span></div>`).join('');
+  return `<div><strong>${escapeHtml(title)}</strong><div class="flex flex-col gap-0.5 pl-2 mt-1">${items}</div></div>`;
+}
+
 @Component({
   selector: 'lfx-committee-view',
   imports: [
@@ -134,6 +157,7 @@ const ACCESS_RETRY_INTERVAL_MS = 400;
     PopoverModule,
     SkeletonModule,
     ToastModule,
+    TooltipModule,
     CategoryAvatarColorPipe,
     InitialsPipe,
     InvitationSubtextPipe,
@@ -342,6 +366,55 @@ export class CommitteeViewComponent {
     if (this.canEdit()) return 'manage';
     if (this.canReview()) return 'review';
     return 'member';
+  });
+
+  /** Resolved membership status label, severity, and icon for display in the group header. Null while loading. */
+  public membershipStatus: Signal<MembershipTagDisplay | null> = computed(() => {
+    if (this.myRoleLoading()) return null;
+    if (this.canEdit()) return { label: 'Manager', severity: 'info', icon: 'fa-light fa-user-gear' };
+    if (this.canReview()) return { label: 'Auditor', severity: 'secondary', icon: 'fa-light fa-user-magnifying-glass' };
+    const role = this.myRole();
+    if (role !== null) {
+      return { label: role === 'None' ? 'Member' : role, severity: 'success', icon: 'fa-light fa-user-check' };
+    }
+    if (this.hasPendingApplication()) return { label: 'Application Pending', severity: 'warn', icon: 'fa-light fa-user-clock' };
+    return { label: 'Not a Member', severity: 'secondary', icon: 'fa-light fa-user' };
+  });
+
+  /** HTML tooltip content explaining what the current membership role allows. */
+  public membershipTooltipHtml: Signal<string> = computed(() => {
+    const status = this.membershipStatus();
+    if (!status) return '';
+    const { label } = status;
+    switch (label) {
+      case 'Manager':
+        return buildTooltipHtml('Manager', [
+          'Manage group members and their roles',
+          'Edit group settings and information',
+          'Create and manage meetings',
+          'Full access to all group content',
+        ]);
+      case 'Auditor':
+        return buildTooltipHtml('Auditor', [
+          'View all group content and discussions',
+          'Access the full member roster',
+          'Cannot modify settings or manage members',
+        ]);
+      case 'Application Pending':
+        return buildTooltipHtml('Application Pending', ['Your request to join is under review', 'You will be notified when approved or declined']);
+      case 'Not a Member':
+        return buildTooltipHtml('Not a Member', ['Join this group to access member-only content', 'Participate in meetings, votes, and discussions']);
+      default: {
+        const roleDesc = ROLE_DESCRIPTIONS[label];
+        const bullets = [
+          ...(roleDesc ? [roleDesc] : []),
+          'Attend meetings and view discussions',
+          'Participate in votes and surveys',
+          'Access member-only content',
+        ];
+        return buildTooltipHtml(label, bullets);
+      }
+    }
   });
 
   public hasChannels: Signal<boolean> = computed(() => {
