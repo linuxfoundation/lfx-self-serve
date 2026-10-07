@@ -3671,11 +3671,25 @@ describe('CampaignsComponent — email delivery channel', () => {
       (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
       expect(internals().emailStagingHeld(), 'fixture precondition: held').toBe(true);
 
+      // The RENDERED guard, not only the handler's: the waiting copy shows and the ack button is
+      // disabled while the create is on the wire. Dropping either template guard while the handler
+      // guard stays would still let an operator click through before the draft can appear.
+      const el = fixture.nativeElement as HTMLElement;
+      const ackButton = (): HTMLButtonElement | null => el.querySelector('[data-testid="campaigns-email-stage-unresolved-ack"] button');
+      fixture.detectChanges();
+      expect(el.querySelector('[data-testid="campaigns-email-stage-unresolved-waiting"]'), 'no waiting copy while the create is on the wire').not.toBeNull();
+      expect(ackButton(), 'fixture precondition: ack button rendered').not.toBeNull();
+      expect(ackButton()!.disabled, 'ack button enabled while the create is on the wire').toBe(true);
+
       (internals() as unknown as { onAcknowledgeStagingUnresolved(): void }).onAcknowledgeStagingUnresolved();
       expect(internals().emailStagingHeld(), 'acknowledged while the create was still on the wire').toBe(true);
 
       create.error(new HttpErrorResponse({ status: 504 }));
       await staging;
+      fixture.detectChanges();
+      expect(el.querySelector('[data-testid="campaigns-email-stage-unresolved-waiting"]'), 'waiting copy outlived the create').toBeNull();
+      expect(ackButton()!.disabled, 'ack button still disabled after the create settled').toBe(false);
+
       (internals() as unknown as { onAcknowledgeStagingUnresolved(): void }).onAcknowledgeStagingUnresolved();
       expect(internals().emailStagingHeld(), 'the acknowledgement never became available').toBe(false);
     });

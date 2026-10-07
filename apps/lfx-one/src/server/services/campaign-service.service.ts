@@ -2057,12 +2057,6 @@ export class CampaignServiceClient {
   }
 
   /**
-   * Map one upstream audience row onto the shared shape.
-   *
-   * `etag` is NOT set here: `listAudiences` has none to take, and a mapper that guessed one would
-   * hand the caller a token that means nothing upstream.
-   */
-  /**
    * Whether a `list-audiences` row carries every field the wire contract REQUIRES, with the right
    * type. Anything less is unreadable, not "a row with blanks": the restore keys on `platform` and
    * `brief_id`, so a partial row read as a verified absence and re-opened a non-idempotent compose.
@@ -2076,6 +2070,12 @@ export class CampaignServiceClient {
     return requiredStrings.every((value) => typeof value === 'string' && value !== '') && typeof row.version === 'number' && Number.isFinite(row.version);
   }
 
+  /**
+   * Map one upstream audience row onto the shared shape.
+   *
+   * `etag` is NOT set here: `listAudiences` has none to take, and a mapper that guessed one would
+   * hand the caller a token that means nothing upstream.
+   */
   private toCampaignAudience(row: CampaignServiceAudienceList): CampaignAudience {
     return {
       id: row.id,
