@@ -75,6 +75,13 @@ async function addSkill(page: Page, idPrefix: string, skill: string): Promise<vo
   await expect(page.getByTestId(`${idPrefix}-skill-list`)).toContainText(skill);
 }
 
+/** Picks a country through the Country card's filterable dropdown. */
+async function pickCountry(page: Page, country: string): Promise<void> {
+  await page.getByTestId('mentorship-mentee-country-select').locator('.p-select').first().click();
+  await page.locator('.p-select-overlay .p-select-filter').fill(country);
+  await page.getByRole('option', { name: country, exact: true }).click();
+}
+
 async function fillRegistrationForm(page: Page): Promise<void> {
   await expect(page.getByTestId('mentorship-mentee-register-title')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
 
@@ -84,6 +91,7 @@ async function fillRegistrationForm(page: Page): Promise<void> {
 
   await addSkill(page, 'mentorship-mentee-have', 'Java');
   await addSkill(page, 'mentorship-mentee-want', 'Python');
+  await pickCountry(page, 'Kenya');
 
   for (const id of CONFIRMATION_INPUT_IDS) {
     await page.locator(`#${id}`).check();
@@ -111,6 +119,7 @@ test.describe('Mentee registration — save', () => {
     expect(body).toMatchObject({
       skillsHave: ['Java'],
       skillsWant: ['Python'],
+      country: 'KE',
       ageEligible: true,
       workAuthorized: true,
       noDuplicateProfile: true,
