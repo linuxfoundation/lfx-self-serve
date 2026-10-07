@@ -4,7 +4,7 @@
 import { Component, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
-import { ActionSlotKind, Meeting, MeetingOccurrence, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole, RsvpResponse } from '@lfx-one/shared/interfaces';
+import { ActionSlotKind, Meeting, MeetingOccurrence, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole } from '@lfx-one/shared/interfaces';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -16,6 +16,7 @@ import { PublicRegistrationModalComponent } from '../../../components/public-reg
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingGuestJoinComponent } from '../guest-join/guest-join.component';
 import { MeetingJoinActionComponent } from '../join-action/join-action.component';
+import { MeetingRsvpCardComponent } from '../rsvp-card/rsvp-card.component';
 import { MeetingActionSlotComponent } from './action-slot.component';
 
 // The Join control has its own spec; here it only has to be the one rendered.
@@ -24,6 +25,9 @@ class JoinActionStubComponent {}
 
 @Component({ selector: 'lfx-meeting-guest-join', template: '<span data-testid="guest-join-stub"></span>' })
 class GuestJoinStubComponent {}
+
+@Component({ selector: 'lfx-meeting-rsvp-card', template: '<span data-testid="rsvp-card-stub"></span>' })
+class RsvpCardStubComponent {}
 
 const SIGN_IN_HREF = '/login?returnTo=https%3A%2F%2Fapp.example%2Fmeetings%2Fmeeting-1';
 const KINDS: ActionSlotKind[] = ['join', 'rsvp', 'register', 'invitation-required', 'guest-join', 'tools', 'no-access', 'rsvp-unavailable', 'none'];
@@ -39,8 +43,6 @@ describe('MeetingActionSlotComponent', () => {
   let joinsInWindow: WritableSignal<boolean>;
   let meeting: WritableSignal<Meeting | undefined>;
   let pastAccessKnown: WritableSignal<boolean>;
-  let myRsvp: WritableSignal<RsvpResponse | null | undefined>;
-  let myRsvpAttr: WritableSignal<string | null>;
   let markRegistered: ReturnType<typeof vi.fn>;
   let dialogClose: Subject<{ registered: boolean } | undefined>;
   let openDialog: ReturnType<typeof vi.fn>;
@@ -64,8 +66,6 @@ describe('MeetingActionSlotComponent', () => {
     joinsInWindow = signal(true);
     meeting = signal<Meeting | undefined>({ id: 'meeting-1', early_join_time_minutes: 15 } as Meeting);
     pastAccessKnown = signal(true);
-    myRsvp = signal<RsvpResponse | null | undefined>(undefined);
-    myRsvpAttr = signal<string | null>(null);
     markRegistered = vi.fn();
     dialogClose = new Subject();
     openDialog = vi.fn().mockReturnValue({ onClose: dialogClose.asObservable() });
@@ -85,8 +85,6 @@ describe('MeetingActionSlotComponent', () => {
             joinsInWindow,
             meeting,
             pastAccessKnown,
-            myRsvp,
-            myRsvpAttr,
             markRegistered,
             selectedOccurrence,
             signInHref: signal(SIGN_IN_HREF),
@@ -98,8 +96,8 @@ describe('MeetingActionSlotComponent', () => {
       ],
     })
       .overrideComponent(MeetingActionSlotComponent, {
-        remove: { imports: [MeetingJoinActionComponent, MeetingGuestJoinComponent] },
-        add: { imports: [JoinActionStubComponent, GuestJoinStubComponent] },
+        remove: { imports: [MeetingJoinActionComponent, MeetingGuestJoinComponent, MeetingRsvpCardComponent] },
+        add: { imports: [JoinActionStubComponent, GuestJoinStubComponent, RsvpCardStubComponent] },
       })
       .overrideComponent(MeetingActionSlotComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
       .compileComponents();
@@ -126,7 +124,7 @@ describe('MeetingActionSlotComponent', () => {
     expect(slots[0].getAttribute('data-kind')).toBe(kind);
   });
 
-  it.each(KINDS.filter((kind) => kind !== 'join' && kind !== 'none'))('explains the %s kind instead of leaving the rail empty', (kind) => {
+  it.each(KINDS.filter((kind) => kind !== 'join' && kind !== 'rsvp' && kind !== 'none'))('explains the %s kind instead of leaving the rail empty', (kind) => {
     render(kind);
 
     expect(text('meeting-action-message')).not.toBe('');
@@ -210,21 +208,12 @@ describe('MeetingActionSlotComponent', () => {
     });
   });
 
-  // E2-04 (FR-023): until E2-05's card, the rsvp kind's line names the viewer's own answer.
-  it.each([
-    [undefined, "You're invited to this meeting."],
-    [null, "You're invited to this meeting. You haven't replied yet."],
-    ['accepted', "You're going."],
-    ['maybe', 'You replied maybe.'],
-    ['declined', "You can't attend."],
-  ] as [RsvpResponse | null | undefined, string][])('says the RSVP is %s', (answer, message) => {
-    myRsvp.set(answer);
-    myRsvpAttr.set(answer === undefined ? null : (answer ?? 'none'));
+  // E2-05: the rsvp kind is its own card (tested in its spec).
+  it('renders the RSVP card for the rsvp kind', () => {
     render('rsvp');
 
-    expect(text('meeting-action-message')).toBe(message);
-    // Absent while unknown, `none` when not answered (testid-contract.md).
-    expect(query('meeting-action-message')?.getAttribute('data-my-rsvp')).toBe(answer === undefined ? null : (answer ?? 'none'));
+    expect(query('rsvp-card-stub')).not.toBeNull();
+    expect(query('meeting-action-message')).toBeNull();
   });
 
   // E2-06 (FR-025).

@@ -1,0 +1,92 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities): 42px pill
+     buttons, 8px apart, under a 13px semibold question. The answer is in data-my-rsvp. -->
+<section class="flex flex-col gap-[9px]" aria-labelledby="meeting-rsvp-card-heading" data-testid="meeting-rsvp-card" [attr.data-my-rsvp]="myRsvpAttr()">
+  @if (confirmed() && myRsvp(); as answer) {
+    <h3 id="meeting-rsvp-card-heading" class="sr-only">Your RSVP</h3>
+    <div
+      class="flex items-center gap-[9px] rounded-[var(--md-radius-md)] px-[13px] py-[11px] text-[13.5px] font-semibold"
+      [class]="confirmations[answer].classes"
+      role="status"
+      data-testid="meeting-rsvp-card-confirmation">
+      <i [class]="confirmations[answer].icon" aria-hidden="true"></i>
+      <span class="flex-1">{{ confirmations[answer].label }}</span>
+      <button
+        type="button"
+        class="rounded-[var(--md-radius-xs)] text-[12.5px] font-semibold underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+        (click)="change()"
+        data-testid="meeting-rsvp-card-change">
+        Change
+      </button>
+    </div>
+  } @else if (pendingResponse(); as response) {
+    <!-- FR-024: on a series, which occurrences the answer covers. -->
+    <h3 id="meeting-rsvp-card-heading" class="m-0 text-[13px] font-semibold text-[var(--md-text-heading)]">Apply your answer to</h3>
+    <div class="flex flex-col gap-[8px]" role="radiogroup" aria-labelledby="meeting-rsvp-card-heading" data-testid="meeting-rsvp-card-scope">
+      @for (option of scopes; track option.scope) {
+        <label class="flex cursor-pointer items-center gap-[9px] text-[13px] text-[var(--md-text-body)]">
+          <input
+            type="radio"
+            name="meeting-rsvp-card-scope"
+            class="accent-[var(--md-accent)]"
+            [value]="option.scope"
+            [checked]="selectedScope() === option.scope"
+            (change)="selectedScope.set(option.scope)"
+            [attr.data-testid]="'meeting-rsvp-card-scope-' + option.scope" />
+          {{ option.label }}
+        </label>
+      }
+    </div>
+    <div class="flex gap-[8px]">
+      <button
+        type="button"
+        class="h-[38px] flex-1 rounded-full bg-[var(--md-accent)] text-[13.5px] font-semibold text-[var(--md-surface-card)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none disabled:opacity-60"
+        [disabled]="!!saving()"
+        [attr.aria-busy]="!!saving()"
+        (click)="confirmScope()"
+        data-testid="meeting-rsvp-card-scope-save">
+        {{ saving() ? 'Saving…' : 'Save' }}
+      </button>
+      <button
+        type="button"
+        class="h-[38px] flex-1 rounded-full border border-[var(--md-border-strong)] bg-[var(--md-surface-card)] text-[13.5px] font-semibold text-[var(--md-text-heading)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none disabled:opacity-60"
+        [disabled]="!!saving()"
+        (click)="cancelScope()"
+        data-testid="meeting-rsvp-card-scope-cancel">
+        Cancel
+      </button>
+    </div>
+  } @else {
+    <h3 id="meeting-rsvp-card-heading" class="m-0 text-[13px] font-semibold text-[var(--md-text-heading)]">Will you attend?</h3>
+    <div class="flex flex-col gap-[8px]">
+      @for (option of options; track option.response) {
+        <!-- The prototype's buttons: outlined in the answer's colour, filled once it is the answer. -->
+        <button
+          type="button"
+          class="inline-flex h-[42px] w-full items-center justify-center gap-[8px] rounded-full border text-[13.5px] font-semibold transition-colors focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none disabled:opacity-60"
+          [style.border-color]="option.tone"
+          [style.color]="myRsvp() === option.response ? 'var(--md-surface-card)' : option.tone"
+          [style.background]="myRsvp() === option.response ? option.tone : 'var(--md-surface-card)'"
+          [disabled]="!!saving()"
+          [attr.aria-pressed]="myRsvp() === option.response"
+          [attr.aria-busy]="saving() === option.response"
+          (click)="choose(option.response)"
+          [attr.data-testid]="'meeting-rsvp-card-' + option.response">
+          <i [class]="saving() === option.response ? 'fa-light fa-spinner-third fa-spin' : option.icon" aria-hidden="true"></i>
+          {{ option.label }}
+        </button>
+      }
+    </div>
+  }
+
+  @if (error(); as message) {
+    <p
+      class="m-0 rounded-[var(--md-radius-md)] bg-[var(--md-status-live-bg)] px-[12px] py-[10px] text-[12.5px] leading-[1.4] text-[var(--md-status-live)]"
+      role="alert"
+      data-testid="meeting-rsvp-card-error">
+      {{ message }}
+    </p>
+  }
+</section>

@@ -84,6 +84,15 @@ own namespace; the two never share a value.
 | `meeting-guest-join-error`                  | Its error message (`role="alert"`)                                                                                    |
 | `meeting-action-register-button`            | `register`'s "Register for meeting" control, for a signed-in outsider                                                 |
 | `meeting-action-message`                    | The slot's line of copy: a finished kind's explanation, or the one line for a kind whose full design is still to come |
+| `meeting-rsvp-card`                         | The `rsvp` kind's "Will you attend?" card; carries `data-my-rsvp`                                                     |
+| `meeting-rsvp-card-${response}`             | One answer button, `accepted` / `maybe` / `declined`; `aria-pressed` once it is the answer                            |
+| `meeting-rsvp-card-confirmation`            | The given answer ("You're going" …)                                                                                   |
+| `meeting-rsvp-card-change`                  | Its Change control                                                                                                    |
+| `meeting-rsvp-card-scope`                   | On a series, the scope radio group                                                                                    |
+| `meeting-rsvp-card-scope-${scope}`          | One scope option, `all` / `single` / `this_and_following`                                                             |
+| `meeting-rsvp-card-scope-save`              | Saves the answer with the chosen scope                                                                                |
+| `meeting-rsvp-card-scope-cancel`            | Back to the answers, without saving                                                                                   |
+| `meeting-rsvp-card-error`                   | Its error message (`role="alert"`)                                                                                    |
 | `meeting-organizer`                         | "Organized by" in the rail card                                                                                       |
 | `meeting-organizer-name`                    | The organizer's display name                                                                                          |
 | `meeting-error-state`                       | Terminal error state                                                                                                  |
@@ -148,8 +157,8 @@ the role. Everywhere else it is absent, for the same reason `data-attendance` is
 The public payload does not carry the viewer's own RSVP, so the page fetches it (E2-04, #2880).
 Until it has loaded, and whenever the fetch fails, the attribute is absent for that viewer too and
 `data-status` shows the time state. Absent therefore never means `none`: a test asserts
-`data-my-rsvp` only once the RSVP has loaded. The `rsvp` slot's `meeting-action-message` carries the
-same attribute with the same values, until E2-05's card replaces that line.
+`data-my-rsvp` only once the RSVP has loaded. The RSVP card (`meeting-rsvp-card`, E2-05) carries the
+same attribute with the same values.
 
 ### `meeting-privacy-chip[data-visibility]` and `[data-restricted]`
 
