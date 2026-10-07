@@ -262,7 +262,7 @@ export const MENTORSHIP_ADMIN_MENTOR_STATUSES = ['requested', 'pending', 'invite
 
 export const MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS: Record<MentorshipAdminMentorStatus, string> = {
   requested: 'Requested',
-  pending: 'Pending',
+  pending: 'Invited',
   invited: 'Invited',
   active: 'Accepted',
   declined: 'Declined',
@@ -280,6 +280,40 @@ export const MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipAdmi
 
 /** Statuses an admin may set through `PATCH …/mentors/:memberId`. Upstream allows no move out of `declined` or `withdrawn`. */
 export const MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES = ['active', 'declined', 'withdrawn'] as const;
+
+/** Shortest trimmed search `GET .../mentor-candidates` accepts; upstream answers 400 below it. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH = 2;
+
+/** Helper text under the Mentors tab invite search. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_HELP_TEXT = 'Search by name, LF username, or full email address.';
+
+/**
+ * Shown when a search that could be an LF username or a full email finds no one. Upstream finds anyone not yet in
+ * Mentorship only by their exact LF username or full email.
+ */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE =
+  'No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username.';
+
+/** Shown when a name search (it has a space) finds no one: name search only finds people who already use Mentorship. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE = 'No Mentorship user matches that name. Try their LF username or full email address.';
+
+/** Shown when the candidate search hits a 503: the account lookup is down for now. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE = "Couldn't look up accounts right now. Try again.";
+
+/** Shown when the candidate search fails for any other reason. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE = "Couldn't search for people. Try again.";
+
+/** Shown once a mentor invite is sent; upstream emails it to the account's primary email. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITED_MESSAGE = 'Invitation sent.';
+
+/** Shown when an invite hits a 409: the person is already invited to, or a mentor of, the program. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE = 'This person is already on the program.';
+
+/** Shown when an invite fails for any reason without its own message. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE = "The invitation couldn't be sent. Please try again.";
+
+/** Longest LFID the BFF forwards on an invite; LF usernames are far shorter. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH = 100;
 
 /** Shown when a mentor change hits a 409: the mentor's status moved on, so the list reloads. */
 export const MENTORSHIP_ADMIN_MENTOR_CHANGED_MESSAGE = 'This mentor changed. The list has been refreshed.';

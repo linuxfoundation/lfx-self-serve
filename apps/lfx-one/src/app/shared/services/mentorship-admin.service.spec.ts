@@ -8,6 +8,7 @@ import { MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE } from '@lfx-one/shared/c
 import {
   MentorshipAdminDeclinePendingResponse,
   MentorshipAdminMenteesResponse,
+  MentorshipAdminMentorCandidatesResponse,
   MentorshipAdminMentorsResponse,
   MentorshipAdminProgramPage,
   MentorshipAdminTermsResponse,
@@ -180,6 +181,48 @@ describe('MentorshipAdminService', () => {
     expect(status).toBe(503);
     expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] getProgramMentors failed', { status: 503, statusText: 'Service Unavailable' });
     expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-name');
+  });
+
+  it('searches mentor candidates with the search kept literal, encoding the id', () => {
+    let names: string[] = [];
+    service.getMentorCandidates('grid flow', 'ada+lfx@example.org').subscribe((response) => (names = response.data.map((candidate) => candidate.name)));
+
+    const req = http.expectOne((r) => r.url === '/api/mentorship/admin/programs/grid%20flow/mentor-candidates');
+    expect(req.request.params.get('search')).toBe('ada+lfx@example.org');
+    expect(req.request.urlWithParams).toContain('search=ada%2Blfx%40example.org');
+    req.flush({ data: [{ lfid: 'ada', name: 'Ada Mentor' }] } satisfies MentorshipAdminMentorCandidatesResponse);
+    expect(names).toEqual(['Ada Mentor']);
+  });
+
+  it('logs a mentor-candidates failure by status only, never the search', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.getMentorCandidates('p1', 'secret-name').subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne((r) => r.url === '/api/mentorship/admin/programs/p1/mentor-candidates').flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(status).toBe(503);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] getMentorCandidates failed', { status: 503, statusText: 'Service Unavailable' });
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-name');
+  });
+
+  it('invites a mentor by LFID, encoding the id, and resolves on 204', () => {
+    let done = 0;
+    service.inviteProgramMentor('prog 1', { lfid: 'ada' }).subscribe(() => done++);
+
+    const req = http.expectOne('/api/mentorship/admin/programs/prog%201/mentors');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ lfid: 'ada' });
+    req.flush(null, { status: 204, statusText: 'No Content' });
+    expect(done).toBe(1);
+  });
+
+  it('passes an invite failure on with its status', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.inviteProgramMentor('p1', { lfid: 'ada' }).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/admin/programs/p1/mentors').flush({ error: 'exists' }, { status: 409, statusText: 'Conflict' });
+    expect(status).toBe(409);
   });
 
   it("reads one page of a program's terms with the paging as query params", () => {

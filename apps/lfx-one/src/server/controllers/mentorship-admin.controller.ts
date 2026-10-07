@@ -5,6 +5,8 @@ import {
   MENTORSHIP_ADMIN_DECISION_STATUSES,
   MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
+  MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH,
+  MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH,
   MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS,
   MENTORSHIP_ADMIN_MENTEE_TABS,
   MENTORSHIP_ADMIN_MENTEES_MAX_LIMIT,
@@ -21,6 +23,7 @@ import {
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminMenteeStatusFilter,
   MentorshipAdminMenteeTab,
+  MentorshipAdminMentorInviteRequest,
   MentorshipAdminMentorStatus,
   MentorshipAdminMentorStatusUpdate,
   MentorshipAttendanceType,
@@ -193,6 +196,35 @@ export class MentorshipAdminController {
 
       logger.success(req, operation, startTime, { programId, status, offset, limit, result_count: mentors.data.length, total: mentors.total });
       res.json(mentors);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/mentorship/admin/programs/:programId/mentor-candidates?search
+  public async getMentorCandidates(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_mentorship_admin_mentor_candidates';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+
+      // Upstream refuses a shorter search with a 400; refusing it here saves the round trip. The text stays out of every log line.
+      const search = parseTrimmedString(getStrictStringQueryParam(req, 'search', operation));
+      if (!search || search.length < MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH) {
+        throw ServiceValidationError.forField('search', `search must be at least ${MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH} characters.`, {
+          operation,
+        });
+      }
+
+      const candidates = await this.mentorshipAdminService.getMentorCandidates(req, programId, search);
+
+      logger.success(req, operation, startTime, { programId, result_count: candidates.data.length });
+      res.json(candidates);
     } catch (error) {
       next(error);
     }
@@ -376,6 +408,27 @@ export class MentorshipAdminController {
 
       logger.success(req, operation, startTime, { programId, termId, declinedCount: result.declinedCount });
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/admin/programs/:programId/mentors — body { lfid } -> 204
+  public async inviteProgramMentor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'invite_mentorship_admin_program_mentor';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      const body = this.parseMentorInvite(req.body, operation);
+      const memberId = await this.mentorshipAdminService.inviteProgramMentor(req, programId, body);
+
+      logger.success(req, operation, startTime, { programId, memberId });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }
@@ -567,6 +620,16 @@ export class MentorshipAdminController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** `lfid` must be a non-blank string; only the LFID is forwarded, never an email or a user id. */
+  private parseMentorInvite(body: unknown, operation: string): MentorshipAdminMentorInviteRequest {
+    const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+    const lfid = typeof raw['lfid'] === 'string' ? raw['lfid'].trim() : '';
+    if (!lfid || lfid.length > MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH) {
+      throw ServiceValidationError.forField('lfid', `lfid must be 1 to ${MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH} characters.`, { operation });
+    }
+    return { lfid };
   }
 
   /** `status` must be one the admin can set on a mentor. */

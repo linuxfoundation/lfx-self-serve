@@ -4,7 +4,7 @@
 <p-confirmDialog />
 
 <div class="flex flex-col gap-4" data-testid="mentorship-mentors-tab">
-  <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+  <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
     <div class="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center lg:flex-1">
       <label class="w-full min-w-0 sm:flex-1">
         <span class="sr-only">Search mentors</span>
@@ -25,29 +25,46 @@
       </div>
     </div>
 
-    <div class="flex items-center gap-2">
-      <div class="w-full sm:w-72">
-        <lfx-select
+    <div class="flex items-start gap-2">
+      <div class="flex w-full flex-col gap-1 sm:w-72">
+        <label for="mentorship-mentors-invitee-input" class="sr-only">Search for a person to invite as a mentor</label>
+        <lfx-autocomplete
           [form]="form"
           control="invitee"
-          [options]="inviteOptions()"
-          optionLabel="label"
-          optionValue="value"
+          inputId="mentorship-mentors-invitee-input"
+          [suggestions]="candidateOptions()"
+          optionLabel="name"
+          dataKey="lfid"
           placeholder="Search and select mentors..."
-          [filter]="true"
-          filterBy="label,email"
-          filterPlaceholder="Search users"
+          [minLength]="candidateMinSearchLength"
+          [forceSelection]="true"
           [showClear]="true"
-          ariaLabel="Select a user to invite as a mentor"
+          appendTo="body"
           styleClass="w-full"
-          dataTest="mentorship-mentors-invitee">
+          inputStyleClass="w-full"
+          describedBy="mentorship-mentors-invitee-help"
+          dataTestId="mentorship-mentors-invitee"
+          (completeMethod)="onCandidateSearch($event)">
           <ng-template #item let-option>
-            <div class="flex flex-col gap-0.5">
-              <span class="text-sm font-medium text-gray-900">{{ option.label }}</span>
-              <span class="text-xs text-gray-500">{{ option.email }}</span>
+            <div class="flex min-w-0 items-center gap-2" [attr.data-testid]="'mentorship-mentors-candidate-' + option.lfid">
+              <lfx-avatar
+                [image]="option.avatarUrl ?? ''"
+                [label]="option.initials"
+                shape="circle"
+                size="normal"
+                [styleClass]="option.avatarStyleClass"
+                [ariaLabel]="option.name" />
+              <div class="flex min-w-0 flex-col gap-0.5">
+                <span class="truncate text-sm font-medium text-gray-900" [title]="option.name">{{ option.name }}</span>
+                <span class="truncate text-xs text-gray-500" [title]="option.lfid">{{ option.lfid }}</span>
+              </div>
             </div>
           </ng-template>
-        </lfx-select>
+          <ng-template #empty>
+            <span class="text-sm text-gray-500" data-testid="mentorship-mentors-candidates-empty">{{ candidatesEmptyMessage() }}</span>
+          </ng-template>
+        </lfx-autocomplete>
+        <span id="mentorship-mentors-invitee-help" class="text-xs text-gray-500" data-testid="mentorship-mentors-invitee-help">{{ candidateHelpText }}</span>
       </div>
 
       <lfx-button
@@ -94,7 +111,7 @@
           <tr>
             <th class="w-[35%] px-4 py-3 !text-sm !font-medium !text-gray-600">Mentor</th>
             <th class="w-[15%] px-4 py-3 !text-sm !font-medium !text-gray-600">Status</th>
-            <th class="w-[24%] px-4 py-3 !text-sm !font-medium !text-gray-600">Invitation Date</th>
+            <th class="w-[24%] px-4 py-3 !text-sm !font-medium !text-gray-600">Invitation / Application</th>
             <th class="w-[16%] px-4 py-3 !text-sm !font-medium !text-gray-600">Profile Created?</th>
             <th class="w-[10%] px-4 py-3 !text-sm !font-medium !text-gray-600 text-end">Actions</th>
           </tr>

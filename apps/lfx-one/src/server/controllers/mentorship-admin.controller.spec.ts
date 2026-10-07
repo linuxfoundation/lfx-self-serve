@@ -329,6 +329,102 @@ describe('MentorshipAdminController', () => {
     });
   });
 
+  describe('getMentorCandidates', () => {
+    it('answers with the candidates of the trimmed search', async () => {
+      const found = { data: [{ lfid: 'ada', name: 'Ada Mentor' }] };
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getMentorCandidates').mockResolvedValue(found);
+
+      await controller.getMentorCandidates(buildReq({ search: '  ada ' }, { programId: PROGRAM_ID }), res, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, 'ada');
+      expect(res.json).toHaveBeenCalledWith(found);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['no search', {}, { programId: PROGRAM_ID }],
+      ['a search under two characters once trimmed', { search: ' a ' }, { programId: PROGRAM_ID }],
+      ['a repeated search', { search: ['ada', 'bob'] }, { programId: PROGRAM_ID }],
+      ['a programId that is not a UUID', { search: 'ada' }, { programId: 'not-a-uuid' }],
+    ])('rejects %s with a 400', async (_label, query, params) => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getMentorCandidates');
+
+      await controller.getMentorCandidates(buildReq(query, params), res, next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('never logs the search text', async () => {
+      vi.spyOn(MentorshipAdminService.prototype, 'getMentorCandidates').mockResolvedValue({ data: [] });
+
+      await controller.getMentorCandidates(buildReq({ search: 'secret-name' }, { programId: PROGRAM_ID }), res, next);
+
+      expect(JSON.stringify(vi.mocked(logger.success).mock.calls.map((call) => call[3]))).not.toContain('secret-name');
+    });
+
+    it('passes a service failure to next', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipAdminService.prototype, 'getMentorCandidates').mockRejectedValue(error);
+
+      await controller.getMentorCandidates(buildReq({ search: 'ada' }, { programId: PROGRAM_ID }), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+    });
+  });
+
+  describe('inviteProgramMentor', () => {
+    const buildWrite = (body: unknown, params: Record<string, unknown> = { programId: PROGRAM_ID }): Request =>
+      ({ params, query: {}, body }) as unknown as Request;
+    let writeRes: Response;
+
+    beforeEach(() => {
+      writeRes = { status: vi.fn().mockReturnThis(), send: vi.fn() } as unknown as Response;
+    });
+
+    it('invites the trimmed LFID and answers 204', async () => {
+      const invite = vi.spyOn(MentorshipAdminService.prototype, 'inviteProgramMentor').mockResolvedValue('mem_1');
+
+      await controller.inviteProgramMentor(buildWrite({ lfid: '  ada ' }), writeRes, next);
+
+      expect(invite).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, { lfid: 'ada' });
+      expect(writeRes.status).toHaveBeenCalledWith(204);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('forwards only the LFID, never an email or a user id', async () => {
+      const invite = vi.spyOn(MentorshipAdminService.prototype, 'inviteProgramMentor').mockResolvedValue('mem_1');
+
+      await controller.inviteProgramMentor(buildWrite({ lfid: 'ada', email: 'ada@example.org', user_id: 'u1' }), writeRes, next);
+
+      expect(invite).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, { lfid: 'ada' });
+    });
+
+    it.each([
+      ['no body', undefined, { programId: PROGRAM_ID }],
+      ['a blank lfid', { lfid: '   ' }, { programId: PROGRAM_ID }],
+      ['a non-string lfid', { lfid: 42 }, { programId: PROGRAM_ID }],
+      ['an lfid over 100 characters', { lfid: 'a'.repeat(101) }, { programId: PROGRAM_ID }],
+      ['a programId that is not a UUID', { lfid: 'ada' }, { programId: 'not-a-uuid' }],
+    ])('rejects %s with a 400', async (_label, body, params) => {
+      const invite = vi.spyOn(MentorshipAdminService.prototype, 'inviteProgramMentor');
+
+      await controller.inviteProgramMentor(buildWrite(body, params), writeRes, next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(invite).not.toHaveBeenCalled();
+    });
+
+    it('passes a service failure to next', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipAdminService.prototype, 'inviteProgramMentor').mockRejectedValue(error);
+
+      await controller.inviteProgramMentor(buildWrite({ lfid: 'ada' }), writeRes, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+    });
+  });
+
   describe('getProgramTerms', () => {
     const emptyPage = { data: [], total: 0 };
 
@@ -833,12 +929,14 @@ describe('MentorshipAdminController', () => {
       ['getEnrollTemplate', 'getEnrollTemplate', { programId: PROGRAM_ID }, {}],
       ['getProgramMentees', 'getProgramMentees', { programId: PROGRAM_ID }, { type: 'current' }],
       ['getProgramMentors', 'getProgramMentors', { programId: PROGRAM_ID }, {}],
+      ['getMentorCandidates', 'getMentorCandidates', { programId: PROGRAM_ID }, { search: 'ada' }],
       ['getProgramTerms', 'getProgramTerms', { programId: PROGRAM_ID }, {}],
       ['getApplicationTasks', 'getApplicationTasks', { applicationId: PROGRAM_ID }, {}],
       ['updateApplicationNote', 'updateApplicationNote', { applicationId: PROGRAM_ID }, {}],
       ['createTasks', 'createTasks', {}, {}],
       ['updateTask', 'updateTask', { taskId: PROGRAM_ID }, {}],
       ['updateProgramMentor', 'updateProgramMentor', { programId: PROGRAM_ID, memberId: PROGRAM_ID }, {}],
+      ['inviteProgramMentor', 'inviteProgramMentor', { programId: PROGRAM_ID }, {}],
       ['updateProgram', 'updateProgram', { programId: PROGRAM_ID }, {}],
       ['createTerm', 'createTerm', { programId: PROGRAM_ID }, {}],
       ['updateTerm', 'updateTerm', { programId: PROGRAM_ID, termId: PROGRAM_ID }, {}],

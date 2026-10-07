@@ -18,6 +18,8 @@ import {
   MentorshipAdminMenteesQuery,
   MentorshipAdminMenteesResponse,
   MentorshipAdminMentorsQuery,
+  MentorshipAdminMentorCandidatesResponse,
+  MentorshipAdminMentorInviteRequest,
   MentorshipAdminMentorsResponse,
   MentorshipAdminMentorStatusUpdate,
   MentorshipAdminProgramPage,
@@ -46,6 +48,7 @@ import {
   MentorshipUpstreamListResponse,
   MentorshipUpstreamLogoUpload,
   MentorshipUpstreamMemberManagementRow,
+  MentorshipUpstreamMentorCandidate,
   MentorshipUpstreamProgramApplicationRow,
   MentorshipUpstreamProgramHeader,
   MentorshipUpstreamProgramManagementSummary,
@@ -304,6 +307,43 @@ export class MentorshipAdminService {
     return { data, total };
   }
 
+  /**
+   * The people matching `search` that an admin may invite as a mentor of the program: anyone in Mentorship by name, and
+   * anyone with an LF account by exact LF username or full email. Upstream returns at most 10 and never an email; a
+   * missing name falls back to the LFID. The search is sent as typed (no LIKE escaping): upstream matches the username
+   * and email exactly. Upstream's 400, 403 and 503 pass through; a caller with no mentorship record finds no one.
+   */
+  public async getMentorCandidates(req: Request, programId: string, search: string): Promise<MentorshipAdminMentorCandidatesResponse> {
+    logger.debug(req, 'mentorship_admin_get_mentor_candidates', 'Searching mentor candidates', { programId });
+
+    let upstream: { data?: MentorshipUpstreamMentorCandidate[] };
+    try {
+      upstream = await proxyMentorshipRequest<{ data?: MentorshipUpstreamMentorCandidate[] }>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/mentor-candidates`,
+        'GET',
+        { search }
+      );
+    } catch (error) {
+      if (isMentorshipNotProvisionedError(error)) {
+        logger.warning(req, 'mentorship_admin_get_mentor_candidates', 'Caller has no mentorship record; returning no candidates', { programId });
+        return { data: [] };
+      }
+      throw error;
+    }
+
+    const data = (upstream.data ?? [])
+      .filter((candidate) => !!candidate.lfid)
+      .map((candidate) => ({
+        lfid: candidate.lfid,
+        name: candidate.name?.trim() || candidate.lfid,
+        avatarUrl: candidate.avatar_url || undefined,
+      }));
+    logger.debug(req, 'mentorship_admin_get_mentor_candidates', 'Mentor candidates found', { programId, count: data.length });
+    return { data };
+  }
+
   /** One page of a program's terms with their application counts, from one upstream term-management read. A caller with no mentorship record has no terms. */
   public async getProgramTerms(req: Request, programId: string, query: MentorshipAdminTermsQuery): Promise<MentorshipAdminTermsResponse> {
     logger.debug(req, 'mentorship_admin_get_program_terms', 'Loading program terms', { programId, offset: query.offset, limit: query.limit });
@@ -422,6 +462,25 @@ export class MentorshipAdminService {
       buildMentorshipUpstreamTaskUpdate(update)
     );
     return mapMentorshipProgramTask(task);
+  }
+
+  /**
+   * Invites the LF account behind `lfid` as a mentor of the program and returns the new member's id. Upstream creates
+   * the Mentorship user when there is none and emails the invite to the account's primary email. Its 400, 403, 409
+   * (already invited or a mentor), 422 (no LF account) and 503 (account lookup down) pass through.
+   */
+  public async inviteProgramMentor(req: Request, programId: string, body: MentorshipAdminMentorInviteRequest): Promise<string | undefined> {
+    logger.debug(req, 'mentorship_admin_invite_program_mentor', 'Inviting program mentor', { programId });
+
+    const member = await proxyMentorshipRequest<{ id?: string }>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/members`,
+      'POST',
+      undefined,
+      { lfid: body.lfid, member_type: 'mentor' }
+    );
+    return member?.id;
   }
 
   /**

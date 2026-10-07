@@ -582,6 +582,81 @@ describe('MentorshipAdminService.getProgramMentors', () => {
   });
 });
 
+describe('MentorshipAdminService.getMentorCandidates', () => {
+  let service: InstanceType<typeof MentorshipAdminService>;
+  const CANDIDATES_PATH = `${PROGRAM_PATH}/mentor-candidates`;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('sends the search unescaped, and maps the candidates with the LFID standing in for a missing name', async () => {
+    const spy = stubProgramReads({
+      [CANDIDATES_PATH]: {
+        data: [{ lfid: 'ada_l', name: 'Ada Lovelace', avatar_url: 'https://cdn.example.com/ada.png' }, { lfid: 'bob' }, { lfid: '', name: 'No Account' }],
+      },
+    });
+
+    const result = await service.getMentorCandidates(buildReq(), PROGRAM_ID, 'ada_l');
+
+    expect(spy.mock.calls[0][4]).toEqual({ search: 'ada_l' });
+    expect(result).toEqual({
+      data: [
+        { lfid: 'ada_l', name: 'Ada Lovelace', avatarUrl: 'https://cdn.example.com/ada.png' },
+        { lfid: 'bob', name: 'bob', avatarUrl: undefined },
+      ],
+    });
+  });
+
+  it('finds no one for a caller with no mentorship record', async () => {
+    stubProgramReads({
+      [CANDIDATES_PATH]: new MicroserviceError('Unauthorized', 401, 'UNAUTHORIZED', { errorBody: { error: 'local user is not provisioned' } }),
+      '/mentorship/v1/me': {},
+    });
+
+    expect(await service.getMentorCandidates(buildReq(), PROGRAM_ID, 'ada')).toEqual({ data: [] });
+  });
+
+  it('passes any other upstream error on', async () => {
+    stubProgramReads({ [CANDIDATES_PATH]: new MicroserviceError('Service Unavailable', 503, 'SERVICE_UNAVAILABLE') });
+
+    await expect(service.getMentorCandidates(buildReq(), PROGRAM_ID, 'ada')).rejects.toMatchObject({ statusCode: 503 });
+  });
+});
+
+describe('MentorshipAdminService.inviteProgramMentor', () => {
+  let service: InstanceType<typeof MentorshipAdminService>;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('posts the LFID as a mentor member and returns the new member id', async () => {
+    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ id: 'mem_1', status: 'invited' } as never);
+
+    const memberId = await service.inviteProgramMentor(buildReq(), PROGRAM_ID, { lfid: 'ada' });
+
+    expect(memberId).toBe('mem_1');
+    expect(spy.mock.calls[0][2]).toBe(`${PROGRAM_PATH}/members`);
+    expect(spy.mock.calls[0][3]).toBe('POST');
+    expect(spy.mock.calls[0][5]).toEqual({ lfid: 'ada', member_type: 'mentor' });
+  });
+
+  it.each([409, 422, 503])('passes an upstream %s on', async (status) => {
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockRejectedValue(new MicroserviceError('Upstream', status, 'UPSTREAM'));
+
+    await expect(service.inviteProgramMentor(buildReq(), PROGRAM_ID, { lfid: 'ada' })).rejects.toMatchObject({ statusCode: status });
+  });
+});
+
 describe('MentorshipAdminService.getProgramTerms', () => {
   let service: InstanceType<typeof MentorshipAdminService>;
   const TERMS_PATH = `${PROGRAM_PATH}/term-management`;

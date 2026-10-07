@@ -12,6 +12,8 @@ import {
 import {
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminDeclinePendingResponse,
+  MentorshipAdminMentorCandidatesResponse,
+  MentorshipAdminMentorInviteRequest,
   MentorshipAdminMentorStatusUpdate,
   MentorshipAdminMenteesQuery,
   MentorshipAdminMenteesResponse,
@@ -91,6 +93,20 @@ export class MentorshipAdminService {
       .pipe(this.logFailure('getProgramMentors'));
   }
 
+  /**
+   * At most 10 people matching `search` who can be invited as a mentor of the program, with no email. The caller sends
+   * at least two trimmed characters; the BFF answers 400 below that. A 503 means the account lookup is down for now.
+   */
+  public getMentorCandidates(programId: string, search: string): Observable<MentorshipAdminMentorCandidatesResponse> {
+    const httpParams = strictHttpParams().set('search', search);
+
+    return this.http
+      .get<MentorshipAdminMentorCandidatesResponse>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/mentor-candidates`, {
+        params: httpParams,
+      })
+      .pipe(this.logFailure('getMentorCandidates'));
+  }
+
   /** One page of a program's terms with their application counts. */
   public getProgramTerms(programId: string, query: MentorshipAdminTermsQuery): Observable<MentorshipAdminTermsResponse> {
     let httpParams = strictHttpParams();
@@ -143,6 +159,16 @@ export class MentorshipAdminService {
     return this.http
       .patch<MentorshipApplicantTask>(`/api/mentorship/admin/tasks/${encodeURIComponent(taskId)}`, body)
       .pipe(take(1), this.logFailure('updateTask'));
+  }
+
+  /**
+   * Invites the picked candidate as a mentor of the program. Resolves on 204. A 409 (already on the program), 422 (no
+   * LF account) and 503 (account lookup down) reach the caller as the error.
+   */
+  public inviteProgramMentor(programId: string, body: MentorshipAdminMentorInviteRequest): Observable<void> {
+    return this.http
+      .post<void>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/mentors`, body)
+      .pipe(take(1), this.logFailure('inviteProgramMentor'));
   }
 
   /** Accepts, declines, revokes the invite of or removes one mentor of a program (the `status` it moves to). Resolves on 204. */

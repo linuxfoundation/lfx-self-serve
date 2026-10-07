@@ -82,6 +82,11 @@ export interface MentorshipAdminMentorStatusUpdate {
   status: MentorshipAdminMentorUpdateStatus;
 }
 
+/** Body of `POST /api/mentorship/admin/programs/:programId/mentors`: the LFID of the picked candidate, invited as a mentor. */
+export interface MentorshipAdminMentorInviteRequest {
+  lfid: string;
+}
+
 /** One action on a Mentors tab row: `key` names its copy, `status` is what it sets. */
 export interface MentorshipAdminMentorAction {
   key: 'accept' | 'decline' | 'revoke' | 'remove';
@@ -265,6 +270,19 @@ export interface MentorshipAdminMentorsResponse {
   total: number;
 }
 
+/** One person the Mentors tab can invite, from `GET /api/mentorship/admin/programs/:programId/mentor-candidates`. Never carries an email. */
+export interface MentorshipAdminMentorCandidate {
+  lfid: string;
+  /** Upstream's name, or the LFID when upstream has none. */
+  name: string;
+  avatarUrl?: string;
+}
+
+/** At most 10 candidates matching the search, from `GET /api/mentorship/admin/programs/:programId/mentor-candidates`. */
+export interface MentorshipAdminMentorCandidatesResponse {
+  data: MentorshipAdminMentorCandidate[];
+}
+
 /** One page of a program's terms, from `GET /api/mentorship/admin/programs/:programId/terms`. */
 export interface MentorshipAdminTermsResponse {
   data: MentorshipProgramTermRow[];
@@ -294,6 +312,13 @@ export interface MentorshipUpstreamMemberManagementRow {
   created_on: string;
   updated_on: string;
   profile_created: boolean;
+}
+
+/** One row of upstream `GET /mentorship/v1/programs/{id}/mentor-candidates`. `name` and `avatar_url` may be missing. */
+export interface MentorshipUpstreamMentorCandidate {
+  lfid: string;
+  name?: string;
+  avatar_url?: string;
 }
 
 /** One row of upstream `GET /mentorship/v1/programs/{id}/term-management`: a term with its mentee application counts. */
