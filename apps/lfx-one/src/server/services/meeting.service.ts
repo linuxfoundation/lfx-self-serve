@@ -22,6 +22,7 @@ import {
   MeetingJoinURL,
   MeetingRecurrence,
   MeetingRegistrant,
+  MeetingRegistrantsByVerifiedEmails,
   MeetingRsvp,
   PaginatedResponse,
   PastMeeting,
@@ -70,6 +71,7 @@ import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
+import { UserVerifiedEmailsService } from './user-verified-emails.service';
 
 /**
  * Service for handling meeting business logic with microservice proxy
@@ -79,12 +81,14 @@ export class MeetingService {
   private committeeService: CommitteeService;
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
+  private userVerifiedEmailsService: UserVerifiedEmailsService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
     this.committeeService = new CommitteeService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.projectService = new ProjectService();
+    this.userVerifiedEmailsService = new UserVerifiedEmailsService();
   }
 
   /**
@@ -993,12 +997,13 @@ export class MeetingService {
    * Fetches all registrants for a meeting by email
    */
   public async getMeetingRegistrantsByEmail(req: Request, meetingUid: string, email: string, m2mToken?: string): Promise<MeetingRegistrant[]> {
-    // Registrant records carry email/meeting_id as data fields, not indexed tags — use `filters` (field-level AND).
+    // Registrant records carry email/meeting_id as data fields, not indexed tags — `filters` AND, `filters_or` OR.
     const normalizedEmail = email.toLowerCase();
     const params: Record<string, any> = {
       type: 'v1_meeting_registrant',
       parent: '',
-      filters: [`email:${normalizedEmail}`, `meeting_id:${meetingUid}`],
+      filters: [`meeting_id:${meetingUid}`],
+      filters_or: this.emailClauses(normalizedEmail),
       page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
@@ -1025,7 +1030,7 @@ export class MeetingService {
 
   /**
    * Fetches registrants for a meeting that match the caller's email or username in a single query.
-   * Uses `filters=meeting_id:X` (AND) combined with `filters_or=[email:Y, username:Z]` so the
+   * Uses `filters=meeting_id:X` (AND) combined with `filters_or=[email clauses, username:Z]` so the
    * query service resolves the intersection in one call instead of two sequential lookups.
    */
   public async getMeetingRegistrantsForUser(
@@ -1036,16 +1041,8 @@ export class MeetingService {
     m2mToken?: string
   ): Promise<MeetingRegistrant[]> {
     const orClauses: string[] = [];
-    if (email) orClauses.push(`email:${email.toLowerCase()}`);
+    if (email) orClauses.push(...this.emailClauses(email.toLowerCase()));
     if (username) orClauses.push(`username:${stripAuthPrefix(username)}`);
-    if (orClauses.length === 0) return [];
-
-    const params: Record<string, any> = {
-      type: 'v1_meeting_registrant',
-      parent: '',
-      filters: [`meeting_id:${meetingUid}`],
-      filters_or: orClauses,
-    };
 
     logger.debug(req, 'get_meeting_registrants_for_user', 'Fetching registrants for current user', {
       meeting_id: meetingUid,
@@ -1053,19 +1050,60 @@ export class MeetingService {
       has_username: !!username,
     });
 
-    const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
+    if (orClauses.length === 0) {
+      return [];
+    }
 
-    return fetchAllQueryResources<MeetingRegistrant>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        { ...params, ...(pageToken && { page_token: pageToken }) },
-        undefined,
-        headers
-      )
-    );
+    return this.queryMeetingRegistrants(req, meetingUid, orClauses, m2mToken);
+  }
+
+  /**
+   * Fetches the signed-in user's registrants for a meeting by their verified emails other than
+   * `triedEmail`, in one query. Rows are ordered by email priority (meeting-invite preference first).
+   * `lookupFailed` is set when nothing matched and an email source was unavailable.
+   */
+  public async getMeetingRegistrantsByVerifiedEmails(
+    req: Request,
+    meetingUid: string,
+    triedEmail: string | undefined
+  ): Promise<MeetingRegistrantsByVerifiedEmails> {
+    const { emails, preferenceEmail, incomplete } = await this.userVerifiedEmailsService.getUserVerifiedEmails(req);
+    const tried = triedEmail?.trim().toLowerCase();
+    const candidates = emails.filter((candidate) => candidate !== tried);
+
+    const registrants =
+      candidates.length > 0
+        ? await this.queryMeetingRegistrants(
+            req,
+            meetingUid,
+            candidates.flatMap((candidate) => this.emailClauses(candidate))
+          )
+        : [];
+    const rank = (registrant: MeetingRegistrant): number => {
+      const index = candidates.indexOf((registrant.email || '').trim().toLowerCase());
+      return index === -1 ? candidates.length : index;
+    };
+    registrants.sort((a, b) => rank(a) - rank(b));
+
+    const matchedEmail = registrants.length > 0 ? (registrants[0].email || '').trim().toLowerCase() : null;
+    let matchedSource: 'meeting_invite_preference' | 'auth_service' | null = null;
+    if (matchedEmail) {
+      matchedSource = matchedEmail === preferenceEmail ? 'meeting_invite_preference' : 'auth_service';
+    }
+    const logMeta = {
+      meeting_id: meetingUid,
+      candidate_count: candidates.length,
+      has_preference: !!preferenceEmail,
+      matched_source: matchedSource,
+      incomplete,
+    };
+    if (matchedSource) {
+      logger.info(req, 'get_meeting_registrants_by_verified_emails', "Matched a registrant by the user's other verified emails", logMeta);
+    } else {
+      logger.debug(req, 'get_meeting_registrants_by_verified_emails', "No registrant under the user's other verified emails", logMeta);
+    }
+
+    return { registrants, lookupFailed: registrants.length === 0 && incomplete };
   }
 
   /**
@@ -2262,6 +2300,34 @@ export class MeetingService {
 
   public async getMeetingProjectName<T extends Meeting>(req: Request, meetings: T[]): Promise<T[]> {
     return this.projectService.enrichWithProjectData(req, meetings) as Promise<T[]>;
+  }
+
+  // `email` keeps the stored casing and term matching is case-sensitive, so also match the lowercased copy.
+  private emailClauses(email: string): string[] {
+    return [`email:${email}`, `case_insensitive_email:${email}`];
+  }
+
+  private queryMeetingRegistrants(req: Request, meetingUid: string, orClauses: string[], m2mToken?: string): Promise<MeetingRegistrant[]> {
+    const params: Record<string, any> = {
+      type: 'v1_meeting_registrant',
+      parent: '',
+      filters: [`meeting_id:${meetingUid}`],
+      filters_or: orClauses,
+    };
+
+    const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
+
+    return fetchAllQueryResources<MeetingRegistrant>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        { ...params, ...(pageToken && { page_token: pageToken }) },
+        undefined,
+        headers
+      )
+    );
   }
 
   /**

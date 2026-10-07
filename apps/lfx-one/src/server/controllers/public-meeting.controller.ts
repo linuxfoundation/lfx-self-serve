@@ -3,6 +3,7 @@
 
 import { Meeting } from '@lfx-one/shared';
 import {
+  ERROR_CODES,
   MEETING_PASSWORD_HEADER,
   PUBLIC_REGISTRATION_FIELD_LABELS,
   PUBLIC_REGISTRATION_FIELD_MAX_LENGTH,
@@ -22,7 +23,7 @@ import {
 import { getPastMeetingResourceId, joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { AuthenticationError, AuthorizationError } from '../errors/authentication.error';
 import {
   addInvitedStatusToMeeting,
@@ -1013,7 +1014,7 @@ export class PublicMeetingController {
     // accounts with multiple emails. Email is the fallback for unauthenticated flows or when
     // no username is available.
     let registrants: MeetingRegistrant[] = [];
-    let matchedBy: 'username' | 'email' | null = null;
+    let matchedBy: 'username' | 'email' | 'verified_email' | null = null;
     if (username) {
       registrants = await this.meetingService.getMeetingRegistrantsByUsername(req, id, username);
       if (registrants.length > 0) {
@@ -1024,6 +1025,24 @@ export class PublicMeetingController {
       registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, id, email);
       if (registrants.length > 0) {
         matchedBy = 'email';
+      }
+    }
+    if (registrants.length === 0) {
+      const byVerifiedEmail = await this.meetingService.getMeetingRegistrantsByVerifiedEmails(req, id, email);
+      registrants = byVerifiedEmail.registrants;
+      if (registrants.length > 0) {
+        matchedBy = 'verified_email';
+      } else if (byVerifiedEmail.lookupFailed) {
+        // Don't tell a registered user they aren't registered because an email source is down.
+        throw new MicroserviceError(
+          'Unable to verify your meeting registration right now, please reload the page in a moment',
+          503,
+          ERROR_CODES.SERVICE_ADVISORY,
+          {
+            operation: 'post_meeting_link',
+            service: 'public_meeting_controller',
+          }
+        );
       }
     }
 

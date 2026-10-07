@@ -9,6 +9,7 @@ import { AuthenticationError } from '../errors';
 import { CredlyService } from '../services/credly.service';
 import { EmailVerificationService } from '../services/email-verification.service';
 import { logger } from '../services/logger.service';
+import { collectAuthServiceVerifiedEmails } from '../services/user-verified-emails.service';
 import { getEffectiveEmail, getEffectiveSub } from '../utils/auth-helper';
 
 export class BadgesController {
@@ -69,24 +70,7 @@ export class BadgesController {
       return effectiveEmail ? [effectiveEmail] : [];
     }
 
-    const seen = new Set<string>();
-    const verifiedEmails: string[] = [];
-
-    const add = (email: string): void => {
-      if (!email) return;
-      const trimmed = email.trim();
-      if (!trimmed) return;
-      const lower = trimmed.toLowerCase();
-      if (!seen.has(lower)) {
-        seen.add(lower);
-        verifiedEmails.push(lower);
-      }
-    };
-
-    if (effectiveEmail) add(emailData.primary_email);
-    for (const alt of emailData.alternate_emails) {
-      if (alt.verified) add(alt.email);
-    }
+    const verifiedEmails = collectAuthServiceVerifiedEmails(emailData, !!effectiveEmail);
 
     logger.debug(req, 'resolve_user_emails', 'Resolved verified emails from auth-service', {
       alternate_count: emailData.alternate_emails.length,
