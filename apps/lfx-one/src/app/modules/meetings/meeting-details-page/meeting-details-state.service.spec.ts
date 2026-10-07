@@ -741,6 +741,18 @@ describe('MeetingDetailsStateService', () => {
       expect(state.meetingStatus()).toBe('upcoming');
     });
 
+    // N-01 (FR-026): RSVP tracking off is the whole off-state, not just a missing fetch.
+    it('gives an invitee on a meeting without RSVP tracking the unavailable slot and the time state', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming({ is_invite_responses_enabled: false }), project }));
+      const state = create();
+      await load();
+
+      expect(state.actionSlot()).toBe('rsvp-unavailable');
+      expect(state.meetingStatus()).toBe('upcoming');
+      expect(state.myRsvpAttr()).toBeNull();
+      expect(getMyRsvp).not.toHaveBeenCalled();
+    });
+
     it.each([
       ['an outsider', { invited: false }, true],
       ['a meeting without RSVP tracking', { is_invite_responses_enabled: false }, true],

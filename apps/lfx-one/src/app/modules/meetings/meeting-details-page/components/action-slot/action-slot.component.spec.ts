@@ -227,6 +227,15 @@ describe('MeetingActionSlotComponent', () => {
     expect(query('meeting-action-message')?.getAttribute('data-my-rsvp')).toBe(answer === undefined ? null : (answer ?? 'none'));
   });
 
+  // N-01 (FR-026, SC-005): a meeting that predates RSVP tracking says so, with no RSVP control.
+  it('explains a meeting without RSVP tracking, and offers nothing to answer', () => {
+    render('rsvp-unavailable');
+
+    expect(query('meeting-rsvp-unavailable-state')?.textContent).toContain("You're invited");
+    expect(text('meeting-action-message')).toBe("RSVPs aren't tracked for this meeting, so there's nothing to answer. You can join when it starts.");
+    expect(fixture.nativeElement.querySelector('[data-testid^="meeting-rsvp-card"], button')).toBeNull();
+  });
+
   // E2-06 (FR-025).
   it('offers an anonymous visitor in the window sign-in, or the guest form', () => {
     render('guest-join', 'visitor');

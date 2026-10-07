@@ -25,10 +25,10 @@ import { MeetingJoinActionComponent } from '../join-action/join-action.component
  * always carries it as `data-kind`. `none` is a decision ("nothing to offer this viewer") and
  * renders an empty slot, never a missing one (SC-004).
  *
- * `join` (FR-027), `register` (E2-02, FR-021), `invitation-required` (E2-03, FR-022) and
- * `guest-join` (E2-06, FR-025) are complete here. The other kinds carry one line of copy until the
- * issue that owns each one builds its full design, so no viewer meets an empty rail meanwhile:
- * `rsvp` E2-04 and E2-05, `rsvp-unavailable` N-01, and `tools` E4.
+ * `join` (FR-027), `register` (E2-02, FR-021), `invitation-required` (E2-03, FR-022),
+ * `guest-join` (E2-06, FR-025) and `rsvp-unavailable` (N-01, FR-026) are complete here. The other
+ * kinds carry one line of copy until the issue that owns each one builds its full design, so no
+ * viewer meets an empty rail meanwhile: `rsvp` E2-04 and E2-05, and `tools` E4.
  *
  * Inside the join window the slot is Join only, as in V1 (FR-029, decided 2026-10-06). Before the
  * window, a viewer who will be able to join then is told the early-join rule here, under the slot,
