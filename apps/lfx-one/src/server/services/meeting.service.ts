@@ -626,15 +626,12 @@ export class MeetingService {
       meetingData.show_meeting_attendees == null &&
       isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted, { restrictedLocks: true })
     ) {
-      // `restrictedLocks: true` — the pre-v2 rule, under which restricted meetings were locked too —
-      // so a restricted meeting gets an explicit `false` every time it is saved without a choice of its
-      // own (a partial body). It can't tell a stale pre-lock `true` from a v2 opt-in, so it fails closed.
-      // It does not cover saves that send a value, as both UIs always do: stale pre-lock rows have to
-      // be backfilled to `false` before `meeting-v2-enabled` is widened (see the PR for this change).
-      // Unlocking a locked meeting with no choice of its own. Upstream keeps whatever the body
-      // omits, and a row written before the lock existed can still hold `true`, so the stale value
-      // would survive the unlock and start sharing the guest list. A locked meeting never carried
-      // an organizer decision to inherit — the same reading `getSavedAttendeeVisibility` gives the form.
+      // A meeting locked under the pre-v2 rule (`restrictedLocks: true`: Board or restricted), saved
+      // with no choice of its own (a partial body). Upstream keeps whatever the body omits, and a row
+      // written before the lock existed can still hold `true` no organizer chose, so the save writes an
+      // explicit `false` rather than letting that value start sharing the guest list. It can't tell a
+      // stale `true` from a v2 opt-in, so it fails closed. Saves that send a value — both UIs always do —
+      // are not covered: stale pre-lock rows must be backfilled to `false` before this rule ships.
       updatePayload.show_meeting_attendees = false;
     }
 
