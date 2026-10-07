@@ -52,15 +52,27 @@ const optionalBoolean = (raw: Record<string, unknown>, field: string, operation:
   return value;
 };
 
+/** An optional text field: `null` when left out or sent as `null`, a 400 when sent as anything but text (`5` is not `"5"`). */
+const optionalText = (raw: Record<string, unknown>, field: string, operation: string, path: string): string | null => {
+  const value = raw[field];
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== 'string') {
+    throw ServiceValidationError.forField(path, `${path} must be text.`, { operation });
+  }
+  return value;
+};
+
 const parsePrerequisite = (value: unknown, index: number, operation: string): MentorshipEnrollCreatePrerequisite => {
   const raw = asRecord(value);
   const path = `prerequisites[${index}]`;
   return {
     name: requireString(raw, 'name', operation, `${path}.name`),
-    description: typeof raw['description'] === 'string' ? raw['description'] : '',
+    description: optionalText(raw, 'description', operation, `${path}.description`) ?? '',
     required: optionalBoolean(raw, 'required', operation, `${path}.required`),
     requireFile: optionalBoolean(raw, 'requireFile', operation, `${path}.requireFile`),
-    dueDate: parseTrimmedString(raw['dueDate']) ?? null,
+    dueDate: parseTrimmedString(optionalText(raw, 'dueDate', operation, `${path}.dueDate`)) ?? null,
   };
 };
 

@@ -147,6 +147,8 @@ describe('parseMentorshipEnrollCreateRequest', () => {
     ['a prerequisite with no name', validBody({ prerequisites: [{ description: 'x' }] }), 'prerequisites[0].name'],
     ['a prerequisite required as text', validBody({ prerequisites: [{ name: 'Resume', required: 'true' }] }), 'prerequisites[0].required'],
     ['a prerequisite with a null file flag', validBody({ prerequisites: [{ name: 'Resume', requireFile: null }] }), 'prerequisites[0].requireFile'],
+    ['a prerequisite description that is not text', validBody({ prerequisites: [{ name: 'Resume', description: 5 }] }), 'prerequisites[0].description'],
+    ['a prerequisite due date that is not text', validBody({ prerequisites: [{ name: 'Task', dueDate: 20300201 }] }), 'prerequisites[0].dueDate'],
     ['terms that are not accepted', validBody({ termsAccepted: false }), 'termsAccepted'],
     ['terms accepted as text', validBody({ termsAccepted: 'true' }), 'termsAccepted'],
   ])('rejects %s with a 400 on the field', (_label, body, field) => {
