@@ -256,6 +256,14 @@ describe('GwEmbedStylesheetService', () => {
       expect(fetchMock).toHaveBeenCalledTimes(names.length + 1);
     });
 
+    it('does not remember an upstream 404, so a rollout race clears on the next request', async () => {
+      fetchMock.mockImplementationOnce(async () => cssResponse('nope', { status: 404 }));
+      expect(await failure()).toMatchObject({ statusCode: 404 });
+      const sheet = await load();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(sheet.css).toContain(SCOPE);
+    });
+
     it('does not remember a misconfiguration, so fixing the env takes effect at once', async () => {
       delete process.env['GW_EMBED_URL'];
       expect(await failure()).toMatchObject({ statusCode: 503, code: 'GW_EMBED_URL_MISCONFIGURED' });

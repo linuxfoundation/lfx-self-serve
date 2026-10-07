@@ -34,6 +34,10 @@ const SERVICE = 'gw_embed';
  * per name for a short while, only a few upstream fetches run at once, the upstream must answer
  * `text/css` within the size cap, and a result with no rules is refused. Both memories are
  * bounded; names are content-hashed upstream, so a cached success never goes stale.
+ *
+ * Gatewaze builds the embed once per image, so every replica serves the same files and the
+ * manifest the browser read names a file this fetch can reach. The exception is a rollout, when
+ * old and new replicas overlap for a minute; a 404 then is not remembered (see `load`).
  */
 export class GwEmbedStylesheetService {
   private readonly cache = new Map<string, GwEmbedScopedStylesheet>();
@@ -76,8 +80,11 @@ export class GwEmbedStylesheetService {
             error instanceof MicroserviceError
               ? error
               : new MicroserviceError('Could not prepare the embed stylesheet', 502, 'gw_embed_stylesheet_failed', { operation: OPERATION, service: SERVICE });
-          // Misconfiguration is not remembered: fixing the env must take effect at once.
-          if (failed.code !== 'GW_EMBED_URL_MISCONFIGURED' && failed.code !== 'GW_EMBED_THEME_UNAVAILABLE') {
+          // Misconfiguration is not remembered: fixing the env must take effect at once. Nor is an
+          // upstream 404: during a Gatewaze rollout the browser may read a new replica's manifest
+          // while this fetch reaches an old one, and the name is right the moment that settles.
+          // A 404 is also the cheapest answer upstream can give, so there is nothing to brake.
+          if (failed.code !== 'GW_EMBED_URL_MISCONFIGURED' && failed.code !== 'GW_EMBED_THEME_UNAVAILABLE' && failed.statusCode !== 404) {
             this.rememberFailure(name, failed);
           }
           throw failed;

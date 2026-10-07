@@ -589,6 +589,7 @@ broken UX, not a security hazard, but avoidable by sequencing the rollback.
 | `environment.GW_SUPABASE_URL`            | Supabase project URL the embedded Gatewaze admin authenticates against; unset means the embed refuses to mount                                                                  | No       | unset     |
 | `environment.GW_SUPABASE_ANON_KEY`       | Supabase **anon** (publishable) key for the embed — never the service-role key; it reaches the browser                                                                          | No       | unset     |
 | `environment.GW_LFID_START_URL`          | LFID sign-in entry point the embed's sign-in button redirects to                                                                                                                | No       | unset     |
+| `environment.GW_EMBED_URL`               | Where the Gatewaze deployment serves the embeddable admin, e.g. `https://admin.example.org/embed`; https-only outside localhost, no trailing slash; unset means the embed refuses to mount | No       | unset     |
 
 `LFX_GATEWAZE_EMBED_ENABLED` is the server half of a dark launch. The client-side
 `gatewaze-embed-enabled` OpenFeature flag hides the routes and nav, but it never runs server-side —
@@ -605,8 +606,10 @@ wrong foundation's chrome but places no restriction on `/api/gw` itself. The pro
 the upstream's own Supabase auth — the embed authenticates the caller's own bearer, so enabling
 this flag confers no data access a caller did not already have.
 
-**Three of these reach the browser.** `GW_SUPABASE_URL`, `GW_SUPABASE_ANON_KEY` and
-`GW_LFID_START_URL` are serialised into `RuntimeConfig` and served in every page response. The anon
+**Four of these reach the browser.** `GW_SUPABASE_URL`, `GW_SUPABASE_ANON_KEY`,
+`GW_LFID_START_URL` and `GW_EMBED_URL` are serialised into `RuntimeConfig` and served in every
+page response. `GW_EMBED_URL` is also what the server fetches the embed's stylesheet from
+(`/public/api/gw-embed-stylesheet/:name`) to scope it to the LFX chrome. The anon
 key is publishable and protected by RLS, so that is correct — but a **service-role key in that slot
 would be published to every visitor**. Check the `role` claim before setting it.
 

@@ -4,7 +4,7 @@
 /*
  * LFX theme for the embedded Gatewaze admin.
  *
- * Appended to the contained embed stylesheet by the server (gw-embed-stylesheet.controller.ts),
+ * Appended to the contained embed stylesheet by the server (gw-embed-stylesheet.service.ts),
  * so everything here is already scoped to the embed's containers and cannot reach LFX chrome.
  *
  * The scope includes `#frame-root`, the Puck canvas root inside the editor's srcdoc iframe, so the

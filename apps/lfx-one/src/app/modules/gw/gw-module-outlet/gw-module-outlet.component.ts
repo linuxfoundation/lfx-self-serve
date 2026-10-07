@@ -102,6 +102,11 @@ export class GwModuleOutletComponent {
   // Plain (non-signal) mount bookkeeping — not template-bound, so no need for reactivity here.
   private destroyed = false;
   private mountHandle: GwEmbedMountHandle | null = null;
+  /**
+   * The dynamic import of the loader, as a property so the spec can stand it in: the unit-test
+   * builder bundles the dependency, so `vi.mock('@gatewaze/admin-embed')` cannot intercept it.
+   */
+  private loadEmbedLoader = (): Promise<typeof import('@gatewaze/admin-embed')> => import('@gatewaze/admin-embed');
   /** Last URL the embed's router has been told about — see syncEmbedToHostUrl. */
   private lastSyncedUrl: string | null = null;
   /** Which mount path this instance is serving; see resolveGwEmbedRoutePrefix. */
@@ -254,7 +259,7 @@ export class GwModuleOutletComponent {
         source: {
           baseUrl: runtimeConfig.gwEmbedUrl,
           // The bundle's stylesheet is unscoped; the server scopes and caches it by hashed name
-          // (gw-embed-stylesheet.controller.ts), so only the file name crosses over.
+          // (gw-embed-stylesheet.service.ts), so only the file name crosses over.
           resolveStylesheetUrl: (url) => `${GW_EMBED_STYLESHEET_ROUTE}/${resolveGwEmbedStylesheetName(url)}`,
         },
         storageKeySuffix: buildGwEmbedStorageSuffix(this.userService.user()?.sub),
@@ -270,7 +275,7 @@ export class GwModuleOutletComponent {
         return;
       }
 
-      const mod = await import('@gatewaze/admin-embed');
+      const mod = await this.loadEmbedLoader();
 
       // The component may have been torn down while the import was in flight (fast navigation away
       // away from the embed) — don't mount into a host node that's about to be removed.

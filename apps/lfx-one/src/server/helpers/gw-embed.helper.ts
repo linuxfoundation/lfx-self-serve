@@ -34,8 +34,12 @@ export function getGwEmbedBaseUrl(operation: string): URL {
   } catch {
     throw fail('GW_EMBED_URL is not a valid URL');
   }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw fail('GW_EMBED_URL must be an http(s) URL');
+  // Same rule as the loader (@gatewaze/admin-embed isAllowedBaseUrl): https, or http for a local
+  // host only. The value is published to the browser, and a value the loader would refuse must
+  // fail here, at configuration time, rather than as gw_ctx_source_invalid on every mount.
+  const localHttp = url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
+  if (url.protocol !== 'https:' && !localHttp) {
+    throw fail('GW_EMBED_URL must be https (http is allowed for localhost only)');
   }
   if (url.username || url.password) {
     throw fail('GW_EMBED_URL must not carry credentials');
