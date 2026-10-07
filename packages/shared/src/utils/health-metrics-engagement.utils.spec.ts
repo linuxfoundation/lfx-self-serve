@@ -530,7 +530,7 @@ describe('representatives rules', () => {
     expect(filterHealthMetricsEngagementRepRows(rows, 'never', '', 'COMPLETED_YEAR').map((row) => row.personName)).toEqual(['Dana Fields']);
   });
 
-  // The name and its organization sub-line read as one cell, so one term searches both.
+  // One term searches the displayed name and the organization column.
   it('searches the person and the organization together, case-insensitively', () => {
     const rows = [repRow('Dana Fields', 'Acme Motors'), repRow('Sam Rivera', 'Vendor Corp')];
 

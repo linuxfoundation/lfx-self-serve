@@ -240,7 +240,7 @@ export function filterHealthMetricsEngagementRepRows(
     if (filter === 'never' && !period.neverAttended) return false;
     if (filter === 'lapsed' && !period.lapsed) return false;
 
-    // Searched together because the name and its organization sub-line read as one cell.
+    // One term searches the displayed name and the organization, the two columns a reader scans.
     return term === '' || repDisplayName(row).toLowerCase().includes(term) || row.accountName.toLowerCase().includes(term);
   });
 

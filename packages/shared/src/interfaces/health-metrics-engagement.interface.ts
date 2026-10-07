@@ -337,7 +337,7 @@ export interface HealthMetricsEngagementRepRow {
   identityUnresolved: boolean;
   personRole: string | null;
   jobTitle: string | null;
-  /** Sub-line under the name; the row's organization, not a second identity. */
+  /** The row's organization, rendered in its own column; not a second identity. */
   accountName: string;
   membershipTier: string | null;
   committeeName: string;

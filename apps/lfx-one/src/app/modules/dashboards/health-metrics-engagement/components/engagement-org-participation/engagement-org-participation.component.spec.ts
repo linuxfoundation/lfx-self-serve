@@ -168,7 +168,7 @@ describe('EngagementOrgParticipationComponent', () => {
     await render(response({ rows: [], counts: null }));
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]').textContent).toContain(
-      'No organizations recorded for this foundation'
+      'No organizations recorded for this scope'
     );
   });
 

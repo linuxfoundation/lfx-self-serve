@@ -355,8 +355,7 @@ describe('AnalyticsController.getEngagementRepresentatives', () => {
     getRepresentatives.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED);
   });
 
-  // Scope is expressed by the caption columns rather than a project key, so a project on the wire
-  // would be a param the service ignores.
+  // A null project reads the all-projects roll-up rows; a slug reads that project's rows.
   it('takes the foundation and project only, and answers with the service response', async () => {
     const { res, next, promise } = callReps({ foundationSlug: 'acme', projectSlug: 'acme-core', range: 'YTD' });
     await promise;

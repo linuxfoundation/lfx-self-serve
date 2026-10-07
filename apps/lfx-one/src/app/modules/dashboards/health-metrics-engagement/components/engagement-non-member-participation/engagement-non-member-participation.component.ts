@@ -54,6 +54,8 @@ export class EngagementNonMemberParticipationComponent {
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not an empty foundation, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
+  /** The view carries no project key, so a selected project needs saying out loud here. */
+  protected readonly projectSelected = computed(() => this.chrome.selectedProjectSlug() !== null);
 
   protected readonly query: Signal<HealthMetricsEngagementNonMemberQuery> = computed(() => this.initQuery());
   protected readonly response: Signal<HealthMetricsEngagementNonMemberParticipation> = this.initResponse();
