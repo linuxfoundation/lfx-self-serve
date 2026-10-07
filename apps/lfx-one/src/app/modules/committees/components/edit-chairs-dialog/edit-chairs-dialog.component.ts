@@ -17,11 +17,11 @@ export class EditChairsDialogComponent {
   private readonly config = inject(DynamicDialogConfig<EditChairsDialogData>);
   private readonly ref = inject(DynamicDialogRef);
 
-  public readonly memberOptions = this.config.data.members;
-  private readonly labelMap = new Map(this.memberOptions.map((m) => [m.value, m.label]));
+  public readonly memberOptions: { label: string; value: string }[] = this.config.data?.members ?? [];
+  private readonly labelMap = new Map<string, string>(this.memberOptions.map((m) => [m.value, m.label]));
 
-  public readonly chairUids = signal<string[]>([...this.config.data.currentChairUids]);
-  public readonly viceChairUids = signal<string[]>([...this.config.data.currentViceChairUids]);
+  public readonly chairUids = signal<string[]>([...(this.config.data?.currentChairUids ?? [])]);
+  public readonly viceChairUids = signal<string[]>([...(this.config.data?.currentViceChairUids ?? [])]);
 
   public readonly addChairForm = new FormGroup({ uid: new FormControl<string | null>(null) });
   public readonly addViceChairForm = new FormGroup({ uid: new FormControl<string | null>(null) });
