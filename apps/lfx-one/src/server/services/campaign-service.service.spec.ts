@@ -141,10 +141,10 @@ describe('adaptJobPollResponse', () => {
     const adapted = adaptJobPollResponse({
       job_id: 'j1',
       status: 'succeeded',
-      result: [{ platform: 'hubspot', ok: true, campaign_id: '223765590314', hubspot_url: 'https://app.hubspot.com/email/8112310/edit/223765590314/settings' }],
+      result: [{ platform: 'hubspot', ok: true, campaign_id: 'c1', hubspot_url: 'https://app.hubspot.com/email/1/edit/c1/settings' }],
     });
 
-    expect(adapted.platformResults?.[0].hubspotUrl).toBe('https://app.hubspot.com/email/8112310/edit/223765590314/settings');
+    expect(adapted.platformResults?.[0].hubspotUrl).toBe('https://app.hubspot.com/email/1/edit/c1/settings');
   });
 
   // A partial job created real campaigns. Reporting the JOB as failed would hide them; each
