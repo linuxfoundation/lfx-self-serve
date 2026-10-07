@@ -478,11 +478,17 @@ export interface MentorshipEnrollCreateRequest {
   termsAccepted: true;
 }
 
+/** One open term in the update body: `id` names a saved open term to change, and a term without one is created. */
+export interface MentorshipEnrollUpdateTerm extends MentorshipEnrollCreateTerm {
+  id?: string;
+}
+
 /**
- * Request body for `PATCH /api/mentorship/admin/programs/:programId`: the create body without its terms and terms acceptance.
- * Terms are saved through the term routes, and the logo through its own route.
+ * Request body for `PATCH /api/mentorship/admin/programs/:programId`: the create body's program fields, without terms acceptance,
+ * and `terms` as the program's full set of open terms. An open term left out is deleted, and closed terms are never sent; a
+ * program with no open terms leaves `terms` out. The logo goes through its own route.
  */
-export type MentorshipEnrollUpdateRequest = Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'>;
+export type MentorshipEnrollUpdateRequest = Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'> & { terms?: MentorshipEnrollUpdateTerm[] };
 
 /** One prerequisite as upstream stores it in a program's `task_templates`. `submitFile` is `'required'` when the mentee must attach a file. */
 export interface MentorshipUpstreamTaskTemplate {
@@ -492,9 +498,19 @@ export interface MentorshipUpstreamTaskTemplate {
   dueDate: string | null;
 }
 
+/** One open term in the upstream program update: RFC 3339 instants in UTC, and `id` only for a saved term. */
+export interface MentorshipUpstreamOpenTerm {
+  id?: string;
+  name: string;
+  start_date_time: string;
+  end_date_time: string;
+  application_start_date: string;
+  application_end_date: string;
+}
+
 /**
  * Upstream body for `PATCH /mentorship/v1/programs/{id}`, a partial merge with snake_case keys. Every optional text field is
- * sent, `''` when blank, so an admin can clear it.
+ * sent, `''` when blank, so an admin can clear it. `terms`, when sent, replaces the program's open terms in the same transaction.
  */
 export interface MentorshipUpstreamProgramUpdate {
   name: string;
@@ -510,16 +526,7 @@ export interface MentorshipUpstreamProgramUpdate {
   project_slug: string;
   project_name: string;
   project_logo_url: string;
-}
-
-/** The term writes one Update makes, worked out from the terms the program had and the terms in the wizard. */
-export interface MentorshipEnrollTermChanges {
-  /** Terms the admin added in the wizard; their ids are local only. */
-  created: MentorshipProgramTerm[];
-  /** Saved terms whose name or dates changed. */
-  updated: MentorshipProgramTerm[];
-  /** Ids of saved terms the admin deleted. */
-  deleted: string[];
+  terms?: MentorshipUpstreamOpenTerm[];
 }
 
 /**
@@ -546,11 +553,11 @@ export interface MentorshipProgramLogoUploadResult {
 
 /**
  * The calls one Submit makes, in order. There is no review step: create already leaves the program `pending`. An edit's Update
- * makes `update`, then `terms`, then `logo`.
+ * makes `update` (the program fields and its open terms in one call), then `logo`.
  */
-export type MentorshipEnrollSubmitStep = 'create' | 'update' | 'terms' | 'logo';
+export type MentorshipEnrollSubmitStep = 'create' | 'update' | 'logo';
 
-export type MentorshipEnrollSubmitPhase = 'idle' | 'creating' | 'updating' | 'saving-terms' | 'uploading-logo' | 'failed' | 'done';
+export type MentorshipEnrollSubmitPhase = 'idle' | 'creating' | 'updating' | 'uploading-logo' | 'failed' | 'done';
 
 /** Shown in the wizard after a failed submit. `step` says which write failed; `message` is the banner text. */
 export interface MentorshipEnrollSubmitFailure {

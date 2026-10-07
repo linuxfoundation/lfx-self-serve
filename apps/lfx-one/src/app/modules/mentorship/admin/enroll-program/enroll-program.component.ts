@@ -39,11 +39,11 @@ import {
   MENTORSHIP_ENROLL_SUBMIT_FAILED,
   MENTORSHIP_ENROLL_SUBMIT_SUCCESS,
   MENTORSHIP_ENROLL_TERM_DELETE_CONFLICT,
-  MENTORSHIP_ENROLL_TERMS_SAVE_FAILED,
   MENTORSHIP_ENROLL_UPDATE_FAILED,
   MENTORSHIP_ENROLL_UPDATE_LABEL,
   MENTORSHIP_ENROLL_UPDATE_SUCCESS,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
+  MENTORSHIP_PROGRAM_NAME_TAKEN_ERROR_CODE,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiLookupStatus,
@@ -62,12 +62,11 @@ import {
   MentorshipProgramTermRow,
 } from '@lfx-one/shared/interfaces';
 import {
-  diffMentorshipEnrollTerms,
   formFromMentorshipEnrollEdit,
   getMentorshipEnrollLogoError,
   getMentorshipEnrollStepErrors,
+  isSameMentorshipTerm,
   isMentorshipTermsAccepted,
-  toMentorshipAdminTermInput,
   toMentorshipEnrollCreateRequest,
   toMentorshipEnrollTerm,
   toMentorshipEnrollUpdateRequest,
@@ -75,7 +74,7 @@ import {
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { catchError, concat, concatMap, defer, EMPTY, expand, forkJoin, map, Observable, of, reduce, startWith, tap, throwError, toArray } from 'rxjs';
+import { concatMap, defer, EMPTY, expand, forkJoin, map, Observable, of, reduce, startWith, tap } from 'rxjs';
 
 import { EnrollDetailsStepComponent } from './components/enroll-details-step/enroll-details-step.component';
 import { EnrollPrerequisitesStepComponent } from './components/enroll-prerequisites-step/enroll-prerequisites-step.component';
@@ -137,12 +136,15 @@ export class EnrollProgramComponent {
 
   /** What an untouched form reads as, the loaded program's answers in an edit; Cancel only asks when the answers differ from it. */
   private initialValue = JSON.stringify(this.form.getRawValue());
-  /** The open terms upstream holds for the edited program. Each saved term write moves it on, so a retry repeats only what failed. */
+  /** The open terms upstream holds for the edited program, as last read. Update sends their ids, so upstream changes them in place. */
   private savedTerms: MentorshipProgramTerm[] = [];
-  /** Which kind of term write is in flight, so a failure can say what went wrong. */
-  private termWrite: 'delete' | 'update' | 'create' | null = null;
   /** The logo file an edit last uploaded. The answers unlock after a failed Update, so the admin may pick another file. */
   private uploadedLogo: File | null = null;
+  /**
+   * An update was saved, or may have been (no answer, or a 5xx), so terms the admin added may now exist upstream with ids the
+   * wizard does not have. The next Update reads the terms first, so it does not create them twice.
+   */
+  private termsOutOfSync = false;
 
   /** The program being edited, `''` when enrolling a new one. */
   protected readonly editProgramId = this.route.snapshot.queryParamMap.get('programId')?.trim() ?? '';
@@ -172,7 +174,7 @@ export class EnrollProgramComponent {
   protected readonly submitFailure = signal<MentorshipEnrollSubmitFailure | null>(null);
   protected readonly submitting = computed(() => {
     const phase = this.submitPhase();
-    return phase === 'creating' || phase === 'updating' || phase === 'saving-terms' || phase === 'uploading-logo';
+    return phase === 'creating' || phase === 'updating' || phase === 'uploading-logo';
   });
   /** Once the program is saved, its answers can no longer change. */
   protected readonly programSaved = computed(() => this.createdProgram() !== null);
@@ -381,20 +383,19 @@ export class EnrollProgramComponent {
       });
   }
 
-  /** Saves the program fields, then the term changes, then a newly picked logo. A retry runs it again; the term writes already saved are not repeated. */
+  /** Saves the program fields and open terms in one call, then a newly picked logo. A retry runs it again. */
   private submitUpdate(project: MentorshipLfProject): void {
     const programId = this.editProgramId;
-    const request = toMentorshipEnrollUpdateRequest(this.form.getRawValue(), project);
     this.submitPhase.set('updating');
     // What is sent must stay what is shown, so the answers lock until the save ends.
     this.form.disable({ emitEvent: false });
-    this.mentorshipAdminService
-      .updateProgram(programId, request)
+    this.syncSavedTerms(programId)
       .pipe(
         concatMap(() => {
-          this.submitPhase.set('saving-terms');
-          return this.saveTermChanges(programId);
+          const savedIds = new Set(this.savedTerms.map((term) => term.id));
+          return this.mentorshipAdminService.updateProgram(programId, toMentorshipEnrollUpdateRequest(this.form.getRawValue(), project, savedIds));
         }),
+        tap(() => (this.termsOutOfSync = true)),
         concatMap(() => {
           const logo = this.logoFile();
           if (!logo || logo === this.uploadedLogo) return of(null);
@@ -410,51 +411,36 @@ export class EnrollProgramComponent {
       });
   }
 
-  /** Deletes first, so a program at the open-term limit has room for its new terms, then updates, then creates, one write at a time. */
-  private saveTermChanges(programId: string): Observable<unknown[]> {
-    const changes = diffMentorshipEnrollTerms(this.savedTerms, this.form.controls.terms.value);
-    const writes = [
-      ...changes.deleted.map((termId) =>
-        defer(() => {
-          this.termWrite = 'delete';
-          return this.mentorshipAdminService.deleteTerm(programId, termId).pipe(
-            tap(() => (this.savedTerms = this.savedTerms.filter((term) => term.id !== termId))),
-            catchError((error: unknown) => {
-              // Upstream keeps a term that has applications; put it back so the list shows what the program has.
-              if (this.statusOf(error) === 409) this.restoreTerm(termId);
-              return throwError(() => error);
-            })
-          );
-        })
-      ),
-      ...changes.updated.map((term) =>
-        defer(() => {
-          this.termWrite = 'update';
-          return this.mentorshipAdminService
-            .updateTerm(programId, term.id, toMentorshipAdminTermInput(term))
-            .pipe(tap(() => (this.savedTerms = this.savedTerms.map((saved) => (saved.id === term.id ? { ...term } : saved)))));
-        })
-      ),
-      ...changes.created.map((term) =>
-        defer(() => {
-          this.termWrite = 'create';
-          return this.mentorshipAdminService.createTerm(programId, toMentorshipAdminTermInput(term)).pipe(tap((row) => this.recordCreatedTerm(term, row.id)));
-        })
-      ),
-    ];
-    return concat(...writes).pipe(toArray());
+  /**
+   * After an update that was saved, or may have been, reads the program's open terms again. Each term the admin added takes the id of
+   * an open term upstream now holds with the same name and dates, which the wizard did not have, so a retry changes it rather than
+   * creating it twice.
+   */
+  private syncSavedTerms(programId: string): Observable<unknown> {
+    if (!this.termsOutOfSync) return of(null);
+    return this.readAllTerms(programId).pipe(
+      tap((rows) => {
+        this.termsOutOfSync = false;
+        const open = rows.filter((row) => row.status === 'open').map(toMentorshipEnrollTerm);
+        const openIds = new Set(open.map((term) => term.id));
+        const formIds = new Set(this.form.controls.terms.value.map((term) => term.id));
+        const unclaimed = open.filter((term) => !formIds.has(term.id));
+        const terms = this.form.controls.terms.value.map((term) => {
+          if (openIds.has(term.id)) return term;
+          const index = unclaimed.findIndex((row) => isSameMentorshipTerm(row, term));
+          return index === -1 ? term : { ...term, id: unclaimed.splice(index, 1)[0].id };
+        });
+        this.form.controls.terms.setValue(terms, { emitEvent: false });
+        this.savedTerms = open;
+      })
+    );
   }
 
-  /** A created term takes upstream's id in the form and in `savedTerms`, so a retry updates it rather than creating it again. */
-  private recordCreatedTerm(term: MentorshipProgramTerm, id: string): void {
-    const terms = this.form.controls.terms.value.map((item) => (item.id === term.id ? { ...item, id } : item));
-    this.form.controls.terms.setValue(terms, { emitEvent: false });
-    this.savedTerms = [...this.savedTerms, { ...term, id }];
-  }
-
-  private restoreTerm(termId: string): void {
-    const saved = this.savedTerms.find((term) => term.id === termId);
-    if (saved) this.form.controls.terms.setValue([...this.form.controls.terms.value, { ...saved }], { emitEvent: false });
+  /** Upstream saved nothing, so the saved terms the admin removed go back in the list. */
+  private restoreRemovedTerms(): void {
+    const formIds = new Set(this.form.controls.terms.value.map((term) => term.id));
+    const removed = this.savedTerms.filter((term) => !formIds.has(term.id)).map((term) => ({ ...term }));
+    this.form.controls.terms.setValue([...this.form.controls.terms.value, ...removed], { emitEvent: false });
   }
 
   private finishUpdate(): void {
@@ -468,7 +454,7 @@ export class EnrollProgramComponent {
     const phase = this.submitPhase();
     this.submitPhase.set('failed');
     this.form.enable({ emitEvent: false });
-    // emitEvent was off for the term writes, so the steps read the terms again from here.
+    // A terms read before the update set them with emitEvent off, so the steps read the terms again from here.
     this.form.controls.terms.setValue([...this.form.controls.terms.value]);
     const status = this.statusOf(error);
     if (phase === 'uploading-logo') {
@@ -479,19 +465,20 @@ export class EnrollProgramComponent {
       });
       return;
     }
-    if (phase === 'saving-terms') {
-      const deleteRefused = this.termWrite === 'delete' && status === 409;
-      this.submitFailure.set({
-        step: 'terms',
-        message: deleteRefused ? MENTORSHIP_ENROLL_TERM_DELETE_CONFLICT : this.writeFailureMessage(error, MENTORSHIP_ENROLL_TERMS_SAVE_FAILED),
-      });
-      return;
-    }
     // The BFF refuses an update whose name another program has, before it writes anything.
-    if (status === 409) {
+    if (status === 409 && error instanceof HttpErrorResponse && error.error?.code === MENTORSHIP_PROGRAM_NAME_TAKEN_ERROR_CODE) {
       this.showNameTaken();
       return;
     }
+    // Upstream's other 409: an open term left out still has applications, and the whole update was refused.
+    if (status === 409) {
+      this.restoreRemovedTerms();
+      this.form.controls.terms.setValue([...this.form.controls.terms.value]);
+      this.submitFailure.set({ step: 'update', message: MENTORSHIP_ENROLL_TERM_DELETE_CONFLICT });
+      return;
+    }
+    // With no answer or a 5xx, upstream may have saved the update anyway.
+    if (status === 0 || status >= 500) this.termsOutOfSync = true;
     this.submitFailure.set({ step: 'update', message: this.writeFailureMessage(error, MENTORSHIP_ENROLL_UPDATE_FAILED) });
   }
 
@@ -513,6 +500,7 @@ export class EnrollProgramComponent {
     this.currentLogoUrl.set(data.logoUrl);
     this.closedTerms.set(rows.filter((row) => row.status === 'closed').map(toMentorshipEnrollTerm));
     this.savedTerms = openTerms.map((term) => ({ ...term }));
+    this.termsOutOfSync = false;
     this.editBaseline.set({
       terms: openTerms.map((term) => ({ ...term })),
       prerequisites: this.form.controls.prerequisites.value.map((item) => ({ ...item })),

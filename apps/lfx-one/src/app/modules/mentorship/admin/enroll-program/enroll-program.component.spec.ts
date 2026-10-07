@@ -24,6 +24,7 @@ import {
   MENTORSHIP_ENROLL_UPDATE_SUCCESS,
   MENTORSHIP_ENROLL_UPLOADS_UNAVAILABLE,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
+  MENTORSHIP_PROGRAM_NAME_TAKEN_ERROR_CODE,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiLookupStatus,
@@ -539,6 +540,15 @@ describe('EnrollProgramComponent — edit mode', () => {
     applicationStartDate: '2020-01-01',
     applicationEndDate: '2020-02-01',
   });
+  /** A term the admin adds in the wizard; its id is local only. */
+  const FALL: MentorshipProgramTerm = {
+    id: 'term-new-1',
+    name: 'Fall',
+    startDate: '2099-09-01',
+    endDate: '2099-11-01',
+    applicationStartDate: '2099-06-01',
+    applicationEndDate: '2099-07-01',
+  };
   const TEMPLATE: MentorshipEnrollImport = {
     name: 'GridFlow Mentorship Program',
     project: { id: 'proj-gridflow', name: 'GridFlow', slug: 'gridflow' },
@@ -582,9 +592,6 @@ describe('EnrollProgramComponent — edit mode', () => {
       getEnrollTemplate: vi.fn(() => of(TEMPLATE)),
       getProgramTerms: vi.fn(() => of({ data: [termRow('t-a', 'open', 'Spring'), termRow('t-b', 'open'), termRow('t-old', 'closed')], total: 3 })),
       updateProgram: recorded('updateProgram', PROGRAM),
-      deleteTerm: recorded('deleteTerm', undefined),
-      updateTerm: recorded('updateTerm', termRow('t-a', 'open')),
-      createTerm: recorded('createTerm', termRow('t-new', 'open')),
       uploadProgramLogo: vi.fn(() => of({ logoUrl: 'https://cdn.example/new.png' })),
       createProgram: vi.fn(),
     };
@@ -632,17 +639,24 @@ describe('EnrollProgramComponent — edit mode', () => {
     expect(byTestId('mentorship-enroll-next')?.textContent).toContain('Update');
   });
 
-  it('updates the program, then deletes, updates and creates terms, and goes back to the program without a logo upload', () => {
+  it('saves the program and its open terms in one PATCH, with no term-route write or logo upload, and goes back to the program', () => {
     const [spring] = component['form'].controls.terms.value;
-    component['form'].controls.terms.setValue([
-      { ...spring, name: 'Spring renamed' },
-      { id: 'term-new-1', name: 'Fall', startDate: '2099-09-01', endDate: '2099-11-01', applicationStartDate: '2099-06-01', applicationEndDate: '2099-07-01' },
-    ]);
+    component['form'].controls.terms.setValue([{ ...spring, name: 'Spring renamed' }, FALL]);
 
     clickUpdate();
 
-    expect(calls).toEqual([`updateProgram ${PROGRAM_ID}`, `deleteTerm ${PROGRAM_ID} t-b`, `updateTerm ${PROGRAM_ID} t-a`, `createTerm ${PROGRAM_ID}`]);
-    expect(service['updateProgram'].mock.calls[0][1]).not.toHaveProperty('terms');
+    expect(calls).toEqual([`updateProgram ${PROGRAM_ID}`]);
+    expect(service['updateProgram'].mock.calls[0][1].terms).toEqual([
+      {
+        id: 't-a',
+        name: 'Spring renamed',
+        startDate: '2020-03-01',
+        endDate: '2020-05-31',
+        applicationStartDate: '2020-01-01',
+        applicationEndDate: '2020-02-01',
+      },
+      { name: 'Fall', startDate: '2099-09-01', endDate: '2099-11-30', applicationStartDate: '2099-06-01', applicationEndDate: '2099-07-01' },
+    ]);
     expect(service['createProgram']).not.toHaveBeenCalled();
     expect(service['uploadProgramLogo']).not.toHaveBeenCalled();
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: MENTORSHIP_ENROLL_UPDATE_SUCCESS }));
@@ -657,19 +671,40 @@ describe('EnrollProgramComponent — edit mode', () => {
     expect(service['uploadProgramLogo']).toHaveBeenCalledWith(PROGRAM_ID, LOGO, false);
   });
 
-  it('sends the admin back to the name field, with no term write, when another program has the name', () => {
-    service['updateProgram'].mockReturnValueOnce(throwError(() => httpError(409)));
+  it('sends the admin back to the name field when another program has the name', () => {
+    service['updateProgram'].mockReturnValueOnce(throwError(() => httpError(409, { code: MENTORSHIP_PROGRAM_NAME_TAKEN_ERROR_CODE })));
 
     clickUpdate();
 
     expect(component['step']()).toBe('details');
     expect(component['stepErrors']()).toMatchObject({ name: MENTORSHIP_ENROLL_NAME_TAKEN });
-    expect(service['deleteTerm']).not.toHaveBeenCalled();
     expect(component['form'].enabled).toBe(true);
   });
 
-  it('puts back a term upstream will not delete, says why, and does not repeat saved writes on retry', () => {
-    service['deleteTerm'].mockReturnValueOnce(throwError(() => httpError(409)));
+  it('does not create a term twice when an update may have been saved although its answer was lost', () => {
+    component['form'].controls.terms.setValue([...component['form'].controls.terms.value, FALL]);
+    service['updateProgram'].mockReturnValueOnce(throwError(() => httpError(0)));
+
+    clickUpdate();
+
+    const saved = {
+      ...termRow('t-fall', 'open', 'Fall'),
+      startDate: '2099-09-01',
+      endDate: '2099-11-30',
+      applicationStartDate: '2099-06-01',
+      applicationEndDate: '2099-07-01',
+    };
+    service['getProgramTerms'].mockReturnValueOnce(of({ data: [termRow('t-a', 'open', 'Spring'), termRow('t-b', 'open'), saved], total: 3 }));
+    calls = [];
+    clickUpdate();
+
+    expect(calls).toEqual([`updateProgram ${PROGRAM_ID}`]);
+    expect(service['updateProgram'].mock.calls[1][1].terms.map((term: { id?: string }) => term.id)).toEqual(['t-a', 't-b', 't-fall']);
+    expect(router.navigate).toHaveBeenCalledWith(['/mentorship/admin', PROGRAM_ID]);
+  });
+
+  it('puts the removed terms back and says why when upstream refuses to delete a term with applications', () => {
+    service['updateProgram'].mockReturnValueOnce(throwError(() => httpError(409, { code: 'CONFLICT' })));
     component['form'].controls.terms.setValue(component['form'].controls.terms.value.filter((term) => term.id !== 't-b'));
 
     clickUpdate();
@@ -677,12 +712,7 @@ describe('EnrollProgramComponent — edit mode', () => {
     expect(byTestId('mentorship-enroll-submit-error')?.textContent).toContain(MENTORSHIP_ENROLL_TERM_DELETE_CONFLICT);
     expect(component['form'].controls.terms.value.map((term) => term.id)).toEqual(['t-a', 't-b']);
     expect(component['form'].enabled).toBe(true);
-
-    calls = [];
-    clickUpdate();
-
-    expect(calls).toEqual([`updateProgram ${PROGRAM_ID}`]);
-    expect(router.navigate).toHaveBeenCalledWith(['/mentorship/admin', PROGRAM_ID]);
+    expect(component['step']()).toBe('prerequisites');
   });
 
   it('shows Retry when the program cannot be read, and reads it again', () => {

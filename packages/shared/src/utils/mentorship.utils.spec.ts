@@ -88,10 +88,8 @@ import {
   mentorshipTaskDueCutoffMs,
   formatMentorshipShortMonthYear,
   filterMentorshipApplicantTasks,
-  diffMentorshipEnrollTerms,
   formFromMentorshipEnrollEdit,
   formFromMentorshipEnrollImport,
-  toMentorshipAdminTermInput,
   toMentorshipEnrollTerm,
   toMentorshipEnrollUpdateRequest,
   formatMentorshipApplicantTaskDueLabel,
@@ -666,7 +664,7 @@ describe('formFromMentorshipEnrollEdit', () => {
     expect(form.logoPreviewUrl).toBe('');
   });
 
-  it("passes validation with the program's own past dates, no logo and no open term", () => {
+  it("passes validation with the program's own past dates and no logo", () => {
     const form = formFromMentorshipEnrollEdit({ ...data, logoUrl: '' }, [term]);
     form.prerequisites = [
       { id: 'imported-0', name: 'Essay', description: 'Why you.', required: true, requireFile: false, custom: true, dueDate: '2020-01-15' },
@@ -675,8 +673,14 @@ describe('formFromMentorshipEnrollEdit', () => {
 
     expect(getMentorshipEnrollStepErrors('details', form, edit)).toEqual({});
     expect(getMentorshipEnrollStepErrors('setup', form, edit)).toEqual({});
-    expect(getMentorshipEnrollStepErrors('setup', { ...form, terms: [] }, edit)).toEqual({});
     expect(getMentorshipEnrollStepErrors('prerequisites', form, edit)).toEqual({});
+  });
+
+  it('needs an open term only when the program had one', () => {
+    const form = { ...formFromMentorshipEnrollEdit(data, []), skills: ['Go'] };
+
+    expect(getMentorshipEnrollStepErrors('setup', form, { terms: [], prerequisites: [] })).toEqual({});
+    expect(getMentorshipEnrollStepErrors('setup', form, { terms: [term], prerequisites: [] }).terms).toBe('Add at least one program term.');
   });
 
   it('skips the date rules for a saved term left as it was, even one that breaks them', () => {
@@ -726,8 +730,9 @@ describe('toMentorshipEnrollTerm', () => {
   });
 });
 
-describe('diffMentorshipEnrollTerms', () => {
-  const saved = (id: string, name = id): MentorshipProgramTerm => ({
+describe('toMentorshipEnrollUpdateRequest', () => {
+  const project = { id: 'p-1', name: 'Project', slug: 'project' } as MentorshipLfProject;
+  const term = (id: string, name: string): MentorshipProgramTerm => ({
     id,
     name,
     startDate: '2030-03-01',
@@ -735,49 +740,34 @@ describe('diffMentorshipEnrollTerms', () => {
     applicationStartDate: '2030-01-01',
     applicationEndDate: '2030-02-01',
   });
-
-  it('sorts terms into created, updated and deleted by id', () => {
-    const kept = saved('a');
-    const renamed = { ...saved('b'), name: 'Renamed' };
-    const added = saved('term-new-1');
-
-    expect(diffMentorshipEnrollTerms([saved('a'), saved('b'), saved('c')], [kept, renamed, added])).toEqual({
-      created: [added],
-      updated: [renamed],
-      deleted: ['c'],
+  const filled = () =>
+    Object.assign(createEmptyMentorshipEnrollForm(), {
+      name: ' Program ',
+      description: '<p>x</p>',
+      repositoryUrl: 'https://repo.example',
+      skills: ['Go'],
+      technologies: ['Go', 'Rust'],
     });
+
+  it('is the create body without terms acceptance when no term is saved yet', () => {
+    const form = filled();
+    const created = toMentorshipEnrollCreateRequest(form, project);
+
+    expect({ ...toMentorshipEnrollUpdateRequest(form, project, new Set()), termsAccepted: true }).toEqual(created);
+    expect(created.industry).toBe('Go, Rust');
   });
 
-  it('ignores a name that only gained spaces', () => {
-    expect(diffMentorshipEnrollTerms([saved('a', 'Spring')], [saved('a', ' Spring ')]).updated).toEqual([]);
+  it('sends the open terms as the full set: saved ones with their id, added ones without', () => {
+    const form = { ...filled(), terms: [term('saved-1', ' Spring '), term('term-new-1', 'Fall')] };
+
+    expect(toMentorshipEnrollUpdateRequest(form, project, new Set(['saved-1', 'saved-2'])).terms).toEqual([
+      { id: 'saved-1', name: 'Spring', startDate: '2030-03-01', endDate: '2030-05-31', applicationStartDate: '2030-01-01', applicationEndDate: '2030-02-01' },
+      { name: 'Fall', startDate: '2030-03-01', endDate: '2030-05-31', applicationStartDate: '2030-01-01', applicationEndDate: '2030-02-01' },
+    ]);
   });
-});
 
-describe('toMentorshipAdminTermInput', () => {
-  it('drops the id and trims the name', () => {
-    expect(
-      toMentorshipAdminTermInput({ id: 't-1', name: ' Spring ', startDate: 'a', endDate: 'b', applicationStartDate: 'c', applicationEndDate: 'd' })
-    ).toEqual({
-      name: 'Spring',
-      startDate: 'a',
-      endDate: 'b',
-      applicationStartDate: 'c',
-      applicationEndDate: 'd',
-    });
-  });
-});
-
-describe('toMentorshipEnrollUpdateRequest', () => {
-  it('is the create body without terms and terms acceptance', () => {
-    const form = createEmptyMentorshipEnrollForm();
-    Object.assign(form, { name: ' Program ', description: '<p>x</p>', repositoryUrl: 'https://repo.example', skills: ['Go'], technologies: ['Go', 'Rust'] });
-    const project = { id: 'p-1', name: 'Project', slug: 'project' } as MentorshipLfProject;
-    const { terms, termsAccepted, ...fields } = toMentorshipEnrollCreateRequest(form, project);
-
-    expect(terms).toHaveLength(1);
-    expect(termsAccepted).toBe(true);
-    expect(toMentorshipEnrollUpdateRequest(form, project)).toEqual(fields);
-    expect(fields.industry).toBe('Go, Rust');
+  it('leaves the terms out when the program has no open term', () => {
+    expect(toMentorshipEnrollUpdateRequest({ ...filled(), terms: [] }, project, new Set())).not.toHaveProperty('terms');
   });
 });
 

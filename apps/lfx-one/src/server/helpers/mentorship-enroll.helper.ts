@@ -9,13 +9,15 @@ import {
   MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
   MentorshipEnrollUpdateRequest,
+  MentorshipEnrollUpdateTerm,
   MentorshipProgramLogoUploadResult,
   MentorshipUpstreamCreatedProgram,
   MentorshipUpstreamEnrollTemplate,
   MentorshipUpstreamLogoUpload,
+  MentorshipUpstreamOpenTerm,
   MentorshipUpstreamProgramUpdate,
 } from '@lfx-one/shared/interfaces';
-import { isUuid } from '@lfx-one/shared/utils';
+import { isUuid, lastDayOfMentorshipMonth, toMentorshipUtcEndOfDayInstant, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
 
 import { ServiceValidationError } from '../errors';
 import { parseTrimmedString } from './mentorship-params.helper';
@@ -158,16 +160,52 @@ export const parseMentorshipEnrollCreateRequest = (body: unknown, operation: str
 };
 
 /**
- * Validates the body of `PATCH /api/mentorship/admin/programs/:programId`: the shared program fields only. Terms go through the
- * term routes and the logo through its own route, so a `terms` or `termsAccepted` sent here is dropped.
+ * Validates the body of `PATCH /api/mentorship/admin/programs/:programId`: the shared program fields, and `terms` when sent, the
+ * program's full set of open terms (1 to `MENTORSHIP_MAX_OPEN_TERMS`, each with the create term fields and, for a saved term, a
+ * UUID `id`). Left out, the terms stay as they are. A `termsAccepted` sent here is dropped, and the logo has its own route.
  */
-export const parseMentorshipEnrollUpdateRequest = (body: unknown, operation: string): MentorshipEnrollUpdateRequest =>
-  parseProgramFields(asRecord(body), operation);
+export const parseMentorshipEnrollUpdateRequest = (body: unknown, operation: string): MentorshipEnrollUpdateRequest => {
+  const raw = asRecord(body);
+  const request = parseProgramFields(raw, operation);
+  const rawTerms = raw['terms'];
+  if (rawTerms === undefined) {
+    return request;
+  }
+  if (!Array.isArray(rawTerms) || rawTerms.length === 0 || rawTerms.length > MENTORSHIP_MAX_OPEN_TERMS) {
+    throw ServiceValidationError.forField('terms', `terms must hold 1 to ${MENTORSHIP_MAX_OPEN_TERMS} terms.`, { operation });
+  }
+  request.terms = rawTerms.map((term, index): MentorshipEnrollUpdateTerm => {
+    const id = asRecord(term)['id'];
+    if (id === undefined) {
+      return parseTerm(term, index, operation);
+    }
+    if (typeof id !== 'string' || !isUuid(id)) {
+      throw ServiceValidationError.forField(`terms[${index}].id`, `terms[${index}].id must be a UUID.`, { operation });
+    }
+    return { id, ...parseTerm(term, index, operation) };
+  });
+  return request;
+};
+
+/**
+ * A term's dates as upstream takes them: RFC 3339 instants in UTC. Each date goes as the start of its day, except the application
+ * end, which goes as the end of its day so the term takes applications through that whole date, and the term end, which goes as
+ * the end of the last day of its month, since the term dialog picks months.
+ */
+export const toMentorshipUpstreamTermDates = (
+  term: Pick<MentorshipEnrollUpdateTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
+): Omit<MentorshipUpstreamOpenTerm, 'id' | 'name'> => ({
+  start_date_time: toMentorshipUtcInstant(term.startDate),
+  end_date_time: toMentorshipUtcEndOfDayInstant(lastDayOfMentorshipMonth(term.endDate)),
+  application_start_date: toMentorshipUtcInstant(term.applicationStartDate),
+  application_end_date: toMentorshipUtcEndOfDayInstant(term.applicationEndDate),
+});
 
 /**
  * The update body as upstream `PATCH /programs/{id}` takes it: snake_case keys, a partial merge. Each optional text field is sent,
  * `''` when blank, so an admin can clear it. Prerequisites become `task_templates` the way upstream create converts them: only the
- * picked (`required`) ones are kept, and `submitFile` is `'required'` when the mentee must attach a file.
+ * picked (`required`) ones are kept, and `submitFile` is `'required'` when the mentee must attach a file. `terms`, when present,
+ * goes as upstream's open-term set, a saved term keeping its `id`.
  */
 export const toMentorshipUpstreamProgramUpdate = (request: MentorshipEnrollUpdateRequest): MentorshipUpstreamProgramUpdate => ({
   name: request.name,
@@ -185,6 +223,9 @@ export const toMentorshipUpstreamProgramUpdate = (request: MentorshipEnrollUpdat
   project_slug: request.projectSlug,
   project_name: request.projectName,
   project_logo_url: request.projectLogoUrl ?? '',
+  ...(request.terms
+    ? { terms: request.terms.map((term) => ({ ...(term.id ? { id: term.id } : {}), name: term.name, ...toMentorshipUpstreamTermDates(term) })) }
+    : {}),
 });
 
 /** The id, slug and status the wizard keeps from an upstream create or update. A program with no slug falls back to its id. */

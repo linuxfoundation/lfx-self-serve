@@ -929,7 +929,6 @@ describe('MentorshipAdminController', () => {
       await controller.updateProgram(updateReq, out, next);
 
       const fields: Record<string, unknown> = { ...createBody };
-      delete fields['terms'];
       delete fields['termsAccepted'];
       expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, fields);
       expect(out.json).toHaveBeenCalledWith(ref);

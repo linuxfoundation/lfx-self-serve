@@ -77,12 +77,12 @@ import type {
   MentorshipApplicantTaskStatus,
   MentorshipApplicationProgress,
   MentorshipEnrollCreateRequest,
+  MentorshipEnrollCreateTerm,
   MentorshipEnrollEditBaseline,
   MentorshipEnrollFieldErrors,
   MentorshipEnrollForm,
   MentorshipEnrollImport,
   MentorshipEnrollStep,
-  MentorshipEnrollTermChanges,
   MentorshipEnrollUpdateRequest,
   MentorshipEnrollValidationInput,
   MentorshipLfProject,
@@ -96,12 +96,7 @@ import type {
   MentorshipTaskFormValue,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
-import type {
-  MentorshipAdminTaskUpdate,
-  MentorshipAdminTermInput,
-  MentorshipProgramMentor,
-  MentorshipProgramTermRow,
-} from '../interfaces/mentorship-admin.interface';
+import type { MentorshipAdminTaskUpdate, MentorshipProgramMentor, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
 import type {
   MentorshipMentorProfileDetails,
   MentorshipMentorProfileFieldErrors,
@@ -258,24 +253,46 @@ export function lastDayOfMentorshipMonth(isoMonthStart: string): string {
  */
 export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidationInput, project: MentorshipLfProject): MentorshipEnrollCreateRequest {
   return {
-    ...toMentorshipEnrollUpdateRequest(form, project),
-    terms: form.terms.map((term) => ({
-      name: term.name.trim(),
-      startDate: term.startDate,
-      endDate: lastDayOfMentorshipMonth(term.endDate),
-      applicationStartDate: term.applicationStartDate,
-      applicationEndDate: term.applicationEndDate,
-    })),
+    ...toMentorshipEnrollProgramFields(form, project),
+    terms: form.terms.map((term) => toMentorshipEnrollRequestTerm(term)),
     termsAccepted: true,
   };
 }
 
 /**
- * The wizard form as the edit wizard's update body: the create body's program fields, without terms (they are saved through
- * the term routes) or terms acceptance. A blank optional field is left out; the BFF sends it on as `''`, which clears it.
+ * The wizard form as the edit wizard's update body: the program fields as create sends them, and the open terms as the program's
+ * full set. A term whose id is in `savedTermIds` keeps it, so upstream changes that term; one the admin added goes without an id
+ * and is created; a saved term left out is deleted. With no open terms, `terms` is left out and upstream keeps them as they are.
  */
-export function toMentorshipEnrollUpdateRequest(form: MentorshipEnrollValidationInput, project: MentorshipLfProject): MentorshipEnrollUpdateRequest {
-  const request: MentorshipEnrollUpdateRequest = {
+export function toMentorshipEnrollUpdateRequest(
+  form: MentorshipEnrollValidationInput,
+  project: MentorshipLfProject,
+  savedTermIds: ReadonlySet<string>
+): MentorshipEnrollUpdateRequest {
+  const request: MentorshipEnrollUpdateRequest = toMentorshipEnrollProgramFields(form, project);
+  if (form.terms.length) {
+    request.terms = form.terms.map((term) => ({ ...(savedTermIds.has(term.id) ? { id: term.id } : {}), ...toMentorshipEnrollRequestTerm(term) }));
+  }
+  return request;
+}
+
+/** A wizard term as create and update send it: the name trimmed and the end month as its last day. */
+function toMentorshipEnrollRequestTerm(term: MentorshipProgramTerm): MentorshipEnrollCreateTerm {
+  return {
+    name: term.name.trim(),
+    startDate: term.startDate,
+    endDate: lastDayOfMentorshipMonth(term.endDate),
+    applicationStartDate: term.applicationStartDate,
+    applicationEndDate: term.applicationEndDate,
+  };
+}
+
+/** The program fields create and update share. A blank optional field is left out; the BFF sends an update's as `''`, which clears it. */
+function toMentorshipEnrollProgramFields(
+  form: MentorshipEnrollValidationInput,
+  project: MentorshipLfProject
+): Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'> {
+  const request: Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'> = {
     projectId: project.id,
     projectSlug: project.slug,
     projectName: project.name,
@@ -327,7 +344,7 @@ export function toMentorshipEnrollTerm(
 }
 
 /** Whether `after` is the saved term `before` unchanged: the same name (trimmed) and dates. `false` when there is no saved term. */
-function isSameMentorshipTerm(before: MentorshipProgramTerm | undefined, after: MentorshipProgramTerm): boolean {
+export function isSameMentorshipTerm(before: MentorshipProgramTerm | undefined, after: MentorshipProgramTerm): boolean {
   return (
     before !== undefined &&
     before.name.trim() === after.name.trim() &&
@@ -336,31 +353,6 @@ function isSameMentorshipTerm(before: MentorshipProgramTerm | undefined, after: 
     before.applicationStartDate === after.applicationStartDate &&
     before.applicationEndDate === after.applicationEndDate
   );
-}
-
-/** A wizard term as the body of the term routes. */
-export function toMentorshipAdminTermInput(term: MentorshipProgramTerm): MentorshipAdminTermInput {
-  return {
-    name: term.name.trim(),
-    startDate: term.startDate,
-    endDate: term.endDate,
-    applicationStartDate: term.applicationStartDate,
-    applicationEndDate: term.applicationEndDate,
-  };
-}
-
-/**
- * The term writes that turn `saved` into `current`. Terms are matched by id: one only in `current` is new, one only in
- * `saved` was deleted, and one in both is updated when its name (trimmed) or a date changed.
- */
-export function diffMentorshipEnrollTerms(saved: MentorshipProgramTerm[], current: MentorshipProgramTerm[]): MentorshipEnrollTermChanges {
-  const savedById = new Map(saved.map((term) => [term.id, term]));
-  const currentIds = new Set(current.map((term) => term.id));
-  return {
-    created: current.filter((term) => !savedById.has(term.id)),
-    updated: current.filter((term) => savedById.has(term.id) && !isSameMentorshipTerm(savedById.get(term.id), term)),
-    deleted: saved.filter((term) => !currentIds.has(term.id)).map((term) => term.id),
-  };
 }
 
 /**
@@ -698,8 +690,8 @@ export function getMentorshipEnrollStepErrors(
   if (step === 'setup') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (!form.skills.length) errors.skills = 'Add at least one skill.';
-    // A program being edited may have only closed terms left, which the wizard does not hold, so it needs no open term.
-    if (!form.terms.length && !edit) {
+    // A program being edited that had only closed terms may stay that way; upstream keeps a program's last open term otherwise.
+    if (!form.terms.length && (!edit || edit.terms.length > 0)) {
       errors.terms = 'Add at least one program term.';
     } else if (form.terms.length > MENTORSHIP_MAX_OPEN_TERMS) {
       errors.terms = MENTORSHIP_MAX_OPEN_TERMS_MESSAGE;

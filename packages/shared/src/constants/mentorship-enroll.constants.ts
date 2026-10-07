@@ -104,9 +104,10 @@ export const MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL = 'Current logo';
 export const MENTORSHIP_ENROLL_EDIT_LOAD_FAILED = "We couldn't load this program. Try again.";
 export const MENTORSHIP_ENROLL_UPDATE_SUCCESS = 'Program updated.';
 export const MENTORSHIP_ENROLL_UPDATE_FAILED = "We couldn't update the program. Your changes are kept, so you can try again.";
-export const MENTORSHIP_ENROLL_TERMS_SAVE_FAILED = "The program details are saved, but some term changes aren't. Your changes are kept, so you can try again.";
-/** Upstream refuses to delete a term that has applications; the wizard puts the term back in its list. */
-export const MENTORSHIP_ENROLL_TERM_DELETE_CONFLICT = `A term that has applications can't be deleted, so it's back in the list. You can close it from the program's Terms tab. A program can have at most ${MENTORSHIP_MAX_OPEN_TERMS} open terms, so if it now has more, remove a term you added before you select Update again.`;
+/** Upstream refuses an update that removes a term with applications and saves nothing; the wizard puts the removed terms back. */
+export const MENTORSHIP_ENROLL_TERM_DELETE_CONFLICT = `A term that has applications can't be deleted, so nothing was saved and the terms you removed are back in the list. Remove only terms without applications, and close the others from the program's Terms tab. A program can have at most ${MENTORSHIP_MAX_OPEN_TERMS} open terms.`;
+/** The `code` the BFF answers a 409 with when another program has the name an update asks for. */
+export const MENTORSHIP_PROGRAM_NAME_TAKEN_ERROR_CODE = 'MENTORSHIP_PROGRAM_NAME_TAKEN';
 export const MENTORSHIP_ENROLL_EDIT_INTRO = "Changes are saved to the program as soon as you select Update. They don't change its review status.";
 export const MENTORSHIP_ENROLL_EDIT_LOGO_NOT_UPLOADED = "The program is updated, but the new logo didn't upload. Try again.";
 export const MENTORSHIP_ENROLL_RETRY_LABEL = 'Retry';
