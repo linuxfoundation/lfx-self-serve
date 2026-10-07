@@ -467,7 +467,7 @@ export class MentorshipAdminService {
    * pass through. The bytes are not logged.
    */
   public async uploadProgramLogo(req: Request, programId: string, logo: Buffer, contentType: string): Promise<MentorshipProgramLogoUploadResult> {
-    logger.debug(req, 'mentorship_admin_upload_program_logo', 'Uploading program logo', { programId, sizeBytes: logo.length, contentType });
+    logger.debug(req, 'mentorship_admin_upload_program_logo', 'Uploading program logo', { programId, sizeBytes: logo.byteLength, contentType });
 
     const uploaded = await proxyMentorshipRequest<MentorshipUpstreamLogoUpload>(
       this.microserviceProxy,

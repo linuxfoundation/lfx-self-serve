@@ -423,13 +423,14 @@ export class MentorshipAdminController {
           path: req.path,
         });
       }
-      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      const logo: unknown = req.body;
+      if (!Buffer.isBuffer(logo) || logo.byteLength === 0) {
         throw ServiceValidationError.forField('logo', 'logo must not be empty.', { operation });
       }
 
-      const result = await this.mentorshipAdminService.uploadProgramLogo(req, programId, req.body, contentType);
+      const result = await this.mentorshipAdminService.uploadProgramLogo(req, programId, logo, contentType);
 
-      logger.success(req, operation, startTime, { programId, sizeBytes: req.body.length, contentType });
+      logger.success(req, operation, startTime, { programId, sizeBytes: logo.byteLength, contentType });
       res.status(201).json(result);
     } catch (error) {
       next(error);

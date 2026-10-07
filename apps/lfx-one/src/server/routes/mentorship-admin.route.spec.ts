@@ -38,7 +38,7 @@ const createProgramHandler = vi.fn((_req: express.Request, res: express.Response
 
 // Records what the raw parser left on `req.body`, which is what the real controller's 415 and empty-body checks read.
 const logoHandler = vi.fn((req: express.Request, res: express.Response) => {
-  res.status(201).json({ isBuffer: Buffer.isBuffer(req.body), length: Buffer.isBuffer(req.body) ? req.body.length : 0 });
+  res.status(201).json({ isBuffer: Buffer.isBuffer(req.body), length: Buffer.isBuffer(req.body) ? req.body.byteLength : 0 });
 });
 
 vi.mock('../controllers/mentorship-admin.controller', () => ({

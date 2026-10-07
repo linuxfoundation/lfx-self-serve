@@ -449,6 +449,7 @@ export interface MentorshipEnrollCreateTerm {
 export interface MentorshipEnrollCreatePrerequisite {
   name: string;
   description: string;
+  /** Whether the admin picked this prerequisite. Upstream saves only `true` items and drops a `false` one without an error. */
   required: boolean;
   requireFile: boolean;
   dueDate: string | null;

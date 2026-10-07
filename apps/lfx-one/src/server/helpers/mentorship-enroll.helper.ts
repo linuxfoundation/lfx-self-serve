@@ -40,13 +40,26 @@ const parseTerm = (value: unknown, index: number, operation: string): Mentorship
   };
 };
 
+/** An optional flag: `false` when left out, a 400 when sent as anything but a boolean (`"true"` is not `true`). */
+const optionalBoolean = (raw: Record<string, unknown>, field: string, operation: string, path: string): boolean => {
+  const value = raw[field];
+  if (value === undefined) {
+    return false;
+  }
+  if (typeof value !== 'boolean') {
+    throw ServiceValidationError.forField(path, `${path} must be true or false.`, { operation });
+  }
+  return value;
+};
+
 const parsePrerequisite = (value: unknown, index: number, operation: string): MentorshipEnrollCreatePrerequisite => {
   const raw = asRecord(value);
+  const path = `prerequisites[${index}]`;
   return {
-    name: requireString(raw, 'name', operation, `prerequisites[${index}].name`),
+    name: requireString(raw, 'name', operation, `${path}.name`),
     description: typeof raw['description'] === 'string' ? raw['description'] : '',
-    required: raw['required'] === true,
-    requireFile: raw['requireFile'] === true,
+    required: optionalBoolean(raw, 'required', operation, `${path}.required`),
+    requireFile: optionalBoolean(raw, 'requireFile', operation, `${path}.requireFile`),
     dueDate: parseTrimmedString(raw['dueDate']) ?? null,
   };
 };

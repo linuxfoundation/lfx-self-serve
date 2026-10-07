@@ -928,6 +928,8 @@ describe('MentorshipAdminController', () => {
     it.each([
       ['an empty body', Buffer.alloc(0)],
       ['a body that is not bytes', {}],
+      ['a string body', 'logo'],
+      ['an array body', ['logo']],
     ])('rejects %s with a 400 and no upstream call', async (_label, body) => {
       const upload = vi.spyOn(MentorshipAdminService.prototype, 'uploadProgramLogo');
 

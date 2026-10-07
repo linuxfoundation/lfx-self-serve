@@ -139,6 +139,8 @@ describe('parseMentorshipEnrollCreateRequest', () => {
     ['a second term with no application end date', validBody({ terms: [term(), term({ applicationEndDate: '' })] }), 'terms[1].applicationEndDate'],
     ['prerequisites that are not a list', validBody({ prerequisites: undefined }), 'prerequisites'],
     ['a prerequisite with no name', validBody({ prerequisites: [{ description: 'x' }] }), 'prerequisites[0].name'],
+    ['a prerequisite required as text', validBody({ prerequisites: [{ name: 'Resume', required: 'true' }] }), 'prerequisites[0].required'],
+    ['a prerequisite with a null file flag', validBody({ prerequisites: [{ name: 'Resume', requireFile: null }] }), 'prerequisites[0].requireFile'],
     ['terms that are not accepted', validBody({ termsAccepted: false }), 'termsAccepted'],
     ['terms accepted as text', validBody({ termsAccepted: 'true' }), 'termsAccepted'],
   ])('rejects %s with a 400 on the field', (_label, body, field) => {
