@@ -92,9 +92,43 @@ import { MicroserviceError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
+import { getUsernameFromAuth } from '../utils/auth-helper';
 import { CommitteeService } from './committee.service';
 
 const req = {} as unknown as Request;
+
+describe('CommitteeService.getMyCommitteeUids', () => {
+  beforeEach(async () => {
+    proxyRequest.mockReset();
+    vi.mocked(getUsernameFromAuth).mockReset().mockResolvedValue('synthetic-user');
+    const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+    vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
+  });
+
+  it.each([undefined, { failOnPartial: true }])('preserves username/project filters, pagination and UID dedupe with options %j', async (options) => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'a' } }], page_token: 'next' })
+      .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'a' } }, { data: { committee_uid: 'b' } }, { data: {} }] });
+    expect(await new CommitteeService().getMyCommitteeUids(req, 'project-a', options)).toEqual(new Set(['a', 'b']));
+    expect(proxyRequest.mock.calls[0][4]).toEqual({ type: 'committee_member', tags_all: ['username:synthetic-user', 'project_uid:project-a'] });
+    expect(proxyRequest.mock.calls[1][4]).toMatchObject({ page_token: 'next' });
+  });
+
+  it.each([false, true])('uses real pagination for later-page failure (strict=%s)', async (strict) => {
+    const error = new Error('later membership page failed');
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'a' } }], page_token: 'next' }).mockRejectedValueOnce(error);
+    const result = new CommitteeService().getMyCommitteeUids(req, undefined, strict ? { failOnPartial: true } : undefined);
+    if (strict) await expect(result).rejects.toBe(error);
+    else await expect(result).resolves.toEqual(new Set(['a']));
+    expect(proxyRequest.mock.calls[0][4].tags_all).toEqual(['username:synthetic-user']);
+  });
+
+  it('retains missing-username semantics even in strict mode', async () => {
+    vi.mocked(getUsernameFromAuth).mockResolvedValue(null);
+    expect(await new CommitteeService().getMyCommitteeUids(req, undefined, { failOnPartial: true })).toEqual(new Set());
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
 
 function pageOf(committees: Partial<Committee>[], pageToken?: string): QueryServiceResponse<Committee> {
   return { resources: committees.map((c) => ({ id: `committee:${c.uid}`, data: c as Committee })), page_token: pageToken } as QueryServiceResponse<Committee>;

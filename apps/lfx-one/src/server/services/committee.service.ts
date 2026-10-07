@@ -1389,7 +1389,7 @@ export class CommitteeService {
    * membership UIDs (e.g. cross-project access filtering). Skips the per-committee
    * count and project enrichment fan-out performed by the full method.
    */
-  public async getMyCommitteeUids(req: Request, projectUid?: string): Promise<Set<string>> {
+  public async getMyCommitteeUids(req: Request, projectUid?: string, fetchOptions: FetchAllQueryResourcesOptions = {}): Promise<Set<string>> {
     const username = await getUsernameFromAuth(req);
     if (!username) {
       return new Set();
@@ -1400,12 +1400,15 @@ export class CommitteeService {
       tagsAll.push(`project_uid:${projectUid}`);
     }
 
-    const memberships = await fetchAllQueryResources<CommitteeMember>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'committee_member',
-        tags_all: tagsAll,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const memberships = await fetchAllQueryResources<CommitteeMember>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee_member',
+          tags_all: tagsAll,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      fetchOptions
     );
 
     return new Set(memberships.map((m) => m.committee_uid).filter((uid): uid is string => Boolean(uid)));

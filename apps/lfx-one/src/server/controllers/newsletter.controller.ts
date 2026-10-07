@@ -117,9 +117,9 @@ export class NewsletterController {
     const startTime = logger.startOperation(req, 'get_my_newsletters', {});
 
     try {
-      const newsletters = await this.newsletterService.getMyNewsletters(req);
-      logger.success(req, 'get_my_newsletters', startTime, { count: newsletters.length });
-      res.json(newsletters);
+      const response = await this.newsletterService.getMyNewsletters(req);
+      logger.success(req, 'get_my_newsletters', startTime, { count: response.newsletters.length, complete: response.complete });
+      res.json(req.query['include_status'] === 'true' ? response : response.newsletters);
     } catch (error) {
       next(error);
     }

@@ -232,9 +232,9 @@ describe('NewsletterReaderComponent', () => {
     expect(component['notFound']()).toBe(false);
   });
 
-  it('should switch to the me lens before navigating back to the feed', () => {
-    // Without the lens switch, lensRedirectGuard rewrites /newsletters/my to the
-    // lens-prefixed mount and newsletterAccessGuard bounces non-writers away.
+  it('should eagerly select me for the current tab and persisted preference before navigation', () => {
+    // Eager Me selection updates the current tab and persisted preference;
+    // route data restores Me independently of the cookie.
     vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
     vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
 
@@ -247,14 +247,14 @@ describe('NewsletterReaderComponent', () => {
 
     expect(lensService.setLens).toHaveBeenCalledWith('me');
     expect(router.navigate).toHaveBeenCalledWith(['/newsletters/my']);
-    // Order matters: navigating first would let lensRedirectGuard rewrite the
-    // URL against the old lens before the switch lands.
+    // Select Me before navigating so current-tab state and the persisted
+    // preference update eagerly.
     expect(vi.mocked(lensService.setLens).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(router.navigate).mock.invocationCallOrder[0]);
   });
 
   it('should leave modified clicks on the breadcrumb to the browser (new tab)', () => {
-    // Cmd/Ctrl-click must not be intercepted so the href can open in a new
-    // tab; the lens is still persisted so that tab lands on the me feed.
+    // Keep native new-tab navigation: route data restores Me without the cookie.
+    // Eager selection updates the current tab and persisted preference.
     vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
     vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
 
