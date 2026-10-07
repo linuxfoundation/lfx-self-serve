@@ -2,6 +2,18 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!--
+  A note on the raw <input>, <select> and <textarea> elements throughout this file.
+
+  The repo's styling rule prefers the `lfx-*` wrappers over raw controls, and this template does not
+  follow it anywhere — it was built on raw elements and already carries dozens of them. Converting
+  them is worth doing and is deliberately NOT part of this change: a wrapper swap moves every
+  control's value accessor, its `data-testid` surface and its error rendering at once, which is a
+  refactor with its own test pass rather than a line or two inside a feature. New controls here
+  therefore match their neighbours, so the eventual migration is one uniform pass rather than a file
+  in two styles. Tracked for the migration, not re-litigated per field.
+-->
+
+<!--
   Brief persistence status.
 
   The live region is SEPARATE from the banner and always in the DOM, including the 'off' state.
@@ -482,14 +494,21 @@
         `GOOGLE_CREATIVE_FIELD_SPECS`, and the normalizer that puts these values on the wire reads
         the same catalogue. Adding a field to a channel therefore reaches this form without an edit
         here.
+
+        `googleCreativeSections()` also withholds a section whose value could not reach Google: all
+        of them while the campaign-service create path is not the one that runs, and Demand Gen's
+        whenever Search is ticked alongside it. See its docblock for why each one is withheld rather
+        than shown and ignored.
       -->
       @for (section of googleCreativeSections(); track section.channel) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" [attr.data-testid]="'implementation-creative-section-' + section.channel">
           <h3 class="text-sm font-semibold text-gray-900">{{ section.label }} Creative</h3>
           <!--
-            The notice sits on every section rather than once above them because only one section is
-            ever shown at a time — campaign-service refuses a multi-channel Google create — and a
-            warning about what an empty creative costs belongs beside the fields it is about.
+            The notice sits on every section rather than once above them because a warning about
+            what an empty creative costs belongs beside the fields it is about. More than one
+            section can be on screen — ticking Performance Max and Display renders both — and only
+            `canSubmit` refuses that pair, so a single notice above the group would read as being
+            about whichever section the operator happened to be looking at.
           -->
           <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-notice-' + section.channel">{{ googleCreativeNotice }}</p>
           <div class="mt-4 flex flex-col gap-4" [formGroupName]="section.groupName">
@@ -511,8 +530,8 @@
                     class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control" />
                 }
-                <span class="text-xs text-gray-400">{{ creativeFieldHint(field) }}</span>
-                @if (creativeFieldError(section.groupName, field); as error) {
+                <span class="text-xs text-gray-400">{{ field.guidance }}</span>
+                @if (creativeFieldErrors()[section.groupName + '.' + field.control]; as error) {
                   <span class="text-xs text-red-600" [attr.data-testid]="'implementation-creative-error-' + section.channel + '-' + field.control">{{
                     error
                   }}</span>

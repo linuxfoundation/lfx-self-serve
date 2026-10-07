@@ -1287,7 +1287,14 @@ describe('CampaignsComponent brief persistence', () => {
        */
       it('loads the demand-gen capability on a first-create Planning to Implementation flow', async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
-          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false })
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: true,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+          })
         );
 
         await withSavedBrief();
@@ -1313,7 +1320,16 @@ describe('CampaignsComponent brief persistence', () => {
       it('sends no capability request when brief persistence is disabled', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(of({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false }));
+          .mockReturnValue(
+            of({
+              campaigns: [],
+              possiblyStale: true,
+              statusToggleEnabled: false,
+              demandGenEnabled: true,
+              googleChannelsEnabled: false,
+              googleCreativeEnabled: false,
+            })
+          );
 
         persistBrief.mockReturnValue(of({ enabled: false, briefId: '', etag: null, created: false, approved: false }));
         proceed();
@@ -1348,7 +1364,14 @@ describe('CampaignsComponent brief persistence', () => {
        */
       it('loads the google-channels capability alongside the demand-gen one', async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
-          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: false, googleChannelsEnabled: true })
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: true,
+            googleCreativeEnabled: true,
+          })
         );
 
         await withSavedBrief();
@@ -1397,7 +1420,16 @@ describe('CampaignsComponent brief persistence', () => {
         expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBeNull();
 
         // User navigates away and comes back via the tab bar.
-        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false }));
+        list.mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: true,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+          })
+        );
         (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('planning', 'paid-marketing');
         (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab(
           'implementation',
@@ -1430,12 +1462,28 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
 
         // Optimize entry lands on top of the still-open capability request.
-        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false }));
+        list.mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: true,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+          })
+        );
         load();
         await fixture.whenStable();
 
         // ...and the original request answers only now.
-        capability.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false });
+        capability.next({
+          campaigns: [],
+          possiblyStale: false,
+          statusToggleEnabled: false,
+          demandGenEnabled: true,
+          googleChannelsEnabled: false,
+          googleCreativeEnabled: false,
+        });
         capability.complete();
         await fixture.whenStable();
 
@@ -1456,7 +1504,16 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
 
         // A newer capability read answers while that list request is still open.
-        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false }));
+        list.mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: true,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+          })
+        );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
         await fixture.whenStable();
         expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
@@ -1478,7 +1535,14 @@ describe('CampaignsComponent brief persistence', () => {
        */
       it('loads the capability for a brief restored from campaign-service', async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
-          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false })
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: true,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+          })
         );
 
         restore(brief, 'brief-9', true);
@@ -1497,7 +1561,16 @@ describe('CampaignsComponent brief persistence', () => {
       it('clears a previously known capability when a later read fails', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false }));
+          .mockReturnValue(
+            of({
+              campaigns: [],
+              possiblyStale: false,
+              statusToggleEnabled: false,
+              demandGenEnabled: true,
+              googleChannelsEnabled: false,
+              googleCreativeEnabled: false,
+            })
+          );
 
         await withSavedBrief();
         await fixture.whenStable();
@@ -1526,7 +1599,16 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
 
         // A second Implementation entry supersedes the first, and answers first.
-        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false }));
+        list.mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: true,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+          })
+        );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
         await fixture.whenStable();
         expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
@@ -1557,7 +1639,14 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
 
         // The previous foundation's read answers only now.
-        pending.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false });
+        pending.next({
+          campaigns: [],
+          possiblyStale: false,
+          statusToggleEnabled: false,
+          demandGenEnabled: true,
+          googleChannelsEnabled: false,
+          googleCreativeEnabled: false,
+        });
         pending.complete();
         await fixture.whenStable();
 
@@ -1589,7 +1678,14 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
 
         // ...and the second still succeeds. Its answer must land.
-        second.next({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false });
+        second.next({
+          campaigns: [],
+          possiblyStale: false,
+          statusToggleEnabled: false,
+          demandGenEnabled: true,
+          googleChannelsEnabled: false,
+          googleCreativeEnabled: false,
+        });
         second.complete();
         await fixture.whenStable();
 
@@ -1606,7 +1702,16 @@ describe('CampaignsComponent brief persistence', () => {
       it('does not refetch the capability once it is known', async () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false }));
+          .mockReturnValue(
+            of({
+              campaigns: [],
+              possiblyStale: false,
+              statusToggleEnabled: false,
+              demandGenEnabled: true,
+              googleChannelsEnabled: false,
+              googleCreativeEnabled: false,
+            })
+          );
 
         await withSavedBrief();
         await fixture.whenStable();
@@ -1625,14 +1730,30 @@ describe('CampaignsComponent brief persistence', () => {
         const list = vi
           .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
           .mockReturnValue(
-            of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false, googleChannelsEnabled: false })
+            of({
+              campaigns: [indexed()],
+              possiblyStale: false,
+              statusToggleEnabled: true,
+              demandGenEnabled: false,
+              googleChannelsEnabled: false,
+              googleCreativeEnabled: true,
+            })
           );
         await withSavedBrief();
         load();
         await fixture.whenStable();
         expect(campaigns()).toHaveLength(1);
 
-        list.mockReturnValue(of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false, googleChannelsEnabled: false }));
+        list.mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: true,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: true,
+          })
+        );
         selectFoundation('cncf');
         await fixture.whenStable();
 
@@ -1652,7 +1773,14 @@ describe('CampaignsComponent brief persistence', () => {
 
         // The response the switch invalidated. Clearing the signal alone cannot stop this — the
         // request was already in flight and lands afterwards.
-        late.next({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false, googleChannelsEnabled: false });
+        late.next({
+          campaigns: [indexed()],
+          possiblyStale: false,
+          statusToggleEnabled: true,
+          demandGenEnabled: false,
+          googleChannelsEnabled: false,
+          googleCreativeEnabled: true,
+        });
         await fixture.whenStable();
 
         expect(campaigns()).toBeNull();
@@ -1675,7 +1803,14 @@ describe('CampaignsComponent brief persistence', () => {
 
       it('does not mark a genuinely empty list as unavailable', async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
-          of({ campaigns: [], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false, googleChannelsEnabled: false })
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: true,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: true,
+          })
         );
         await withSavedBrief();
         load();
@@ -1704,6 +1839,7 @@ describe('CampaignsComponent brief persistence', () => {
             statusToggleEnabled: true,
             demandGenEnabled: false,
             googleChannelsEnabled: false,
+            googleCreativeEnabled: true,
           })
         );
         await withSavedBrief();
@@ -1736,6 +1872,7 @@ describe('CampaignsComponent brief persistence', () => {
           statusToggleEnabled: true,
           demandGenEnabled: false,
           googleChannelsEnabled: false,
+          googleCreativeEnabled: true,
         });
         await fixture.whenStable();
         expect(optimizeText()).toContain('Brief B campaign');
@@ -1793,7 +1930,14 @@ describe('CampaignsComponent brief persistence', () => {
         expect(unavailable()).toBe(true);
 
         list.mockReturnValue(
-          of({ campaigns: [indexed()], possiblyStale: false, statusToggleEnabled: true, demandGenEnabled: false, googleChannelsEnabled: false })
+          of({
+            campaigns: [indexed()],
+            possiblyStale: false,
+            statusToggleEnabled: true,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: true,
+          })
         );
         load();
         await fixture.whenStable();

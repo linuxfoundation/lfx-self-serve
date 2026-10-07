@@ -14,6 +14,7 @@ import {
   ValidationErrors,
   ValidatorFn,
   Validators,
+  TouchedChangeEvent,
 } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -69,7 +70,7 @@ import {
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { map, merge, scan, skip, startWith, Subscription, take } from 'rxjs';
+import { filter, map, merge, scan, skip, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -221,6 +222,28 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleChannelsAvailable = computed<boolean>(() => this.googleChannelsEnabled() === true);
 
   /**
+   * Whether a Google creative typed into this form will actually reach Google — `null` while
+   * unknown.
+   *
+   * Three states again, and withheld while `null` for the usual reason. What makes this one its
+   * own input rather than a reuse of `googleChannelsEnabled`: the creative objects travel on
+   * `googleAdsConfig`, which only the campaign-service create path builds. With the cutover dark
+   * the LEGACY creator composes a Demand Gen ad from the two copy arrays and reads no creative key
+   * at all, so every image, logo and call to action typed here is discarded without a word and the
+   * create still reports success. Performance Max and Display cannot be selected in that state at
+   * all, so Demand Gen is the only channel that can reach the section on the losing road — which
+   * is exactly why the gate cannot be `googleChannelsAvailable`, whose extra flag would also
+   * withhold the section in deployments where the creative works.
+   *
+   * Nothing is CLEARED on a `false`: the draft keeps whatever was typed, the section is only
+   * withheld. A capability answer is not a reason to destroy a user's text.
+   */
+  public readonly googleCreativeEnabled = input<boolean | null>(null);
+
+  /** Render the creative sections only on an explicit yes. `null` (unknown) withholds them. */
+  protected readonly googleCreativeAvailable = computed<boolean>(() => this.googleCreativeEnabled() === true);
+
+  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *
@@ -356,9 +379,13 @@ export class ImplementationTabComponent implements OnInit {
     // lists split, and no name mapping sits between the form and the wire.
     //
     // Always constructed, never conditionally: a group built only when its channel is ticked would
-    // be destroyed and rebuilt as the operator changes their mind, losing everything typed into it
-    // — and `getRawValue()` reports a disabled group, so hiding one in the template costs nothing
-    // that has to be paid for here.
+    // be destroyed and rebuilt as the operator changes their mind, losing everything typed into it.
+    //
+    // Constructed ENABLED, and then enabled or disabled by the constructor effect to match the
+    // sections actually on screen — a group cannot be left enabled while hidden, because its bounds
+    // would hold `campaignForm.invalid` true with no visible control to fix. The effect, not this
+    // line, is the live state; `getRawValue()` reports a disabled group, so the payload, the draft
+    // snapshot and the restore are all indifferent to which way it currently sits.
     demandGenCreative: this.buildCreativeGroup('demand-gen'),
     performanceMaxCreative: this.buildCreativeGroup('performance-max'),
     displayCreative: this.buildCreativeGroup('display'),
@@ -602,6 +629,26 @@ export class ImplementationTabComponent implements OnInit {
    */
   private readonly campaignFormRevision = toSignal(
     merge(this.campaignForm.valueChanges, this.campaignForm.statusChanges).pipe(
+      scan((revision: number) => revision + 1, 0),
+      startWith(0)
+    ),
+    { initialValue: 0 }
+  );
+
+  /**
+   * The same counter for TOUCHED, which `campaignFormRevision` cannot see.
+   *
+   * Blurring a control moves `touched` without emitting on `valueChanges` or `statusChanges`, so a
+   * memo that read only the revision above would hold an error message back until the operator's
+   * next keystroke somewhere on the form. `events` is the stream that carries it.
+   *
+   * Kept separate rather than merged into the revision counter so that counter keeps meaning
+   * exactly what `canSubmit` needs it to mean — a blur changes no answer there, and widening it
+   * would recompute every reader for an event none of them reads.
+   */
+  private readonly campaignFormTouchRevision = toSignal(
+    this.campaignForm.events.pipe(
+      filter((event) => event instanceof TouchedChangeEvent),
       scan((revision: number) => revision + 1, 0),
       startWith(0)
     ),
@@ -1124,6 +1171,20 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();
   protected readonly searchCopyApplies: Signal<boolean> = this.initSearchCopyApplies();
   protected readonly googleCreativeSections: Signal<GoogleCreativeSection[]> = this.initGoogleCreativeSections();
+
+  /**
+   * Every creative field that currently has something to say, keyed `groupName.control`.
+   *
+   * A map resolved once per change rather than a method the template calls per field: the method
+   * form ran on every change-detection pass, for every field of every rendered section, to walk the
+   * control tree and rebuild the same sentence. Keyed by a string because that is what the template
+   * has — `section.groupName` is a plain string on the resolved section, for the reason
+   * {@link creativeFieldError} records.
+   *
+   * Absent means nothing to say. The template reads it through `@if (… ; as error)`, so an entry
+   * is only ever added when there is a message.
+   */
+  protected readonly creativeFieldErrors: Signal<Record<string, string>> = this.initCreativeFieldErrors();
   protected readonly googleBiddingChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleBiddingChannel();
   protected readonly googleBiddingOptions: Signal<GoogleBiddingOption[]> = this.initGoogleBiddingOptions();
   protected readonly googleBiddingStrategy: Signal<GoogleBiddingStrategy | null> = this.initGoogleBiddingStrategy();
@@ -1155,6 +1216,17 @@ export class ImplementationTabComponent implements OnInit {
    * this component, not from the user.
    */
   private seeding = false;
+
+  /**
+   * The last value of `searchCopyApplies` the revalidation effect acted on.
+   *
+   * A plain field for the same reason `seeding` is one: nothing renders from it. It exists because
+   * `searchCopyApplies` reads `campaignFormRevision`, so the effect that watches it wakes on every
+   * keystroke; this is what keeps a revalidation to the moments the ANSWER moved. `null` rather
+   * than `false` as the initial value, so the effect's very first pass always runs and settles the
+   * deliberate `null` the validators returned during construction.
+   */
+  private lastSearchCopyApplies: boolean | null = null;
 
   // === Lifecycle ===
 
@@ -1225,24 +1297,64 @@ export class ImplementationTabComponent implements OnInit {
       this.emitDraft();
     });
 
-    // Re-run the two ad-copy array validators when the channel selection moves.
+    // Re-run the two ad-copy array validators when the answer `searchCopyRequired` reads moves.
     //
     // Angular revalidates a control when IT changes and propagates the result upward; it never
-    // revalidates a SIBLING. `searchCopyRequired` asks about the channel checkboxes, which are
-    // siblings of the arrays it guards, so without this the gate would latch at whatever the
+    // revalidates a SIBLING. `searchCopyRequired` asks about the channel selection, which is a
+    // sibling of the arrays it guards, so without this the gate would latch at whatever the
     // selection was the last time a headline was typed: unticking Search would leave the form
     // invalid with no visible control to fix, and ticking Search back on with the copy already
     // emptied would leave it valid and submit an ad with no text.
     //
-    // `includeVideo` is deliberately absent — Video reads neither array, and the control is
-    // constructed disabled so it emits nothing here anyway. Both arrays are revalidated together
-    // rather than one per source, because either checkbox moves the answer for both.
-    merge(this.campaignForm.controls.includeSearch.valueChanges, this.campaignForm.controls.includeDemandGen.valueChanges)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        this.headlinesArray.updateValueAndValidity({ emitEvent: false });
-        this.descriptionsArray.updateValueAndValidity({ emitEvent: false });
-      });
+    // Driven off `searchCopyApplies` rather than off the two checkboxes, because the checkboxes
+    // are not the only thing that moves it. `showGoogleSection()` is the other half of that gate
+    // and it reads `selectedPlatforms`, a SIGNAL INPUT — unticking Google in the parent changes
+    // the answer without either checkbox emitting anything. And the validators run once at
+    // construction, while the gate signal does not yet exist and `searchCopyRequired` returns a
+    // deliberate `null`; an effect runs after construction, so its first pass is also what
+    // settles that placeholder into the real answer. Neither of those was covered by the
+    // `valueChanges` pair this replaces.
+    //
+    // `includeVideo` needs no mention: Video reads neither array, and `searchCopyApplies` does not
+    // look at it. Both arrays are revalidated together rather than one per source, because
+    // whatever moves the answer moves it for both.
+    effect(() => {
+      // Read first and unconditionally — a dependency taken inside a branch is a dependency the
+      // effect stops tracking the moment the branch is not taken.
+      const applies = this.searchCopyApplies();
+      if (applies === this.lastSearchCopyApplies) return;
+      this.lastSearchCopyApplies = applies;
+      // `emitEvent: false` for the usual reason: this is a validity recompute, not an edit, and
+      // letting it emit would push an identical draft to the parent on every channel tick.
+      this.headlinesArray.updateValueAndValidity({ emitEvent: false });
+      this.descriptionsArray.updateValueAndValidity({ emitEvent: false });
+    });
+
+    // Keep each creative group enabled exactly while its section is on screen.
+    //
+    // The groups are all constructed and never destroyed, which is what makes a hidden section's
+    // text survive the operator changing their mind. The cost of that is validators: an enabled
+    // group carries its bounds into `campaignForm.invalid` whether or not anything renders it, so
+    // twenty headlines typed into Demand Gen and then hidden by ticking Search would hold
+    // `canSubmit` false with no visible control to fix — the precise failure the bidding block
+    // above records, arriving by a different door.
+    //
+    // Disabling is the whole fix and costs nothing elsewhere: `getRawValue()` reports a disabled
+    // group, so `googleCreativePayload`, `googleCreativeSnapshot` and `restoreGoogleCreatives` all
+    // read and write exactly as before, and nothing typed is cleared.
+    effect(() => {
+      const rendered = new Set(this.googleCreativeSections().map((section) => section.groupName));
+      for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+        const group = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[channel]];
+        const shouldBeEnabled = rendered.has(GOOGLE_CREATIVE_REQUEST_KEYS[channel]);
+        if (shouldBeEnabled === group.enabled) continue;
+        // `emitEvent: false` keeps this out of `valueChanges`; without it every toggle would emit
+        // a draft, and the status change alone would re-enter this effect through
+        // `campaignFormRevision`.
+        if (shouldBeEnabled) group.enable({ emitEvent: false });
+        else group.disable({ emitEvent: false });
+      }
+    });
 
     // skip(1) drops the emission toObservable fires immediately on subscribe — ngOnInit already
     // runs the initial load, so only later foundation switches should refetch the ad-account list.
@@ -1623,53 +1735,6 @@ export class ImplementationTabComponent implements OnInit {
     const matchType = (event.target as HTMLSelectElement).value as MicrosoftKeyword['matchType'];
     this.microsoftKeywords.update((keywords) => keywords.map((k, i) => (i === index ? { ...k, matchType } : k)));
     this.emitDraft();
-  }
-
-  /**
-   * The guidance line under a creative field: its bounds, then anything its catalogue entry adds.
-   *
-   * Assembled here rather than in the template because the sentence depends on which bounds the
-   * field actually has — a `@if` ladder over four combinations in the template would say the same
-   * thing in four places, and the repo forbids the nested ternary that would otherwise compress it.
-   *
-   * `min` is stated as guidance only. No validator enforces it ({@link creativeFieldValidators}
-   * explains why), so this line is what tells an operator that a half-filled Performance Max
-   * creative will be refused by Google even though this form will submit it.
-   */
-  protected creativeFieldHint(field: GoogleCreativeFieldSpec): string {
-    const parts: string[] = [];
-    if (field.kind === 'text') {
-      if (field.width !== undefined) parts.push(`Up to ${field.width} characters.`);
-    } else {
-      if (field.min !== undefined && field.max !== undefined) parts.push(`${field.min}–${field.max} entries, one per line.`);
-      else if (field.max !== undefined) parts.push(`Up to ${field.max} entries, one per line.`);
-      else if (field.min !== undefined) parts.push(`At least ${field.min} entries, one per line.`);
-      else parts.push('One entry per line.');
-      if (field.width !== undefined) parts.push(`Up to ${field.width} characters each.`);
-    }
-    if (field.hint !== undefined) parts.push(field.hint);
-    return parts.join(' ');
-  }
-
-  /**
-   * The error to show beneath a creative field, or null when there is nothing to say.
-   *
-   * Addressed by path rather than by the typed control tree: `groupName` arrives from a resolved
-   * {@link GoogleCreativeSection} as a plain string, so `get([group, control])` is the lookup that
-   * survives a channel being added to the catalogue without a change here.
-   *
-   * Only shown once the field has been touched — every one of these controls starts empty and valid,
-   * and an untouched field has no error to report anyway.
-   */
-  protected creativeFieldError(groupName: string, field: GoogleCreativeFieldSpec): string | null {
-    const control = this.campaignForm.get([groupName, field.control]);
-    if (!control?.touched) return null;
-    const errors = control.errors;
-    if (!errors) return null;
-    if (errors['creativeListMax']) return `At most ${errors['creativeListMax'].max} entries — ${errors['creativeListMax'].actual} given.`;
-    if (errors['creativeListWidth']) return `Each entry must be ${errors['creativeListWidth'].width} characters or fewer.`;
-    if (errors['maxlength']) return `Must be ${errors['maxlength'].requiredLength} characters or fewer.`;
-    return null;
   }
 
   protected submit(): void {
@@ -2579,18 +2644,56 @@ export class ImplementationTabComponent implements OnInit {
    * `canSubmit`, and duplicating it here as "take the first" would silently hide the second
    * section a user had already typed into, making the refusal they are about to get harder to
    * understand, not easier.
+   *
+   * Two further things empty it, and both are the same rule — never render a control whose value
+   * cannot reach Google:
+   *
+   * - `googleCreativeAvailable()`. The creative objects ride on `googleAdsConfig`, which only the
+   *   campaign-service create path builds; with the cutover dark the legacy creator reads no
+   *   creative key at all and the create still reports success.
+   * - Search being ticked. `buildGoogleAdsConfig`'s Search branch emits `headlines`/`descriptions`
+   *   and never calls `googleCreative`, so a Search+Demand Gen pair discards the Demand Gen
+   *   creative even with the cutover on. The pair funds Demand Gen out of the budget split — it is
+   *   a real selection, not an invalid one — which is exactly why the section has to go rather than
+   *   the selection.
    */
   private initGoogleCreativeSections(): Signal<GoogleCreativeSection[]> {
     return computed(() => {
       void this.campaignFormRevision();
       if (!this.showGoogleSection()) return [];
+      if (!this.googleCreativeAvailable()) return [];
       const selected = this.selectedGoogleChannels();
-      return GOOGLE_CHANNELS_WITH_CREATIVE.filter((channel) => selected.includes(channel)).map((channel) => ({
+      const reachesGoogle = selected.includes('search') ? selected.filter((channel) => channel !== 'demand-gen') : selected;
+      return GOOGLE_CHANNELS_WITH_CREATIVE.filter((channel) => reachesGoogle.includes(channel)).map((channel) => ({
         channel,
         label: GOOGLE_CREATIVE_SECTION_TITLES[channel],
         groupName: GOOGLE_CREATIVE_REQUEST_KEYS[channel],
-        fields: GOOGLE_CREATIVE_FIELD_SPECS[channel],
+        // The guidance line is folded in here rather than left to a template method, so it is
+        // assembled when the section resolves instead of on every change-detection pass.
+        fields: GOOGLE_CREATIVE_FIELD_SPECS[channel].map((field) => ({ ...field, guidance: this.creativeFieldGuidance(field) })),
       }));
+    });
+  }
+
+  /**
+   * Build the keyed error map from the sections currently rendered.
+   *
+   * Both revisions are read unconditionally and up front: a value edit moves the validators, a blur
+   * moves `touched`, and either can be what turns a message on. Only rendered sections are walked —
+   * a withheld section's group is disabled and has no error an operator could act on.
+   */
+  private initCreativeFieldErrors(): Signal<Record<string, string>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      void this.campaignFormTouchRevision();
+      const errors: Record<string, string> = {};
+      for (const section of this.googleCreativeSections()) {
+        for (const field of section.fields) {
+          const message = this.creativeFieldError(section.groupName, field);
+          if (message !== null) errors[`${section.groupName}.${field.control}`] = message;
+        }
+      }
+      return errors;
     });
   }
 
@@ -2852,6 +2955,57 @@ export class ImplementationTabComponent implements OnInit {
       return field.width === undefined ? [] : [Validators.maxLength(field.width)];
     }
     return [this.creativeListBounds(field)];
+  }
+
+  /**
+   * The guidance line under a creative field: its bounds, then anything its catalogue entry adds.
+   *
+   * Assembled here rather than in the template because the sentence depends on which bounds the
+   * field actually has — a `@if` ladder over four combinations in the template would say the same
+   * thing in four places, and the repo forbids the nested ternary that would otherwise compress it.
+   *
+   * Called from {@link initGoogleCreativeSections} and never from the template: every input is the
+   * static catalogue entry, so the answer cannot change between two change-detection passes and a
+   * method on the render path would be re-deriving a constant.
+   *
+   * `min` is stated as guidance only. No validator enforces it ({@link creativeFieldValidators}
+   * explains why), so this line is what tells an operator that a half-filled Performance Max
+   * creative will be refused by Google even though this form will submit it.
+   */
+  private creativeFieldGuidance(field: GoogleCreativeFieldSpec): string {
+    const parts: string[] = [];
+    if (field.kind === 'text') {
+      if (field.width !== undefined) parts.push(`Up to ${field.width} characters.`);
+    } else {
+      if (field.min !== undefined && field.max !== undefined) parts.push(`${field.min}–${field.max} entries, one per line.`);
+      else if (field.max !== undefined) parts.push(`Up to ${field.max} entries, one per line.`);
+      else if (field.min !== undefined) parts.push(`At least ${field.min} entries, one per line.`);
+      else parts.push('One entry per line.');
+      if (field.width !== undefined) parts.push(`Up to ${field.width} characters each.`);
+    }
+    if (field.hint !== undefined) parts.push(field.hint);
+    return parts.join(' ');
+  }
+
+  /**
+   * The error to show beneath a creative field, or null when there is nothing to say.
+   *
+   * Addressed by path rather than by the typed control tree: `groupName` arrives from a resolved
+   * {@link GoogleCreativeSection} as a plain string, so `get([group, control])` is the lookup that
+   * survives a channel being added to the catalogue without a change here.
+   *
+   * Only shown once the field has been touched — every one of these controls starts empty and valid,
+   * and an untouched field has no error to report anyway.
+   */
+  private creativeFieldError(groupName: string, field: GoogleCreativeFieldSpec): string | null {
+    const control = this.campaignForm.get([groupName, field.control]);
+    if (!control?.touched) return null;
+    const errors = control.errors;
+    if (!errors) return null;
+    if (errors['creativeListMax']) return `At most ${errors['creativeListMax'].max} entries — ${errors['creativeListMax'].actual} given.`;
+    if (errors['creativeListWidth']) return `Each entry must be ${errors['creativeListWidth'].width} characters or fewer.`;
+    if (errors['maxlength']) return `Must be ${errors['maxlength'].requiredLength} characters or fewer.`;
+    return null;
   }
 
   /**

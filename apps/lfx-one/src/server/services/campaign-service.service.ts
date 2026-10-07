@@ -511,6 +511,7 @@ export class CampaignServiceClient {
         statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle),
         demandGenEnabled: canCreateDemandGen(),
         googleChannelsEnabled: canCreateGoogleChannels(),
+        googleCreativeEnabled: cutoverOwnsCreate(),
       };
     }
 
@@ -562,6 +563,7 @@ export class CampaignServiceClient {
       statusToggleEnabled: isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle),
       demandGenEnabled: canCreateDemandGen(),
       googleChannelsEnabled: canCreateGoogleChannels(),
+      googleCreativeEnabled: cutoverOwnsCreate(),
     };
   }
 

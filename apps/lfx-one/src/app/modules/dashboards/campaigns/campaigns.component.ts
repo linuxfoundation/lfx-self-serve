@@ -752,6 +752,19 @@ export class CampaignsComponent {
   protected readonly briefCampaignsGoogleChannelsEnabled = signal<boolean | null>(null);
 
   /**
+   * Whether a Google creative supplied with the create will actually reach Google — `null` while
+   * unanswered.
+   *
+   * The third sibling, with the same three-state model and the same two writers as the other two.
+   * It tracks `cutoverOwnsCreate()` alone: the creative objects ride on `googleAdsConfig`, which
+   * only the campaign-service create path builds, so with the cutover dark the legacy creator
+   * discards them in silence. Separate from `briefCampaignsGoogleChannelsEnabled` because that one
+   * additionally requires the Google-channels flag, and the window where the cutover owns the
+   * create with that flag off is one where Demand Gen creative works.
+   */
+  protected readonly briefCampaignsGoogleCreativeEnabled = signal<boolean | null>(null);
+
+  /**
    * Generation counter for the campaign-list read — the same mechanism as `emailSearchGeneration`,
    * reused rather than reinvented.
    *
@@ -2289,6 +2302,7 @@ export class CampaignsComponent {
         this.briefCampaignsToggleEnabled.set(false);
         this.briefCampaignsDemandGenEnabled.set(null);
         this.briefCampaignsGoogleChannelsEnabled.set(null);
+        this.briefCampaignsGoogleCreativeEnabled.set(null);
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
         // set would report the previous foundation's outage against a foundation never queried.
         this.briefCampaignsUnavailable.set(false);
@@ -4154,6 +4168,7 @@ export class CampaignsComponent {
           this.capabilityGeneration++;
           this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
           this.briefCampaignsGoogleChannelsEnabled.set(result.googleChannelsEnabled);
+          this.briefCampaignsGoogleCreativeEnabled.set(result.googleCreativeEnabled);
         },
         // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
         // draft's selection on evidence a failed read does not have; leaving the previous value
@@ -4165,6 +4180,7 @@ export class CampaignsComponent {
           if (!mayWrite()) return;
           this.briefCampaignsDemandGenEnabled.set(null);
           this.briefCampaignsGoogleChannelsEnabled.set(null);
+          this.briefCampaignsGoogleCreativeEnabled.set(null);
         },
       });
   }
@@ -4222,6 +4238,7 @@ export class CampaignsComponent {
     this.briefCampaignsToggleEnabled.set(false);
     this.briefCampaignsDemandGenEnabled.set(null);
     this.briefCampaignsGoogleChannelsEnabled.set(null);
+    this.briefCampaignsGoogleCreativeEnabled.set(null);
 
     if (projectSlug === '' || briefId === null || briefId === '') {
       // No brief id means nothing was persisted this session and no restore supplied one, so
@@ -4247,6 +4264,7 @@ export class CampaignsComponent {
             this.capabilityGeneration++;
             this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
             this.briefCampaignsGoogleChannelsEnabled.set(result.googleChannelsEnabled);
+            this.briefCampaignsGoogleCreativeEnabled.set(result.googleCreativeEnabled);
           }
         },
         error: () => {
@@ -4264,6 +4282,7 @@ export class CampaignsComponent {
           if (mayWriteCapability()) {
             this.briefCampaignsDemandGenEnabled.set(null);
             this.briefCampaignsGoogleChannelsEnabled.set(null);
+            this.briefCampaignsGoogleCreativeEnabled.set(null);
           }
         },
       });

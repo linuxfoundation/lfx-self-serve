@@ -4051,7 +4051,14 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
 
     const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
 
-    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false });
+    expect(result).toEqual({
+      campaigns: [],
+      possiblyStale: true,
+      statusToggleEnabled: false,
+      demandGenEnabled: true,
+      googleChannelsEnabled: false,
+      googleCreativeEnabled: false,
+    });
   });
 
   // The index stores `version`; a write needs `If-Match`. campaign-service's ETag is exactly
@@ -4200,7 +4207,14 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     expect(proxyRequest).not.toHaveBeenCalled();
     // possiblyStale TRUE on a refusal: nothing was queried, so the empty list must not assert
     // that the brief has no campaigns.
-    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true, googleChannelsEnabled: false });
+    expect(result).toEqual({
+      campaigns: [],
+      possiblyStale: true,
+      statusToggleEnabled: false,
+      demandGenEnabled: true,
+      googleChannelsEnabled: false,
+      googleCreativeEnabled: false,
+    });
   });
 });
 

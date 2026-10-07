@@ -3960,6 +3960,9 @@ function seedChannel(fixture: ComponentFixture<ImplementationTabComponent>, patc
   });
   fixture.componentRef.setInput('demandGenEnabled', true);
   fixture.componentRef.setInput('googleChannelsEnabled', true);
+  // Creative is withheld until the cutover owns the create — see `googleCreativeEnabled`. It is a
+  // capability of its own rather than a reading of `googleChannelsEnabled`, so it has to be set.
+  fixture.componentRef.setInput('googleCreativeEnabled', true);
   fixture.detectChanges();
   return c;
 }
@@ -4025,8 +4028,11 @@ describe('ImplementationTabComponent google search-copy gate', () => {
 
   /**
    * Nothing re-runs a validator when a SIBLING control changes, so the gate is inert without the
-   * constructor subscription that revalidates both arrays on a channel tick. Reading the arrays'
-   * validity BEFORE and AFTER the tick is what holds that subscription in place.
+   * constructor effect that revalidates both arrays when the gate's answer moves. Reading the
+   * arrays' validity BEFORE and AFTER the tick is what holds that effect in place.
+   *
+   * The `detectChanges` is load-bearing: an effect settles on the next flush, where the
+   * `valueChanges` subscription this replaced ran synchronously on the tick.
    */
   it('revalidates the copy arrays when the channel changes under them', () => {
     const c = seedChannel(fixture, { includeDisplay: true });
@@ -4035,8 +4041,29 @@ describe('ImplementationTabComponent google search-copy gate', () => {
 
     c['campaignForm'].controls.includeDisplay.setValue(false);
     c['campaignForm'].controls.includeSearch.setValue(true);
+    fixture.detectChanges();
 
     expect(c['campaignForm'].controls.headlines.invalid).toBe(true);
+  });
+
+  /**
+   * The checkboxes are not the only thing that moves the gate. `showGoogleSection()` reads
+   * `selectedPlatforms`, a signal input — dropping Google in the parent makes the copy stop being
+   * required without either checkbox emitting, which the `valueChanges` pair this replaced missed.
+   */
+  it('revalidates the copy arrays when google leaves the selected platforms', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.headlines.at(0).setValue('');
+    expect(c['campaignForm'].controls.headlines.invalid).toBe(true);
+
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['linkedin-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+
+    expect(c['searchCopyApplies']()).toBe(false);
+    expect(c['campaignForm'].controls.headlines.valid).toBe(true);
   });
 });
 
@@ -4082,6 +4109,65 @@ describe('ImplementationTabComponent google creative sections', () => {
     const c = fixture.componentInstance as unknown as Record<string, any>;
 
     expect(c['googleCreativeSections']()).toEqual([]);
+  });
+
+  /**
+   * The creative capability is withheld until the cutover owns the create, because the legacy
+   * in-process creator sends no creative object at all — rendering the fields there would collect
+   * copy the create then silently drops. `null` is the "not known yet" state and withholds too.
+   */
+  it.each([[null], [false]])('renders no section while googleCreativeEnabled is %s', (capability) => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', capability);
+    fixture.detectChanges();
+
+    expect(c['googleCreativeSections']()).toEqual([]);
+  });
+
+  /**
+   * Search and Demand Gen are one campaign on the wire: `buildGoogleAdsConfig`'s Search branch
+   * sends no `googleCreative` at all. Leaving the Demand Gen section up alongside Search would
+   * collect creative the request then drops, so Search takes the section down.
+   */
+  it('drops the demand gen section when search is ticked alongside it', () => {
+    const c = seedChannel(fixture, { includeSearch: true, includeDemandGen: true, includeDisplay: true });
+
+    expect(c['googleCreativeSections']().map((section: { channel: string }) => section.channel)).toEqual(['display']);
+  });
+
+  /**
+   * The hazard the section rules open, and the effect that closes it: a withheld section leaves a
+   * `FormGroup` nobody can reach, and an enabled invalid group holds `campaignForm.invalid` true
+   * with no control on screen to fix. Only the rendered groups stay enabled.
+   */
+  it('enables only the creative groups it renders', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+
+    expect(c['campaignForm'].controls.displayCreative.enabled).toBe(true);
+    expect(c['campaignForm'].controls.demandGenCreative.enabled).toBe(false);
+    expect(c['campaignForm'].controls.performanceMaxCreative.enabled).toBe(false);
+
+    c['campaignForm'].controls.includeDisplay.setValue(false);
+    c['campaignForm'].controls.includePerformanceMax.setValue(true);
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.displayCreative.enabled).toBe(false);
+    expect(c['campaignForm'].controls.performanceMaxCreative.enabled).toBe(true);
+  });
+
+  /**
+   * Disabling a group must not change what the payload, the snapshot or a restore can see.
+   * `getRawValue()` reports disabled controls, which is why none of those three needed a change.
+   */
+  it('still reads a disabled creative group through getRawValue', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.displayCreative.controls.longHeadline.setValue('Still here');
+
+    c['campaignForm'].controls.includeDisplay.setValue(false);
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.displayCreative.enabled).toBe(false);
+    expect(c['campaignForm'].getRawValue().displayCreative.longHeadline).toBe('Still here');
   });
 
   /**
@@ -4135,19 +4221,33 @@ describe('ImplementationTabComponent google creative sections', () => {
     expect(c['canSubmit']()).toBe(true);
   });
 
-  /** All four bound combinations a hint sentence is assembled from, plus the catalogue's own note. */
-  it('states a field’s bounds in its hint', () => {
+  /** All four bound combinations a guidance sentence is assembled from, plus the catalogue's own note. */
+  it('states a field’s bounds in its guidance', () => {
     const c = fixture.componentInstance as unknown as Record<string, any>;
 
-    expect(c['creativeFieldHint']({ control: 'a', label: 'A', kind: 'list', min: 1, max: 5, width: 30 })).toBe(
+    expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'list', min: 1, max: 5, width: 30 })).toBe(
       '1–5 entries, one per line. Up to 30 characters each.'
     );
-    expect(c['creativeFieldHint']({ control: 'a', label: 'A', kind: 'list', max: 5 })).toBe('Up to 5 entries, one per line.');
-    expect(c['creativeFieldHint']({ control: 'a', label: 'A', kind: 'list', min: 2 })).toBe('At least 2 entries, one per line.');
-    expect(c['creativeFieldHint']({ control: 'a', label: 'A', kind: 'list' })).toBe('One entry per line.');
-    expect(c['creativeFieldHint']({ control: 'a', label: 'A', kind: 'text', width: 25 })).toBe('Up to 25 characters.');
-    expect(c['creativeFieldHint']({ control: 'a', label: 'A', kind: 'text' })).toBe('');
-    expect(c['creativeFieldHint']({ control: 'a', label: 'A', kind: 'text', width: 25, hint: 'Required.' })).toBe('Up to 25 characters. Required.');
+    expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'list', max: 5 })).toBe('Up to 5 entries, one per line.');
+    expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'list', min: 2 })).toBe('At least 2 entries, one per line.');
+    expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'list' })).toBe('One entry per line.');
+    expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'text', width: 25 })).toBe('Up to 25 characters.');
+    expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'text' })).toBe('');
+    expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'text', width: 25, hint: 'Required.' })).toBe('Up to 25 characters. Required.');
+  });
+
+  /**
+   * The template reads `field.guidance`, not a method — the sentence is assembled once when the
+   * section resolves instead of on every change-detection pass. This pins the two together.
+   */
+  it('carries each field’s guidance on the resolved section', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const section = c['googleCreativeSections']().find((entry: { groupName: string }) => entry.groupName === 'displayCreative');
+
+    expect(section.fields).toHaveLength(GOOGLE_CREATIVE_FIELD_SPECS.display.length);
+    section.fields.forEach((field: Record<string, any>, index: number) => {
+      expect(field['guidance']).toBe(c['creativeFieldGuidance'](GOOGLE_CREATIVE_FIELD_SPECS.display[index]));
+    });
   });
 
   /**
@@ -4160,11 +4260,13 @@ describe('ImplementationTabComponent google creative sections', () => {
     const headlines = c['campaignForm'].controls.displayCreative.controls.headlines;
     headlines.setValue(Array.from({ length: spec.max + 1 }, () => 'ok').join('\n'));
 
-    expect(c['creativeFieldError']('displayCreative', spec)).toBeNull();
+    expect(c['creativeFieldErrors']()[`displayCreative.${spec.control}`]).toBeUndefined();
 
+    // Blur emits on neither `valueChanges` nor `statusChanges`, so the touched state reaches the
+    // error map over its own `AbstractControl.events` stream. This is the assertion that pins it.
     headlines.markAsTouched();
 
-    expect(c['creativeFieldError']('displayCreative', spec)).toBe(`At most ${spec.max} entries — ${spec.max + 1} given.`);
+    expect(c['creativeFieldErrors']()[`displayCreative.${spec.control}`]).toBe(`At most ${spec.max} entries — ${spec.max + 1} given.`);
   });
 
   it('reports the width and maxlength errors in the field’s own words', () => {
@@ -4175,11 +4277,11 @@ describe('ImplementationTabComponent google creative sections', () => {
 
     group.headlines.setValue('a'.repeat(listSpec.width + 1));
     group.headlines.markAsTouched();
-    expect(c['creativeFieldError']('displayCreative', listSpec)).toBe(`Each entry must be ${listSpec.width} characters or fewer.`);
+    expect(c['creativeFieldErrors']()[`displayCreative.${listSpec.control}`]).toBe(`Each entry must be ${listSpec.width} characters or fewer.`);
 
     group.longHeadline.setValue('a'.repeat(textSpec.width + 1));
     group.longHeadline.markAsTouched();
-    expect(c['creativeFieldError']('displayCreative', textSpec)).toBe(`Must be ${textSpec.width} characters or fewer.`);
+    expect(c['creativeFieldErrors']()[`displayCreative.${textSpec.control}`]).toBe(`Must be ${textSpec.width} characters or fewer.`);
   });
 
   /**

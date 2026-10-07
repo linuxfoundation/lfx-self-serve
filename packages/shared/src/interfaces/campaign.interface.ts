@@ -1425,7 +1425,24 @@ export interface GoogleCreativeSection {
   label: string;
   /** The nested `campaignForm` group holding this channel's controls. */
   groupName: string;
-  fields: readonly GoogleCreativeFieldSpec[];
+  fields: readonly GoogleCreativeSectionField[];
+}
+
+/**
+ * One field of a resolved creative section: its catalogue entry plus the sentence shown under it.
+ *
+ * The guidance line is assembled when the section is resolved rather than read from a template
+ * method call, because a method on the render path is re-run on every change-detection pass to
+ * produce a string that cannot change — the bounds it states come from the static catalogue.
+ */
+export interface GoogleCreativeSectionField extends GoogleCreativeFieldSpec {
+  /**
+   * The bounds sentence, followed by anything the catalogue entry's own `hint` adds.
+   *
+   * Named apart from `hint` because it SUBSUMES it: `hint` is the catalogue's extra clause, this is
+   * the whole line an operator reads.
+   */
+  guidance: string;
 }
 
 /**
@@ -2896,6 +2913,25 @@ export interface CampaignListResult {
    * where `demandGenEnabled` is `true`, because the legacy creator serves Demand Gen.
    */
   googleChannelsEnabled: boolean;
+
+  /**
+   * Whether a Google creative object supplied with the create will actually reach Google.
+   *
+   * The creative objects ride on `googleAdsConfig`, which only the campaign-service create path
+   * builds. The LEGACY creator composes a Demand Gen ad from `headlines`/`descriptions` alone and
+   * reads no creative key at all, so with the cutover dark everything an operator typed into the
+   * creative section — images, logos, business name, call to action — is discarded in silence and
+   * the create still reports success.
+   *
+   * This is therefore `cutoverOwnsCreate()` and nothing else. It is NOT a third way of saying
+   * `googleChannelsEnabled`: that one additionally requires the Google-channels flag, and the
+   * window where the cutover owns the create with that flag off is one where Demand Gen creative
+   * works perfectly well. Deriving this from that would withhold a working control.
+   *
+   * Read the same way as the two above and modelled the same way on the client (`boolean | null`,
+   * `null` for unanswered).
+   */
+  googleCreativeEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------
