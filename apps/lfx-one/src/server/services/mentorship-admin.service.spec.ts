@@ -343,6 +343,16 @@ describe('MentorshipAdminService.getProgramMentees', () => {
     expect(result.data[0].tasks).toBeUndefined();
   });
 
+  it('sends Applied as applied and Tasks Completed as tasks_submitted', async () => {
+    const spy = stubProgramReads({ [`${PROGRAM_PATH}/applications`]: { data: [], meta: { total: 0, limit: 10, offset: 0 } } });
+
+    await service.getProgramMentees(buildReq(), PROGRAM_ID, { type: 'current', status: 'applied' });
+    await service.getProgramMentees(buildReq(), PROGRAM_ID, { type: 'current', status: 'tasks-completed' });
+
+    expect(spy.mock.calls[0][4]).toMatchObject({ status: 'applied' });
+    expect(spy.mock.calls[1][4]).toMatchObject({ status: 'tasks_submitted' });
+  });
+
   it('defaults to offset 0 and 10 rows, and never sends more than 50', async () => {
     const spy = stubProgramReads({ [`${PROGRAM_PATH}/applications`]: { data: [], meta: { total: 0, limit: 10, offset: 0 } } });
 

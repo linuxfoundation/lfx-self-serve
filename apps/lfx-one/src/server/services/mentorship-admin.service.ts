@@ -58,6 +58,7 @@ import { Request } from 'express';
 
 import {
   MENTORSHIP_ADMIN_APPLICATIONS_MAX_LIMIT,
+  MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_TO_UPSTREAM,
   MENTORSHIP_ADMIN_TASKS_MAX_LIMIT,
   MENTORSHIP_ADMIN_TERMS_MAX_LIMIT,
   MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES,
@@ -231,7 +232,7 @@ export class MentorshipAdminService {
         'GET',
         {
           type: query.type,
-          status: query.status,
+          status: query.status ? MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_TO_UPSTREAM[query.status] : undefined,
           term: query.termId,
           search: escapeMentorshipSearch(query.search),
           offset: query.offset ?? 0,

@@ -5,7 +5,6 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { MENTORSHIP_MENTEE_STATUS_LABELS, MENTORSHIP_MENTEE_STATUSES } from '@lfx-one/shared/constants';
 import {
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminMenteesQuery,
@@ -239,12 +238,17 @@ describe('CurrentMenteesTabComponent', () => {
     expect(note).toContain('Tasks Completed');
   });
 
-  it('offers every wire status in the status filter, and only the open terms in the term filter', () => {
+  it('offers the statuses the table shows in the status filter, and only the open terms in the term filter', () => {
     const component = fixture.componentInstance;
 
     expect(component['statusOptions'].map((option) => option.label)).toEqual([
       'All statuses',
-      ...MENTORSHIP_MENTEE_STATUSES.map((status) => MENTORSHIP_MENTEE_STATUS_LABELS[status]),
+      'Applied',
+      'Tasks Completed',
+      'Accepted',
+      'Declined',
+      'Withdrawn',
+      'Graduated',
     ]);
     expect(component['termOptions']().map((option) => option.label)).toEqual(['All open terms', 'Fall 2026', 'Winter 2027']);
   });
@@ -259,6 +263,18 @@ describe('CurrentMenteesTabComponent', () => {
     settle();
 
     expect(lastQuery()).toMatchObject({ status: 'declined', offset: 0 });
+  });
+
+  it('sends Applied and Tasks Completed as their display statuses', () => {
+    const component = fixture.componentInstance;
+
+    component['form'].controls.status.setValue('applied');
+    settle();
+    expect(lastQuery().status).toBe('applied');
+
+    component['form'].controls.status.setValue('tasks-completed');
+    settle();
+    expect(lastQuery().status).toBe('tasks-completed');
   });
 
   it('sends the chosen term id upstream, and drops the filter when it is cleared', () => {

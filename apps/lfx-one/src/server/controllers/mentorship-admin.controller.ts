@@ -5,6 +5,7 @@ import {
   MENTORSHIP_ADMIN_DECISION_STATUSES,
   MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
+  MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS,
   MENTORSHIP_ADMIN_MENTEE_TABS,
   MENTORSHIP_ADMIN_MENTEES_MAX_LIMIT,
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
@@ -12,18 +13,17 @@ import {
   MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES,
   MENTORSHIP_ATTENDANCE_TYPES,
   MENTORSHIP_ENROLL_LOGO_MIME_TYPES,
-  MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_PROGRAM_PAGE_SIZE,
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_PROGRAMS_MAX_LIMIT,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipAdminApplicationStatusUpdate,
+  MentorshipAdminMenteeStatusFilter,
   MentorshipAdminMenteeTab,
   MentorshipAdminMentorStatus,
   MentorshipAdminMentorStatusUpdate,
   MentorshipAttendanceType,
-  MentorshipMenteeStatus,
 } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -133,9 +133,11 @@ export class MentorshipAdminController {
         throw ServiceValidationError.forField('type', `type is required and must be one of: ${MENTORSHIP_ADMIN_MENTEE_TABS.join(', ')}`, { operation });
       }
 
+      const type = rawType as MentorshipAdminMenteeTab;
+      const statusFilters = MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS[type];
       const rawStatus = parseTrimmedString(getStrictStringQueryParam(req, 'status', operation));
-      if (rawStatus !== undefined && !(MENTORSHIP_MENTEE_STATUSES as readonly string[]).includes(rawStatus)) {
-        throw ServiceValidationError.forField('status', `status must be one of: ${MENTORSHIP_MENTEE_STATUSES.join(', ')}`, { operation });
+      if (rawStatus !== undefined && !(statusFilters as readonly string[]).includes(rawStatus)) {
+        throw ServiceValidationError.forField('status', `status must be one of: ${statusFilters.join(', ')}`, { operation });
       }
 
       const termId = parseTrimmedString(getStrictStringQueryParam(req, 'termId', operation));
@@ -151,8 +153,7 @@ export class MentorshipAdminController {
         operation,
       });
 
-      const type = rawType as MentorshipAdminMenteeTab;
-      const status = rawStatus as MentorshipMenteeStatus | undefined;
+      const status = rawStatus as MentorshipAdminMenteeStatusFilter | undefined;
       const mentees = await this.mentorshipAdminService.getProgramMentees(req, programId, { type, status, termId, search, offset, limit });
 
       logger.success(req, operation, startTime, { programId, type, status, offset, limit, result_count: mentees.data.length, total: mentees.total });

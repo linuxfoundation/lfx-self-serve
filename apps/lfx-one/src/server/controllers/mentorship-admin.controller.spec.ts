@@ -224,10 +224,25 @@ describe('MentorshipAdminController', () => {
     });
 
     it.each([
+      ['current', 'applied'],
+      ['current', 'tasks-completed'],
+      ['past', 'pending'],
+    ])('takes the %s tab status filter %s', async (type, status) => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProgramMentees').mockResolvedValue(emptyPage);
+
+      await controller.getProgramMentees(buildReq({ type, status }, { programId: PROGRAM_ID }), res, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, expect.objectContaining({ type, status }));
+    });
+
+    it.each([
       ['a bad program id', {}, { programId: 'nope' }],
       ['a missing type', {}, { programId: PROGRAM_ID }],
       ['an unknown type', { type: 'all' }, { programId: PROGRAM_ID }],
       ['an unknown status', { type: 'current', status: 'hold' }, { programId: PROGRAM_ID }],
+      ['the wire pending on the current tab', { type: 'current', status: 'pending' }, { programId: PROGRAM_ID }],
+      ['a display status on the past tab', { type: 'past', status: 'tasks-completed' }, { programId: PROGRAM_ID }],
+      ['the upstream tasks_submitted', { type: 'current', status: 'tasks_submitted' }, { programId: PROGRAM_ID }],
       ['a bad term id', { type: 'current', termId: 'spring' }, { programId: PROGRAM_ID }],
       ['a bad offset', { type: 'current', offset: '-1' }, { programId: PROGRAM_ID }],
       ['a limit above 50', { type: 'current', limit: '51' }, { programId: PROGRAM_ID }],
