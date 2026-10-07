@@ -431,11 +431,8 @@ export class MeetingComposerFormService {
 
     if (context.mode === 'edit' && context.meetingUid) {
       this.loadMeeting(context.meetingUid);
-
-      // An occurrence edit never shows or saves the guest list — registrants belong to the series.
-      if (!this.isOccurrenceEdit()) {
-        this.loadGuests(context.meetingUid);
-      }
+      // Loaded for an occurrence edit too: it lists who attends that occurrence, and invites to it alone.
+      this.loadGuests(context.meetingUid);
     }
 
     // Set after the subscriptions are wired so the type's visibility/restriction defaults still apply.
@@ -590,13 +587,18 @@ export class MeetingComposerFormService {
    * @description Whole-form validity for a series edit or a create. An occurrence edit asks only its own
    * sections: the hidden series-level controls are never sent, so a stored value they reject — a legacy
    * `None` meeting type, an early-join window outside today's range — must not hold the occurrence's Save
-   * hostage behind a control the organizer cannot see. It also stays closed until something has changed,
-   * because upstream stores every occurrence update as an override of the series, even an identical one.
+   * hostage behind a control the organizer cannot see. It also stays closed until something has changed —
+   * an occurrence field, or a pending occurrence-scoped guest change — because upstream stores every occurrence
+   * update as an override of the series, even an identical one.
    * Callers must read `revision` themselves — this is a plain method.
    */
   public isSavable(): boolean {
     if (this.isOccurrenceEdit()) {
-      return !!this.occurrence() && this.visibleSections().every((section) => this.isSectionValid(section.id)) && this.occurrenceHasChanges();
+      return (
+        !!this.occurrence() &&
+        this.visibleSections().every((section) => this.isSectionValid(section.id)) &&
+        (this.occurrenceHasChanges() || this.hasPendingRegistrantWork())
+      );
     }
 
     // A series edit stays closed until something differs from what was loaded — saving an untouched
@@ -973,7 +975,8 @@ export class MeetingComposerFormService {
     return {
       uid: '',
       meeting_id: this.meetingId() ?? '',
-      occurrence_id: null,
+      // An occurrence edit invites to that occurrence alone; everywhere else a new guest covers every occurrence.
+      occurrence_id: this.isOccurrenceEdit() ? (this.occurrence()?.occurrence_id ?? this.occurrenceId()) : null,
       email: '',
       first_name: '',
       last_name: '',
@@ -1561,9 +1564,11 @@ export class MeetingComposerFormService {
   // Other private helper methods
 
   /**
-   * Saves an occurrence edit through upstream's occurrence update, and nothing else.
-   * @description Guests, resources and the series settings are not on screen in this mode, so there is
-   * no dependent work to run after it. Emits `null` on success, like a series edit, and follows
+   * Saves an occurrence edit: its own fields through upstream's occurrence update, then its guests.
+   * @description Nothing here ever reaches the series. New guests carry the occurrence's id, so they are
+   * invited to it alone, and only guests scoped to this occurrence can be removed — series guests are
+   * read-only. Documents and links are not saved at all, since upstream cannot scope them to an
+   * occurrence, and series settings are never sent. Emits `null` on success, like a series edit, and follows
    * {@link submit}'s contract otherwise — silent on a failure it has already toasted, or on a save that
    * outlived its open.
    */
@@ -1578,8 +1583,33 @@ export class MeetingComposerFormService {
 
     this.submitting.set(true);
 
-    return this.meetingService.updateOccurrence(meetingId, occurrence.occurrence_id, this.prepareOccurrenceData(occurrence)).pipe(
-      switchMap(() => (generation === this.generation ? of(null) : EMPTY)),
+    // The occurrence itself is only written when one of its own fields changed: upstream stores every
+    // occurrence update as an override of the series, so a guests-only save must not create one.
+    const update$: Observable<unknown> = this.occurrenceHasChanges()
+      ? this.meetingService.updateOccurrence(meetingId, occurrence.occurrence_id, this.prepareOccurrenceData(occurrence))
+      : of(null);
+
+    return update$.pipe(
+      switchMap(() => {
+        if (generation !== this.generation) {
+          return EMPTY;
+        }
+
+        // Guests only — never attachments, which upstream cannot scope to an occurrence. Every queued guest
+        // change here is occurrence-scoped: adds carry the occurrence id, and only guests invited to this
+        // occurrence alone can be removed.
+        return this.processRegistrantOperations(meetingId).pipe(
+          switchMap((registrants) => {
+            if (generation !== this.generation) {
+              this.reportStaleDependentResults(null, registrants, true);
+              return EMPTY;
+            }
+
+            this.reportDependentResults(null, registrants, true);
+            return of(null);
+          })
+        );
+      }),
       catchError((error: unknown) => {
         console.error('Error saving meeting occurrence:', error);
         const isStale = generation !== this.generation;
@@ -1652,6 +1682,11 @@ export class MeetingComposerFormService {
 
       case 'agenda-resources':
         return !(form.get('description')?.invalid ?? true);
+
+      // Same rule as a series edit: the group picker is hidden here, so this only ever trips on a guest
+      // list that failed to load.
+      case 'guests':
+        return !this.hasUnreconciledGroupSelection() && !this.committeeContextUnresolved();
 
       default:
         return false;
@@ -2266,6 +2301,13 @@ export class MeetingComposerFormService {
   }
 
   /** Whether anything queued on the form still needs the saved meeting's id to be persisted. */
+  /** Pending guest adds, edits or removals — the only dependent work an occurrence edit saves. */
+  private hasPendingRegistrantWork(): boolean {
+    const registrants = this.registrantUpdates();
+
+    return registrants.toAdd.length > 0 || registrants.toUpdate.length > 0 || registrants.toDelete.length > 0;
+  }
+
   private hasPendingDependentWork(): boolean {
     const registrants = this.registrantUpdates();
 

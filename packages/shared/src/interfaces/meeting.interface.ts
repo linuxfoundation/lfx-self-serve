@@ -819,6 +819,16 @@ export interface ComposerGuestRow {
    * the literal `guest` when a registrant arrives carrying neither.
    */
   removeLabel: string;
+  /**
+   * Single-occurrence edit only: which occurrences the guest is invited to — `All occurrences` or
+   * `This occurrence`. `null` everywhere else, where every guest shares the same scope.
+   */
+  scopeLabel: string | null;
+  /**
+   * Whether the row offers a remove button. While editing one occurrence, only guests invited to it alone
+   * can be removed: upstream cannot exclude a series guest from a single occurrence, so those are read-only.
+   */
+  removable: boolean;
 }
 
 /**

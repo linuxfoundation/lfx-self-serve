@@ -774,7 +774,7 @@ export class MeetingService {
           options
         ),
       { failOnPartial, maxResults }
-    );
+    ).then((rows) => rows.map((row) => MeetingService.withRegistrantOccurrenceId(row)));
 
     // If include_rsvp is false, the RSVP walk isn't needed at all — skip it rather than fetching
     // and discarding it.
@@ -2603,6 +2603,23 @@ export class MeetingService {
    * documented above is a populated body, so this is defence rather than an expectation; callers
    * that need a value here already have to treat every field as "the write response didn't say".
    */
+  /**
+   * Surfaces a listed registrant's occurrence scope under the read model's `occurrence_id`.
+   * @description The query-service index stores it as `occurrence` (empty = every occurrence), the name
+   * ITX uses, while `MeetingRegistrant` and every write path call it `occurrence_id` — only
+   * {@link fromUpstreamRegistrant} renamed it, and that runs on create/update responses alone. Additive:
+   * the raw `occurrence` key is left in place, and an `occurrence_id` the row already carries wins.
+   */
+  private static withRegistrantOccurrenceId(row: MeetingRegistrant): MeetingRegistrant {
+    const occurrence = (row as MeetingRegistrant & { occurrence?: unknown }).occurrence;
+
+    if (row.occurrence_id || typeof occurrence !== 'string' || !occurrence) {
+      return row;
+    }
+
+    return { ...row, occurrence_id: occurrence };
+  }
+
   private fromUpstreamRegistrant(upstream: Record<string, unknown> | null | undefined): MeetingRegistrant {
     const { org, profile_picture, occurrence, modified_at, ...rest } = upstream ?? {};
 

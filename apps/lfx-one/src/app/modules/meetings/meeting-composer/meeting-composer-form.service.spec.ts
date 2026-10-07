@@ -2193,12 +2193,14 @@ describe('MeetingComposerFormService — single-occurrence edit', () => {
 
   let updateOccurrence: ReturnType<typeof vi.fn>;
   let getMeetingRegistrants: ReturnType<typeof vi.fn>;
+  let addMeetingRegistrants: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
   let composerClose: ReturnType<typeof vi.fn>;
 
   function openOccurrence(occurrenceId: string, meeting: Partial<Meeting> = SERIES): MeetingComposerFormService {
     updateOccurrence = vi.fn().mockReturnValue(of(undefined));
     getMeetingRegistrants = vi.fn().mockReturnValue(of([]));
+    addMeetingRegistrants = vi.fn().mockReturnValue(of({ summary: { successful: 1, failed: 0 } }));
     messageAdd = vi.fn();
     composerClose = vi.fn();
 
@@ -2215,6 +2217,14 @@ describe('MeetingComposerFormService — single-occurrence edit', () => {
             getMeeting: vi.fn().mockReturnValue(of(meeting as Meeting)),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRegistrants,
+            addMeetingRegistrants,
+            // Mirrors the real mapper's occurrence handling, which is what these tests exercise.
+            stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({
+              meeting_id: meetingUid,
+              email: guest.email,
+              ...(guest.occurrence_id ? { occurrence_id: guest.occurrence_id } : {}),
+            }),
+            getChangedFields: (guest: MeetingRegistrantWithState) => ({ email: guest.email }),
             updateMeeting: vi.fn(),
             updateOccurrence,
           },
@@ -2246,11 +2256,11 @@ describe('MeetingComposerFormService — single-occurrence edit', () => {
     expect(service.form().get('description')?.value).toBe('Series agenda');
   });
 
-  it('shows only the sections an occurrence can change, and skips the guest fetch', () => {
+  it('shows only the sections an occurrence can change, and loads the guests', () => {
     const service = openOccurrence(FIRST.occurrence_id);
 
-    expect(service.visibleSections().map((section) => section.id)).toEqual(['details-access', 'date-schedule', 'agenda-resources']);
-    expect(getMeetingRegistrants).not.toHaveBeenCalled();
+    expect(service.visibleSections().map((section) => section.id)).toEqual(['details-access', 'date-schedule', 'guests', 'agenda-resources']);
+    expect(getMeetingRegistrants).toHaveBeenCalled();
   });
 
   it('keeps Save closed until something changes, then ignores the hidden series controls', () => {
@@ -2323,6 +2333,43 @@ describe('MeetingComposerFormService — single-occurrence edit', () => {
     expect(service.effectiveDuration()).toBe(60);
     expect(service.occurrenceHasChanges()).toBe(false);
     expect(service.isSavable()).toBe(false);
+  });
+
+  it('invites a guest added here to this occurrence alone', () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+
+    expect(service.newGuestDefaults().occurrence_id).toBe(SECOND.occurrence_id);
+  });
+
+  it('saves a guests-only change without writing an occurrence override', () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+    service.setGuests([{ ...service.newGuestDefaults(), email: 'guest@example.com' }]);
+
+    expect(service.occurrenceHasChanges()).toBe(false);
+    expect(service.isSavable()).toBe(true);
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    expect(updateOccurrence).not.toHaveBeenCalled();
+    expect(addMeetingRegistrants).toHaveBeenCalledWith('meeting-1', [
+      expect.objectContaining({ email: 'guest@example.com', occurrence_id: SECOND.occurrence_id }),
+    ]);
+    expect(emissions).toEqual([null]);
+  });
+
+  it('never saves documents or links, so nothing reaches the series', () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+    service.deleteAttachment('attachment-1');
+
+    // A queued attachment change is not occurrence work: it neither opens Save nor runs on submit.
+    expect(service.isSavable()).toBe(false);
+
+    service.form().get('title')?.setValue('Planning special');
+    service.submit().subscribe();
+
+    expect(updateOccurrence).toHaveBeenCalled();
+    expect(addMeetingRegistrants).not.toHaveBeenCalled();
   });
 });
 
