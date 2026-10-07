@@ -1129,8 +1129,11 @@ export class AudienceBuilderTabComponent {
           // field, so a URL typed for event B survived into event C's brief and the next discovery
           // composed B's lists with C's brief id. Reseed it; nothing else exists to reset.
           // Only for a different EVENT: a later update to the same event's brief must not clobber
-          // what the operator typed over the seed.
-          if (previousKey !== '' && previousKey !== nextKey && this.eventUrlControl.dirty) {
+          // what the operator typed over the seed. For the FIRST brief (no key yet -- a first visit,
+          // or just after a foundation switch) the first-brief rule decides: a typed URL is kept
+          // only when that brief advertises it, the same rule discovered work is held to.
+          const reseed = previousKey !== '' ? previousKey !== nextKey : differentEvent;
+          if (reseed && this.eventUrlControl.dirty) {
             this.eventUrlControl.reset(advertised, { emitEvent: false });
           }
           return;

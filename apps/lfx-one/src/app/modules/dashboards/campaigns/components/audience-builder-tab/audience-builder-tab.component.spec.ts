@@ -1118,6 +1118,26 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "E's lists survived into F's brief").toBeNull();
     });
 
+    it("reseeds a URL typed after a foundation switch when the new project's first brief is for another event", async () => {
+      // The key is empty after the switch, so the reseed (gated on a previous key) skipped the first
+      // brief, and the typed URL's lists would be built against the new brief id.
+      await render({ initialEventUrl: 'https://events.example.org/event-e', briefId: 'brief-e' });
+      fixture.componentRef.setInput('eventKey', 'event-e');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('projectSlug', 'other-foundation');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/event-x');
+
+      fixture.componentRef.setInput('eventKey', 'event-f');
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-f');
+      fixture.componentRef.setInput('briefId', 'brief-f');
+      fixture.detectChanges();
+
+      expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value, "X's typed URL survived into F's first brief").toBe(
+        'https://events.example.org/event-f'
+      );
+    });
+
     it("keeps work discovered after a foundation switch when the new project's first brief advertises that URL", async () => {
       // The parent keeps the OLD project's brief across the switch; remembering its key compared the
       // new project's first brief against it and wiped work discovered for that very event.

@@ -3728,6 +3728,43 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingMessage()).toContain('try again');
     });
 
+    it('releases the hold when a create cancelled mid-flight comes back as a definite refusal', async () => {
+      // The cancel held the dispatch because the create MIGHT have started; a definite refusal says
+      // it did not, but the stale-context return skipped it and kept everything locked.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const create = new Subject<{ jobId: string; error?: string; enabled: boolean }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(create as never);
+      const staging = (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      await fixture.whenStable();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      expect(internals().emailStagingHeld(), 'fixture precondition: the cancel held the dispatch').toBe(true);
+
+      create.next({ enabled: true, jobId: '', error: 'The campaign service refused this request.' });
+      create.complete();
+      await staging;
+
+      expect(internals().emailStagingHeld(), 'a refused create kept the stage held').toBe(false);
+    });
+
+    it('keeps the hold when a create cancelled mid-flight comes back as indeterminate', async () => {
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const create = new Subject<{ jobId: string; error?: string; enabled: boolean; indeterminate?: boolean }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(create as never);
+      const staging = (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      await fixture.whenStable();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+
+      create.next({ enabled: true, jobId: '', error: 'Unconfirmed.', indeterminate: true });
+      create.complete();
+      await staging;
+
+      expect(internals().emailStagingHeld(), 'an indeterminate create was released').toBe(true);
+    });
+
     it('holds a DISPATCHED stage when a brief reset cancels its poll', async () => {
       // The reset idles the display state, but the create cannot be recalled and its job may still
       // resolve the brief's audience -- releasing let A -> B -> A replace it underneath the job.

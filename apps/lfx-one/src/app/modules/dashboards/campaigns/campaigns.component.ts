@@ -3419,6 +3419,16 @@ export class CampaignsComponent {
           // Released when the REQUEST settles, success or failure, whatever context is on screen.
           .pipe(finalize(() => this.createsOnWire.update((keys) => new Set([...keys].filter((key) => key !== wireKey)))))
       );
+      // A DEFINITE refusal created nothing, whatever is on screen now. A cancel during the await
+      // (`cancelStagingPoll`) held this dispatch as unresolved because the create might have
+      // started; the answer says it did not, so that hold is released here -- before the context
+      // check below, which would otherwise leave Stage, the pickers and audience writes locked
+      // over a draft that cannot exist. No earlier hold can be cleared by mistake: a held scope
+      // cannot start a stage.
+      if (outcome.error && !outcome.indeterminate) {
+        this.releaseStageHold(projectSlug, briefId);
+        this.settleDispatch(dispatched);
+      }
       // Checked here TOO, not only after the persist above. A reset landing during THIS await
       // leaves the request already sent -- the draft may well exist upstream -- but everything
       // after it belongs to the previous brief: the poll would run under the new context and
@@ -4060,6 +4070,15 @@ export class CampaignsComponent {
   private markStageUnresolved(projectSlug: string, briefId: string): void {
     const key = this.stageScopeKey(projectSlug, briefId);
     this.unresolvedStages.update((keys) => new Set([...keys, key]));
+  }
+
+  /** Releases a project/brief's unresolved-stage hold once an answer proves nothing was created. */
+  private releaseStageHold(projectSlug: string, briefId: string): void {
+    const key = this.stageScopeKey(projectSlug, briefId);
+    if (!this.unresolvedStages().has(key)) {
+      return;
+    }
+    this.unresolvedStages.update((keys) => new Set([...keys].filter((held) => held !== key)));
   }
 
   /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
