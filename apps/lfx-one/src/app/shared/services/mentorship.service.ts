@@ -1,12 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE, MENTORSHIP_INVITABLE_USER_PAGE_SIZE, MENTORSHIP_LF_PROJECT_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { MENTORSHIP_LF_PROJECT_PAGE_SIZE } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiBadge,
-  MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
   MentorshipLfxProfileFields,
   MentorshipNameAvailability,
@@ -25,7 +24,6 @@ import { strictHttpParams } from '../utils/http-params.utils';
  * wizard holds Next while it cannot confirm the name), the project picker's pages (Retry rather than
  * a failure shown as no projects, or a truncated list as complete), the CII badge (a 404 is `null`)
  * and the review and profile calls.
- * The invitable-user lookup is the exception: it degrades to an empty response, as in `CrowdfundingService`.
  * The admin pages' reads live in `MentorshipAdminService` and the mentor pages' in `MentorshipMentorService`.
  */
 @Injectable({ providedIn: 'root' })
@@ -50,18 +48,6 @@ export class MentorshipService {
     return this.http
       .get<MentorshipLfProjectsResponse>('/api/mentorship/lf-projects', { params: httpParams })
       .pipe(take(1), catchError(this.rethrowError('getLfProjects')));
-  }
-
-  /** LFX users that can be invited as mentors. Not program-scoped. */
-  public getInvitableUsers(params?: { search?: string; offset?: number; limit?: number }): Observable<MentorshipInvitableUsersResponse> {
-    let httpParams = new HttpParams();
-    if (params?.search) httpParams = httpParams.set('search', params.search);
-    if (params?.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
-    httpParams = httpParams.set('limit', String(params?.limit ?? MENTORSHIP_INVITABLE_USER_PAGE_SIZE));
-
-    return this.http
-      .get<MentorshipInvitableUsersResponse>('/api/mentorship/invitable-users', { params: httpParams })
-      .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE, 'getInvitableUsers')));
   }
 
   /** The program an approve/reject email link points at. Rethrows so the page can branch on the status code. */
@@ -97,20 +83,6 @@ export class MentorshipService {
         return throwError(() => err);
       })
     );
-  }
-
-  /**
-   * Never re-throws to the UI; a 404 is silently swallowed as `fallback`, other
-   * failures log to the console and also fall back so a transient BFF hiccup
-   * doesn't wipe out the whole admin page.
-   */
-  private handleError<T>(fallback: T, label: string) {
-    return (err: HttpErrorResponse): Observable<T> => {
-      if (err.status !== 404) {
-        console.error(`[MentorshipService] ${label} failed`, err);
-      }
-      return of(fallback);
-    };
   }
 
   private rethrowError(label: string) {

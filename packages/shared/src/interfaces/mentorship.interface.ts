@@ -107,19 +107,6 @@ export interface MentorshipLfProject {
 /** One lazy-load page of LF projects; `page_token` is the cursor for the next page and is left out once the list is exhausted. */
 export type MentorshipLfProjectsResponse = PaginatedResponse<MentorshipLfProject>;
 
-/** LFX user option surfaced in the admin Mentors tab "invite mentor" picker. */
-export interface MentorshipInvitableUser {
-  id: string;
-  name: string;
-  email: string;
-  avatarUrl?: string;
-}
-
-export type MentorshipInvitableUsersResponse = {
-  data: MentorshipInvitableUser[];
-  total: number;
-};
-
 /** Result of the program-name availability lookup. */
 export interface MentorshipNameAvailability {
   available: boolean;

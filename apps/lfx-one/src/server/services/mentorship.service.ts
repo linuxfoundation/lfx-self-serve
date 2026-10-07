@@ -2,16 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
   MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS,
   MENTORSHIP_PROGRAM_REVIEW_DECISIONS,
-  MOCK_MENTORSHIP_INVITABLE_USERS,
   ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiBadge,
-  MentorshipInvitableUsersResponse,
   MentorshipLfProject,
   MentorshipLfProjectsResponse,
   MentorshipNameAvailability,
@@ -35,14 +32,13 @@ import {
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import { listAllMentorshipPages, proxyMentorshipRequest, withoutQueryInErrorPath } from '../helpers/mentorship-api.helper';
 import {
   buildMentorshipUpstreamLfxProfileFields,
   buildMentorshipUpstreamProfileLinks,
   resolveMentorshipGithubProfileLink,
   resolveMentorshipPrimaryEmail,
 } from '../helpers/mentorship-lfx-profile.helper';
-import { paginateOffsetLimit } from '../helpers/mentorship-params.helper';
 
 import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
@@ -61,24 +57,6 @@ function buildCiiBadgeJsonUrl(projectId: string): string {
     throw ServiceValidationError.forField('projectId', 'CII Project ID must be numeric', { operation: 'mentorship_get_cii_badge' });
   }
   return 'https://www.bestpractices.dev/projects/' + numericId + '/badge.json';
-}
-
-/**
- * An upstream failure's `path` is the full request URL, query included, and the error handler logs it. This rebuilds the error
- * with the query cut off, so a failed name check does not log the name it was asked about.
- */
-function withoutQueryInErrorPath(error: unknown): unknown {
-  if (!(error instanceof MicroserviceError) || !error.path?.includes('?')) return error;
-  return new MicroserviceError(error.message, error.statusCode, error.code, {
-    operation: error.operation,
-    service: error.service,
-    path: error.path.slice(0, error.path.indexOf('?')),
-    errorBody: error.errorBody,
-    originalMessage: error.originalMessage,
-    originalError: error.originalError,
-    transportFailure: error.transportFailure,
-    clientMessage: error.clientMessage,
-  });
 }
 
 export class MentorshipService {
@@ -140,23 +118,6 @@ export class MentorshipService {
 
     logger.debug(req, 'mentorship_get_lf_projects', 'LF projects page built', { count: data.length, reads, has_more: !!pageToken });
     return { data, ...(pageToken && { page_token: pageToken }) };
-  }
-
-  /**
-   * LFX users that can be invited as mentors. Not program-scoped — this is the
-   * general user pool; callers exclude anyone already on their own list.
-   */
-  public async getInvitableUsers(req: Request, options: { search?: string; offset?: number; limit?: number } = {}): Promise<MentorshipInvitableUsersResponse> {
-    logger.debug(req, 'mentorship_get_invitable_users', 'Filtering invitable users', options);
-
-    const needle = options.search?.trim().toLowerCase() ?? '';
-    const filtered = needle
-      ? MOCK_MENTORSHIP_INVITABLE_USERS.filter((user) => user.name.toLowerCase().includes(needle) || user.email.toLowerCase().includes(needle))
-      : [...MOCK_MENTORSHIP_INVITABLE_USERS];
-
-    const page = paginateOffsetLimit(filtered, options.offset ?? 0, options.limit ?? MENTORSHIP_INVITABLE_USER_PAGE_SIZE);
-    logger.debug(req, 'mentorship_get_invitable_users', 'Invitable users page built', { count: page.data.length, total: page.total });
-    return page;
   }
 
   public async getCiiBadge(req: Request, projectId: string): Promise<MentorshipCiiBadge> {

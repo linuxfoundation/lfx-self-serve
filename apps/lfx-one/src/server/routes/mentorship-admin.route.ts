@@ -35,6 +35,8 @@ router.get('/programs/:programId', (req, res, next) => adminController.getProgra
 router.get('/programs/:programId/enroll-template', (req, res, next) => adminController.getEnrollTemplate(req, res, next));
 router.get('/programs/:programId/mentees', (req, res, next) => adminController.getProgramMentees(req, res, next));
 router.get('/programs/:programId/mentors', (req, res, next) => adminController.getProgramMentors(req, res, next));
+// A read, so open while impersonating; POST only so the search, which can be an email, stays out of the logged URL.
+router.post('/programs/:programId/mentor-candidates', (req, res, next) => adminController.getMentorCandidates(req, res, next));
 router.get('/programs/:programId/terms', (req, res, next) => adminController.getProgramTerms(req, res, next));
 router.get('/applications/:applicationId/tasks', (req, res, next) => adminController.getApplicationTasks(req, res, next));
 router.patch('/applications/:applicationId/status', blockDuringImpersonation, (req, res, next) => adminController.updateApplicationStatus(req, res, next));
@@ -42,6 +44,7 @@ router.put('/applications/:applicationId/note', blockDuringImpersonation, (req, 
 router.post('/applications/:applicationId/withdraw', blockDuringImpersonation, (req, res, next) => adminController.withdrawApplication(req, res, next));
 router.post('/tasks', blockDuringImpersonation, (req, res, next) => adminController.createTasks(req, res, next));
 router.patch('/tasks/:taskId', blockDuringImpersonation, (req, res, next) => adminController.updateTask(req, res, next));
+router.post('/programs/:programId/mentors', blockDuringImpersonation, (req, res, next) => adminController.inviteProgramMentor(req, res, next));
 router.patch('/programs/:programId/mentors/:memberId', blockDuringImpersonation, (req, res, next) => adminController.updateProgramMentor(req, res, next));
 router.post('/programs/:programId/terms/:termId/decline-pending', blockDuringImpersonation, (req, res, next) =>
   adminController.declinePendingForTerm(req, res, next)

@@ -11,6 +11,24 @@ import { logger } from '../services/logger.service';
 import type { MicroserviceProxyService } from '../services/microservice-proxy.service';
 import { isImpersonating } from '../utils/auth-helper';
 
+/**
+ * An upstream failure's `path` is the full request URL, query included, and the error handler logs it. This rebuilds the error
+ * with the query cut off, so a failed name check or mentor candidate search does not log the name or email it was asked about.
+ */
+export function withoutQueryInErrorPath(error: unknown): unknown {
+  if (!(error instanceof MicroserviceError) || !error.path?.includes('?')) return error;
+  return new MicroserviceError(error.message, error.statusCode, error.code, {
+    operation: error.operation,
+    service: error.service,
+    path: error.path.slice(0, error.path.indexOf('?')),
+    errorBody: error.errorBody,
+    originalMessage: error.originalMessage,
+    originalError: error.originalError,
+    transportFailure: error.transportFailure,
+    clientMessage: error.clientMessage,
+  });
+}
+
 /** Whether an upstream failure is the mentorship service saying the caller has no local record yet. */
 export function isMentorshipNotProvisionedError(error: unknown): boolean {
   return error instanceof MicroserviceError && error.statusCode === 401 && error.errorBody?.error === MENTORSHIP_NOT_PROVISIONED_ERROR;
