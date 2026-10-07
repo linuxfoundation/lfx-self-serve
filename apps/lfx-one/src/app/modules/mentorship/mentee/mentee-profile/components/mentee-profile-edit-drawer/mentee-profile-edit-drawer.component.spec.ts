@@ -100,6 +100,7 @@ class StubSelectComponent {
   readonly size = input('');
   readonly styleClass = input('');
   readonly filter = input(false);
+  readonly required = input(false);
 }
 
 @Component({ selector: 'lfx-button', template: '' })
@@ -193,6 +194,7 @@ describe('MenteeProfileEditDrawerComponent', () => {
     expect(select.control()).toBe('country');
     expect(select.form()).toBe(comp['form']);
     expect(select.filter()).toBe(true);
+    expect(select.required()).toBe(true);
     expect(select.options()).toContainEqual({ label: 'Kenya', value: 'KE' });
     expect(element().querySelector('label[for="mentee-profile-edit-country"]')).not.toBeNull();
   });

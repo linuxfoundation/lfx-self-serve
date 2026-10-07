@@ -8,6 +8,7 @@ import type {
   MentorshipMenteeRegisterFieldErrors,
 } from '../interfaces/mentorship-mentee.interface';
 import type { MentorshipRegisterFailureOptions } from '../interfaces/mentorship.interface';
+import { COUNTRIES } from './countries.constants';
 
 export const MENTORSHIP_MENTEE_REGISTER_TITLE = 'Become a Mentee';
 
@@ -40,11 +41,13 @@ export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_PLACEHOLDER = 'Share any other c
 
 /** The Country card: on register, in the profile edit drawer, and on the profile details card. */
 export const MENTORSHIP_MENTEE_COUNTRY_TITLE = 'Country';
-export const MENTORSHIP_MENTEE_COUNTRY_INTRO = 'Tell us the country you live in. Program administrators use it to verify stipend eligibility.';
+export const MENTORSHIP_MENTEE_COUNTRY_INTRO = 'Tell us the country you live in. The Linux Foundation HR team uses it to verify stipend eligibility.';
 export const MENTORSHIP_MENTEE_COUNTRY_LABEL = 'Country of residence';
 export const MENTORSHIP_MENTEE_COUNTRY_PLACEHOLDER = 'Select your country';
 export const MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE = 'Select your country of residence.';
 export const MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE = 'Select a country from the list.';
+/** The codes a mentee country may hold: the assigned ISO 3166-1 alpha-2 codes the dropdown offers, derived from `COUNTRIES`. */
+export const MENTORSHIP_MENTEE_COUNTRY_CODES: ReadonlySet<string> = new Set<string>(COUNTRIES.map((country) => country.value));
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX = 1000;
 
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_TITLE = 'Demographics';

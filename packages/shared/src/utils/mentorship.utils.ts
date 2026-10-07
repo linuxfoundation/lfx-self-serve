@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ASSIGNED_COUNTRY_CODES } from '../constants/campaign.constants';
 import { MONTH_OPTIONS } from '../constants/profile.constants';
 import {
   MENTORSHIP_CII_INVALID_ID,
@@ -34,6 +33,7 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
+  MENTORSHIP_MENTEE_COUNTRY_CODES,
   MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE,
   MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS,
@@ -842,7 +842,7 @@ export function getMentorshipMenteeIntroductionError(html: string): string | und
  */
 export function getMentorshipMenteeCountryError(country: string): string | undefined {
   if (isBlank(country)) return MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE;
-  return ASSIGNED_COUNTRY_CODES.has(country) ? undefined : MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE;
+  return MENTORSHIP_MENTEE_COUNTRY_CODES.has(country) ? undefined : MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE;
 }
 
 /**

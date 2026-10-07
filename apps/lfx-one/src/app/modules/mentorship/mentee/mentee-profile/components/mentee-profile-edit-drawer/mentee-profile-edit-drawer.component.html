@@ -102,6 +102,7 @@
             [placeholder]="countryPlaceholder"
             styleClass="w-full"
             [filter]="true"
+            [required]="true"
             data-testid="mentee-profile-edit-country-select" />
           @if (countryError(); as error) {
             <p role="alert" class="text-xs text-red-600" data-testid="mentee-profile-edit-country-error">{{ error }}</p>

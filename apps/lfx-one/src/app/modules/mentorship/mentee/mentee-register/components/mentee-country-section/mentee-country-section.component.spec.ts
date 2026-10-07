@@ -55,6 +55,7 @@ describe('MenteeCountrySectionComponent', () => {
     expect(select().control()).toBe('country');
     expect(select().inputId()).toBe('mentorship-mentee-country');
     expect(select().filter()).toBe(true);
+    expect(select().required()).toBe(true);
     expect(select().placeholder()).toBe(MENTORSHIP_MENTEE_COUNTRY_PLACEHOLDER);
     expect(select().options()).toHaveLength(COUNTRIES.length);
     expect(select().options()).toContainEqual({ label: 'Kenya', value: 'KE' });
