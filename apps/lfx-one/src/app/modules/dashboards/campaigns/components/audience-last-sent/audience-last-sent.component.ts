@@ -284,9 +284,14 @@ export class AudienceLastSentComponent {
     // The BFF refuses more than AUDIENCE_ATTACH_MAX_LIST_IDS ids per array, while campaign-service
     // can record a send with up to 200 include lists; reusing such a send always ended in a 400.
     // The exclusions counted are what the attach actually POSTS: the send's own suppressions plus
-    // every current tick and Exclude mark (`pendingExclusionIds`), minus the lists it sends to.
+    // every current tick and Exclude mark (`pendingExclusionIds`). A list on BOTH sides is not
+    // subtracted: the attach refuses that overlap outright (it would drop an exclusion the operator
+    // chose), so the row is blocked for it here rather than offered and then refused.
     const includeIds = new Set(usable.map((list) => list.listId));
-    const sentExclusions = new Set([...email.suppressionLists.map((list) => list.listId), ...this.pendingExclusionIds()].filter((id) => !includeIds.has(id)));
+    const sentExclusions = new Set([...email.suppressionLists.map((list) => list.listId), ...this.pendingExclusionIds()]);
+    if ([...sentExclusions].some((id) => includeIds.has(id))) {
+      return 'A list this send went to is also excluded here. Remove that exclusion, or copy the selection and review it instead.';
+    }
     if (usable.length > AUDIENCE_ATTACH_MAX_LIST_IDS || sentExclusions.size > AUDIENCE_ATTACH_MAX_LIST_IDS) {
       return `This send's lists, with the exclusions ticked here, come to more than ${AUDIENCE_ATTACH_MAX_LIST_IDS} on one side, more than one attach can carry. Copy the selection and narrow it instead.`;
     }

@@ -251,6 +251,15 @@ describe('AudienceLastSentComponent', () => {
       expect(host().textContent ?? '').toContain('more than one attach can carry');
     });
 
+    it('blocks reusing a send whose include list is also excluded, which the attach would refuse', () => {
+      // Subtracting the overlap from the count offered a reuse the attach handler then refused.
+      render({ emails: [email({})], canAttach: true, pendingExclusionIds: [email({}).includedLists[0].listId] });
+
+      const button = host().querySelector<HTMLButtonElement>('[data-testid="audience-last-sent-use-' + email({}).emailId + '"]');
+      expect(button?.disabled, 'a reuse the attach refuses was offered').toBe(true);
+      expect(host().textContent ?? '').toContain('also excluded here');
+    });
+
     it('stops marking a send attached once a new exclusion is ticked, so it can be recorded', () => {
       // A recorded set that merely CONTAINED the send's own suppressions kept "Use these lists"
       // disabled after the step-3 ticks changed, with no way to record the new exclusion.
