@@ -1350,17 +1350,6 @@ export class CampaignServiceClient {
       };
     }
 
-    // Performance Max, Video and Display reach campaign-service through the same
-    // `googleAdsConfig.channel` field, and carry exactly the same hazard against a deployment
-    // that predates them: Go's decoder drops an unknown channel value, the dispatcher builds its
-    // default SEARCH campaign, and a paid campaign is created under the wrong channel and
-    // reported as success. The rationale is the Demand Gen one above in full — a capability flag
-    // rather than a version probe, because the service exposes no version endpoint and a
-    // successful create proves nothing about which channel it created.
-    //
-    // A SEPARATE flag from Demand Gen's, deliberately: a deployment that has had Demand Gen since
-    // LFXV2-3257 is not thereby ready for the three newer channels, and reusing the flag would
-    // turn them on everywhere Demand Gen is already on.
     // Video is refused UNCONDITIONALLY, before the capability flag is even consulted.
     //
     // The flag answers "has this deployment been cut over to the newer channels?", and for
@@ -1386,6 +1375,27 @@ export class CampaignServiceClient {
       };
     }
 
+    // Performance Max and Display reach campaign-service through the same `googleAdsConfig.channel`
+    // field Demand Gen uses, and the flag asks the same question — "does the DEPLOYED service know
+    // these channel values?" — but the failure it prevents depends on how old that service is, and
+    // the two cases are NOT the same:
+    //
+    //   - A service predating the `channel` field itself (before LFXV2-3257) has no such field to
+    //     decode. Go's decoder drops it silently, the dispatcher builds its default SEARCH
+    //     campaign, and a paid campaign is created under the wrong channel and reported as
+    //     SUCCESS. This is the silent, expensive case, and it is the one the Demand Gen flag above
+    //     was written for.
+    //   - A service that HAS the field but not these values refuses the dispatch by name —
+    //     `unsupported channel "performance-max" (want "search" or "demand-gen")` — before it
+    //     contacts Google at all, so nothing is created and nothing is charged. Noisy, not silent.
+    //
+    // The flag default-denies both, because nothing on this side can tell the two apart: the
+    // service exposes no version endpoint, and a successful create proves nothing about WHICH
+    // channel was created. That is also why this is a capability flag rather than a version probe.
+    //
+    // A SEPARATE flag from Demand Gen's, deliberately: a deployment that has had Demand Gen since
+    // LFXV2-3257 is not thereby ready for the newer channels, and reusing the flag would turn them
+    // on everywhere Demand Gen is already on.
     const flaggedChannel = selectedGoogleChannels.find((c) => (GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG as readonly string[]).includes(c));
     if (flaggedChannel && !isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceGoogleChannels)) {
       return {

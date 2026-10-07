@@ -309,9 +309,20 @@ create is refused with a message telling the user to select Search instead.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS` is the same kind of flag, asking the same question
 about a later campaign-service: does the deployed service know the `performance-max`, `video` and
-`display` channel values? The silent-Search failure above is identical, and so is the remedy —
-deploy the service, confirm it, then set this. Left off, a create for one of those channels is
-refused with a message naming the channel and telling the user to ask an administrator.
+`display` channel values? The remedy is the same — deploy the service, confirm it, then set this —
+but the failure it guards against is not one symptom, it is two, and which one an operator sees
+depends on how old the deployed service is:
+
+- **Older than LFXV2-3257** — no `channel` field exists, so the silent-Search failure described
+  above applies in full: a Search campaign is created with real budget and the job reports success.
+- **LFXV2-3257 or later** — the field exists, and a value it does not recognise is refused by name
+  (`unsupported channel "performance-max"`) before Google is contacted. The job fails loudly;
+  nothing is created and nothing is charged.
+
+The flag default-denies both, because nothing on the LFX One side can distinguish them: there is no
+version endpoint, and a successful create proves nothing about which channel it created. Left off, a
+create for one of those channels is refused with a message naming the channel and telling the user
+to ask an administrator.
 
 It is deliberately NOT folded into `..._DEMAND_GEN`. A deployment running LFXV2-3257 has had
 Demand Gen for months with that flag on; widening it would turn these three on everywhere Demand

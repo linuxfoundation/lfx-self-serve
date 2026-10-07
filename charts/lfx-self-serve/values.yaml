@@ -525,11 +525,21 @@ environment:
   # Gates whether Performance Max, Video and Display Google campaigns may be requested at all.
   #
   # The same question DEMAND_GEN asks, about a later campaign-service: "does the DEPLOYED service
-  # know these googleAdsConfig.channel values?". The failure it prevents is the same silent,
-  # expensive one — Go's JSON decoder does not reject an unknown channel value, so a service that
-  # predates them falls through to its default SEARCH campaign: real budget, no keywords, and by
-  # its own documentation it "can never serve". The job reports success and the wrong campaign is
-  # found later in Google Ads with money already spent.
+  # know these googleAdsConfig.channel values?". What goes wrong when it does not depends on how
+  # old the deployed service is, and operators should expect two different symptoms:
+  #
+  #   - Older than LFXV2-3257, there is no channel field at all. Go's JSON decoder drops the
+  #     unknown key, the service builds its default SEARCH campaign — real budget, no keywords,
+  #     and by its own documentation it "can never serve" — and the job reports SUCCESS. The wrong
+  #     campaign is found later in Google Ads with money already spent. This silent case is the
+  #     one DEMAND_GEN above exists for.
+  #   - LFXV2-3257 or later, the field exists and an unrecognised value is REFUSED by name
+  #     (unsupported channel "performance-max") before Google is contacted. The job fails; nothing
+  #     is created and nothing is charged.
+  #
+  # This flag default-denies both. Nothing on the LFX One side can tell the two versions apart:
+  # campaign-service exposes no version endpoint, and a successful create proves nothing about
+  # which channel it actually created.
   #
   # SEPARATE from DEMAND_GEN rather than folded into it. A deployment running LFXV2-3257 has had
   # Demand Gen for months with that flag on, and widening it would turn these three on everywhere
