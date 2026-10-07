@@ -91,7 +91,7 @@ own namespace; the two never share a value.
 | `meeting-invitation-required-state`         | The signed-in-outsider / invitation-required state                                                                    |
 | `meeting-invitation-required-contact`       | Its "Contact the organizer" `mailto:` control                                                                         |
 | `meeting-invitation-required-support`       | Its "Contact support" control, when the organizer has no usable email                                                 |
-| `meeting-rsvp-unavailable-state`            | The `rsvp-unavailable` state: an invitee on a meeting that predates RSVP tracking (N-01)                              |
+| `meeting-rsvp-unavailable-state`            | The `rsvp-unavailable` state: an invitee on a meeting without RSVP tracking (N-01)                                    |
 | `meeting-occurrence-edit-button`            | Organizer's "Edit this occurrence" control                                                                            |
 | `meeting-occurrence-cancel-button`          | Organizer's "Cancel this occurrence" control                                                                          |
 
