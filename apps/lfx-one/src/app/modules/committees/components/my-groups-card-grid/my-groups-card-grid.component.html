@@ -45,8 +45,8 @@
               tooltipPosition="top"
               [attr.aria-label]="'Copy link for ' + item.committee.name"
               [attr.data-testid]="'public-group-copy-link-' + item.committee.uid"
-              (click)="$event.stopPropagation(); copyPublicGroupLink(item.committee)"
-              (keydown.enter)="$event.stopPropagation(); copyPublicGroupLink(item.committee)"
+              (click)="$event.preventDefault(); $event.stopPropagation(); copyPublicGroupLink(item.committee)"
+              (keydown.enter)="$event.preventDefault(); $event.stopPropagation(); copyPublicGroupLink(item.committee)"
               (keydown.space)="$event.preventDefault(); $event.stopPropagation(); copyPublicGroupLink(item.committee)">
               <i class="fa-light fa-globe w-3 h-3" aria-hidden="true"></i>
             </span>
