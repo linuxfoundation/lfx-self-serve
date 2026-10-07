@@ -204,6 +204,7 @@ export class MeetupsService {
         STARTS_AT,
         EVENT_NAME,
         COMMUNITY,
+        COMMUNITY_SLUG,
         DATE,
         LOCATION,
         ROLES,
@@ -244,6 +245,7 @@ export class MeetupsService {
           STARTS_AT,
           EVENT_NAME,
           COMMUNITY,
+          COMMUNITY_SLUG,
           DATE,
           LOCATION,
           ROLES,
@@ -260,6 +262,7 @@ export class MeetupsService {
         STARTS_AT,
         EVENT_NAME,
         COMMUNITY,
+        COMMUNITY_SLUG,
         DATE,
         LOCATION,
         ROLES,
@@ -303,7 +306,7 @@ export class MeetupsService {
   }
 
   private mapRowToMeetup(row: MeetupRow): MyMeetup {
-    if (!row.EVENT_ID || !row.EVENT_NAME || !row.COMMUNITY || !row.STARTS_AT || !row.GROUP_SLUG || !row.EVENT_SLUG) {
+    if (!row.EVENT_ID || !row.EVENT_NAME || !row.COMMUNITY || !row.COMMUNITY_SLUG?.trim() || !row.STARTS_AT || !row.GROUP_SLUG || !row.EVENT_SLUG) {
       throw new Error('Meetup row is missing required fields');
     }
 
@@ -313,7 +316,7 @@ export class MeetupsService {
     }
 
     const role = row.ROLES ?? '';
-    const communityPath = encodeURIComponent(row.COMMUNITY.toLowerCase());
+    const communityPath = encodeURIComponent(row.COMMUNITY_SLUG);
     const groupSlug = encodeURIComponent(row.GROUP_SLUG);
     const eventSlug = encodeURIComponent(row.EVENT_SLUG);
 

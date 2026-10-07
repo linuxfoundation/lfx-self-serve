@@ -12,6 +12,7 @@ vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => (
 vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning: vi.fn() } }));
 
 import { MeetupsService } from './meetups.service';
+import { logger } from './logger.service';
 
 describe('MeetupsService', () => {
   let service: MeetupsService;
@@ -24,6 +25,7 @@ describe('MeetupsService', () => {
     STARTS_AT: '2026-11-01T12:00:00Z',
     EVENT_NAME: 'Example Meetup',
     COMMUNITY: 'Example Community',
+    COMMUNITY_SLUG: 'example-community',
     DATE: 'November 1, 2026',
     LOCATION: 'Online',
     ROLES: 'Attendee',
@@ -34,8 +36,114 @@ describe('MeetupsService', () => {
 
   beforeEach(() => {
     execute.mockReset();
+    vi.mocked(logger.warning).mockClear();
     execute.mockResolvedValue({ rows: [] });
     service = new MeetupsService();
+  });
+
+  describe.each([false, true])('canonical meetup links with isPast=%s', (isPast) => {
+    const row: MeetupRow = {
+      EVENT_ID: 'synthetic-event-1',
+      STARTS_AT: '2026-10-15T12:00:00.000Z',
+      EVENT_NAME: 'Synthetic meetup',
+      COMMUNITY: 'Example Community: Cloud & Tools',
+      COMMUNITY_SLUG: 'canonical-key',
+      DATE: 'October 15, 2026',
+      LOCATION: 'Online',
+      ROLES: 'Attendee',
+      GROUP_SLUG: 'example-group',
+      EVENT_SLUG: 'example-event',
+      TOTAL_RECORDS: 4,
+    };
+
+    it.each([
+      { community: 'Example Community: Cloud & Tools', canonical: 'canonical-key', path: 'canonical-key' },
+      { community: 'matching-address', canonical: 'matching-address', path: 'matching-address' },
+      { community: 'Example Display', canonical: 'CanonicalCase', path: 'CanonicalCase' },
+      { community: 'Example Display', canonical: 'Canonical /%?# ü', path: 'Canonical%20%2F%25%3F%23%20%C3%BC' },
+    ])('uses the canonical address for $canonical while preserving $community', async ({ community, canonical, path }) => {
+      execute.mockResolvedValueOnce({ rows: [{ ...row, COMMUNITY: community, COMMUNITY_SLUG: canonical }] });
+
+      const result = await service.getMyMeetups(request, email, { ...options, isPast });
+
+      expect(result).toEqual({
+        data: [
+          {
+            id: row.EVENT_ID,
+            name: row.EVENT_NAME,
+            community,
+            startDate: row.STARTS_AT,
+            date: row.DATE,
+            location: row.LOCATION,
+            role: 'Attendee',
+            status: 'Registered',
+            groupSlug: row.GROUP_SLUG,
+            eventSlug: row.EVENT_SLUG,
+            url: `https://ocgroups.dev/${path}/group/example-group/event/example-event`,
+          },
+        ],
+        total: 4,
+        pageSize: 10,
+        offset: 0,
+      });
+    });
+
+    it('encodes group and event segments once and retains unregistered status', async () => {
+      execute.mockResolvedValueOnce({ rows: [{ ...row, ROLES: null, GROUP_SLUG: 'Group /%', EVENT_SLUG: 'Event ?#' }] });
+
+      const result = await service.getMyMeetups(request, email, { ...options, isPast });
+
+      expect(result.data[0]).toMatchObject({
+        role: '',
+        status: 'Not Registered',
+        groupSlug: 'Group /%',
+        eventSlug: 'Event ?#',
+        url: 'https://ocgroups.dev/canonical-key/group/Group%20%2F%25/event/Event%20%3F%23',
+      });
+    });
+
+    it.each([undefined, null, '', ' \t\n '])('drops canonical value %j with a warning while preserving neighbors and totals', async (canonical) => {
+      const malformed = { ...row, COMMUNITY_SLUG: canonical };
+      if (canonical === undefined) delete malformed.COMMUNITY_SLUG;
+      execute.mockResolvedValueOnce({ rows: [malformed, { ...row, EVENT_ID: 'synthetic-event-2' }] });
+
+      const result = await service.getMyMeetups(request, email, { ...options, isPast });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].id).toBe('synthetic-event-2');
+      expect(result.total).toBe(4);
+      expect(logger.warning).toHaveBeenCalledExactlyOnceWith(request, 'get_my_meetups', 'Dropping malformed meetup row', {
+        event_id: row.EVENT_ID,
+        error: 'Meetup row is missing required fields',
+        page_size: 10,
+        offset: 0,
+      });
+    });
+
+    it('projects canonical identity through every explicit meetup select while retaining retrieval behavior', async () => {
+      await service.getMyMeetups(request, email, {
+        ...options,
+        isPast,
+        community: row.COMMUNITY,
+        searchQuery: 'Synthetic',
+        role: 'Attendee',
+        status: 'registered',
+        sortField: 'COMMUNITY',
+        sortOrder: 'DESC',
+        pageSize: 5,
+        offset: 10,
+      });
+      const [sql, binds] = execute.mock.calls[0];
+      const projections = [...sql.matchAll(/SELECT\s+(EVENT_ID,[\s\S]*?)\s+FROM/g)].map((match) => match[1]);
+      expect(projections).toHaveLength(isPast ? 2 : 1);
+      for (const projection of projections) expect(projection).toMatch(/\bCOMMUNITY,\s+COMMUNITY_SLUG,/);
+      expect(sql).toContain(isPast ? 'OCG_PAST_MEETUPS' : 'OCG_UPCOMING_MEETUPS');
+      expect(sql).toContain('AND TRIM(COMMUNITY) = ?');
+      expect(sql).toContain('ORDER BY COMMUNITY DESC, EVENT_ID DESC');
+      expect(sql).toContain('LIMIT 5 OFFSET 10');
+      if (!isPast) expect(sql).toContain('AND ROLES IS NOT NULL');
+      expect(binds).toEqual([email, '%Synthetic%', row.COMMUNITY, ',Attendee,']);
+    });
   });
 
   it.each([1, 10])('propagates upcoming registered-only failures at pageSize=%s', async (pageSize) => {
