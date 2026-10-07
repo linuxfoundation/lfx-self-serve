@@ -8,12 +8,15 @@ import {
   MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX,
   MENTORSHIP_CUSTOM_PREREQ_NAME_MAX,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_ENROLL_LOGO_EMPTY,
   MENTORSHIP_ENROLL_LOGO_EXTENSIONS,
   MENTORSHIP_ENROLL_LOGO_MAX_BYTES,
+  MENTORSHIP_ENROLL_LOGO_MIME_TYPES,
   MENTORSHIP_ENROLL_LOGO_TOO_LARGE,
   MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
   MENTORSHIP_ENROLL_NAME_MAX,
   MENTORSHIP_ENROLL_NAME_MIN,
+  MENTORSHIP_ENROLL_PROJECT_REQUIRED,
   MENTORSHIP_INVALID_URL,
   MENTORSHIP_MAX_OPEN_TERMS,
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
@@ -207,10 +210,23 @@ export function isMentorshipLogoFileName(fileName: string): boolean {
   return (MENTORSHIP_ENROLL_LOGO_EXTENSIONS as readonly string[]).includes(ext);
 }
 
-/** The message for a logo the wizard, the partial-save banner or the program card refuses to send, or `''` when the file is fine. */
-export function getMentorshipEnrollLogoError(file: { name: string; size: number }): string {
-  if (!isMentorshipLogoFileName(file.name)) return MENTORSHIP_ENROLL_LOGO_TYPE_ERROR;
+/**
+ * The message for a logo the wizard, the partial-save banner or the program card refuses to send, or `''` when the file is fine.
+ * The upload sends `type` as its Content-Type, so a file whose type is empty or not on the route's list is refused here too.
+ */
+export function getMentorshipEnrollLogoError(file: { name: string; size: number; type: string }): string {
+  if (!isMentorshipLogoFileName(file.name) || !(MENTORSHIP_ENROLL_LOGO_MIME_TYPES as readonly string[]).includes(file.type)) {
+    return MENTORSHIP_ENROLL_LOGO_TYPE_ERROR;
+  }
+  if (file.size === 0) return MENTORSHIP_ENROLL_LOGO_EMPTY;
   if (file.size > MENTORSHIP_ENROLL_LOGO_MAX_BYTES) return MENTORSHIP_ENROLL_LOGO_TOO_LARGE;
+  return '';
+}
+
+/** Upstream create refuses a single-day application window and one that does not end before the term starts. */
+function getMentorshipEnrollTermWindowError(term: Pick<MentorshipProgramTerm, 'startDate' | 'applicationStartDate' | 'applicationEndDate'>): string {
+  if (term.applicationEndDate <= term.applicationStartDate) return 'Application end date must be after the application start date.';
+  if (term.applicationEndDate >= term.startDate) return 'Application end date must be before the term start month.';
   return '';
 }
 
@@ -465,7 +481,7 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     }
     const projectId = form.projectId.trim();
     if (!projectId) {
-      errors.projectId = 'Select a Linux Foundation project.';
+      errors.projectId = MENTORSHIP_ENROLL_PROJECT_REQUIRED;
     }
     if (!form.technologies.length) errors.technologies = 'Add at least one technology.';
     const descriptionError = mentorshipRichTextError(
@@ -512,7 +528,9 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
             ? `Term name must be ${MENTORSHIP_TERM_NAME_MAX} characters or fewer.`
             : MENTORSHIP_TERM_FIELDS_ERROR;
       } else {
-        const firstTermError = form.terms.map((term) => Object.values(getMentorshipTermDateErrors(term))[0]).find(Boolean);
+        const firstTermError = form.terms
+          .map((term) => Object.values(getMentorshipTermDateErrors(term))[0] ?? getMentorshipEnrollTermWindowError(term))
+          .find(Boolean);
         if (firstTermError) errors.terms = firstTermError;
       }
     }

@@ -25,6 +25,7 @@ import {
   MENTORSHIP_ENROLL_NAME_MIN,
   MENTORSHIP_ENROLL_NAME_TAKEN,
   MENTORSHIP_ENROLL_NAME_UNAVAILABLE,
+  MENTORSHIP_ENROLL_PROJECT_REQUIRED,
   MENTORSHIP_ENROLL_RETRY_LABEL,
   MENTORSHIP_ENROLL_STEP_LABELS,
   MENTORSHIP_ENROLL_STEPS_ORDER,
@@ -34,6 +35,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiLookupStatus,
+  MentorshipEnrollFieldErrors,
   MentorshipEnrollForm,
   MentorshipEnrollProgramRef,
   MentorshipEnrollStep,
@@ -148,7 +150,7 @@ export class EnrollProgramComponent {
   protected readonly stepErrors = computed(() => {
     if (!this.showErrors()) return {};
     this.formSnapshot();
-    const errors = getMentorshipEnrollStepErrors(this.step(), this.toEnrollForm(this.form.getRawValue()));
+    const errors = this.stepErrorsFor(this.step());
     if (this.step() === 'details' && this.nameTakenOnCreate()) return { ...errors, name: MENTORSHIP_ENROLL_NAME_TAKEN };
     return errors;
   });
@@ -202,7 +204,7 @@ export class EnrollProgramComponent {
   protected onNext(): void {
     this.formIncompleteShown.set(false);
     const current = this.step();
-    const errors = getMentorshipEnrollStepErrors(current, this.toEnrollForm(this.form.getRawValue()));
+    const errors = this.stepErrorsFor(current);
     const firstError = Object.values(errors)[0];
     if (firstError) {
       this.showErrors.set(true);
@@ -277,10 +279,11 @@ export class EnrollProgramComponent {
   protected submitEnrollment(): void {
     if (this.submitting()) return;
     const project = this.selectedProject();
-    if (!this.logoFile() || !project) {
+    const invalidStep = this.invalidSubmitStep();
+    if (invalidStep || !project) {
       this.formIncompleteShown.set(true);
       this.showErrors.set(true);
-      this.step.set('details');
+      this.step.set(invalidStep ?? 'details');
       this.scrollToTop();
       return;
     }
@@ -291,13 +294,10 @@ export class EnrollProgramComponent {
       const existing = this.createdProgram();
       if (existing) return of(existing);
       this.submitPhase.set('creating');
-      return this.mentorshipAdminService.createProgram(toMentorshipEnrollCreateRequest(this.form.getRawValue(), project)).pipe(
-        tap((program) => {
-          this.createdProgram.set(program);
-          // What was saved must stay what is shown.
-          this.form.disable({ emitEvent: false });
-        })
-      );
+      const request = toMentorshipEnrollCreateRequest(this.form.getRawValue(), project);
+      // What is sent must stay what is shown, so the answers lock now and unlock only if the create fails.
+      this.form.disable({ emitEvent: false });
+      return this.mentorshipAdminService.createProgram(request).pipe(tap((program) => this.createdProgram.set(program)));
     })
       .pipe(
         concatMap((program) =>
@@ -332,6 +332,7 @@ export class EnrollProgramComponent {
   }
 
   private failCreate(error: unknown): void {
+    this.form.enable({ emitEvent: false });
     const status = this.statusOf(error);
     if (status === 409) {
       this.nameTakenOnCreate.set(true);
@@ -366,6 +367,21 @@ export class EnrollProgramComponent {
         reject: () => resolve(false),
       });
     });
+  }
+
+  /** A step's errors, plus a project id the picker never resolved to a project (Submit needs the project itself). */
+  private stepErrorsFor(step: MentorshipEnrollStep): MentorshipEnrollFieldErrors {
+    const errors = getMentorshipEnrollStepErrors(step, this.toEnrollForm(this.form.getRawValue()));
+    if (step === 'details' && !errors.projectId && !this.selectedProject()) return { ...errors, projectId: MENTORSHIP_ENROLL_PROJECT_REQUIRED };
+    return errors;
+  }
+
+  /** The step Submit sends the admin back to, or `undefined` when it can go ahead. */
+  private invalidSubmitStep(): MentorshipEnrollStep | undefined {
+    if (!this.logoFile() || !this.selectedProject()) return 'details';
+    // A created program's answers are locked. Before create every step is checked again: an earlier step's dates may have passed meanwhile.
+    if (this.createdProgram()) return undefined;
+    return MENTORSHIP_ENROLL_STEPS_ORDER.find((step) => Object.keys(this.stepErrorsFor(step)).length > 0);
   }
 
   private statusOf(error: unknown): number {

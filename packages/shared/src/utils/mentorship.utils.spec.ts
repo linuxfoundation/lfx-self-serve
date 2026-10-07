@@ -7,6 +7,7 @@ import {
   createDefaultMentorshipTerm,
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_ENROLL_LOGO_EMPTY,
   MENTORSHIP_ENROLL_LOGO_MAX_BYTES,
   MENTORSHIP_ENROLL_LOGO_TOO_LARGE,
   MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
@@ -292,6 +293,21 @@ describe('getMentorshipEnrollStepErrors', () => {
     expect(getMentorshipEnrollStepErrors('setup', form).terms).toBe('Enter a valid date (YYYY-MM-DD).');
   });
 
+  it('refuses the application windows upstream create refuses', () => {
+    const term = { id: 'term-1', name: 'Term 1 - 2099', startDate: '2099-06-01', endDate: '2099-08-31', applicationStartDate: '2099-03-01' };
+    const form = createEmptyMentorshipEnrollForm();
+    form.skills = ['GO'];
+
+    form.terms = [{ ...term, applicationEndDate: '2099-03-01' }];
+    expect(getMentorshipEnrollStepErrors('setup', form).terms).toBe('Application end date must be after the application start date.');
+
+    form.terms = [{ ...term, applicationEndDate: '2099-06-15' }];
+    expect(getMentorshipEnrollStepErrors('setup', form).terms).toBe('Application end date must be before the term start month.');
+
+    form.terms = [{ ...term, applicationEndDate: '2099-05-31' }];
+    expect(getMentorshipEnrollStepErrors('setup', form).terms).toBeUndefined();
+  });
+
   it('requires a coding-challenge URL when that prerequisite is required', () => {
     const form = createEmptyMentorshipEnrollForm();
     form.prerequisites = form.prerequisites.map((item) => (item.id === 'prereq-coding' ? { ...item, required: true, challengeUrl: '' } : item));
@@ -313,14 +329,24 @@ describe('mentorship URL and logo helpers', () => {
 
 describe('getMentorshipEnrollLogoError', () => {
   it('accepts a png or jpeg within the limit, including exactly the limit', () => {
-    expect(getMentorshipEnrollLogoError({ name: 'logo.png', size: 1024 })).toBe('');
-    expect(getMentorshipEnrollLogoError({ name: 'logo.JPG', size: MENTORSHIP_ENROLL_LOGO_MAX_BYTES })).toBe('');
+    expect(getMentorshipEnrollLogoError({ name: 'logo.png', size: 1024, type: 'image/png' })).toBe('');
+    expect(getMentorshipEnrollLogoError({ name: 'logo.JPG', size: MENTORSHIP_ENROLL_LOGO_MAX_BYTES, type: 'image/jpeg' })).toBe('');
   });
 
-  it('refuses another type first, then a file over the limit', () => {
-    expect(getMentorshipEnrollLogoError({ name: 'notes.pdf', size: 10 })).toBe(MENTORSHIP_ENROLL_LOGO_TYPE_ERROR);
-    expect(getMentorshipEnrollLogoError({ name: 'notes.pdf', size: MENTORSHIP_ENROLL_LOGO_MAX_BYTES + 1 })).toBe(MENTORSHIP_ENROLL_LOGO_TYPE_ERROR);
-    expect(getMentorshipEnrollLogoError({ name: 'logo.png', size: MENTORSHIP_ENROLL_LOGO_MAX_BYTES + 1 })).toBe(MENTORSHIP_ENROLL_LOGO_TOO_LARGE);
+  it('refuses another type first, then an empty file, then a file over the limit', () => {
+    expect(getMentorshipEnrollLogoError({ name: 'notes.pdf', size: 10, type: 'application/pdf' })).toBe(MENTORSHIP_ENROLL_LOGO_TYPE_ERROR);
+    expect(getMentorshipEnrollLogoError({ name: 'notes.pdf', size: MENTORSHIP_ENROLL_LOGO_MAX_BYTES + 1, type: 'application/pdf' })).toBe(
+      MENTORSHIP_ENROLL_LOGO_TYPE_ERROR
+    );
+    expect(getMentorshipEnrollLogoError({ name: 'logo.png', size: 0, type: 'image/png' })).toBe(MENTORSHIP_ENROLL_LOGO_EMPTY);
+    expect(getMentorshipEnrollLogoError({ name: 'logo.png', size: MENTORSHIP_ENROLL_LOGO_MAX_BYTES + 1, type: 'image/png' })).toBe(
+      MENTORSHIP_ENROLL_LOGO_TOO_LARGE
+    );
+  });
+
+  it('refuses a logo name whose content type the upload route would refuse, including an empty type', () => {
+    expect(getMentorshipEnrollLogoError({ name: 'logo.png', size: 10, type: 'image/gif' })).toBe(MENTORSHIP_ENROLL_LOGO_TYPE_ERROR);
+    expect(getMentorshipEnrollLogoError({ name: 'logo.png', size: 10, type: '' })).toBe(MENTORSHIP_ENROLL_LOGO_TYPE_ERROR);
   });
 });
 

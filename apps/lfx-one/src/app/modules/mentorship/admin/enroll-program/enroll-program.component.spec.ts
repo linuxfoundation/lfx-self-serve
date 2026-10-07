@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { FormGroup } from '@angular/forms';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import {
@@ -16,6 +17,7 @@ import {
   MENTORSHIP_ENROLL_LOGO_TOO_LARGE,
   MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
   MENTORSHIP_ENROLL_NAME_TAKEN,
+  MENTORSHIP_ENROLL_PROJECT_REQUIRED,
   MENTORSHIP_ENROLL_SUBMIT_FAILED,
   MENTORSHIP_ENROLL_SUBMIT_SUCCESS,
   MENTORSHIP_ENROLL_UPLOADS_UNAVAILABLE,
@@ -234,6 +236,46 @@ describe('EnrollProgramComponent', () => {
       expect(createProgram).not.toHaveBeenCalled();
       expect(component['step']()).toBe('details');
       expect(element().textContent).toContain(MENTORSHIP_ENROLL_FORM_INCOMPLETE);
+    });
+
+    it('shows a project error when the project id never resolved to a project', () => {
+      setPrerequisitesStep();
+      component['selectedProject'].set(null);
+
+      clickSubmit();
+
+      expect(createProgram).not.toHaveBeenCalled();
+      expect(component['step']()).toBe('details');
+      expect(component['stepErrors']().projectId).toBe(MENTORSHIP_ENROLL_PROJECT_REQUIRED);
+    });
+
+    it('checks the earlier steps again and sends the admin to the first one that no longer passes', () => {
+      setPrerequisitesStep();
+      const [term] = component['form'].getRawValue().terms;
+      component['form'].controls.terms.setValue([{ ...term, applicationStartDate: '2020-01-01', applicationEndDate: '2020-01-02' }]);
+
+      clickSubmit();
+
+      expect(createProgram).not.toHaveBeenCalled();
+      expect(component['step']()).toBe('setup');
+      expect(component['stepErrors']().terms).toBeTruthy();
+    });
+
+    it('locks the answers while the create is pending and unlocks them if it fails', () => {
+      const create = new Subject<MentorshipEnrollProgramRef>();
+      createProgram.mockReturnValue(create);
+      setPrerequisitesStep();
+      const prerequisites = (): StubPrerequisitesStepComponent =>
+        fixture.debugElement.query(By.directive(StubPrerequisitesStepComponent)).componentInstance as StubPrerequisitesStepComponent;
+
+      clickSubmit();
+      expect(component['form'].disabled).toBe(true);
+      expect(prerequisites().locked()).toBe(true);
+
+      create.error(httpError(500));
+      fixture.detectChanges();
+      expect(component['form'].enabled).toBe(true);
+      expect(prerequisites().locked()).toBe(false);
     });
   });
 

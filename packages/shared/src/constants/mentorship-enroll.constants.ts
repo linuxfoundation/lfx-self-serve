@@ -62,6 +62,8 @@ export const MENTORSHIP_ENROLL_LOGO_MIME_TYPES = ['image/png', 'image/jpeg'] as 
 export const MENTORSHIP_ENROLL_LOGO_HELPER = 'JPG, PNG · 420px × 420px · Max 2 MB';
 export const MENTORSHIP_ENROLL_LOGO_TYPE_ERROR = 'Program logo is not the right file type.';
 export const MENTORSHIP_ENROLL_LOGO_TOO_LARGE = 'Program logo must be 2 MB or smaller.';
+export const MENTORSHIP_ENROLL_LOGO_EMPTY = 'Program logo file is empty.';
+export const MENTORSHIP_ENROLL_PROJECT_REQUIRED = 'Select a Linux Foundation project.';
 
 export const MENTORSHIP_ENROLL_DETAILS_INTRO = 'Describe the program and the project it belongs to. This is what candidates read on your program page.';
 export const MENTORSHIP_ENROLL_SETUP_INTRO = 'Define the skills mentees need and the term schedule for this program.';

@@ -36,7 +36,7 @@
         <lfx-mentorship-enroll-setup-step [form]="form" [errors]="stepErrors()" />
       }
       @case ('prerequisites') {
-        <lfx-mentorship-enroll-prerequisites-step [form]="form" [errors]="stepErrors()" [locked]="programSaved()" />
+        <lfx-mentorship-enroll-prerequisites-step [form]="form" [errors]="stepErrors()" [locked]="submitting() || programSaved()" />
       }
     }
 
