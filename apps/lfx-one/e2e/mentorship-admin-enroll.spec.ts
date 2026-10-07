@@ -22,7 +22,13 @@ import { expect, Page, Route, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
 import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
-import { stubEnrollWizardReads } from './helpers/mentorship-admin-enroll.helper';
+import {
+  ENROLL_IMPORT_SOURCE_ID,
+  ENROLL_IMPORT_SOURCE_NAME,
+  ENROLL_IMPORT_TEMPLATE,
+  stubEnrollImportReads,
+  stubEnrollWizardReads,
+} from './helpers/mentorship-admin-enroll.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -36,11 +42,17 @@ const PROGRAM_NAME = 'Acme Rocket Mentorship';
 
 const fulfillJson = (route: Route, body: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
 
-async function openWizard(page: Page): Promise<void> {
+async function openWizard(page: Page, options: { templateFails?: boolean } = {}): Promise<void> {
   await enableMentorshipFlag(page);
   await stubEnrollWizardReads(page, fulfillJson);
+  await stubEnrollImportReads(page, fulfillJson, options);
   await openMentorPage(page, ENROLL_URL);
   await expect(page.getByTestId('mentorship-enroll-title')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+}
+
+async function pickImportProgram(page: Page): Promise<void> {
+  await page.locator('#importProgramId').click();
+  await page.getByRole('option', { name: ENROLL_IMPORT_SOURCE_NAME, exact: true }).click();
 }
 
 test.describe('Admin enroll wizard — leaving', () => {
@@ -86,6 +98,47 @@ test.describe('Admin enroll wizard — leaving', () => {
     await page.locator('#name').fill(PROGRAM_NAME);
     await page.getByTestId('mentorship-enroll-next').click();
 
+    expect(writes).toEqual([]);
+  });
+});
+
+test.describe('Admin enroll wizard — import from an existing program', () => {
+  test('fills the details from the picked program and shows its technologies', async ({ page }) => {
+    await openWizard(page);
+
+    await pickImportProgram(page);
+
+    await expect(page.locator('#name')).toHaveValue(ENROLL_IMPORT_TEMPLATE.name);
+    await expect(page.locator('#repositoryUrl')).toHaveValue(ENROLL_IMPORT_TEMPLATE.repositoryUrl);
+    await expect(page.locator('#websiteUrl')).toHaveValue(ENROLL_IMPORT_TEMPLATE.websiteUrl);
+    await expect(page.locator('#codeOfConductUrl')).toHaveValue(ENROLL_IMPORT_TEMPLATE.codeOfConductUrl);
+    const details = page.getByTestId('mentorship-enroll-details');
+    await expect(details.getByText('GO', { exact: true })).toBeVisible();
+    await expect(details.getByText('Kubernetes', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('mentorship-enroll-import-error')).toHaveCount(0);
+  });
+
+  test('shows an inline error and keeps what was typed when the template fails to load', async ({ page }) => {
+    await openWizard(page, { templateFails: true });
+    await page.locator('#name').fill(PROGRAM_NAME);
+
+    await pickImportProgram(page);
+
+    await expect(page.getByTestId('mentorship-enroll-import-error')).toContainText("Couldn't load that program");
+    await expect(page.locator('#name')).toHaveValue(PROGRAM_NAME);
+  });
+
+  test('never writes to the program it imported from', async ({ page }) => {
+    const writes: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() !== 'GET' && new URL(request.url()).pathname.includes(ENROLL_IMPORT_SOURCE_ID)) writes.push(request.url());
+    });
+    await openWizard(page);
+
+    await pickImportProgram(page);
+    await page.locator('#name').fill(PROGRAM_NAME);
+
+    await expect(page.locator('#name')).toHaveValue(PROGRAM_NAME);
     expect(writes).toEqual([]);
   });
 });

@@ -24,6 +24,7 @@ import {
   MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
   MentorshipEnrollCreateRequest,
+  MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
   MentorshipMentorTaskCreateRequest,
   MentorshipMentorTaskCreateResponse,
@@ -158,6 +159,13 @@ export class MentorshipAdminService {
         {}
       )
       .pipe(take(1), this.logFailure('declinePendingForTerm'));
+  }
+
+  /** Reads the details of an existing program for the enroll wizard's import. A 403, a 404 or any other failure reaches the caller as the error. */
+  public getEnrollTemplate(programId: string): Observable<MentorshipEnrollImport> {
+    return this.http
+      .get<MentorshipEnrollImport>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/enroll-template`)
+      .pipe(take(1), this.logFailure('getEnrollTemplate'));
   }
 
   /**

@@ -7,6 +7,8 @@ import {
   MENTORSHIP_CHALLENGE_URL_REQUIRED,
   MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX,
   MENTORSHIP_CUSTOM_PREREQ_NAME_MAX,
+  createDefaultMentorshipTerm,
+  createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
   MENTORSHIP_ENROLL_LOGO_EMPTY,
   MENTORSHIP_ENROLL_LOGO_EXTENSIONS,
@@ -75,10 +77,13 @@ import type {
   MentorshipApplicationProgress,
   MentorshipEnrollCreateRequest,
   MentorshipEnrollFieldErrors,
+  MentorshipEnrollForm,
+  MentorshipEnrollImport,
   MentorshipEnrollStep,
   MentorshipEnrollValidationInput,
   MentorshipLfProject,
   MentorshipNoteDisplay,
+  MentorshipPrerequisite,
   MentorshipProgramMentee,
   MentorshipProgramTerm,
   MentorshipRegisterFailureOptions,
@@ -282,6 +287,66 @@ export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidation
   const industry = uniqueMentorshipList(form.technologies).join(', ');
   if (industry) request.industry = industry;
   return request;
+}
+
+/**
+ * The wizard form for an imported program. The template's details and prerequisites are copied; the terms are not, so the
+ * form gets one default term, and the logo is not, so the admin picks one. `termsAccepted` starts over as `false`.
+ */
+export function formFromMentorshipEnrollImport(importProgramId: string, data: MentorshipEnrollImport): MentorshipEnrollForm {
+  return {
+    ...createEmptyMentorshipEnrollForm(),
+    importProgramId,
+    name: data.name,
+    projectId: data.project?.id ?? '',
+    technologies: [...data.technologies],
+    description: data.description,
+    repositoryUrl: data.repositoryUrl,
+    websiteUrl: data.websiteUrl,
+    ciiProjectId: data.ciiProjectId,
+    codeOfConductUrl: data.codeOfConductUrl,
+    skills: [...data.skills],
+    terms: [createDefaultMentorshipTerm()],
+    prerequisites: mergeImportedMentorshipPrerequisites(data.prerequisites),
+  };
+}
+
+/**
+ * Lays the imported prerequisites over the standard list. An imported item selects a standard row only when it is that row
+ * as create sends it: the same name (ignoring case), description and file requirement, and no due date. The Coding
+ * Challenge is compared without the `Challenge:` line create appends to its description, and gets that URL back. A
+ * standard row's text, file requirement and due date cannot be edited, so any other imported item, a changed standard one
+ * included, becomes a custom prerequisite that keeps its stored values. The standard rows the program did not use stay in
+ * the list unselected.
+ */
+function mergeImportedMentorshipPrerequisites(imported: MentorshipPrerequisite[]): MentorshipPrerequisite[] {
+  const standard = createEmptyMentorshipEnrollForm().prerequisites;
+  const custom: MentorshipPrerequisite[] = [];
+  for (const item of imported) {
+    const name = item.name.trim().toLowerCase();
+    const index = standard.findIndex((entry) => !entry.required && entry.name.toLowerCase() === name);
+    const entry = index === -1 ? undefined : standard[index];
+    const challenge = entry?.challengeUrl !== undefined ? splitImportedChallenge(item.description) : { text: item.description.trim(), url: '' };
+    const isStandard = entry !== undefined && challenge.text === entry.description && Boolean(item.requireFile) === Boolean(entry.requireFile) && !item.dueDate;
+    if (!isStandard) {
+      custom.push({ ...item });
+      continue;
+    }
+    standard[index] = { ...entry, required: true, ...(entry.challengeUrl !== undefined ? { challengeUrl: challenge.url } : {}) };
+  }
+  return [...standard, ...custom];
+}
+
+/**
+ * Splits a Coding Challenge description into its text and the URL on its last line when that line is `Challenge: <url>`.
+ * Without such a line the URL is `''` and the text is the whole description. Only the last line is matched, so a long
+ * stored description never makes the pattern backtrack.
+ */
+function splitImportedChallenge(description: string): { text: string; url: string } {
+  const text = description.trim();
+  const newline = text.lastIndexOf('\n');
+  const url = newline === -1 ? '' : (/^[ \t]*Challenge:[ \t]*(\S+)$/.exec(text.slice(newline + 1))?.[1] ?? '');
+  return url ? { text: text.slice(0, newline).trimEnd(), url } : { text, url: '' };
 }
 
 /**

@@ -6,9 +6,11 @@ import {
   MentorshipEnrollCreatePrerequisite,
   MentorshipEnrollCreateRequest,
   MentorshipEnrollCreateTerm,
+  MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
   MentorshipProgramLogoUploadResult,
   MentorshipUpstreamCreatedProgram,
+  MentorshipUpstreamEnrollTemplate,
   MentorshipUpstreamLogoUpload,
 } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
@@ -154,3 +156,56 @@ export const toMentorshipEnrollProgramRef = (program: MentorshipUpstreamCreatedP
 export const toMentorshipProgramLogoUploadResult = (upload: MentorshipUpstreamLogoUpload): MentorshipProgramLogoUploadResult => ({
   logoUrl: upload.public_url,
 });
+
+/** The Technologies kept in upstream's comma-separated `industry`: trimmed, blanks dropped, repeats dropped (case-insensitive) keeping the first spelling. */
+const splitTechnologies = (industry: string | null | undefined): string[] => {
+  const seen = new Set<string>();
+  const technologies: string[] = [];
+  for (const part of (industry ?? '').split(',')) {
+    const technology = part.trim();
+    const key = technology.toLowerCase();
+    if (technology && !seen.has(key)) {
+      seen.add(key);
+      technologies.push(technology);
+    }
+  }
+  return technologies;
+};
+
+/**
+ * What the wizard copies from an upstream enroll template. `project` is `null` unless the template names a project uid, name and
+ * slug, since create needs all three, and a missing text field is `''`. Every imported prerequisite is a selected, editable one
+ * (`custom`) until the wizard matches it to a standard prerequisite; it asks for a file when upstream's `submitFile` is not blank, and a
+ * `null` due date is left out. Terms are not part of the template, and neither is a logo.
+ */
+export const toMentorshipEnrollImport = (template: MentorshipUpstreamEnrollTemplate): MentorshipEnrollImport => {
+  const { program } = template;
+  const projectId = parseTrimmedString(program.project_uid);
+  const projectName = parseTrimmedString(program.project_name);
+  const projectSlug = parseTrimmedString(program.project_slug);
+  const projectLogoUrl = parseTrimmedString(program.project_logo_url);
+
+  return {
+    name: program.name,
+    project:
+      projectId && projectName && projectSlug
+        ? { id: projectId, name: projectName, slug: projectSlug, ...(projectLogoUrl ? { logoUrl: projectLogoUrl } : {}) }
+        : null,
+    description: program.description ?? '',
+    repositoryUrl: program.repo_link ?? '',
+    websiteUrl: program.website_url ?? '',
+    codeOfConductUrl: program.code_of_conduct ?? '',
+    ciiProjectId: program.cii_project_id ?? '',
+    technologies: splitTechnologies(program.industry),
+    skills: [...(template.skills ?? [])],
+    prerequisites: (template.prerequisites ?? []).map((item, index) => ({
+      id: `imported-${index}`,
+      name: item.name,
+      description: item.description ?? '',
+      required: true,
+      requireFile: Boolean(item.submitFile),
+      custom: true,
+      ...(item.dueDate ? { dueDate: item.dueDate } : {}),
+    })),
+  };
+};

@@ -56,7 +56,7 @@ import type {
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskView,
 } from '../interfaces/mentorship-mentee.interface';
-import type { MentorshipEnrollValidationInput, MentorshipLfProject, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
+import type { MentorshipEnrollImport, MentorshipEnrollValidationInput, MentorshipLfProject, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import type { MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
 import type { MentorshipMentorRegisterForm } from '../interfaces/mentorship-mentor.interface';
 import {
@@ -81,6 +81,7 @@ import {
   mentorshipTaskDueCutoffMs,
   formatMentorshipShortMonthYear,
   filterMentorshipApplicantTasks,
+  formFromMentorshipEnrollImport,
   formatMentorshipApplicantTaskDueLabel,
   formatMentorshipReviewUpdatedLabel,
   mentorshipMenteeTaskCompletion,
@@ -461,6 +462,152 @@ describe('toMentorshipEnrollCreateRequest', () => {
     for (const key of ['logoFileName', 'logoPreviewUrl', 'importProgramId', 'status', 'logo_url', 'logoUrl']) {
       expect(request).not.toHaveProperty(key);
     }
+  });
+});
+
+describe('formFromMentorshipEnrollImport', () => {
+  const imported: MentorshipEnrollImport = {
+    name: 'Existing Program',
+    project: { id: '11111111-1111-4111-8111-111111111111', name: 'Project One', slug: 'project-one' },
+    description: '<p>Copied description</p>',
+    repositoryUrl: 'https://github.com/example/repo',
+    websiteUrl: 'https://example.org',
+    codeOfConductUrl: 'https://example.org/coc',
+    ciiProjectId: '1842',
+    technologies: ['Go', 'Kubernetes'],
+    skills: ['Java', 'Database'],
+    prerequisites: [
+      { id: 'imported-0', name: 'Resume', description: 'Upload the most recent version of your resume.', required: true, requireFile: true, custom: true },
+      { id: 'imported-1', name: 'Essay', description: '', required: true, requireFile: false, custom: true, dueDate: '2027-01-15' },
+    ],
+  };
+
+  it('copies the details, technologies and skills', () => {
+    const form = formFromMentorshipEnrollImport('mp_1', imported);
+
+    expect(form).toMatchObject({
+      importProgramId: 'mp_1',
+      name: 'Existing Program',
+      projectId: '11111111-1111-4111-8111-111111111111',
+      description: '<p>Copied description</p>',
+      repositoryUrl: 'https://github.com/example/repo',
+      websiteUrl: 'https://example.org',
+      codeOfConductUrl: 'https://example.org/coc',
+      ciiProjectId: '1842',
+      technologies: ['Go', 'Kubernetes'],
+      skills: ['Java', 'Database'],
+    });
+  });
+
+  it('selects the standard prerequisites the program used and adds the rest as custom ones', () => {
+    const form = formFromMentorshipEnrollImport('mp_1', imported);
+    const standard = createEmptyMentorshipEnrollForm().prerequisites;
+
+    expect(form.prerequisites).toHaveLength(standard.length + 1);
+    expect(form.prerequisites.find((item) => item.id === 'prereq-resume')).toEqual({ ...standard[0], required: true });
+    expect(form.prerequisites.filter((item) => item.required && !item.custom).map((item) => item.id)).toEqual(['prereq-resume']);
+    expect(form.prerequisites.at(-1)).toEqual(imported.prerequisites[1]);
+  });
+
+  it('matches standard names ignoring case and gives the Coding Challenge back its URL', () => {
+    const form = formFromMentorshipEnrollImport('mp_1', {
+      ...imported,
+      prerequisites: [
+        {
+          id: 'imported-0',
+          name: 'coding challenge',
+          description: 'Complete a code challenge\n\nChallenge: https://challenge.example/task',
+          required: true,
+          requireFile: false,
+          custom: true,
+        },
+      ],
+    });
+
+    expect(form.prerequisites.find((item) => item.id === 'prereq-coding')).toMatchObject({ required: true, challengeUrl: 'https://challenge.example/task' });
+    expect(form.prerequisites.some((item) => item.custom)).toBe(false);
+  });
+
+  it('reads the Coding Challenge URL only from a Challenge: line at the end of its description', () => {
+    const importCoding = (description: string) => {
+      const prerequisites = formFromMentorshipEnrollImport('mp_1', {
+        ...imported,
+        prerequisites: [{ id: 'imported-0', name: 'Coding Challenge', description, required: true, requireFile: false, custom: true }],
+      }).prerequisites;
+      const coding = prerequisites.find((item) => item.id === 'prereq-coding');
+      return { selected: coding?.required, url: coding?.challengeUrl, custom: prerequisites.filter((item) => item.custom).map((item) => item.description) };
+    };
+    const base = 'Complete a code challenge';
+
+    expect(importCoding(`${base}\n\tChallenge:  https://challenge.example/task  \n`)).toEqual({
+      selected: true,
+      url: 'https://challenge.example/task',
+      custom: [],
+    });
+    expect(importCoding(base)).toEqual({ selected: true, url: '', custom: [] });
+    for (const description of [
+      'Challenge: https://challenge.example/task',
+      `${base}\n\nChallenge: https://challenge.example/task\nMore text`,
+      `${base}${'\n'.repeat(50_000)}More text`,
+    ]) {
+      expect(importCoding(description)).toEqual({ selected: false, url: '', custom: [description] });
+    }
+  });
+
+  it('keeps a standard prerequisite the program changed as a custom one with its stored values', () => {
+    const resume = { name: 'Resume', description: 'Upload the most recent version of your resume.', required: true, requireFile: true, custom: true };
+    const changed = [
+      { ...resume, id: 'imported-0', description: 'Upload a one-page resume.' },
+      { ...resume, id: 'imported-1', requireFile: false },
+      { ...resume, id: 'imported-2', dueDate: '2027-01-15' },
+    ];
+
+    for (const item of changed) {
+      const form = formFromMentorshipEnrollImport('mp_1', { ...imported, prerequisites: [item] });
+
+      expect(form.prerequisites.find((entry) => entry.id === 'prereq-resume')?.required).toBe(false);
+      expect(form.prerequisites.at(-1)).toEqual(item);
+    }
+  });
+
+  it('passes the prerequisites step for a program created from the standard list', () => {
+    const used = createEmptyMentorshipEnrollForm().prerequisites.filter((item) => item.challengeUrl === undefined);
+    const form = formFromMentorshipEnrollImport('mp_1', {
+      ...imported,
+      prerequisites: used.map((item, index) => ({
+        id: `imported-${index}`,
+        name: item.name,
+        description: item.description,
+        required: true,
+        requireFile: item.requireFile === true,
+        custom: true,
+      })),
+    });
+
+    expect(form.prerequisites.filter((item) => item.required).map((item) => item.id)).toEqual(used.map((item) => item.id));
+    expect(getMentorshipEnrollStepErrors('prerequisites', { ...form, termsAccepted: true })).toEqual({});
+  });
+
+  it('does not share its lists with the import', () => {
+    const form = formFromMentorshipEnrollImport('mp_1', imported);
+
+    expect(form.technologies).not.toBe(imported.technologies);
+    expect(form.skills).not.toBe(imported.skills);
+    expect(form.prerequisites.at(-1)).not.toBe(imported.prerequisites[1]);
+  });
+
+  it('starts with one default term, no logo and the terms not accepted', () => {
+    const form = formFromMentorshipEnrollImport('mp_1', imported);
+
+    expect(form.terms).toHaveLength(1);
+    expect(form.terms[0]).toEqual(createDefaultMentorshipTerm());
+    expect(form.logoFileName).toBe('');
+    expect(form.logoPreviewUrl).toBe('');
+    expect(form.termsAccepted).toBe(false);
+  });
+
+  it('leaves the project empty when the template has none', () => {
+    expect(formFromMentorshipEnrollImport('mp_1', { ...imported, project: null }).projectId).toBe('');
   });
 });
 

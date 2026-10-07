@@ -13,6 +13,7 @@ import {
   MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
   MentorshipEnrollCreateRequest,
+  MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
   MentorshipMentorTaskCreateResponse,
   MentorshipProgramLogoUploadResult,
@@ -79,6 +80,26 @@ describe('MentorshipAdminService', () => {
     http.expectOne('/api/mentorship/admin/programs/nope').flush('missing', { status: 404, statusText: 'Not Found' });
     expect(status).toBe(404);
     expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] getProgram failed', { status: 404, statusText: 'Not Found' });
+  });
+
+  it('reads the enroll template from the admin endpoint, encoding the id', () => {
+    let name: string | undefined;
+    service.getEnrollTemplate('grid flow').subscribe((value) => (name = value.name));
+
+    const req = http.expectOne('/api/mentorship/admin/programs/grid%20flow/enroll-template');
+    expect(req.request.method).toBe('GET');
+    req.flush({ name: 'Example Program', project: null, technologies: [], skills: [], prerequisites: [] } satisfies Partial<MentorshipEnrollImport>);
+    expect(name).toBe('Example Program');
+  });
+
+  it('logs an enroll template failure by status and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.getEnrollTemplate('nope').subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/admin/programs/nope/enroll-template').flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(status).toBe(503);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] getEnrollTemplate failed', { status: 503, statusText: 'Service Unavailable' });
   });
 
   it('reads one page of mentees with the set filters as query params', () => {

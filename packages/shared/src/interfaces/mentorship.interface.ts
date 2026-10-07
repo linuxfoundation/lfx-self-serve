@@ -516,3 +516,43 @@ export interface MentorshipUpstreamLogoUpload {
   content_type: string;
   size: number;
 }
+
+/**
+ * Upstream body from `GET /mentorship/v1/programs/{id}/enroll-template`. Upstream omits an empty `prerequisites`, and a
+ * prerequisite's `description`, `submitFile` and `dueDate` are `null` when unset.
+ */
+export interface MentorshipUpstreamEnrollTemplate {
+  program: {
+    id: string;
+    name: string;
+    description?: string | null;
+    repo_link?: string | null;
+    website_url?: string | null;
+    code_of_conduct?: string | null;
+    cii_project_id?: string | null;
+    /** Comma-separated Technologies. */
+    industry?: string | null;
+    project_uid?: string | null;
+    project_slug?: string | null;
+    project_name?: string | null;
+    project_logo_url?: string | null;
+  };
+  skills?: string[] | null;
+  /** The program's stored task templates, passed through as they are, so their keys are camelCase unlike `program`'s. */
+  prerequisites?: { name: string; description?: string | null; submitFile?: string | null; dueDate?: string | null }[] | null;
+}
+
+/** Response from `GET /api/mentorship/admin/programs/:programId/enroll-template`: what the wizard copies from an existing program. */
+export interface MentorshipEnrollImport {
+  name: string;
+  /** `null` when the template has no project uid. */
+  project: MentorshipLfProject | null;
+  description: string;
+  repositoryUrl: string;
+  websiteUrl: string;
+  codeOfConductUrl: string;
+  ciiProjectId: string;
+  technologies: string[];
+  skills: string[];
+  prerequisites: MentorshipPrerequisite[];
+}

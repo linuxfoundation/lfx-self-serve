@@ -36,6 +36,10 @@ const createProgramHandler = vi.fn((_req: express.Request, res: express.Response
   res.status(201).json({ id: 'program' });
 });
 
+const enrollTemplateHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.json({ name: 'Example Program' });
+});
+
 // Records what the raw parser left on `req.body`, which is what the real controller's 415 and empty-body checks read.
 const logoHandler = vi.fn((req: express.Request, res: express.Response) => {
   res.status(201).json({ isBuffer: Buffer.isBuffer(req.body), length: Buffer.isBuffer(req.body) ? req.body.byteLength : 0 });
@@ -44,6 +48,7 @@ const logoHandler = vi.fn((req: express.Request, res: express.Response) => {
 vi.mock('../controllers/mentorship-admin.controller', () => ({
   MentorshipAdminController: class {
     public createProgram = createProgramHandler;
+    public getEnrollTemplate = enrollTemplateHandler;
     public uploadProgramLogo = logoHandler;
     public updateApplicationNote = noteHandler;
     public createTasks = tasksHandler;
@@ -216,6 +221,15 @@ describe('mentorship admin router — program create impersonation gate', () => 
 
     expect(res.status).toBe(201);
     expect(createProgramHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mentorship admin router — GET /programs/:programId/enroll-template', () => {
+  it('reaches the controller while impersonating, since it only reads', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/admin/programs/${PROGRAM_ID}/enroll-template`);
+
+    expect(res.status).toBe(200);
+    expect(enrollTemplateHandler).toHaveBeenCalledTimes(1);
   });
 });
 

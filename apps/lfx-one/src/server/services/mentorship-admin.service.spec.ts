@@ -988,6 +988,64 @@ describe('MentorshipAdminService term writes', () => {
   });
 });
 
+describe('MentorshipAdminService.getEnrollTemplate', () => {
+  const TEMPLATE_PATH = `/mentorship/v1/programs/${PROGRAM_ID}/enroll-template`;
+  const upstreamTemplate = {
+    program: {
+      id: PROGRAM_ID,
+      name: 'private-program-name',
+      description: 'private-program-description',
+      industry: 'Go, Rust',
+      repo_link: 'https://private.example/repo',
+    },
+    skills: ['private-skill'],
+    prerequisites: [{ name: 'Resume', description: 'private-prereq-description', submitFile: 'required', dueDate: null }],
+  };
+  let service: InstanceType<typeof MentorshipAdminService>;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('reads the template from the program path and returns it mapped', async () => {
+    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue(upstreamTemplate as never);
+
+    const result = await service.getEnrollTemplate(buildReq(), PROGRAM_ID);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0].slice(2, 4)).toEqual([TEMPLATE_PATH, 'GET']);
+    expect(result).toMatchObject({
+      name: 'private-program-name',
+      project: null,
+      technologies: ['Go', 'Rust'],
+      skills: ['private-skill'],
+      prerequisites: [{ id: 'imported-0', name: 'Resume', required: true, requireFile: true, custom: true }],
+    });
+  });
+
+  it.each([403, 404, 503])('passes an upstream %i through', async (status) => {
+    const error = MicroserviceError.fromMicroserviceResponse(status, 'Error', { error: 'nope' }, 'LFX_V2_SERVICE', TEMPLATE_PATH);
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockRejectedValue(error);
+
+    await expect(service.getEnrollTemplate(buildReq(), PROGRAM_ID)).rejects.toBe(error);
+  });
+
+  it('never logs the template contents', async () => {
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue(upstreamTemplate as never);
+
+    await service.getEnrollTemplate(buildReq(), PROGRAM_ID);
+
+    const logged = JSON.stringify(Object.values(logger).flatMap((fn) => vi.mocked(fn as () => void).mock.calls.map((call) => call.slice(1))));
+    for (const secret of ['private-program-name', 'private-program-description', 'private.example', 'private-skill', 'private-prereq-description']) {
+      expect(logged).not.toContain(secret);
+    }
+  });
+});
+
 describe('MentorshipAdminService program create and logo upload', () => {
   const PROGRAMS_PATH = '/mentorship/v1/programs';
   const createBody = {

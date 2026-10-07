@@ -4,10 +4,16 @@
 import '@angular/compiler';
 
 import { MENTORSHIP_MAX_OPEN_TERMS } from '@lfx-one/shared/constants';
+import type { MentorshipUpstreamEnrollTemplate } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
 import { ServiceValidationError } from '../errors';
-import { parseMentorshipEnrollCreateRequest, toMentorshipEnrollProgramRef, toMentorshipProgramLogoUploadResult } from './mentorship-enroll.helper';
+import {
+  parseMentorshipEnrollCreateRequest,
+  toMentorshipEnrollImport,
+  toMentorshipEnrollProgramRef,
+  toMentorshipProgramLogoUploadResult,
+} from './mentorship-enroll.helper';
 
 const OPERATION = 'create_mentorship_admin_program';
 const PROJECT_ID = '3f2c1a9e-7b4d-4c1e-9a55-0d6e8f1a2b3c';
@@ -183,5 +189,107 @@ describe('toMentorshipProgramLogoUploadResult', () => {
     expect(
       toMentorshipProgramLogoUploadResult({ public_url: 'https://cdn.example/logo.png', filename: 'logo.png', content_type: 'image/png', size: 10 })
     ).toEqual({ logoUrl: 'https://cdn.example/logo.png' });
+  });
+});
+
+describe('toMentorshipEnrollImport', () => {
+  const PROJECT_UID = '5c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+  const template = (program: Record<string, unknown> = {}, rest: Record<string, unknown> = {}): MentorshipUpstreamEnrollTemplate =>
+    ({
+      program: { id: 'p-1', name: 'Existing Program', ...program },
+      skills: ['Go'],
+      ...rest,
+    }) as MentorshipUpstreamEnrollTemplate;
+
+  it('maps the program fields, the project, the technologies and the skills', () => {
+    const result = toMentorshipEnrollImport(
+      template({
+        description: '<p>About</p>',
+        repo_link: 'https://github.com/example/repo',
+        website_url: 'https://example.org',
+        code_of_conduct: 'https://example.org/coc',
+        cii_project_id: '1842',
+        industry: 'Go, Kubernetes',
+        project_uid: PROJECT_UID,
+        project_slug: 'example-project',
+        project_name: 'Example Project',
+        project_logo_url: 'https://cdn.example/project.png',
+      })
+    );
+
+    expect(result).toEqual({
+      name: 'Existing Program',
+      project: { id: PROJECT_UID, name: 'Example Project', slug: 'example-project', logoUrl: 'https://cdn.example/project.png' },
+      description: '<p>About</p>',
+      repositoryUrl: 'https://github.com/example/repo',
+      websiteUrl: 'https://example.org',
+      codeOfConductUrl: 'https://example.org/coc',
+      ciiProjectId: '1842',
+      technologies: ['Go', 'Kubernetes'],
+      skills: ['Go'],
+      prerequisites: [],
+    });
+  });
+
+  it('has no project when the template has no project uid', () => {
+    expect(toMentorshipEnrollImport(template()).project).toBeNull();
+    expect(toMentorshipEnrollImport(template({ project_uid: '  ', project_name: 'Orphan' })).project).toBeNull();
+  });
+
+  it('has no project when the template leaves out the project name or slug, so the admin picks one', () => {
+    expect(toMentorshipEnrollImport(template({ project_uid: PROJECT_UID, project_slug: 'example-project' })).project).toBeNull();
+    expect(toMentorshipEnrollImport(template({ project_uid: PROJECT_UID, project_name: 'Example Project', project_slug: ' ' })).project).toBeNull();
+  });
+
+  it('leaves the project logo out when it is empty', () => {
+    expect(
+      toMentorshipEnrollImport(template({ project_uid: PROJECT_UID, project_name: 'Example Project', project_slug: 'example-project', project_logo_url: '' }))
+        .project
+    ).toEqual({ id: PROJECT_UID, name: 'Example Project', slug: 'example-project' });
+  });
+
+  it('turns missing or null text fields into empty text', () => {
+    const result = toMentorshipEnrollImport(template({ description: null, repo_link: null, website_url: undefined, industry: null }));
+
+    expect(result).toMatchObject({ description: '', repositoryUrl: '', websiteUrl: '', codeOfConductUrl: '', ciiProjectId: '', technologies: [] });
+  });
+
+  it('trims the technologies, drops blanks and repeats, and keeps the first spelling', () => {
+    expect(toMentorshipEnrollImport(template({ industry: ' Go , ,kubernetes,GO, Kubernetes ,Rust' })).technologies).toEqual(['Go', 'kubernetes', 'Rust']);
+  });
+
+  it('copies the skills and tolerates a missing list', () => {
+    expect(toMentorshipEnrollImport(template({}, { skills: ['Go', 'Rust'] })).skills).toEqual(['Go', 'Rust']);
+    expect(toMentorshipEnrollImport(template({}, { skills: undefined })).skills).toEqual([]);
+  });
+
+  it('maps each prerequisite to a selected, editable one and asks for a file only when upstream set submitFile', () => {
+    const result = toMentorshipEnrollImport(
+      template(
+        {},
+        {
+          prerequisites: [
+            { name: 'Resume', description: 'Upload it', submitFile: 'required', dueDate: '2030-02-01' },
+            { name: 'Essay', description: null, submitFile: null, dueDate: null },
+          ],
+        }
+      )
+    );
+
+    expect(result.prerequisites).toEqual([
+      { id: 'imported-0', name: 'Resume', description: 'Upload it', required: true, requireFile: true, custom: true, dueDate: '2030-02-01' },
+      { id: 'imported-1', name: 'Essay', description: '', required: true, requireFile: false, custom: true },
+    ]);
+    expect(result.prerequisites[1]).not.toHaveProperty('dueDate');
+  });
+
+  it('asks for no file when submitFile is blank', () => {
+    const result = toMentorshipEnrollImport(template({}, { prerequisites: [{ name: 'Essay', submitFile: '' }] }));
+
+    expect(result.prerequisites[0].requireFile).toBe(false);
+  });
+
+  it('tolerates a template with no prerequisites', () => {
+    expect(toMentorshipEnrollImport(template({}, { prerequisites: undefined })).prerequisites).toEqual([]);
   });
 });

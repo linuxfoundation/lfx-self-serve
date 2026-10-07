@@ -26,6 +26,7 @@ The program list and the program page (header, tab counts and all four tabs) rea
 | PATCH  | `/api/mentorship/admin/programs/:programId/mentors/:memberId`             | `updateProgramMentor`     | Accept, Decline, Revoke invite and Remove on a mentor |
 | POST   | `/api/mentorship/admin/programs`                                          | `createProgram`           | Enroll wizard, create step                            |
 | POST   | `/api/mentorship/admin/programs/:programId/logo`                          | `uploadProgramLogo`       | Enroll wizard, logo upload after create               |
+| GET    | `/api/mentorship/admin/programs/:programId/enroll-template`               | `getEnrollTemplate`       | Enroll wizard, import from an existing program        |
 | POST   | `/api/mentorship/admin/programs/:programId/terms`                         | `createTerm`              | Add Term on the Terms tab                             |
 | PATCH  | `/api/mentorship/admin/programs/:programId/terms/:termId`                 | `updateTerm`              | Edit on a term row                                    |
 | POST   | `/api/mentorship/admin/programs/:programId/terms/:termId/close`           | `closeTerm`               | Close on a term row                                   |
@@ -142,7 +143,7 @@ Create, edit, close, re-open and delete a term, each behind `blockDuringImperson
 - On a caller's first visit upstream answers not-provisioned, so `proxyMentorshipRequest` provisions them (`PUT /me`) and retries, as on the mentor and mentee pages. A not-provisioned error that still reaches the service (while impersonating, which never provisions, or when the retry is refused too) gives an empty page and a warn log with no user identifiers. Any other error propagates, and the page shows its failed-load state with Retry.
 - Upstream lists only direct `program_admin` memberships. Admins who only inherit access from the project are not listed yet.
 - The list now carries upstream program ids, while the program detail still resolves mock ids only, so opening a listed program shows the not-found state until the detail moves to the mentorship service (linuxfoundation/lfx-mentorship#233).
-- The Enroll form's "import from program" picker keeps only programs that have import details (`isMentorshipProgramImportable`). Those details are still keyed by mock ids, so the picker offers only "None" until import moves to the mentorship service.
+- The Enroll form's "import from program" picker lists every program the admin manages, with "None" first. It reads the list page by page at `MENTORSHIP_PROGRAMS_MAX_LIMIT` until `total` is reached or a page comes back empty. See [Import from an existing program](#import-from-an-existing-program).
 
 ### Status mapping
 
@@ -170,6 +171,20 @@ Two writes behind the Enroll wizard, each behind `blockDuringImpersonation` and 
 - `express.raw` runs on this route only, limited to `MENTORSHIP_ENROLL_LOGO_MAX_BYTES`. A larger body is a 413 (`PAYLOAD_TOO_LARGE`), converted from the parser's `entity.too.large` before the error handler flattens it to a 500. `express.raw` skips a type that is not on the list, so the controller answers 415 (`UNSUPPORTED_MEDIA_TYPE`) for it first and 400 on the `logo` field for an empty body.
 - Logs carry the program id, status, term count, size in bytes and content type only, never a name, description, URL or file name.
 - **Known gaps.** A dev environment without object storage answers the logo upload with a 503. A user who has just created a program can get a 403 on the upload until the permission grant lands; the app service's `uploadProgramLogo` retries that 403 up to 3 times, after 1, 2 and 4 seconds (see [Wizard create flow](#wizard-create-flow)). The create call is never retried. Upstream stores the date-only term dates at 00:00 UTC, refuses a term whose application window is a single day (application end must fall strictly after application start, and before the term starts), and drops any prerequisite sent with `required: false` without an error; the BFF passes all three through unchecked, so the wizard has to match them. The wizard's term dialog and setup step both refuse those two application windows (`getMentorshipEnrollTermDateErrors`); the program-detail Terms tab edits through a separate BFF route and keeps its own date rules.
+
+## Import from an existing program
+
+`GET /api/mentorship/admin/programs/:programId/enroll-template` is a read, so `blockDuringImpersonation` does not apply. It validates `programId` as a UUID (400 otherwise) and forwards to upstream `GET /mentorship/v1/programs/{id}/enroll-template` with the caller's bearer token through `proxyMentorshipRequest`, so upstream decides whether the caller may read that program (403 and 404 reach the wizard as they are). The source program is never written.
+
+- Upstream answers `{ program, skills, prerequisites }`. `program` is snake_case. `skills` is always sent, possibly empty, and `prerequisites` is left out when empty. `prerequisites` is the program's stored task templates as they are, so its keys are camelCase (`submitFile`, `dueDate`).
+- `toMentorshipEnrollImport` in `mentorship-enroll.helper.ts` maps the answer to `MentorshipEnrollImport`: text fields default to an empty string, and `project` is `null` unless the template carries a project uid, name and slug (create needs all three, so the admin picks the project otherwise).
+- Technologies come from `program.industry`, a comma-separated string: split, trimmed, blanks dropped, and repeats removed ignoring case (the first spelling wins). This is the same field the create route writes.
+- The BFF maps each prerequisite to a custom one: `required: true`, `requireFile` when upstream's `submitFile` is not blank, and `dueDate` kept only when set. Ids are `imported-<index>`.
+- `formFromMentorshipEnrollImport` then lays them over the standard list. An item selects a standard row only when it matches that row as create sends it: the same name (ignoring case), description and file requirement, and no due date. The Coding Challenge is compared without the `Challenge:` line that create appended to its description, and gets that URL back (only the description's last line is checked). A standard row's text, file requirement and due date cannot be edited, so every other item, including a standard one the program changed, stays custom with its stored values. The standard rows the program did not use stay unselected.
+- Terms and the logo are not copied, and `termsAccepted` is not set. `formFromMentorshipEnrollImport` gives the new form one default term and no logo.
+- Logs carry the program id and the prerequisite count only, never a name, description, URL or skill.
+
+In the wizard, picking a program reads its template (a newer pick drops the read of an older one), fills the form, clears any logo the admin had picked, and sets the project picker's value to the template's project even when the picker has not loaded it. A failed read shows `MENTORSHIP_ENROLL_IMPORT_FAILED` under the select, puts the select back to "None" and leaves the rest of the form as it was, so enrolling from scratch still works. Leaving the step before the read returns cancels it and puts the select back to "None" too. Picking "None" resets the form. If any page of the program list fails, the select offers only "None" and shows `MENTORSHIP_ENROLL_IMPORT_LIST_FAILED` under it, so an empty list does not read as having no programs.
 
 ## Wizard create flow
 
