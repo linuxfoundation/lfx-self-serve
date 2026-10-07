@@ -63,6 +63,12 @@ describe('parseMentorshipEnrollCreateRequest', () => {
     expect(parsed).not.toHaveProperty('ciiProjectId');
   });
 
+  it('keeps industry trimmed and leaves it out when blank or not text', () => {
+    expect(parseMentorshipEnrollCreateRequest(validBody({ industry: ' GO, Kubernetes ' }), OPERATION).industry).toBe('GO, Kubernetes');
+    expect(parseMentorshipEnrollCreateRequest(validBody({ industry: '' }), OPERATION)).not.toHaveProperty('industry');
+    expect(parseMentorshipEnrollCreateRequest(validBody({ industry: 5 }), OPERATION)).not.toHaveProperty('industry');
+  });
+
   it('drops fields the create body must never carry', () => {
     const parsed = parseMentorshipEnrollCreateRequest(
       validBody({

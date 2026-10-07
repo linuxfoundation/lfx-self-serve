@@ -69,7 +69,8 @@ const parsePrerequisite = (value: unknown, index: number, operation: string): Me
  * `status` or term `id` never reaches upstream. It checks the shape the upstream create needs (a project, the text fields, at
  * least one skill, 1 to `MENTORSHIP_MAX_OPEN_TERMS` terms, accepted terms), trims every text field but a prerequisite
  * description, and leaves lengths, URLs and dates to the wizard and upstream, which both check them. A field inside a list is
- * named by its index (`terms[1].startDate`). Nothing in the body is logged.
+ * named by its index (`terms[1].startDate`). The optional text fields, `industry` among them, are kept only when not blank.
+ * Nothing in the body is logged.
  */
 export const parseMentorshipEnrollCreateRequest = (body: unknown, operation: string): MentorshipEnrollCreateRequest => {
   const raw = asRecord(body);
@@ -120,10 +121,12 @@ export const parseMentorshipEnrollCreateRequest = (body: unknown, operation: str
   const websiteUrl = parseTrimmedString(raw['websiteUrl']);
   const codeOfConductUrl = parseTrimmedString(raw['codeOfConductUrl']);
   const ciiProjectId = parseTrimmedString(raw['ciiProjectId']);
+  const industry = parseTrimmedString(raw['industry']);
   if (projectLogoUrl) request.projectLogoUrl = projectLogoUrl;
   if (websiteUrl) request.websiteUrl = websiteUrl;
   if (codeOfConductUrl) request.codeOfConductUrl = codeOfConductUrl;
   if (ciiProjectId) request.ciiProjectId = ciiProjectId;
+  if (industry) request.industry = industry;
 
   return request;
 };

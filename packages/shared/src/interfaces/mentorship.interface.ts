@@ -470,6 +470,8 @@ export interface MentorshipEnrollCreateRequest {
   websiteUrl?: string;
   codeOfConductUrl?: string;
   ciiProjectId?: string;
+  /** The wizard's Technologies, joined with `', '`. Upstream keeps it apart from `skills`. */
+  industry?: string;
   skills: string[];
   terms: MentorshipEnrollCreateTerm[];
   prerequisites: MentorshipEnrollCreatePrerequisite[];
