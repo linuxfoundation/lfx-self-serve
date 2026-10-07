@@ -4,7 +4,17 @@
 import { SlicePipe } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import {
+  AbstractControl,
+  FormArray,
+  FormBuilder,
+  FormControl,
+  FormGroup,
+  ReactiveFormsModule,
+  ValidationErrors,
+  ValidatorFn,
+  Validators,
+} from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   CAMPAIGN_BUDGET_DEFAULTS,
@@ -34,8 +44,24 @@ import {
   normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
   CAMPAIGN_PLATFORMS,
+  GOOGLE_ADS_BIDDING_BOUNDS,
+  GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_GEO_TARGET_MAP,
+  GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
+  GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_BIDDING_CPA_STRATEGIES,
+  GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
+  GOOGLE_BIDDING_ROAS_STRATEGIES,
+  GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
+  GOOGLE_BIDDING_STRATEGY_LABELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_NAME_TOKENS,
+  GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CONVERSION_ACTION_CHANNELS,
+  GOOGLE_CREATIVE_FIELD_SPECS,
+  GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   REDDIT_MAX_BUDGET_USD,
@@ -49,6 +75,7 @@ import type { Signal } from '@angular/core';
 import type {
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
+  CampaignCreateRequest,
   CampaignCreateResult,
   CampaignImplementationDraft,
   CampaignJobOutcome,
@@ -56,7 +83,11 @@ import type {
   CampaignPlatform,
   CampaignPlatformResult,
   CampaignType,
+  GoogleBiddingOption,
+  GoogleBiddingStrategy,
   GoogleCampaignChannel,
+  GoogleCreativeFieldSpec,
+  GoogleCreativeSection,
   LinkedInAccount,
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
@@ -266,6 +297,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
   protected readonly videoCreateUnsupportedReason = GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON;
+  protected readonly googleCreativeNotice = GOOGLE_CREATIVE_REQUIRED_NOTICE;
   protected readonly redditMaxBudget = REDDIT_MAX_BUDGET_USD;
   protected readonly allKnownGeos: LinkedInGeoTarget[] = [...new Map(Object.values(LINKEDIN_GEO_RESOLVE_MAP).map((g) => [g.urn, g])).values()];
   protected readonly todayDate = new Date().toISOString().split('T')[0];
@@ -303,8 +335,49 @@ export class ImplementationTabComponent implements OnInit {
     // whole change the day Google ships the API.
     includeVideo: [{ value: false, disabled: !GOOGLE_VIDEO_CREATE_SUPPORTED }],
     includeDisplay: [false],
-    headlines: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)])]),
-    descriptions: this.fb.array([this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)])]),
+    // Required-ness lives on the ARRAY, not on each control, and is conditional on a channel that
+    // actually consumes this copy being selected — see `searchCopyRequired`. The per-control
+    // validator is the width bound alone.
+    //
+    // Before, every control carried `Validators.required` unconditionally, so an empty first
+    // headline made `campaignForm.invalid` true and `canSubmit` false for EVERY Google selection.
+    // A Performance Max or Display campaign — whose ad copy is its own creative object and has
+    // nothing to do with these two arrays — could not be created without first filling in a
+    // Search headline and description that would then be sent nowhere.
+    headlines: this.fb.array([this.fb.control('', [Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)])], {
+      validators: [this.searchCopyRequired('headline')],
+    }),
+    descriptions: this.fb.array([this.fb.control('', [Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)])], {
+      validators: [this.searchCopyRequired('description')],
+    }),
+    // One nested group per Google channel whose ad copy is a creative OBJECT rather than the two
+    // arrays above — see `buildCreativeGroup`. Named after the key campaign-service expects
+    // (`GOOGLE_CREATIVE_REQUEST_KEYS`) so the submit payload is the group's own raw value with the
+    // lists split, and no name mapping sits between the form and the wire.
+    //
+    // Always constructed, never conditionally: a group built only when its channel is ticked would
+    // be destroyed and rebuilt as the operator changes their mind, losing everything typed into it
+    // — and `getRawValue()` reports a disabled group, so hiding one in the template costs nothing
+    // that has to be paid for here.
+    demandGenCreative: this.buildCreativeGroup('demand-gen'),
+    performanceMaxCreative: this.buildCreativeGroup('performance-max'),
+    displayCreative: this.buildCreativeGroup('display'),
+    // The Google bidding plan. All five are STRINGS, including the three money/ratio fields, so
+    // that "" can mean "not supplied" — which is a different answer from a typed 0, and the one
+    // the wire needs, since upstream reads 0 as absent on all three.
+    //
+    // NO validators, for the reason the LinkedIn block below records and one more specific to this
+    // section: which of these fields even applies depends on the strategy and the channel, and
+    // Angular never revalidates a control because a SIBLING changed. A bounds validator here would
+    // sit on a control the template has since hidden, holding a value the submit will never send,
+    // and silently make `campaignForm.invalid` true for a campaign that has nothing wrong with it.
+    // `googleBiddingError` carries the checking instead: it is a computed, so it re-runs on every
+    // edit, and it only ever speaks about the fields currently in play.
+    googleBiddingStrategy: [''],
+    googleTargetCpa: [''],
+    googleTargetRoas: [''],
+    googleCpcBid: [''],
+    googleConversionActions: [''],
     // The LinkedIn ad account, geo targets and targeting profile, on the FORM rather than in
     // signals (LFXV2-3230). All three are user-editable — a select, an add/remove chip list and a
     // two-button toggle — and all three used to be destroyed by a tab switch, then silently
@@ -433,6 +506,26 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly microsoftKeywords = signal<MicrosoftKeyword[]>([]);
   protected readonly microsoftBudgetUsd = signal(500);
   protected readonly microsoftCpcBid = signal('');
+  /**
+   * Google's own geo targets, as ISO-2 country codes.
+   *
+   * A SEPARATE list from the form's single `countryCode`, not a replacement for it. `countryCode` is
+   * read by five other things — the campaign-name region token, the Meta, Microsoft and Reddit geo
+   * fallbacks, and the draft — and widening it to a list would change what every one of them
+   * targets. This list is additive: empty means "use the event country", exactly as before.
+   */
+  protected readonly googleGeoTargets = signal<string[]>([]);
+  protected readonly googleMaxGeoTargets = GOOGLE_ADS_MAX_GEO_TARGETS;
+  /**
+   * The country codes Google Ads can actually target on this path, offered as a closed list.
+   *
+   * A select rather than Meta's and Microsoft's free-text box, because here the accepted set IS
+   * enumerable: `validateGeoTargets` (`internal/platform/googleads/geo.go`) resolves every code
+   * against a curated 30-entry map and hard-errors on a miss, and `GOOGLE_ADS_GEO_TARGET_MAP` is
+   * that same map. Typing `PT` into a free-text box would be well-formed, assigned, and refused — so
+   * the control that cannot express it is the kinder one.
+   */
+  protected readonly googleGeoOptions = Object.keys(GOOGLE_ADS_GEO_TARGET_MAP).sort();
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
@@ -606,6 +699,44 @@ export class ImplementationTabComponent implements OnInit {
     const eligibleChips = chips.filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
     if (eligibleChips.length > 0) return eligibleChips;
     return normalizeGeoTargets([this.countryCodeValue()]).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
+  });
+
+  /**
+   * The geo list a Google create would ACTUALLY send — one value for the preview and for `submit()`,
+   * on the same rule as `metaEffectiveGeoTargets`: the screen must not claim one target while the
+   * request buys another.
+   *
+   * The fallback is `[countryCode]` UNFILTERED, which is what this path sent before the chip list
+   * existed. Filtering it to the supported 30 here would look tidier and be worse: an event in a
+   * country Google cannot target on this path would then submit an EMPTY geo list, and an empty list
+   * is not a refusal — it is a campaign with no geographic restriction at all. Passed through, the
+   * BFF's own guard names the country in the error instead.
+   */
+  protected readonly googleEffectiveGeoTargets = computed<string[]>(() => {
+    const chips = this.googleGeoTargets();
+    if (chips.length > 0) return chips;
+    return [this.googleGeoFallbackCode()];
+  });
+
+  /**
+   * The event country as Google would read it: trimmed and upper-cased, because the map's keys are
+   * upper-case and `countryCode` is a free-text control an operator can type `de` into.
+   *
+   * Empty is a real answer and is deliberately NOT turned into an empty geo list — an empty list is
+   * not a refusal, it is a campaign with no geographic restriction, which is the one outcome nobody
+   * asked for. It stays a single empty entry so the BFF's guard refuses the create, and the section
+   * says so before the operator gets there.
+   *
+   * Read through a `typeof` guard rather than straight off the signal, for the same reason
+   * `normalizeGeoTargets` guards each entry: `applyDraft` patches `countryCode` from the saved
+   * draft, and `patchValue` writes an `undefined` key as a value — a draft persisted before the
+   * field existed therefore leaves a nonNullable control holding `undefined`, and this computed is
+   * evaluated by the template on every Google render. The sibling Meta path survives that only
+   * because the helper it calls drops non-strings.
+   */
+  protected readonly googleGeoFallbackCode = computed<string>(() => {
+    const code = this.countryCodeValue() as string | null | undefined;
+    return typeof code === 'string' ? code.trim().toUpperCase() : '';
   });
 
   protected readonly showMetaSection = computed(() => this.selectedPlatforms().includes('meta-ads'));
@@ -857,6 +988,9 @@ export class ImplementationTabComponent implements OnInit {
       if (flagged.length > 0 && channels.length > 1) return false;
     }
     if (googleSelected && this.campaignForm.invalid) return false;
+    // The bidding plan's own checking, which is a computed rather than control validators — see the
+    // form declaration. Scoped to Google because the plan only exists there.
+    if (googleSelected && this.googleBiddingError() !== null) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -988,6 +1122,17 @@ export class ImplementationTabComponent implements OnInit {
   // === Reactive Signals (from form valueChanges) ===
   protected readonly displayBudgetPct: Signal<number> = this.initDisplayBudgetPct();
   protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();
+  protected readonly searchCopyApplies: Signal<boolean> = this.initSearchCopyApplies();
+  protected readonly googleCreativeSections: Signal<GoogleCreativeSection[]> = this.initGoogleCreativeSections();
+  protected readonly googleBiddingChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleBiddingChannel();
+  protected readonly googleBiddingOptions: Signal<GoogleBiddingOption[]> = this.initGoogleBiddingOptions();
+  protected readonly googleBiddingStrategy: Signal<GoogleBiddingStrategy | null> = this.initGoogleBiddingStrategy();
+  protected readonly googleBiddingDefaultLabel: Signal<string> = this.initGoogleBiddingDefaultLabel();
+  protected readonly googleTakesTargetCpa: Signal<boolean> = this.initGoogleTakesTargetCpa();
+  protected readonly googleTakesTargetRoas: Signal<boolean> = this.initGoogleTakesTargetRoas();
+  protected readonly googleTakesCpcBid: Signal<boolean> = this.initGoogleTakesCpcBid();
+  protected readonly googleTakesConversionActions: Signal<boolean> = this.initGoogleTakesConversionActions();
+  protected readonly googleBiddingError: Signal<string | null> = this.initGoogleBiddingError();
   protected readonly campaignName: Signal<string> = this.initCampaignName();
 
   // === Form Array Accessors ===
@@ -1080,6 +1225,25 @@ export class ImplementationTabComponent implements OnInit {
       this.emitDraft();
     });
 
+    // Re-run the two ad-copy array validators when the channel selection moves.
+    //
+    // Angular revalidates a control when IT changes and propagates the result upward; it never
+    // revalidates a SIBLING. `searchCopyRequired` asks about the channel checkboxes, which are
+    // siblings of the arrays it guards, so without this the gate would latch at whatever the
+    // selection was the last time a headline was typed: unticking Search would leave the form
+    // invalid with no visible control to fix, and ticking Search back on with the copy already
+    // emptied would leave it valid and submit an ad with no text.
+    //
+    // `includeVideo` is deliberately absent — Video reads neither array, and the control is
+    // constructed disabled so it emits nothing here anyway. Both arrays are revalidated together
+    // rather than one per source, because either checkbox moves the answer for both.
+    merge(this.campaignForm.controls.includeSearch.valueChanges, this.campaignForm.controls.includeDemandGen.valueChanges)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.headlinesArray.updateValueAndValidity({ emitEvent: false });
+        this.descriptionsArray.updateValueAndValidity({ emitEvent: false });
+      });
+
     // skip(1) drops the emission toObservable fires immediately on subscribe — ngOnInit already
     // runs the initial load, so only later foundation switches should refetch the ad-account list.
     toObservable(this.activeFoundationSlug)
@@ -1131,10 +1295,11 @@ export class ImplementationTabComponent implements OnInit {
     return channels;
   }
 
+  // No `Validators.required` on the pushed control, matching the array declaration: an added box
+  // the user has not reached yet must not invalidate the form, and "at least one filled" is
+  // decided once on the array by `searchCopyRequired`.
   protected addHeadline(): void {
-    (this.campaignForm.controls.headlines as FormArray).push(
-      this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)])
-    );
+    (this.campaignForm.controls.headlines as FormArray).push(this.fb.control('', [Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchHeadline)]));
   }
 
   protected removeHeadline(index: number): void {
@@ -1143,9 +1308,7 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   protected addDescription(): void {
-    (this.campaignForm.controls.descriptions as FormArray).push(
-      this.fb.control('', [Validators.required, Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)])
-    );
+    (this.campaignForm.controls.descriptions as FormArray).push(this.fb.control('', [Validators.maxLength(CAMPAIGN_CHAR_LIMITS.searchDescription)]));
   }
 
   protected removeDescription(index: number): void {
@@ -1352,6 +1515,34 @@ export class ImplementationTabComponent implements OnInit {
     input.value = '';
   }
 
+  /**
+   * Add one Google geo target.
+   *
+   * No normaliser call, unlike Meta's and Microsoft's adds: the only source of a code here is the
+   * select, whose options are the map's own keys, so the value is already canonical. The two guards
+   * that remain are the ones a select cannot express — the cap, and not adding a code twice.
+   */
+  protected addGoogleGeoTarget(code: string): void {
+    if (code === '') return;
+    if (this.googleGeoTargets().length >= GOOGLE_ADS_MAX_GEO_TARGETS) return;
+    if (this.googleGeoTargets().includes(code)) return;
+    this.googleGeoTargets.update((targets) => [...targets, code]);
+    this.emitDraft();
+  }
+
+  protected onGoogleGeoTargetAdd(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    this.addGoogleGeoTarget(select.value);
+    // Back to the placeholder, so the control reads "add another" rather than naming the code it
+    // just moved into a chip.
+    select.value = '';
+  }
+
+  protected removeGoogleGeoTarget(index: number): void {
+    this.googleGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
   protected removeMicrosoftGeoTarget(index: number): void {
     this.microsoftGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
     this.emitDraft();
@@ -1434,6 +1625,53 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /**
+   * The guidance line under a creative field: its bounds, then anything its catalogue entry adds.
+   *
+   * Assembled here rather than in the template because the sentence depends on which bounds the
+   * field actually has — a `@if` ladder over four combinations in the template would say the same
+   * thing in four places, and the repo forbids the nested ternary that would otherwise compress it.
+   *
+   * `min` is stated as guidance only. No validator enforces it ({@link creativeFieldValidators}
+   * explains why), so this line is what tells an operator that a half-filled Performance Max
+   * creative will be refused by Google even though this form will submit it.
+   */
+  protected creativeFieldHint(field: GoogleCreativeFieldSpec): string {
+    const parts: string[] = [];
+    if (field.kind === 'text') {
+      if (field.width !== undefined) parts.push(`Up to ${field.width} characters.`);
+    } else {
+      if (field.min !== undefined && field.max !== undefined) parts.push(`${field.min}–${field.max} entries, one per line.`);
+      else if (field.max !== undefined) parts.push(`Up to ${field.max} entries, one per line.`);
+      else if (field.min !== undefined) parts.push(`At least ${field.min} entries, one per line.`);
+      else parts.push('One entry per line.');
+      if (field.width !== undefined) parts.push(`Up to ${field.width} characters each.`);
+    }
+    if (field.hint !== undefined) parts.push(field.hint);
+    return parts.join(' ');
+  }
+
+  /**
+   * The error to show beneath a creative field, or null when there is nothing to say.
+   *
+   * Addressed by path rather than by the typed control tree: `groupName` arrives from a resolved
+   * {@link GoogleCreativeSection} as a plain string, so `get([group, control])` is the lookup that
+   * survives a channel being added to the catalogue without a change here.
+   *
+   * Only shown once the field has been touched — every one of these controls starts empty and valid,
+   * and an untouched field has no error to report anyway.
+   */
+  protected creativeFieldError(groupName: string, field: GoogleCreativeFieldSpec): string | null {
+    const control = this.campaignForm.get([groupName, field.control]);
+    if (!control?.touched) return null;
+    const errors = control.errors;
+    if (!errors) return null;
+    if (errors['creativeListMax']) return `At most ${errors['creativeListMax'].max} entries — ${errors['creativeListMax'].actual} given.`;
+    if (errors['creativeListWidth']) return `Each entry must be ${errors['creativeListWidth'].width} characters or fewer.`;
+    if (errors['maxlength']) return `Must be ${errors['maxlength'].requiredLength} characters or fewer.`;
+    return null;
+  }
+
   protected submit(): void {
     if (!this.canSubmit()) return;
 
@@ -1462,7 +1700,18 @@ export class ImplementationTabComponent implements OnInit {
       keywords: this.briefKeywords(),
       headlines: (form.headlines as string[]).filter((h) => h.trim()),
       descriptions: (form.descriptions as string[]).filter((d) => d.trim()),
-      geoTargets: [form.countryCode],
+      // The SAME derivation the Google section previews, for the reason `metaEffectiveGeoTargets`
+      // exists: deriving the request's targets separately from the displayed ones is how a screen
+      // ends up claiming one country while the request buys another.
+      geoTargets: this.googleEffectiveGeoTargets(),
+      // The per-channel creative objects, present only for a selected channel that has one and
+      // only when something was actually typed into it. Google-gated for the same reason the
+      // section is: a LinkedIn-only create must not carry a Google creative the operator left
+      // behind from an earlier selection.
+      ...(platforms.includes('google-ads') ? this.googleCreativePayload(campaignTypes) : {}),
+      // The bidding plan, Google-gated for the same reason the creative is, and already narrowed
+      // to the fields the effective strategy and channel actually take.
+      ...(platforms.includes('google-ads') ? this.googleBiddingPayload() : {}),
       driveFolderUrl: this.briefDriveFolderUrl() || undefined,
       platforms,
       ...(platforms.includes('linkedin-ads')
@@ -1769,6 +2018,22 @@ export class ImplementationTabComponent implements OnInit {
     this.replaceCopyArray(this.headlinesArray, draft.headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline, false);
     this.replaceCopyArray(this.descriptionsArray, draft.descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription, false);
 
+    // Same present-only rule as the Meta block below. Restored BEFORE it only because these are
+    // form controls rather than signals and belong with the patch above; the two do not interact.
+    if (draft.googleCreatives !== undefined) {
+      this.restoreGoogleCreatives(draft.googleCreatives);
+    }
+    // Copied rather than referenced, so the restored form does not share an array with the draft
+    // the parent still holds — the same rule `metaGeoTargets` follows below.
+    if (draft.googleGeoTargets !== undefined) {
+      this.googleGeoTargets.set([...draft.googleGeoTargets]);
+    }
+    // The bidding controls, each on the same present-only rule. One `if` per field rather than a
+    // single patch, because a draft saved before this section shipped carries some of these and
+    // not others only as the section grows — and a blanket patch of `undefined` would clear a
+    // seeded value rather than leave it.
+    this.restoreGoogleBidding(draft);
+
     // Restored only when PRESENT. A draft persisted before these fields shipped has none of them,
     // and absence there means "this draft predates Meta fields" — the seeded values must stand.
     // Writing `?? 'traffic'` instead would let an old draft silently downgrade a Conversions
@@ -1839,7 +2104,9 @@ export class ImplementationTabComponent implements OnInit {
   private replaceCopyArray(target: FormArray, values: string[], maxLength: number, emitEvent: boolean): void {
     target.clear({ emitEvent: false });
     for (const value of values) {
-      target.push(this.fb.control(value, [Validators.required, Validators.maxLength(maxLength)]), { emitEvent: false });
+      // Width bound only, matching the array declaration and the two add handlers. Required-ness
+      // is the array's `searchCopyRequired`, which a restore does not have to re-decide.
+      target.push(this.fb.control(value, [Validators.maxLength(maxLength)]), { emitEvent: false });
     }
     // Emission is the CALLER's decision, and BOTH answers are load-bearing — an earlier revision
     // of this helper hardcoded suppression for both and made the original bug strictly worse.
@@ -1886,6 +2153,23 @@ export class ImplementationTabComponent implements OnInit {
       linkedInGeoTargets: form.linkedInGeoTargets,
       linkedInTargetingProfile: form.linkedInTargetingProfile,
       eventSlug: form.eventSlug,
+      // The three creative groups, raw. Named here for the same reason every field above is: this
+      // emit is an object literal, so a nested group reaches the draft only when it is listed.
+      // Carried for ALL three channels regardless of which is ticked — the selection is itself a
+      // draft field, and a user who tries Display, types a headline, then switches to Performance
+      // Max must not lose the Display copy the moment they look away.
+      googleCreatives: this.googleCreativeSnapshot(),
+      // Spread, not referenced, for the same reason the Meta and Microsoft geo lists below are.
+      googleGeoTargets: [...this.googleGeoTargets()],
+      // The bidding plan as TYPED, not as resolved: the raw strategy the operator picked, not the
+      // channel default standing in for it, and the raw text of each number. A draft gives back
+      // the form that was left, and resolving here would make a reopened draft claim a choice
+      // nobody made.
+      googleBiddingStrategy: form.googleBiddingStrategy,
+      googleTargetCpa: form.googleTargetCpa,
+      googleTargetRoas: form.googleTargetRoas,
+      googleCpcBid: form.googleCpcBid,
+      googleConversionActions: form.googleConversionActions,
       // Signal-backed, so `valueChanges` never carries them — they are snapshotted here and
       // emitted explicitly by each Meta handler. `placements` is spread rather than referenced so
       // the parent holds a value, not a live view of a signal this component is about to destroy.
@@ -2224,5 +2508,480 @@ export class ImplementationTabComponent implements OnInit {
    */
   private normaliseGeoCodes(codes: string[]): string[] {
     return codes.map((g) => g.trim().toUpperCase()).filter((g) => /^[A-Z]{2}$/.test(g));
+  }
+
+  /**
+   * Whether the Search/Demand Gen ad-copy arrays are being asked for at all.
+   *
+   * The two arrays are ONE ad's copy, and exactly two channels build an ad from them. `search`
+   * does on both create roads. `demand-gen` does on the LEGACY road — `campaign-proxy.service.ts`
+   * composes its Demand Gen ad from these same `headlines` and `descriptions` — which is why it is
+   * named here rather than only `search`: gating on Search alone would have hidden and
+   * un-required the copy that a cutover-dark Demand Gen create still sends, turning a working
+   * campaign into an empty one.
+   *
+   * `performance-max`, `display` and `video` never read them on either road. Their copy is a
+   * creative object with its own counts and widths ({@link GOOGLE_CREATIVE_FIELD_SPECS}), collected in
+   * its own section.
+   *
+   * Gated on the Google platform too: with Google unselected these arrays are not on screen, and
+   * a LinkedIn-only or Meta-only create must not be blocked by an empty Google headline.
+   */
+  private initSearchCopyApplies(): Signal<boolean> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.showGoogleSection()) return false;
+      const channels = this.selectedGoogleChannels();
+      return channels.includes('search') || channels.includes('demand-gen');
+    });
+  }
+
+  /**
+   * Array-level "at least one non-empty entry", applied only when {@link initSearchCopyApplies}
+   * says the copy is being asked for.
+   *
+   * On the ARRAY rather than on each control because required-ness here is a property of the SET:
+   * what Google needs is an ad with copy in it, not a non-empty value in every box the user
+   * happened to add. Per-control `Validators.required` also has to be re-decided on every `push`,
+   * every `removeAt` and every draft restore, and each of those is a place the condition could be
+   * forgotten; one validator on the array is decided once.
+   *
+   * Nothing re-runs a validator when a SIBLING control changes, so ticking or unticking a channel
+   * box does not by itself move this array's validity — the constructor subscription that watches
+   * the two channel controls is what revalidates both arrays, and this validator is inert without
+   * it.
+   *
+   * The `searchCopyApplies` guard is for construction order: `fb.array(…, { validators })`
+   * validates immediately, which happens while `campaignForm` itself is still being built and the
+   * gate signal is several field initialisers away from existing. Testing the LATER of the two is
+   * what makes one guard enough — the gate cannot be assigned before the form it reads.
+   * Returning `null` there is correct as well as safe: the gate's own revalidation settles the
+   * real answer as soon as anything moves.
+   */
+  private searchCopyRequired(label: 'headline' | 'description'): ValidatorFn {
+    return (control: AbstractControl): ValidationErrors | null => {
+      if (!this.searchCopyApplies?.()) return null;
+      const values = (control.value as unknown[]) ?? [];
+      const filled = values.some((v) => typeof v === 'string' && v.trim() !== '');
+      return filled ? null : { searchCopyRequired: { label } };
+    };
+  }
+
+  /**
+   * The creative sections to render, in channel order, for the channels currently selected.
+   *
+   * Empty whenever Google is unselected, and empty for a Search-only campaign — Search has no
+   * creative object at all, its copy being the two arrays above.
+   *
+   * Only ONE entry can ever be non-empty in practice, because the BFF emits one `googleAdsConfig`
+   * with one `channel` and campaign-service refuses a multi-channel Google create. This is written
+   * as a list anyway rather than a single resolved channel: the one-at-a-time rule lives in
+   * `canSubmit`, and duplicating it here as "take the first" would silently hide the second
+   * section a user had already typed into, making the refusal they are about to get harder to
+   * understand, not easier.
+   */
+  private initGoogleCreativeSections(): Signal<GoogleCreativeSection[]> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.showGoogleSection()) return [];
+      const selected = this.selectedGoogleChannels();
+      return GOOGLE_CHANNELS_WITH_CREATIVE.filter((channel) => selected.includes(channel)).map((channel) => ({
+        channel,
+        label: GOOGLE_CREATIVE_SECTION_TITLES[channel],
+        groupName: GOOGLE_CREATIVE_REQUEST_KEYS[channel],
+        fields: GOOGLE_CREATIVE_FIELD_SPECS[channel],
+      }));
+    });
+  }
+
+  /**
+   * The channel the bidding plan is written against — the SAME one the request will carry.
+   *
+   * Mirrors `buildGoogleAdsConfig`'s choice exactly, including its asymmetry: Search wins whenever
+   * it is selected, because that builder emits `channel: 'search'` for a Search+Demand Gen pair
+   * and funds Demand Gen out of the split. Picking Demand Gen's narrower strategy set for that
+   * pair would offer the operator a bidding plan the campaign they get cannot use.
+   *
+   * Null whenever Google is unselected or no channel is ticked: there is no "default channel" to
+   * fall back on, and a picker rendered against a guess would be offering options for a campaign
+   * nobody asked for.
+   */
+  private initGoogleBiddingChannel(): Signal<GoogleCampaignChannel | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.showGoogleSection()) return null;
+      const channels = this.selectedGoogleChannels();
+      if (channels.length === 0) return null;
+      return channels.includes('search') ? 'search' : channels[0];
+    });
+  }
+
+  /**
+   * The strategies the selected channel accepts, labelled for the picker.
+   *
+   * Straight from the shared catalogue, which reproduces campaign-service's five per-channel sets.
+   * Nothing is added here and nothing is filtered out — a strategy missing from a channel's list
+   * is missing because the dispatcher refuses it there, and one that appears is one it takes.
+   */
+  private initGoogleBiddingOptions(): Signal<GoogleBiddingOption[]> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel) return [];
+      return GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel].map((value) => ({ value, label: GOOGLE_BIDDING_STRATEGY_LABELS[value] }));
+    });
+  }
+
+  /**
+   * The strategy actually in force: the operator's pick, or the channel's default when they have
+   * picked nothing.
+   *
+   * A pick that is NOT in the current channel's set resolves to the default too, and that case is
+   * reachable by ordinary use rather than by tampering: choose Target ROAS on Display, then switch
+   * the campaign to Video, and the control still holds a value Video refuses. Resolving it away
+   * here is what keeps the dependent fields — and the payload — honest about what will be sent.
+   *
+   * Null only when there is no channel at all.
+   */
+  private initGoogleBiddingStrategy(): Signal<GoogleBiddingStrategy | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const channel = this.googleBiddingChannel();
+      if (!channel) return null;
+      const chosen = this.campaignForm.controls.googleBiddingStrategy.value.trim();
+      const accepted = GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel] as readonly GoogleBiddingStrategy[];
+      return accepted.find((strategy) => strategy === chosen) ?? GOOGLE_BIDDING_DEFAULT_BY_CHANNEL[channel];
+    });
+  }
+
+  /** What the picker's empty option names, so "channel default" says WHICH strategy that is. */
+  private initGoogleBiddingDefaultLabel(): Signal<string> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel) return '';
+      return GOOGLE_BIDDING_STRATEGY_LABELS[GOOGLE_BIDDING_DEFAULT_BY_CHANNEL[channel]];
+    });
+  }
+
+  /**
+   * Whether the effective strategy carries a target CPA / target ROAS / manual bid.
+   *
+   * These gate the template, and through `googleBiddingPayload` the request as well. Upstream
+   * REFUSES a target on a strategy that cannot carry it, and refuses a CPC bid under anything but
+   * manual CPC, rather than dropping either — so a value left behind in a hidden control has to be
+   * withheld at submit, not merely hidden on screen.
+   */
+  private initGoogleTakesTargetCpa(): Signal<boolean> {
+    return computed(() => {
+      const strategy = this.googleBiddingStrategy();
+      return strategy !== null && (GOOGLE_BIDDING_CPA_STRATEGIES as readonly string[]).includes(strategy);
+    });
+  }
+
+  private initGoogleTakesTargetRoas(): Signal<boolean> {
+    return computed(() => {
+      const strategy = this.googleBiddingStrategy();
+      return strategy !== null && (GOOGLE_BIDDING_ROAS_STRATEGIES as readonly string[]).includes(strategy);
+    });
+  }
+
+  private initGoogleTakesCpcBid(): Signal<boolean> {
+    return computed(() => this.googleBiddingStrategy() === 'manual-cpc');
+  }
+
+  /**
+   * Whether this channel can name its conversion actions at create time.
+   *
+   * A CHANNEL question, not a strategy one: `campaign.selective_optimization` is defined for
+   * Search, Display and Video, so those three accept the list under any strategy. Demand Gen and
+   * Performance Max select conversions through a resource that cannot be written until the
+   * campaign exists, and campaign-service refuses the list there rather than dropping it.
+   */
+  private initGoogleTakesConversionActions(): Signal<boolean> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      return channel !== null && (GOOGLE_CONVERSION_ACTION_CHANNELS as readonly string[]).includes(channel);
+    });
+  }
+
+  /**
+   * What is wrong with the bidding plan as typed, in one sentence, or null when nothing is.
+   *
+   * This exists INSTEAD of control validators — see the form declaration — and it speaks only
+   * about fields that are currently in play, so a stale value in a hidden control can never block
+   * a create. `canSubmit` reads it, and the template prints it.
+   *
+   * Every bound here is campaign-service's own, equal and never tighter: the point is to put the
+   * refusal in front of the operator while the form is open rather than after a round trip, not to
+   * refuse anything upstream would have taken.
+   */
+  private initGoogleBiddingError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.googleBiddingChannel()) return null;
+      const form = this.campaignForm.controls;
+
+      if (this.googleTakesCpcBid()) {
+        const error = this.googleBidAmountError(form.googleCpcBid.value, 'Max CPC bid', GOOGLE_ADS_BIDDING_BOUNDS.cpcBid);
+        if (error) return error;
+      }
+      if (this.googleTakesTargetCpa()) {
+        const error = this.googleBidAmountError(form.googleTargetCpa.value, 'Target CPA', GOOGLE_ADS_BIDDING_BOUNDS.targetCpa);
+        if (error) return error;
+        if (this.googleBiddingStrategy() === 'target-cpa' && form.googleTargetCpa.value.trim() === '') {
+          return 'Target CPA strategy needs a target CPA.';
+        }
+      }
+      if (this.googleTakesTargetRoas()) {
+        const error = this.googleBidAmountError(form.googleTargetRoas.value, 'Target ROAS', GOOGLE_ADS_BIDDING_BOUNDS.targetRoas);
+        if (error) return error;
+        if (this.googleBiddingStrategy() === 'target-roas' && form.googleTargetRoas.value.trim() === '') {
+          return 'Target ROAS strategy needs a target ROAS.';
+        }
+      }
+      if (this.googleTakesConversionActions()) {
+        const actions = this.splitCreativeLines(form.googleConversionActions.value);
+        if (actions.length > GOOGLE_ADS_MAX_CONVERSION_ACTIONS) {
+          return `Google accepts at most ${GOOGLE_ADS_MAX_CONVERSION_ACTIONS} conversion actions.`;
+        }
+        const malformed = actions.find((action) => !GOOGLE_ADS_CONVERSION_ACTION_PATTERN.test(action));
+        if (malformed !== undefined) {
+          return `"${malformed}" is not a conversion action id or resource name.`;
+        }
+      }
+      return null;
+    });
+  }
+
+  /**
+   * One bidding number checked against its bounds, as a sentence or null.
+   *
+   * Blank is NOT an error here — it is the normal way to leave a bid or an optional target unset,
+   * and the two strategies that genuinely require their target say so themselves in
+   * `googleBiddingError`. Only text that cannot be a number, or a number outside Google's range,
+   * is reported.
+   */
+  private googleBidAmountError(raw: string, label: string, bounds: { min: number; max: number }): string | null {
+    const text = raw.trim();
+    if (text === '') return null;
+    const value = Number(text);
+    if (!Number.isFinite(value)) return `${label} must be a number.`;
+    if (value < bounds.min || value > bounds.max) return `${label} must be between ${bounds.min} and ${bounds.max}.`;
+    return null;
+  }
+
+  /**
+   * The bidding plan as the request carries it, or `{}` when there is nothing to send.
+   *
+   * Gated by the SAME computeds the template renders, so what the operator can see is exactly what
+   * is sent: a target typed under one strategy and then abandoned under another is withheld rather
+   * than forwarded into a refusal. The strategy itself is sent only when the operator chose one the
+   * channel accepts — leaving it out is how the channel default is reached, the same absent-key
+   * route `geoTargets` and the flight window take.
+   */
+  private googleBiddingPayload(): Partial<CampaignCreateRequest> {
+    const channel = this.googleBiddingChannel();
+    if (!channel) return {};
+    const form = this.campaignForm.controls;
+    const payload: Partial<CampaignCreateRequest> = {};
+
+    const chosen = form.googleBiddingStrategy.value.trim();
+    const accepted = GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel] as readonly GoogleBiddingStrategy[];
+    const strategy = accepted.find((candidate) => candidate === chosen);
+    if (strategy) payload.biddingStrategy = strategy;
+
+    if (this.googleTakesCpcBid()) {
+      const cpcBid = this.googleBidAmount(form.googleCpcBid.value);
+      if (cpcBid !== undefined) payload.cpcBid = cpcBid;
+    }
+    if (this.googleTakesTargetCpa()) {
+      const targetCpa = this.googleBidAmount(form.googleTargetCpa.value);
+      if (targetCpa !== undefined) payload.targetCpa = targetCpa;
+    }
+    if (this.googleTakesTargetRoas()) {
+      const targetRoas = this.googleBidAmount(form.googleTargetRoas.value);
+      if (targetRoas !== undefined) payload.targetRoas = targetRoas;
+    }
+    if (this.googleTakesConversionActions()) {
+      const actions = this.splitCreativeLines(form.googleConversionActions.value);
+      if (actions.length > 0) payload.conversionActions = actions;
+    }
+    return payload;
+  }
+
+  /** One typed bidding number, or `undefined` when the field is blank or cannot be a number. */
+  private googleBidAmount(raw: string): number | undefined {
+    const text = raw.trim();
+    if (text === '') return undefined;
+    const value = Number(text);
+    return Number.isFinite(value) && value !== 0 ? value : undefined;
+  }
+
+  /**
+   * One nested form group for a channel's creative, one control per catalogued field.
+   *
+   * Every control is a STRING, including the list fields, which hold one entry per line. The
+   * alternative — a `FormArray` with add/remove rows per list — was rejected on size: Performance
+   * Max alone has seven list fields with caps up to twenty, and a row UI across all three channels
+   * runs to thousands of lines of template for a form whose list entries are mostly pasted image
+   * URLs. `splitCreativeLines` is the single place that turns the text back into the array the
+   * wire carries.
+   */
+  private buildCreativeGroup(channel: (typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number]): FormGroup<Record<string, FormControl<string>>> {
+    const controls: Record<string, FormControl<string>> = {};
+    for (const field of GOOGLE_CREATIVE_FIELD_SPECS[channel]) {
+      controls[field.control] = this.fb.nonNullable.control('', this.creativeFieldValidators(field));
+    }
+    return new FormGroup(controls);
+  }
+
+  /**
+   * The bounds a creative field is validated against — `max` and `width`, never `min`.
+   *
+   * `min` is deliberately absent. campaign-service ACCEPTS a channel with no creative at all, and
+   * a minimum enforced here would refuse a create that upstream would have made: an operator who
+   * wants the campaign and budget now, and the assets later, is doing something the platform
+   * supports. `min` is shown as guidance in the section instead ({@link GOOGLE_CREATIVE_FIELD_SPECS}),
+   * which is where a floor that only applies to a PARTIALLY filled creative belongs.
+   *
+   * `max` and `width` are the other direction: both are hard upstream bounds, so enforcing them
+   * refuses only what Google would have refused anyway — after the campaign already exists, which
+   * is the expensive place to find out.
+   */
+  private creativeFieldValidators(field: GoogleCreativeFieldSpec): ValidatorFn[] {
+    if (field.kind === 'text') {
+      return field.width === undefined ? [] : [Validators.maxLength(field.width)];
+    }
+    return [this.creativeListBounds(field)];
+  }
+
+  /**
+   * Per-line bounds for a list field, which `Validators.maxLength` cannot express: the control
+   * holds one multi-line string, so its own length is the sum of every entry plus the newlines,
+   * and bounding that would refuse five short headlines for being long together.
+   */
+  private creativeListBounds(field: GoogleCreativeFieldSpec): ValidatorFn {
+    return (control: AbstractControl): ValidationErrors | null => {
+      const lines = this.splitCreativeLines(control.value as string);
+      if (field.max !== undefined && lines.length > field.max) {
+        return { creativeListMax: { label: field.label, max: field.max, actual: lines.length } };
+      }
+      if (field.width !== undefined && lines.some((line) => line.length > (field.width as number))) {
+        return { creativeListWidth: { label: field.label, width: field.width } };
+      }
+      return null;
+    };
+  }
+
+  /**
+   * The creative objects for the submit payload, built from the nested groups.
+   *
+   * Shape-never-content, matching the BFF normalizer it feeds: a field that trims to nothing is
+   * OMITTED rather than sent as `''` or `[]`, and a channel whose whole creative is empty emits no
+   * key at all — because an empty array is a positive statement ("no images") where absence means
+   * "none asked for", and upstream treats the two differently on the reciprocal image fields.
+   */
+  private googleCreativePayload(channels: CampaignType[]): Record<string, Record<string, string | string[]>> {
+    const payload: Record<string, Record<string, string | string[]>> = {};
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      if (!channels.includes(channel)) continue;
+      const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[channel]].getRawValue();
+      const creative: Record<string, string | string[]> = {};
+      for (const field of GOOGLE_CREATIVE_FIELD_SPECS[channel]) {
+        const value = raw[field.control] ?? '';
+        if (field.kind === 'list') {
+          const lines = this.splitCreativeLines(value);
+          if (lines.length > 0) creative[field.control] = lines;
+          continue;
+        }
+        const trimmed = value.trim();
+        if (trimmed !== '') creative[field.control] = trimmed;
+      }
+      if (Object.keys(creative).length > 0) payload[GOOGLE_CREATIVE_REQUEST_KEYS[channel]] = creative;
+    }
+    return payload;
+  }
+
+  /**
+   * All three creative groups' raw text, for the draft.
+   *
+   * A fresh object per group rather than the group's own value, so the parent holds a snapshot and
+   * not a live view of a form this component is about to destroy — the same rule the Meta and
+   * Microsoft blocks in `emitDraft` follow.
+   */
+  private googleCreativeSnapshot(): Record<string, Record<string, string>> {
+    const snapshot: Record<string, Record<string, string>> = {};
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      snapshot[GOOGLE_CREATIVE_REQUEST_KEYS[channel]] = { ...this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[channel]].getRawValue() };
+    }
+    return snapshot;
+  }
+
+  /**
+   * Replay a draft's creative text into the three groups.
+   *
+   * Field-by-field rather than `patchValue` on the whole record, because the draft is persisted
+   * JSON: it can name a group or a field that no longer exists (a field removed from the catalogue
+   * since the draft was saved), and Angular throws on a patch naming a control that is not there.
+   * Skipping the unknown ones restores everything that still exists instead of losing the whole
+   * restore to one stale key.
+   *
+   * `emitEvent: false` matches the copy-array restore just above: nothing derives a display from
+   * these controls, and letting a dozen patches through would recompute the campaign-name preview
+   * once per field for no gain.
+   */
+  private restoreGoogleCreatives(saved: Record<string, Record<string, string>>): void {
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      const groupName = GOOGLE_CREATIVE_REQUEST_KEYS[channel];
+      const values = saved[groupName];
+      if (!values) continue;
+      const group = this.campaignForm.controls[groupName];
+      for (const field of GOOGLE_CREATIVE_FIELD_SPECS[channel]) {
+        const value = values[field.control];
+        if (typeof value !== 'string') continue;
+        group.controls[field.control].setValue(value, { emitEvent: false });
+      }
+    }
+  }
+
+  /**
+   * Replay a draft's bidding text into the five controls.
+   *
+   * Only strings are restored, and only keys the draft actually carries. The draft is persisted
+   * JSON, so a field can be missing (saved before this section shipped) or the wrong type
+   * (hand-edited, or written by an older shape) — and `setValue` on a non-nullable control with a
+   * non-string would put a value in the form that every reader here assumes cannot be there.
+   *
+   * No validation of the STRATEGY name: an unknown or wrong-channel value is restored as typed and
+   * resolved away by `googleBiddingStrategy`, so the operator sees what they left rather than a
+   * silently blanked picker.
+   *
+   * `emitEvent: false` matches `restoreGoogleCreatives`: `applyDraft` is replaying a draft, not
+   * recording an edit, and five separate change events would re-emit it five times.
+   */
+  private restoreGoogleBidding(draft: CampaignImplementationDraft): void {
+    const fields = ['googleBiddingStrategy', 'googleTargetCpa', 'googleTargetRoas', 'googleCpcBid', 'googleConversionActions'] as const;
+    for (const field of fields) {
+      const value = draft[field];
+      if (typeof value !== 'string') continue;
+      this.campaignForm.controls[field].setValue(value, { emitEvent: false });
+    }
+  }
+
+  /**
+   * A one-entry-per-line textarea's value as the entries it stands for.
+   *
+   * Splits on either newline convention, trims each entry and drops the empties, so a trailing
+   * newline or a blank separator line does not become an entry that counts against the cap or
+   * reaches the wire as an empty image URL.
+   *
+   * Shared by the creative list fields and the conversion-action list, which have the same shape
+   * on screen and the same shape on the wire.
+   */
+  private splitCreativeLines(value: string | null | undefined): string[] {
+    if (typeof value !== 'string') return [];
+    return value
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line !== '');
   }
 }

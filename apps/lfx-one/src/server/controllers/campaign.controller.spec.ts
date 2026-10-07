@@ -1061,6 +1061,167 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
+   * The creative, forwarded under the channel's OWN request key.
+   *
+   * Pinned per channel rather than once, because the key and the field list differ for each and a
+   * mapper that sent Demand Gen's shape for all three would be refused upstream on the two it does
+   * not fit — after the budget mutate on nothing, since the refusal is the client's own preflight.
+   */
+  it.each([
+    ['demand-gen' as const, 'demandGenCreative', { headlines: [' Join us '], descriptions: ['Register'], logoUrls: ['https://cdn.example/logo.png'] }],
+    ['performance-max' as const, 'performanceMaxCreative', { headlines: ['H1', 'H2', 'H3'], descriptions: ['D1'], finalUrl: ' https://example.com/ ' }],
+    ['display' as const, 'displayCreative', { headlines: ['H1'], longHeadline: 'A single long headline', descriptions: ['D1'] }],
+  ])('forwards the %s creative under its own request key', async (channel, key, creative) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: [channel], [key]: creative }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent[key]).toBeDefined();
+    // Trimmed, never counted — every width and count rule is the upstream client's preflight.
+    expect((sent[key] as Record<string, unknown>)['headlines']).toEqual(channel === 'demand-gen' ? ['Join us'] : creative.headlines);
+  });
+
+  /** A creative keyed to a channel that was not selected is not the selected channel's creative. */
+  it('ignores a creative belonging to another channel', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['display'], demandGenCreative: { headlines: ['H1'] } }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('demandGenCreative');
+    expect(sent).not.toHaveProperty('displayCreative');
+  });
+
+  /**
+   * The empty cases, all three of which must OMIT rather than send an empty object or list.
+   *
+   * Upstream distinguishes "no creative asked for" (nil — the pre-existing shell behaviour) from
+   * "a creative with an empty headline list" (a validation failure), so sending `[]` would turn an
+   * operator who skipped the section into a refused create rather than the shell they had before.
+   */
+  it.each([
+    ['no creative key at all', {}],
+    ['a creative whose every entry is blank', { displayCreative: { headlines: ['', '   '], longHeadline: '  ' } }],
+    ['a creative of the wrong shape entirely', { displayCreative: ['not', 'an', 'object'] }],
+    ['a creative carrying non-string entries', { displayCreative: { headlines: [1, null, {}] } }],
+  ])('omits the creative key for %s', async (_label, overrides) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['display'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('displayCreative');
+  });
+
+  /**
+   * The bidding plan reaches BOTH branches of the builder.
+   *
+   * Search and the non-Search channels build their config in two separate return statements, and a
+   * plan spread into only one of them would silently drop every bid an operator set on the other.
+   */
+  it.each([['search' as const], ['display' as const]])('carries the bidding plan on a %s create', async (channel) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: [channel], biddingStrategy: 'target-cpa', targetCpa: 25.5, conversionActions: ['12345'] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['biddingStrategy']).toBe('target-cpa');
+    expect(sent['targetCpa']).toBe(25.5);
+    expect(sent['conversionActions']).toEqual(['12345']);
+  });
+
+  /**
+   * Shape only, and deliberately so.
+   *
+   * Every per-channel, per-strategy and bounds rule lives in `validateBiddingPlan`
+   * (`internal/platform/googleads/bidding.go`) as PURE preflight — no network, no clock — so an
+   * invalid plan is refused before the budget mutate, named, with nothing stranded. A second copy
+   * here could only diverge by refusing a create upstream would have accepted. These three are
+   * each invalid upstream for a different reason and all three must travel.
+   */
+  it.each([
+    ['a strategy the channel does not accept', { biddingStrategy: 'manual-cpc', campaignTypes: ['display'] }, 'biddingStrategy', 'manual-cpc'],
+    ['a target below the accepted minimum', { biddingStrategy: 'target-cpa', targetCpa: 0.001 }, 'targetCpa', 0.001],
+    ['a target above the accepted maximum', { biddingStrategy: 'target-roas', targetRoas: 5000 }, 'targetRoas', 5000],
+  ])('forwards %s rather than refusing it here', async (_label, overrides, field, expected) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)[field]).toBe(expected);
+  });
+
+  /**
+   * What the plan DOES drop: values that cannot be a value at all.
+   *
+   * Zero is "absent" rather than a bid — upstream reads `0` on all three numbers as "not
+   * supplied", so a typed zero and an omitted key are the same request and only omission stays
+   * true if that ever changes. `NaN` and the infinities are dropped because `JSON.stringify`
+   * renders all three as `null`, which upstream reads as a type error on a `float64` field: a
+   * create refused for a number the operator never typed.
+   */
+  it('omits a blank strategy, a zero or non-finite amount, and blank conversion entries', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          biddingStrategy: '   ',
+          cpcBid: 0,
+          targetCpa: Number.NaN,
+          targetRoas: Number.POSITIVE_INFINITY,
+          conversionActions: ['', '   ', 12345, null],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    for (const key of ['biddingStrategy', 'cpcBid', 'targetCpa', 'targetRoas', 'conversionActions']) {
+      expect(sent).not.toHaveProperty(key);
+    }
+  });
+
+  /** A conversion list is trimmed and the blanks dropped, but the surviving ids are not judged. */
+  it('trims the conversion actions it keeps without judging them', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ conversionActions: [' 12345 ', '', 'customers/999/conversionActions/678', 'not-an-id'] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['conversionActions']).toEqual(['12345', 'customers/999/conversionActions/678', 'not-an-id']);
+  });
+
+  /**
    * The split arm, for a channel that is not demand-gen. The two demand-gen tests above cannot
    * cover this: `normalizeBudgetSplit` has always known `demand-gen`, so a builder that special-cased
    * that one type and treated the rest as single-channel would still pass them and would then

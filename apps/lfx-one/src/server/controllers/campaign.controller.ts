@@ -35,6 +35,7 @@ import type {
   CampaignStatusUpdateResult,
   CampaignToggleStatus,
   FlushableResponse,
+  GoogleCampaignChannel,
   MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
   MicrosoftKeywordsWindow,
@@ -52,6 +53,9 @@ import {
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
+  GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CREATIVE_FIELD_SPECS,
+  GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   ISO_CALENDAR_DATE_PATTERN,
@@ -122,6 +126,32 @@ const CAMPAIGN_SERVICE_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set
 const SUPPORTED_DELIVERY_TYPES: ReadonlySet<string> = new Set(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id));
 
 const NUMERIC_ID_RE = /^\d+$/;
+
+/**
+ * Which `googleAdsConfig` creative key each Google channel uses, and which of its fields are lists
+ * rather than scalars — derived from the shared catalogue, never restated here.
+ *
+ * The normalizer below needs exactly two things per field: its name, and whether an array or a
+ * string is the valid shape. Both are already stated in `GOOGLE_CREATIVE_FIELD_SPECS`, which the
+ * Implementation tab reads to build the form that produces these bodies. Restating them here —
+ * which this table used to do — meant the form and the normalizer could disagree about a field's
+ * shape, and the disagreement would surface as a body Google rejects after the campaign already
+ * exists. `display.longHeadline` is the live example: a **scalar** where Performance Max's
+ * `longHeadlines` is a list.
+ *
+ * `video` has no entry on purpose — see `GOOGLE_VIDEO_CREATE_SUPPORTED`. `search` has none either:
+ * its copy rides as top-level `headlines`/`descriptions`/`keywords`, not under a creative key.
+ */
+const GOOGLE_CREATIVE_FIELDS: Record<string, { key: string; lists: readonly string[]; scalars: readonly string[] }> = Object.fromEntries(
+  GOOGLE_CHANNELS_WITH_CREATIVE.map((channel) => [
+    channel,
+    {
+      key: GOOGLE_CREATIVE_REQUEST_KEYS[channel],
+      lists: GOOGLE_CREATIVE_FIELD_SPECS[channel].filter((f) => f.kind === 'list').map((f) => f.control),
+      scalars: GOOGLE_CREATIVE_FIELD_SPECS[channel].filter((f) => f.kind === 'text').map((f) => f.control),
+    },
+  ])
+);
 
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
@@ -2938,16 +2968,27 @@ export class CampaignController {
       // Headlines, descriptions and keywords are deliberately ABSENT, not empty. Upstream
       // REFUSES `keywords` and `audienceSegments` on every channel but Search rather than
       // dropping them (`validateCampaignKind`, `internal/platform/googleads`), so forwarding the
-      // Implementation tab's keyword list here would turn a servable create into a refusal. The
-      // creative each of these channels needs — `performanceMaxCreative`, `videoCreative`,
-      // `displayCreative`, `demandGenCreative` — has no source on this request yet; the
-      // dispatcher creates the campaign shell without it, which is the same thing the Demand Gen
-      // path has done since LFXV2-3257.
+      // Implementation tab's keyword list here would turn a servable create into a refusal.
+      //
+      // The CREATIVE is the one thing these channels take that Search's fields cannot express, and
+      // it is now forwarded — `demandGenCreative`, `performanceMaxCreative` or `displayCreative`,
+      // whichever matches the single selected channel. Before this it had no source on the request
+      // and every non-Search create produced a campaign with no ad: billable, un-servable, and
+      // reported as a success. A creative that is absent or empty still takes the old road, so an
+      // operator who skips the section gets exactly the shell they got before rather than a refusal.
+      //
+      // `videoCreative` is NOT built, and the omission is not an oversight to be tidied up later:
+      // `GOOGLE_VIDEO_CREATE_SUPPORTED` is false because the Google Ads API has no call that
+      // creates a Video campaign, so `createCampaigns` refuses a `video` channel before this config
+      // is ever dispatched. There is nothing for a video creative to attach to.
+      const creative = this.googleCreative(body, selectedChannels[0]);
       return {
         budget: body.budgetUsd ?? 0,
         channel: selectedChannels[0],
         ...this.googleFlightWindow(body),
+        ...this.googleBidding(body),
         ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}),
+        ...creative,
       };
     }
 
@@ -2979,6 +3020,7 @@ export class CampaignController {
       // a future default change unable to repoint this one silently.
       channel: 'search',
       ...this.googleFlightWindow(body),
+      ...this.googleBidding(body),
       headlines: body.headlines ?? [],
       descriptions: body.descriptions ?? [],
       // The service's keyword shape is `{text, matchType}` with an upper-case enum; the UI carries
@@ -2990,6 +3032,58 @@ export class CampaignController {
       // to the dispatcher today; only one of them stays true if that default is ever tightened.
       ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}),
     };
+  }
+
+  /**
+   * The selected channel's creative, normalized and spread-ready, or `{}` when there is nothing to
+   * send.
+   *
+   * Three judgements, all of them the permissive one, and all of them for the same reason this
+   * file's geo normalizer gives: this route has no body validator, and a BFF that refuses a create
+   * campaign-service would have accepted is the costlier mistake of the two.
+   *
+   * 1. **Shape, never content.** Blank and non-string list entries are dropped and strings are
+   *    trimmed; nothing counts anything. Every count, width and aspect-ratio rule lives in the
+   *    upstream client's preflight (`internal/platform/googleads/*_creative.go`), which runs before
+   *    the budget mutate, so a creative that is short a headline is refused there with a message
+   *    naming the field — not here, where a second copy of those rules could only drift.
+   * 2. **A field that empties out is OMITTED, not sent empty.** Upstream distinguishes "no creative
+   *    asked for" (nil, the pre-existing shell behaviour) from "a creative with an empty logo
+   *    list" (a validation failure). Sending `[]` would convert an operator who left the section
+   *    alone into a refused create.
+   * 3. **The same applies to the whole creative.** If no field survives, no creative key is emitted
+   *    and the create behaves exactly as it did before this existed.
+   *
+   * Unknown channels — `search`, `video`, anything a future catalogue adds — return `{}` rather
+   * than throwing, so a channel gaining a creative upstream is one table entry here and not a
+   * crash in the meantime.
+   */
+  private googleCreative(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
+    const spec = GOOGLE_CREATIVE_FIELDS[channel];
+    if (!spec) return {};
+
+    // `as Record<string, unknown>` rather than the typed interface: the value arrives off an
+    // unvalidated request body, so every field has to be re-tested at runtime anyway and the
+    // declared type would only make the tests look redundant.
+    const source = (body as unknown as Record<string, unknown>)[spec.key];
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+    const raw = source as Record<string, unknown>;
+
+    const creative: Record<string, unknown> = {};
+    for (const field of spec.lists) {
+      const value = raw[field];
+      if (!Array.isArray(value)) continue;
+      const clean = value.filter((v): v is string => typeof v === 'string' && v.trim() !== '').map((v) => v.trim());
+      if (clean.length > 0) creative[field] = clean;
+    }
+    for (const field of spec.scalars) {
+      const value = raw[field];
+      if (typeof value !== 'string') continue;
+      const clean = value.trim();
+      if (clean !== '') creative[field] = clean;
+    }
+
+    return Object.keys(creative).length > 0 ? { [spec.key]: creative } : {};
   }
 
   /**
@@ -3025,6 +3119,60 @@ export class CampaignController {
     if (startDate) window['startDate'] = startDate;
     if (endDate) window['endDate'] = endDate;
     return window;
+  }
+
+  /**
+   * The bidding plan, normalized and spread-ready, or `{}` when the request names none.
+   *
+   * SHAPE ONLY, deliberately — this drops what cannot be a value (a blank strategy, a
+   * non-finite or zero number, a blank conversion action) and forwards everything else exactly as
+   * given. It does NOT check that the strategy suits the channel, that a target belongs to the
+   * strategy carrying it, or that a number is in range, even though all of that is knowable here.
+   *
+   * Those are campaign-service's calls and it makes every one of them in `validateBiddingPlan`
+   * (`internal/platform/googleads/bidding.go`) as PURE PREFLIGHT: no network, no clock, and
+   * nothing created — the refusal lands before the budget mutate, so an invalid plan costs a 400
+   * and strands nothing. A second copy of those rules here could only diverge in one direction
+   * that matters, refusing a create upstream would have accepted, and a duplicated rule drifts
+   * the moment Google's own per-channel support moves. The form offers only the valid set per
+   * channel, which is where that hazard belongs.
+   *
+   * Zero is "absent", not a value: upstream reads `0` on any of the three numbers as "not
+   * supplied", so forwarding a typed zero and omitting the key are the same request — and only
+   * omission stays true if that ever changes.
+   */
+  private googleBidding(body: CampaignCreateRequest): Record<string, unknown> {
+    const plan: Record<string, unknown> = {};
+
+    const strategy = typeof body?.biddingStrategy === 'string' ? body.biddingStrategy.trim() : '';
+    if (strategy) plan['biddingStrategy'] = strategy;
+
+    const cpcBid = this.googleBidAmount(body?.cpcBid);
+    if (cpcBid !== undefined) plan['cpcBid'] = cpcBid;
+
+    const targetCpa = this.googleBidAmount(body?.targetCpa);
+    if (targetCpa !== undefined) plan['targetCpa'] = targetCpa;
+
+    const targetRoas = this.googleBidAmount(body?.targetRoas);
+    if (targetRoas !== undefined) plan['targetRoas'] = targetRoas;
+
+    const conversionActions = Array.isArray(body?.conversionActions)
+      ? body.conversionActions.map((action) => (typeof action === 'string' ? action.trim() : '')).filter((action) => action !== '')
+      : [];
+    if (conversionActions.length > 0) plan['conversionActions'] = conversionActions;
+
+    return plan;
+  }
+
+  /**
+   * One bidding number, or `undefined` when there is nothing to send.
+   *
+   * `NaN` and the infinities are dropped rather than forwarded because `JSON.stringify` renders
+   * all three as `null`, which upstream reads as a type error on a `float64` field — a create
+   * refused for a number the operator never typed.
+   */
+  private googleBidAmount(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) && value !== 0 ? value : undefined;
   }
 
   /**

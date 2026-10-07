@@ -218,8 +218,186 @@
         }
       </div>
 
-      <!-- Google Ads: Headlines -->
+      <!--
+        Google Ads: geo targets.
+
+        Separate from the Country Code above rather than a replacement for it — that single code
+        still names the event's own country and still feeds the campaign name, the Meta, Microsoft
+        and Reddit fallbacks and the draft. This list says where the GOOGLE campaign runs, and empty
+        means "the event country", which is what this path sent before the list existed.
+      -->
       @if (showGoogleSection()) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-geo-section">
+          <label class="mb-2 block text-xs font-medium text-gray-700" for="google-geo-add">
+            Google Geo Targets ({{ googleGeoTargets().length }}/{{ googleMaxGeoTargets }})
+          </label>
+          <div class="flex flex-wrap items-center gap-2">
+            @for (geo of googleGeoTargets(); track geo; let i = $index) {
+              <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                {{ geo }}
+                <button
+                  type="button"
+                  (click)="removeGoogleGeoTarget(i)"
+                  class="ml-0.5 text-blue-400 hover:text-blue-600"
+                  [attr.aria-label]="'Remove ' + geo"
+                  [attr.data-testid]="'implementation-google-geo-remove-' + geo">
+                  <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                </button>
+              </span>
+            }
+            @if (googleGeoTargets().length < googleMaxGeoTargets) {
+              <!--
+                A select, unlike Meta's and Microsoft's free-text boxes. Google resolves every code
+                against a curated 30-entry map before its first mutate and hard-errors on a miss, so
+                the accepted set is enumerable here in a way it is not there — and a control that
+                cannot express `PT` is kinder than one that accepts it and fails at create time.
+              -->
+              <select
+                id="google-geo-add"
+                (change)="onGoogleGeoTargetAdd($event)"
+                class="rounded-md border border-dashed border-blue-300 bg-white px-2 py-1 text-xs text-blue-600"
+                data-testid="implementation-google-geo-add">
+                <option value="">+ Add country</option>
+                @for (code of googleGeoOptions; track code) {
+                  <option [value]="code">{{ code }}</option>
+                }
+              </select>
+            } @else {
+              <span class="text-xs text-gray-400" data-testid="implementation-google-geo-full">
+                Maximum of {{ googleMaxGeoTargets }} geo targets reached.
+              </span>
+            }
+          </div>
+          <!--
+            Two states, and the difference matters. A blank list with a country code set is SAFE —
+            the request falls back to it, and the line names the country so it is not an invisible
+            default. A blank list with no country code is the hazard: the create is refused, and
+            saying so here is cheaper than finding out after the other platforms have been created.
+          -->
+          @if (googleGeoTargets().length === 0) {
+            @if (googleGeoFallbackCode() !== '') {
+              <span class="mt-2 block text-xs text-gray-400" data-testid="implementation-google-geo-default">
+                No countries added — this campaign targets {{ googleGeoFallbackCode() }}, the event country.
+              </span>
+            } @else {
+              <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-geo-none">
+                Add at least one country — the event country is blank, and the create is refused without one.
+              </p>
+            }
+          }
+        </div>
+      }
+
+      <!--
+        Google Ads: bidding and conversions.
+
+        Rendered against ONE channel — `googleBiddingChannel()`, the same one the request will
+        carry — because the accepted strategies differ per channel and a picker that offered the
+        union would offer refusals. Every field below the picker appears only when the strategy in
+        force actually takes it: upstream REFUSES a target CPA under Manual CPC, a manual bid under
+        anything but Manual CPC, and a conversion list on Demand Gen or Performance Max, rather than
+        dropping any of them, so an inapplicable field on screen is a create that fails.
+      -->
+      @if (googleBiddingChannel()) {
+        <div class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-bidding-section">
+          <div class="flex flex-col gap-2">
+            <label class="block text-xs font-medium text-gray-700" for="google-bidding-strategy">Bidding Strategy</label>
+            <select
+              id="google-bidding-strategy"
+              formControlName="googleBiddingStrategy"
+              class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              data-testid="implementation-google-bidding-strategy">
+              <!--
+                The empty option names the default rather than reading "None", because leaving this
+                alone does not mean no bidding — campaign-service applies the channel's own default,
+                and this is the only place the operator can see which one that is.
+              -->
+              <option value="">Channel default — {{ googleBiddingDefaultLabel() }}</option>
+              @for (option of googleBiddingOptions(); track option.value) {
+                <option [value]="option.value">{{ option.label }}</option>
+              }
+            </select>
+          </div>
+
+          @if (googleTakesCpcBid()) {
+            <!--
+              `type="text"` with a decimal keypad, not `type="number"`, and the three numeric
+              fields agree on it. Angular binds a number input through `NumberValueAccessor`, which
+              writes a NUMBER or null into the control — these controls are declared as strings so
+              that "" can mean "not supplied", and that accessor would put a `null` in a
+              non-nullable control the moment the box is cleared.
+            -->
+            <div class="flex flex-col gap-2">
+              <label class="block text-xs font-medium text-gray-700" for="google-cpc-bid">Max CPC Bid (account currency)</label>
+              <input
+                id="google-cpc-bid"
+                type="text"
+                inputmode="decimal"
+                formControlName="googleCpcBid"
+                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                data-testid="implementation-google-cpc-bid" />
+              <span class="text-xs text-gray-400">Leave blank to let the ad groups inherit the campaign's bid.</span>
+            </div>
+          }
+
+          @if (googleTakesTargetCpa()) {
+            <div class="flex flex-col gap-2">
+              <label class="block text-xs font-medium text-gray-700" for="google-target-cpa">Target CPA (account currency)</label>
+              <input
+                id="google-target-cpa"
+                type="text"
+                inputmode="decimal"
+                formControlName="googleTargetCpa"
+                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                data-testid="implementation-google-target-cpa" />
+            </div>
+          }
+
+          @if (googleTakesTargetRoas()) {
+            <div class="flex flex-col gap-2">
+              <label class="block text-xs font-medium text-gray-700" for="google-target-roas">Target ROAS (ratio)</label>
+              <input
+                id="google-target-roas"
+                type="text"
+                inputmode="decimal"
+                formControlName="googleTargetRoas"
+                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                data-testid="implementation-google-target-roas" />
+              <!-- A ratio, not a percentage, and the two differ by a factor of a hundred in spend. -->
+              <span class="text-xs text-gray-400">4 means four units of conversion value for every unit spent, not 4%.</span>
+            </div>
+          }
+
+          @if (googleTakesConversionActions()) {
+            <div class="flex flex-col gap-2">
+              <label class="block text-xs font-medium text-gray-700" for="google-conversion-actions">Conversion Actions (one per line)</label>
+              <textarea
+                id="google-conversion-actions"
+                rows="3"
+                formControlName="googleConversionActions"
+                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                data-testid="implementation-google-conversion-actions"></textarea>
+              <span class="text-xs text-gray-400">
+                An id such as 987654321, or a full customers/&lt;id&gt;/conversionActions/&lt;id&gt; name. Leave blank to use the account's own conversion
+                goals.
+              </span>
+            </div>
+          }
+
+          @if (googleBiddingError()) {
+            <p role="alert" class="text-xs text-red-600" data-testid="implementation-google-bidding-error">{{ googleBiddingError() }}</p>
+          }
+        </div>
+      }
+
+      <!-- Google Ads: Headlines
+           Shown for the two channels that build an ad from these arrays — Search on both create
+           roads, Demand Gen on the legacy one. Performance Max, Display and Video collect their
+           copy in their own creative sections below, with their own counts and widths; rendering
+           this one for them asked for a Search headline that would be sent nowhere, and its
+           required validator blocked the create until it was filled in. See
+           `initSearchCopyApplies`. -->
+      @if (searchCopyApplies()) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-headlines-section">
           <div class="mb-3 flex items-center justify-between">
             <h3 class="text-sm font-semibold text-gray-900">Headlines</h3>
@@ -285,6 +463,59 @@
                     [attr.aria-label]="'Remove description ' + (i + 1)">
                     <i class="fa-light fa-xmark" aria-hidden="true"></i>
                   </button>
+                }
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!--
+        Google Ads: per-channel creative.
+
+        One section per selected channel that carries a creative OBJECT rather than the two copy
+        arrays above — Demand Gen, Performance Max and Display. Search is absent because its copy IS
+        those arrays, and Video because Google Ads cannot create a Video campaign at all.
+
+        Everything rendered here comes from `googleCreativeSections()`, which resolves the shared
+        field catalogue: the fields, their order, their bounds and their hints are stated once, in
+        `GOOGLE_CREATIVE_FIELD_SPECS`, and the normalizer that puts these values on the wire reads
+        the same catalogue. Adding a field to a channel therefore reaches this form without an edit
+        here.
+      -->
+      @for (section of googleCreativeSections(); track section.channel) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" [attr.data-testid]="'implementation-creative-section-' + section.channel">
+          <h3 class="text-sm font-semibold text-gray-900">{{ section.label }} Creative</h3>
+          <!--
+            The notice sits on every section rather than once above them because only one section is
+            ever shown at a time — campaign-service refuses a multi-channel Google create — and a
+            warning about what an empty creative costs belongs beside the fields it is about.
+          -->
+          <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-notice-' + section.channel">{{ googleCreativeNotice }}</p>
+          <div class="mt-4 flex flex-col gap-4" [formGroupName]="section.groupName">
+            @for (field of section.fields; track field.control) {
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" [attr.for]="section.channel + '-' + field.control">{{ field.label }}</label>
+                @if (field.kind === 'list') {
+                  <textarea
+                    [id]="section.channel + '-' + field.control"
+                    [formControlName]="field.control"
+                    rows="3"
+                    class="resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control"></textarea>
+                } @else {
+                  <input
+                    type="text"
+                    [id]="section.channel + '-' + field.control"
+                    [formControlName]="field.control"
+                    class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control" />
+                }
+                <span class="text-xs text-gray-400">{{ creativeFieldHint(field) }}</span>
+                @if (creativeFieldError(section.groupName, field); as error) {
+                  <span class="text-xs text-red-600" [attr.data-testid]="'implementation-creative-error-' + section.channel + '-' + field.control">{{
+                    error
+                  }}</span>
                 }
               </div>
             }

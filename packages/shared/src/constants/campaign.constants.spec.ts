@@ -8,6 +8,22 @@ import {
   CAMPAIGN_ALERT_THRESHOLDS,
   CAMPAIGN_EMAIL_TYPES,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
+  GOOGLE_ADS_BIDDING_BOUNDS,
+  GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
+  GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
+  GOOGLE_BIDDING_CPA_STRATEGIES,
+  GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
+  GOOGLE_BIDDING_ROAS_STRATEGIES,
+  GOOGLE_BIDDING_STRATEGIES,
+  GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
+  GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
+  GOOGLE_CAMPAIGN_CHANNELS,
+  GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CONVERSION_ACTION_CHANNELS,
+  GOOGLE_CREATIVE_FIELD_SPECS,
+  GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_CREATIVE_SECTION_TITLES,
   META_OBJECTIVE_LABELS,
   META_OBJECTIVE_PARAMS,
   META_SELECTABLE_OBJECTIVES,
@@ -430,5 +446,269 @@ describe('isCanonicalGoogleAdsResourceId', () => {
   ])('refuses %s (%s) without throwing', (value, _label) => {
     expect(() => isCanonicalGoogleAdsResourceId(value as never)).not.toThrow();
     expect(isCanonicalGoogleAdsResourceId(value as never)).toBe(false);
+  });
+});
+
+/**
+ * The Google channel catalogue is a REPRODUCTION of campaign-service's own tables — the picker is
+ * built from it, and anything it offers that upstream refuses becomes a create that fails after
+ * the budget has already been mutated. These cases pin the reproduction against the contract in
+ * `internal/platform/googleads/bidding.go` and its sibling channel files, so a table edited here
+ * without a corresponding upstream change goes red rather than shipping as a broken option.
+ *
+ * The direction matters: every assertion below is "we offer no more than upstream accepts". A set
+ * narrower than upstream's costs an operator an option; a set wider than upstream's costs them a
+ * campaign.
+ */
+describe('Google bidding catalogue', () => {
+  it('covers every channel the app can create', () => {
+    expect(Object.keys(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL).sort()).toEqual([...GOOGLE_CAMPAIGN_CHANNELS].sort());
+    expect(Object.keys(GOOGLE_BIDDING_DEFAULT_BY_CHANNEL).sort()).toEqual([...GOOGLE_CAMPAIGN_CHANNELS].sort());
+  });
+
+  /**
+   * Set-for-set against upstream. Written out rather than derived, because a derivation would
+   * reproduce whatever mistake the constant made — these five sets genuinely disagree and the
+   * disagreements are the contract.
+   */
+  it.each([
+    ['search', ['manual-cpc', 'maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas']],
+    ['demand-gen', ['maximize-clicks']],
+    ['performance-max', ['maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas']],
+    ['video', ['maximize-conversions', 'target-cpa']],
+    ['display', ['maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas']],
+  ])('offers %s exactly the strategies campaign-service accepts', (channel, expected) => {
+    expect([...GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel as (typeof GOOGLE_CAMPAIGN_CHANNELS)[number]]]).toEqual(expected);
+  });
+
+  /**
+   * Demand Gen is the one set a reader is most likely to "fix": every other automated strategy
+   * looks like it should work there. A live `validateOnly` mutate returned
+   * `BIDDING_STRATEGY_TYPE_INCOMPATIBLE_WITH_SHARED_BUDGET` for all of them.
+   */
+  it('keeps demand gen at maximize-clicks alone', () => {
+    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL['demand-gen']).toHaveLength(1);
+  });
+
+  /**
+   * Performance Max has no manual bidding at all upstream; Display's omission is OURS — the client's
+   * Display ad-group payload carries no bid field — so the two exclusions have different causes and
+   * are pinned separately.
+   */
+  it('omits manual cpc where it cannot be sent', () => {
+    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL['performance-max']).not.toContain('manual-cpc');
+    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL.display).not.toContain('manual-cpc');
+    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL.search).toContain('manual-cpc');
+  });
+
+  it('offers no strategy outside the accepted vocabulary', () => {
+    for (const strategies of Object.values(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL)) {
+      for (const strategy of strategies) {
+        expect(GOOGLE_BIDDING_STRATEGIES).toContain(strategy);
+      }
+    }
+  });
+
+  /**
+   * A default that is not in its own channel's accepted set would preselect an option the picker
+   * also refuses to show — the one combination guaranteed to fail the create.
+   */
+  it('defaults each channel to a strategy that channel accepts', () => {
+    for (const channel of GOOGLE_CAMPAIGN_CHANNELS) {
+      expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel]).toContain(GOOGLE_BIDDING_DEFAULT_BY_CHANNEL[channel]);
+    }
+  });
+
+  /** `defaultBiddingStrategy` in `internal/platform/googleads/bidding.go`, channel by channel. */
+  it.each([
+    ['search', 'manual-cpc'],
+    ['demand-gen', 'maximize-clicks'],
+    ['performance-max', 'maximize-conversions'],
+    ['video', 'maximize-conversions'],
+    ['display', 'maximize-conversions'],
+  ])('names %s default as %s', (channel, expected) => {
+    expect(GOOGLE_BIDDING_DEFAULT_BY_CHANNEL[channel as (typeof GOOGLE_CAMPAIGN_CHANNELS)[number]]).toBe(expected);
+  });
+
+  /**
+   * Upstream REFUSES a target carried on a strategy that cannot hold it rather than dropping it, so
+   * a strategy appearing in both sets would offer both fields and make one of them fatal.
+   */
+  it('keeps the cpa and roas strategies disjoint', () => {
+    for (const strategy of GOOGLE_BIDDING_CPA_STRATEGIES) {
+      expect(GOOGLE_BIDDING_ROAS_STRATEGIES).not.toContain(strategy);
+    }
+  });
+
+  it('requires a target only on the two target-bearing spellings', () => {
+    expect([...GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES]).toEqual(['target-cpa', 'target-roas']);
+    for (const strategy of GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES) {
+      expect([...GOOGLE_BIDDING_CPA_STRATEGIES, ...GOOGLE_BIDDING_ROAS_STRATEGIES]).toContain(strategy);
+    }
+  });
+
+  /**
+   * Equal to upstream, never tighter: a bound narrower than `minCPCBid`/`maxCPCBid` (`adgroup_ad.go`)
+   * or `minTargetCPA`/`maxTargetCPA`/`minTargetROAS`/`maxTargetROAS` (`bidding.go`) would refuse a
+   * create Google would have accepted, which is the one failure mode this form must not have.
+   */
+  it('reproduces the upstream numeric bounds', () => {
+    expect(GOOGLE_ADS_BIDDING_BOUNDS.cpcBid).toEqual({ min: 0.01, max: 100_000 });
+    expect(GOOGLE_ADS_BIDDING_BOUNDS.targetCpa).toEqual({ min: 0.01, max: 1_000_000 });
+    expect(GOOGLE_ADS_BIDDING_BOUNDS.targetRoas).toEqual({ min: 0.01, max: 1000 });
+  });
+});
+
+describe('Google conversion actions', () => {
+  /**
+   * Not a Search-versus-the-rest split: `campaign.selective_optimization` is defined for SEARCH,
+   * DISPLAY and VIDEO. Demand Gen has no such field and Performance Max selects conversions through
+   * a resource that cannot be addressed until the campaign exists, so both REFUSE a list rather
+   * than dropping it — the section has to be withheld there, not offered and discarded.
+   */
+  it('admits exactly the three channels upstream accepts a list on', () => {
+    expect([...GOOGLE_CONVERSION_ACTION_CHANNELS]).toEqual(['search', 'video', 'display']);
+    expect(GOOGLE_CONVERSION_ACTION_CHANNELS).not.toContain('demand-gen');
+    expect(GOOGLE_CONVERSION_ACTION_CHANNELS).not.toContain('performance-max');
+  });
+
+  it('names only real channels', () => {
+    for (const channel of GOOGLE_CONVERSION_ACTION_CHANNELS) {
+      expect(GOOGLE_CAMPAIGN_CHANNELS).toContain(channel);
+    }
+  });
+
+  /** `maxConversionActions` in `internal/platform/googleads/bidding.go`. */
+  it('caps the list where upstream caps it', () => {
+    expect(GOOGLE_ADS_MAX_CONVERSION_ACTIONS).toBe(100);
+  });
+
+  it.each([
+    ['12345', true],
+    ['1', true],
+    ['customers/8666746580/conversionActions/678', true],
+    // The resource name must be the whole value, not merely contained in it.
+    ['customers/1/conversionActions/2 extra', false],
+    ['not-an-id', false],
+    ['', false],
+    ['  12345', false],
+    ['customers/abc/conversionActions/1', false],
+    ['conversionActions/678', false],
+  ])('matches %s -> %s', (value, expected) => {
+    expect(GOOGLE_ADS_CONVERSION_ACTION_PATTERN.test(value)).toBe(expected);
+  });
+
+  /**
+   * A shared `RegExp` with the `g` flag carries `lastIndex` between calls, so the same valid id
+   * alternates true/false as a list is validated entry by entry. The flag is the whole hazard —
+   * this pattern is module-level and reused, so the absence is asserted rather than assumed.
+   */
+  it('is stateless across repeated tests', () => {
+    expect(GOOGLE_ADS_CONVERSION_ACTION_PATTERN.global).toBe(false);
+    expect(GOOGLE_ADS_CONVERSION_ACTION_PATTERN.test('12345')).toBe(true);
+    expect(GOOGLE_ADS_CONVERSION_ACTION_PATTERN.test('12345')).toBe(true);
+  });
+});
+
+describe('Google channel enums and creative catalogue', () => {
+  /**
+   * The monitoring GAQL filters `campaign.advertising_channel_type` with these literals, and the
+   * create path sends the matching channel — so a wrong spelling here does not fail loudly, it
+   * silently drops that channel's campaigns out of every metrics read.
+   */
+  it('mirrors the advertising channel type each create sends', () => {
+    expect(GOOGLE_ADS_CHANNEL_TYPE_ENUMS).toEqual({
+      search: 'SEARCH',
+      'demand-gen': 'DEMAND_GEN',
+      'performance-max': 'PERFORMANCE_MAX',
+      video: 'VIDEO',
+      display: 'DISPLAY',
+    });
+  });
+
+  /**
+   * Search builds its ad from the shared headline/description copy, and the Google Ads API cannot
+   * create a Video campaign at all — so neither collects a channel creative, and offering one would
+   * build a form whose only possible outcome is a refusal.
+   */
+  it('collects a creative only for the three channels that carry one', () => {
+    expect([...GOOGLE_CHANNELS_WITH_CREATIVE]).toEqual(['demand-gen', 'performance-max', 'display']);
+    expect(GOOGLE_CHANNELS_WITH_CREATIVE).not.toContain('search');
+    expect(GOOGLE_CHANNELS_WITH_CREATIVE).not.toContain('video');
+  });
+
+  it('gives each of those channels a spec, a request key and a section title', () => {
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      expect(GOOGLE_CREATIVE_FIELD_SPECS[channel].length).toBeGreaterThan(0);
+      expect(GOOGLE_CREATIVE_REQUEST_KEYS[channel]).toBeTruthy();
+      expect(GOOGLE_CREATIVE_SECTION_TITLES[channel]).toBeTruthy();
+    }
+  });
+
+  /** campaign-service's own envelope spelling, which has nothing to do with the channel's wire value. */
+  it('names the request keys campaign-service reads', () => {
+    expect(GOOGLE_CREATIVE_REQUEST_KEYS).toEqual({
+      'demand-gen': 'demandGenCreative',
+      'performance-max': 'performanceMaxCreative',
+      display: 'displayCreative',
+    });
+  });
+
+  /**
+   * The section headings spell the channel the way its own checkbox does — deliberately NOT the
+   * reporting shorthand in `GOOGLE_CAMPAIGN_CHANNEL_LABELS` (`DG Display`, `PMax`), so the section
+   * a user opens is named the same as the box they ticked to open it.
+   */
+  it('titles each section the way its checkbox reads', () => {
+    expect(GOOGLE_CREATIVE_SECTION_TITLES).toEqual({
+      'demand-gen': 'Demand Gen',
+      'performance-max': 'Performance Max',
+      display: 'Display',
+    });
+  });
+
+  it('never states a minimum above its own maximum', () => {
+    for (const specs of Object.values(GOOGLE_CREATIVE_FIELD_SPECS)) {
+      for (const spec of specs) {
+        const { min, max } = spec as { min?: number; max?: number };
+        if (min !== undefined && max !== undefined) {
+          expect(min).toBeLessThanOrEqual(max);
+        }
+      }
+    }
+  });
+
+  /**
+   * The counts that differ between channels under the SAME field name — the trap the catalogue
+   * exists to close. Performance Max needs three headlines and two descriptions where the other two
+   * channels need one of each; a shared number would make a valid PMax form impossible to fill or a
+   * valid Demand Gen form impossible to submit.
+   */
+  it.each([
+    ['demand-gen', 'headlines', 1, 5],
+    ['performance-max', 'headlines', 3, 15],
+    ['display', 'headlines', 1, 5],
+    ['demand-gen', 'descriptions', 1, 5],
+    ['performance-max', 'descriptions', 2, 5],
+    ['display', 'descriptions', 1, 5],
+  ])('bounds %s %s at %i..%i', (channel, control, min, max) => {
+    const spec = GOOGLE_CREATIVE_FIELD_SPECS[channel as (typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number]].find((f) => f.control === control) as {
+      min?: number;
+      max?: number;
+    };
+    expect(spec.min).toBe(min);
+    expect(spec.max).toBe(max);
+  });
+
+  /**
+   * `longHeadline` is a LIST on Performance Max and a SINGLE STRING on Display — same word, two
+   * shapes. This is why the spec carries `kind` instead of letting a caller infer the shape from
+   * the name, and reading the wrong one puts an array where upstream expects a string.
+   */
+  it('keeps the long headline shapes apart', () => {
+    const pmax = GOOGLE_CREATIVE_FIELD_SPECS['performance-max'].find((f) => f.control === 'longHeadlines');
+    const display = GOOGLE_CREATIVE_FIELD_SPECS.display.find((f) => f.control === 'longHeadline');
+    expect(pmax?.kind).toBe('list');
+    expect(display?.kind).toBe('text');
   });
 });
