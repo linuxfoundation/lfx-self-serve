@@ -7,7 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { MEETING_JOIN_STATE_KEY } from '@lfx-one/shared/constants';
-import { Meeting, MeetingJoinPageState, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingJoinPageState, MeetingRsvp, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
@@ -29,6 +29,7 @@ describe('MeetingDetailsStateService', () => {
   let queryParamMap$: BehaviorSubject<ParamMap>;
   let getPublicMeeting: ReturnType<typeof vi.fn>;
   let getPublicPastMeeting: ReturnType<typeof vi.fn>;
+  let getMyRsvp: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let seed: MeetingJoinPageState | null;
   let authenticated: WritableSignal<boolean>;
@@ -54,7 +55,7 @@ describe('MeetingDetailsStateService', () => {
           },
         },
         { provide: Router, useValue: { navigate } },
-        { provide: MeetingService, useValue: { getPublicMeeting, getPublicPastMeeting } },
+        { provide: MeetingService, useValue: { getPublicMeeting, getPublicPastMeeting, getMeetingRsvpForCurrentUserOrFail: getMyRsvp } },
         { provide: UserService, useValue: { authenticated } },
         { provide: MeetingDetailsSeedService, useValue: { take: (routeId: string | null) => (routeId === MEETING_ID ? seed : null) } },
       ],
@@ -67,6 +68,7 @@ describe('MeetingDetailsStateService', () => {
     queryParamMap$ = new BehaviorSubject<ParamMap>(convertToParamMap({}));
     getPublicMeeting = vi.fn().mockReturnValue(of({ meeting: buildMeeting(), project }));
     getPublicPastMeeting = vi.fn().mockReturnValue(throwError(() => ({ status: 404 })));
+    getMyRsvp = vi.fn().mockReturnValue(of(null));
     navigate = vi.fn().mockResolvedValue(true);
     seed = null;
     authenticated = signal(true);
@@ -659,6 +661,257 @@ describe('MeetingDetailsStateService', () => {
 
       expect(state.actionSlot()).toBeNull();
       expect(state.joinsInWindow()).toBe(false);
+    });
+  });
+
+  // E2-04 (FR-023).
+  describe('my RSVP', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const upcoming = (overrides: Partial<Meeting> = {}) =>
+      ({
+        ...buildMeeting(),
+        start_time: new Date(Date.now() + 3 * DAY).toISOString(),
+        duration: 60,
+        occurrences: [],
+        visibility: 'public',
+        restricted: false,
+        invited: true,
+        is_invite_responses_enabled: true,
+        ...overrides,
+      }) as unknown as Meeting;
+    const rsvp = (responseType: string) => ({ id: 'rsvp-1', meeting_id: MEETING_ID, response_type: responseType }) as unknown as MeetingRsvp;
+    // The request key reaches the fetch through `toObservable`, an effect, which a service-only
+    // TestBed runs on `tick()`: settle the lookup, then flush the effect and the fetch it starts.
+    const load = async (): Promise<void> => {
+      await settle();
+      TestBed.tick();
+      await settle();
+    };
+
+    it("loads an invited viewer's own answer into the status the pill shows", async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
+      getMyRsvp.mockReturnValue(of(rsvp('accepted')));
+      const state = create();
+      await load();
+
+      expect(getMyRsvp).toHaveBeenCalledWith(MEETING_ID, undefined);
+      expect(state.myRsvp()).toBe('accepted');
+      expect(state.myRsvpAttr()).toBe('accepted');
+      expect(state.meetingStatus()).toBe('going');
+    });
+
+    it('scopes the request to the selected occurrence of a series', async () => {
+      const first = new Date(Date.now() + 3 * DAY).toISOString();
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: upcoming({
+            start_time: first,
+            recurrence: { type: 2 },
+            occurrences: [{ occurrence_id: '1760000000', start_time: first, duration: 60 }],
+          } as unknown as Partial<Meeting>),
+          project,
+        })
+      );
+      const state = create();
+      await load();
+
+      expect(state.myRsvp()).toBeNull();
+      expect(getMyRsvp).toHaveBeenCalledWith(MEETING_ID, '1760000000');
+    });
+
+    it('reads no answer as awaiting the RSVP', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
+      const state = create();
+      await load();
+
+      expect(state.myRsvp()).toBeNull();
+      expect(state.myRsvpAttr()).toBe('none');
+      expect(state.meetingStatus()).toBe('awaiting-rsvp');
+    });
+
+    // "Could not load" must never read as "has not answered".
+    it('falls back to the time state when the fetch fails', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
+      getMyRsvp.mockReturnValue(throwError(() => ({ status: 500 })));
+      const state = create();
+      await load();
+
+      expect(state.myRsvp()).toBeUndefined();
+      expect(state.myRsvpAttr()).toBeNull();
+      expect(state.meetingStatus()).toBe('upcoming');
+    });
+
+    it.each([
+      ['an outsider', { invited: false }, true],
+      ['a meeting without RSVP tracking', { is_invite_responses_enabled: false }, true],
+      ['an anonymous visitor', {}, false],
+      ['an ended meeting', { start_time: '2023-11-14T22:13:20Z' }, true],
+    ] as [string, Partial<Meeting>, boolean][])('does not fetch for %s', async (_label, overrides, signedIn) => {
+      authenticated.set(signedIn);
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming(overrides), project }));
+      const state = create();
+      await load();
+
+      expect(getMyRsvp).not.toHaveBeenCalled();
+      expect(state.myRsvp()).toBeUndefined();
+    });
+
+    // The BFF answers before the indexer has caught up, so a fetch in flight must not win.
+    it('applies a saved answer at once, and drops a fetch that was already in flight', async () => {
+      const inFlight = new Subject<MeetingRsvp | null>();
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
+      getMyRsvp.mockReturnValue(inFlight);
+      const state = create();
+      await load();
+
+      state.setMyRsvp(MEETING_ID, undefined, rsvp('maybe'));
+      inFlight.next(null);
+
+      expect(state.myRsvp()).toBe('maybe');
+      expect(state.meetingStatus()).toBe('maybe');
+    });
+
+    // The saved answer must survive the page's own re-lookups: the request key is deduplicated, so a
+    // lagging refetch never overwrites it.
+    it('keeps a saved answer when the meeting is looked up again', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
+      const state = create();
+      await load();
+      state.setMyRsvp(MEETING_ID, undefined, rsvp('declined'));
+
+      queryParamMap$.next(convertToParamMap({ utm: 'refresh' }));
+      await load();
+
+      expect(getMyRsvp).toHaveBeenCalledTimes(1);
+      expect(state.myRsvp()).toBe('declined');
+    });
+
+    it('fetches again for another occurrence, and is unknown meanwhile', async () => {
+      const first = new Date(Date.now() + 3 * DAY);
+      const second = new Date(Date.now() + 10 * DAY);
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: upcoming({
+            start_time: first.toISOString(),
+            recurrence: { type: 2 },
+            occurrences: [
+              { occurrence_id: '1760000000', start_time: first.toISOString(), duration: 60 },
+              { occurrence_id: '1760600000', start_time: second.toISOString(), duration: 60 },
+            ],
+          } as unknown as Partial<Meeting>),
+          project,
+        })
+      );
+      getMyRsvp.mockReturnValue(of(rsvp('accepted')));
+      const state = create();
+      await load();
+      expect(state.myRsvp()).toBe('accepted');
+
+      const pending = new Subject<MeetingRsvp | null>();
+      getMyRsvp.mockReturnValue(pending);
+      queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
+      await load();
+
+      expect(getMyRsvp).toHaveBeenLastCalledWith(MEETING_ID, '1760600000');
+      expect(state.myRsvp()).toBeUndefined();
+    });
+
+    // Checked against the route synchronously: right after a navigation, before the fetch for the new
+    // occurrence has even started, a late save for the old one is already dropped.
+    it('drops a late save for the occurrence the page has just left', async () => {
+      const first = new Date(Date.now() + 3 * DAY);
+      const second = new Date(Date.now() + 10 * DAY);
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: upcoming({
+            start_time: first.toISOString(),
+            recurrence: { type: 2 },
+            occurrences: [
+              { occurrence_id: '1760000000', start_time: first.toISOString(), duration: 60 },
+              { occurrence_id: '1760600000', start_time: second.toISOString(), duration: 60 },
+            ],
+          } as unknown as Partial<Meeting>),
+          project,
+        })
+      );
+      const state = create();
+      await load();
+
+      getMyRsvp.mockReturnValue(new Subject<MeetingRsvp | null>());
+      queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
+      state.setMyRsvp(MEETING_ID, '1760000000', rsvp('accepted'));
+
+      // Not even briefly: an async key would still hold the old occurrence here and let it through.
+      expect(state.myRsvp()).not.toBe('accepted');
+      await load();
+      expect(state.myRsvp()).toBeUndefined();
+    });
+
+    // A failure must not stick for the rest of the visit: one immediate retry, then one per clock
+    // tick while it keeps failing, and none once it succeeds.
+    it('retries a failed fetch, then once per clock tick until it succeeds', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      try {
+        getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
+        getMyRsvp.mockReturnValue(throwError(() => ({ status: 503 })));
+        const state = create();
+        vi.advanceTimersByTime(1);
+        await load();
+        await load();
+        expect(getMyRsvp).toHaveBeenCalledTimes(2);
+        expect(state.myRsvp()).toBeUndefined();
+
+        vi.advanceTimersByTime(30_000);
+        await load();
+        expect(getMyRsvp).toHaveBeenCalledTimes(3);
+
+        getMyRsvp.mockReturnValue(of(rsvp('accepted')));
+        vi.advanceTimersByTime(30_000);
+        await load();
+        expect(getMyRsvp).toHaveBeenCalledTimes(4);
+        expect(state.myRsvp()).toBe('accepted');
+
+        vi.advanceTimersByTime(60_000);
+        await load();
+        expect(getMyRsvp).toHaveBeenCalledTimes(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('stops retrying a failed fetch once the viewer saves an answer', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      try {
+        getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
+        getMyRsvp.mockReturnValue(throwError(() => ({ status: 503 })));
+        const state = create();
+        vi.advanceTimersByTime(1);
+        await load();
+        await load();
+        const callsBeforeSave = getMyRsvp.mock.calls.length;
+
+        state.setMyRsvp(MEETING_ID, undefined, rsvp('maybe'));
+        getMyRsvp.mockReturnValue(of(null));
+        vi.advanceTimersByTime(60_000);
+        await load();
+
+        expect(getMyRsvp).toHaveBeenCalledTimes(callsBeforeSave);
+        expect(state.myRsvp()).toBe('maybe');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    // E2-05's save is async: one that lands after the page moved on must not mark the new view.
+    it('drops a saved answer for an occurrence or meeting the page is no longer on', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
+      const state = create();
+      await load();
+
+      state.setMyRsvp('another-meeting', undefined, rsvp('accepted'));
+      state.setMyRsvp(MEETING_ID, '1760000000', rsvp('accepted'));
+
+      expect(state.myRsvp()).toBeNull();
     });
   });
 

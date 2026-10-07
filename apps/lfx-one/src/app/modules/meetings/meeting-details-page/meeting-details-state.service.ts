@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser, isPlatformServer } from '@angular/common';
 import { computed, inject, Injectable, makeStateKey, PLATFORM_ID, Signal, signal, TransferState } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { MEETING_JOIN_STATE_KEY } from '@lfx-one/shared/constants';
@@ -14,11 +14,13 @@ import {
   MeetingJoinPageState,
   MeetingOccurrence,
   MeetingPrivacyState,
+  MeetingRsvp,
   MeetingStatusKind,
   MeetingTimeState,
   MeetingViewerRole,
   PublicMeetingProject,
   PublicPastMeetingResponse,
+  RsvpResponse,
 } from '@lfx-one/shared/interfaces';
 import {
   getActiveOccurrences,
@@ -28,12 +30,29 @@ import {
   resolveActionSlot,
   resolveMeetingStatus,
   resolvePrivacy,
+  resolveRsvpOccurrenceId,
   resolveTimeState,
   resolveViewerRole,
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject, catchError, combineLatest, EMPTY, interval, map, Observable, switchMap, tap, timer } from 'rxjs';
+import {
+  BehaviorSubject,
+  catchError,
+  combineLatest,
+  distinctUntilChanged,
+  EMPTY,
+  interval,
+  map,
+  merge,
+  Observable,
+  of,
+  startWith,
+  Subject,
+  switchMap,
+  tap,
+  timer,
+} from 'rxjs';
 
 import { MeetingDetailsSeedService } from '../meeting-details-gate/meeting-details-seed.service';
 
@@ -85,6 +104,35 @@ export class MeetingDetailsStateService {
    * same series has its own id, so it reads the server's `invited` instead.
    */
   private readonly optimisticInvitedId = signal<string | null>(null);
+  /** RSVPs saved from this page (E2-05), applied ahead of the indexer; see {@link setMyRsvp}. */
+  private readonly myRsvpUpdates$ = new Subject<MeetingRsvp>();
+  /** Set while the last `myRsvp` fetch failed, so the request is retried on the clock. */
+  private readonly myRsvpFailed = signal(false);
+  /**
+   * What `myRsvp` is fetched for, derived synchronously from the route: `null` when it is not
+   * fetched. `retry` is `0` normally and the clock's time while the last fetch failed, so a failure
+   * is retried once straight away and then on each clock tick, instead of sticking for the rest of
+   * the visit.
+   */
+  private readonly myRsvpRequest: Signal<{ meetingId: string; occurrenceId: string | undefined; retry: number } | null> = computed(() => {
+    const meeting = this.meeting();
+    const eligible =
+      !!meeting &&
+      this.matchesRoute() &&
+      this.userService.authenticated() &&
+      this.isInvited(meeting) &&
+      isMeetingInviteResponsesEnabled(meeting) &&
+      !this.loadedViaPastMeetingId() &&
+      this.timeState() !== 'ended';
+    if (!eligible || !meeting) {
+      return null;
+    }
+    return {
+      meetingId: meeting.id,
+      occurrenceId: resolveRsvpOccurrenceId(meeting, { occurrence: this.selectedOccurrence() }),
+      retry: this.myRsvpFailed() ? this.now().getTime() : 0,
+    };
+  });
   /** Meetings this page has auto-joined, so a remounted Join control does not open them again. */
   private readonly autoJoinedMeetingIds = new Set<string>();
   /** The meeting password for lookups: `?password=`, or else the composer's navigation state. */
@@ -126,9 +174,26 @@ export class MeetingDetailsStateService {
   /** The selected occurrence's time state on the clock; `null` until the meeting has loaded. */
   public readonly timeState: Signal<MeetingTimeState | null> = this.initTimeState();
   /**
-   * The meeting status the pill and the identity bar both show (E1-05), so the two cannot disagree.
-   * The viewer's own RSVP is not loaded until E2-04 (`myRsvp: undefined`), so an invited viewer sees
-   * the time state until it is; E2-04 sets it here, once, for both.
+   * The viewer's own answer for the selected occurrence (E2-04, FR-023): `null` when they have not
+   * answered, `undefined` while unknown. It is only fetched for a signed-in viewer on the invite list
+   * of an upcoming or live meeting with RSVP tracking on; everyone else stays `undefined`, and so
+   * does a failed fetch, which the pill reads as the time state rather than "Awaiting your RSVP".
+   */
+  public readonly myRsvp: Signal<RsvpResponse | null | undefined> = this.initMyRsvp();
+  /**
+   * `myRsvp` as the `data-my-rsvp` attribute value (testid-contract.md): `none` when not answered,
+   * `null` (attribute absent) while unknown.
+   */
+  public readonly myRsvpAttr: Signal<RsvpResponse | 'none' | null> = computed(() => {
+    const myRsvp = this.myRsvp();
+    if (myRsvp === undefined) {
+      return null;
+    }
+    return myRsvp ?? 'none';
+  });
+  /**
+   * The meeting status the pill and the identity bar both show (E1-05), so the two cannot disagree,
+   * including the viewer's own RSVP once it has loaded.
    */
   public readonly meetingStatus: Signal<MeetingStatusKind | null> = this.initMeetingStatus();
   public readonly status: Signal<MeetingDetailsLoadStatus> = this.initStatus();
@@ -198,6 +263,27 @@ export class MeetingDetailsStateService {
     }
     this.optimisticInvitedId.set(meetingId);
     this.refresh$.next();
+  }
+
+  /**
+   * Applies an RSVP the viewer just saved (E2-05) to `myRsvp` at once. The BFF answers before the
+   * query service has indexed it, so a fetch already in flight could still return the old answer:
+   * the saved one switches it out (V1's `rsvpUpdateCounter` guards the same race), and the request
+   * key is deduplicated, so nothing refetches it until the occurrence or meeting changes.
+   *
+   * `meetingId` and `occurrenceId` are what the RSVP was saved for. A save that completes after the
+   * page has moved to another occurrence or meeting is dropped: that one fetches its own answer.
+   */
+  public setMyRsvp(meetingId: string, occurrenceId: string | undefined, rsvp: MeetingRsvp): void {
+    // Read synchronously: right after a navigation the route already points at the new view.
+    const key = this.myRsvpRequest();
+    if (!key || key.meetingId !== meetingId || key.occurrenceId !== occurrenceId) {
+      return;
+    }
+    // A saved answer settles an earlier failed fetch: stop retrying, or the next retry could put an
+    // index-lagged answer back over it. The key's drop to `retry: 0` does not refetch.
+    this.myRsvpFailed.set(false);
+    this.myRsvpUpdates$.next(rsvp);
   }
 
   /** Re-runs the lookup for the current route, e.g. from the error state's retry. */
@@ -303,9 +389,46 @@ export class MeetingDetailsStateService {
         hasStarted: this.now().getTime() >= start,
         invited: this.isInvited(meeting),
         inviteResponsesEnabled: isMeetingInviteResponsesEnabled(meeting),
-        myRsvp: undefined,
+        myRsvp: this.myRsvp(),
       });
     });
+  }
+
+  private initMyRsvp(): Signal<RsvpResponse | null | undefined> {
+    if (!isPlatformBrowser(this.platformId)) {
+      return signal<RsvpResponse | null | undefined>(undefined).asReadonly();
+    }
+    // Deduplicated on its values: the occurrence is re-selected on each clock tick, and a re-lookup
+    // hands out a new meeting object, neither of which should refetch over a saved answer.
+    const request = toObservable(this.myRsvpRequest).pipe(
+      // A retry tick refetches; the drop back to `retry: 0` after a success does not.
+      distinctUntilChanged((a, b) => a?.meetingId === b?.meetingId && a?.occurrenceId === b?.occurrenceId && (b?.retry === 0 || a?.retry === b?.retry))
+    );
+
+    return toSignal(
+      merge(request.pipe(map((key) => ({ key }))), this.myRsvpUpdates$.pipe(map((rsvp) => ({ rsvp })))).pipe(
+        switchMap((event): Observable<RsvpResponse | null | undefined> => {
+          if ('rsvp' in event) {
+            return of(event.rsvp.response_type);
+          }
+          if (!event.key) {
+            return of(undefined);
+          }
+          return this.meetingService.getMeetingRsvpForCurrentUserOrFail(event.key.meetingId, event.key.occurrenceId).pipe(
+            map((rsvp): RsvpResponse | null | undefined => rsvp?.response_type ?? null),
+            tap(() => this.myRsvpFailed.set(false)),
+            // Unknown, not "not answered": the pill falls back to the time state, and the request is
+            // retried (see `myRsvpRequest`).
+            catchError(() => {
+              this.myRsvpFailed.set(true);
+              return of<RsvpResponse | null | undefined>(undefined);
+            }),
+            startWith<RsvpResponse | null | undefined>(undefined)
+          );
+        })
+      ),
+      { initialValue: undefined }
+    );
   }
 
   private initNow(): Signal<Date> {

@@ -737,11 +737,21 @@ export class MeetingService {
   }
 
   public getMeetingRsvpForCurrentUser(meetingUid: string, occurrenceId?: string): Observable<MeetingRsvp | null> {
+    return this.getMeetingRsvpForCurrentUserOrFail(meetingUid, occurrenceId).pipe(catchError(() => of(null)));
+  }
+
+  /**
+   * The caller's own RSVP, or `null` when they have not answered — like
+   * {@link getMeetingRsvpForCurrentUser}, but a failure is logged and rethrown rather than read as
+   * `null`, for a caller that must not mistake "could not load" for "has not answered" (the V2
+   * status pill, E2-04).
+   */
+  public getMeetingRsvpForCurrentUserOrFail(meetingUid: string, occurrenceId?: string): Observable<MeetingRsvp | null> {
     const options = occurrenceId ? { params: { occurrenceId } } : {};
     return this.http.get<MeetingRsvp | null>(`/api/meetings/${meetingUid}/rsvp/me`, options).pipe(
       catchError((error) => {
         console.error(`Failed to get RSVP for meeting ${meetingUid}:`, error);
-        return of(null);
+        return throwError(() => error);
       })
     );
   }

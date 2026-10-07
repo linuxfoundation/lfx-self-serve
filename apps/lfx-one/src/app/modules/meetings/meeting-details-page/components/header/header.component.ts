@@ -110,8 +110,11 @@ export class MeetingHeaderComponent {
     const status = this.status();
     return status ? MEETING_STATUS_LABELS[status] : '';
   });
-  /** The viewer's own RSVP for `data-my-rsvp`; not loaded until E2-04, so the attribute is absent. */
-  protected readonly myRsvpAttr: Signal<string | null> = computed(() => null);
+  /**
+   * The viewer's own RSVP for `data-my-rsvp` (E2-04): `none` when they have not answered, and absent
+   * while it is unknown, which covers everyone it is not loaded for (testid-contract.md).
+   */
+  protected readonly myRsvpAttr: Signal<string | null> = this.state.myRsvpAttr;
 
   /**
    * Opens the meeting's foundation overview in a new tab, as v1's context chips do: sets the

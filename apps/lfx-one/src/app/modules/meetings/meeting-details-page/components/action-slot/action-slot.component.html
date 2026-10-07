@@ -80,8 +80,10 @@
         </div>
       }
       @case ('rsvp') {
-        <!-- E2-04 and E2-05 add the RSVP card. -->
-        <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">You're invited to this meeting.</p>
+        <!-- E2-05 adds the RSVP card; until then the viewer's own answer (E2-04), once it has loaded. -->
+        <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message" [attr.data-my-rsvp]="myRsvpAttr()">
+          {{ rsvpMessage() }}
+        </p>
       }
       @case ('rsvp-unavailable') {
         <!-- N-01 designs this state. -->
