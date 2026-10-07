@@ -18,9 +18,11 @@ import {
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_HELP_TEXT,
+  MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE,
+  MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE,
@@ -386,7 +388,7 @@ export class MentorsTabComponent {
     this.candidateSearch$
       .pipe(
         switchMap((search) => {
-          if (search.length < MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH) {
+          if (search.length < MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH || search.length > MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH) {
             return of({ search, data: [] as MentorshipAdminMentorCandidate[], error: null as unknown });
           }
           return this.mentorshipAdminService.getMentorCandidates(this.programId(), search).pipe(
@@ -403,16 +405,19 @@ export class MentorsTabComponent {
   }
 
   /**
-   * A 400 is an unpublished program (the search is long enough by then), a 503 the account lookup being down; any
-   * other failure is generic. With no failure, a search with a space is a
-   * name, which only finds people already in Mentorship; anything else could be an LF username or a full email.
+   * A search too long to send says so (the BFF would refuse it with a 400). Otherwise a 400 is an unpublished program, a
+   * 503 the account lookup being down, and any other failure is generic. With no failure, only a full email gets the
+   * account-creation hint: a single word can be a name or an LF username of someone who already has an account.
    */
   private candidatesEmptyMessageFor(search: string, error: unknown): string {
+    if (search.length > MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH) return MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE;
     if (error) {
       const status = error instanceof HttpErrorResponse ? error.status : 0;
       if (status === 400) return MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE;
       return status === 503 ? MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE : MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE;
     }
-    return /\s/.test(search) ? MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE : MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(search)
+      ? MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE
+      : MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE;
   }
 }

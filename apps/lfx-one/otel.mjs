@@ -28,6 +28,9 @@ const otlpEndpoint = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'];
 const CREDENTIAL_URL_PATHS = new Set(['/invite', '/invite/error', '/mentorship/mentor/invites']);
 // Upstream path that carries the mentor invite token as a segment.
 export const MENTOR_INVITE_UPSTREAM_PATH = '/mentorship/v1/mentor-invites/';
+// Upstream mentor candidate search, whose `?search=` can be a full email address. Mirrors the path the BFF builds in
+// MentorshipAdminService.getMentorCandidates (MENTORSHIP_PROGRAMS_PATH + /{id}/mentor-candidates).
+export const MENTOR_CANDIDATES_UPSTREAM_PATH_PATTERN = /\/mentorship\/v1\/programs\/[^/]+\/mentor-candidates\/?$/;
 
 /**
  * Returns a root-relative request URL with an invite `token` replaced by `redacted`, on the
@@ -256,11 +259,17 @@ if (!otlpEndpoint) {
         // (undici's own construction would throw on the same input and skip the span anyway, so
         // that fallback is provably harmless here, not merely assumed safe).
         // The mentor-invite upstream call carries the signed invite token as a path segment, so it
-        // is suppressed the same way: url.full/url.path would export the credential.
+        // is suppressed the same way: url.full/url.path would export the credential. The mentor
+        // candidate search is suppressed too: its query can be a full email address, and url.full
+        // keeps the query string.
         ignoreRequestHook: (request) => {
           try {
             const url = new URL(request.path, request.origin);
-            return url.hostname === 'hooks.slack.com' || url.pathname.includes(MENTOR_INVITE_UPSTREAM_PATH);
+            return (
+              url.hostname === 'hooks.slack.com' ||
+              url.pathname.includes(MENTOR_INVITE_UPSTREAM_PATH) ||
+              MENTOR_CANDIDATES_UPSTREAM_PATH_PATTERN.test(url.pathname)
+            );
           } catch {
             return false;
           }

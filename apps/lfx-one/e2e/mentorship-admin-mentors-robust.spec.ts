@@ -21,7 +21,7 @@ import {
   MENTOR_ACTIVE_ID,
   MENTOR_DECLINED_ID,
   MENTOR_INVITED_ID,
-  MENTOR_PENDING_ID,
+  MENTOR_REQUESTED_AGAIN_ID,
   MENTOR_REQUESTED_ID,
   newMentorStubState,
   stubMentorActions,
@@ -52,7 +52,7 @@ test.describe('Admin Mentors tab actions — structure', () => {
 
   test('gives each row the action buttons its status allows, keyed by action and membership id', async ({ page }) => {
     await expect(rowActions(page, MENTOR_REQUESTED_ID)).toHaveCount(2);
-    await expect(rowActions(page, MENTOR_PENDING_ID)).toHaveCount(2);
+    await expect(rowActions(page, MENTOR_REQUESTED_AGAIN_ID)).toHaveCount(2);
     await expect(rowActions(page, MENTOR_INVITED_ID)).toHaveCount(1);
     await expect(rowActions(page, MENTOR_ACTIVE_ID)).toHaveCount(1);
     await expect(rowActions(page, MENTOR_DECLINED_ID)).toHaveCount(0);

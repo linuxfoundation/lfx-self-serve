@@ -258,11 +258,10 @@ export const MENTORSHIP_MENTOR_STATUS_LABELS: Record<MentorshipMentorStatus, str
  * Mentor lifecycle on the admin Mentors tab, which reads every `program_members` status upstream keeps
  * (`active` is the accepted mentor). Declaration order is the status filter's option order.
  */
-export const MENTORSHIP_ADMIN_MENTOR_STATUSES = ['requested', 'pending', 'invited', 'active', 'declined', 'withdrawn'] as const;
+export const MENTORSHIP_ADMIN_MENTOR_STATUSES = ['requested', 'invited', 'active', 'declined', 'withdrawn'] as const;
 
 export const MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS: Record<MentorshipAdminMentorStatus, string> = {
   requested: 'Requested',
-  pending: 'Invited',
   invited: 'Invited',
   active: 'Accepted',
   declined: 'Declined',
@@ -271,7 +270,6 @@ export const MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS: Record<MentorshipAdminMentor
 
 export const MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipAdminMentorStatus, string> = {
   requested: 'bg-amber-100 text-amber-700',
-  pending: 'bg-amber-100 text-amber-700',
   invited: 'bg-blue-100 text-blue-700',
   active: 'bg-emerald-100 text-emerald-700',
   declined: 'bg-red-100 text-red-600',
@@ -290,15 +288,19 @@ export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH = 254;
 /** Helper text under the Mentors tab invite search. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_HELP_TEXT = 'Search by name, LF username, or full email address.';
 
-/**
- * Shown when a search that could be an LF username or a full email finds no one. Upstream finds anyone not yet in
- * Mentorship only by their exact LF username or full email.
- */
+/** Shown when a full-email search finds no one: that address has no LF account. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE =
   'No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username.';
 
-/** Shown when a name search (it has a space) finds no one: name search only finds people who already use Mentorship. */
-export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE = 'No Mentorship user matches that name. Try their LF username or full email address.';
+/**
+ * Shown when any other search finds no one. It can be a name or an LF username, so it does not say the account is
+ * missing: name search only finds people already in Mentorship, and anyone else only by exact LF username or full email.
+ */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE =
+  'No one matches that search. Name search only finds people already in Mentorship; try their exact LF username or full email address.';
+
+/** Shown, without a request, when a pasted search is longer than `MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH`. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE = 'That search is too long. Use at most 254 characters.';
 
 /** Shown when the candidate search hits a 503: the account lookup is down for now. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE = "Couldn't look up accounts right now. Try again.";
@@ -327,10 +329,6 @@ export const MENTORSHIP_ADMIN_MENTOR_CHANGED_MESSAGE = 'This mentor changed. The
 /** Mentors tab row actions by the mentor's status, in display order. Upstream's DELETE only withdraws an active mentor, so Remove covers it. */
 export const MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS: Record<MentorshipAdminMentorStatus, readonly MentorshipAdminMentorAction[]> = {
   requested: [
-    { key: 'accept', label: 'Accept', status: 'active' },
-    { key: 'decline', label: 'Decline', status: 'declined' },
-  ],
-  pending: [
     { key: 'accept', label: 'Accept', status: 'active' },
     { key: 'decline', label: 'Decline', status: 'declined' },
   ],

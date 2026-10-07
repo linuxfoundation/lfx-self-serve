@@ -551,12 +551,12 @@ describe('MentorshipAdminService.getProgramMentors', () => {
     expect(spy.mock.calls[0][4]).toMatchObject({ offset: 0, limit: 10 });
   });
 
-  it('shows an unknown status as pending and logs the ids and status, never the name', async () => {
+  it('shows an unknown status as requested and logs the ids and status, never the name', async () => {
     stubProgramReads({ [MEMBERS_PATH]: { data: [memberRow('m1', { status: 'mystery' })] } });
 
     const { data } = await service.getProgramMentors(buildReq(), PROGRAM_ID, {});
 
-    expect(data[0].status).toBe('pending');
+    expect(data[0].status).toBe('requested');
     expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_admin_get_program_mentors', expect.any(String), {
       programId: PROGRAM_ID,
       memberId: 'm1',

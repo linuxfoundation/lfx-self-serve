@@ -9,6 +9,7 @@ import {
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE,
+  MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE,
@@ -173,6 +174,13 @@ describe('MentorsTabComponent', () => {
       expect(JSON.stringify(options)).not.toContain('@');
     });
 
+    it('does not send a pasted search over 254 characters, and says it is too long rather than blaming the program', () => {
+      search(`${'a'.repeat(250)}@example.org`);
+
+      expect(getMentorCandidates).not.toHaveBeenCalled();
+      expect(fixture.componentInstance['candidatesEmptyMessage']()).toBe(MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE);
+    });
+
     it('does not ask upstream below two trimmed characters', () => {
       search(' p ');
 
@@ -182,8 +190,10 @@ describe('MentorsTabComponent', () => {
 
     it.each([
       ['alice@example.org', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE],
-      ['alice', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE],
+      ['alice', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE],
+      ['Priya', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE],
       ['Alice Example', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE],
+      ['alice@example', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE],
     ])('says why %s found no one', (query, message) => {
       getMentorCandidates.mockReturnValue(of({ data: [] }));
 
@@ -347,7 +357,6 @@ describe('MentorsTabComponent', () => {
 
     it.each([
       ['requested', ['accept', 'decline']],
-      ['pending', ['accept', 'decline']],
       ['invited', ['revoke']],
       ['active', ['remove']],
       ['declined', []],

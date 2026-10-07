@@ -348,7 +348,7 @@ describe('MentorshipAdminController', () => {
       ['no body', undefined, { programId: PROGRAM_ID }],
       ['no search', {}, { programId: PROGRAM_ID }],
       ['a search under two characters once trimmed', { search: ' a ' }, { programId: PROGRAM_ID }],
-      ['a search over 254 characters', { search: `${'a'.repeat(250)}@x.io` }, { programId: PROGRAM_ID }],
+      ['a search over 254 characters', { search: `${'a'.repeat(250)}@example.org` }, { programId: PROGRAM_ID }],
       ['a non-string search', { search: ['ada', 'bob'] }, { programId: PROGRAM_ID }],
       ['a programId that is not a UUID', { search: 'ada' }, { programId: 'not-a-uuid' }],
     ])('rejects %s with a 400', async (_label, body, params) => {
