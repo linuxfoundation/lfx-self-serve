@@ -38,7 +38,7 @@ export interface GwHostContext {
    */
   signIn: {
     /** The host's own sign-in entry point (LFID here). The embed never implements sign-in itself. */
-    startUrl: string;
+    lfidStartUrl: string;
     returnUrl: string;
   };
   /** Where the loader fetches the embed from (`GW_EMBED_URL`) and how its stylesheet reaches the page. */
@@ -118,11 +118,6 @@ export interface GwEmbedNotification {
  */
 export interface GwEmbedMountHandle {
   unmount: () => void;
-  /**
-   * Resolves once the embed is mounted (with the deployment's manifest), or with `null` when
-   * loading failed — reported through `onFatal` — or `unmount()` was called first. Never rejects.
-   */
-  ready: Promise<GwEmbedManifest | null>;
 }
 
 /** The deployment's `<baseUrl>/manifest.json`, as the loader hands it back. */
