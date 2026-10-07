@@ -2,11 +2,11 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4 pt-2" data-testid="committee-surveys-tab">
-  @if (loading() || surveys().length > 0) {
+  @if (surveysLoading() || surveys().length > 0) {
     <lfx-surveys-table
       [surveys]="surveys()"
       [hasPMOAccess]="canEdit()"
-      [loading]="loading()"
+      [loading]="surveysLoading()"
       [committeeUid]="committee().uid"
       (viewResults)="viewSurveyResults($event)"
       (rowClick)="viewSurveyResults($event)">

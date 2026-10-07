@@ -36,7 +36,9 @@ import {
   Meeting,
   PendingInvitation,
   ProjectContext,
+  Survey,
   TabConfigEntry,
+  Vote,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
 import {
@@ -57,7 +59,9 @@ import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SurveyService } from '@services/survey.service';
 import { UserService } from '@services/user.service';
+import { VoteService } from '@services/vote.service';
 import { CategoryAvatarColorPipe } from '@pipes/category-avatar-color.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
 import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
@@ -160,6 +164,8 @@ export class CommitteeViewComponent {
   private readonly userService = inject(UserService);
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly surveyService = inject(SurveyService);
+  private readonly voteService = inject(VoteService);
   private readonly invitationService = inject(InvitationService);
   private readonly joinApplicationSession = inject(CommitteeJoinApplicationSessionService);
   private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
@@ -209,6 +215,13 @@ export class CommitteeViewComponent {
   public membersLoading = signal<boolean>(true);
   public invitesLoading = signal<boolean>(true);
   public applicationsLoading = signal<boolean>(true);
+  // Votes and surveys are pre-fetched here so the tab badge counts are available before the user
+  // first opens those tabs. votesRefresh/surveysRefresh increment to trigger a re-fetch (e.g.
+  // after a delete from the child component).
+  public votesLoading = signal<boolean>(true);
+  public surveysLoading = signal<boolean>(true);
+  private readonly votesRefresh = signal(0);
+  private readonly surveysRefresh = signal(0);
   public joiningOrLeaving = signal(false);
   // Blocks the join/apply CTA while the org-prefetch is running and while the dialog
   // is open (signal stays true until .finally() resolves when the dialog closes) so a
@@ -243,6 +256,10 @@ export class CommitteeViewComponent {
   // Pending invites share the members refresh trigger so adding/revoking refreshes both.
   public invites: Signal<CommitteeInvite[]> = this.initializeInvites();
   public applications: Signal<CommitteeJoinApplication[]> = this.initializeApplications();
+  // Pre-fetched so tab badge counts are available before the user visits each tab. The child
+  // components receive these as inputs and emit refresh outputs to trigger re-fetches here.
+  public votes: Signal<Vote[]> = this.initVotes();
+  public surveys: Signal<Survey[]> = this.initSurveys();
   // Feature flag: engagement metrics UI (LFXV2-1705). Defaults false, so SSR and an unreachable
   // LaunchDarkly both fail closed — flag off means zero engagement UI and zero engagement fetches.
   public readonly engagementMetricsEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_ENGAGEMENT_METRICS_FLAG, false);
@@ -365,21 +382,48 @@ export class CommitteeViewComponent {
     { key: 'about', label: 'About', icon: 'fa-circle-info', visible: () => true },
     {
       key: 'members',
-      label: () => {
-        const count = this.committee()?.total_members;
-        return count != null ? `Members (${count})` : 'Members';
-      },
+      label: 'Members',
       icon: 'fa-users',
       // isMembersTabVisible() already encodes the full access rule (canViewCommitteeRoster
       // covers BASIC_PROFILE + writer + auditor; canEdit and canSendMemberInvites add invite_only
       // and admin scenarios). Using it directly here ensures BASIC_PROFILE visitors see the tab
       // even though isMemberOrAdmin() is false for them (GH-2988).
       visible: () => this.isMembersTabVisible(),
+      // Use the actual roster length for callers who have roster access (including admin/writers):
+      // total_members may under-count when the current user is an admin who isn't also a regular
+      // member — the backend counts roster members but may not include all manager entries.
+      // Show null while loading so the badge only appears once the count is known.
+      badge: () => {
+        if (this.membersLoading()) return null;
+        if (canViewCommitteeRoster(this.committee())) return this.members().length;
+        // Invite-only members who can send invites but whose roster is hidden fall back to
+        // the server-computed total (the roster wasn't fetched, so members() is always []).
+        return this.committee()?.total_members ?? null;
+      },
     },
-    { key: 'votes', label: 'Votes', icon: 'fa-check-to-slot', visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible() },
-    // Visitors see the Meetings tab when the group's calendar is marked public.
-    { key: 'meetings', label: 'Meetings', icon: 'fa-calendar', visible: () => this.isMemberOrAdmin() || !!this.committee()?.calendar?.public },
-    { key: 'surveys', label: 'Surveys', icon: 'fa-chart-simple', visible: () => this.isMemberOrAdmin() },
+    {
+      key: 'votes',
+      label: 'Votes',
+      icon: 'fa-check-to-slot',
+      visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible(),
+      badge: () => (this.votesLoading() ? null : this.votes().length),
+    },
+    {
+      // Visitors see the Meetings tab when the group's calendar is marked public.
+      key: 'meetings',
+      label: 'Meetings',
+      icon: 'fa-calendar',
+      visible: () => this.isMemberOrAdmin() || !!this.committee()?.calendar?.public,
+      // Show upcoming meetings count — the tab defaults to the "upcoming" view.
+      badge: () => (this.meetingsLoading() ? null : this.upcomingMeetings().length),
+    },
+    {
+      key: 'surveys',
+      label: 'Surveys',
+      icon: 'fa-chart-simple',
+      visible: () => this.isMemberOrAdmin(),
+      badge: () => (this.surveysLoading() ? null : this.surveys().length),
+    },
     // Visitors can see the Documents tab — committee#viewer FGA (the same check that gates the
     // group page itself) also governs /committees/:id/folders, /links, and committee_document
     // query-service resources, so a viewer of a public committee already has read access to all
@@ -519,6 +563,14 @@ export class CommitteeViewComponent {
 
   public onMembersRefreshed(): void {
     this.refreshMembers();
+  }
+
+  public onVotesRefreshed(): void {
+    this.votesRefresh.update((v) => v + 1);
+  }
+
+  public onSurveysRefreshed(): void {
+    this.surveysRefresh.update((v) => v + 1);
   }
 
   public onEngagementWindowChange(window: CommitteeEngagementWindow): void {
@@ -1473,6 +1525,59 @@ export class CommitteeViewComponent {
               return of([]);
             }),
             finalize(() => this.meetingsLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] }
+    );
+  }
+
+  /**
+   * Pre-fetches votes for this committee so the Votes tab badge count is available before the
+   * user first opens the tab. Only fetches when the committee has voting enabled and the current
+   * user has some form of access (member role or writer). Mirrors initializeMembers' pattern of
+   * reading access state from the committee object to avoid signal timing issues.
+   */
+  private initVotes(): Signal<Vote[]> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.votesRefresh)]).pipe(
+        switchMap(([committee]) => {
+          // Only fetch if voting is enabled and the user has access (member or admin, not visitor).
+          if (!committee?.uid || !committee.enable_voting || (!committee.my_role && !committee.writer)) {
+            this.votesLoading.set(false);
+            return of([]);
+          }
+          this.votesLoading.set(true);
+          return this.voteService.getVotesByCommittee(committee.uid).pipe(
+            // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over
+            // stale index rows — same transformation the child component previously applied.
+            map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
+            catchError(() => of([])),
+            finalize(() => this.votesLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] }
+    );
+  }
+
+  /**
+   * Pre-fetches surveys for this committee so the Surveys tab badge count is available before the
+   * user first opens the tab. Only fetches when the user has member or admin access.
+   */
+  private initSurveys(): Signal<Survey[]> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.surveysRefresh)]).pipe(
+        switchMap(([committee]) => {
+          // Only fetch when the user has access (member or admin, not a visitor).
+          if (!committee?.uid || (!committee.my_role && !committee.writer)) {
+            this.surveysLoading.set(false);
+            return of([]);
+          }
+          this.surveysLoading.set(true);
+          return this.surveyService.getSurveysByCommittee(committee.uid, 'last_modified_at.desc').pipe(
+            catchError(() => of([])),
+            finalize(() => this.surveysLoading.set(false))
           );
         })
       ),

@@ -1,8 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -12,9 +11,8 @@ import { SurveysTableComponent } from '@app/modules/surveys/components/surveys-t
 import { SurveyResultsDrawerComponent } from '@app/modules/surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
-import { SurveyService } from '@services/survey.service';
 import { MessageService } from 'primeng/api';
-import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
+import { finalize } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-surveys',
@@ -26,23 +24,27 @@ import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
 export class CommitteeSurveysComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly lensService = inject(LensService);
-  private readonly surveyService = inject(SurveyService);
   private readonly messageService = inject(MessageService);
   private readonly router = inject(Router);
 
-  // Inputs
+  // Inputs — surveys data is pre-fetched and passed from committee-view so the tab badge count is
+  // available before the user first opens this tab.
   public committee = input.required<Committee>();
   public canEdit = input<boolean>(false);
+  public surveys = input<Survey[]>([]);
+  public surveysLoading = input<boolean>(true);
+
+  // Outputs
+  /** Emitted when a survey action changes the list so the parent can re-fetch the tab badge count. */
+  public readonly refresh = output<void>();
 
   // State
-  public loading = signal<boolean>(true);
   public creating = signal(false);
   public resultsDrawerVisible = model<boolean>(false);
   public selectedSurveyId = signal<string | null>(null);
   public selectedSurvey = signal<Survey | null>(null);
 
   // Data
-  public surveys: Signal<Survey[]> = this.initSurveys();
   public createSurveyQueryParams: Signal<Record<string, string>> = this.initCreateSurveyQueryParams();
 
   public viewSurveyResults(survey: Survey): void {
@@ -77,28 +79,5 @@ export class CommitteeSurveysComponent {
   // Private initializer functions
   private initCreateSurveyQueryParams(): Signal<Record<string, string>> {
     return computed(() => buildCommitteeCreateQueryParams(this.committee()));
-  }
-
-  private initSurveys(): Signal<Survey[]> {
-    return toSignal(
-      toObservable(this.committee).pipe(
-        filter((c) => !!c?.uid),
-        tap(() => this.loading.set(true)),
-        switchMap((c) =>
-          this.surveyService.getSurveysByCommittee(c.uid, 'last_modified_at.desc').pipe(
-            catchError(() => {
-              this.messageService.add({
-                severity: 'error',
-                summary: 'Error',
-                detail: 'Failed to load surveys. Please try again.',
-              });
-              return of([]);
-            }),
-            finalize(() => this.loading.set(false))
-          )
-        )
-      ),
-      { initialValue: [] }
-    );
   }
 }

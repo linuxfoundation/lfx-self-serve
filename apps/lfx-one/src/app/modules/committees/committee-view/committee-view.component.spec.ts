@@ -16,7 +16,9 @@ import { MailingListService } from '@services/mailing-list.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { SurveyService } from '@services/survey.service';
 import { UserService } from '@services/user.service';
+import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { EMPTY, of } from 'rxjs';
@@ -87,6 +89,8 @@ describe('CommitteeViewComponent', () => {
         },
         { provide: MeetingService, useValue: { getMeetingsByCommittee } },
         { provide: MailingListService, useValue: { getMailingListsByCommittee: vi.fn(() => of([])) } },
+        { provide: VoteService, useValue: { getVotesByCommittee: vi.fn(() => of([])), mergeRecentlyOpenedVotes: vi.fn((v: unknown[]) => v) } },
+        { provide: SurveyService, useValue: { getSurveysByCommittee: vi.fn(() => of([])) } },
         { provide: MessageService, useValue: { add: vi.fn(), clear: vi.fn() } },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: UserService, useValue: { user: signal(null), viewerUsername: signal<string | null>('viewer') } },
