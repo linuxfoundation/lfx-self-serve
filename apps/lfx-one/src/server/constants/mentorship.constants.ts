@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  MentorshipAdminMenteeStatusFilter,
   MentorshipAdminMentorStatus,
   MentorshipApplicantTaskStatus,
   MentorshipMenteeStatus,
@@ -97,6 +98,20 @@ export const MENTORSHIP_ADMIN_TERMS_MAX_LIMIT = 100;
 export const MENTORSHIP_ADMIN_APPLICATION_STATUS_MAP: Readonly<Record<MentorshipUpstreamApplicationStatus, MentorshipMenteeStatus>> = {
   pending: 'pending',
   hold: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+  withdrawn: 'withdrawn',
+  graduated: 'graduated',
+};
+
+/**
+ * The upstream `status` of each admin mentee status filter. Upstream splits `pending` on the prerequisite tasks:
+ * `applied` while one is outstanding, `tasks_submitted` once every one is submitted or complete (or there are none).
+ */
+export const MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_TO_UPSTREAM: Readonly<Record<MentorshipAdminMenteeStatusFilter, string>> = {
+  pending: 'pending',
+  applied: 'applied',
+  'tasks-completed': 'tasks_submitted',
   accepted: 'accepted',
   declined: 'declined',
   withdrawn: 'withdrawn',

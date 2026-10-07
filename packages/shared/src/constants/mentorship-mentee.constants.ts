@@ -8,6 +8,7 @@ import type {
   MentorshipMenteeRegisterFieldErrors,
 } from '../interfaces/mentorship-mentee.interface';
 import type { MentorshipRegisterFailureOptions } from '../interfaces/mentorship.interface';
+import { COUNTRIES } from './countries.constants';
 
 export const MENTORSHIP_MENTEE_REGISTER_TITLE = 'Become a Mentee';
 
@@ -37,6 +38,16 @@ export const MENTORSHIP_MENTEE_SKILLS_HAVE_LABEL = 'What skills do you currently
 export const MENTORSHIP_MENTEE_SKILLS_WANT_LABEL = 'What skills would you like to improve?';
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL = 'Anything else you want mentors to know?';
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_PLACEHOLDER = 'Share any other context that would help a mentor get to know you.';
+
+/** The Country card: on register, in the profile edit drawer, and on the profile details card. */
+export const MENTORSHIP_MENTEE_COUNTRY_TITLE = 'Country';
+export const MENTORSHIP_MENTEE_COUNTRY_INTRO = 'Tell us the country you live in. The Linux Foundation HR team uses it to verify stipend eligibility.';
+export const MENTORSHIP_MENTEE_COUNTRY_LABEL = 'Country of residence';
+export const MENTORSHIP_MENTEE_COUNTRY_PLACEHOLDER = 'Select your country';
+export const MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE = 'Select your country of residence.';
+export const MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE = 'Select a country from the list.';
+/** The codes a mentee country may hold: the assigned ISO 3166-1 alpha-2 codes the dropdown offers, derived from `COUNTRIES`. */
+export const MENTORSHIP_MENTEE_COUNTRY_CODES: ReadonlySet<string> = new Set<string>(COUNTRIES.map((country) => country.value));
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX = 1000;
 
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_TITLE = 'Demographics';
@@ -161,6 +172,7 @@ export const MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS: readonly (keyof MentorshipMe
   'introduction',
   'skillsHave',
   'skillsWant',
+  'country',
   'ageEligible',
   'workAuthorized',
   'noDuplicateProfile',
@@ -439,6 +451,7 @@ export const MENTORSHIP_MENTEE_PROFILE_ABOUT_EMPTY = 'No introduction added yet.
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_EMPTY = 'No skills added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EMPTY = 'No areas to improve added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_NOTES_EMPTY = 'No additional notes added yet.';
+export const MENTORSHIP_MENTEE_PROFILE_COUNTRY_EMPTY = 'No country added yet.';
 
 // ---------------------------------------------------------------------------
 // Mentee apply page — `/mentorship/mentee/apply?programId=&programTermId=`
@@ -554,7 +567,7 @@ export const MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS = {
 export const MENTORSHIP_UPSTREAM_MENTEE_SKILL_SET_KEYS = ['skills', 'improvementSkills', 'comments'] as const;
 
 /** Top-level keys the profile update accepts. Anything else is a 400. */
-export const MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS = ['introduction', 'skillSet', 'demographics', 'socioeconomics'] as const;
+export const MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS = ['introduction', 'skillSet', 'demographics', 'socioeconomics', 'country'] as const;
 export const MENTORSHIP_MENTEE_SKILL_SET_KEYS = ['skillsHave', 'skillsWant', 'additionalNotes'] as const;
 
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE = `You can add up to ${MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS} skills of up to ${MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH} characters each.`;

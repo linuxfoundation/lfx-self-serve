@@ -10,7 +10,7 @@ import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { Committee, Project } from '@lfx-one/shared/interfaces';
+import { Committee, PersonaType, Project } from '@lfx-one/shared/interfaces';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { BehaviorSubject, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -39,6 +39,9 @@ describe('CommitteeManageComponent', () => {
   let routerEvents$: BehaviorSubject<NavigationEnd>;
   let queryParamMap$: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
   let activeContext: ReturnType<typeof signal<{ uid: string; slug: string; name: string } | null>>;
+  let currentPersona: ReturnType<typeof signal<PersonaType>>;
+  let personaLoaded: ReturnType<typeof signal<boolean>>;
+  let createCommittee: ReturnType<typeof vi.fn>;
 
   // Enriched detail payload: project_slug + is_foundation populated by the BFF — drives
   // syncEntityProjectContext directly. Unenriched: project_uid only — triggers the by-uid
@@ -75,6 +78,9 @@ describe('CommitteeManageComponent', () => {
 
   beforeEach(() => {
     getCommittee = vi.fn();
+    createCommittee = vi.fn();
+    currentPersona = signal<PersonaType>('maintainer');
+    personaLoaded = signal(true);
     getProject = vi.fn().mockReturnValue(of(resolvedProject()));
     setProject = vi.fn();
     setFoundation = vi.fn();
@@ -110,7 +116,7 @@ describe('CommitteeManageComponent', () => {
             snapshot: { queryParamMap: convertToParamMap({}), paramMap: convertToParamMap({ id: COMMITTEE_UID }) },
           },
         },
-        { provide: CommitteeService, useValue: { getCommittee, getCommitteesByProject: vi.fn().mockReturnValue(of([])) } },
+        { provide: CommitteeService, useValue: { getCommittee, createCommittee, getCommitteesByProject: vi.fn().mockReturnValue(of([])) } },
         { provide: ProjectService, useValue: { getProject, project: signal(null) } },
         {
           provide: ProjectContextService,
@@ -125,7 +131,7 @@ describe('CommitteeManageComponent', () => {
           },
         },
         // evictOnWriteAccessLoss injects these directly — mocked so no transitive HttpClient chain.
-        { provide: PersonaService, useValue: { currentPersona: signal('maintainer') } },
+        { provide: PersonaService, useValue: { currentPersona, personaLoaded } },
         { provide: LensService, useValue: { activeLens: signal('project') } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         // Real class, not a useValue fake — ConfirmDialog touches ConfirmationService's internal
@@ -202,5 +208,112 @@ describe('CommitteeManageComponent', () => {
     fixture.componentInstance.previousStep();
 
     expect(navigate).toHaveBeenCalledWith([], { queryParams: { step: 1 }, queryParamsHandling: 'merge' });
+  });
+
+  describe('category preselection from ?category=', () => {
+    const useRoute = (params: Record<string, string>, query: Record<string, string>) =>
+      TestBed.overrideProvider(ActivatedRoute, {
+        useValue: {
+          paramMap: of(convertToParamMap(params)),
+          queryParamMap: of(convertToParamMap(query)),
+          snapshot: { queryParamMap: convertToParamMap(query), paramMap: convertToParamMap(params) },
+        },
+      });
+
+    it('preselects a category the persona can pick on the create route', async () => {
+      useRoute({}, { project: PROJECT_SLUG, category: 'Newsletter' });
+      const fixture = await createComponent();
+
+      expect(fixture.componentInstance.form.get('category')?.value).toBe('Newsletter');
+    });
+
+    it('ignores a category outside the persona’s selectable set', async () => {
+      useRoute({}, { project: PROJECT_SLUG, category: 'Board' });
+      const fixture = await createComponent();
+
+      expect(fixture.componentInstance.form.get('category')?.value).toBe('');
+    });
+
+    it('ignores the param on the edit route so it never overrides a saved category', async () => {
+      getCommittee.mockReturnValue(of({ ...enrichedCommittee(), category: 'Board' }));
+      useRoute({ id: COMMITTEE_UID }, { category: 'Newsletter' });
+      const fixture = await createComponent();
+
+      expect(fixture.componentInstance.form.get('category')?.value).toBe('Board');
+
+      currentPersona.set('contributor');
+      await TestBed.inject(ApplicationRef).whenStable();
+      currentPersona.set('maintainer');
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(fixture.componentInstance.form.get('category')?.value).toBe('Board');
+    });
+
+    it('waits for detected persona and rejects a restricted URL category after Contributor becomes Maintainer', async () => {
+      currentPersona.set('contributor');
+      personaLoaded.set(false);
+      useRoute({}, { category: 'Board' });
+      const fixture = await createComponent();
+      const component = fixture.componentInstance;
+
+      expect(component.form.get('category')?.value).toBe('');
+      expect(component.canProceed()).toBe(false);
+      currentPersona.set('maintainer');
+      personaLoaded.set(true);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(component.form.get('category')?.value).toBe('');
+      component.nextStep();
+      expect(component.currentStep()).toBe(1);
+      component.form.get('name')?.setValue('Example Group');
+      component.onSubmit();
+      expect(createCommittee).not.toHaveBeenCalled();
+    });
+
+    it('preselects Newsletter after detection and never reapplies it over a later valid selection', async () => {
+      currentPersona.set('contributor');
+      personaLoaded.set(false);
+      useRoute({}, { category: 'Newsletter' });
+      const fixture = await createComponent();
+      const component = fixture.componentInstance;
+
+      currentPersona.set('maintainer');
+      personaLoaded.set(true);
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(component.form.get('category')?.value).toBe('Newsletter');
+      expect(component.canProceed()).toBe(true);
+
+      component.form.get('category')?.setValue('Working Group');
+      currentPersona.set('executive-director');
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(component.form.get('category')?.value).toBe('Working Group');
+    });
+
+    it('blocks submission synchronously on persona restriction and clears the now-unavailable category', async () => {
+      currentPersona.set('contributor');
+      useRoute({}, { category: 'Board' });
+      const fixture = await createComponent();
+      const component = fixture.componentInstance;
+      expect(component.form.get('category')?.value).toBe('Board');
+      component.form.get('name')?.setValue('Example Board');
+
+      currentPersona.set('maintainer');
+      component.onSubmit();
+      expect(createCommittee).not.toHaveBeenCalled();
+      expect(component.canProceed()).toBe(false);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(component.form.get('category')?.value).toBe('');
+    });
+
+    it('preserves a valid category chosen while persona detection is pending', async () => {
+      personaLoaded.set(false);
+      useRoute({}, { category: 'Newsletter' });
+      const fixture = await createComponent();
+      fixture.componentInstance.form.get('category')?.setValue('Working Group');
+
+      personaLoaded.set(true);
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(fixture.componentInstance.form.get('category')?.value).toBe('Working Group');
+    });
   });
 });

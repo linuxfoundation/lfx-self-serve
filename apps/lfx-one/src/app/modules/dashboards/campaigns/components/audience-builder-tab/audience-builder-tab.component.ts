@@ -9,9 +9,17 @@ import { CampaignService } from '@services/campaign.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, pairwise, startWith, switchMap, tap } from 'rxjs';
 
-import { AUDIENCE_SIGNAL_INFO, AUDIENCE_SIGNAL_ORDER, AUDIENCE_UNION_EXACT_CAP } from '@lfx-one/shared/constants';
+import {
+  AUDIENCE_ATTACH_MAX_LIST_IDS,
+  AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
+  AUDIENCE_SIGNAL_INFO,
+  AUDIENCE_SIGNAL_ORDER,
+  AUDIENCE_UNION_EXACT_CAP,
+} from '@lfx-one/shared/constants';
 import type {
+  AudienceAttachExistingRequest,
   AudienceAttachExistingResult,
+  AudienceBriefState,
   AudienceBuilderCapabilities,
   AudienceCardBucket,
   AudienceComposeMasterPartial,
@@ -25,6 +33,7 @@ import type {
   AudienceDiscoverySSEEventType,
   AudienceLastSentEmail,
   AudienceListBrief,
+  AudienceListRef,
   AudienceListSearchResult,
   AudienceMasterListBrief,
   AudiencePreviewCount,
@@ -147,6 +156,17 @@ export class AudienceBuilderTabComponent {
    * which audience that draft resolves to, and the create carries only the brief id.
    */
   public readonly stagingInFlight = input(false);
+  /**
+   * Why `briefId` is empty, when it is.
+   *
+   * The parent saves the brief on its own as this tab opens, so an empty id almost never means
+   * "the plan was not saved". It means the save is still running, failed, produced a brief that
+   * is not approved, or found a brief this session does not own (`'unopened'`). Telling the operator to save the plan on the Plan tab sent them to a step they
+   * had already done, with no way to recover.
+   */
+  public readonly briefState = input<AudienceBriefState>('none');
+  /** The parent's conflict-specific recovery for a failed save; replaces the generic failure copy. */
+  public readonly briefSaveMessage = input('');
 
   // === Outputs ===
   /**
@@ -184,6 +204,8 @@ export class AudienceBuilderTabComponent {
   public readonly audienceWriteInFlight = outputFromObservable(
     toObservable(computed(() => this.composeOnWire() || this.attachInFlight())).pipe(distinctUntilChanged())
   );
+  /** Save the brief again after the save the parent started on its own failed. */
+  public readonly retryBrief = output<void>();
 
   // === Forms ===
   protected readonly eventUrlControl = new FormControl('', { nonNullable: true });
@@ -296,6 +318,20 @@ export class AudienceBuilderTabComponent {
    * where they are actually used (`excludeIds`), not where they are stored.
    */
   private readonly suppression = signal<ReadonlyMap<string, string>>(new Map());
+  /**
+   * Lists the operator marked as EXCLUSIONS from steps 2, 4 or 5 (list id -> name): their contacts
+   * are kept off the send, exactly like a ticked suppression row. Kept apart from `suppression`
+   * because that map is keyed by grid row and these lists have no row there.
+   *
+   * Mutually exclusive with `inclusion`: marking a list one way removes it from the other, so a list
+   * can never be both included and excluded through these controls.
+   */
+  private readonly exclusion = signal<ReadonlyMap<string, string>>(new Map());
+  /**
+   * Whether this run's suppression rows have been pre-ticked yet. Seeded once per discovery run so a
+   * row the operator unticked does not tick itself again on a later reload of the same run.
+   */
+  private readonly suppressionSeeded = signal(false);
 
   // === State: preview & compose ===
   protected readonly previewing = signal(false);
@@ -500,14 +536,27 @@ export class AudienceBuilderTabComponent {
 
   protected readonly inclusionEntries = computed(() => [...this.inclusion()].map(([listId, name]) => ({ listId, name })));
 
+  /** Lists marked as exclusions from steps 2, 4 and 5, so each child can show its Exclude as on. */
+  protected readonly exclusionIds = computed<ReadonlySet<string>>(() => new Set(this.exclusion().keys()));
+
   /**
-   * The exclusions actually sent to compose: suppression minus inclusion.
+   * At least one suppression list must stay ticked in step 3 before anything is composed or
+   * attached. Sending with no suppression at all is the compliance failure that step exists to
+   * prevent, so it is a hard gate rather than the amber hint it used to be.
+   */
+  protected readonly suppressionMissing = computed(() => this.suppressionListIds().size === 0);
+
+  /**
+   * The exclusions actually sent: ticked suppression rows plus lists marked Exclude, minus inclusion.
    *
    * A list ticked on both sides is a contradiction the operator cannot see resolved anywhere else,
    * and HubSpot would apply both filters and return nobody. Inclusion wins because it is the
-   * explicit intent — the suppression tick is a recommendation this component made.
+   * explicit intent — the suppression tick is a recommendation this component made. (An Exclude
+   * mark cannot collide with inclusion: the two are kept mutually exclusive when set.)
    */
-  protected readonly excludeIds = computed(() => [...this.suppressionListIds()].filter((id) => !this.inclusion().has(id)));
+  protected readonly excludeIds = computed(() =>
+    [...new Set([...this.suppressionListIds(), ...this.exclusion().keys()])].filter((id) => !this.inclusion().has(id))
+  );
 
   /**
    * Lists ticked on BOTH sides. Resolving this silently was the defect: `excludeIds` drops the
@@ -659,7 +708,32 @@ export class AudienceBuilderTabComponent {
     if (attached === null || this.attachedListId() !== attached.master.listId) {
       return [];
     }
-    return [...new Set(attached.suppressionListIds)].filter((id) => id !== attached.master.listId);
+    const includes = new Set(this.attachedIncludeIds());
+    return [...new Set(attached.suppressionListIds)].filter((id) => !includes.has(id));
+  });
+
+  /**
+   * Every list the recorded audience sends to, so a prior send with several include lists can be
+   * matched on all of them. An attach of several lists records them in `includeListIds`; a single
+   * master (attached or composed) is just that one list.
+   */
+  protected readonly attachedIncludeIds = computed<readonly string[]>(() => {
+    const listId = this.attachedListId();
+    if (listId === null) {
+      return [];
+    }
+    const attached = this.attachResult();
+    if (attached !== null && attached.master.listId === listId) {
+      const includes = attached.audience.includeListIds ?? [];
+      return includes.length > 0 ? includes : [listId];
+    }
+    return [listId];
+  });
+
+  /** Names for the recorded include lists, for the attach result banner. */
+  protected readonly attachedIncludeNames = computed(() => {
+    const names = this.listNameIndex();
+    return this.attachedIncludeIds().map((listId) => names.get(listId) ?? `List ${listId}`);
   });
 
   /**
@@ -677,6 +751,10 @@ export class AudienceBuilderTabComponent {
     const attached = this.attachResult();
     if (listId === null || attached === null || attached.master.listId !== listId) {
       return listId;
+    }
+    // Several lists attached directly: no single master is "the" send list, so none reads as used.
+    if (this.attachedIncludeIds().length > 1) {
+      return null;
     }
     const recorded = new Set(this.attachedExclusions());
     const requested = new Set(this.excludeIds().filter((id) => id !== listId));
@@ -715,6 +793,22 @@ export class AudienceBuilderTabComponent {
     return urls;
   });
 
+  /** Every list name this panel has seen, so a recorded attach can name the lists it sends to. */
+  private readonly listNameIndex = computed(() => {
+    const names = new Map<string, string>();
+    const note = (listId: string, name?: string) => {
+      if (name) {
+        names.set(listId, name);
+      }
+    };
+    this.discoveredLists().forEach((list) => note(list.listId, list.name));
+    this.reuseMasterLists().forEach((list) => note(list.listId, list.name));
+    this.lastSentEmails().forEach((email) => [...email.includedLists, ...email.suppressionLists].forEach((list) => note(list.listId, list.name)));
+    this.searchResults().forEach((list) => note(list.listId, list.name));
+    this.inclusion().forEach((name, listId) => note(listId, name));
+    return names;
+  });
+
   /** Inclusion chips decorated with a link and size where one is known. */
   protected readonly inclusionChips = computed(() => {
     const urls = this.urlIndex();
@@ -741,6 +835,21 @@ export class AudienceBuilderTabComponent {
         name: gridNames.get(key) ?? copied.get(listId) ?? `List ${listId}`,
         hubspotUrl: this.urlIndex().get(listId) ?? '',
       }));
+  });
+
+  /** Lists marked Exclude in steps 2, 4 and 5, for their own chip group in the review step. */
+  protected readonly exclusionChips = computed(() => {
+    const urls = this.urlIndex();
+    const sizes = this.sizeIndex();
+    return [...this.exclusion()].map(([listId, name]) => {
+      const size = sizes.get(listId);
+      return {
+        listId,
+        name,
+        hubspotUrl: urls.get(listId) ?? '',
+        sizeText: size === undefined ? '' : size.toLocaleString('en-US'),
+      };
+    });
   });
 
   /**
@@ -771,40 +880,105 @@ export class AudienceBuilderTabComponent {
   });
 
   /**
-   * Reusing an EXISTING master list needs the same settled suppression read that composing does.
+   * Reusing EXISTING lists needs the same settled suppression read that composing does, and at
+   * least one suppression ticked.
    *
-   * Separate from `canUseSelectionDirectly` only because that one additionally requires exactly
-   * one inclusion; the readiness half is identical and is the half that matters here.
+   * Every attach path -- a master list, a past send's lists, or the step-6 selection -- sends the
+   * step-3 ticks along with it, so all of them share this gate. `canUseSelectionDirectly` adds only
+   * that there must be something selected.
    */
   protected readonly canUseExistingMaster = computed(
     () =>
       this.canAttach() &&
       !this.suppressionLoading() &&
       !this.suppressionFailed() &&
-      // The same conflict gate compose and single-list reuse carry. This path submits
-      // `excludeIds()`, which DROPS a list ticked on both sides -- so the attachment silently lost a
-      // suppression the panel still showed as applied.
+      !this.suppressionMissing() &&
+      // The same conflict gate compose carries. Attach submits `excludeIds()`, which DROPS a list
+      // ticked on both sides -- so the attachment silently lost a suppression the panel still
+      // showed as applied.
       this.conflictingIds().length === 0
   );
 
   /**
-   * A single included list can be sent to as-is; only several lists need combining into a master.
+   * The selected lists can be sent to as they are, with no master list combining them: a HubSpot
+   * email takes several include lists, so a master is only needed when the operator wants one list
+   * to reuse later.
    *
    * Gated on a settled suppression fetch, for the same fail-closed reason as `canCompose`: the
    * exclusions this attach records are the ones ticked from that fetch, so attaching while it is in
-   * flight or failed records a send with no GDPR/CASL suppression. A past send's lists are not
-   * gated here — they carry the suppression that send actually used.
+   * flight or failed records a send with no GDPR/CASL suppression.
    */
-  protected readonly canUseSelectionDirectly = computed(
-    () =>
-      this.canAttach() &&
-      !this.suppressionLoading() &&
-      !this.suppressionFailed() &&
-      this.inclusion().size === 1 &&
-      this.conflictingIds().length === 0 &&
-      !this.composing() &&
-      !this.attachInFlight()
-  );
+  protected readonly canUseSelectionDirectly = computed(() => this.canUseExistingMaster() && this.inclusion().size > 0 && this.listLimitMessage() === '');
+
+  /**
+   * Why direct use is off when the only obstacle is the selection's size; '' otherwise. The BFF
+   * refuses more than AUDIENCE_ATTACH_MAX_LIST_IDS include ids, so offering the action past that
+   * only produced a failed attach.
+   */
+  protected readonly directUseLimitMessage = computed(() => this.listLimitMessage());
+
+  /**
+   * Why a compose or a direct attach of the current selection would be refused by the BFF's
+   * per-request cap: more than AUDIENCE_ATTACH_MAX_LIST_IDS lists selected, or excluded. '' when
+   * within it. Both actions send these arrays, so both are gated on it; telling the operator to
+   * compose instead steered them into a compose that failed the same way and then locked.
+   */
+  protected readonly listLimitMessage = computed(() => {
+    if (this.inclusion().size > AUDIENCE_ATTACH_MAX_LIST_IDS) {
+      return `Select at most ${AUDIENCE_ATTACH_MAX_LIST_IDS} lists. One request can carry at most ${AUDIENCE_ATTACH_MAX_LIST_IDS}.`;
+    }
+    if (this.excludeIds().length > AUDIENCE_ATTACH_MAX_LIST_IDS) {
+      return `Exclude at most ${AUDIENCE_ATTACH_MAX_LIST_IDS} lists. One request can carry at most ${AUDIENCE_ATTACH_MAX_LIST_IDS}.`;
+    }
+    return '';
+  });
+
+  /**
+   * Why "Use for this email" cannot run, in the operator's terms. Empty when it can.
+   *
+   * The brief half replaces the old fixed "Save the plan on the Plan tab first" text, which was
+   * wrong in every case it was shown: the parent saves the brief itself when this tab opens.
+   */
+  protected readonly attachUnavailableMessage = computed(() => {
+    if (this.briefId() === '') {
+      return this.briefStateMessage();
+    }
+    if (this.suppressionLoading()) {
+      return 'The suppression lists are still loading in step 3.';
+    }
+    if (this.suppressionFailed()) {
+      return 'The suppression lists in step 3 could not be loaded. Reload them before attaching.';
+    }
+    if (this.suppressionMissing()) {
+      // Nothing to tick is a different problem from nothing ticked: telling the operator to select a
+      // list when none resolves in this portal gave them an instruction they could not follow.
+      return this.suppressionLists().some((list) => list.listId !== '')
+        ? 'Select at least one suppression list in step 3 first. Every send must keep at least one suppression list.'
+        : 'No suppression list resolves in this HubSpot portal, and every send must keep at least one. Ask a HubSpot admin to create the hygiene lists.';
+    }
+    if (this.conflictingIds().length > 0) {
+      return 'A list is ticked both to send to and to suppress. Untick one side first.';
+    }
+    return '';
+  });
+
+  /** The brief half of `attachUnavailableMessage`, also shown beside the step-6 actions. */
+  protected readonly briefStateMessage = computed(() => {
+    switch (this.briefState()) {
+      case 'resolving':
+        return 'Saving the plan for this email… Lists can be attached as soon as it is saved.';
+      case 'unapproved':
+        return 'The plan was saved but is not approved yet. Approve it on the Plan tab, then come back to attach lists.';
+      case 'unopened':
+        return 'This email already has a saved plan from an earlier session that was not opened here, so it was not saved over. Open it from the Plan tab: pick this email type, then re-enter the event URL to restore it. Lists can be attached once it is loaded.';
+      case 'failed':
+        return (
+          this.briefSaveMessage() || 'Saving the plan for this email failed, so there is nothing to attach lists to yet. Use Retry at the top of this tab.'
+        );
+      default:
+        return 'This email has no saved plan yet. Fill in the Plan tab and continue to save it, then come back to attach lists.';
+    }
+  });
 
   /**
    * Compose is a non-idempotent WRITE to a production portal, so this gate fails closed on
@@ -847,6 +1021,10 @@ export class AudienceBuilderTabComponent {
       // in an unrelated one is unaffected.
       this.strandedProject() !== this.projectSlug() &&
       this.conflictingIds().length === 0 &&
+      // At least one suppression list, always. See `suppressionMissing`.
+      !this.suppressionMissing() &&
+      // Within the BFF's per-request cap, or the compose is refused and then locks. See `listLimitMessage`.
+      this.listLimitMessage() === '' &&
       this.inclusion().size > 0
   );
 
@@ -1060,7 +1238,45 @@ export class AudienceBuilderTabComponent {
   // === Protected Methods: selection ===
   protected onToggleDiscovered(listId: string): void {
     const list = this.discoveredLists().find((candidate) => candidate.listId === listId);
+    this.dropExclusion(listId);
     this.toggle(this.inclusion, listId, list?.name ?? listId);
+  }
+
+  /** Step 2's Exclude: marks (or unmarks) a discovered list as an exclusion. */
+  protected onToggleExclude(listId: string): void {
+    const list = this.discoveredLists().find((candidate) => candidate.listId === listId);
+    this.onExcludeList({ listId, name: list?.name ?? listId });
+  }
+
+  /**
+   * Marks a list as an exclusion -- its contacts are kept off the send -- or unmarks it if it is
+   * already one. Marking it removes it from the included lists: a list cannot be both.
+   */
+  protected onExcludeList(list: AudienceListRef): void {
+    if (this.selectionLocked() || list.listId === '') {
+      return;
+    }
+    const next = new Map(this.exclusion());
+    if (next.has(list.listId)) {
+      next.delete(list.listId);
+    } else {
+      next.set(list.listId, list.name);
+      if (this.inclusion().has(list.listId)) {
+        const inclusion = new Map(this.inclusion());
+        inclusion.delete(list.listId);
+        this.inclusion.set(inclusion);
+      }
+    }
+    this.exclusion.set(next);
+    this.invalidatePreview();
+  }
+
+  protected onRemoveExclusion(listId: string): void {
+    if (this.selectionLocked()) {
+      return;
+    }
+    this.dropExclusion(listId);
+    this.invalidatePreview();
   }
 
   protected onToggleSuppression(key: string): void {
@@ -1107,20 +1323,25 @@ export class AudienceBuilderTabComponent {
         }
       });
     this.inclusion.set(inclusion);
+    [...inclusion.keys()].forEach((listId) => this.dropExclusion(listId));
     this.suppression.set(suppression);
     this.copiedSuppressionNames.set(copiedNames);
     this.invalidatePreview();
   }
 
-  /** Attaches a past send's single include list and its suppression lists as they are. */
+  /**
+   * Attaches a past send's include lists directly -- however many it had, with no master list built
+   * -- excluding that send's suppression lists AND whatever is ticked or marked Exclude here, so the
+   * mandatory step-3 suppression always applies.
+   */
   protected onUseSendLists(email: AudienceLastSentEmail): void {
-    const include = email.includedLists.find((list) => !list.missing);
-    if (!include) {
+    const includes = email.includedLists.filter((list) => !list.missing).map((list) => list.listId);
+    if (includes.length === 0 || !this.canUseExistingMaster()) {
       return;
     }
     this.attachExisting(
       email.emailId,
-      include.listId,
+      includes,
       email.suppressionLists.map((list) => list.listId),
       `Same lists as the earlier send "${email.emailName}"`
     );
@@ -1134,22 +1355,32 @@ export class AudienceBuilderTabComponent {
    * failed the set is empty for a reason that has nothing to do with the operator's intent. It
    * would record a send audience with NO exclusions before anyone could review them.
    *
-   * Prior-send reuse is deliberately NOT gated this way: it carries the earlier send's own
-   * exclusions rather than the ticked ones, so a pending lookup does not empty it.
+   * Prior-send reuse is gated the same way now: it adds the ticked suppressions to the earlier
+   * send's own, so at least one must be ticked and the lookup must have settled.
    */
   protected onUseMasterList(list: AudienceMasterListBrief): void {
     if (!this.canUseExistingMaster()) {
       return;
     }
-    this.attachExisting(list.listId, list.listId, this.excludeIds(), '');
+    this.attachExisting(list.listId, [list.listId], [], '');
   }
 
-  /** Sends to the ONE selected list directly, with the ticked suppression — no master list needed. */
+  /** Sends to every selected list directly, with the ticked suppression — no master list built. */
   protected onUseSelectionDirectly(): void {
-    const [listId] = [...this.inclusion().keys()];
-    if (listId && this.canUseSelectionDirectly()) {
-      this.attachExisting(listId, listId, this.excludeIds(), '');
+    if (!this.canUseSelectionDirectly()) {
+      return;
     }
+    const entries = this.inclusionEntries();
+    const names = entries.map((entry) => entry.name);
+    // Bounded to what the BFF stores: a long run of list names otherwise failed the whole attach.
+    const full = entries.length === 1 ? '' : `${entries.length} lists: ${names.join(', ')}`;
+    const summary = full.length > AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH ? `${full.slice(0, AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH - 1)}…` : full;
+    this.attachExisting(
+      'selection',
+      entries.map((entry) => entry.listId),
+      [],
+      summary
+    );
   }
 
   protected onRemoveSuppression(key: string): void {
@@ -1541,6 +1772,7 @@ export class AudienceBuilderTabComponent {
           this.suppressionLists.set(lists);
           this.suppressionFailed.set(false);
           this.suppressionLoading.set(false);
+          this.seedSuppression(lists);
         },
         error: () => {
           if (run !== this.runGeneration) {
@@ -1554,27 +1786,72 @@ export class AudienceBuilderTabComponent {
   }
 
   /**
+   * Pre-ticks every resolved suppression row, once per discovery run.
+   *
+   * Suppression is mandatory, so the safe default is all of it: the operator unticks a list the
+   * send was not written for rather than having to remember to tick each one. A row with no list id
+   * cannot be ticked, and a list already included stays included -- ticking it would raise the
+   * include/exclude conflict the operator then has to resolve by hand.
+   */
+  private seedSuppression(lists: readonly AudienceSuppressionList[]): void {
+    if (this.suppressionSeeded()) {
+      return;
+    }
+    const next = new Map(this.suppression());
+    lists.filter((list) => list.listId !== '' && !this.inclusion().has(list.listId)).forEach((list) => next.set(list.key, list.listId));
+    this.suppression.set(next);
+    this.suppressionSeeded.set(true);
+    this.invalidatePreview();
+  }
+
+  /**
    * Records existing lists as this brief's send audience. Nothing is created in HubSpot, so a
    * failure is safe to retry and there is no partial state to reconcile.
+   *
+   * One list goes up as `masterListId`, several as `includeListIds` -- the send goes to all of them
+   * with no master list built. The exclusions are always `extraExclusions` (a past send's own) plus
+   * everything ticked or marked Exclude here, so no path can attach without the step-3 suppression.
    */
-  private attachExisting(busyId: string, masterListId: string, suppressionListIds: string[], summary: string): void {
+  private attachExisting(busyId: string, includeIds: readonly string[], extraExclusions: readonly string[], summary: string): void {
     const briefId = this.briefId();
     if (!this.canAttach() || briefId === '' || this.attachInFlight()) {
       return;
     }
+    const includes = [...new Set(includeIds)];
+    if (includes.length === 0) {
+      return;
+    }
+    const includeSet = new Set(includes);
+    const requestedExclusions = [...new Set([...extraExclusions, ...this.excludeIds()])];
+    // REFUSED, not filtered: dropping an exclusion that is also being sent to recorded a send that
+    // reaches contacts the operator marked for exclusion -- a reused master marked Exclude, or a past
+    // send's list now ticked for suppression. The tab's own conflict gate only sees the step-6
+    // selection, not the lists an attach brings in, so the overlap is checked here too.
+    const conflicting = requestedExclusions.filter((id) => includeSet.has(id));
+    if (conflicting.length > 0) {
+      this.attachError.set(
+        `${conflicting.length === 1 ? 'A list is' : `${conflicting.length} lists are`} both sent to and excluded by this attach. Remove the exclusion or choose different lists.`
+      );
+      return;
+    }
+    const sentExclusions = requestedExclusions;
+    if (sentExclusions.length > AUDIENCE_ATTACH_MAX_LIST_IDS) {
+      this.attachError.set(`At most ${AUDIENCE_ATTACH_MAX_LIST_IDS} lists can be excluded from one send.`);
+      return;
+    }
+    if (sentExclusions.length === 0) {
+      this.attachError.set('Select at least one suppression list in step 3 first.');
+      return;
+    }
     const run = this.runGeneration;
     const dispatchProject = this.projectSlug();
-    const sentExclusions = [...new Set(suppressionListIds)].filter((id) => id !== masterListId);
+    const base = { briefId, suppressionListIds: sentExclusions, ...(summary ? { inclusionSummary: summary } : {}) };
+    const request: AudienceAttachExistingRequest = includes.length === 1 ? { ...base, masterListId: includes[0] } : { ...base, includeListIds: includes };
     this.attachInFlight.set(true);
     this.attachingId.set(busyId);
     this.attachError.set(null);
     this.campaignService
-      .attachExistingAudience(this.projectSlug(), {
-        briefId,
-        masterListId,
-        suppressionListIds: sentExclusions,
-        ...(summary ? { inclusionSummary: summary } : {}),
-      })
+      .attachExistingAudience(this.projectSlug(), request)
       // Released when the REQUEST settles -- see `attachInFlight`. The generation guards below
       // still decide whether its result is shown.
       .pipe(
@@ -1640,6 +1917,8 @@ export class AudienceBuilderTabComponent {
     if (this.inclusion().has(listId)) {
       return;
     }
+    // Including a list un-marks it as an exclusion: a list cannot be both.
+    this.dropExclusion(listId);
     const next = new Map(this.inclusion());
     next.set(listId, name);
     this.inclusion.set(next);
@@ -1659,6 +1938,15 @@ export class AudienceBuilderTabComponent {
     }
     target.set(next);
     this.invalidatePreview();
+  }
+
+  private dropExclusion(listId: string): void {
+    if (!this.exclusion().has(listId)) {
+      return;
+    }
+    const next = new Map(this.exclusion());
+    next.delete(listId);
+    this.exclusion.set(next);
   }
 
   /** A count computed for a different selection is misinformation, so it is dropped on every edit. */
@@ -1799,6 +2087,9 @@ export class AudienceBuilderTabComponent {
     this.searchResults.set([]);
     this.inclusion.set(new Map());
     this.suppression.set(new Map());
+    this.exclusion.set(new Map());
+    // The next run's suppression rows are pre-ticked afresh.
+    this.suppressionSeeded.set(false);
     this.composeResult.set(null);
     this.composePartial.set(null);
     this.composeError.set(null);

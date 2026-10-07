@@ -32,8 +32,11 @@ import { strictHttpParams } from '../utils/http-params.utils';
 export class MentorshipService {
   private readonly http = inject(HttpClient);
 
-  public isProgramNameAvailable(name: string): Observable<MentorshipNameAvailability> {
-    return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params: strictHttpParams().set('name', name) }).pipe(take(1));
+  /** `excludeProgramId` leaves that program out, so the edit wizard does not report a program's own name as taken. */
+  public isProgramNameAvailable(name: string, excludeProgramId = ''): Observable<MentorshipNameAvailability> {
+    let params = strictHttpParams().set('name', name);
+    if (excludeProgramId) params = params.set('excludeProgramId', excludeProgramId);
+    return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params }).pipe(take(1));
   }
 
   /** One lazy-load page of LF projects; pass the previous page's `page_token` as `pageToken` for the next one. Errors propagate. */

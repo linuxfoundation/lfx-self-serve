@@ -323,6 +323,23 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     expect(result.suppressionListIds).toEqual(['201']);
   });
 
+  it('posts several include lists and maps them back onto the audience', async () => {
+    const req = {} as Request;
+    proxyRequest.mockResolvedValue({
+      master: { list_id: '101', name: 'Registrants', hubspot_url: 'https://app.hubspot.com/l/1' },
+      suppression_list_ids: ['201'],
+      include_list_ids: ['101', '102'],
+      audience: { id: 'aud-3', status: 'built', version: 1, platform_master_list_id: '101', include_list_ids: ['101', '102'] },
+    });
+
+    const result = await service.attachExisting(req, 'tlf', { briefId: 'brief-1', includeListIds: ['101', '102'], suppressionListIds: ['201'] });
+
+    const [, , , , , body] = proxyRequest.mock.calls[0];
+    expect(body).toEqual({ attach: { brief_id: 'brief-1', include_list_ids: ['101', '102'], suppression_list_ids: ['201'] } });
+    expect(result.audience.includeListIds).toEqual(['101', '102']);
+    expect(result.audience.platformMasterListId).toBe('101');
+  });
+
   it('maps a list brief HubSpot link when upstream sends one', async () => {
     const req = {} as Request;
     proxyRequest.mockResolvedValue({

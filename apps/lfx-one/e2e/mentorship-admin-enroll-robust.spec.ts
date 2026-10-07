@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Admin enroll wizard — structural / data-testid contract (linuxfoundation/lfx-mentorship#259).
+ * Admin enroll wizard — structural / data-testid contract (linuxfoundation/lfx-mentorship#259, edit mode #265).
  *
  * Companion to `mentorship-admin-enroll.spec.ts` (content). This spec asserts, by testid and role rather than
  * copy, that the wizard shell renders its stepper, first step and footer buttons, that the submit button is idle
@@ -18,7 +18,14 @@ import { expect, Page, Route, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
 import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
-import { ENROLL_IMPORT_SOURCE_ID, ENROLL_IMPORT_SOURCE_NAME, stubEnrollImportReads, stubEnrollWizardReads } from './helpers/mentorship-admin-enroll.helper';
+import {
+  ENROLL_EDIT_PROGRAM_ID,
+  ENROLL_IMPORT_SOURCE_ID,
+  ENROLL_IMPORT_SOURCE_NAME,
+  stubEnrollEditReads,
+  stubEnrollImportReads,
+  stubEnrollWizardReads,
+} from './helpers/mentorship-admin-enroll.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -108,5 +115,50 @@ test.describe('Admin enroll wizard — import structure', () => {
     await expect(page.getByTestId('mentorship-enroll-details')).toBeVisible();
 
     expect(writes).toEqual([]);
+  });
+});
+
+test.describe('Admin enroll wizard — edit structure', () => {
+  const editUrl = `/mentorship/admin/enroll?programId=${ENROLL_EDIT_PROGRAM_ID}`;
+
+  test('renders the details step without the import picker once the program has loaded', async ({ page }) => {
+    await enableMentorshipFlag(page);
+    await stubEnrollWizardReads(page, fulfillJson);
+    await stubEnrollEditReads(page, fulfillJson);
+    await openMentorPage(page, editUrl);
+
+    await expect(page.getByTestId('mentorship-enroll-details')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mentorship-enroll-import')).toHaveCount(0);
+    await expect(page.getByTestId('mentorship-enroll-load-error')).toHaveCount(0);
+  });
+
+  test('leaves out the terms acknowledgement on the prerequisites step', async ({ page }) => {
+    await enableMentorshipFlag(page);
+    await stubEnrollWizardReads(page, fulfillJson);
+    await stubEnrollEditReads(page, fulfillJson);
+    const nameChecked = page.waitForResponse(/\/api\/mentorship\/programs\/name-available/);
+    await openMentorPage(page, editUrl);
+    const next = page.getByTestId('mentorship-enroll-next').getByRole('button');
+    await expect(page.getByTestId('mentorship-enroll-details')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+    await nameChecked;
+
+    await next.click();
+    await expect(page.getByTestId('mentorship-enroll-setup')).toBeVisible();
+    await next.click();
+
+    await expect(page.getByTestId('mentorship-enroll-terms')).toHaveCount(0);
+  });
+
+  test('announces a failed program read as an alert with a Retry button', async ({ page }) => {
+    await enableMentorshipFlag(page);
+    await stubEnrollWizardReads(page, fulfillJson);
+    await stubEnrollEditReads(page, fulfillJson, { templateFails: true });
+    await openMentorPage(page, editUrl);
+
+    const error = page.getByTestId('mentorship-enroll-load-error');
+    await expect(error).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+    await expect(error).toHaveAttribute('role', 'alert');
+    await expect(page.getByTestId('mentorship-enroll-load-retry').getByRole('button')).toBeVisible();
+    await expect(page.getByTestId('mentorship-enroll-details')).toHaveCount(0);
   });
 });

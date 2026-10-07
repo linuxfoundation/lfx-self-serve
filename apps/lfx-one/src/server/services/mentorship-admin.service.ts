@@ -6,8 +6,10 @@ import {
   MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
+  MENTORSHIP_ENROLL_NAME_TAKEN,
   MENTORSHIP_MAX_OPEN_TERMS,
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
+  MENTORSHIP_PROGRAM_NAME_TAKEN_ERROR_CODE,
   MENTORSHIP_PROGRAM_STATUSES,
 } from '@lfx-one/shared/constants';
 import {
@@ -29,6 +31,7 @@ import {
   MentorshipEnrollCreateRequest,
   MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
+  MentorshipEnrollUpdateRequest,
   MentorshipMentorTaskCreateRequest,
   MentorshipMentorTaskCreateResponse,
   MentorshipProgramLogoUploadResult,
@@ -50,11 +53,12 @@ import {
   MentorshipUpstreamTask,
   MentorshipUpstreamTermManagementRow,
 } from '@lfx-one/shared/interfaces';
-import { lastDayOfMentorshipMonth, toMentorshipUtcEndOfDayInstant, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
+import { lastDayOfMentorshipMonth } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import {
   MENTORSHIP_ADMIN_APPLICATIONS_MAX_LIMIT,
+  MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_TO_UPSTREAM,
   MENTORSHIP_ADMIN_TASKS_MAX_LIMIT,
   MENTORSHIP_ADMIN_TERMS_MAX_LIMIT,
   MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES,
@@ -73,17 +77,25 @@ import {
 import { buildMentorshipUpstreamTaskUpdate } from '../helpers/mentorship-admin-task.helper';
 import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { saveMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
-import { toMentorshipEnrollImport, toMentorshipEnrollProgramRef, toMentorshipProgramLogoUploadResult } from '../helpers/mentorship-enroll.helper';
+import {
+  toMentorshipEnrollImport,
+  toMentorshipEnrollProgramRef,
+  toMentorshipProgramLogoUploadResult,
+  toMentorshipUpstreamProgramUpdate,
+  toMentorshipUpstreamTermDates,
+} from '../helpers/mentorship-enroll.helper';
 import { createMentorshipMenteeTasks } from '../helpers/mentorship-mentor-task.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
 import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask } from '../helpers/mentorship-program-application.helper';
 
 import { logger } from './logger.service';
+import { MentorshipService } from './mentorship.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /** The program admin screens behind `/api/mentorship/admin`. */
 export class MentorshipAdminService {
   private readonly microserviceProxy = new MicroserviceProxyService();
+  private readonly mentorshipService = new MentorshipService();
 
   /**
    * The programs the caller administers, from one upstream `GET /me/programs` read: upstream searches, filters by
@@ -220,7 +232,7 @@ export class MentorshipAdminService {
         'GET',
         {
           type: query.type,
-          status: query.status,
+          status: query.status ? MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_TO_UPSTREAM[query.status] : undefined,
           term: query.termId,
           search: escapeMentorshipSearch(query.search),
           offset: query.offset ?? 0,
@@ -465,6 +477,33 @@ export class MentorshipAdminService {
   }
 
   /**
+   * Saves the edit wizard's program fields, and its open terms when sent, with upstream's partial update, which leaves the status
+   * as it is and replaces the open terms in the same transaction. The logo has its own route. Upstream's update does not check that
+   * the name is free, so the BFF asks first, leaving this program out, and answers 409 with no write when another program has the
+   * name. The check and the write are two calls, so two updates at once can still both pass it. Upstream's 400, 403, 404 and 409
+   * (an open term left out still has applications) pass through. Nothing in the body is logged.
+   */
+  public async updateProgram(req: Request, programId: string, body: MentorshipEnrollUpdateRequest): Promise<MentorshipEnrollProgramRef> {
+    logger.debug(req, 'mentorship_admin_update_program', 'Updating program', { programId, termCount: body.terms?.length });
+
+    const { available } = await this.mentorshipService.isProgramNameAvailable(req, body.name, programId);
+    if (!available) {
+      logger.warning(req, 'mentorship_admin_update_program', 'Another program has the name, skipping the write', { programId });
+      throw new ConflictError(MENTORSHIP_ENROLL_NAME_TAKEN, MENTORSHIP_PROGRAM_NAME_TAKEN_ERROR_CODE, { operation: 'mentorship_admin_update_program' });
+    }
+
+    const updated = await proxyMentorshipRequest<MentorshipUpstreamCreatedProgram>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}`,
+      'PATCH',
+      undefined,
+      toMentorshipUpstreamProgramUpdate(body)
+    );
+    return toMentorshipEnrollProgramRef(updated);
+  }
+
+  /**
    * Reads the details of an existing program for the enroll wizard's import. Upstream's 403, 404 and 5xx pass through. Nothing
    * in the template is logged.
    */
@@ -577,18 +616,11 @@ export class MentorshipAdminService {
   }
 
   /**
-   * Upstream takes RFC 3339 timestamps, sent in UTC. Each date goes as the start of its day, except the application end,
-   * which goes as the end of its day so the term takes applications through that whole date, and the term end, which goes
-   * as the end of the last day of its month: the dialog picks months, and the UI treats a term as running through its end month.
+   * The term routes' body: the name and the dates as `toMentorshipUpstreamTermDates` sends them, the term end first moved to the last
+   * day of its month: the dialog picks months, and the UI treats a term as running through its end month.
    */
   private toUpstreamTermBody(input: MentorshipAdminTermInput): Record<string, string> {
-    return {
-      name: input.name,
-      start_date_time: toMentorshipUtcInstant(input.startDate),
-      end_date_time: toMentorshipUtcEndOfDayInstant(lastDayOfMentorshipMonth(input.endDate)),
-      application_start_date: toMentorshipUtcInstant(input.applicationStartDate),
-      application_end_date: toMentorshipUtcEndOfDayInstant(input.applicationEndDate),
-    };
+    return { name: input.name, ...toMentorshipUpstreamTermDates({ ...input, endDate: lastDayOfMentorshipMonth(input.endDate) }) };
   }
 
   /** Maps upstream's answer to a write; a status missing or one the table can't show falls back to `fallbackStatus`, the rest to the input. */

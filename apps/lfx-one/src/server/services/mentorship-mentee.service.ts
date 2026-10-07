@@ -232,7 +232,8 @@ export class MentorshipMenteeService {
   public async updateMenteeProfile(req: Request, request: MentorshipMenteeProfileUpdateRequest): Promise<MentorshipMenteeProfileUpdateResponse> {
     // Group names only: the values are personal data.
     logger.debug(req, 'mentorship_update_mentee_profile', 'Updating mentee profile', { changed_groups: Object.keys(request) });
-    const writesJsonColumn = request.skillSet !== undefined || request.demographics !== undefined || request.socioeconomics !== undefined;
+    const writesJsonColumn =
+      request.skillSet !== undefined || request.demographics !== undefined || request.socioeconomics !== undefined || request.country !== undefined;
     const stored = writesJsonColumn ? await this.getStoredMenteeProfile(req) : undefined;
     const upstream = await proxyMentorshipRequest<MentorshipUpstreamUserProfile>(
       this.microserviceProxy,

@@ -20,6 +20,8 @@ export interface MentorshipMenteeRegisterForm {
   skillsHave: string[];
   skillsWant: string[];
   additionalNotes: string;
+  /** ISO 3166-1 alpha-2 code of the mentee's country of residence; `''` until one is picked. */
+  country: string;
   ageConsent: boolean;
   age: string;
   raceEthnicityConsent: boolean;
@@ -49,6 +51,7 @@ export interface MentorshipMenteeRegisterFieldErrors {
   introduction?: string;
   skillsHave?: string;
   skillsWant?: string;
+  country?: string;
   ageEligible?: string;
   workAuthorized?: string;
   noDuplicateProfile?: string;
@@ -68,6 +71,8 @@ export interface MentorshipMenteeRegisterRequest {
   skillsHave: string[];
   skillsWant: string[];
   additionalNotes: string;
+  /** ISO 3166-1 alpha-2 code from `COUNTRIES`; stored upstream as `address.country`. */
+  country: string;
   demographics?: MentorshipMenteeDemographics;
   ageEligible: boolean;
   workAuthorized: boolean;
@@ -288,12 +293,14 @@ export interface MentorshipMenteeApplicationView {
  * - `skillsHave` ← `skill_set.skills`
  * - `skillsWant` ← `skill_set.improvementSkills`
  * - `additionalNotes` ← `skill_set.comments`
+ * - `country` ← `address.country` (ISO 3166-1 alpha-2), absent when none is stored
  */
 export interface MentorshipMenteeProfileDetails {
   aboutMe: string;
   skillsHave: string[];
   skillsWant: string[];
   additionalNotes?: string;
+  country?: string;
 }
 
 /** Status on an Application History row: the stored `applications.status` value. */
@@ -373,6 +380,8 @@ export interface MentorshipMenteeProfileUpdateRequest {
   skillSet?: MentorshipMenteeSkillSetUpdate;
   demographics?: MentorshipMenteeDemographicsGroupUpdate;
   socioeconomics?: MentorshipMenteeSocioeconomicsGroupUpdate;
+  /** ISO 3166-1 alpha-2 code from `COUNTRIES`, written to `address.country`. Omitted means unchanged. */
+  country?: string;
 }
 
 /** 200 body of `PATCH /api/mentorship/mentee/profile`: the saved profile, re-mapped. History is not returned. */
@@ -387,6 +396,7 @@ export interface MentorshipMenteeProfileFormValue {
   skillsHave: string[];
   skillsWant: string[];
   additionalNotes: string;
+  country: string;
 }
 
 /** `form.getRawValue()` of the demographics drawer: `${key}Consent` booleans and `${key}` answers per `MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS`. */
@@ -649,6 +659,16 @@ export interface MentorshipUpstreamMenteeSocioeconomicsInput {
 }
 
 /**
+ * The `address` column. The mentee forms own only `country` (ISO 3166-1 alpha-2, which the HR
+ * acceptance notice expands to a name); the index signature carries the legacy keys (`city`,
+ * `address1`, `zipCode`) a profile update keeps, because upstream replaces the column whole.
+ */
+export interface MentorshipUpstreamMenteeAddress {
+  country: string;
+  [key: string]: unknown;
+}
+
+/**
  * Body of `PUT /mentorship/v1/me/profiles/mentee`. `user_id` and `profile_type` are overridden
  * upstream from the token and path; the name, email and logo come from the LFX profile, and phone and
  * slug are intentionally not sent. A PUT to an existing profile replaces ALL columns, which is why the
@@ -660,6 +680,7 @@ export interface MentorshipUpstreamMenteeProfileInput extends MentorshipUpstream
   age_eligible: boolean;
   work_eligible: boolean;
   skill_set: MentorshipUpstreamMenteeSkillSetInput;
+  address: MentorshipUpstreamMenteeAddress;
   demographics?: MentorshipUpstreamMenteeDemographicsInput;
   socioeconomics?: MentorshipUpstreamMenteeSocioeconomicsInput;
 }
@@ -731,4 +752,5 @@ export interface MentorshipUpstreamMenteeProfileUpdate {
   skill_set?: MentorshipUpstreamMenteeSkillSet;
   demographics?: MentorshipUpstreamMenteeDemographics;
   socioeconomics?: MentorshipUpstreamMenteeSocioeconomics;
+  address?: MentorshipUpstreamMenteeAddress;
 }

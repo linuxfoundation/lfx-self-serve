@@ -5,6 +5,7 @@ import {
   MENTORSHIP_ADMIN_DECISION_STATUSES,
   MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
+  MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS,
   MENTORSHIP_ADMIN_MENTEE_TABS,
   MENTORSHIP_ADMIN_MENTEES_MAX_LIMIT,
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
@@ -12,18 +13,17 @@ import {
   MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES,
   MENTORSHIP_ATTENDANCE_TYPES,
   MENTORSHIP_ENROLL_LOGO_MIME_TYPES,
-  MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_PROGRAM_PAGE_SIZE,
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_PROGRAMS_MAX_LIMIT,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipAdminApplicationStatusUpdate,
+  MentorshipAdminMenteeStatusFilter,
   MentorshipAdminMenteeTab,
   MentorshipAdminMentorStatus,
   MentorshipAdminMentorStatusUpdate,
   MentorshipAttendanceType,
-  MentorshipMenteeStatus,
 } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -32,7 +32,7 @@ import { AuthenticationError, MicroserviceError, ServiceValidationError } from '
 import { parseMentorshipAdminTaskUpdate } from '../helpers/mentorship-admin-task.helper';
 import { parseMentorshipAdminTermInput } from '../helpers/mentorship-admin-term.helper';
 import { parseMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
-import { parseMentorshipEnrollCreateRequest } from '../helpers/mentorship-enroll.helper';
+import { parseMentorshipEnrollCreateRequest, parseMentorshipEnrollUpdateRequest } from '../helpers/mentorship-enroll.helper';
 import { parseMentorshipMentorTaskCreateRequest } from '../helpers/mentorship-mentor-task.helper';
 import { parseMentorshipAdminPaging, parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
@@ -133,9 +133,11 @@ export class MentorshipAdminController {
         throw ServiceValidationError.forField('type', `type is required and must be one of: ${MENTORSHIP_ADMIN_MENTEE_TABS.join(', ')}`, { operation });
       }
 
+      const type = rawType as MentorshipAdminMenteeTab;
+      const statusFilters = MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS[type];
       const rawStatus = parseTrimmedString(getStrictStringQueryParam(req, 'status', operation));
-      if (rawStatus !== undefined && !(MENTORSHIP_MENTEE_STATUSES as readonly string[]).includes(rawStatus)) {
-        throw ServiceValidationError.forField('status', `status must be one of: ${MENTORSHIP_MENTEE_STATUSES.join(', ')}`, { operation });
+      if (rawStatus !== undefined && !(statusFilters as readonly string[]).includes(rawStatus)) {
+        throw ServiceValidationError.forField('status', `status must be one of: ${statusFilters.join(', ')}`, { operation });
       }
 
       const termId = parseTrimmedString(getStrictStringQueryParam(req, 'termId', operation));
@@ -151,8 +153,7 @@ export class MentorshipAdminController {
         operation,
       });
 
-      const type = rawType as MentorshipAdminMenteeTab;
-      const status = rawStatus as MentorshipMenteeStatus | undefined;
+      const status = rawStatus as MentorshipAdminMenteeStatusFilter | undefined;
       const mentees = await this.mentorshipAdminService.getProgramMentees(req, programId, { type, status, termId, search, offset, limit });
 
       logger.success(req, operation, startTime, { programId, type, status, offset, limit, result_count: mentees.data.length, total: mentees.total });
@@ -417,6 +418,27 @@ export class MentorshipAdminController {
 
       logger.success(req, operation, startTime, { programId: program.id, status: program.status });
       res.status(201).json(program);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/mentorship/admin/programs/:programId — the edit wizard's program fields; terms and the logo have their own routes
+  public async updateProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'update_mentorship_admin_program';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      const body = parseMentorshipEnrollUpdateRequest(req.body, operation);
+      const program = await this.mentorshipAdminService.updateProgram(req, programId, body);
+
+      logger.success(req, operation, startTime, { programId: program.id, status: program.status });
+      res.json(program);
     } catch (error) {
       next(error);
     }

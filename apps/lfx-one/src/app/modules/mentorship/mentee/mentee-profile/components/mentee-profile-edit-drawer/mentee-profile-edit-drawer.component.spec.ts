@@ -9,6 +9,7 @@ import { By } from '@angular/platform-browser';
 import {
   ERROR_CODES,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
+  MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE,
   MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE,
   MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_FALLBACK,
   MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_MESSAGES,
@@ -28,6 +29,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ButtonComponent } from '../../../../../../shared/components/button/button.component';
 import { RichEditorComponent } from '../../../../../../shared/components/rich-editor/rich-editor.component';
+import { SelectComponent } from '../../../../../../shared/components/select/select.component';
 import { TextareaComponent } from '../../../../../../shared/components/textarea/textarea.component';
 import { SkillsPickerComponent } from '../../../../components/skills-picker/skills-picker.component';
 import { DrawerModule } from 'primeng/drawer';
@@ -39,6 +41,7 @@ const PROFILE: MentorshipMenteeProfileDetails = {
   skillsHave: ['Go', 'Python'],
   skillsWant: ['Kubernetes'],
   additionalNotes: 'Comfortable working asynchronously.',
+  country: 'KE',
 };
 
 /* eslint-disable @angular-eslint/component-selector */
@@ -85,6 +88,19 @@ class StubSkillsPickerComponent {
   readonly idPrefix = input('');
   readonly control = input('skills');
   readonly error = input<string | undefined>(undefined);
+}
+
+@Component({ selector: 'lfx-select', template: '' })
+class StubSelectComponent {
+  readonly form = input<FormGroup>();
+  readonly control = input('');
+  readonly options = input<unknown[]>([]);
+  readonly inputId = input('');
+  readonly placeholder = input('');
+  readonly size = input('');
+  readonly styleClass = input('');
+  readonly filter = input(false);
+  readonly required = input(false);
 }
 
 @Component({ selector: 'lfx-button', template: '' })
@@ -145,10 +161,10 @@ describe('MenteeProfileEditDrawerComponent', () => {
     })
       .overrideComponent(MenteeProfileEditDrawerComponent, {
         remove: {
-          imports: [DrawerModule, ButtonComponent, RichEditorComponent, TextareaComponent, SkillsPickerComponent],
+          imports: [DrawerModule, ButtonComponent, RichEditorComponent, SelectComponent, TextareaComponent, SkillsPickerComponent],
         },
         add: {
-          imports: [StubDrawerComponent, StubRichEditorComponent, StubTextareaComponent, StubSkillsPickerComponent, StubButtonComponent],
+          imports: [StubDrawerComponent, StubRichEditorComponent, StubSelectComponent, StubTextareaComponent, StubSkillsPickerComponent, StubButtonComponent],
         },
       })
       .compileComponents();
@@ -168,7 +184,37 @@ describe('MenteeProfileEditDrawerComponent', () => {
     expect(raw.skillsHave).toEqual(PROFILE.skillsHave);
     expect(raw.skillsWant).toEqual(PROFILE.skillsWant);
     expect(raw.additionalNotes).toBe(PROFILE.additionalNotes);
+    expect(raw.country).toBe('KE');
     expect(raw).not.toHaveProperty('resumeFileName');
+  });
+
+  it('binds the country to a filterable dropdown of the ISO countries', () => {
+    const select = stub<StubSelectComponent>('lfx-select');
+
+    expect(select.control()).toBe('country');
+    expect(select.form()).toBe(comp['form']);
+    expect(select.filter()).toBe(true);
+    expect(select.required()).toBe(true);
+    expect(select.options()).toContainEqual({ label: 'Kenya', value: 'KE' });
+    expect(element().querySelector('label[for="mentee-profile-edit-country"]')).not.toBeNull();
+  });
+
+  it('requires a country before saving a profile stored without one, and shows the error after Save', () => {
+    drawer.open({ ...PROFILE, country: undefined });
+    fixture.detectChanges();
+    comp['form'].controls.additionalNotes.setValue('Weekends only.');
+
+    expect(comp['countryError']()).toBeUndefined();
+    comp['onSave']();
+    fixture.detectChanges();
+
+    expect(updateMenteeProfile).not.toHaveBeenCalled();
+    expect(drawer.isOpen()).toBe(true);
+    expect(element().querySelector('[data-testid="mentee-profile-edit-country-error"]')?.textContent?.trim()).toBe(MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE);
+
+    comp['form'].controls.country.setValue('NG');
+    fixture.detectChanges();
+    expect(comp['countryError']()).toBeUndefined();
   });
 
   it('binds the introduction to the rich editor the register form uses', () => {
@@ -265,6 +311,14 @@ describe('MenteeProfileEditDrawerComponent', () => {
         skillSet: { skillsHave: ['Go', 'Python', 'Rust'], skillsWant: ['Kubernetes'], additionalNotes: 'Comfortable working asynchronously.' },
       });
       expect(Object.keys(request)).toEqual(['skillSet']);
+    });
+
+    it('sends only the country when only it changed', () => {
+      comp['form'].controls.country.setValue('NG');
+
+      comp['onSave']();
+
+      expect(updateMenteeProfile).toHaveBeenCalledWith({ country: 'NG' });
     });
 
     it('sends only the introduction HTML when only it changed', () => {

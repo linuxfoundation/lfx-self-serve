@@ -151,6 +151,25 @@ describe('MenteeProfileDetailsComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-notes-empty"]')).not.toBeNull();
   });
 
+  it('shows the stored country code by its name', () => {
+    setup({ ...baseProfile, country: 'KE' });
+
+    expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-country-text"]')?.textContent?.trim()).toBe('Kenya');
+  });
+
+  it('shows a stored code outside the country list as stored', () => {
+    setup({ ...baseProfile, country: 'XK' });
+
+    expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-country-text"]')?.textContent?.trim()).toBe('XK');
+  });
+
+  it('shows the empty-country label when no country is stored', () => {
+    setup();
+
+    expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-country-text"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-country-empty"]')).not.toBeNull();
+  });
+
   it('emits editClick when the Edit Mentee Profile button is pressed', () => {
     setup();
 

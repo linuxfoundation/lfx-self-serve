@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ActivatedRoute, provideRouter } from '@angular/router';
+import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE } from '@lfx-one/shared/constants';
 import { MentorshipAdminMenteesResponse, MentorshipAdminProgramPage, MentorshipProgramApplicant } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
@@ -110,6 +110,14 @@ describe('ProgramDetailComponent', () => {
 
     it('reads the page for the program in the route', () => {
       expect(getProgram).toHaveBeenCalledWith('mp_example_fall26');
+    });
+
+    it('opens the enroll wizard in edit mode for this program from Edit Program', () => {
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+      element().querySelector<HTMLButtonElement>('[data-testid="mentorship-program-detail-edit"] button')!.click();
+
+      expect(navigate).toHaveBeenCalledWith(['/mentorship/admin/enroll'], { queryParams: { programId: 'mp_example_fall26' } });
     });
 
     it('opens on the Current Mentees tab, handing it the program id and the terms', () => {

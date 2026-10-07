@@ -3,7 +3,7 @@
 
 import '@angular/compiler';
 
-import { MENTORSHIP_MAX_OPEN_TERMS_MESSAGE } from '@lfx-one/shared/constants';
+import { MENTORSHIP_ENROLL_NAME_TAKEN, MENTORSHIP_MAX_OPEN_TERMS_MESSAGE } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,6 +24,7 @@ vi.mock('../utils/auth-helper', () => ({
 
 const { MentorshipAdminService } = await import('./mentorship-admin.service');
 const { MicroserviceProxyService } = await import('./microservice-proxy.service');
+const { MentorshipService } = await import('./mentorship.service');
 const { MicroserviceError } = await import('../errors');
 const { logger } = await import('./logger.service');
 
@@ -340,6 +341,16 @@ describe('MentorshipAdminService.getProgramMentees', () => {
     expect(result.data).toHaveLength(1);
     expect(result.data[0]).toMatchObject({ id: 'a1', status: 'pending', termId: 't1', termName: 'Fall' });
     expect(result.data[0].tasks).toBeUndefined();
+  });
+
+  it('sends Applied as applied and Tasks Completed as tasks_submitted', async () => {
+    const spy = stubProgramReads({ [`${PROGRAM_PATH}/applications`]: { data: [], meta: { total: 0, limit: 10, offset: 0 } } });
+
+    await service.getProgramMentees(buildReq(), PROGRAM_ID, { type: 'current', status: 'applied' });
+    await service.getProgramMentees(buildReq(), PROGRAM_ID, { type: 'current', status: 'tasks-completed' });
+
+    expect(spy.mock.calls[0][4]).toMatchObject({ status: 'applied' });
+    expect(spy.mock.calls[1][4]).toMatchObject({ status: 'tasks_submitted' });
   });
 
   it('defaults to offset 0 and 10 rows, and never sends more than 50', async () => {
@@ -1079,6 +1090,52 @@ describe('MentorshipAdminService program create and logo upload', () => {
 
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0].slice(2, 6)).toEqual([PROGRAMS_PATH, 'POST', undefined, createBody]);
+  });
+
+  it('patches the program with the snake_case update body and returns the id, slug and status', async () => {
+    const spy = vi
+      .spyOn(MicroserviceProxyService.prototype, 'proxyRequest')
+      .mockResolvedValue({ id: PROGRAM_ID, slug: 'private-program-name', status: 'published' } as never);
+    const updateBody = {
+      projectId: createBody.projectId,
+      projectSlug: createBody.projectSlug,
+      projectName: createBody.projectName,
+      name: createBody.name,
+      description: createBody.description,
+      repositoryUrl: createBody.repositoryUrl,
+      skills: createBody.skills,
+      prerequisites: [],
+    };
+    const nameCheck = vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable').mockResolvedValue({ available: true });
+
+    await expect(service.updateProgram(buildReq(), PROGRAM_ID, updateBody)).resolves.toEqual({
+      id: PROGRAM_ID,
+      slug: 'private-program-name',
+      status: 'published',
+    });
+
+    expect(nameCheck).toHaveBeenCalledWith(expect.anything(), updateBody.name, PROGRAM_ID);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0].slice(2, 5)).toEqual([`${PROGRAMS_PATH}/${PROGRAM_ID}`, 'PATCH', undefined]);
+    expect(spy.mock.calls[0][5]).toMatchObject({
+      name: updateBody.name,
+      repo_link: updateBody.repositoryUrl,
+      skills: updateBody.skills,
+      project_uid: updateBody.projectId,
+    });
+  });
+
+  it('answers 409 with no write when another program has the name', async () => {
+    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable').mockResolvedValue({ available: false });
+    const updateBody = { ...createBody, terms: undefined, termsAccepted: undefined };
+
+    await expect(service.updateProgram(buildReq(), PROGRAM_ID, updateBody)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'MENTORSHIP_PROGRAM_NAME_TAKEN',
+      message: MENTORSHIP_ENROLL_NAME_TAKEN,
+    });
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('falls back to the id when the created program has no slug', async () => {

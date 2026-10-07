@@ -26,8 +26,12 @@ import {
   EVENT_TERM_YEAR_PATTERN,
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
+  EMAIL_HERO_PREVIEW_HOSTS,
+  EMAIL_HERO_PREVIEW_IMAGE_PATH,
+  HUBSPOT_APP_HOST_PATTERN,
 } from '@lfx-one/shared/constants';
 import type {
+  AudienceBriefState,
   AudienceComposedList,
   AudienceComposeUnattachedEvent,
   BriefMetrics,
@@ -66,7 +70,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { EmailBodyPreviewComponent } from '@components/email-body-preview/email-body-preview.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { TextareaComponent } from '@components/textarea/textarea.component';
+import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywords.service';
 import { CampaignService } from '@services/campaign.service';
@@ -119,7 +123,11 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
 function withUnlinkedCta(body: string, unlinkedLabel: string): string {
   if (unlinkedLabel === '') return body;
   const fragment = `<div><strong>${escapeHtml(unlinkedLabel)}</strong></div>`;
-  return body.includes(stripResourceLoadingHtml(fragment)) ? body : `${body}${fragment}`;
+  // The rich editor re-serializes a hand-edited body with `<p>` where the server wrote `<div>`,
+  // so the folded label is looked for in both shapes.
+  const asParagraph = fragment.replace(/^<div>/, '<p>').replace(/<\/div>$/, '</p>');
+  const alreadyFolded = [fragment, asParagraph].some((candidate) => body.includes(stripResourceLoadingHtml(candidate)));
+  return alreadyFolded ? body : `${body}${fragment}`;
 }
 
 @Component({
@@ -134,7 +142,7 @@ function withUnlinkedCta(body: string, unlinkedLabel: string): string {
     CheckboxComponent,
     EmailBodyPreviewComponent,
     InputTextComponent,
-    TextareaComponent,
+    RichEditorComponent,
     SelectComponent,
     PlanningTabComponent,
     ImplementationTabComponent,
@@ -1147,6 +1155,29 @@ export class CampaignsComponent {
   /** The Audience tab is writing this brief's send audience. See its `audienceWriteInFlight`. */
   protected readonly emailAudienceWriteInFlight = signal(false);
   /**
+   * How the last Audience-tab warm-up save ended when it produced no usable id: the brief was
+   * saved but not approved, the save failed outright, or a brief this session does not own
+   * already exists. `'none'` otherwise. Cleared with the id. Only ever `'none'`, `'unapproved'`,
+   * `'failed'` or `'unopened'`.
+   */
+  private readonly emailBriefSaveOutcome = signal<AudienceBriefState>('none');
+  /** The conflict-specific recovery for a failed warm-up save, shown by the Audience tab; '' otherwise. */
+  protected readonly emailBriefSaveMessage = signal('');
+  /**
+   * Why the Audience tab has (or has no) brief to attach to. An empty `emailBriefId` used to read
+   * as "save the plan first" in every case, though the tab saves it itself on open -- so the real
+   * cause is a save still running, a save that failed, or a brief that is not approved.
+   */
+  protected readonly emailBriefState = computed<AudienceBriefState>(() => {
+    if (this.emailBriefId() !== '') {
+      return 'ready';
+    }
+    if (this.emailBriefResolving()) {
+      return 'resolving';
+    }
+    return this.emailBriefSaveOutcome();
+  });
+  /**
    * The brief id the last audience read was for, so the Audience tab's retry re-reads THAT brief.
    *
    * Not `emailBriefId`: a restore deliberately leaves that empty for an unapproved brief (see
@@ -1465,7 +1496,8 @@ export class CampaignsComponent {
    * omits AND made the BROWSER fetch it, which the server-side guard cannot prevent. Same
    * validator as the controller, so the two cannot drift.
    *
-   * NOT rendered in the preview, and that is deliberate.
+   * Rendered in the preview ONLY for https `linuxfoundation.org` hosts, through
+   * `emailHeroPreviewUrl`; every other host is named, never loaded.
    *
    * `canonicalHttpUrl` is a literal/name denylist: it does NOT resolve DNS, so a hostname that
    * resolves to a private address still passes it. campaign-service's dial-time guard covers
@@ -1473,10 +1505,10 @@ export class CampaignsComponent {
    * value into an `<img [src]>` made the operator's browser fetch an arbitrary host from inside
    * their network, and `referrerpolicy` suppressed the referrer without stopping the request.
    *
-   * The preview therefore NAMES the image rather than loading it (see `emailHeroImageHost`).
-   * This value is still what gets STAGED -- campaign-service fetches and re-hosts it behind its
-   * own guard at that point -- so it remains the right thing to send, and the wrong thing to
-   * render.
+   * The preview therefore NAMES the image rather than loading it, except for the allowlisted
+   * hosts above (see `emailHeroImageHost`). This value is still what gets STAGED --
+   * campaign-service fetches and re-hosts it behind its own guard at that point -- so it remains
+   * the right thing to send, and the wrong thing to render for any other host.
    */
   protected readonly emailHeroImageUrl = computed<string>(() => {
     if (!this.emailBodyIsStageable()) return '';
@@ -1622,7 +1654,8 @@ export class CampaignsComponent {
    * There is no re-hosted asset to show instead -- campaign-service re-hosts the bytes when the
    * draft is staged, and the brief carries only the scraped URL at preview time. So the preview
    * names the image rather than loading it: the operator still sees that a banner will be
-   * attached and where it came from, and no request leaves the browser.
+   * attached and where it came from, and no request leaves the browser. The one exception is an
+   * image on one of `EMAIL_HERO_PREVIEW_HOSTS`, which `emailHeroPreviewUrl` renders as the real banner.
    */
   protected readonly emailHeroImageHost = computed<string>(() => {
     // `new URL('')` throws, so the try/catch covers the empty case too -- an explicit
@@ -1630,6 +1663,30 @@ export class CampaignsComponent {
     // handles that input.
     try {
       return new URL(this.emailHeroImageUrl()).host;
+    } catch {
+      return '';
+    }
+  });
+
+  /**
+   * The hero URL, but ONLY when it is safe to let the operator's browser fetch it; '' otherwise.
+   *
+   * The "name, never load" rule above exists because a scraped hostname can resolve to a private
+   * address. That risk does not apply to the Foundation's own event sites, so an https URL on one
+   * of `EMAIL_HERO_PREVIEW_HOSTS`, with an image path and no query, is rendered as the real banner.
+   * The match is on the parsed hostname (a suffix test on the raw string would accept
+   * `evil.com/?.linuxfoundation.org`), and any other URL keeps the named-only note.
+   *
+   * Exact hosts and an image path, not the `*.linuxfoundation.org` zone: LFX One and the SSO host
+   * live in that zone, and the image request carries the operator's same-site cookies, so a
+   * scraped `og:image` of the app's own `/logout` signed the operator out as the preview rendered.
+   */
+  protected readonly emailHeroPreviewUrl = computed<string>(() => {
+    try {
+      const url = new URL(this.emailHeroImageUrl());
+      const safe =
+        url.protocol === 'https:' && EMAIL_HERO_PREVIEW_HOSTS.has(url.hostname) && url.search === '' && EMAIL_HERO_PREVIEW_IMAGE_PATH.test(url.pathname);
+      return safe ? url.href : '';
     } catch {
       return '';
     }
@@ -1767,6 +1824,8 @@ export class CampaignsComponent {
 
   /** Terminal message for the staging attempt — empty while idle or in flight. */
   protected readonly emailStagingMessage = signal<string>('');
+  /** HubSpot link to the staged draft; '' when the service sent none or it is not an http(s) URL. */
+  protected readonly emailStagingDraftUrl = signal<string>('');
 
   /**
    * Whether a send can be staged right now.
@@ -2746,6 +2805,18 @@ export class CampaignsComponent {
     void this.restoreEmailAudience(this.activeFoundationSlug(), this.emailAudienceReadBriefId);
   }
 
+  /** The Audience tab asked to retry the brief save. It offers Retry only after a failed save. */
+  protected onRetryEmailBrief(): void {
+    // The Audience tab showed this conflict's recovery (`emailBriefSaveMessage`) beside the Retry
+    // being clicked, so the overwrite that message promises is granted now -- through the one
+    // function that pairs a promotion with its warning -- and the retry can actually succeed rather
+    // than repeat the same conflict.
+    if (this.emailBriefSaveMessage() !== '') {
+      this.emailSaveFailureMessage('');
+    }
+    this.warmEmailBriefId();
+  }
+
   /**
    * A master list was created in HubSpot and attached to nothing.
    *
@@ -2924,6 +2995,8 @@ export class CampaignsComponent {
       this.emailAudienceReadPending.set(false);
       this.emailAudienceReadUnavailable.set(false);
       this.emailBriefResolving.set(false);
+      this.emailBriefSaveOutcome.set('none');
+      this.emailBriefSaveMessage.set('');
       this.emailAudienceReadBriefId = '';
       this.emailAudienceScope.update((n) => n + 1);
       this.emailAudienceGeneration++;
@@ -3186,6 +3259,7 @@ export class CampaignsComponent {
 
     this.emailStaging.set('staging');
     this.emailStagingMessage.set('');
+    this.emailStagingDraftUrl.set('');
 
     // Bumped BEFORE the await below; the reset bumps the same counter to invalidate it.
     const generation = ++this.emailStagingGeneration;
@@ -3733,6 +3807,20 @@ export class CampaignsComponent {
       });
   }
   /**
+   * The staged draft's link, only when it points at HubSpot's app (`HUBSPOT_APP_HOST_PATTERN`);
+   * '' otherwise. The value comes from campaign-service and is not checked on the way through the
+   * BFF, so the host is pinned here, the same way list links are pinned server-side.
+   */
+  private hubspotDraftUrl(raw: string | undefined): string {
+    const href = canonicalHttpUrl(raw);
+    try {
+      return href !== '' && new URL(href).protocol === 'https:' && HUBSPOT_APP_HOST_PATTERN.test(new URL(href).hostname) ? href : '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
    * Abandon an in-flight staging poll and return the button to idle.
    *
    * CANCEL, do not merely bump past it: `pollStagingJob` never reads `emailStagingGeneration`,
@@ -3754,6 +3842,7 @@ export class CampaignsComponent {
     this.stagingJobSubscription = null;
     this.emailStaging.set('idle');
     this.emailStagingMessage.set('');
+    this.emailStagingDraftUrl.set('');
   }
 
   /**
@@ -3798,9 +3887,8 @@ export class CampaignsComponent {
    * point where its result is still useful. Composing is what needs the id, and by the time the
    * operator presses that button the round trip has long finished.
    *
-   * Silent on failure on purpose. The tab is usable with no brief -- that is the documented
-   * exploratory path -- and it states inline that a compose without one attaches nothing, so there
-   * is nothing to report here that the operator is not already told at the point of action.
+   * No banner of its own: the outcome is recorded in `emailBriefSaveOutcome`, and the Audience tab
+   * states it (with a Retry that calls this again) through `emailBriefState`.
    */
   private warmEmailBriefId(): void {
     const brief = this.emailBriefOutput();
@@ -3811,7 +3899,12 @@ export class CampaignsComponent {
     const scope = this.emailAudienceScope();
     this.emailBriefResolving.set(true);
     void this.ensureEmailBriefId(brief, projectSlug)
-      .catch(() => undefined)
+      .catch(() => {
+        if (scope === this.emailAudienceScope()) {
+          this.emailBriefSaveOutcome.set('failed');
+          this.emailBriefSaveMessage.set('');
+        }
+      })
       .finally(() => {
         // Only for the send that started it: a reset already cleared it, and a newer warm-up owns it.
         if (scope === this.emailAudienceScope()) {
@@ -4204,13 +4297,14 @@ export class CampaignsComponent {
           this.emailStaging.set('done');
           // The id is INCLUDED, because without it this message sends the user to hunt for one
           // draft among the hundreds the portal lists — the picker above says "Showing 100 of 500".
-          // `campaignId` is already on the result and was simply discarded here.
           //
-          // The id is shown rather than linked: a HubSpot deep link needs the PORTAL id, which the
-          // connection row does not reliably carry (it is empty for `tlf` today), and a link built
-          // without it points at whichever portal the reader happens to be signed into. An id the
-          // user can paste into HubSpot's own search is worth more than a link that may 404.
+          // It is also LINKED when campaign-service sent a link. That link is built upstream from
+          // the connection's portal id, so it targets the right portal instead of whichever one the
+          // reader is signed into; it is absent when the portal id is unknown, and the id alone is
+          // then what the operator pastes into HubSpot's search. `canonicalHttpUrl` keeps a
+          // non-http(s) value out of the `[href]`.
           const draftId = hubspotResult?.campaignId ?? '';
+          this.emailStagingDraftUrl.set(this.hubspotDraftUrl(hubspotResult?.hubspotUrl));
           this.emailStagingMessage.set(
             draftId === ''
               ? 'Draft created in HubSpot. Review and send it from there.'
@@ -4749,16 +4843,46 @@ export class CampaignsComponent {
     if (pending !== null && pending.generation === this.emailBriefPersistGeneration && pending.conflict === conflict) {
       this.rememberBriefId(pending.key, { id: pending.id, etag: null, absence: 'overwrite' });
     }
+    return this.emailConflictText(conflict, consequence);
+  }
+
+  /**
+   * The conflict's message plus the consequence, with NO side effect. `emailSaveFailureMessage`
+   * renders through it after granting the staged overwrite; the Audience tab's brief banner uses it
+   * directly, because nothing has shown the warning at the point that text is recorded.
+   */
+  private emailConflictText(conflict: NonNullable<CampaignBriefPersistResult['conflict']>, consequence: string): string {
     // Capitalised, because the conflict message is a COMPLETE sentence ending in a period while
     // each consequence is a lowercase clause written to follow a comma. Joining them raw produced
     // "...re-enter the event URL to open it. so no audience was built."
-    const [first, ...rest] = consequence;
+    const [first = '', ...rest] = consequence;
     // The re-select step is appended HERE rather than in `conflictMessages`, which the paid
     // surface shares: a reload resets `selectedEmailTypeId` to the default, so under a non-default
     // stage re-entering the URL finds nothing until the operator picks the type back. That advice
     // is meaningless on paid, which has no type selector.
     const reselect = conflict === 'unowned-brief-exists' ? ' Re-select this email type first.' : '';
-    return `${this.conflictMessages[conflict]}${reselect} ${first.toUpperCase()}${rest.join('')}`;
+    return `${this.conflictMessages[conflict]}${reselect} ${first.toUpperCase()}${rest.join('')}`.trimEnd();
+  }
+
+  /**
+   * What an email persist that produced no usable id means for the Audience tab.
+   *
+   * `unowned-brief-exists` is told apart from a plain failure because Retry cannot clear it: the
+   * same save is refused again for as long as the page has not loaded the existing row.
+   */
+  private emailBriefOutcome(briefId: string, conflict: CampaignBriefPersistResult['conflict']): AudienceBriefState {
+    if (conflict === 'unowned-brief-exists') {
+      return 'unopened';
+    }
+    // A conflict is NOT "saved but unapproved" even when it carries an id: `stale-brief`,
+    // `unverified-validator` and `superseded-after-write` can return one with `approved: false`.
+    // Reading those as unapproved sent the operator to the Plan tab, and never surfaced the conflict
+    // message whose render is what grants the overwrite the retry needs -- so proceeding again hit
+    // the same conflict indefinitely.
+    if (conflict !== undefined) {
+      return 'failed';
+    }
+    return briefId !== '' ? 'unapproved' : 'failed';
   }
 
   /** The persist itself, wrapped by `ensureEmailBriefId`'s in-flight dedup. */
@@ -4863,6 +4987,8 @@ export class CampaignsComponent {
         return briefId;
       }
       this.emailBriefConflict = null;
+      this.emailBriefSaveOutcome.set('none');
+      this.emailBriefSaveMessage.set('');
       this.emailBriefId.set(briefId);
       // Re-read the brief's audience whenever an id lands with none known. A reset (re-proceeding
       // from Plan) clears `emailAudience` while this resolves the SAME brief through the ownership
@@ -4888,6 +5014,20 @@ export class CampaignsComponent {
         });
       }
       return briefId;
+    }
+    // Recorded for the Audience tab, which otherwise cannot tell "saved but not approved" from a
+    // failed save -- both return ''. Generation-guarded like every other write on this path.
+    if (generation === this.emailBriefPersistGeneration) {
+      this.emailBriefSaveOutcome.set(this.emailBriefOutcome(briefId, persisted.conflict));
+      // The conflict's own recovery, rendered on the Audience tab. Text only: the staged overwrite
+      // is NOT granted here, because nothing has shown the warning yet. `onRetryEmailBrief` grants
+      // it, from the Retry the operator clicks beside this message. `unowned-brief-exists` has its
+      // own fixed copy on the tab.
+      this.emailBriefSaveMessage.set(
+        persisted.conflict !== undefined && persisted.conflict !== 'unowned-brief-exists'
+          ? this.emailConflictText(persisted.conflict, 'so no lists can be attached yet. Use Retry at the top of this tab.')
+          : ''
+      );
     }
     return '';
   }
@@ -5343,6 +5483,8 @@ export class CampaignsComponent {
     this.emailAudienceReadPending.set(false);
     this.emailAudienceReadUnavailable.set(false);
     this.emailBriefResolving.set(false);
+    this.emailBriefSaveOutcome.set('none');
+    this.emailBriefSaveMessage.set('');
     this.emailAudienceReadBriefId = '';
     this.emailAudienceScope.update((n) => n + 1);
     this.emailCopy.set(null);

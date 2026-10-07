@@ -65,7 +65,7 @@ export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipM
   }
 
   const typeErrors: Record<string, string> = {};
-  const { introduction, skillsHave, skillsWant, additionalNotes } = body;
+  const { introduction, skillsHave, skillsWant, additionalNotes, country } = body;
   if (typeof introduction !== 'string') typeErrors['introduction'] = 'Introduction must be a string.';
   if (!isStringArray(skillsHave)) typeErrors['skillsHave'] = 'Skills you currently have must be a list of strings.';
   if (!isStringArray(skillsWant)) typeErrors['skillsWant'] = 'Skills you would like to improve must be a list of strings.';
@@ -74,6 +74,7 @@ export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipM
   } else if (additionalNotes.trim().length > MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX) {
     typeErrors['additionalNotes'] = `Additional notes must be ${MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX} characters or fewer.`;
   }
+  if (typeof country !== 'string') typeErrors['country'] = 'Country must be a string.';
   for (const flag of ['ageEligible', 'workAuthorized', 'noDuplicateProfile', 'complianceAccepted', 'termsAccepted'] as const) {
     if (typeof body[flag] !== 'boolean') typeErrors[flag] = 'This confirmation must be true or false.';
   }
@@ -91,6 +92,7 @@ export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipM
     skillsHave: withoutDuplicateSkills(skillsHave as string[]),
     skillsWant: withoutDuplicateSkills(skillsWant as string[]),
     additionalNotes: (additionalNotes as string).trim(),
+    country: country as string,
     ...(demographics ? { demographics } : {}),
     ageEligible: body['ageEligible'] as boolean,
     workAuthorized: body['workAuthorized'] as boolean,
@@ -110,7 +112,8 @@ export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipM
 /**
  * The `PUT /mentorship/v1/me/profiles/mentee` body. The JSON columns mirror what
  * `mapMentorshipMenteeProfile` reads back: `skill_set` carries both skill lists and the notes,
- * `demographics` the age band, gender and race, `socioeconomics` the income and education.
+ * `address` the country code, `demographics` the age band, gender and race, `socioeconomics` the
+ * income and education.
  * The name and logo are the LFX profile's, each sent only when the card had it; `email` is the
  * resolved primary email and `profile_links` the resolved GitHub link, each sent only when there is
  * one. The profile is new, so there are no stored links to keep. Phone and slug are not sent: an
@@ -133,6 +136,7 @@ export const buildMentorshipUpstreamMenteeProfile = (
     age_eligible: request.ageEligible,
     work_eligible: request.workAuthorized,
     skill_set: { skills: request.skillsHave, improvementSkills: request.skillsWant, comments: request.additionalNotes },
+    address: { country: request.country },
     ...(demographics ? { demographics } : {}),
     ...(socioeconomics ? { socioeconomics } : {}),
   };

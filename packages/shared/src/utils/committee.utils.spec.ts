@@ -24,6 +24,7 @@ import {
   canViewCommitteeRoster,
   committeeRouteIdMatches,
   countVotingReps,
+  getSelectableCommitteeCategories,
   groupCommitteesByFoundation,
   resolveCommitteeMemberPermission,
   resolveGroupsCardRoleSeverity,
@@ -136,6 +137,19 @@ describe('buildCommitteeCreateQueryParams', () => {
 
   it('omits the project key when the committee has no project slug', () => {
     expect(buildCommitteeCreateQueryParams(committee({ uid: 'cmte-9' }))).toEqual({ committee_uid: 'cmte-9' });
+  });
+});
+
+describe('getSelectableCommitteeCategories', () => {
+  const values = (persona: Parameters<typeof getSelectableCommitteeCategories>[0]) => getSelectableCommitteeCategories(persona).map((c) => c.value);
+
+  it('restricts Maintainers but still lets them create Newsletter groups', () => {
+    expect(values('maintainer')).toContain('Newsletter');
+    expect(values('maintainer')).not.toContain('Board');
+  });
+
+  it('offers every category to other personas', () => {
+    expect(values('executive-director')).toEqual(expect.arrayContaining(['Board', 'Newsletter']));
   });
 });
 

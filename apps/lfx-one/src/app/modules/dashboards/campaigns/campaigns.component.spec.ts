@@ -1963,6 +1963,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     onGenerateEmailCopy(): Promise<void>;
     emailStaging: WritableSignal<'idle' | 'staging' | 'done' | 'error'>;
     emailStagingMessage: WritableSignal<string>;
+    emailStagingDraftUrl: Signal<string>;
     canStageEmail: Signal<boolean>;
     onStageEmailSend(): Promise<void>;
     // Read-only now: the form is the source of truth and these derive from it, so a test
@@ -1993,6 +1994,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailCtaIsStageable: Signal<boolean>;
     emailCtaLabel: Signal<string>;
     emailHeroImageUrl: Signal<string>;
+    emailHeroPreviewUrl: Signal<string>;
     emailRegistrationUrl: Signal<string>;
     emailSponsors: Signal<CampaignEventSponsor[]>;
     emailBodyIsStageable: Signal<boolean>;
@@ -2558,6 +2560,24 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       const bOut = internals().abTestBodyHtmlBForSend();
       expect(bOut.split('Register Now').length - 1).toBe(1);
+    });
+
+    it('does not fold the refused CTA twice after the rich editor rewrites the folded label as a paragraph', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>A body</p>',
+        cta: 'Register Now',
+        ctaUrl: 'https://evil.example/phish',
+      } as unknown as EmailBriefCopy);
+      // What the editor writes back once the operator types: `<div>` becomes `<p>`.
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p><p><strong>Register Now</strong></p>');
+      fixture.detectChanges();
+
+      expect(internals().emailCtaUnlinkedLabel()).toBe('Register Now');
+      expect(internals().abTestBodyHtmlBForSend().split('Register Now').length - 1).toBe(1);
     });
 
     it.each([
@@ -3128,6 +3148,40 @@ describe('CampaignsComponent — email delivery channel', () => {
     // persist is still current by its own generation while its caller has already returned early
     // and rendered NO banner. Promoting there would hand out overwrite permission for a refusal
     // the operator was never shown.
+    it('shows a warm-up conflict on the Audience tab and grants its overwrite only on Retry', async () => {
+      // A conflict carrying an id used to read as "unapproved": no Retry, and the conflict message
+      // whose render grants the overwrite never appeared, so proceeding repeated the conflict.
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+      persist.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: '"1"', approved: true }));
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+      await internals().onGenerateEmailCopy();
+
+      persist.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null, approved: false, conflict: 'stale-brief' }));
+      internals().emailBriefId.set('');
+      const warm = internals() as unknown as { warmEmailBriefId(): void; emailBriefSaveMessage: () => string; onRetryEmailBrief(): void };
+      warm.warmEmailBriefId();
+      await fixture.whenStable();
+
+      expect((internals() as unknown as { emailBriefState: () => string }).emailBriefState()).toBe('failed');
+      expect(warm.emailBriefSaveMessage(), 'the conflict recovery never reached the Audience tab').not.toBe('');
+
+      // Not granted by the warm-up alone: the next save still addresses the row with its validator.
+      persist.mockClear();
+      persist.mockReturnValue(NEVER);
+      warm.onRetryEmailBrief();
+      await fixture.whenStable();
+
+      expect(persist, 'Retry after the shown conflict did not carry the overwrite').toHaveBeenLastCalledWith(
+        emailBrief,
+        expect.anything(),
+        'brief-77',
+        null,
+        true
+      );
+    });
+
     it('withholds the overwrite until the conflict warning is actually rendered', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
@@ -3333,6 +3387,42 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       expect(internals().emailStaging()).toBe('error');
       expect(internals().emailStagingMessage()).toContain('could not be cloned');
+    });
+
+    it.each([
+      ['an https HubSpot link', 'https://app.hubspot.com/email/123/edit/c1/settings', 'https://app.hubspot.com/email/123/edit/c1/settings'],
+      ['a non-http(s) link', 'javascript:alert(1)', ''],
+      ['no link', undefined, ''],
+      ['a regional HubSpot app host', 'https://app-eu1.hubspot.com/email/123/edit/c1/settings', 'https://app-eu1.hubspot.com/email/123/edit/c1/settings'],
+      ['an https link off HubSpot', 'https://evil.example/email/123', ''],
+      ['a look-alike HubSpot host', 'https://app.hubspot.com.evil.example/email/123', ''],
+      ['plain http to HubSpot', 'http://app.hubspot.com/email/123', ''],
+    ])('links the staged draft only for a safe URL: %s', async (_label, hubspotUrl, expected) => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      // The link renders on the Implement tab; without it the anchor assertion read an absent element.
+      internals().selectedEmailTab.set('implementation');
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      internals().emailBriefId.set(audience.briefId);
+      internals().onAudienceComposed(audience);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({
+          campaigns: [],
+          errors: [],
+          platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'c1', hubspotUrl }],
+        } as unknown as CampaignJobOutcome)
+      );
+
+      await internals().onStageEmailSend();
+      fixture.detectChanges();
+
+      expect(internals().emailStaging()).toBe('done');
+      expect(internals().emailStagingDraftUrl()).toBe(expected);
+      const anchor = fixture.nativeElement.querySelector('[data-testid="campaigns-email-stage-draft-link"]') as HTMLAnchorElement | null;
+      expect(anchor?.getAttribute('href') ?? '').toBe(expected);
     });
 
     /** An ABSENT platformResults must still succeed — it is optional on the contract. */
@@ -4562,7 +4652,52 @@ describe('CampaignsComponent — email delivery channel', () => {
       // Upstream declares ArrayOf(String). If it ever arrived JSON-encoded, `.length` would read
       // the STRING length and report "9 suppression list(s)" for a single list -- a
       // compliance-facing number on a send list, wrong by a factor of nine.
-      expect(panel?.textContent).toContain('1 suppression list(s) applied');
+      expect(panel?.textContent).toContain('1 exclusion list(s) applied');
+    });
+
+    it("tells the Audience tab why there is no brief id, rather than 'save the plan first'", () => {
+      const state = internals() as unknown as {
+        emailBriefState: () => string;
+        emailBriefSaveOutcome: { set: (v: string) => void };
+      };
+      internals().emailBriefId.set('');
+      state.emailBriefSaveOutcome.set('failed');
+      expect(state.emailBriefState()).toBe('failed');
+
+      state.emailBriefSaveOutcome.set('unapproved');
+      expect(state.emailBriefState()).toBe('unapproved');
+
+      // An earlier session's brief for this send is a refusal Retry cannot clear, so it is not 'failed'.
+      const outcome = (internals() as unknown as { emailBriefOutcome: (id: string, c?: string) => string }).emailBriefOutcome.bind(internals());
+      expect(outcome('', 'unowned-brief-exists')).toBe('unopened');
+      expect(outcome('', undefined)).toBe('failed');
+      expect(outcome('brief-9', undefined)).toBe('unapproved');
+      // A conflict carrying an id is still a failed save with its own recovery, not "unapproved".
+      for (const conflict of ['stale-brief', 'unverified-validator', 'superseded-after-write']) {
+        expect(outcome('brief-9', conflict), `${conflict} with an id read as unapproved`).toBe('failed');
+      }
+
+      // A brief id wins over any recorded outcome: the plan is saved and approved.
+      internals().emailBriefId.set('brief-77');
+      expect(state.emailBriefState()).toBe('ready');
+    });
+
+    it('names every include list when lists were attached directly with no master', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailAudience.set({
+        id: 'aud-1',
+        status: 'built',
+        platformMasterListId: '101',
+        includeListIds: ['101', '102'],
+        suppressionListIds: ['201'],
+      } as never);
+      fixture.detectChanges();
+
+      const includes = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-include-lists"]');
+      expect(includes?.textContent).toContain('101');
+      expect(includes?.textContent).toContain('102');
     });
 
     it('refuses to stage if the audience stops being built before the await', async () => {
@@ -6101,6 +6236,44 @@ describe('CampaignsComponent — email delivery channel', () => {
       // canonicalHttpUrl, so the two cannot restate the rule differently.
       expect(internals().emailHeroImageUrl()).toBe('https://cdn.example.com/hero.png');
       expect(internals().emailSponsors()).toEqual([{ name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' }]);
+    });
+
+    it('loads the preview hero only for https linuxfoundation.org hosts', () => {
+      selectEmail();
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
+      const previewFor = (heroImageUrl: string): string => {
+        internals().emailBriefOutput.set({
+          eventDetails: {
+            name: 'KubeCon EU 2026',
+            slug: 'kubecon-eu-2026',
+            countryCode: 'NL',
+            registrationUrl: 'https://events.example/register',
+            heroImageUrl,
+          },
+        } as unknown as CampaignBriefOutput);
+        fixture.detectChanges();
+        return internals().emailHeroPreviewUrl();
+      };
+
+      expect(previewFor('https://events.linuxfoundation.org/hero.png')).toBe('https://events.linuxfoundation.org/hero.png');
+      expect(previewFor('https://linuxfoundation.org/hero.png')).toBe('https://linuxfoundation.org/hero.png');
+      // Parsed-hostname match, not a string suffix: the first three below look like the trusted
+      // name but are not it; then a non-https scheme, and an unrelated host as the control.
+      expect(previewFor('https://evil.com/?.linuxfoundation.org')).toBe('');
+      expect(previewFor('https://notlinuxfoundation.org/hero.png')).toBe('');
+      expect(previewFor('https://linuxfoundation.org.evil.com/hero.png')).toBe('');
+      expect(previewFor('http://events.linuxfoundation.org/hero.png')).toBe('');
+      expect(previewFor('https://cdn.example.com/hero.png')).toBe('');
+      // Exact hosts and an image path: LFX One and SSO live in the linuxfoundation.org zone, and the
+      // image request carries same-site cookies, so a scraped og:image of the app's own /logout
+      // signed the operator out as the preview rendered.
+      expect(previewFor('https://app.lfx.linuxfoundation.org/logout'), 'the app host is in the zone, not on the list').toBe('');
+      expect(previewFor('https://sso.linuxfoundation.org/hero.png'), 'a zone subdomain off the list').toBe('');
+      expect(previewFor('https://events.linuxfoundation.org/logout'), 'an allowed host with a non-image path').toBe('');
+      expect(previewFor('https://events.linuxfoundation.org/hero.png?next=/logout'), 'a query string').toBe('');
+      expect(previewFor('https://events.linuxfoundation.org/uploads/HERO.JPG')).toBe('https://events.linuxfoundation.org/uploads/HERO.JPG');
     });
 
     it('stages the call to action whose destination was refused, as text', async () => {

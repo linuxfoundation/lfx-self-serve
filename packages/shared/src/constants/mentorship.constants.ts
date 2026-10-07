@@ -12,6 +12,8 @@ import type {
   MentorshipUpstreamProgramStatus,
 } from '../interfaces/mentorship.interface';
 import type {
+  MentorshipAdminMenteeStatusFilter,
+  MentorshipAdminMenteeTab,
   MentorshipAdminMentorAction,
   MentorshipAdminMentorStatus,
   MentorshipAdminProgramTabCounts,
@@ -238,9 +240,10 @@ export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
 export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn'] as const;
 
 /**
- * Mentee lifecycle statuses on the admin Current Mentees / Past Mentees tabs.
+ * Mentee lifecycle statuses an application holds on the wire.
  * Superset of mentor statuses; mentees additionally reach `graduated`.
- * Declaration order is the status filter's option order.
+ * Declaration order is the Past Mentees status filter's option order; Current Mentees
+ * filters on `MENTORSHIP_APPLICANT_DISPLAY_STATUSES` instead.
  */
 export const MENTORSHIP_MENTEE_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn', 'graduated'] as const;
 
@@ -407,6 +410,15 @@ export const MENTORSHIP_APPLICANT_STATUS_LABELS: Record<MentorshipApplicantDispl
   declined: 'Declined',
   withdrawn: 'Withdrawn',
   graduated: 'Graduated',
+};
+
+/**
+ * The status filter values each admin mentee tab offers and the BFF accepts, in option order. Current Mentees
+ * filters on the statuses its table shows; Past Mentees on the wire status, as its table shows it.
+ */
+export const MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS: Record<MentorshipAdminMenteeTab, readonly MentorshipAdminMenteeStatusFilter[]> = {
+  current: MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
+  past: MENTORSHIP_MENTEE_STATUSES,
 };
 
 /** The shared statuses reuse the mentee classes so the two palettes can't drift apart. */

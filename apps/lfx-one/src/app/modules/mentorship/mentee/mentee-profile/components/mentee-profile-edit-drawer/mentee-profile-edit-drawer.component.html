@@ -84,6 +84,31 @@
             dataTest="mentee-profile-edit-additional-notes" />
         </div>
       </div>
+
+      <div class="flex flex-col gap-4" data-testid="mentee-profile-edit-country">
+        <div class="flex flex-col gap-1">
+          <h2 class="text-base font-semibold text-gray-900">{{ countryTitle }}</h2>
+          <p class="text-sm text-gray-500">{{ countryIntro }}</p>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label for="mentee-profile-edit-country" class="text-sm font-medium text-gray-700">{{ countryLabel }} <span class="text-red-500">*</span></label>
+          <lfx-select
+            size="small"
+            [form]="form"
+            control="country"
+            [options]="countryOptions"
+            inputId="mentee-profile-edit-country"
+            [placeholder]="countryPlaceholder"
+            styleClass="w-full"
+            [filter]="true"
+            [required]="true"
+            data-testid="mentee-profile-edit-country-select" />
+          @if (countryError(); as error) {
+            <p role="alert" class="text-xs text-red-600" data-testid="mentee-profile-edit-country-error">{{ error }}</p>
+          }
+        </div>
+      </div>
     </div>
 
     <!-- Kept next to the actions, not at the top of the body: Save sits below a long scrolling form, so an error at the top would render off-screen. -->
