@@ -2131,8 +2131,8 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
   it('marks the response as available and orders streams by domain when rows are returned', async () => {
     execute.mockResolvedValueOnce({
       rows: [
-        buildRevenueWideRow({ REVENUE_DOMAIN: 'memberships', REVENUE_USD: 600_000, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 }),
-        buildRevenueWideRow({ REVENUE_DOMAIN: 'events', REVENUE_USD: 400_000, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 }),
+        buildRevenueWideRow({ REVENUE_DOMAIN: 'memberships', REVENUE_USD: 600_000, REVENUE_SHARE_PCT: 60, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 }),
+        buildRevenueWideRow({ REVENUE_DOMAIN: 'events', REVENUE_USD: 400_000, REVENUE_SHARE_PCT: 40, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 }),
       ],
     });
 
@@ -2142,8 +2142,8 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
       dataAvailable: true,
       total: 1_000_000,
       streams: [
-        { key: 'memberships', value: 600_000 },
-        { key: 'events', value: 400_000 },
+        { key: 'memberships', value: 600_000, share: 60 },
+        { key: 'events', value: 400_000, share: 40 },
       ],
     });
     expect(execute.mock.calls[0][0]).toContain('ORDER BY revenue_domain');
@@ -2178,7 +2178,7 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
 
     const result = await service.getHealthOverviewRevenue('cncf');
 
-    expect(result['YTD']).toEqual({ dataAvailable: true, total: 600_000, streams: [{ key: 'memberships', value: 600_000 }] });
+    expect(result['YTD']).toEqual({ dataAvailable: true, total: 600_000, streams: [{ key: 'memberships', value: 600_000, share: null }] });
     expect(result['COMPLETED_YEAR']).toEqual({ dataAvailable: false, total: 0, streams: [] });
   });
 
@@ -2193,8 +2193,8 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
     const result = await service.getHealthOverviewRevenue('cncf');
 
     expect(result['YTD']?.streams).toEqual([
-      { key: 'memberships', value: 600_000 },
-      { key: 'events', value: null },
+      { key: 'memberships', value: 600_000, share: null },
+      { key: 'events', value: null, share: null },
     ]);
   });
 
@@ -2202,12 +2202,14 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
     // Snowflake can serialize a high-precision NUMBER as a string; rejecting it instead of coercing
     // would report a funded foundation as having no revenue data for the period.
     execute.mockResolvedValueOnce({
-      rows: [{ REVENUE_DOMAIN: 'memberships', REVENUE_USD__YTD: '600000.00', FOUNDATION_TOTAL_REVENUE_USD__YTD: '1000000.00' }],
+      rows: [
+        { REVENUE_DOMAIN: 'memberships', REVENUE_USD__YTD: '600000.00', REVENUE_SHARE_PCT__YTD: '60.0000', FOUNDATION_TOTAL_REVENUE_USD__YTD: '1000000.00' },
+      ],
     });
 
     const result = await service.getHealthOverviewRevenue('cncf');
 
-    expect(result['YTD']).toEqual({ dataAvailable: true, total: 1_000_000, streams: [{ key: 'memberships', value: 600_000 }] });
+    expect(result['YTD']).toEqual({ dataAvailable: true, total: 1_000_000, streams: [{ key: 'memberships', value: 600_000, share: 60 }] });
   });
 
   it('reads every selectable period in a single one-bind query and never emits the 4th-year-back suffix this table lacks', async () => {
@@ -2221,7 +2223,7 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
     expect((query as string).match(/\?/g)).toHaveLength(1);
     // Pinned independently of the constant: the loop below derives its expectations from the same
     // list the service generates from, so only this assertion catches a column silently dropped there.
-    expect(HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS).toEqual(['REVENUE_USD', 'FOUNDATION_TOTAL_REVENUE_USD']);
+    expect(HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS).toEqual(['REVENUE_USD', 'REVENUE_SHARE_PCT', 'FOUNDATION_TOTAL_REVENUE_USD']);
     for (const suffix of ['_ytd', '_last_completed_year', '_prev_completed_year', '_3rd_last_completed_year']) {
       for (const column of HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS) {
         expect(query).toContain(`${column.toLowerCase()}${suffix}`);
@@ -2588,7 +2590,59 @@ describe('ProjectService — getHealthOverviewKpis', () => {
     }
     expect((query as string).match(/members_renewing_90d_value_usd/g)).toHaveLength(1);
     expect((query as string).match(/non_members_pipeline_value_usd/g)).toHaveLength(1);
+    expect((query as string).match(/members_renewing_90d_unsecured_org_pct/g)).toHaveLength(1);
     expect(query).not.toContain('_4th_last_completed_year');
+  });
+
+  it('adds the registrations line to Events and the unsecured-renewals chip to Members', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        buildKpiWideRow({
+          EVENTS_REGISTRATIONS_COUNT: 1234,
+          EVENTS_REGISTRATIONS_GOAL: 1500,
+          MEMBERS_RENEWING_90D_ORG_COUNT: 7,
+          MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT: 3,
+          MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD: 185_000,
+          MEMBERS_RENEWING_90D_UNSECURED_ORG_PCT: 0.43,
+        }),
+      ],
+    });
+
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
+
+    expect(result?.find((state) => state.area === 'evt')?.statDetail).toEqual({ text: '1,234 registrations · goal 1,500' });
+    expect(result?.find((state) => state.area === 'mem')?.statDetail).toEqual({ text: '3 of 7 unsecured · $185K', tone: 'watch' });
+  });
+
+  it('drops the goal when it is unset and keeps the members chip neutral when every renewal is secured', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        buildKpiWideRow({
+          EVENTS_REGISTRATIONS_COUNT: 1,
+          EVENTS_REGISTRATIONS_GOAL: null,
+          MEMBERS_RENEWING_90D_ORG_COUNT: 4,
+          MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT: 0,
+          MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD: null,
+          MEMBERS_RENEWING_90D_UNSECURED_ORG_PCT: 0,
+        }),
+      ],
+    });
+
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
+
+    expect(result?.find((state) => state.area === 'evt')?.statDetail).toEqual({ text: '1 registration' });
+    expect(result?.find((state) => state.area === 'mem')?.statDetail).toEqual({ text: '0 of 4 unsecured', tone: 'none' });
+  });
+
+  it('hides both detail lines when their counts are unmeasured', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [buildKpiWideRow({ EVENTS_REGISTRATIONS_COUNT: null, EVENTS_REGISTRATIONS_GOAL: 1500, MEMBERS_RENEWING_90D_ORG_COUNT: null })],
+    });
+
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
+
+    expect(result?.find((state) => state.area === 'evt')?.statDetail).toBeUndefined();
+    expect(result?.find((state) => state.area === 'mem')?.statDetail).toBeUndefined();
   });
 });
 
@@ -2603,33 +2657,40 @@ describe('ProjectService — getFoundationProfileSummary', () => {
 
   it('formats a fetched row into display strings, pinning to a single row', async () => {
     execute.mockResolvedValueOnce({
-      rows: [{ PROJECT_COUNT: 14, MEMBERSHIP_TIER_COUNT: 4, BOARD_SEAT_COUNT: 12, RENEWALS_NEXT_90D_COUNT: 5 }],
+      rows: [{ MEMBER_COUNT: 1725, PROJECT_COUNT: 14, MEMBERSHIP_TIER_COUNT: 4, BOARD_SEAT_COUNT: 12, RENEWALS_NEXT_90D_COUNT: 5 }],
     });
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+    expect(result).toEqual({
+      dataAvailable: true,
+      size: '1,725 members',
+      projects: '14',
+      tiers: '4 tiers',
+      board: '12 seats',
+      nextRenewals: '5 in the next 90 days',
+    });
     expect(execute.mock.calls[0][0]).toContain('LIMIT 1');
   });
 
   it('singularizes tier and seat labels when the count is exactly 1', async () => {
     execute.mockResolvedValueOnce({
-      rows: [{ PROJECT_COUNT: 1, MEMBERSHIP_TIER_COUNT: 1, BOARD_SEAT_COUNT: 1, RENEWALS_NEXT_90D_COUNT: 0 }],
+      rows: [{ MEMBER_COUNT: 1, PROJECT_COUNT: 1, MEMBERSHIP_TIER_COUNT: 1, BOARD_SEAT_COUNT: 1, RENEWALS_NEXT_90D_COUNT: 0 }],
     });
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ dataAvailable: true, projects: '1', tiers: '1 tier', board: '1 seat', nextRenewals: '0 in the next 90 days' });
+    expect(result).toEqual({ dataAvailable: true, size: '1 member', projects: '1', tiers: '1 tier', board: '1 seat', nextRenewals: '0 in the next 90 days' });
   });
 
   it('renders a null column as an em dash rather than a zero count', async () => {
     execute.mockResolvedValueOnce({
-      rows: [{ PROJECT_COUNT: 3, MEMBERSHIP_TIER_COUNT: null, BOARD_SEAT_COUNT: null, RENEWALS_NEXT_90D_COUNT: null }],
+      rows: [{ MEMBER_COUNT: null, PROJECT_COUNT: 3, MEMBERSHIP_TIER_COUNT: null, BOARD_SEAT_COUNT: null, RENEWALS_NEXT_90D_COUNT: null }],
     });
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ dataAvailable: true, projects: '3', tiers: '—', board: '—', nextRenewals: '—' });
+    expect(result).toEqual({ dataAvailable: true, size: '—', projects: '3', tiers: '—', board: '—', nextRenewals: '—' });
   });
 
   it('returns the unavailable default when no row is returned for the foundation', async () => {
@@ -2637,7 +2698,7 @@ describe('ProjectService — getFoundationProfileSummary', () => {
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ dataAvailable: false, projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
+    expect(result).toEqual({ dataAvailable: false, size: '—', projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
   });
 
   it('returns the unavailable default instead of a 5xx when the table is not deployed yet', async () => {
@@ -2646,7 +2707,7 @@ describe('ProjectService — getFoundationProfileSummary', () => {
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ dataAvailable: false, projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
+    expect(result).toEqual({ dataAvailable: false, size: '—', projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
   });
 });
 

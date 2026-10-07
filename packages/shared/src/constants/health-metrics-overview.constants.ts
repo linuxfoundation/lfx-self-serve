@@ -122,6 +122,7 @@ export const HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS = {
   'mem.atrisk': { section: 'risk', queryParams: { riskBucket: null, riskPage: null } },
   'mem.renewals': { section: 'renewals', queryParams: { renewalsPage: null } },
   'mem.list': { section: 'list', queryParams: { memTier: null, memNps: null, memSearch: null, memPage: null } },
+  'mem.board': { section: 'board', queryParams: { boardCohort: null, boardPage: null } },
 } as const satisfies Record<string, HealthMetricsOverviewMembersLinkSpec>;
 
 /**
@@ -175,6 +176,9 @@ export const HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS: ReadonlySet<(typeof HEALT
  * it emits and the key it later reads can't drift into a silent "no data" render for every period.
  */
 export const HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS = [
+  'EVENTS_REGISTRATIONS_COUNT',
+  'EVENTS_REGISTRATIONS_ON_TARGETED_COUNT',
+  'EVENTS_REGISTRATIONS_GOAL',
   'EVENTS_PCT_OF_REGISTRATION_GOAL',
   'EVENTS_STATUS',
   'CERTIFICATIONS_EARNED_COUNT',
@@ -189,6 +193,7 @@ export const HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS = [
  */
 export const HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS = [
   'REVENUE_USD',
+  'REVENUE_SHARE_PCT',
   'FOUNDATION_TOTAL_REVENUE_USD',
 ] as const satisfies readonly (keyof HealthOverviewRevenueRow)[];
 

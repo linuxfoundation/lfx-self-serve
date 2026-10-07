@@ -147,6 +147,11 @@ describe('buildHealthMetricsOverviewTiles', () => {
     const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'evt', showStatus: false })], undefined);
     expect(tiles[0].showStatus).toBe(false);
   });
+  it('carries statDetail through to the tile view model', () => {
+    const statDetail = { text: '3 of 7 unsecured · $185K', tone: 'watch' as const };
+    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'mem', statDetail })], undefined);
+    expect(tiles[0].statDetail).toEqual(statDetail);
+  });
 });
 
 describe('groupHealthMetricsOverviewFindings', () => {
@@ -264,6 +269,7 @@ describe('buildHealthMetricsOverviewMembersRoute', () => {
     ['mem.atrisk', 'risk', { riskBucket: null, riskPage: null }],
     ['mem.renewals', 'renewals', { renewalsPage: null }],
     ['mem.list', 'list', { memTier: null, memNps: null, memSearch: null, memPage: null }],
+    ['mem.board', 'board', { boardCohort: null, boardPage: null }],
   ] as const)('links %s to its section with its arrival filters', (target, fragment, queryParams) => {
     expect(buildHealthMetricsOverviewMembersRoute(target)).toEqual({
       commands: ['/foundation/health-metrics', 'members'],
@@ -402,14 +408,14 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
       dataAvailable: true,
       total: 100,
       streams: [
-        { key: 'memberships', value: 60 },
-        { key: 'events', value: 40 },
+        { key: 'memberships', value: 60, share: 60 },
+        { key: 'events', value: 40, share: 40 },
       ],
       ...overrides,
     };
   }
 
-  it('computes each stream’s percent share of the total and formats its value', () => {
+  it('labels each stream with the model’s share and formats its value', () => {
     const streams = buildHealthMetricsOverviewRevenueStreams(revenue());
     expect(streams).toEqual([
       { key: 'memberships', label: 'Memberships', dotClass: 'bg-blue-500', percentLabel: '60%', widthPercent: 60, valueLabel: expect.any(String) },
@@ -417,8 +423,20 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
     ]);
   });
 
-  it('reports 0% for every stream when the total is 0, instead of dividing by zero', () => {
-    const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ total: 0, streams: [{ key: 'training', value: 0 }] }));
+  it('takes the legend percent from the model share rather than recomputing it from value/total', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ total: 100, streams: [{ key: 'training', value: 25, share: 31.6 }] }));
+    expect(streams[0].percentLabel).toBe('32%');
+    expect(streams[0].widthPercent).toBe(25);
+  });
+
+  it('renders "—" for the percent when the model has no share, keeping the value', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ streams: [{ key: 'events', value: 40, share: null }] }));
+    expect(streams[0].percentLabel).toBe('—');
+    expect(streams[0].valueLabel).not.toBe('—');
+  });
+
+  it('sizes every bar segment at 0 when the total is 0, instead of dividing by zero', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ total: 0, streams: [{ key: 'training', value: 0, share: 0 }] }));
     expect(streams[0].percentLabel).toBe('0%');
     expect(streams[0].widthPercent).toBe(0);
   });
@@ -428,9 +446,9 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
       revenue({
         total: 3,
         streams: [
-          { key: 'memberships', value: 1 },
-          { key: 'events', value: 1 },
-          { key: 'training', value: 1 },
+          { key: 'memberships', value: 1, share: 33.3 },
+          { key: 'events', value: 1, share: 33.3 },
+          { key: 'training', value: 1, share: 33.3 },
         ],
       })
     );
@@ -439,12 +457,14 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
   });
 
   it('renders a null stream as an em dash instead of $0 / 0%', () => {
-    const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ streams: [{ key: 'events', value: null }] }));
+    const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ streams: [{ key: 'events', value: null, share: null }] }));
     expect(streams[0]).toEqual(expect.objectContaining({ percentLabel: '—', widthPercent: 0, valueLabel: '—' }));
   });
 
   it('degrades an out-of-contract stream key to a fallback label/color instead of throwing', () => {
-    const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ streams: [{ key: 'unknown' as HealthMetricsOverviewRevenueStreamKey, value: 60 }] }));
+    const streams = buildHealthMetricsOverviewRevenueStreams(
+      revenue({ streams: [{ key: 'unknown' as HealthMetricsOverviewRevenueStreamKey, value: 60, share: 60 }] })
+    );
     expect(streams[0].label).toBe('Other');
     expect(streams[0].dotClass).toBe('bg-gray-400');
   });
@@ -453,8 +473,8 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
     const streams = buildHealthMetricsOverviewRevenueStreams(
       revenue({
         streams: [
-          { key: 'unknown-a' as HealthMetricsOverviewRevenueStreamKey, value: 30 },
-          { key: 'unknown-b' as HealthMetricsOverviewRevenueStreamKey, value: 30 },
+          { key: 'unknown-a' as HealthMetricsOverviewRevenueStreamKey, value: 30, share: 30 },
+          { key: 'unknown-b' as HealthMetricsOverviewRevenueStreamKey, value: 30, share: 30 },
         ],
       })
     );

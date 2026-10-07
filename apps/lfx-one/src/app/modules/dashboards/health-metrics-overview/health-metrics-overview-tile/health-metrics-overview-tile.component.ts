@@ -21,5 +21,7 @@ export class HealthMetricsOverviewTileComponent {
   protected readonly classificationMeta = computed(
     () => HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[this.tile().classification] ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none
   );
+  // An untoned detail line reads as neutral, the same gray as an unclassified tile.
+  protected readonly statDetailTextClass = computed(() => HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[this.tile().statDetail?.tone ?? 'none'].textClass);
   protected readonly asOfLabel = computed(() => formatHealthMetricsOverviewAsOfLabel(this.tile().evaluatedAt));
 }

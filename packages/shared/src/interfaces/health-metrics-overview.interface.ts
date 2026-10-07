@@ -121,22 +121,36 @@ export interface HealthMetricsAreaState {
    * `hm_area_state` column.
    */
   showStatus?: boolean;
+  /** Optional second line under the stat label — e.g. the Events registration count or the Members unsecured chip. */
+  statDetail?: HealthMetricsAreaStateDetail;
+}
+
+/** A tile's second line; `tone` colours it as a chip in that classification's text color, omitted for plain text. */
+export interface HealthMetricsAreaStateDetail {
+  text: string;
+  tone?: HealthMetricsOverviewClassification;
 }
 
 /**
  * One period's slice of a `HEALTH_OVERVIEW_KPIS` row (LFXV2-3365), projected out of a
  * {@link HealthOverviewAllPeriodsRow} by `getHealthOverviewKpis`. Field names are the underlying
- * columns' uppercase aliases with the period suffix stripped. Five fields
- * (events/training/contributors-prefixed) vary by period; the four members/non-members fields are
- * point-in-time and repeat identically across every range.
+ * columns' uppercase aliases with the period suffix stripped. The events/training/contributors fields
+ * vary by period; the members/non-members fields are point-in-time and repeat across every range.
  */
 export interface HealthOverviewKpisRow {
+  EVENTS_REGISTRATIONS_COUNT: number | null;
+  EVENTS_REGISTRATIONS_ON_TARGETED_COUNT: number | null;
+  EVENTS_REGISTRATIONS_GOAL: number | null;
   EVENTS_PCT_OF_REGISTRATION_GOAL: number | null;
   EVENTS_STATUS: string | null;
   CERTIFICATIONS_EARNED_COUNT: number | null;
   TRAINING_STATUS: string | null;
   CONTRIBUTORS_COUNT: number | null;
   MEMBERS_RENEWING_90D_VALUE_USD: number | null;
+  MEMBERS_RENEWING_90D_ORG_COUNT: number | null;
+  MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT: number | null;
+  MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD: number | null;
+  MEMBERS_RENEWING_90D_UNSECURED_ORG_PCT: number | null;
   MEMBERS_STATUS: string | null;
   NON_MEMBERS_PIPELINE_VALUE_USD: number | null;
   NON_MEMBERS_STATUS: string | null;
@@ -151,6 +165,7 @@ export interface HealthOverviewKpisRow {
  */
 export interface HealthOverviewRevenueRow {
   REVENUE_USD: number | null;
+  REVENUE_SHARE_PCT: number | null;
   FOUNDATION_TOTAL_REVENUE_USD: number | null;
 }
 
@@ -252,6 +267,8 @@ export interface HealthMetricsOverviewTileViewModel {
   insightsUrl?: string;
   /** False to hide the status chip entirely — see {@link HealthMetricsAreaState.showStatus}. */
   showStatus?: boolean;
+  /** Second line under the stat label — see {@link HealthMetricsAreaState.statDetail}. */
+  statDetail?: HealthMetricsAreaStateDetail;
   /** Set for each area in `HEALTH_METRICS_OVERVIEW_TILE_LINKS` while it carries a figure — the tile links into its Level 2 tab. */
   route?: HealthMetricsOverviewFindingRoute;
   /** The tile link's text, set with {@link route}. */
@@ -333,18 +350,18 @@ export interface HealthMetricsFindingVisualBarViewModel {
 export interface HealthMetricsOverviewRevenue {
   dataAvailable: boolean;
   total: number;
-  /** `value` is `null` when the view has no figure for that stream — rendered as "—", not "$0". */
-  streams: { key: string; value: number | null }[];
+  /** `value`/`share` are `null` when the view has no figure — rendered as "—", not "$0"/"0%". `share` is the model's percent of total. */
+  streams: { key: string; value: number | null; share: number | null }[];
 }
 
 /**
  * Rail "Foundation" block raw data — backed live by `HEALTH_OVERVIEW_PROFILE` (Health Metrics v2
- * doc). No `size` field: the doc's table has no backing column for it and it was dropped rather
- * than fabricated. `nextRenewals` reflects the table's only renewal window, 90 days (not 30).
+ * doc). `size` is the member count. `nextRenewals` reflects the table's only renewal window, 90 days.
  * `dataAvailable` is false when the read failed or found no row; a null column renders as "—".
  */
 export interface HealthMetricsOverviewFoundationSummary {
   dataAvailable: boolean;
+  size: string;
   projects: string;
   tiers: string;
   board: string;

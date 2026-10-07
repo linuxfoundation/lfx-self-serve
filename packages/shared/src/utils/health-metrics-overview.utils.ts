@@ -134,6 +134,7 @@ export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaSta
       icon: areaMeta.icon,
       statValue: state.statValue,
       statLabel: state.statLabel,
+      statDetail: state.statDetail,
       classification: state.classification,
       evaluatedAt: state.evaluatedAt,
       insightsUrl: areaMeta.key === 'code' ? insightsUrl : undefined,
@@ -195,7 +196,7 @@ export function resolveHealthMetricsOverviewGroupMeta(classification: keyof type
 /** Fallback legend metadata for a `stream.key` outside the fixed 3-stream set, so a degraded upstream row still renders instead of throwing. */
 const UNKNOWN_REVENUE_STREAM_META = { label: 'Other', dotClass: 'bg-gray-400' } as const;
 
-/** Builds the rail's "Foundation Revenue" legend rows — percent share and formatted total per stream. */
+/** Builds the rail's "Foundation Revenue" legend rows — the model's percent share and formatted total per stream. */
 export function buildHealthMetricsOverviewRevenueStreams(revenue: HealthMetricsOverviewRevenue): HealthMetricsOverviewRevenueStreamViewModel[] {
   return revenue.streams.map((stream) => {
     const streamMeta = HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS as Record<string, { label: string; dotClass: string }>;
@@ -204,14 +205,13 @@ export function buildHealthMetricsOverviewRevenueStreams(revenue: HealthMetricsO
     if (stream.value === null) {
       return { key: stream.key, label: meta.label, dotClass: meta.dotClass, percentLabel: '—', widthPercent: 0, valueLabel: '—' };
     }
-    // widthPercent stays unrounded for the bar segment — rounding each stream independently (as the
-    // legend's percentLabel does) before sizing can leave the segmented bar short of 100%.
+    // The legend shows the model's share; the bar stays value/total, unrounded, so its segments fill 100%.
     const widthPercent = revenue.total > 0 ? (stream.value / revenue.total) * 100 : 0;
     return {
       key: stream.key,
       label: meta.label,
       dotClass: meta.dotClass,
-      percentLabel: `${Math.round(widthPercent)}%`,
+      percentLabel: stream.share === null ? '—' : `${Math.round(stream.share)}%`,
       widthPercent,
       valueLabel: formatCurrency(stream.value),
     };
