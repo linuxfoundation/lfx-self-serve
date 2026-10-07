@@ -1482,20 +1482,6 @@ export class MeetingComposerFormService {
   }
 
   /**
-   * Reconciles a guest fetch against the rows already on screen.
-   * @description Keyed on the saved row's `uid`, falling back to a lowercased email for a local row a
-   * fetch has not given a `uid` yet. What each local state contributes:
-   *
-   * - `new` — kept, ahead of the saved rows, unless the fetch turns out to have returned it after all.
-   *   A group emission can add someone mid-flight, and a retry then loads them as saved.
-   * - `deleted` — stays deleted. The organizer removed a saved guest; hydrating the freshly loaded
-   *   copy as `existing` would drop that removal from `registrantUpdates` without saying so. A
-   *   suppressed email counts as removed too, which covers a group guest removed while still unsaved.
-   * - `modified` — the organizer's edits win, but `originalData` is refreshed from the loaded copy so
-   *   `getChangedFields` diffs against what is stored now rather than against a stale snapshot.
-   * - anything else, or no local row at all — hydrated from the fetch as `existing`.
-   */
-  /**
    * Single-occurrence edit only: reads a listed guest's occurrence scope into `occurrence_id`.
    * @description The registrant list comes from the query-service index, which stores the scope as
    * `occurrence` (empty = every occurrence) and does not rename it, so a listed guest never carries
@@ -1512,6 +1498,20 @@ export class MeetingComposerFormService {
     return { ...registrant, occurrence_id: occurrence };
   }
 
+  /**
+   * Reconciles a guest fetch against the rows already on screen.
+   * @description Keyed on the saved row's `uid`, falling back to a lowercased email for a local row a
+   * fetch has not given a `uid` yet. What each local state contributes:
+   *
+   * - `new` — kept, ahead of the saved rows, unless the fetch turns out to have returned it after all.
+   *   A group emission can add someone mid-flight, and a retry then loads them as saved.
+   * - `deleted` — stays deleted. The organizer removed a saved guest; hydrating the freshly loaded
+   *   copy as `existing` would drop that removal from `registrantUpdates` without saying so. A
+   *   suppressed email counts as removed too, which covers a group guest removed while still unsaved.
+   * - `modified` — the organizer's edits win, but `originalData` is refreshed from the loaded copy so
+   *   `getChangedFields` diffs against what is stored now rather than against a stale snapshot.
+   * - anything else, or no local row at all — hydrated from the fetch as `existing`.
+   */
   private mergeLoadedGuests(loaded: MeetingRegistrant[]): MeetingRegistrantWithState[] {
     const localByUid = new Map<string, MeetingRegistrantWithState>();
     const localByEmail = new Map<string, MeetingRegistrantWithState>();
