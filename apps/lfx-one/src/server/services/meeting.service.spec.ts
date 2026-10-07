@@ -1863,11 +1863,23 @@ describe('MeetingService.updateMeeting attendee visibility lock', () => {
     expect(payload.show_meeting_attendees).toBe(false);
   });
 
-  it('forces show_meeting_attendees off when the stored meeting is restricted', async () => {
+  it('lets a restricted meeting opt in to sharing its guest list', async () => {
     proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, organizers: [] });
     proxyRequestWithResponse.mockResolvedValueOnce({});
 
     await service.updateMeeting(req, 'meeting-1', { ...baseUpdate });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(true);
+  });
+
+  it('writes an explicit false for a restricted meeting saved without a choice, discarding a pre-v2 stale opt-in', async () => {
+    // Restricted meetings were locked under the pre-v2 rule, so a stored `true` can predate the
+    // organizer ever being able to choose it. Upstream keeps what the body omits, so it is cleared here.
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, show_meeting_attendees: true, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdateWithoutChoice });
 
     const payload = proxyRequestWithResponse.mock.calls[0][5];
     expect(payload.show_meeting_attendees).toBe(false);
@@ -1982,11 +1994,11 @@ describe('MeetingService.createMeeting attendee visibility lock', () => {
     expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(false);
   });
 
-  it('forces show_meeting_attendees off when restricted', async () => {
+  it("keeps a restricted meeting's opt-in on create", async () => {
     proxyRequest.mockResolvedValueOnce({ id: 'meeting-1' }).mockResolvedValueOnce({ id: 'meeting-1', restricted: true });
 
-    await service.createMeeting(req, { ...baseCreate, meeting_type: 'Technical', restricted: true });
+    await service.createMeeting(req, { ...baseCreate, meeting_type: 'Technical', restricted: true, show_meeting_attendees: true });
 
-    expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(false);
+    expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(true);
   });
 });

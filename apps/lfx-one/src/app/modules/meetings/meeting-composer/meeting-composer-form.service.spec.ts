@@ -894,14 +894,15 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
     expect(service.form().get('restricted')?.value).toBe(false);
   });
 
-  it('locks attendee visibility when the meeting is restricted', () => {
+  it('leaves attendee visibility to the organizer when the meeting is restricted', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
     service.form().get('show_meeting_attendees')?.setValue(true);
 
     service.form().get('restricted')?.setValue(true);
 
-    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(true);
-    expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
+    // Composer v2 locks board meetings only; restricted (invite-only) meetings may share their guest list.
+    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(false);
+    expect(service.form().get('show_meeting_attendees')?.value).toBe(true);
   });
 
   it('locks attendee visibility when switching to Board in edit mode without flipping restricted', () => {

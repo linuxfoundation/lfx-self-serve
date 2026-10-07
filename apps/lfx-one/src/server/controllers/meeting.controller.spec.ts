@@ -833,7 +833,7 @@ describe('MeetingController', () => {
 
       it.each([
         ['a Board meeting', { meeting_type: 'Board' }],
-        ['a restricted meeting', { restricted: true }],
+        ['a restricted Board meeting', { meeting_type: 'Board', restricted: true }],
       ])('returns no roster to an invitee of %s that still carries a legacy opt-in', async (_label, lock) => {
         meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, show_meeting_attendees: true, committees: [], ...lock });
         const res = buildRes();

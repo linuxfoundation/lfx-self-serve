@@ -167,7 +167,8 @@ export class MeetingManageComponent {
    * @description Resolved from the meeting rather than the form: the picker mounts on `meetingId()`
    * against a form that is still empty and unlocked, so the form cannot answer this yet.
    */
-  public savedAttendeeVisibility = computed(() => getSavedAttendeeVisibility(this.meeting()));
+  // Pre-v2 wizard: restricted meetings keep their lock here (`restrictedLocks`), unlike the v2 composer.
+  public savedAttendeeVisibility = computed(() => getSavedAttendeeVisibility(this.meeting(), { restrictedLocks: true }));
   // Meeting → EntityWithProject adapter so the active project context syncs from the loaded
   // meeting rather than the cookie-restored last-visited project.
   private readonly meetingEntityContext: Signal<EntityWithProject | null> = this.initializeMeetingEntityContext();
@@ -303,7 +304,7 @@ export class MeetingManageComponent {
     if (meetingTypeControl && restrictedControl) {
       merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges)
         .pipe(startWith(null), takeUntilDestroyed(this.destroyRef))
-        .subscribe(() => syncShowMeetingAttendeesLock(this.form()));
+        .subscribe(() => syncShowMeetingAttendeesLock(this.form(), { restrictedLocks: true }));
     }
 
     // Separate subscription for meeting data changes - populates form only once
@@ -1164,7 +1165,7 @@ export class MeetingManageComponent {
 
     // Update the form validator to use edit mode validator with original start time
     this.updateFormValidator();
-    syncShowMeetingAttendeesLock(this.form());
+    syncShowMeetingAttendeesLock(this.form(), { restrictedLocks: true });
   }
 
   private populateExistingLinks(): void {

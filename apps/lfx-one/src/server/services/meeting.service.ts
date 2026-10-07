@@ -544,7 +544,7 @@ export class MeetingService {
     };
 
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board/restricted meeting into sharing its guest list in calendar invites.
+    // to opt a board meeting into sharing its guest list in calendar invites.
     if (isShowMeetingAttendeesLocked(createPayload.meeting_type, createPayload.restricted)) {
       createPayload.show_meeting_attendees = false;
     }
@@ -619,10 +619,16 @@ export class MeetingService {
     const meetingType = submittedType || existingMeeting.meeting_type;
     const restricted = meetingData.restricted ?? existingMeeting.restricted;
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board/restricted meeting into sharing its guest list in calendar invites.
+    // to opt a board meeting into sharing its guest list in calendar invites.
     if (isShowMeetingAttendeesLocked(meetingType, restricted)) {
       updatePayload.show_meeting_attendees = false;
-    } else if (meetingData.show_meeting_attendees == null && isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted)) {
+    } else if (
+      meetingData.show_meeting_attendees == null &&
+      isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted, { restrictedLocks: true })
+    ) {
+      // `restrictedLocks: true` — the pre-v2 rule, under which restricted meetings were locked too —
+      // so a restricted meeting written then, and possibly still holding a stale `true`, also gets an
+      // explicit `false` the first time it is saved without a choice of its own.
       // Unlocking a locked meeting with no choice of its own. Upstream keeps whatever the body
       // omits, and a row written before the lock existed can still hold `true`, so the stale value
       // would survive the unlock and start sharing the guest list. A locked meeting never carried

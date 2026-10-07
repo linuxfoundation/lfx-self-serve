@@ -818,8 +818,10 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
   });
 
-  it('keeps the committee preference pending across locked→locked, then applies on unlock', async () => {
+  it('keeps the committee preference pending across locked→locked, then applies on unlock (pre-v2 rule)', async () => {
     const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    // Restricted only locks under the pre-v2 wizard's rule, which this transition exercises.
+    fixture.componentRef.setInput('restrictedLocksAttendees', true);
     component.form().get('meeting_type')?.setValue('Board');
     component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
     await fixture.whenStable();
@@ -832,6 +834,15 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
 
     component.form().get('restricted')?.setValue(false);
     await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
+  it('applies the committee preference on a restricted meeting under the v2 rule', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.form().get('restricted')?.setValue(true);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+
     expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
   });
 

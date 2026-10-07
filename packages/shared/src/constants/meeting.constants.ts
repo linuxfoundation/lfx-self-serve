@@ -742,8 +742,11 @@ export const SHOW_MEETING_ATTENDEES_FEATURE = {
   color: lfxColors.blue[500],
 };
 
-/** Note shown when the attendees toggle is locked off for board or restricted meetings. */
-export const SHOW_MEETING_ATTENDEES_LOCKED_NOTE = 'Not available for board or restricted meetings';
+/** Note shown when the attendees toggle is locked off: board meetings only (meeting v2 composer and the server rule). */
+export const SHOW_MEETING_ATTENDEES_LOCKED_NOTE = 'Not available for board meetings';
+
+/** Note the pre-v2 wizard shows, where restricted meetings stay locked too. */
+export const SHOW_MEETING_ATTENDEES_LEGACY_LOCKED_NOTE = 'Not available for board or restricted meetings';
 
 // ============================================================================
 // Meeting Duration Options

@@ -65,7 +65,8 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   private readonly meetingTypeValue: Signal<string | null> = controlValueSignal<string>(this.form, 'meeting_type');
   private readonly restrictedValue: Signal<boolean | null> = controlValueSignal<boolean>(this.form, 'restricted');
   protected readonly showAttendeesToggleNote: Signal<string | null> = computed(() =>
-    getShowMeetingAttendeesLockedNote(this.meetingTypeValue(), this.restrictedValue())
+    // Only the pre-v2 wizard hosts this manager, so restricted meetings keep their lock here.
+    getShowMeetingAttendeesLockedNote(this.meetingTypeValue(), this.restrictedValue(), { restrictedLocks: true })
   );
 
   // Output events for two-way binding

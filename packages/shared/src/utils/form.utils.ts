@@ -3,6 +3,7 @@
 
 import { AbstractControl, FormArray, FormGroup } from '@angular/forms';
 
+import type { ShowMeetingAttendeesLockOptions } from '../interfaces';
 import { isShowMeetingAttendeesLocked } from './meeting-attendee-lock.utils';
 
 /**
@@ -78,7 +79,7 @@ export function markMeetingFormForValidation(form: FormGroup): void {
 }
 
 /**
- * Locks attendee visibility off for board and restricted meetings.
+ * Locks attendee visibility off for board meetings (and restricted ones, when `restrictedLocks` is set).
  * @description Forces `show_meeting_attendees` to false and disables the control when
  * {@link isShowMeetingAttendeesLocked} is true; re-enables it otherwise. Composer and manage
  * share this helper so the two surfaces cannot drift.
@@ -88,13 +89,13 @@ export function markMeetingFormForValidation(form: FormGroup): void {
  * free of Angular imports so the server — and its tests — can load the real rule directly
  * rather than through this barrel.
  */
-export function syncShowMeetingAttendeesLock(form: FormGroup): void {
+export function syncShowMeetingAttendeesLock(form: FormGroup, options: ShowMeetingAttendeesLockOptions = {}): void {
   const control = form.get('show_meeting_attendees');
   if (!control) {
     return;
   }
 
-  if (isShowMeetingAttendeesLocked(form.get('meeting_type')?.value, form.get('restricted')?.value)) {
+  if (isShowMeetingAttendeesLocked(form.get('meeting_type')?.value, form.get('restricted')?.value, options)) {
     if (control.value !== false) {
       control.setValue(false, { emitEvent: false });
     }

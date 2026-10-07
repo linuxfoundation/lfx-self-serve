@@ -24,17 +24,25 @@ describe('isShowMeetingAttendeesLocked', () => {
     expect(isShowMeetingAttendeesLocked('  board\t', false)).toBe(true);
   });
 
-  it('locks restricted meetings of any type', () => {
-    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, true)).toBe(true);
+  it('leaves restricted meetings unlocked by default — sharing is the organizer\'s choice', () => {
+    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, true)).toBe(false);
   });
 
-  it('locks a restricted meeting whose flag arrived as a string', () => {
+  it('still locks a restricted meeting of any type under the pre-v2 rule', () => {
+    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, true, { restrictedLocks: true })).toBe(true);
+  });
+
+  it('locks a restricted meeting whose flag arrived as a string under the pre-v2 rule', () => {
     // Nothing coerces this field between v1 and here, so a stringified boolean must not
     // fail open on the one branch that is meant to be strictest. The same casing and
     // whitespace variance that meeting_type has to absorb applies here too.
-    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, 'true')).toBe(true);
-    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, 'True')).toBe(true);
-    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, ' TRUE ')).toBe(true);
+    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, 'true', { restrictedLocks: true })).toBe(true);
+    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, 'True', { restrictedLocks: true })).toBe(true);
+    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, ' TRUE ', { restrictedLocks: true })).toBe(true);
+  });
+
+  it('keeps a restricted Board meeting locked either way', () => {
+    expect(isShowMeetingAttendeesLocked(MeetingType.BOARD, true)).toBe(true);
   });
 
   it('does not treat other strings as restricted', () => {
@@ -79,8 +87,12 @@ describe('getSavedAttendeeVisibility', () => {
     // toggle off. Neither value was the organizer's choice, so neither may be restored when they
     // later switch the meeting to an unlocked type.
     expect(getSavedAttendeeVisibility(meeting({ meeting_type: MeetingType.BOARD, show_meeting_attendees: true }))).toBeNull();
-    expect(getSavedAttendeeVisibility(meeting({ restricted: true, show_meeting_attendees: true }))).toBeNull();
     expect(getSavedAttendeeVisibility(meeting({ meeting_type: MeetingType.BOARD, show_meeting_attendees: false }))).toBeNull();
+    expect(getSavedAttendeeVisibility(meeting({ restricted: true, show_meeting_attendees: true }), { restrictedLocks: true })).toBeNull();
+  });
+
+  it("reports a restricted meeting's saved decision under the current rule", () => {
+    expect(getSavedAttendeeVisibility(meeting({ restricted: true, show_meeting_attendees: true }))).toBe(true);
   });
 });
 
@@ -96,6 +108,10 @@ describe('isMeetingAttendeeListShared', () => {
 
   it('keeps a locked meeting private even when a legacy row still carries the opt-in', () => {
     expect(isMeetingAttendeeListShared(meeting({ meeting_type: MeetingType.BOARD, show_meeting_attendees: true }))).toBe(false);
-    expect(isMeetingAttendeeListShared(meeting({ restricted: true, show_meeting_attendees: true }))).toBe(false);
+  });
+
+  it('shares a restricted meeting\'s guest list when its organizer opted in', () => {
+    expect(isMeetingAttendeeListShared(meeting({ restricted: true, show_meeting_attendees: true }))).toBe(true);
+    expect(isMeetingAttendeeListShared(meeting({ restricted: true, show_meeting_attendees: false }))).toBe(false);
   });
 });

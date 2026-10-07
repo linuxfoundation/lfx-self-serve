@@ -38,6 +38,7 @@
         [selectedCommittees]="form().get('committees')?.value || []"
         [form]="form()"
         [savedAttendeeVisibility]="savedAttendeeVisibility()"
+        [restrictedLocksAttendees]="true"
         [committeeContext]="committeeContext()"
         (committeeMembersChange)="onCommitteeMembersChange($event)">
       </lfx-meeting-committee-manager>
