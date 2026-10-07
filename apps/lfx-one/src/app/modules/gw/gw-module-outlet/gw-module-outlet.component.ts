@@ -248,7 +248,7 @@ export class GwModuleOutletComponent {
           features: [...GW_EMBED_ENABLED_FEATURES],
         },
         signIn: {
-          lfidStartUrl: runtimeConfig.gwLfidStartUrl,
+          startUrl: runtimeConfig.gwLfidStartUrl,
           returnUrl: this.buildEmbedReturnUrl(),
         },
         source: {
@@ -279,11 +279,24 @@ export class GwModuleOutletComponent {
       }
 
       // Returns at once; the loader fetches the manifest, stylesheet and bundle, then mounts.
-      // Failures on that path come back through `onFatal`; calling `unmount()` cancels the mount
-      // and no extra teardown bookkeeping is needed.
+      // Failures on that path come back through `onFatal` (and `ready` resolves null), and an
+      // `unmount()` before `ready` cancels the mount, so teardown needs no extra bookkeeping.
       this.mountHandle = mod.mount(this.embedRoot().nativeElement, ctx);
       this.lastSyncedUrl = `${window.location.pathname}${window.location.search}`;
       this.watchHostNavigation();
+      // Keep the skeleton up until the embed is actually in the DOM: `mounting` is cleared in the
+      // finally below, and clearing it on the synchronous return would leave the outlet blank
+      // while the loader is still fetching.
+      const manifest = await this.mountHandle.ready;
+      if (manifest) {
+        console.info(`[GwModuleOutlet] Gatewaze embed ${manifest.version} mounted (contract ${manifest.contract})`);
+      } else if (!this.destroyed && !this.hostPanelShowing()) {
+        // Nothing mounted. The loader has already said why through `onFatal`, but it marks a
+        // manifest or bundle fetch failure as recoverable (a retry may work), which `onFatal`
+        // surfaces as a toast and nothing else — and a toast over an empty outlet reads as a
+        // hang. Unless teardown cancelled the mount or a panel is already up, this is terminal.
+        this.showErrorPanel('The embedded admin module could not be loaded. Reload the page to try again.');
+      }
     } catch (error) {
       // No client-side error-reporting service exists yet; console.error is the established
       // fallback used throughout apps/lfx-one/src/app/shared (no-console isn't a lint rule here).

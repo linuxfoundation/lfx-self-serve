@@ -15,7 +15,7 @@ import {
   GW_EMBED_STORAGE_KEY_SUFFIX,
   GW_EMBED_STYLESHEET_ROUTE,
 } from '@lfx-one/shared/constants';
-import { GwHostContext, RuntimeConfig } from '@lfx-one/shared/interfaces';
+import { GwEmbedManifest, GwHostContext, RuntimeConfig } from '@lfx-one/shared/interfaces';
 import { EMPTY } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -550,12 +550,21 @@ describe('GwModuleOutletComponent', () => {
 
   describe('loading through @gatewaze/admin-embed', () => {
     // Browser platform, like the impersonation block above: this is the one path that reaches the
-    // loader. The stand-in returns synchronously; there is no `ready` promise in the current
-    // GwEmbedMountHandle contract — failures surface through `onFatal`.
+    // loader. The stand-in's `ready` is a deferred promise so the skeleton can be observed in
+    // flight, resolved with a manifest, or resolved with null (the loader's "nothing mounted").
     let browserComponent: GwModuleOutletComponent;
+    let resolveReady: (manifest: GwEmbedManifest | null) => void;
     let innerUnmount: ReturnType<typeof vi.fn>;
 
     const EMBED_URL = 'https://admin.example.test/embed';
+    const MANIFEST: GwEmbedManifest = {
+      contract: 1,
+      version: '1.3.146',
+      entry: 'admin-embed-abc.js',
+      stylesheet: 'admin-embed-def.css',
+      modules: ['newsletters'],
+      builtAt: '',
+    };
 
     const configure = (runtimeConfig: Partial<RuntimeConfig>): void => {
       TestBed.resetTestingModule();
@@ -583,7 +592,12 @@ describe('GwModuleOutletComponent', () => {
 
     beforeEach(() => {
       innerUnmount = vi.fn();
-      loaderMount.mockReset().mockImplementation(() => ({ unmount: innerUnmount }));
+      loaderMount.mockReset().mockImplementation(() => ({
+        unmount: innerUnmount,
+        ready: new Promise<GwEmbedManifest | null>((resolve) => {
+          resolveReady = resolve;
+        }),
+      }));
       configure({});
     });
 
@@ -600,42 +614,55 @@ describe('GwModuleOutletComponent', () => {
     });
 
     it('hands the loader the embed source and routes the stylesheet through the scoped endpoint', async () => {
-      await mount();
+      const pending = mount();
       await settle();
       expect(loaderMount).toHaveBeenCalledTimes(1);
       const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
       expect(ctx.source.baseUrl).toBe(EMBED_URL);
-      expect(ctx.signIn.lfidStartUrl).toBe('https://sso.example.test/start');
+      expect(ctx.signIn.startUrl).toBe('https://sso.example.test/start');
       expect(ctx.source.resolveStylesheetUrl?.(`${EMBED_URL}/admin-embed-def.css`)).toBe(`${GW_EMBED_STYLESHEET_ROUTE}/admin-embed-def.css`);
+      resolveReady(MANIFEST);
+      await pending;
     });
 
-    it('clears the mounting flag once the embed loader returns', async () => {
-      await mount();
+    it('keeps the skeleton up until the loader reports the embed mounted', async () => {
+      const pending = mount();
+      await settle();
+      // The loader has returned, but nothing is on screen yet.
+      expect(browserComponent['mounting']()).toBe(true);
+      expect(browserComponent['mountError']()).toBeNull();
+
+      resolveReady(MANIFEST);
+      await pending;
       expect(browserComponent['mounting']()).toBe(false);
       expect(browserComponent['mountError']()).toBeNull();
     });
 
-    it('shows the error panel when onFatal fires during mount', async () => {
-      loaderMount.mockImplementation((_el: unknown, ctx: GwHostContext) => {
-        ctx.onFatal?.({
-          error_type: 'import_failed',
-          code: 'gw_embed_contract_mismatch',
-          message: 'The embedded admin module could not be loaded. Reload the page to try again.',
-          recoverable: false,
-        });
-        return { unmount: innerUnmount };
-      });
-      await mount();
+    it('treats a null ready result as terminal and shows the error panel', async () => {
+      const pending = mount();
+      await settle();
+      resolveReady(null);
+      await pending;
       expect(browserComponent['mounting']()).toBe(false);
       expect(browserComponent['mountError']()).toContain('could not be loaded');
     });
 
+    it('does not raise the error panel when teardown cancelled the mount', async () => {
+      const pending = mount();
+      await settle();
+      (browserComponent as unknown as { destroyed: boolean }).destroyed = true;
+      resolveReady(null);
+      await pending;
+      expect(browserComponent['mountError']()).toBeNull();
+    });
+
     it('leaves a panel that onFatal already raised in place', async () => {
-      loaderMount.mockImplementation((_el: unknown, ctx: GwHostContext) => {
-        ctx.onFatal?.({ error_type: 'import_failed', code: 'gw_embed_contract_mismatch', message: 'Upgrade the loader.', recoverable: false });
-        return { unmount: innerUnmount };
-      });
-      await mount();
+      const pending = mount();
+      await settle();
+      const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
+      ctx.onFatal?.({ error_type: 'import_failed', code: 'gw_embed_contract_mismatch', message: 'Upgrade the loader.', recoverable: false });
+      resolveReady(null);
+      await pending;
       expect(browserComponent['mountError']()).toBe('Upgrade the loader.');
     });
   });
