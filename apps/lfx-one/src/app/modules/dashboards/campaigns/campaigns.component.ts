@@ -28,6 +28,7 @@ import {
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import type {
+  AudienceBriefState,
   AudienceComposedList,
   AudienceComposeUnattachedEvent,
   BriefMetrics,
@@ -1136,6 +1137,26 @@ export class CampaignsComponent {
    * replaced. The Audience tab sees it as part of `audienceReadPending`.
    */
   protected readonly emailBriefResolving = signal(false);
+  /**
+   * How the last Audience-tab warm-up save ended when it produced no usable id: the brief was
+   * saved but not approved, or the save failed outright. `'none'` otherwise. Cleared with the id.
+   * Only ever `'none'`, `'unapproved'` or `'failed'`.
+   */
+  private readonly emailBriefSaveOutcome = signal<AudienceBriefState>('none');
+  /**
+   * Why the Audience tab has (or has no) brief to attach to. An empty `emailBriefId` used to read
+   * as "save the plan first" in every case, though the tab saves it itself on open -- so the real
+   * cause is a save still running, a save that failed, or a brief that is not approved.
+   */
+  protected readonly emailBriefState = computed<AudienceBriefState>(() => {
+    if (this.emailBriefId() !== '') {
+      return 'ready';
+    }
+    if (this.emailBriefResolving()) {
+      return 'resolving';
+    }
+    return this.emailBriefSaveOutcome();
+  });
   /**
    * The brief id the last audience read was for, so the Audience tab's retry re-reads THAT brief.
    *
@@ -2662,6 +2683,11 @@ export class CampaignsComponent {
     void this.restoreEmailAudience(this.activeFoundationSlug(), this.emailAudienceReadBriefId);
   }
 
+  /** The Audience tab asked to retry the brief save that failed or left it unapproved. */
+  protected onRetryEmailBrief(): void {
+    this.warmEmailBriefId();
+  }
+
   /**
    * A master list was created in HubSpot and attached to nothing.
    *
@@ -2828,6 +2854,7 @@ export class CampaignsComponent {
       this.emailAudienceReadPending.set(false);
       this.emailAudienceReadUnavailable.set(false);
       this.emailBriefResolving.set(false);
+      this.emailBriefSaveOutcome.set('none');
       this.emailAudienceReadBriefId = '';
       this.emailAudienceScope.update((n) => n + 1);
       this.emailAudienceGeneration++;
@@ -3639,9 +3666,8 @@ export class CampaignsComponent {
    * point where its result is still useful. Composing is what needs the id, and by the time the
    * operator presses that button the round trip has long finished.
    *
-   * Silent on failure on purpose. The tab is usable with no brief -- that is the documented
-   * exploratory path -- and it states inline that a compose without one attaches nothing, so there
-   * is nothing to report here that the operator is not already told at the point of action.
+   * No banner of its own: the outcome is recorded in `emailBriefSaveOutcome`, and the Audience tab
+   * states it (with a Retry that calls this again) through `emailBriefState`.
    */
   private warmEmailBriefId(): void {
     const brief = this.emailBriefOutput();
@@ -3652,7 +3678,11 @@ export class CampaignsComponent {
     const scope = this.emailAudienceScope();
     this.emailBriefResolving.set(true);
     void this.ensureEmailBriefId(brief, projectSlug)
-      .catch(() => undefined)
+      .catch(() => {
+        if (scope === this.emailAudienceScope()) {
+          this.emailBriefSaveOutcome.set('failed');
+        }
+      })
       .finally(() => {
         // Only for the send that started it: a reset already cleared it, and a newer warm-up owns it.
         if (scope === this.emailAudienceScope()) {
@@ -4567,6 +4597,19 @@ export class CampaignsComponent {
     return `${this.conflictMessages[conflict]}${reselect} ${first.toUpperCase()}${rest.join('')}`;
   }
 
+  /**
+   * What an email persist that produced no usable id means for the Audience tab.
+   *
+   * `unowned-brief-exists` is told apart from a plain failure because Retry cannot clear it: the
+   * same save is refused again for as long as the page has not loaded the existing row.
+   */
+  private emailBriefOutcome(briefId: string, conflict: CampaignBriefPersistResult['conflict']): AudienceBriefState {
+    if (briefId !== '') {
+      return 'unapproved';
+    }
+    return conflict === 'unowned-brief-exists' ? 'unopened' : 'failed';
+  }
+
   /** The persist itself, wrapped by `ensureEmailBriefId`'s in-flight dedup. */
   private async persistEmailBrief(brief: CampaignBriefOutput, projectSlug: string): Promise<string> {
     const known = this.emailBriefId();
@@ -4669,6 +4712,7 @@ export class CampaignsComponent {
         return briefId;
       }
       this.emailBriefConflict = null;
+      this.emailBriefSaveOutcome.set('none');
       this.emailBriefId.set(briefId);
       // Re-read the brief's audience whenever an id lands with none known. A reset (re-proceeding
       // from Plan) clears `emailAudience` while this resolves the SAME brief through the ownership
@@ -4694,6 +4738,11 @@ export class CampaignsComponent {
         });
       }
       return briefId;
+    }
+    // Recorded for the Audience tab, which otherwise cannot tell "saved but not approved" from a
+    // failed save -- both return ''. Generation-guarded like every other write on this path.
+    if (generation === this.emailBriefPersistGeneration) {
+      this.emailBriefSaveOutcome.set(this.emailBriefOutcome(briefId, persisted.conflict));
     }
     return '';
   }
@@ -5149,6 +5198,7 @@ export class CampaignsComponent {
     this.emailAudienceReadPending.set(false);
     this.emailAudienceReadUnavailable.set(false);
     this.emailBriefResolving.set(false);
+    this.emailBriefSaveOutcome.set('none');
     this.emailAudienceReadBriefId = '';
     this.emailAudienceScope.update((n) => n + 1);
     this.emailCopy.set(null);

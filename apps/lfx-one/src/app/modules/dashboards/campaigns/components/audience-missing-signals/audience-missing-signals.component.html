@@ -77,14 +77,29 @@
                 </a>
               </div>
             </div>
-            <button
-              type="button"
-              (click)="onAdd(list)"
-              [disabled]="disabled() || list.selected"
-              class="shrink-0 rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              [attr.data-testid]="'audience-missing-signals-add-' + list.listId">
-              {{ list.selected ? 'Added' : 'Add' }}
-            </button>
+            <div class="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                (click)="onAdd(list)"
+                [disabled]="disabled() || list.selected"
+                class="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                [attr.data-testid]="'audience-missing-signals-add-' + list.listId">
+                {{ list.selected ? 'Added' : 'Add' }}
+              </button>
+              <button
+                type="button"
+                (click)="onExclude(list)"
+                [disabled]="disabled()"
+                [attr.aria-pressed]="list.excluded"
+                [class]="
+                  list.excluded
+                    ? 'rounded border border-red-300 bg-red-100 px-2 py-1 text-xs font-medium text-red-700 disabled:opacity-50'
+                    : 'rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50'
+                "
+                [attr.data-testid]="'audience-missing-signals-exclude-' + list.listId">
+                {{ list.excluded ? 'Excluded' : 'Exclude' }}
+              </button>
+            </div>
           </div>
         }
       </div>

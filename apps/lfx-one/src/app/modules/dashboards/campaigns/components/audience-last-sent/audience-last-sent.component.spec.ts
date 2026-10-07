@@ -59,10 +59,15 @@ describe('AudienceLastSentComponent', () => {
       attachedListId?: string | null;
       attachedMasterId?: string | null;
       attachedExclusionIds?: readonly string[];
+      attachedIncludeIds?: readonly string[];
+      attachUnavailableMessage?: string;
     } = {}
   ): void {
     fixture.componentRef.setInput('emails', inputs.emails ?? []);
     fixture.componentRef.setInput('attachedListId', inputs.attachedListId ?? null);
+    // Defaults to the single attached list, which is what the builder tab passes for a one-list attach.
+    fixture.componentRef.setInput('attachedIncludeIds', inputs.attachedIncludeIds ?? (inputs.attachedListId ? [inputs.attachedListId] : []));
+    fixture.componentRef.setInput('attachUnavailableMessage', inputs.attachUnavailableMessage ?? '');
     // Defaults to `attachedListId`: the recorded exclusions match the ticks unless a test says not.
     fixture.componentRef.setInput('attachedMasterId', inputs.attachedMasterId === undefined ? (inputs.attachedListId ?? null) : inputs.attachedMasterId);
     fixture.componentRef.setInput('attachedExclusionIds', inputs.attachedExclusionIds ?? []);
@@ -310,15 +315,25 @@ describe('AudienceLastSentComponent', () => {
       expect(seen.map((e) => e.emailId)).toEqual(['em-1']);
     });
 
-    it('blocks a send that included several lists — an email has one include list', () => {
+    it('reuses a send that included several lists, since an email can send to several include lists', () => {
       const seen: AudienceLastSentEmail[] = [];
       fixture.componentInstance.useSendLists.subscribe((e) => seen.push(e));
       render({ emails: [email({ includedLists: [brief(), brief({ listId: '302', name: 'Other' })] })], canAttach: true });
 
       click('audience-last-sent-use-em-1');
 
-      expect(seen).toEqual([]);
-      expect(host().querySelector('[data-testid="audience-last-sent-use-blocked-em-1"]')).not.toBeNull();
+      expect(seen.map((e) => e.emailId)).toEqual(['em-1']);
+      expect(host().querySelector('[data-testid="audience-last-sent-use-blocked-em-1"]')).toBeNull();
+    });
+
+    it('marks a multi-list send attached when every include list matches', () => {
+      render({
+        emails: [email({ includedLists: [brief(), brief({ listId: '302', name: 'Other' })] })],
+        attachedListId: '301',
+        attachedIncludeIds: ['302', '301'],
+      });
+
+      expect(host().textContent ?? '').toContain('Same lists used for this email');
     });
 
     it('blocks a send whose suppression list no longer resolves', () => {
@@ -396,12 +411,13 @@ describe('AudienceLastSentComponent', () => {
     it('explains why nothing can be attached when there is no brief', () => {
       const seen: AudienceMasterListBrief[] = [];
       fixture.componentInstance.useMasterList.subscribe((l) => seen.push(l));
-      render({ masterLists: [master()], canAttach: false });
+      // The parent passes the real reason (still saving, failed, unapproved); the panel shows it as-is.
+      render({ masterLists: [master()], canAttach: false, attachUnavailableMessage: 'Saving the plan for this email…' });
 
       click('audience-last-sent-master-use-401');
 
       expect(seen).toEqual([]);
-      expect(host().querySelector('[data-testid="audience-last-sent-attach-unavailable"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="audience-last-sent-attach-unavailable"]')?.textContent).toContain('Saving the plan');
     });
 
     it('links list names to HubSpot when a link is known', () => {

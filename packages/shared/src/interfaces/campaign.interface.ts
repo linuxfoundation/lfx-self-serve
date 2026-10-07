@@ -770,6 +770,12 @@ export interface CampaignAudience {
   briefId: string;
   platform: string;
   platformMasterListId?: string;
+  /**
+   * Every list the send includes, when the audience was attached from several existing lists
+   * rather than one composed master. Absent on a composed or single-list audience, where
+   * `platformMasterListId` alone is the send list.
+   */
+  includeListIds?: string[];
   suppressionListIds?: string[];
   inclusionSummary?: string;
   status: CampaignAudienceStatus;
@@ -3546,8 +3552,13 @@ export interface AudienceComposeMasterPartial {
  */
 export interface AudienceAttachExistingRequest {
   briefId: string;
-  /** The single include list the send goes to. */
-  masterListId: string;
+  /** A single include list the send goes to. Exactly one of this or `includeListIds` is sent. */
+  masterListId?: string;
+  /**
+   * Several existing include lists the send goes to directly — no master list is composed.
+   * Exactly one of this or `masterListId` is sent.
+   */
+  includeListIds?: string[];
   /** Existing lists the send suppresses. */
   suppressionListIds?: string[];
   /** Human-readable note recorded on the audience row; upstream derives one when omitted. */
@@ -3559,6 +3570,24 @@ export interface AudienceAttachExistingResult {
   master: AudienceComposedList;
   suppressionListIds: string[];
   audience: CampaignAudience;
+}
+
+/**
+ * Where the email's saved plan (brief) stands, as far as attaching lists to it is concerned.
+ *
+ * The brief is saved automatically when the Audience tab opens, so an empty brief id is almost
+ * never "no plan yet": it is a save still running, a save that failed, or a plan that is saved but
+ * not approved. Each needs different copy, and only `failed` can be retried from the Audience tab.
+ * `unopened` is a save refused because this send already has a saved brief the page never loaded;
+ * retrying cannot help, only restoring that brief can. `none` is the exploratory path -- no email
+ * plan to attach to at all.
+ */
+export type AudienceBriefState = 'none' | 'resolving' | 'ready' | 'unapproved' | 'unopened' | 'failed';
+
+/** A list identified by id and display name, as the Audience tab's include/exclude actions carry it. */
+export interface AudienceListRef {
+  listId: string;
+  name: string;
 }
 
 // --- Audience QA -----------------------------------------------------------

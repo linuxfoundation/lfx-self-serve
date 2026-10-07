@@ -4198,7 +4198,48 @@ describe('CampaignsComponent — email delivery channel', () => {
       // Upstream declares ArrayOf(String). If it ever arrived JSON-encoded, `.length` would read
       // the STRING length and report "9 suppression list(s)" for a single list -- a
       // compliance-facing number on a send list, wrong by a factor of nine.
-      expect(panel?.textContent).toContain('1 suppression list(s) applied');
+      expect(panel?.textContent).toContain('1 exclusion list(s) applied');
+    });
+
+    it("tells the Audience tab why there is no brief id, rather than 'save the plan first'", () => {
+      const state = internals() as unknown as {
+        emailBriefState: () => string;
+        emailBriefSaveOutcome: { set: (v: string) => void };
+      };
+      internals().emailBriefId.set('');
+      state.emailBriefSaveOutcome.set('failed');
+      expect(state.emailBriefState()).toBe('failed');
+
+      state.emailBriefSaveOutcome.set('unapproved');
+      expect(state.emailBriefState()).toBe('unapproved');
+
+      // An earlier session's brief for this send is a refusal Retry cannot clear, so it is not 'failed'.
+      const outcome = (internals() as unknown as { emailBriefOutcome: (id: string, c?: string) => string }).emailBriefOutcome.bind(internals());
+      expect(outcome('', 'unowned-brief-exists')).toBe('unopened');
+      expect(outcome('', undefined)).toBe('failed');
+      expect(outcome('brief-9', undefined)).toBe('unapproved');
+
+      // A brief id wins over any recorded outcome: the plan is saved and approved.
+      internals().emailBriefId.set('brief-77');
+      expect(state.emailBriefState()).toBe('ready');
+    });
+
+    it('names every include list when lists were attached directly with no master', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailAudience.set({
+        id: 'aud-1',
+        status: 'built',
+        platformMasterListId: '101',
+        includeListIds: ['101', '102'],
+        suppressionListIds: ['201'],
+      } as never);
+      fixture.detectChanges();
+
+      const includes = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-include-lists"]');
+      expect(includes?.textContent).toContain('101');
+      expect(includes?.textContent).toContain('102');
     });
 
     it('refuses to stage if the audience stops being built before the await', async () => {

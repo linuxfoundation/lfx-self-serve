@@ -513,8 +513,28 @@ export class AudienceBuilderController {
       next(invalid(req, 'audience_attach_existing', 'briefId', 'briefId is required'));
       return;
     }
-    if (!masterListId) {
-      next(invalid(req, 'audience_attach_existing', 'masterListId', 'masterListId is required'));
+
+    // Several existing include lists, sent directly with no master list composed. Strict for the
+    // same reason as the suppressions below: a blank id silently dropped would send to fewer
+    // lists than the operator chose.
+    const includeListIds = body.includeListIds === undefined ? undefined : strictStringArray(body.includeListIds);
+    if (body.includeListIds !== undefined && (!includeListIds || !includeListIds.length)) {
+      next(
+        invalid(
+          req,
+          'audience_attach_existing',
+          'includeListIds',
+          `includeListIds must be a non-empty array of at most ${MAX_LIST_IDS} non-blank strings of at most ${MAX_LIST_ID_LENGTH} characters`
+        )
+      );
+      return;
+    }
+    if (includeListIds && masterListId) {
+      next(invalid(req, 'audience_attach_existing', 'includeListIds', 'send either masterListId or includeListIds, not both'));
+      return;
+    }
+    if (!includeListIds && !masterListId) {
+      next(invalid(req, 'audience_attach_existing', 'masterListId', 'masterListId or includeListIds is required'));
       return;
     }
     if (masterListId.length > MAX_LIST_ID_LENGTH) {
@@ -546,12 +566,15 @@ export class AudienceBuilderController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'audience_attach_existing', { suppressions: suppressionListIds.length });
+    const startTime = logger.startOperation(req, 'audience_attach_existing', {
+      includes: includeListIds ? includeListIds.length : 1,
+      suppressions: suppressionListIds.length,
+    });
 
     try {
       const result = await this.audienceBuilder.attachExisting(req, projectSlug, {
         briefId,
-        masterListId,
+        ...(includeListIds ? { includeListIds } : { masterListId }),
         suppressionListIds,
         ...(body.inclusionSummary ? { inclusionSummary: body.inclusionSummary } : {}),
       });
