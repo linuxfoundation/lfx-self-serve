@@ -3,12 +3,12 @@
 
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Meeting, MeetingOccurrence, MeetingRsvp, RsvpResponse, User } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { Observable, of, Subject, throwError } from 'rxjs';
-import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
@@ -225,6 +225,82 @@ describe('MeetingRsvpCardComponent', () => {
 
     expect((query('meeting-rsvp-card-maybe') as HTMLButtonElement).disabled).toBe(true);
     expect(query('meeting-rsvp-card-accepted')?.getAttribute('aria-busy')).toBe('true');
+  });
+
+  // A save in flight keeps its pending buttons, even if the page's own answer loads meanwhile.
+  it('stays on the pending answer while saving, even when the answer loads', () => {
+    myRsvp.set(undefined);
+    fixture.detectChanges();
+    createMeetingRsvp.mockReturnValue(new Subject<MeetingRsvp>() as Observable<MeetingRsvp>);
+    click('meeting-rsvp-card-accepted');
+
+    myRsvp.set('declined');
+    fixture.detectChanges();
+
+    expect(query('meeting-rsvp-card-confirmation')).toBeNull();
+    expect(query('meeting-rsvp-card-accepted')?.getAttribute('aria-busy')).toBe('true');
+  });
+
+  it('announces a second save of the same answer too', () => {
+    click('meeting-rsvp-card-accepted');
+    expect(text('meeting-rsvp-card-announcement')).toBe("RSVP saved. You're going.");
+
+    const pending = new Subject<MeetingRsvp>();
+    createMeetingRsvp.mockReturnValue(pending as Observable<MeetingRsvp>);
+    click('meeting-rsvp-card-change');
+    click('meeting-rsvp-card-accepted');
+    // Cleared at the start of the save, so the same words are a fresh mutation when it completes.
+    expect(text('meeting-rsvp-card-announcement')).toBe('');
+    pending.next(saved('accepted'));
+    pending.complete();
+    fixture.detectChanges();
+
+    expect(text('meeting-rsvp-card-announcement')).toBe("RSVP saved. You're going.");
+  });
+
+  // A save that completes after the page moved to another occurrence must leave the new view alone.
+  it('keeps a slow save out of the occurrence the page moved to', () => {
+    myRsvp.set(undefined);
+    fixture.detectChanges();
+    const pending = new Subject<MeetingRsvp>();
+    createMeetingRsvp.mockReturnValue(pending as Observable<MeetingRsvp>);
+    click('meeting-rsvp-card-accepted');
+
+    meeting.set({ id: 'meeting-1', title: 'Acme Weekly Sync', recurrence: { type: 2 }, occurrences: [OCCURRENCE] } as unknown as Meeting);
+    selectedOccurrence.set(OCCURRENCE);
+    fixture.detectChanges();
+    pending.next(saved('accepted'));
+    pending.complete();
+    fixture.detectChanges();
+
+    expect(query('meeting-rsvp-card-confirmation')).toBeNull();
+    expect(text('meeting-rsvp-card-announcement')).toBe('');
+    // The save itself still completed: its toast, and the state service's own guard.
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'RSVP Updated' }));
+    expect(setMyRsvp).toHaveBeenCalledWith('meeting-1', undefined, saved('accepted'));
+  });
+
+  it('completes a save after the card is destroyed', () => {
+    const pending = new Subject<MeetingRsvp>();
+    createMeetingRsvp.mockReturnValue(pending as Observable<MeetingRsvp>);
+    click('meeting-rsvp-card-maybe');
+    fixture.destroy();
+
+    pending.next(saved('maybe'));
+    pending.complete();
+
+    expect(setMyRsvp).toHaveBeenCalledWith('meeting-1', undefined, saved('maybe'));
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'RSVP Updated' }));
+  });
+
+  it('clears a previous error when a retry succeeds', () => {
+    createMeetingRsvp.mockReturnValueOnce(throwError(() => ({ status: 500 })));
+    click('meeting-rsvp-card-accepted');
+    expect(query('meeting-rsvp-card-error')).not.toBeNull();
+
+    click('meeting-rsvp-card-accepted');
+
+    expect(query('meeting-rsvp-card-error')).toBeNull();
   });
 
   // V1's copy: a 404 means the viewer is not on the invite list.

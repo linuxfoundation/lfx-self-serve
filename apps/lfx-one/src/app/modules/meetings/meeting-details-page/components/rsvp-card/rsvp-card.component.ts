@@ -3,7 +3,6 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, linkedSignal, Signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { CreateMeetingRsvpRequest, MeetingRsvp, RsvpResponse, RsvpScope } from '@lfx-one/shared/interfaces';
@@ -50,6 +49,8 @@ export class MeetingRsvpCardComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
   private readonly elementRef: ElementRef<HTMLElement> = inject(ElementRef);
+  /** Set once the card is destroyed; a save it started still completes, but stops touching the card. */
+  private destroyed = false;
 
   /** The three answers, in the prototype's order, with its words and colours (V2 tokens). */
   protected readonly options: { response: RsvpResponse; label: string; icon: string; tone: string }[] = [
@@ -88,9 +89,16 @@ export class MeetingRsvpCardComponent {
   /** The answer to show: the page's own once loaded, else what this card saved. */
   protected readonly answer: Signal<RsvpResponse | null> = computed(() => this.state.myRsvp() ?? this.savedResponse());
   protected readonly myRsvpAttr: Signal<string | null> = this.state.myRsvpAttr;
-  /** Answered, and not changing it: the confirmation shows instead of the buttons. */
-  protected readonly confirmed = computed(() => !!this.answer() && !this.changing() && !this.pendingResponse());
+  /**
+   * Answered, not changing it and not saving: the confirmation shows instead of the buttons. A save
+   * in flight keeps its disabled buttons on screen even if the page's own answer loads meanwhile.
+   */
+  protected readonly confirmed = computed(() => !!this.answer() && !this.changing() && !this.pendingResponse() && !this.saving());
   protected readonly recurring = computed(() => !!this.state.meeting()?.recurrence);
+
+  public constructor() {
+    this.destroyRef.onDestroy(() => (this.destroyed = true));
+  }
 
   protected choose(response: RsvpResponse): void {
     if (this.saving()) {
@@ -99,7 +107,9 @@ export class MeetingRsvpCardComponent {
     this.error.set(null);
     // FR-024: a series asks for a scope first; a single meeting saves `all` silently.
     if (this.recurring()) {
+      // Enabled here too: a save abandoned by an occurrence change leaves its `disable()` behind.
       this.scopeForm.reset({ scope: 'all' });
+      this.scopeForm.enable();
       this.pendingResponse.set(response);
       this.focusAfterRender('#meeting-rsvp-card-scope-all');
       return;
@@ -110,6 +120,7 @@ export class MeetingRsvpCardComponent {
   protected confirmScope(): void {
     const response = this.pendingResponse();
     if (response) {
+      this.error.set(null);
       this.save(response, this.scopeForm.controls.scope.value);
     }
   }
@@ -151,36 +162,52 @@ export class MeetingRsvpCardComponent {
       request.occurrence_id = occurrenceId;
     }
 
+    // The card this save belongs to: if the page moves to another meeting or occurrence while it is in
+    // flight, the card's state is the new view's, which the save must not touch.
+    const key = this.rsvpKey();
+    const current = (): boolean => !this.destroyed && this.rsvpKey() === key;
+
     this.saving.set(response);
+    this.announcement.set('');
     this.scopeForm.disable();
+    // Not cancelled with the card: the write completes even if the slot is destroyed (the page left,
+    // or the join window opened), so the RSVP, its toast and `setMyRsvp` still land.
     this.meetingService
       .createMeetingRsvp(meeting.id, request)
       .pipe(
         finalize(() => {
-          this.saving.set(null);
-          this.scopeForm.enable();
-        }),
-        takeUntilDestroyed(this.destroyRef)
+          if (current()) {
+            this.saving.set(null);
+            this.scopeForm.enable();
+          }
+        })
       )
       .subscribe({
         next: (rsvp: MeetingRsvp) => {
+          // Guards itself against a meeting or occurrence the page has left.
           this.state.setMyRsvp(meeting.id, occurrenceId, rsvp);
-          this.savedResponse.set(rsvp.response_type);
-          this.pendingResponse.set(null);
-          this.changing.set(false);
-          this.announcement.set(`RSVP saved. ${this.confirmations[rsvp.response_type].label}.`);
-          this.focusAfterRender('[data-testid="meeting-rsvp-card-change"]');
           this.messageService.add({
             severity: 'success',
             summary: 'RSVP Updated',
             detail: `You have responded "${this.responseWord(response)}" for this meeting.`,
             life: 3000,
           });
+          if (!current()) {
+            return;
+          }
+          this.savedResponse.set(rsvp.response_type);
+          this.pendingResponse.set(null);
+          this.changing.set(false);
+          this.error.set(null);
+          this.announcement.set(`RSVP saved. ${this.confirmations[rsvp.response_type].label}.`);
+          this.focusAfterRender('[data-testid="meeting-rsvp-card-change"]');
         },
         error: (error: HttpErrorResponse) => {
           const message = this.errorMessage(error);
-          this.error.set(message);
           this.messageService.add({ severity: 'error', summary: 'RSVP Failed', detail: message, life: 5000 });
+          if (current()) {
+            this.error.set(message);
+          }
         },
       });
   }
