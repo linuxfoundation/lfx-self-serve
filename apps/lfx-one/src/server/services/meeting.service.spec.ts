@@ -489,16 +489,6 @@ describe('MeetingService.getMeetingRegistrants', () => {
     expect(proxyRequest).toHaveBeenCalledTimes(1);
   });
 
-  it("surfaces the index's `occurrence` as `occurrence_id`, leaving series-wide guests without one", async () => {
-    const scoped = { id: 'v1_meeting_registrant:s', data: { uid: 's', email: 's@example.com', occurrence: '1893456000' } as unknown as MeetingRegistrant };
-    const seriesWide = { id: 'v1_meeting_registrant:w', data: { uid: 'w', email: 'w@example.com', occurrence: '' } as unknown as MeetingRegistrant };
-    proxyRequest.mockResolvedValueOnce({ resources: [scoped, seriesWide] });
-
-    const result = await service.getMeetingRegistrants(req, 'meeting-1');
-
-    expect(result.map((registrant) => registrant.occurrence_id)).toEqual(['1893456000', undefined]);
-  });
-
   it('sends page_size on the roster walk', async () => {
     proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
 

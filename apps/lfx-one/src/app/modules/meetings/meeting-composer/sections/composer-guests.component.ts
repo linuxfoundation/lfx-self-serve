@@ -150,7 +150,20 @@ export class ComposerGuestsComponent {
    */
   protected readonly guestRows: Signal<ComposerGuestRow[]> = this.initGuestRows();
 
-  private readonly invitedEmails: Signal<Set<string>> = computed(() => new Set(this.visibleGuests().map((guest) => guest.email?.toLowerCase() ?? '')));
+  /**
+   * Emails already on the meeting, for the duplicate guard.
+   * @description Built from every live guest, not just the visible ones: editing one occurrence hides guests
+   * scoped to other occurrences, and adding one of them here again could be rejected upstream at save time.
+   */
+  private readonly invitedEmails: Signal<Set<string>> = computed(
+    () =>
+      new Set(
+        this.formService
+          .guests()
+          .filter((guest) => guest.state !== 'deleted')
+          .map((guest) => guest.email?.toLowerCase() ?? '')
+      )
+  );
 
   /**
    * Adds the person picked from search, or falls back to the manual dialog.
@@ -291,7 +304,9 @@ export class ComposerGuestsComponent {
     const email = (formValue['email'] as string | null) ?? '';
 
     if (email && this.invitedEmails().has(email.toLowerCase())) {
-      this.messageService.add({ severity: 'warn', summary: 'Already invited', detail: `${email} is already on the guest list.` });
+      const onScreen = this.visibleGuests().some((guest) => guest.email?.toLowerCase() === email.toLowerCase());
+      const detail = onScreen ? `${email} is already on the guest list.` : `${email} is already invited to another occurrence of this meeting.`;
+      this.messageService.add({ severity: 'warn', summary: 'Already invited', detail });
       return;
     }
 

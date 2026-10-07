@@ -453,7 +453,14 @@ export class MeetingComposerFormService {
     const meetingUid = this.meetingId() ?? '';
 
     this.registrantUpdates.set({
-      toAdd: next.filter((guest) => guest.state === 'new').map((guest) => this.meetingService.stripMetadata(meetingUid, guest)),
+      // `occurrence_id` is added here rather than by the shared mapper, which the pre-v2 guest screens use
+      // too: only the occurrence edit ever sets it on a new guest (see `newGuestDefaults`).
+      toAdd: next
+        .filter((guest) => guest.state === 'new')
+        .map((guest) => ({
+          ...this.meetingService.stripMetadata(meetingUid, guest),
+          ...(guest.occurrence_id ? { occurrence_id: guest.occurrence_id } : {}),
+        })),
       toUpdate: next.filter((guest) => guest.state === 'modified').map((guest) => ({ uid: guest.uid, changes: this.meetingService.getChangedFields(guest) })),
       toDelete: next.filter((guest) => guest.state === 'deleted').map((guest) => guest.uid),
     } satisfies RegistrantPendingChanges);
@@ -597,7 +604,7 @@ export class MeetingComposerFormService {
       return (
         !!this.occurrence() &&
         this.visibleSections().every((section) => this.isSectionValid(section.id)) &&
-        (this.occurrenceHasChanges() || this.hasPendingRegistrantWork())
+        (this.occurrenceHasChanges() || this.hasRegistrantUpdates())
       );
     }
 
@@ -1459,7 +1466,7 @@ export class MeetingComposerFormService {
           return;
         }
 
-        this.setGuests(this.mergeLoadedGuests(loaded));
+        this.setGuests(this.mergeLoadedGuests(loaded.map((registrant) => this.withOccurrenceScope(registrant))));
 
         // Straight to `reconcileCommitteeMembers`, not back through `syncCommitteeMembers`: `take(1)`
         // hands the value to this subscriber before it completes, so `finalize` has not yet flipped
@@ -1488,6 +1495,23 @@ export class MeetingComposerFormService {
    *   `getChangedFields` diffs against what is stored now rather than against a stale snapshot.
    * - anything else, or no local row at all — hydrated from the fetch as `existing`.
    */
+  /**
+   * Single-occurrence edit only: reads a listed guest's occurrence scope into `occurrence_id`.
+   * @description The registrant list comes from the query-service index, which stores the scope as
+   * `occurrence` (empty = every occurrence) and does not rename it, so a listed guest never carries
+   * `occurrence_id`. The occurrence edit needs it to tell series guests from this occurrence's own, so the
+   * rename happens here, for that mode alone, rather than on the shared list everyone else reads.
+   */
+  private withOccurrenceScope(registrant: MeetingRegistrant): MeetingRegistrant {
+    const occurrence = (registrant as MeetingRegistrant & { occurrence?: unknown }).occurrence;
+
+    if (!this.isOccurrenceEdit() || registrant.occurrence_id || typeof occurrence !== 'string' || !occurrence) {
+      return registrant;
+    }
+
+    return { ...registrant, occurrence_id: occurrence };
+  }
+
   private mergeLoadedGuests(loaded: MeetingRegistrant[]): MeetingRegistrantWithState[] {
     const localByUid = new Map<string, MeetingRegistrantWithState>();
     const localByEmail = new Map<string, MeetingRegistrantWithState>();
@@ -1585,7 +1609,8 @@ export class MeetingComposerFormService {
 
     // The occurrence itself is only written when one of its own fields changed: upstream stores every
     // occurrence update as an override of the series, so a guests-only save must not create one.
-    const update$: Observable<unknown> = this.occurrenceHasChanges()
+    const writesOccurrence = this.occurrenceHasChanges();
+    const update$: Observable<unknown> = writesOccurrence
       ? this.meetingService.updateOccurrence(meetingId, occurrence.occurrence_id, this.prepareOccurrenceData(occurrence))
       : of(null);
 
@@ -1602,6 +1627,17 @@ export class MeetingComposerFormService {
           switchMap((registrants) => {
             if (generation !== this.generation) {
               this.reportStaleDependentResults(null, registrants, true);
+              return EMPTY;
+            }
+
+            // A guests-only save where every guest change failed saved nothing at all. Emitting would raise
+            // "Occurrence updated" and close the drawer over the organizer's lost changes, so it stays open.
+            if (!writesOccurrence && registrants.length > 0 && registrants.every((result) => result.success === 0)) {
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'The guest changes for this occurrence could not be saved. Please try again.',
+              });
               return EMPTY;
             }
 
@@ -2301,13 +2337,6 @@ export class MeetingComposerFormService {
   }
 
   /** Whether anything queued on the form still needs the saved meeting's id to be persisted. */
-  /** Pending guest adds, edits or removals — the only dependent work an occurrence edit saves. */
-  private hasPendingRegistrantWork(): boolean {
-    const registrants = this.registrantUpdates();
-
-    return registrants.toAdd.length > 0 || registrants.toUpdate.length > 0 || registrants.toDelete.length > 0;
-  }
-
   private hasPendingDependentWork(): boolean {
     const registrants = this.registrantUpdates();
 

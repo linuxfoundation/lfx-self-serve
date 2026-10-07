@@ -668,8 +668,6 @@ export class MeetingService {
       ...(registrant.job_title ? { job_title: registrant.job_title } : {}),
       ...(registrant.org_name ? { org_name: registrant.org_name } : {}),
       ...(registrant.committee_uid ? { committee_uid: registrant.committee_uid } : {}),
-      // Set only for a guest invited to a single occurrence; omitted, the invite covers every occurrence.
-      ...(registrant.occurrence_id ? { occurrence_id: registrant.occurrence_id } : {}),
     };
   }
 

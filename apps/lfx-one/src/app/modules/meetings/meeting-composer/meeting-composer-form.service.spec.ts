@@ -2194,6 +2194,9 @@ describe('MeetingComposerFormService — single-occurrence edit', () => {
   let updateOccurrence: ReturnType<typeof vi.fn>;
   let getMeetingRegistrants: ReturnType<typeof vi.fn>;
   let addMeetingRegistrants: ReturnType<typeof vi.fn>;
+  let deleteMeetingAttachment: ReturnType<typeof vi.fn>;
+  let createMeetingAttachment: ReturnType<typeof vi.fn>;
+  let uploadMeetingFile: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
   let composerClose: ReturnType<typeof vi.fn>;
 
@@ -2201,6 +2204,9 @@ describe('MeetingComposerFormService — single-occurrence edit', () => {
     updateOccurrence = vi.fn().mockReturnValue(of(undefined));
     getMeetingRegistrants = vi.fn().mockReturnValue(of([]));
     addMeetingRegistrants = vi.fn().mockReturnValue(of({ summary: { successful: 1, failed: 0 } }));
+    deleteMeetingAttachment = vi.fn().mockReturnValue(of(undefined));
+    createMeetingAttachment = vi.fn().mockReturnValue(of(undefined));
+    uploadMeetingFile = vi.fn().mockReturnValue(of(undefined));
     messageAdd = vi.fn();
     composerClose = vi.fn();
 
@@ -2218,15 +2224,14 @@ describe('MeetingComposerFormService — single-occurrence edit', () => {
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRegistrants,
             addMeetingRegistrants,
-            // Mirrors the real mapper's occurrence handling, which is what these tests exercise.
-            stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({
-              meeting_id: meetingUid,
-              email: guest.email,
-              ...(guest.occurrence_id ? { occurrence_id: guest.occurrence_id } : {}),
-            }),
+            // Like the real shared mapper, this drops `occurrence_id` — the composer adds it itself.
+            stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({ meeting_id: meetingUid, email: guest.email }),
             getChangedFields: (guest: MeetingRegistrantWithState) => ({ email: guest.email }),
             updateMeeting: vi.fn(),
             updateOccurrence,
+            deleteMeetingAttachment,
+            createMeetingAttachment,
+            uploadMeetingFile,
           },
         },
       ],
@@ -2366,10 +2371,38 @@ describe('MeetingComposerFormService — single-occurrence edit', () => {
     expect(service.isSavable()).toBe(false);
 
     service.form().get('title')?.setValue('Planning special');
-    service.submit().subscribe();
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
 
     expect(updateOccurrence).toHaveBeenCalled();
+    expect(deleteMeetingAttachment).not.toHaveBeenCalled();
+    expect(createMeetingAttachment).not.toHaveBeenCalled();
+    expect(uploadMeetingFile).not.toHaveBeenCalled();
     expect(addMeetingRegistrants).not.toHaveBeenCalled();
+    expect(emissions).toEqual([null]);
+    expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+  });
+
+  it("reads a listed guest's `occurrence` scope into `occurrence_id`", () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+    const listed = { uid: 'reg-1', email: 'scoped@example.com', occurrence: SECOND.occurrence_id } as unknown as MeetingRegistrant;
+    getMeetingRegistrants.mockReturnValue(of([listed]));
+
+    service.retryLoadGuests();
+
+    expect(service.guests()[0].occurrence_id).toBe(SECOND.occurrence_id);
+  });
+
+  it('stays open with an error when every guest change in a guests-only save fails', () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+    addMeetingRegistrants.mockReturnValue(throwError(() => new Error('conflict')));
+    service.setGuests([{ ...service.newGuestDefaults(), email: 'guest@example.com' }]);
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    expect(emissions).toEqual([]);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
   });
 });
 
