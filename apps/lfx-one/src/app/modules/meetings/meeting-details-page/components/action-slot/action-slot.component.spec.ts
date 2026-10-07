@@ -216,6 +216,26 @@ describe('MeetingActionSlotComponent', () => {
     expect(query('meeting-action-message')).toBeNull();
   });
 
+  // N-01 (FR-026, SC-005): a meeting that predates RSVP tracking says so, with no RSVP control.
+  it('explains a meeting without RSVP tracking, and offers nothing to answer', () => {
+    render('rsvp-unavailable');
+
+    expect(query('meeting-rsvp-unavailable-state')?.textContent).toContain("You're invited");
+    expect(text('meeting-action-message')).toBe("RSVPs aren't tracked for this meeting, so there's nothing to answer.");
+    // No control at all, and nothing that carries an answer.
+    expect(fixture.nativeElement.querySelector('button, input')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-my-rsvp]')).toBeNull();
+  });
+
+  // The join rule is the hint's alone, so the two never disagree.
+  it('leaves when to join to the early-join hint', () => {
+    timeState.set('before');
+    render('rsvp-unavailable');
+
+    expect(text('meeting-action-join-hint')).toBe('You can join up to 15 minutes before the start time.');
+    expect(text('meeting-action-message')).not.toContain('join');
+  });
+
   // E2-06 (FR-025).
   it('offers an anonymous visitor in the window sign-in, or the guest form', () => {
     render('guest-join', 'visitor');
