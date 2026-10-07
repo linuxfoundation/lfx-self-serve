@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -26,12 +26,7 @@ export class EditChairsDialogComponent {
   public readonly addChairForm = new FormGroup({ uid: new FormControl<string | null>(null) });
   public readonly addViceChairForm = new FormGroup({ uid: new FormControl<string | null>(null) });
 
-  public readonly chairOptions: Signal<{ label: string; value: string }[]> = computed(() => {
-    const assigned = new Set([...this.chairUids(), ...this.viceChairUids()]);
-    return this.memberOptions.filter((m) => !assigned.has(m.value));
-  });
-
-  public readonly viceChairOptions: Signal<{ label: string; value: string }[]> = computed(() => {
+  public readonly availableOptions = computed(() => {
     const assigned = new Set([...this.chairUids(), ...this.viceChairUids()]);
     return this.memberOptions.filter((m) => !assigned.has(m.value));
   });

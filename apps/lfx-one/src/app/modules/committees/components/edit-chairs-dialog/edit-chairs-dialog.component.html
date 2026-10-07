@@ -20,7 +20,7 @@
     <lfx-select
       [form]="addChairForm"
       control="uid"
-      [options]="chairOptions()"
+      [options]="availableOptions()"
       optionLabel="label"
       optionValue="value"
       placeholder="Add a chair..."
@@ -48,7 +48,7 @@
     <lfx-select
       [form]="addViceChairForm"
       control="uid"
-      [options]="viceChairOptions()"
+      [options]="availableOptions()"
       optionLabel="label"
       optionValue="value"
       placeholder="Add a vice chair..."
