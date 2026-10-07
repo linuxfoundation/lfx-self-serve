@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { AUDIENCE_ATTACH_MAX_LIST_IDS, AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import type {
@@ -28,18 +29,21 @@ const LAST_SENT_MAX_LIMIT = 10;
  *
  * Every id here is forwarded upstream and a 201 audience row is created, so an unbounded array is
  * an unbounded upstream payload reachable by any campaign manager. A HubSpot list id is a short
- * numeric string and the picker cannot select anywhere near 50 lists, so both bounds are far above
- * any real selection and only a malformed or hostile body reaches them.
+ * numeric string. The Audience tab checks the same shared bound before offering an action, so only
+ * a malformed or hostile body reaches it.
  *
  * Refused rather than truncated: silently dropping ids past the cap would record a send with LESS
  * suppression than the caller asked for, which is the same failure `strictStringArray` refuses a
  * blank entry to avoid.
  */
-const MAX_LIST_IDS = 50;
+const MAX_LIST_IDS = AUDIENCE_ATTACH_MAX_LIST_IDS;
 const MAX_LIST_ID_LENGTH = 64;
 
 /** Free text forwarded upstream and stored on the audience row, so it needs a ceiling too. */
-const MAX_INCLUSION_SUMMARY_LENGTH = 2_000;
+const MAX_INCLUSION_SUMMARY_LENGTH = AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH;
+
+/** The refusal for a compose or attach with no suppression list: every send must keep one. */
+const MISSING_SUPPRESSION_MESSAGE = 'at least one suppression list is required: every send must keep at least one';
 
 /** Default number of past sends returned when the caller does not ask for a specific count. */
 const LAST_SENT_DEFAULT_LIMIT = 3;
@@ -444,6 +448,12 @@ export class AudienceBuilderController {
       );
       return;
     }
+    // Every send keeps at least one suppression list: the compliance gate the Audience tab shows is
+    // enforced HERE, at the server boundary, so a direct API call cannot compose an unsuppressed master.
+    if (excludeListIds.length === 0) {
+      next(invalid(req, 'audience_compose_master', 'excludeListIds', MISSING_SUPPRESSION_MESSAGE));
+      return;
+    }
 
     const startTime = logger.startOperation(req, 'audience_compose_master', { lists: listIds.length, excluded: excludeListIds.length });
 
@@ -555,6 +565,11 @@ export class AudienceBuilderController {
           `suppressionListIds must be an array of at most ${MAX_LIST_IDS} non-blank strings of at most ${MAX_LIST_ID_LENGTH} characters`
         )
       );
+      return;
+    }
+    // Same server-side gate as compose: an attach records a send, so it must carry a suppression list.
+    if (suppressionListIds.length === 0) {
+      next(invalid(req, 'audience_attach_existing', 'suppressionListIds', MISSING_SUPPRESSION_MESSAGE));
       return;
     }
     if (body.inclusionSummary !== undefined && typeof body.inclusionSummary !== 'string') {

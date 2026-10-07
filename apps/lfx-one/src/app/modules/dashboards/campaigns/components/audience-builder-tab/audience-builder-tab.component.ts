@@ -9,7 +9,13 @@ import { CampaignService } from '@services/campaign.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { catchError, combineLatest, distinctUntilChanged, filter, map, of, pairwise, startWith, switchMap, tap } from 'rxjs';
 
-import { AUDIENCE_SIGNAL_INFO, AUDIENCE_SIGNAL_ORDER, AUDIENCE_UNION_EXACT_CAP } from '@lfx-one/shared/constants';
+import {
+  AUDIENCE_ATTACH_MAX_LIST_IDS,
+  AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
+  AUDIENCE_SIGNAL_INFO,
+  AUDIENCE_SIGNAL_ORDER,
+  AUDIENCE_UNION_EXACT_CAP,
+} from '@lfx-one/shared/constants';
 import type {
   AudienceAttachExistingRequest,
   AudienceAttachExistingResult,
@@ -851,7 +857,20 @@ export class AudienceBuilderTabComponent {
    * exclusions this attach records are the ones ticked from that fetch, so attaching while it is in
    * flight or failed records a send with no GDPR/CASL suppression.
    */
-  protected readonly canUseSelectionDirectly = computed(() => this.canUseExistingMaster() && this.inclusion().size > 0);
+  protected readonly canUseSelectionDirectly = computed(
+    () => this.canUseExistingMaster() && this.inclusion().size > 0 && this.inclusion().size <= AUDIENCE_ATTACH_MAX_LIST_IDS
+  );
+
+  /**
+   * Why direct use is off when the only obstacle is the selection's size; '' otherwise. The BFF
+   * refuses more than AUDIENCE_ATTACH_MAX_LIST_IDS include ids, so offering the action past that
+   * only produced a failed attach.
+   */
+  protected readonly directUseLimitMessage = computed(() =>
+    this.inclusion().size > AUDIENCE_ATTACH_MAX_LIST_IDS
+      ? `Select at most ${AUDIENCE_ATTACH_MAX_LIST_IDS} lists to send to directly, or compose a master list from them.`
+      : ''
+  );
 
   /**
    * Why "Use for this email" cannot run, in the operator's terms. Empty when it can.
@@ -1209,7 +1228,9 @@ export class AudienceBuilderTabComponent {
     }
     const entries = this.inclusionEntries();
     const names = entries.map((entry) => entry.name);
-    const summary = entries.length === 1 ? '' : `${entries.length} lists: ${names.join(', ')}`;
+    // Bounded to what the BFF stores: a long run of list names otherwise failed the whole attach.
+    const full = entries.length === 1 ? '' : `${entries.length} lists: ${names.join(', ')}`;
+    const summary = full.length > AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH ? `${full.slice(0, AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH - 1)}…` : full;
     this.attachExisting(
       'selection',
       entries.map((entry) => entry.listId),
@@ -1636,7 +1657,23 @@ export class AudienceBuilderTabComponent {
       return;
     }
     const includeSet = new Set(includes);
-    const sentExclusions = [...new Set([...extraExclusions, ...this.excludeIds()])].filter((id) => !includeSet.has(id));
+    const requestedExclusions = [...new Set([...extraExclusions, ...this.excludeIds()])];
+    // REFUSED, not filtered: dropping an exclusion that is also being sent to recorded a send that
+    // reaches contacts the operator marked for exclusion -- a reused master marked Exclude, or a past
+    // send's list now ticked for suppression. The tab's own conflict gate only sees the step-6
+    // selection, not the lists an attach brings in, so the overlap is checked here too.
+    const conflicting = requestedExclusions.filter((id) => includeSet.has(id));
+    if (conflicting.length > 0) {
+      this.attachError.set(
+        `${conflicting.length === 1 ? 'A list is' : `${conflicting.length} lists are`} both sent to and excluded by this attach. Remove the exclusion or choose different lists.`
+      );
+      return;
+    }
+    const sentExclusions = requestedExclusions;
+    if (sentExclusions.length > AUDIENCE_ATTACH_MAX_LIST_IDS) {
+      this.attachError.set(`At most ${AUDIENCE_ATTACH_MAX_LIST_IDS} lists can be excluded from one send.`);
+      return;
+    }
     if (sentExclusions.length === 0) {
       this.attachError.set('Select at least one suppression list in step 3 first.');
       return;

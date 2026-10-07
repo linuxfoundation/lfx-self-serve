@@ -4,10 +4,15 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CampaignService } from '@services/campaign.service';
-import { of, Subject, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS, AUDIENCE_UNION_EXACT_CAP } from '@lfx-one/shared/constants';
+import {
+  AUDIENCE_ATTACH_MAX_LIST_IDS,
+  AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
+  AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS,
+  AUDIENCE_UNION_EXACT_CAP,
+} from '@lfx-one/shared/constants';
 import type {
   AudienceComposedList,
   AudienceComposeMasterPartial,
@@ -701,6 +706,60 @@ describe('AudienceBuilderTabComponent', () => {
 
       const btn = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
       expect(btn?.disabled, 'compose stayed enabled with an unresolved include/exclude conflict').toBe(true);
+    });
+
+    it('refuses to attach a master that is also marked Exclude, instead of dropping the exclusion', async () => {
+      // Filtering the overlap out recorded a send that reaches contacts the operator marked for
+      // exclusion. The tab's conflict gate only sees the step-6 selection, not the attached list.
+      await renderWithDiscovery({ briefId: 'brief-1' });
+      const tab = fixture.componentInstance as unknown as {
+        onExcludeList: (list: { listId: string; name: string }) => void;
+        onUseMasterList: (list: { listId: string; name: string }) => void;
+        attachError: () => string | null;
+      };
+      tab.onExcludeList({ listId: '901', name: 'Synthetic Master' });
+      fixture.detectChanges();
+
+      tab.onUseMasterList({ listId: '901', name: 'Synthetic Master' });
+
+      expect(attachExistingAudience, 'the overlap was attached with the exclusion dropped').not.toHaveBeenCalled();
+      expect(tab.attachError()).toContain('both sent to and excluded');
+    });
+
+    it('does not offer direct use past the BFF include-list cap, and says why', async () => {
+      await renderWithDiscovery({ briefId: 'brief-1' });
+      const tab = fixture.componentInstance as unknown as {
+        inclusion: { set: (m: ReadonlyMap<string, string>) => void };
+        canUseSelectionDirectly: () => boolean;
+        directUseLimitMessage: () => string;
+      };
+      const tooMany = new Map(Array.from({ length: AUDIENCE_ATTACH_MAX_LIST_IDS + 1 }, (_, i) => [String(1000 + i), `List ${i}`] as [string, string]));
+      tab.inclusion.set(tooMany);
+      fixture.detectChanges();
+
+      expect(tab.canUseSelectionDirectly(), 'direct use offered for a selection the BFF refuses').toBe(false);
+      expect(tab.directUseLimitMessage()).toContain(`at most ${AUDIENCE_ATTACH_MAX_LIST_IDS} lists`);
+      expect(host().querySelector('[data-testid="campaigns-audience-use-direct-limit"]')).not.toBeNull();
+    });
+
+    it('keeps a direct-use summary within the BFF length cap', async () => {
+      await renderWithDiscovery({ briefId: 'brief-1' });
+      const tab = fixture.componentInstance as unknown as {
+        inclusion: { set: (m: ReadonlyMap<string, string>) => void };
+        onUseSelectionDirectly: () => void;
+      };
+      attachExistingAudience.mockReturnValue(NEVER);
+      const longNames = new Map(
+        Array.from({ length: 50 }, (_, i) => [String(2000 + i), `Synthetic list with a deliberately long name ${i}`] as [string, string])
+      );
+      tab.inclusion.set(longNames);
+      fixture.detectChanges();
+
+      tab.onUseSelectionDirectly();
+
+      const request = attachExistingAudience.mock.calls.at(-1)?.[1] as { inclusionSummary?: string; includeListIds?: string[] } | undefined;
+      expect(request?.includeListIds).toHaveLength(50);
+      expect(request?.inclusionSummary?.length ?? 0).toBeLessThanOrEqual(AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH);
     });
 
     it('says so when no suppression list resolves in the portal, rather than asking for a tick', async () => {

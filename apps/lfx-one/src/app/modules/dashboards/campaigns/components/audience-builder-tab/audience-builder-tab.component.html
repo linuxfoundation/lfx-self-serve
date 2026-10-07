@@ -631,6 +631,8 @@
               </button>
               @if (attachUnavailableMessage(); as reason) {
                 <p class="text-xs text-amber-700" data-testid="campaigns-audience-use-direct-unavailable">{{ reason }}</p>
+              } @else if (directUseLimitMessage(); as limit) {
+                <p class="text-xs text-amber-700" data-testid="campaigns-audience-use-direct-limit">{{ limit }}</p>
               } @else {
                 <p class="text-xs text-gray-500">
                   Sends to the {{ inclusionEntries().length }} selected list(s) directly. Composing a master list is optional.

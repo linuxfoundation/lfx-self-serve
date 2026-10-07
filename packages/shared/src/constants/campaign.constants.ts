@@ -1901,3 +1901,12 @@ export const EMAIL_HERO_PREVIEW_IMAGE_PATH = /\.(?:png|jpe?g|gif|webp|svg)$/i;
 
 /** HubSpot's app hosts (`app.hubspot.com`, regional `app-eu1.hubspot.com`): where a staged draft link may point. */
 export const HUBSPOT_APP_HOST_PATTERN = /^app(?:-[a-z0-9]+)?\.hubspot\.com$/;
+
+/**
+ * The most list ids one audience-builder request may carry per array (include, suppression,
+ * exclude). The BFF refuses more; the Audience tab checks the same bound before offering an action.
+ */
+export const AUDIENCE_ATTACH_MAX_LIST_IDS = 50;
+
+/** The longest `inclusionSummary` the BFF accepts on an attach; it is stored on the audience row. */
+export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;

@@ -207,7 +207,7 @@ describe('getCapabilities', () => {
     proxyMethods.composeMaster.mockResolvedValue(composed);
     const res = buildRes();
 
-    await controller.composeMaster(buildReq({ listIds: ['1'], eventName: 'Synthetic Summit' }), res, next);
+    await controller.composeMaster(buildReq({ listIds: ['1'], eventName: 'Synthetic Summit', excludeListIds: ['201'] }), res, next);
 
     expect(res.status, 'a create answered 200; the documented status is 201').toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith(composed);
@@ -502,11 +502,11 @@ describe('composeMaster', () => {
     // compose the caller plainly meant.
     proxyMethods.composeMaster.mockResolvedValue({ master: created, sourceListIds: ['10'], recorded: false });
 
-    await controller.composeMaster(buildReq({ listIds: ['10'], briefId: '' }), buildRes(), next);
+    await controller.composeMaster(buildReq({ listIds: ['10'], briefId: '', excludeListIds: ['201'] }), buildRes(), next);
     expect(proxyMethods.composeMaster.mock.calls[0]?.[2]).not.toHaveProperty('briefId');
 
     proxyMethods.composeMaster.mockClear();
-    await controller.composeMaster(buildReq({ listIds: ['10'], briefId: 'brief-1' }), buildRes(), next);
+    await controller.composeMaster(buildReq({ listIds: ['10'], briefId: 'brief-1', excludeListIds: ['201'] }), buildRes(), next);
     expect(proxyMethods.composeMaster.mock.calls[0]?.[2]).toMatchObject({ briefId: 'brief-1' });
   });
 
@@ -518,7 +518,7 @@ describe('composeMaster', () => {
     proxyMethods.composeMaster.mockRejectedValue(new AudienceComposePartialError('Lists created but not attached.', undefined, undefined, undefined, master));
     const res = buildRes();
 
-    await controller.composeMaster(buildReq({ listIds: ['10'], briefId: 'brief-1' }), res, next);
+    await controller.composeMaster(buildReq({ listIds: ['10'], briefId: 'brief-1', excludeListIds: ['201'] }), res, next);
 
     expect(res.status).toHaveBeenCalledWith(502);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ master, error: 'Lists created but not attached.' }));
@@ -576,7 +576,7 @@ describe('composeMaster payload', () => {
     // named picks meant it never reached the wire.
     proxyMethods.composeMaster.mockResolvedValue({ master: { listId: '1', name: 'm', size: 1, hubspotUrl: 'u' }, sourceListIds: [] });
 
-    const req = buildReq({ listIds: ['101'], eventName: 'KubeCon NA', injected: 'should not survive' }, { project: 'tlf' });
+    const req = buildReq({ listIds: ['101'], eventName: 'KubeCon NA', excludeListIds: ['201'], injected: 'should not survive' }, { project: 'tlf' });
     await controller.composeMaster(req, buildRes(), vi.fn());
 
     const sent = proxyMethods.composeMaster.mock.calls.at(-1)?.[2];
@@ -628,7 +628,7 @@ describe('attachExisting', () => {
     ['too many suppression ids', { suppressionListIds: Array.from({ length: 51 }, (_unused, i) => `${i}`) }, 'suppressionListIds'],
     ['an over-long suppression id', { suppressionListIds: ['2'.repeat(65)] }, 'suppressionListIds'],
     ['an over-long master list id', { masterListId: '5'.repeat(65) }, 'masterListId'],
-    ['an over-long inclusion summary', { inclusionSummary: 'x'.repeat(2_001) }, 'inclusionSummary'],
+    ['an over-long inclusion summary', { suppressionListIds: ['201'], inclusionSummary: 'x'.repeat(2_001) }, 'inclusionSummary'],
     // `?? []` replaced an explicit null before validation, so it attached with no suppression.
     ['a null suppression list', { suppressionListIds: null }, 'suppressionListIds'],
   ])('refuses %s', async (_label, overrides, field) => {
@@ -641,7 +641,6 @@ describe('attachExisting', () => {
   it.each([
     ['the largest allowed selection', Array.from({ length: 50 }, (_unused, i) => `${i}`)],
     ['the longest allowed id', ['2'.repeat(64)]],
-    ['an empty selection', []],
   ])('still accepts %s', async (_label, suppressionListIds) => {
     proxyMethods.attachExisting.mockResolvedValue(attached);
 
@@ -657,16 +656,21 @@ describe('attachExisting', () => {
   it.each([
     ['attach', 'suppressionListIds'],
     ['compose', 'excludeListIds'],
-  ])('treats an OMITTED exclusion field on %s as none', async (kind, field) => {
-    // The counterpart of the null refusals: only `undefined` defaults, and it still does.
-    proxyMethods.attachExisting.mockResolvedValue(attached);
-    if (kind === 'attach') {
-      await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '501' }), buildRes(), next);
-      expect(proxyMethods.attachExisting).toHaveBeenCalledWith(expect.anything(), 'tlf', expect.objectContaining({ [field]: [] }));
-    } else {
-      await controller.composeMaster(buildReq({ listIds: ['10'], eventName: 'Synthetic Summit' }), buildRes(), next);
-      expect(proxyMethods.composeMaster).toHaveBeenCalledWith(expect.anything(), 'tlf', expect.objectContaining({ [field]: [] }));
+  ])('refuses an OMITTED or empty exclusion field on %s: every send keeps a suppression list', async (kind, field) => {
+    // The Audience tab's mandatory-suppression gate is enforced at the server boundary too, so a
+    // direct API call cannot compose or attach an unsuppressed audience.
+    for (const extra of [{}, { [field]: [] }]) {
+      vi.mocked(next).mockClear();
+      if (kind === 'attach') {
+        await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '501', ...extra }), buildRes(), next);
+      } else {
+        await controller.composeMaster(buildReq({ listIds: ['10'], eventName: 'Synthetic Summit', ...extra }), buildRes(), next);
+      }
+      expect(nextError(next).toResponse()['errors']).toMatchObject([{ field }]);
+      expect(JSON.stringify(nextError(next).toResponse())).toContain('at least one suppression list');
     }
+    expect(proxyMethods.attachExisting).not.toHaveBeenCalled();
+    expect(proxyMethods.composeMaster).not.toHaveBeenCalled();
   });
 
   it('forwards the trimmed request and answers 201', async () => {
