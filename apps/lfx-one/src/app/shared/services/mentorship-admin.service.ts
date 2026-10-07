@@ -17,8 +17,11 @@ import {
   MentorshipAdminTermsQuery,
   MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
+  MentorshipEnrollCreateRequest,
+  MentorshipEnrollProgramRef,
   MentorshipMentorTaskCreateRequest,
   MentorshipMentorTaskCreateResponse,
+  MentorshipProgramLogoUploadResult,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipProgramTermRow,
@@ -149,6 +152,26 @@ export class MentorshipAdminService {
         {}
       )
       .pipe(take(1), this.logFailure('declinePendingForTerm'));
+  }
+
+  /**
+   * Creates a program with its terms and prerequisites. Upstream leaves it `pending`, so this alone sends it to review.
+   * Validation (400) and the rest reach the caller as the error; there is no retry here.
+   */
+  public createProgram(body: MentorshipEnrollCreateRequest): Observable<MentorshipEnrollProgramRef> {
+    return this.http.post<MentorshipEnrollProgramRef>('/api/mentorship/admin/programs', body).pipe(take(1), this.logFailure('createProgram'));
+  }
+
+  /**
+   * Uploads a program's logo as a raw `image/png` or `image/jpeg` body and resolves with its public URL. The BFF answers 415 for another
+   * type and 413 above the size limit.
+   */
+  public uploadProgramLogo(programId: string, file: File): Observable<MentorshipProgramLogoUploadResult> {
+    return this.http
+      .post<MentorshipProgramLogoUploadResult>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/logo`, file, {
+        headers: { 'Content-Type': file.type },
+      })
+      .pipe(take(1), this.logFailure('uploadProgramLogo'));
   }
 
   /** Creates an open term; the BFF refuses it with a 409 when the program already has four open terms. */

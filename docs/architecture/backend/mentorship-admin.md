@@ -5,7 +5,7 @@
 
 The admin pages under `/mentorship/admin/*` read their data from the LFX One BFF's `/api/mentorship/admin/*` routes. The admin code has its own router, controller and services, separate from the mentor and mentee code, so each admin screen can move to the mentorship service without touching the other two (linuxfoundation/lfx-mentorship#229).
 
-The program list and the program page (header, tab counts and all four tabs) read the mentorship service (see [Program list sourcing](#program-list-sourcing) and [Program page sourcing](#program-page-sourcing)). The program page reads no mock data; the Mentors tab's invite picker still does (see [Program list sourcing](#program-list-sourcing)). The Enroll form's name check and project picker are live (see [Enroll lookups](#enroll-lookups)). Application decisions on Current Mentees (accept, decline, withdraw, graduate, decline by term), the reviewer note, Create task and the Mentors tab's Accept, Decline, Revoke invite and Remove write through the mentorship service (see [Application decisions](#application-decisions), [Reviewer note](#reviewer-note), [Create task](#create-task) and [Mentor status](#mentor-status)). The Terms tab's create, edit, close, re-open and delete write through it too (see [Term writes](#term-writes)). Mentor invite stays a "coming soon" stub until its PR.
+The program list and the program page (header, tab counts and all four tabs) read the mentorship service (see [Program list sourcing](#program-list-sourcing) and [Program page sourcing](#program-page-sourcing)). The program page reads no mock data; the Mentors tab's invite picker still does (see [Program list sourcing](#program-list-sourcing)). The Enroll form's name check and project picker are live (see [Enroll lookups](#enroll-lookups)). Application decisions on Current Mentees (accept, decline, withdraw, graduate, decline by term), the reviewer note, Create task and the Mentors tab's Accept, Decline, Revoke invite and Remove write through the mentorship service (see [Application decisions](#application-decisions), [Reviewer note](#reviewer-note), [Create task](#create-task) and [Mentor status](#mentor-status)). The Terms tab's create, edit, close, re-open and delete write through it too (see [Term writes](#term-writes)). The Enroll wizard's create and logo upload routes are in place, with no UI on them yet (see [Program create and logo upload](#program-create-and-logo-upload)). Mentor invite stays a "coming soon" stub until its PR.
 
 ## Routes
 
@@ -24,6 +24,8 @@ The program list and the program page (header, tab counts and all four tabs) rea
 | POST   | `/api/mentorship/admin/tasks`                                             | `createTasks`             | Create task on an accepted Current Mentees row        |
 | PATCH  | `/api/mentorship/admin/tasks/:taskId`                                     | `updateTask`              | Edit and the status select on an expanded task row    |
 | PATCH  | `/api/mentorship/admin/programs/:programId/mentors/:memberId`             | `updateProgramMentor`     | Accept, Decline, Revoke invite and Remove on a mentor |
+| POST   | `/api/mentorship/admin/programs`                                          | `createProgram`           | Enroll wizard, create step                            |
+| POST   | `/api/mentorship/admin/programs/:programId/logo`                          | `uploadProgramLogo`       | Enroll wizard, logo upload after create               |
 | POST   | `/api/mentorship/admin/programs/:programId/terms`                         | `createTerm`              | Add Term on the Terms tab                             |
 | PATCH  | `/api/mentorship/admin/programs/:programId/terms/:termId`                 | `updateTerm`              | Edit on a term row                                    |
 | POST   | `/api/mentorship/admin/programs/:programId/terms/:termId/close`           | `closeTerm`               | Close on a term row                                   |
@@ -155,6 +157,17 @@ Upstream works out `admin_status` from the program status and its terms. The BFF
 | `hidden`                | Hidden         | `archived`, `hidden`                            |
 
 An unrecognised `admin_status` is shown as Pending Review and logged (program id and value only).
+
+## Program create and logo upload
+
+Two writes behind the Enroll wizard, each behind `blockDuringImpersonation` and with the caller's bearer token through `proxyMentorshipRequest`, so a first-time caller is provisioned and retried.
+
+- `POST /api/mentorship/admin/programs` takes `MentorshipEnrollCreateRequest` (camelCase) and answers 201 with `{ id, slug, status }`. `parseMentorshipEnrollCreateRequest` in `mentorship-enroll.helper.ts` rebuilds the body from known keys only and answers 400 on the failing field: a UUID `projectId`, non-empty `projectSlug`, `projectName`, `name`, `description` and `repositoryUrl`, a non-empty `skills` list, 1–`MENTORSHIP_MAX_OPEN_TERMS` terms with five date and name fields, a `prerequisites` list and `termsAccepted: true`. The optional text fields are kept only when not blank. `logo_url`, `logoUrl`, `status`, a term `id` and `logoFileName` are never forwarded.
+- Upstream `POST /mentorship/v1/programs` leaves the program `pending`, which is "in review". There is no submit route and no publish call, so creating the program is what sends it to review. `slug` falls back to the id when upstream returns none.
+- `POST /api/mentorship/admin/programs/:programId/logo` takes the raw file as the body with `Content-Type: image/png` or `image/jpeg` (`MENTORSHIP_ENROLL_LOGO_MIME_TYPES`) and answers 201 with `{ logoUrl }`, upstream's `public_url`. The BFF forwards the buffer and its content type to `POST /mentorship/v1/programs/{id}/logo-upload`. The wizard calls it after create, with the new program id, and then keeps the returned URL.
+- `express.raw` runs on this route only, limited to `MENTORSHIP_ENROLL_LOGO_MAX_BYTES`. A larger body is a 413 (`PAYLOAD_TOO_LARGE`), converted from the parser's `entity.too.large` before the error handler flattens it to a 500. `express.raw` skips a type that is not on the list, so the controller answers 415 (`UNSUPPORTED_MEDIA_TYPE`) for it first and 400 on the `logo` field for an empty body.
+- Logs carry the program id, status, term count, size in bytes and content type only, never a name, description, URL or file name.
+- **Known gaps.** A dev environment without object storage answers the logo upload with a 503. A user who has just created a program can get a 403 on the upload until the permission grant lands, which the wizard handles with one retry in a later PR. The app service has no retry on either call.
 
 ## Enroll lookups
 

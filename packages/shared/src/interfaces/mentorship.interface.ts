@@ -429,3 +429,72 @@ export interface MentorshipRegisterFailureOptions<TFieldErrors extends object> {
   /** Copy for a 422. Without it a 422 gets the fallback message, since the page has no eligibility statements to point at. */
   ineligibleMessage?: string;
 }
+
+// -- Admin enroll: create a program -------------------------------------------
+
+/** One term in the create body. No `id` (upstream generates it) and dates are date-only `YYYY-MM-DD`. */
+export interface MentorshipEnrollCreateTerm {
+  name: string;
+  startDate: string;
+  endDate: string;
+  applicationStartDate: string;
+  applicationEndDate: string;
+}
+
+/** One prerequisite in the create body. `dueDate` is a date-only `YYYY-MM-DD` or `null`. */
+export interface MentorshipEnrollCreatePrerequisite {
+  name: string;
+  description: string;
+  required: boolean;
+  requireFile: boolean;
+  dueDate: string | null;
+}
+
+/**
+ * Request body for `POST /api/mentorship/admin/programs`, sent on to upstream `POST /mentorship/v1/programs` as is. It has no
+ * `status`, `logoUrl` or term `id`: upstream sets the status to `pending`, and the logo goes up in a second call.
+ */
+export interface MentorshipEnrollCreateRequest {
+  projectId: string;
+  projectSlug: string;
+  projectName: string;
+  projectLogoUrl?: string;
+  name: string;
+  description: string;
+  repositoryUrl: string;
+  websiteUrl?: string;
+  codeOfConductUrl?: string;
+  ciiProjectId?: string;
+  skills: string[];
+  terms: MentorshipEnrollCreateTerm[];
+  prerequisites: MentorshipEnrollCreatePrerequisite[];
+  termsAccepted: true;
+}
+
+/** Response from `POST /api/mentorship/admin/programs`: what the wizard keeps so a failed logo upload can retry without a second create. */
+export interface MentorshipEnrollProgramRef {
+  id: string;
+  /** Falls back to `id` when upstream returns no slug. */
+  slug: string;
+  status: string;
+}
+
+/** Response from `POST /api/mentorship/admin/programs/:programId/logo`. */
+export interface MentorshipProgramLogoUploadResult {
+  logoUrl: string;
+}
+
+/** The upstream fields the BFF reads from the program a create returns. */
+export interface MentorshipUpstreamCreatedProgram {
+  id: string;
+  slug?: string;
+  status: string;
+}
+
+/** Upstream body from `POST /mentorship/v1/programs/{id}/logo-upload`. */
+export interface MentorshipUpstreamLogoUpload {
+  public_url: string;
+  filename: string;
+  content_type: string;
+  size: number;
+}

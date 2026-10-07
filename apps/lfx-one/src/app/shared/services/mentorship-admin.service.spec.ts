@@ -11,7 +11,10 @@ import {
   MentorshipAdminProgramPage,
   MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
+  MentorshipEnrollCreateRequest,
+  MentorshipEnrollProgramRef,
   MentorshipMentorTaskCreateResponse,
+  MentorshipProgramLogoUploadResult,
   MentorshipProgramsResponse,
 } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -276,6 +279,67 @@ describe('MentorshipAdminService', () => {
     expect(req.request.body).toEqual({ status: 'withdrawn' });
     req.flush(null, { status: 204, statusText: 'No Content' });
     expect(done).toBe(1);
+  });
+
+  it('posts the program create body and resolves with the program ref', () => {
+    const body: MentorshipEnrollCreateRequest = {
+      projectId: '3f2c1a9e-7b4d-4c1e-9a55-0d6e8f1a2b3c',
+      projectSlug: 'example-project',
+      projectName: 'Example Project',
+      name: 'Example Program',
+      description: '<p>Build things.</p>',
+      repositoryUrl: 'https://github.com/example/repo',
+      skills: ['Go'],
+      terms: [{ name: 'Term 1', startDate: '2030-03-01', endDate: '2030-05-31', applicationStartDate: '2030-01-01', applicationEndDate: '2030-02-28' }],
+      prerequisites: [],
+      termsAccepted: true,
+    };
+    let ref: MentorshipEnrollProgramRef | undefined;
+    service.createProgram(body).subscribe((value) => (ref = value));
+
+    const req = http.expectOne('/api/mentorship/admin/programs');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(body);
+    req.flush({ id: 'prog_1', slug: 'example-program', status: 'pending' } satisfies MentorshipEnrollProgramRef);
+    expect(ref).toEqual({ id: 'prog_1', slug: 'example-program', status: 'pending' });
+  });
+
+  it('logs a failed program create by status only and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.createProgram({ name: 'secret-program' } as MentorshipEnrollCreateRequest).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/admin/programs').flush({ message: 'bad' }, { status: 400, statusText: 'Bad Request' });
+
+    expect(status).toBe(400);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] createProgram failed', { status: 400, statusText: 'Bad Request' });
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-program');
+  });
+
+  it('uploads the logo file as the raw body with its own content type, encoding the program id', () => {
+    const file = new File([new Uint8Array([1, 2, 3])], 'secret-logo.png', { type: 'image/png' });
+    let logoUrl: string | undefined;
+    service.uploadProgramLogo('prog 1', file).subscribe((value) => (logoUrl = value.logoUrl));
+
+    const req = http.expectOne('/api/mentorship/admin/programs/prog%201/logo');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toBe(file);
+    expect(req.request.headers.get('Content-Type')).toBe('image/png');
+    req.flush({ logoUrl: 'https://cdn.example/logo.png' } satisfies MentorshipProgramLogoUploadResult);
+    expect(logoUrl).toBe('https://cdn.example/logo.png');
+  });
+
+  it('logs a failed logo upload by status only and lets a 413 reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const file = new File([new Uint8Array([1])], 'secret-logo.png', { type: 'image/png' });
+    let status: number | undefined;
+    service.uploadProgramLogo('prog_1', file).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/admin/programs/prog_1/logo').flush({ message: 'big' }, { status: 413, statusText: 'Payload Too Large' });
+
+    expect(status).toBe(413);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] uploadProgramLogo failed', { status: 413, statusText: 'Payload Too Large' });
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-logo');
   });
 
   it('logs a failed mentor change by status only and lets it reach the caller', () => {

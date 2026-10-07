@@ -56,6 +56,18 @@ describe('proxyMentorshipRequest', () => {
     expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', path, 'PATCH', { limit: 5 }, body);
   });
 
+  it('sends the custom headers on the request and its retry, not on the PUT /me provisioning call', async () => {
+    proxyRequest.mockRejectedValueOnce(upstream401('local user is not provisioned')).mockResolvedValueOnce({}).mockResolvedValueOnce({ ok: true });
+    const bytes = Buffer.from('png');
+    const headers = { 'Content-Type': 'image/png' };
+
+    await expect(proxyMentorshipRequest(proxy, req, path, 'POST', undefined, bytes, path, headers)).resolves.toEqual({ ok: true });
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', path, 'POST', undefined, bytes, headers);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
+    expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', path, 'POST', undefined, bytes, headers);
+  });
+
   it('does not provision an impersonated user, since impersonation is read-only', async () => {
     const error = upstream401('local user is not provisioned');
     proxyRequest.mockRejectedValueOnce(error);

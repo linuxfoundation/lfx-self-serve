@@ -987,3 +987,116 @@ describe('MentorshipAdminService term writes', () => {
     expect(logged).not.toContain('private-term-name');
   });
 });
+
+describe('MentorshipAdminService program create and logo upload', () => {
+  const PROGRAMS_PATH = '/mentorship/v1/programs';
+  const createBody = {
+    projectId: '5c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
+    projectSlug: 'energy-project',
+    projectName: 'Energy Project',
+    name: 'private-program-name',
+    description: '<p>private-program-description</p>',
+    repositoryUrl: 'https://github.com/example/repo',
+    skills: ['Go'],
+    terms: [{ name: 'Fall 2026', startDate: '2026-09-01', endDate: '2026-12-31', applicationStartDate: '2026-07-01', applicationEndDate: '2026-08-15' }],
+    prerequisites: [],
+    termsAccepted: true as const,
+  };
+  let service: InstanceType<typeof MentorshipAdminService>;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('posts the create body as is and returns the id, slug and status', async () => {
+    const spy = vi
+      .spyOn(MicroserviceProxyService.prototype, 'proxyRequest')
+      .mockResolvedValue({ id: PROGRAM_ID, slug: 'private-program-name', status: 'pending', name: 'private-program-name' } as never);
+
+    await expect(service.createProgram(buildReq(), createBody)).resolves.toEqual({ id: PROGRAM_ID, slug: 'private-program-name', status: 'pending' });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0].slice(2, 6)).toEqual([PROGRAMS_PATH, 'POST', undefined, createBody]);
+  });
+
+  it('falls back to the id when the created program has no slug', async () => {
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ id: PROGRAM_ID, status: 'pending' } as never);
+
+    await expect(service.createProgram(buildReq(), createBody)).resolves.toEqual({ id: PROGRAM_ID, slug: PROGRAM_ID, status: 'pending' });
+  });
+
+  it.each([400, 409])('passes an upstream %i on create through', async (status) => {
+    const error = MicroserviceError.fromMicroserviceResponse(status, 'Error', { error: 'conflict' }, 'LFX_V2_SERVICE', PROGRAMS_PATH);
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockRejectedValue(error);
+
+    await expect(service.createProgram(buildReq(), createBody)).rejects.toBe(error);
+  });
+
+  it('provisions a first-time user and retries the create once', async () => {
+    const notProvisioned = MicroserviceError.fromMicroserviceResponse(
+      401,
+      'Unauthorized',
+      { error: 'local user is not provisioned' },
+      'LFX_V2_SERVICE',
+      PROGRAMS_PATH
+    );
+    const spy = vi
+      .spyOn(MicroserviceProxyService.prototype, 'proxyRequest')
+      .mockRejectedValueOnce(notProvisioned)
+      .mockResolvedValueOnce({} as never)
+      .mockResolvedValueOnce({ id: PROGRAM_ID, slug: 's', status: 'pending' } as never);
+
+    await expect(service.createProgram(buildReq(), createBody)).resolves.toMatchObject({ id: PROGRAM_ID });
+    expect(spy.mock.calls.map((call) => [call[2], call[3]])).toEqual([
+      [PROGRAMS_PATH, 'POST'],
+      ['/mentorship/v1/me', 'PUT'],
+      [PROGRAMS_PATH, 'POST'],
+    ]);
+  });
+
+  it('never logs the program name or description on create', async () => {
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ id: PROGRAM_ID, status: 'pending' } as never);
+
+    await service.createProgram(buildReq(), createBody);
+
+    const logged = JSON.stringify(Object.values(logger).flatMap((fn) => vi.mocked(fn as () => void).mock.calls.map((call) => call.slice(1))));
+    expect(logged).not.toContain('private-program-name');
+    expect(logged).not.toContain('private-program-description');
+  });
+
+  it('sends the logo bytes to the program logo-upload path with the content type', async () => {
+    const spy = vi
+      .spyOn(MicroserviceProxyService.prototype, 'proxyRequest')
+      .mockResolvedValue({ public_url: 'https://cdn.example/logo.png', filename: 'a.png', content_type: 'image/png', size: 3 } as never);
+    const bytes = Buffer.from([1, 2, 3]);
+
+    await expect(service.uploadProgramLogo(buildReq(), PROGRAM_ID, bytes, 'image/png')).resolves.toEqual({ logoUrl: 'https://cdn.example/logo.png' });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0].slice(2)).toEqual([`${PROGRAMS_PATH}/${PROGRAM_ID}/logo-upload`, 'POST', undefined, bytes, { 'Content-Type': 'image/png' }]);
+  });
+
+  it.each([403, 404, 409, 413, 415, 503])('passes an upstream %i on the logo upload through', async (status) => {
+    const error = MicroserviceError.fromMicroserviceResponse(status, 'Error', { error: 'no' }, 'LFX_V2_SERVICE', PROGRAMS_PATH);
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockRejectedValue(error);
+
+    await expect(service.uploadProgramLogo(buildReq(), PROGRAM_ID, Buffer.from([1]), 'image/jpeg')).rejects.toBe(error);
+  });
+
+  it('logs the program id, byte size and content type of a logo upload, and nothing else', async () => {
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ public_url: 'https://cdn.example/secret-logo.png' } as never);
+
+    await service.uploadProgramLogo(buildReq(), PROGRAM_ID, Buffer.from([1, 2]), 'image/png');
+
+    expect(vi.mocked(logger.debug)).toHaveBeenCalledWith(expect.anything(), 'mentorship_admin_upload_program_logo', expect.any(String), {
+      programId: PROGRAM_ID,
+      sizeBytes: 2,
+      contentType: 'image/png',
+    });
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain('secret-logo');
+  });
+});

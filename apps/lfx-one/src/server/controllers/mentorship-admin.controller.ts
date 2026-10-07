@@ -11,6 +11,7 @@ import {
   MENTORSHIP_ADMIN_MENTOR_STATUSES,
   MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES,
   MENTORSHIP_ATTENDANCE_TYPES,
+  MENTORSHIP_ENROLL_LOGO_MIME_TYPES,
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_PROGRAM_PAGE_SIZE,
   MENTORSHIP_PROGRAM_STATUSES,
@@ -27,10 +28,11 @@ import {
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError, ServiceValidationError } from '../errors';
+import { AuthenticationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { parseMentorshipAdminTaskUpdate } from '../helpers/mentorship-admin-task.helper';
 import { parseMentorshipAdminTermInput } from '../helpers/mentorship-admin-term.helper';
 import { parseMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
+import { parseMentorshipEnrollCreateRequest } from '../helpers/mentorship-enroll.helper';
 import { parseMentorshipMentorTaskCreateRequest } from '../helpers/mentorship-mentor-task.helper';
 import { parseMentorshipAdminPaging, parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
@@ -375,6 +377,60 @@ export class MentorshipAdminController {
 
       logger.success(req, operation, startTime, { programId, memberId, status: body.status });
       res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/admin/programs — body MentorshipEnrollCreateRequest -> 201 + { id, slug, status }
+  public async createProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'create_mentorship_admin_program';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const body = parseMentorshipEnrollCreateRequest(req.body, operation);
+      const program = await this.mentorshipAdminService.createProgram(req, body);
+
+      logger.success(req, operation, startTime, { programId: program.id, status: program.status });
+      res.status(201).json(program);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/admin/programs/:programId/logo — raw PNG or JPEG bytes -> 201 + { logoUrl }
+  public async uploadProgramLogo(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'upload_mentorship_program_logo';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+
+      // `express.raw` skips a body whose type is not on the list, so a wrong type arrives here with no bytes and must be told apart from an empty file.
+      const contentType = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+      if (!(MENTORSHIP_ENROLL_LOGO_MIME_TYPES as readonly string[]).includes(contentType)) {
+        throw new MicroserviceError('Logo must be a PNG or JPEG image', 415, 'UNSUPPORTED_MEDIA_TYPE', {
+          operation,
+          service: 'mentorship_admin_controller',
+          path: req.path,
+        });
+      }
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        throw ServiceValidationError.forField('logo', 'logo must not be empty.', { operation });
+      }
+
+      const result = await this.mentorshipAdminService.uploadProgramLogo(req, programId, req.body, contentType);
+
+      logger.success(req, operation, startTime, { programId, sizeBytes: req.body.length, contentType });
+      res.status(201).json(result);
     } catch (error) {
       next(error);
     }

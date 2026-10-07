@@ -57,6 +57,8 @@ export const MENTORSHIP_ENROLL_LOGO_ACCEPT = '.jpg,.jpeg,.png,image/jpeg,image/p
 /** SVG excluded (XSS risk), matching `ALLOWED_AVATAR_MIME_TYPES`. */
 export const MENTORSHIP_ENROLL_LOGO_EXTENSIONS = ['jpg', 'jpeg', 'png'] as const;
 export const MENTORSHIP_ENROLL_LOGO_MAX_BYTES = 2 * 1024 * 1024;
+/** Content types the logo route accepts, the same pair upstream `logo-upload` takes. */
+export const MENTORSHIP_ENROLL_LOGO_MIME_TYPES = ['image/png', 'image/jpeg'] as const;
 export const MENTORSHIP_ENROLL_LOGO_HELPER = 'JPG, PNG · 420px × 420px · Max 2 MB';
 export const MENTORSHIP_ENROLL_LOGO_TYPE_ERROR = 'Program logo is not the right file type.';
 
