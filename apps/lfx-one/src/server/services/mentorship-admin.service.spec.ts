@@ -3,7 +3,7 @@
 
 import '@angular/compiler';
 
-import { MENTORSHIP_MAX_OPEN_TERMS_MESSAGE } from '@lfx-one/shared/constants';
+import { MENTORSHIP_ENROLL_NAME_TAKEN, MENTORSHIP_MAX_OPEN_TERMS_MESSAGE } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,6 +24,7 @@ vi.mock('../utils/auth-helper', () => ({
 
 const { MentorshipAdminService } = await import('./mentorship-admin.service');
 const { MicroserviceProxyService } = await import('./microservice-proxy.service');
+const { MentorshipService } = await import('./mentorship.service');
 const { MicroserviceError } = await import('../errors');
 const { logger } = await import('./logger.service');
 
@@ -1095,6 +1096,7 @@ describe('MentorshipAdminService program create and logo upload', () => {
       skills: createBody.skills,
       prerequisites: [],
     };
+    const nameCheck = vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable').mockResolvedValue({ available: true });
 
     await expect(service.updateProgram(buildReq(), PROGRAM_ID, updateBody)).resolves.toEqual({
       id: PROGRAM_ID,
@@ -1102,6 +1104,7 @@ describe('MentorshipAdminService program create and logo upload', () => {
       status: 'published',
     });
 
+    expect(nameCheck).toHaveBeenCalledWith(expect.anything(), updateBody.name, PROGRAM_ID);
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0].slice(2, 5)).toEqual([`${PROGRAMS_PATH}/${PROGRAM_ID}`, 'PATCH', undefined]);
     expect(spy.mock.calls[0][5]).toMatchObject({
@@ -1110,6 +1113,19 @@ describe('MentorshipAdminService program create and logo upload', () => {
       skills: updateBody.skills,
       project_uid: updateBody.projectId,
     });
+  });
+
+  it('answers 409 with no write when another program has the name', async () => {
+    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable').mockResolvedValue({ available: false });
+    const updateBody = { ...createBody, terms: undefined, termsAccepted: undefined };
+
+    await expect(service.updateProgram(buildReq(), PROGRAM_ID, updateBody)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'MENTORSHIP_PROGRAM_NAME_TAKEN',
+      message: MENTORSHIP_ENROLL_NAME_TAKEN,
+    });
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('falls back to the id when the created program has no slug', async () => {

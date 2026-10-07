@@ -686,6 +686,15 @@ describe('formFromMentorshipEnrollEdit', () => {
     expect(getMentorshipEnrollStepErrors('setup', form, { terms: [legacy], prerequisites: [] }).terms).toBeUndefined();
   });
 
+  it('lets the admin rename a saved term whose one-day application window the Terms tab allowed', () => {
+    const oneDay = { ...term, applicationStartDate: '2020-02-01', applicationEndDate: '2020-02-01' };
+    const renamed = { ...oneDay, name: 'Spring renamed' };
+    const form = formFromMentorshipEnrollEdit(data, [renamed]);
+
+    expect(getMentorshipEnrollTermDateErrors(renamed, new Date(), oneDay)).toEqual({});
+    expect(getMentorshipEnrollStepErrors('setup', form, { terms: [oneDay], prerequisites: [] }).terms).toBeUndefined();
+  });
+
   it('still checks a past date the admin changed', () => {
     const form = formFromMentorshipEnrollEdit(data, [term]);
     const edit = { terms: [term], prerequisites: [] };

@@ -106,8 +106,7 @@ export const MENTORSHIP_ENROLL_UPDATE_SUCCESS = 'Program updated.';
 export const MENTORSHIP_ENROLL_UPDATE_FAILED = "We couldn't update the program. Your changes are kept, so you can try again.";
 export const MENTORSHIP_ENROLL_TERMS_SAVE_FAILED = "The program details are saved, but some term changes aren't. Your changes are kept, so you can try again.";
 /** Upstream refuses to delete a term that has applications; the wizard puts the term back in its list. */
-export const MENTORSHIP_ENROLL_TERM_DELETE_CONFLICT =
-  "A term that has applications can't be deleted, so it's back in the list. You can close it from the program's Terms tab. Select Update to save your other changes.";
+export const MENTORSHIP_ENROLL_TERM_DELETE_CONFLICT = `A term that has applications can't be deleted, so it's back in the list. You can close it from the program's Terms tab. A program can have at most ${MENTORSHIP_MAX_OPEN_TERMS} open terms, so if it now has more, remove a term you added before you select Update again.`;
 export const MENTORSHIP_ENROLL_EDIT_INTRO = "Changes are saved to the program as soon as you select Update. They don't change its review status.";
 export const MENTORSHIP_ENROLL_EDIT_LOGO_NOT_UPLOADED = "The program is updated, but the new logo didn't upload. Try again.";
 export const MENTORSHIP_ENROLL_RETRY_LABEL = 'Retry';

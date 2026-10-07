@@ -621,12 +621,21 @@ export function getMentorshipTermDateErrors(
 /**
  * Term date errors for the enroll wizard: the shared term rules, then the application windows upstream create refuses,
  * reported on `applicationEndDate`. The term dialog and the setup step both use it, so a term the dialog saves passes Next.
+ * A saved term (`original`) whose dates are all unchanged has nothing to check, so renaming it never trips a rule its dates
+ * were saved under, such as the one-day application window the Terms tab allows.
  */
 export function getMentorshipEnrollTermDateErrors(
   term: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>,
   today = new Date(),
   original?: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
 ): MentorshipTermDateErrors {
+  const datesUnchanged =
+    original !== undefined &&
+    term.startDate === original.startDate &&
+    term.endDate === original.endDate &&
+    term.applicationStartDate === original.applicationStartDate &&
+    term.applicationEndDate === original.applicationEndDate;
+  if (datesUnchanged) return {};
   const errors = getMentorshipTermDateErrors(term, today, original);
   if (Object.keys(errors).length) return errors;
   const windowError = getMentorshipEnrollTermWindowError(term);

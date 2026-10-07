@@ -164,7 +164,7 @@ export class EnrollProgramComponent {
   protected readonly selectedProject = signal<MentorshipLfProject | null>(null);
   protected readonly logoFile = signal<File | null>(null);
   protected readonly logoFieldError = signal('');
-  protected readonly nameTakenOnCreate = signal(false);
+  protected readonly nameTakenOnSave = signal(false);
   protected readonly submitPhase = signal<MentorshipEnrollSubmitPhase>('idle');
   protected readonly createdProgram = signal<MentorshipEnrollProgramRef | null>(null);
   protected readonly logoUploaded = signal(false);
@@ -203,7 +203,7 @@ export class EnrollProgramComponent {
     if (!this.showErrors()) return {};
     this.formSnapshot();
     const errors = this.stepErrorsFor(this.step());
-    if (this.step() === 'details' && this.nameTakenOnCreate()) return { ...errors, name: MENTORSHIP_ENROLL_NAME_TAKEN };
+    if (this.step() === 'details' && this.nameTakenOnSave()) return { ...errors, name: MENTORSHIP_ENROLL_NAME_TAKEN };
     return errors;
   });
 
@@ -224,7 +224,7 @@ export class EnrollProgramComponent {
   });
 
   public constructor() {
-    this.form.controls.name.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.nameTakenOnCreate.set(false));
+    this.form.controls.name.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.nameTakenOnSave.set(false));
     this.destroyRef.onDestroy(() => this.revokeLogoPreview());
     if (this.editing) this.loadProgram();
   }
@@ -269,10 +269,10 @@ export class EnrollProgramComponent {
     }
 
     const programName = this.form.controls.name.value.trim();
-    const nameUnavailable = this.nameLookupStatus() !== 'available' || this.nameTakenOnCreate();
+    const nameUnavailable = this.nameLookupStatus() !== 'available' || this.nameTakenOnSave();
     if (current === 'details' && programName.length >= MENTORSHIP_ENROLL_NAME_MIN && nameUnavailable) {
       this.showErrors.set(true);
-      const detail = this.nameTakenOnCreate() ? MENTORSHIP_ENROLL_NAME_TAKEN : this.nameLookupMessage(this.nameLookupStatus());
+      const detail = this.nameTakenOnSave() ? MENTORSHIP_ENROLL_NAME_TAKEN : this.nameLookupMessage(this.nameLookupStatus());
       this.messageService.add({ severity: 'warn', summary: 'Check this step', detail, life: 4000 });
       return;
     }
@@ -487,6 +487,11 @@ export class EnrollProgramComponent {
       });
       return;
     }
+    // The BFF refuses an update whose name another program has, before it writes anything.
+    if (status === 409) {
+      this.showNameTaken();
+      return;
+    }
     this.submitFailure.set({ step: 'update', message: this.writeFailureMessage(error, MENTORSHIP_ENROLL_UPDATE_FAILED) });
   }
 
@@ -551,14 +556,19 @@ export class EnrollProgramComponent {
     this.form.enable({ emitEvent: false });
     const status = this.statusOf(error);
     if (status === 409) {
-      this.nameTakenOnCreate.set(true);
-      this.nameLookupStatus.set('taken');
-      this.showErrors.set(true);
-      this.step.set('details');
-      this.scrollToTop();
+      this.showNameTaken();
       return;
     }
     this.submitFailure.set({ step: 'create', message: this.writeFailureMessage(error, MENTORSHIP_ENROLL_SUBMIT_FAILED) });
+  }
+
+  /** Another program has the name: the create or update is refused with a 409, so the admin goes back to the name field. */
+  private showNameTaken(): void {
+    this.nameTakenOnSave.set(true);
+    this.nameLookupStatus.set('taken');
+    this.showErrors.set(true);
+    this.step.set('details');
+    this.scrollToTop();
   }
 
   /** The read-only refusal while impersonating says why in the server's words; any other failure gets `fallback`. */

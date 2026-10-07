@@ -313,7 +313,7 @@ describe('EnrollProgramComponent', () => {
       expect(toast).toHaveBeenLastCalledWith(expect.objectContaining({ severity: 'warn', detail: MENTORSHIP_ENROLL_NAME_TAKEN }));
 
       component['form'].controls.name.setValue('GridFlow Mentorship Program 2');
-      expect(component['nameTakenOnCreate']()).toBe(false);
+      expect(component['nameTakenOnSave']()).toBe(false);
     });
 
     it.each([400, 0, 500, 502])('shows the generic banner for a %i and never the upstream text', (status) => {
@@ -655,6 +655,17 @@ describe('EnrollProgramComponent — edit mode', () => {
     clickUpdate();
 
     expect(service['uploadProgramLogo']).toHaveBeenCalledWith(PROGRAM_ID, LOGO, false);
+  });
+
+  it('sends the admin back to the name field, with no term write, when another program has the name', () => {
+    service['updateProgram'].mockReturnValueOnce(throwError(() => httpError(409)));
+
+    clickUpdate();
+
+    expect(component['step']()).toBe('details');
+    expect(component['stepErrors']()).toMatchObject({ name: MENTORSHIP_ENROLL_NAME_TAKEN });
+    expect(service['deleteTerm']).not.toHaveBeenCalled();
+    expect(component['form'].enabled).toBe(true);
   });
 
   it('puts back a term upstream will not delete, says why, and does not repeat saved writes on retry', () => {
