@@ -1782,6 +1782,17 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 
+  it('marks a 202 with no job id as indeterminate, not as a refusal', async () => {
+    // Accepted upstream, so the dispatch may still create the campaign; a retry could duplicate it.
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: {} });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res.jobId).toBeNull();
+    expect(res.indeterminate).toBe(true);
+  });
+
   it('sends the envelope as the request BODY, not as query parameters', async () => {
     // `proxyRequestWithResponse(req, service, path, method, query, data)`. Passing the envelope
     // fifth serializes it into the query string and sends no body, which campaign-service
@@ -1839,6 +1850,7 @@ describe('CampaignServiceClient.createCampaigns', () => {
 
     expect(res.jobId).toBeNull();
     expect(res.error).toContain('nothing was created');
+    expect(res.indeterminate, 'a definite refusal was marked indeterminate').toBeUndefined();
     expect(res.error).toContain('try again');
   });
 
@@ -1990,6 +2002,8 @@ describe('CampaignServiceClient.createCampaigns', () => {
 
     expect(res.error).toContain('could not be confirmed');
     expect(res.error).not.toContain('nothing was created');
+    // Structured, so the caller holds the stage without parsing the copy.
+    expect(res.indeterminate, 'an unconfirmed create was not marked indeterminate').toBe(true);
   });
 
   /**
@@ -2426,12 +2440,27 @@ describe('CampaignServiceClient.listAudiences', () => {
     expect(result).toEqual({ enabled: true, audiences: [] });
   });
 
-  it('drops rows with no id', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences: [{ ...audience, id: '' }, null, audience] }));
+  // A row that is not a row is malformed, like a missing array. Filtering these down to `[]`
+  // reported a response that DID carry an audience as a verified absence, which re-opened compose.
+  it.each([
+    ['a null row', [null]],
+    ['a row with no id', [{ ...audience, id: '' }]],
+    ['a readable row beside an unreadable one', [{ ...audience, id: '' }, audience]],
+    // An id alone is not a row: `{ id: 'a' }` mapped to an audience with no platform, so the
+    // restore found no HubSpot row and read the response as a verified absence.
+    ['a row with only an id', [{ id: 'a' }]],
+    ['a row with no platform', [{ ...audience, platform: '' }]],
+    ['a row with no brief id', [{ ...audience, brief_id: undefined }]],
+    ['a row with no project id', [{ ...audience, project_id: '' }]],
+    ['a row with no status', [{ ...audience, status: undefined }]],
+    ['a row whose version is not a number', [{ ...audience, version: '1' }]],
+  ])('reports %s as an unreadable read, not as an empty or partial one', async (_label, audiences) => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences }));
 
     const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
 
-    expect(result.audiences?.map((row) => row.id)).toEqual(['aud-1']);
+    expect(result.audiences, 'an unreadable row was read as a verified result').toBeUndefined();
+    expect(result.error).toBeTruthy();
   });
 
   it('does not let an unrecognised status masquerade as usable', async () => {

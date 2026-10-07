@@ -77,7 +77,7 @@ import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { firstValueFrom, skip, Subscription, take } from 'rxjs';
+import { finalize, firstValueFrom, skip, Subscription, take } from 'rxjs';
 
 import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
 import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
@@ -1145,6 +1145,16 @@ export class CampaignsComponent {
    */
   protected readonly emailBriefResolving = signal(false);
   /**
+   * The event the email brief is for, as the Audience tab tells events apart: slug, then name, then
+   * registration URL. See the tab's `eventKey`.
+   */
+  protected readonly emailEventKey = computed(() => {
+    const details = this.emailBriefOutput()?.eventDetails;
+    return (details?.slug || details?.name || details?.registrationUrl || '').trim().toLowerCase();
+  });
+  /** The Audience tab is writing this brief's send audience. See its `audienceWriteInFlight`. */
+  protected readonly emailAudienceWriteInFlight = signal(false);
+  /**
    * How the last Audience-tab warm-up save ended when it produced no usable id: the brief was
    * saved but not approved, the save failed outright, or a brief this session does not own
    * already exists. `'none'` otherwise. Cleared with the id. Only ever `'none'`, `'unapproved'`,
@@ -1773,6 +1783,44 @@ export class CampaignsComponent {
    * ("connect HubSpot", "pick a template") and the one they cannot are both surfaced here.
    */
   protected readonly emailStaging = signal<'idle' | 'staging' | 'done' | 'error'>('idle');
+  /**
+   * A stage ended WITHOUT a terminal answer, so a HubSpot draft may still be created against this
+   * brief's audience: the poll lost track of the job or timed out, the create was accepted with no
+   * job or reported `indeterminate`, it failed after it was sent, or a reset cancelled it after
+   * dispatch.
+   *
+   * `emailStaging` becomes `'error'` on those paths, which released every lock keyed on it while the
+   * background dispatcher could still resolve the audience. So this holds them -- audience writes,
+   * the type and segment pickers, and Stage itself (a retry could duplicate the draft) -- until the
+   * operator confirms they checked HubSpot (`onAcknowledgeStagingUnresolved`).
+   *
+   * SCOPED to the project and brief the stage was for, and kept per scope. The component survives
+   * foundation switches and brief resets, so a single flag locked foundation B on A's stage -- and
+   * let B's acknowledgement clear A's protection without anyone checking A's portal. Now it holds
+   * only the matching context, and A's warning is still there on return to A.
+   */
+  protected readonly emailStagingUnresolved = computed(() => this.unresolvedStages().has(this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId())));
+  /** Every project/brief with an unresolved stage. See `emailStagingUnresolved`. */
+  private readonly unresolvedStages = signal<ReadonlySet<string>>(new Set());
+  /**
+   * The project/brief of a create that has been DISPATCHED and has not reached a terminal answer.
+   *
+   * Held apart from `emailStaging`, which is display state: a brief reset calls `cancelStagingPoll`
+   * and idles it, yet the create cannot be recalled and its job may still resolve that brief's
+   * audience. A cancel therefore turns a dispatched stage into an unresolved one for its scope.
+   */
+  private dispatchedStage: { projectSlug: string; briefId: string } | null = null;
+  /**
+   * Scopes whose create REQUEST is still awaiting its HTTP response. Separate from the unresolved
+   * hold: a reset can record a stage as unresolved while its create is still on the wire, and the
+   * acknowledgement must not be accepted until that request settles -- checking HubSpot before the
+   * draft can appear, then staging again, is how the duplicate is made.
+   */
+  private readonly createsOnWire = signal<ReadonlySet<string>>(new Set());
+  /** The scope on screen has a create request still awaiting its response. */
+  protected readonly emailStageCreateOnWire = computed(() => this.createsOnWire().has(this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId())));
+  /** A stage is in flight OR unresolved: what every lock that protects a stage keys on. */
+  protected readonly emailStagingHeld = computed(() => this.emailStaging() === 'staging' || this.emailStagingUnresolved());
 
   /** Terminal message for the staging attempt — empty while idle or in flight. */
   protected readonly emailStagingMessage = signal<string>('');
@@ -1801,7 +1849,13 @@ export class CampaignsComponent {
       // and `failed`, and a build that ends in `failed` still yields an audience object. Gating
       // on existence alone would re-admit the exact refusal this guard exists to prevent.
       this.emailAudience()?.status === 'built' &&
+      // Not while that audience is being REPLACED. A re-attach or a replacement compose leaves the
+      // old row `built` until its reply lands, so staging then cloned a draft against the list the
+      // operator was in the middle of replacing.
+      !this.emailAudienceWriteInFlight() &&
       this.emailStaging() !== 'staging' &&
+      // Not over an UNRESOLVED stage: its draft may still be created, so a retry could duplicate it.
+      !this.emailStagingUnresolved() &&
       // A generation IN FLIGHT, not just a staging one. `onStageEmailSend` reads `emailCopy()`
       // unconditionally, and a regeneration clears it only when the response lands -- so staging
       // during one sends the PREVIOUS copy while the operator watches new copy being written.
@@ -2304,6 +2358,23 @@ export class CampaignsComponent {
       this.onSelectEmailSegment(value);
     });
 
+    // Both pickers that change what a stage SENDS are locked while one is in flight. Invalidating
+    // the generation (as both handlers do) stops the UI from reporting the abandoned stage, but it
+    // cannot recall a create already on the wire: `onStageEmailSend` snapshots the copy before its
+    // awaits, so switching mid-stage cloned a HubSpot draft with the PREVIOUS selection's copy.
+    // Disabled through the CONTROLS, not a `[disabled]` binding, which fights ReactiveForms.
+    toObservable(this.emailStagingHeld)
+      .pipe(takeUntilDestroyed())
+      .subscribe((held) => {
+        for (const control of [this.selectorForm.controls.emailType, this.selectorForm.controls.emailSegment]) {
+          if (held) {
+            control.disable({ emitEvent: false });
+          } else {
+            control.enable({ emitEvent: false });
+          }
+        }
+      });
+
     // Clearing lives on the control's own stream rather than in a template handler: the
     // checkbox is form-driven now, so a `setValue(false)` from the reset paths must clear the
     // draft exactly like an operator un-ticking the box. A (change) handler would only fire
@@ -2716,6 +2787,19 @@ export class CampaignsComponent {
     this.emailAudienceSkipped.set(false);
   }
 
+  /** The operator checked HubSpot after a stage that ended without an answer; release ITS locks only. */
+  protected onAcknowledgeStagingUnresolved(): void {
+    // Not while this scope's create is still on the wire: the draft may not have appeared YET.
+    if (this.emailStageCreateOnWire()) {
+      return;
+    }
+    const key = this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId());
+    this.unresolvedStages.update((keys) => new Set([...keys].filter((k) => k !== key)));
+    // And its dispatch marker, if any is left for this scope: a reconciled stage must not be re-held
+    // by the next reset's `cancelStagingPoll`.
+    this.settleDispatchFor(this.activeFoundationSlug(), this.emailBriefId());
+  }
+
   /** The Audience tab asked to re-read the saved audience it could not verify. */
   protected onRetryAudienceRead(): void {
     void this.restoreEmailAudience(this.activeFoundationSlug(), this.emailAudienceReadBriefId);
@@ -2767,15 +2851,27 @@ export class CampaignsComponent {
    * prospect stays stageable under an "Alumni" selector.
    *
    * Deliberately a SUBSET of what a type change clears. A segment is not part of a brief's
-   * identity: one brief serves every segment and only the framing differs, so the brief id, the
-   * template suggestion and the staging poll are all left alone. A type change touches those
-   * because it moves the STAGE, and the stage is what names the brief.
+   * identity: one brief serves every segment and only the framing differs, so the brief id and the
+   * template suggestion are left alone. A type change touches those because it moves the STAGE,
+   * and the stage is what names the brief.
+   *
+   * The in-flight STAGE is not left alone, though. It was staging the previous segment's copy, so
+   * it is invalidated exactly as a type change does it -- and the picker is locked while one runs
+   * (see the constructor), since a create already on the wire cannot be recalled.
    */
   protected onSelectEmailSegment(segmentId: string): void {
     if (segmentId === this.selectedEmailSegmentId()) {
       return;
     }
     this.selectedEmailSegmentId.set(segmentId);
+
+    // Same pair as `onSelectEmailType`: invalidate the stage and clean up the state it owns, or the
+    // poll goes on to report "Draft created" for copy this segment no longer shows. Only an
+    // IN-FLIGHT poll -- a finished stage's confirmation is not erased by a later segment change.
+    this.emailStagingGeneration++;
+    if (this.emailStaging() === 'staging') {
+      this.cancelStagingPoll();
+    }
 
     this.emailCopyGeneration++;
     this.emailCopy.set(null);
@@ -3149,7 +3245,15 @@ export class CampaignsComponent {
     // precondition upstream actively refuses on (`resolveBuiltAudience`), so omitting it here
     // would let the enumeration drift from the guard it mirrors -- and the failure would arrive
     // from HubSpot after the draft work had begun rather than from this early return.
-    if (brief === null || sourceEmailId === '' || projectSlug === '' || this.emailAudience()?.status !== 'built') {
+    if (
+      brief === null ||
+      sourceEmailId === '' ||
+      projectSlug === '' ||
+      this.emailAudience()?.status !== 'built' ||
+      this.emailAudienceWriteInFlight() ||
+      this.emailStaging() === 'staging' ||
+      this.emailStagingUnresolved()
+    ) {
       return;
     }
 
@@ -3160,6 +3264,7 @@ export class CampaignsComponent {
     // Bumped BEFORE the await below; the reset bumps the same counter to invalidate it.
     const generation = ++this.emailStagingGeneration;
     const isCurrent = (): boolean => generation === this.emailStagingGeneration;
+    let dispatched: { projectSlug: string; briefId: string } | null = null;
 
     try {
       // Shared with the audience build via `ensureEmailBriefId`, so the two actions cannot write
@@ -3168,6 +3273,22 @@ export class CampaignsComponent {
       // A reset can land during that await. Abandoning here is what stops the create below --
       // which CLONES a HubSpot draft -- from running against the previous brief.
       if (!isCurrent()) {
+        return;
+      }
+      // And the AUDIENCE can change during it: the Audience tab stays mounted, so a replacement
+      // compose or attach started while the brief id was resolving would otherwise have the create
+      // clone a draft against the list being replaced. Same gate `canStageEmail` holds, re-read.
+      // The unresolved check is re-made against the RESOLVED brief id: the on-screen key is
+      // `emailBriefId()`, which can be '' before the persist above assigns it. Its recovery is the
+      // HubSpot check, not another stage, so it gets its own copy.
+      if (this.unresolvedStages().has(this.stageScopeKey(projectSlug, briefId))) {
+        this.emailStaging.set('error');
+        this.emailStagingMessage.set('The last stage for this email ended without an answer. Check HubSpot and confirm before staging again.');
+        return;
+      }
+      if (this.emailAudienceWriteInFlight() || this.emailAudience()?.status !== 'built') {
+        this.emailStaging.set('error');
+        this.emailStagingMessage.set('The send audience changed while staging. Stage again once it has finished updating.');
         return;
       }
 
@@ -3286,7 +3407,28 @@ export class CampaignsComponent {
         },
       };
 
-      const outcome = await firstValueFrom(this.campaignService.createCampaign(request, projectSlug, briefId));
+      // Recorded BEFORE the await: from here the create is on the wire and cannot be recalled.
+      // Kept as a LOCAL too, so a stale reply settles its own dispatch and never its successor's.
+      dispatched = { projectSlug, briefId };
+      this.dispatchedStage = dispatched;
+      const wireKey = this.stageScopeKey(projectSlug, briefId);
+      this.createsOnWire.update((keys) => new Set([...keys, wireKey]));
+      const outcome = await firstValueFrom(
+        this.campaignService
+          .createCampaign(request, projectSlug, briefId)
+          // Released when the REQUEST settles, success or failure, whatever context is on screen.
+          .pipe(finalize(() => this.createsOnWire.update((keys) => new Set([...keys].filter((key) => key !== wireKey)))))
+      );
+      // A DEFINITE refusal created nothing, whatever is on screen now. A cancel during the await
+      // (`cancelStagingPoll`) held this dispatch as unresolved because the create might have
+      // started; the answer says it did not, so that hold is released here -- before the context
+      // check below, which would otherwise leave Stage, the pickers and audience writes locked
+      // over a draft that cannot exist. No earlier hold can be cleared by mistake: a held scope
+      // cannot start a stage.
+      if (outcome.error && !outcome.indeterminate) {
+        this.releaseStageHold(projectSlug, briefId);
+        this.settleDispatch(dispatched);
+      }
       // Checked here TOO, not only after the persist above. A reset landing during THIS await
       // leaves the request already sent -- the draft may well exist upstream -- but everything
       // after it belongs to the previous brief: the poll would run under the new context and
@@ -3298,6 +3440,12 @@ export class CampaignsComponent {
 
       if (outcome.error) {
         this.emailStaging.set('error');
+        // An error is not always a refusal: the BFF marks a create that MAY have started (accepted
+        // with no job, or unconfirmed after it left) as indeterminate. Held, or a retry duplicates it.
+        if (outcome.indeterminate) {
+          this.markStageUnresolved(projectSlug, briefId);
+        }
+        this.settleDispatch(dispatched);
         this.emailStagingMessage.set(outcome.error);
         return;
       }
@@ -3308,14 +3456,24 @@ export class CampaignsComponent {
       // a dispatcher failure read as a created draft. The paid path already polls
       // (`implementation-tab`'s `pollJob`); this is the same contract for email.
       if (!outcome.jobId) {
-        // No id to follow. Report the ack honestly rather than inventing an outcome.
+        // No id to follow. Report the ack honestly rather than inventing an outcome -- and hold the
+        // locks: the request WAS accepted, so a draft may still be created.
         this.emailStaging.set('error');
+        this.markStageUnresolved(projectSlug, briefId);
+        this.settleDispatch(dispatched);
         this.emailStagingMessage.set('Staging was accepted but returned nothing to track. Check HubSpot before retrying.');
         return;
       }
 
-      this.pollStagingJob(outcome.jobId, projectSlug);
+      this.pollStagingJob(outcome.jobId, projectSlug, briefId);
     } catch {
+      // A failure AFTER the create left is indeterminate: it may have reached the BFF and started.
+      // Fail closed and hold its scope; a failure before dispatch (the persist) has nothing to hold.
+      // ITS OWN dispatch, from the local: a stale rejection must not settle a newer stage's state.
+      if (dispatched !== null) {
+        this.markStageUnresolved(dispatched.projectSlug, dispatched.briefId);
+        this.settleDispatch(dispatched);
+      }
       // Guarded like every other write in this method. A reset mid-stage would otherwise raise a
       // failure banner for a brief nobody is looking at -- and on the email tab that reads as
       // "your staging failed" about work the operator has already navigated away from.
@@ -3325,7 +3483,13 @@ export class CampaignsComponent {
       // The cause is not surfaced: a create failure can carry upstream detail, and the job
       // result collapses every dispatcher error to one string anyway.
       this.emailStaging.set('error');
-      this.emailStagingMessage.set('Staging failed. Check the HubSpot connection and try again.');
+      // After dispatch the create may already be running, and the stage is held as unresolved:
+      // "try again" there invited a duplicate draft, so the copy points at HubSpot instead.
+      this.emailStagingMessage.set(
+        dispatched !== null
+          ? 'Staging ended without an answer and a draft may still be created. Check HubSpot before staging again.'
+          : 'Staging failed. Check the HubSpot connection and try again.'
+      );
     }
   }
 
@@ -3679,6 +3843,11 @@ export class CampaignsComponent {
    * are one operation.
    */
   private cancelStagingPoll(): void {
+    // A dispatched create is abandoned by the UI, not by HubSpot: hold its scope until confirmed.
+    if (this.dispatchedStage !== null) {
+      this.markStageUnresolved(this.dispatchedStage.projectSlug, this.dispatchedStage.briefId);
+      this.dispatchedStage = null;
+    }
     this.stagingJobSubscription?.unsubscribe();
     this.stagingJobSubscription = null;
     this.emailStaging.set('idle');
@@ -3872,6 +4041,44 @@ export class CampaignsComponent {
     const project = this.activeFoundationSlug();
     const drop = new Set([this.unattachedScopeKey(project, this.emailBriefId()), this.unattachedScopeKey(project, '')]);
     this.unattachedByScope.update((map) => new Map([...map].filter(([key]) => !drop.has(key))));
+  }
+
+  /** The `unresolvedStages` key for a project and brief. */
+  private stageScopeKey(projectSlug: string, briefId: string): string {
+    return `${projectSlug}|${briefId}`;
+  }
+
+  /** Clears the dispatch marker only if it is still THIS dispatch, never a successor's. */
+  private settleDispatch(dispatched: { projectSlug: string; briefId: string } | null): void {
+    if (dispatched !== null && this.dispatchedStage === dispatched) {
+      this.dispatchedStage = null;
+    }
+  }
+
+  /**
+   * Clears the dispatch marker when it is for this scope. For the poll's exits, which know the scope
+   * they polled but not the dispatch object: once the job is recorded as unresolved it is no longer
+   * "abandoned by a cancel", and a leftover marker re-locked the brief on the next reset.
+   */
+  private settleDispatchFor(projectSlug: string, briefId: string): void {
+    if (this.dispatchedStage?.projectSlug === projectSlug && this.dispatchedStage.briefId === briefId) {
+      this.dispatchedStage = null;
+    }
+  }
+
+  /** Records a stage that ended without a terminal answer, for the project and brief it staged. */
+  private markStageUnresolved(projectSlug: string, briefId: string): void {
+    const key = this.stageScopeKey(projectSlug, briefId);
+    this.unresolvedStages.update((keys) => new Set([...keys, key]));
+  }
+
+  /** Releases a project/brief's unresolved-stage hold once an answer proves nothing was created. */
+  private releaseStageHold(projectSlug: string, briefId: string): void {
+    const key = this.stageScopeKey(projectSlug, briefId);
+    if (!this.unresolvedStages().has(key)) {
+      return;
+    }
+    this.unresolvedStages.update((keys) => new Set([...keys].filter((held) => held !== key)));
   }
 
   /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
@@ -4070,7 +4277,7 @@ export class CampaignsComponent {
    * a job that never settles reports that rather than spinning forever, because a HubSpot draft
    * may exist either way and the operator needs to be told to go look.
    */
-  private pollStagingJob(jobId: string, projectSlug: string): void {
+  private pollStagingJob(jobId: string, projectSlug: string, briefId: string): void {
     const MAX_POLLS = Math.ceil(300_000 / CAMPAIGN_JOB_POLL_INTERVAL_MS);
     this.stagingJobSubscription?.unsubscribe();
     this.stagingJobSubscription = this.campaignService
@@ -4082,6 +4289,8 @@ export class CampaignsComponent {
           if (!outcome) {
             return;
           }
+          // A terminal answer: the job is no longer one a cancel could leave unresolved.
+          this.dispatchedStage = null;
           if (outcome.errors.length > 0) {
             this.emailStaging.set('error');
             this.emailStagingMessage.set(outcome.errors[0]);
@@ -4123,6 +4332,8 @@ export class CampaignsComponent {
         },
         error: () => {
           this.emailStaging.set('error');
+          this.markStageUnresolved(projectSlug, briefId);
+          this.settleDispatchFor(projectSlug, briefId);
           this.emailStagingMessage.set('Lost track of the staging job. Check HubSpot before retrying.');
         },
         complete: () => {
@@ -4130,6 +4341,8 @@ export class CampaignsComponent {
           // leaving the panel spinning or claiming a success nothing confirmed.
           if (this.emailStaging() === 'staging') {
             this.emailStaging.set('error');
+            this.markStageUnresolved(projectSlug, briefId);
+            this.settleDispatchFor(projectSlug, briefId);
             this.emailStagingMessage.set('Staging is taking longer than expected. Check HubSpot to see whether the draft was created.');
           }
         },

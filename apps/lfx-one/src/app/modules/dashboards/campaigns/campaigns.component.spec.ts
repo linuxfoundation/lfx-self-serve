@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -2004,8 +2004,13 @@ describe('CampaignsComponent — email delivery channel', () => {
       controls: {
         deliveryType: { setValue(v: CampaignDeliveryType): void };
         programType: { setValue(v: CampaignProgramType): void };
+        emailType: { disabled: boolean };
+        emailSegment: { disabled: boolean };
       };
     };
+    emailAudienceWriteInFlight: WritableSignal<boolean>;
+    emailStagingUnresolved: Signal<boolean>;
+    emailStagingHeld: Signal<boolean>;
   }
 
   const internals = (): Internals => fixture.componentInstance as unknown as Internals;
@@ -3600,6 +3605,402 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().selectedEmailTemplateId.set('hs-1');
       fixture.detectChanges();
     }
+
+    it('holds Stage while the Audience tab is replacing the recorded audience', () => {
+      // A re-attach or a replacement compose leaves the old row `built` until its reply lands, so
+      // Stage stayed enabled and cloned a draft against the list being replaced.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      expect(internals().canStageEmail(), 'fixture precondition: stageable on a built audience').toBe(true);
+
+      internals().emailAudienceWriteInFlight.set(true);
+      expect(internals().canStageEmail(), 'Stage stayed open during an audience write').toBe(false);
+      fixture.detectChanges();
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent,
+        'Stage was disabled with no reason given'
+      ).toContain('audience write is still running');
+
+      internals().emailAudienceWriteInFlight.set(false);
+      expect(internals().canStageEmail()).toBe(true);
+    });
+
+    it.each([
+      ['the poll lost track of the job', () => throwError(() => new Error('network'))],
+      ['the poll timed out with no answer', () => of(null)],
+    ])('holds every stage lock when %s, until the operator confirms', (_label, poll) => {
+      // A draft may still be created, so releasing on `'error'` let a replacement write race it and
+      // a retry duplicate it.
+      onImplementTab();
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(poll() as never);
+      internals().emailStaging.set('staging');
+      (internals() as unknown as { pollStagingJob(job: string, slug: string, brief: string): void }).pollStagingJob(
+        'job-1',
+        internals().activeFoundationSlug(),
+        internals().emailBriefId()
+      );
+      fixture.detectChanges();
+
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingHeld(), 'the locks were released on an unresolved stage').toBe(true);
+      expect(internals().selectorForm.controls.emailSegment.disabled).toBe(true);
+
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="campaigns-email-stage-unresolved-ack"] button')?.click();
+      fixture.detectChanges();
+      expect(internals().emailStagingHeld(), 'confirming did not release the locks').toBe(false);
+      expect(internals().selectorForm.controls.emailSegment.disabled).toBe(false);
+    });
+
+    it('explains a Stage held by an unresolved stage even after the poll is cancelled', () => {
+      // `cancelStagingPoll` resets the state to idle and clears the message while the hold stays,
+      // so a hint keyed on the message left a disabled Stage with no reason.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      (internals() as unknown as { markStageUnresolved(p: string, b: string): void }).markStageUnresolved(
+        internals().activeFoundationSlug(),
+        internals().emailBriefId()
+      );
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      fixture.detectChanges();
+
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent ?? '';
+      expect(internals().canStageEmail()).toBe(false);
+      expect(hint, 'Stage was held with no reason given').toContain('ended without an answer');
+    });
+
+    it('scopes an unresolved stage to its brief: another brief is not locked, and the hold returns with it', () => {
+      // A single global flag locked brief B on A's stage, and B's acknowledgement cleared A's.
+      onImplementTab();
+      internals().emailBriefId.set('brief-a');
+      (internals() as unknown as { markStageUnresolved(p: string, b: string): void }).markStageUnresolved(internals().activeFoundationSlug(), 'brief-a');
+      expect(internals().emailStagingHeld(), 'fixture precondition: A is held').toBe(true);
+
+      internals().emailBriefId.set('brief-b');
+      expect(internals().emailStagingHeld(), "brief B was locked by brief A's stage").toBe(false);
+
+      internals().emailBriefId.set('brief-a');
+      expect(internals().emailStagingHeld(), "A's hold was lost on the round trip").toBe(true);
+    });
+
+    it('tells the operator to check HubSpot when the RESOLVED brief has an unresolved stage', async () => {
+      // The on-screen key can differ from the brief the persist resolves; the recovery is the HubSpot
+      // check, not "stage again".
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(internals() as unknown as { ensureEmailBriefId(): Promise<string> }, 'ensureEmailBriefId').mockResolvedValue('brief-held');
+      (internals() as unknown as { markStageUnresolved(p: string, b: string): void }).markStageUnresolved(internals().activeFoundationSlug(), 'brief-held');
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(create).not.toHaveBeenCalled();
+      expect(internals().emailStagingMessage()).toContain('Check HubSpot');
+    });
+
+    it('does not advise a retry when the create failed after it was dispatched', async () => {
+      // The stage is held as unresolved because the create may already be running; "try again"
+      // contradicted that hold and invited a duplicate draft.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 504 })) as never);
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(internals().emailStagingHeld(), 'fixture precondition: the dispatched stage is held').toBe(true);
+      expect(internals().emailStagingMessage()).toContain('Check HubSpot before staging again');
+      expect(internals().emailStagingMessage()).not.toContain('try again');
+    });
+
+    it('keeps the retry advice for a failure before anything was dispatched', async () => {
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(internals() as unknown as { ensureEmailBriefId(): Promise<string> }, 'ensureEmailBriefId').mockRejectedValue(new Error('persist failed'));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(create).not.toHaveBeenCalled();
+      expect(internals().emailStagingMessage()).toContain('try again');
+    });
+
+    it('releases the hold when a create cancelled mid-flight comes back as a definite refusal', async () => {
+      // The cancel held the dispatch because the create MIGHT have started; a definite refusal says
+      // it did not, but the stale-context return skipped it and kept everything locked.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const create = new Subject<{ jobId: string; error?: string; enabled: boolean }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(create as never);
+      const staging = (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      await fixture.whenStable();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      expect(internals().emailStagingHeld(), 'fixture precondition: the cancel held the dispatch').toBe(true);
+
+      create.next({ enabled: true, jobId: '', error: 'The campaign service refused this request.' });
+      create.complete();
+      await staging;
+
+      expect(internals().emailStagingHeld(), 'a refused create kept the stage held').toBe(false);
+    });
+
+    it('keeps the hold when a create cancelled mid-flight comes back as indeterminate', async () => {
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const create = new Subject<{ jobId: string; error?: string; enabled: boolean; indeterminate?: boolean }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(create as never);
+      const staging = (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      await fixture.whenStable();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+
+      create.next({ enabled: true, jobId: '', error: 'Unconfirmed.', indeterminate: true });
+      create.complete();
+      await staging;
+
+      expect(internals().emailStagingHeld(), 'an indeterminate create was released').toBe(true);
+    });
+
+    it('holds a DISPATCHED stage when a brief reset cancels its poll', async () => {
+      // The reset idles the display state, but the create cannot be recalled and its job may still
+      // resolve the brief's audience -- releasing let A -> B -> A replace it underneath the job.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ enabled: true, jobId: 'job-1', error: null }) as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(NEVER as never);
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      expect(internals().emailStaging(), 'fixture precondition: polling').toBe('staging');
+
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      expect(internals().emailStaging()).toBe('idle');
+      expect(internals().emailStagingHeld(), 'a dispatched stage was released by a UI reset').toBe(true);
+    });
+
+    it('releases nothing extra once the job reached a terminal answer', async () => {
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ enabled: true, jobId: 'job-1', error: null }) as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({ errors: [], platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'd-1' }] }) as never
+      );
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      expect(internals().emailStaging()).toBe('done');
+
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      expect(internals().emailStagingHeld(), 'a finished stage was held as unresolved').toBe(false);
+    });
+
+    it.each([
+      ['an indeterminate create (it may have started)', { jobId: '', error: 'Campaign creation could not be confirmed.', indeterminate: true }, true],
+      ['a definite refusal (nothing was created)', { jobId: '', error: 'Campaign creation was rejected and nothing was created.' }, false],
+    ])('on %s, holds the stage only if a draft may exist', async (_label, response, held) => {
+      // A refusal left `dispatchedStage` set, so a later segment change or reset turned a draft that
+      // cannot exist into an unresolved hold -- and an indeterminate error read as a refusal.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of(response) as never);
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+
+      expect(internals().emailStagingHeld()).toBe(held);
+    });
+
+    it('refuses the unresolved acknowledgement while the abandoned create is still on the wire', async () => {
+      // A reset records the stage as unresolved but cannot cancel the create; checking HubSpot before
+      // the draft can appear, then staging again, is how a duplicate is made.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const create = new Subject<{ jobId: string }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(create as never);
+      const staging = (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      await fixture.whenStable();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      expect(internals().emailStagingHeld(), 'fixture precondition: held').toBe(true);
+
+      // The RENDERED guard, not only the handler's: the waiting copy shows and the ack button is
+      // disabled while the create is on the wire. Dropping either template guard while the handler
+      // guard stays would still let an operator click through before the draft can appear.
+      const el = fixture.nativeElement as HTMLElement;
+      const ackButton = (): HTMLButtonElement | null => el.querySelector('[data-testid="campaigns-email-stage-unresolved-ack"] button');
+      fixture.detectChanges();
+      expect(el.querySelector('[data-testid="campaigns-email-stage-unresolved-waiting"]'), 'no waiting copy while the create is on the wire').not.toBeNull();
+      expect(ackButton(), 'fixture precondition: ack button rendered').not.toBeNull();
+      expect(ackButton()!.disabled, 'ack button enabled while the create is on the wire').toBe(true);
+
+      (internals() as unknown as { onAcknowledgeStagingUnresolved(): void }).onAcknowledgeStagingUnresolved();
+      expect(internals().emailStagingHeld(), 'acknowledged while the create was still on the wire').toBe(true);
+
+      create.error(new HttpErrorResponse({ status: 504 }));
+      await staging;
+      fixture.detectChanges();
+      expect(el.querySelector('[data-testid="campaigns-email-stage-unresolved-waiting"]'), 'waiting copy outlived the create').toBeNull();
+      expect(ackButton()!.disabled, 'ack button still disabled after the create settled').toBe(false);
+
+      (internals() as unknown as { onAcknowledgeStagingUnresolved(): void }).onAcknowledgeStagingUnresolved();
+      expect(internals().emailStagingHeld(), 'the acknowledgement never became available').toBe(false);
+    });
+
+    it("lets a stale create's rejection settle only its own dispatch, not the newer stage's", async () => {
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const first = new Subject<{ jobId: string }>();
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValueOnce(first as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(NEVER as never);
+      const stageA = (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      await fixture.whenStable();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      (internals() as unknown as { onAcknowledgeStagingUnresolved(): void }).onAcknowledgeStagingUnresolved();
+
+      // Stage B starts on a different brief while A's request is still pending.
+      internals().emailBriefId.set('brief-other');
+      internals().onAudienceComposed({ ...composed, briefId: 'brief-other' });
+      create.mockReturnValueOnce(of({ jobId: 'job-b' }) as never);
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      first.error(new HttpErrorResponse({ status: 504 }));
+      await stageA;
+
+      expect(internals().emailStagingUnresolved(), "A's stale rejection marked brief B unresolved").toBe(false);
+      expect(
+        (internals() as unknown as { dispatchedStage: { briefId: string } | null }).dispatchedStage?.briefId,
+        "A's stale rejection cleared B's dispatch marker"
+      ).toBe('brief-other');
+    });
+
+    it('does not re-lock a brief on a reset after its lost job was acknowledged', async () => {
+      // The poll's error path recorded the stage as unresolved but left the dispatch marker set,
+      // so a later reset treated it as a newly abandoned create and locked the brief again.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(throwError(() => new Error('network')) as never);
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      expect(internals().emailStagingHeld(), 'fixture precondition: held after the lost job').toBe(true);
+
+      (internals() as unknown as { onAcknowledgeStagingUnresolved(): void }).onAcknowledgeStagingUnresolved();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+
+      expect(internals().emailStagingHeld(), 'an acknowledged stage was re-locked by a reset').toBe(false);
+    });
+
+    it('holds the stage when the create request fails after it was sent', async () => {
+      // The request may have reached the BFF and started; failing closed beats a duplicate draft.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })) as never);
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingHeld(), 'a create that may have started was released').toBe(true);
+    });
+
+    it('holds the locks when staging is accepted but returns no job to follow', async () => {
+      // The request WAS accepted, so a draft may still be created; releasing let a retry duplicate it.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ enabled: true, jobId: null, error: null }) as never);
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingHeld(), 'an accepted stage with nothing to track released the locks').toBe(true);
+    });
+
+    it('locks the type and segment pickers while a stage is in flight', () => {
+      // `onStageEmailSend` snapshots the copy before its awaits, so switching mid-stage cloned a
+      // HubSpot draft with the PREVIOUS selection's copy -- a create on the wire cannot be recalled.
+      selectEmail();
+      internals().emailStaging.set('staging');
+      fixture.detectChanges();
+      expect(internals().selectorForm.controls.emailSegment.disabled, 'segment could change mid-stage').toBe(true);
+      expect(internals().selectorForm.controls.emailType.disabled, 'type could change mid-stage').toBe(true);
+
+      internals().emailStaging.set('done');
+      fixture.detectChanges();
+      expect(internals().selectorForm.controls.emailSegment.disabled).toBe(false);
+      expect(internals().selectorForm.controls.emailType.disabled).toBe(false);
+    });
+
+    it('abandons an in-flight stage when the segment changes, as a type change does', () => {
+      // Left running, the poll went on to report "Draft created" for copy the new segment no longer
+      // shows. Invalidated and cleaned up together, like `onSelectEmailType`.
+      selectEmail();
+      internals().emailStaging.set('staging');
+      const priv = internals() as unknown as { emailStagingGeneration: number; onSelectEmailSegment(id: string): void };
+      const before = priv.emailStagingGeneration;
+
+      priv.onSelectEmailSegment('alumni');
+
+      expect(priv.emailStagingGeneration, 'the in-flight stage was not invalidated').toBe(before + 1);
+      expect(internals().emailStaging(), 'the abandoned stage kept spinning').toBe('idle');
+    });
+
+    it("keeps a finished stage's confirmation across a segment change", () => {
+      selectEmail();
+      internals().emailStaging.set('done');
+
+      (internals() as unknown as { onSelectEmailSegment(id: string): void }).onSelectEmailSegment('alumni');
+
+      expect(internals().emailStaging(), 'a finished stage\'s "Draft created" was erased').toBe('done');
+    });
+
+    it('refuses to create when an audience write started during the brief-id await', async () => {
+      // The Audience tab stays mounted, so a replacement write could start while staging resolved
+      // its brief id; the create would then clone a draft against the list being replaced.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+      const persist = vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(() => {
+        internals().emailAudienceWriteInFlight.set(true);
+        return of({ status: 'saved', approved: true, briefId: composed.briefId, etag: null }) as never;
+      });
+      internals().emailBriefId.set('');
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(persist).toHaveBeenCalled();
+      expect(create, 'a draft was cloned against an audience being replaced').not.toHaveBeenCalled();
+      expect(internals().emailStaging()).toBe('error');
+    });
+
+    it('explains a Stage blocked by a FIRST compose, not "compose it first"', () => {
+      // The audience is still null while the first compose runs, so a hint keyed on the audience
+      // told the operator to do exactly what was already in progress.
+      onImplementTab();
+      internals().emailAudienceWriteInFlight.set(true);
+      fixture.detectChanges();
+
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent ?? '';
+      expect(hint).toContain('audience write is still running');
+      expect(hint, 'the hint asked for the compose that was running').not.toContain('Compose the send audience');
+    });
+
+    it('says a restored audience is attached instead of asking for one', () => {
+      // Only `composed` was special-cased, so a restored, attached audience still read "Needed
+      // before the draft can be staged" directly above the card announcing it attached.
+      onImplementTab();
+      internals().emailAudience.set({ ...composed, status: 'built' });
+      internals().emailAudienceOrigin.set('restored');
+      fixture.detectChanges();
+
+      const block = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-send-audience"]');
+      expect(block?.querySelector('[data-testid="campaigns-email-audience-restored-note"]')).not.toBeNull();
+      expect(block?.textContent, 'a restored audience was described as still needed').not.toContain('Needed before the draft can be staged');
+    });
 
     it('unblocks staging on a composed audience', () => {
       onImplementTab();

@@ -5,6 +5,15 @@
   <!-- The brief's saved audience is not known yet, or could not be read. Every write below is
        blocked in that state -- a second audience on top of a hidden one is a duplicate HubSpot
        list -- so the reason is shown here rather than leaving disabled buttons unexplained. -->
+  @if (stagingInFlight()) {
+    <div class="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3" role="status" data-testid="campaigns-audience-staging-pause">
+      <i class="fa-light fa-spinner-third fa-spin text-gray-500" aria-hidden="true"></i>
+      <p class="text-xs text-gray-700">
+        A send is being staged in HubSpot, or its last stage ended without an answer. Composing and attaching are paused until the stage finishes or is
+        confirmed on the Implement tab.
+      </p>
+    </div>
+  }
   @if (audienceReadPending()) {
     <div class="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3" role="status" data-testid="campaigns-audience-read-pending">
       <i class="fa-light fa-spinner-third fa-spin text-gray-500" aria-hidden="true"></i>
@@ -121,6 +130,7 @@
           degraded() ||
           discovering() ||
           composing() ||
+          attachInFlight() ||
           eventUrlControl.value.trim().length === 0 ||
           (composeAttempted() && eventUrlControl.value.trim() === composedFor())
         "
@@ -178,7 +188,7 @@
         <span class="text-xs font-medium text-gray-900">A compose was left unconfirmed</span>
       </div>
       <p class="text-xs text-gray-700">
-        You changed project while a master list was being created for <span class="font-medium">{{ strandedProject() }}</span
+        The project or event changed while a master list was being created in <span class="font-medium">{{ strandedProject() }}</span
         >. That request was not cancelled, so the lists may exist in HubSpot. Check the portal before composing again — a second attempt would create
         duplicates.
       </p>
@@ -187,10 +197,16 @@
         this on the next run let it be dismissed implicitly — the operator could return to
         that project and compose duplicates having never read it.
       -->
+      @if (composeOnWire()) {
+        <p class="text-xs text-amber-800" data-testid="campaigns-audience-compose-stranded-waiting">
+          The request is still running. Wait for it to finish before checking the portal.
+        </p>
+      }
       <button
         type="button"
         (click)="onDismissStranded()"
-        class="w-fit rounded-md border border-amber-300 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+        [disabled]="composeOnWire()"
+        class="w-fit rounded-md border border-amber-300 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
         data-testid="campaigns-audience-compose-stranded-dismiss">
         I have checked HubSpot
       </button>

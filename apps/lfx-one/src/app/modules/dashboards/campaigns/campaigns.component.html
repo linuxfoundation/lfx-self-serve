@@ -322,14 +322,17 @@
           [active]="selectedEmailTab() === 'audience'"
           [briefId]="emailBriefId()"
           [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''"
+          [eventKey]="emailEventKey()"
           [audienceReadFailed]="emailAudienceReadFailed()"
           [audienceReadPending]="emailAudienceReadPending() || emailBriefResolving()"
           [audienceReadUnavailable]="emailAudienceReadUnavailable()"
           [audienceScope]="emailAudienceScope()"
+          [stagingInFlight]="emailStagingHeld()"
           [existingAudience]="emailAudience()"
           [briefState]="emailBriefState()"
           [briefSaveMessage]="emailBriefSaveMessage()"
           (retryAudienceRead)="onRetryAudienceRead()"
+          (audienceWriteInFlight)="emailAudienceWriteInFlight.set($event)"
           (retryBrief)="onRetryEmailBrief()"
           (audienceAttached)="onAudienceComposed($event)"
           (audienceComposeUnattached)="onAudienceComposeUnattached($event)"
@@ -621,8 +624,15 @@
                        resolves the newest, and so a build silently superseded a list the operator
                        had assembled by hand. Every audience now comes from the Audience tab, which
                        is the only surface that shows what is in the list before it is sent to. -->
+                  <!-- Every origin that HAS an audience says so. Only `composed` was special-cased, so a
+                       restored, attached audience still read "Needed before the draft can be
+                       staged" directly above the card announcing it attached. -->
                   @if (emailAudienceOrigin() === 'composed') {
                     <p class="text-sm text-gray-500">Composed on the Audience tab and attached to this campaign.</p>
+                  } @else if (emailAudienceOrigin() === 'restored') {
+                    <p class="text-sm text-gray-500" data-testid="campaigns-email-audience-restored-note">
+                      Restored from this campaign's saved plan. Replace it from the Audience tab if it should change.
+                    </p>
                   } @else {
                     <p class="text-sm text-gray-500">
                       Composed on the Audience tab. Needed before the draft can be staged in HubSpot, not before the email is written.
@@ -1030,12 +1040,25 @@
                         {{ briefRequiredHint }}
                       } @else if (selectedEmailTemplateId() === '') {
                         Choose a template to clone.
+                      } @else if (activeFoundationSlug() === '') {
+                        Select a foundation to stage this send under.
+                      } @else if (emailStagingUnresolved()) {
+                        <!-- Must not depend on `emailStagingMessage`: `cancelStagingPoll` clears that
+                             while the unresolved hold stays, which left Stage disabled with no reason. -->
+                        The last stage ended without an answer — check HubSpot, then confirm below.
+                      } @else if (emailAudienceWriteInFlight()) {
+                        <!-- Before the audience-state branches: on a first compose the audience is still
+                             null, and "compose it first" told the operator to do what was running. -->
+                        An audience write is still running on the Audience tab (possibly started for another email or project) — wait for it to finish before
+                        staging.
                       } @else if (emailAudience() === null) {
                         Compose the send audience on the Audience tab first.
                       } @else if (emailAudience()?.status === 'building') {
                         The audience is unconfirmed — reconcile the lists it created before staging.
                       } @else if (emailAudience()?.status !== 'built') {
                         The audience failed — compose it again on the Audience tab before staging.
+                      } @else if (emailCopyState() === 'generating' || abTestCopyState() === 'generating') {
+                        Wait for the copy to finish generating before staging.
                       }
                     </span>
                   }
@@ -1059,6 +1082,22 @@
                       >
                     }
                   </p>
+                }
+                <!-- The stage ended without an answer, so a draft may still appear. Everything that could
+                     race it stays locked until the operator says they checked. -->
+                @if (emailStagingUnresolved()) {
+                  @if (emailStageCreateOnWire()) {
+                    <p class="text-xs text-gray-600" data-testid="campaigns-email-stage-unresolved-waiting">
+                      The create request is still running. Wait for it to finish before checking HubSpot.
+                    </p>
+                  }
+                  <lfx-button
+                    label="I have checked HubSpot"
+                    severity="secondary"
+                    size="small"
+                    [disabled]="emailStageCreateOnWire()"
+                    (onClick)="onAcknowledgeStagingUnresolved()"
+                    data-testid="campaigns-email-stage-unresolved-ack" />
                 }
               </div>
             </div>

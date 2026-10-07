@@ -1143,10 +1143,18 @@ export class CampaignServiceClient {
         return { enabled: true, error: 'The saved audience for this brief could not be read. Reload to try again.' };
       }
       const rows = response.data.audiences;
-      return {
-        enabled: true,
-        audiences: rows.filter((row): row is CampaignServiceAudienceList => Boolean(row?.id)).map((row) => this.toCampaignAudience(row)),
-      };
+      const usable = rows.filter((row): row is CampaignServiceAudienceList => this.isReadableAudienceRow(row));
+      // A row that is not a row is malformed too, for the same reason as the missing array above.
+      // Filtering `[null]` or `[{ id: '' }]` down to `[]` reported a response that DID carry an
+      // audience -- just not a readable one -- as a verified absence, and that re-opened compose.
+      // An `id` alone is not a row either: `{ id: 'a' }` mapped to an audience with no platform, so
+      // the restore found no HubSpot row and read the malformed response as a verified absence.
+      // Partial loss counts: the newest row is the one dispatch uses, and it may be the dropped one.
+      if (usable.length !== rows.length) {
+        logger.warning(req, 'list_audiences', 'Audience read-back returned unreadable rows', { total: rows.length, usable: usable.length });
+        return { enabled: true, error: 'The saved audience for this brief could not be read. Reload to try again.' };
+      }
+      return { enabled: true, audiences: usable.map((row) => this.toCampaignAudience(row)) };
     } catch (error) {
       logger.warning(req, 'list_audiences', 'Audience read-back failed, returning an error result', { err: error });
       return { enabled: true, error: upstreamMessageOr(error, 'The saved audience for this brief could not be read. Reload to try again.') };
@@ -1335,7 +1343,12 @@ export class CampaignServiceClient {
         // A 202 with no job id is unusable: the caller has no way to poll, and reporting success
         // would leave a dispatch running that nothing can observe. Say so rather than returning
         // an empty id the poller would treat as a legacy in-process job.
-        return { enabled: true, jobId: null, error: 'Campaign creation was accepted but returned no job to track. Check the ad platforms before retrying.' };
+        return {
+          enabled: true,
+          jobId: null,
+          error: 'Campaign creation was accepted but returned no job to track. Check the ad platforms before retrying.',
+          indeterminate: true,
+        };
       }
       return { enabled: true, jobId, error: null };
     } catch (error: unknown) {
@@ -1382,6 +1395,7 @@ export class CampaignServiceClient {
         enabled: true,
         jobId: null,
         error: 'Campaign creation could not be confirmed. It may have started — check the ad platforms before retrying.',
+        indeterminate: true,
       };
     }
   }
@@ -2043,6 +2057,20 @@ export class CampaignServiceClient {
       undefined,
       timeoutMs === undefined ? undefined : { timeoutMs }
     );
+  }
+
+  /**
+   * Whether a `list-audiences` row carries every field the wire contract REQUIRES, with the right
+   * type. Anything less is unreadable, not "a row with blanks": the restore keys on `platform` and
+   * `brief_id`, so a partial row read as a verified absence and re-opened a non-idempotent compose.
+   * `status` only has to be a non-empty string -- an unrecognised value is mapped to `failed` below.
+   */
+  private isReadableAudienceRow(row: CampaignServiceAudienceList | null | undefined): boolean {
+    if (!row || typeof row !== 'object') {
+      return false;
+    }
+    const requiredStrings = [row.id, row.project_id, row.brief_id, row.platform, row.status];
+    return requiredStrings.every((value) => typeof value === 'string' && value !== '') && typeof row.version === 'number' && Number.isFinite(row.version);
   }
 
   /**

@@ -224,6 +224,9 @@ describe('AudienceBuilderTabComponent', () => {
   describe('discovery', () => {
     it('seeds the event URL from the brief without overwriting a typed value', async () => {
       await render({ initialEventUrl: 'https://events.example.org/synthetic-summit' });
+      // The SAME event throughout: a later update to its brief, not a different event's brief.
+      fixture.componentRef.setInput('eventKey', 'synthetic-summit');
+      fixture.detectChanges();
       expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value).toBe('https://events.example.org/synthetic-summit');
 
       // A later brief update must not clobber what the operator typed over the seed.
@@ -881,6 +884,486 @@ describe('AudienceBuilderTabComponent', () => {
       expect(btn?.disabled, 'a verified-absent audience must not block compose').toBe(false);
     });
 
+    it("starts over when a DIFFERENT event's brief arrives under the mounted panel", async () => {
+      // The parent hands Plan's next event to the same component. Event A's discovery and ticks
+      // survived, and a compose then sent A's lists with B's brief id.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), 'fixture precondition: a list is selected').not.toBeNull();
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.componentRef.setInput('briefId', 'brief-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "event A's selection survived into event B").toBeNull();
+      expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value).toBe('https://events.example.org/event-b');
+    });
+
+    it('keeps the selection across a stage change that clears the brief and hands back the SAME event', async () => {
+      // Every stage change clears the brief first, so the URL goes A -> '' -> A. Comparing plain
+      // previous/next pairs saw A -> '' as a change of event and wiped the same event's work.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('initialEventUrl', '');
+      fixture.componentRef.setInput('briefId', '');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-a');
+      fixture.componentRef.setInput('briefId', 'brief-a-cfp');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), 'a stage change wiped the same event').not.toBeNull();
+    });
+
+    it('resets across a cleared brief when it is a DIFFERENT event that comes back', async () => {
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('initialEventUrl', '');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "event A's selection survived into event B").toBeNull();
+    });
+
+    it("keeps hand-started work in a new project when that project's first brief arrives", async () => {
+      // A project switch must forget the previous project's last event: carried over, the new
+      // project's first brief read as a CHANGE of event and wiped the exploratory discovery.
+      await render({ initialEventUrl: 'https://events.example.org/p1-event', briefId: 'brief-p1' });
+      fixture.componentRef.setInput('projectSlug', 'other-project');
+      fixture.componentRef.setInput('initialEventUrl', '');
+      fixture.componentRef.setInput('briefId', '');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/p2-event');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/p2-event');
+      fixture.componentRef.setInput('briefId', 'brief-p2');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), 'hand-started work was wiped by the first brief').not.toBeNull();
+    });
+
+    it("strands a compose in flight when a different event's brief arrives, and blocks a recompose", async () => {
+      // The reply is discarded by the reset, so the create must be recorded as unconfirmed rather
+      // than lost -- composing again would duplicate the lists.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      composeAudienceMaster.mockReturnValue(new Subject());
+      click('campaigns-audience-compose');
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-stranded"]'), 'the abandoned create was not reported').not.toBeNull();
+
+      // The acknowledgement waits for the abandoned request to settle: the lists may not exist yet.
+      const dismiss = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose-stranded-dismiss"]');
+      expect(dismiss?.disabled, 'the stranded marker could be cleared mid-request').toBe(true);
+      (fixture.componentInstance as unknown as { onDismissStranded(): void }).onDismissStranded();
+      fixture.detectChanges();
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-stranded"]'), 'the handler cleared it anyway').not.toBeNull();
+
+      // And composing again in that project is blocked until the operator reconciles it.
+      typeEventUrl('https://events.example.org/event-b');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      click('campaigns-audience-compose');
+      expect(composeAudienceMaster, 'a second compose ran over the stranded one').toHaveBeenCalledTimes(1);
+    });
+
+    it('pauses compose and attach while the parent is staging a send', async () => {
+      // The exclusion is two-way: a write started while the create is on the wire could change which
+      // audience that draft resolves to, and the create carries only the brief id.
+      await renderWithDiscovery({ briefId: 'brief-1' });
+      click('audience-card-grid-toggle-101');
+      fixture.componentRef.setInput('stagingInFlight', true);
+      fixture.detectChanges();
+
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled, 'compose ran during staging').toBe(true);
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-use-direct"]')?.disabled, 'attach ran during staging').toBe(true);
+      expect(host().querySelector('[data-testid="campaigns-audience-staging-pause"]')).not.toBeNull();
+
+      fixture.componentRef.setInput('stagingInFlight', false);
+      fixture.detectChanges();
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(false);
+    });
+
+    it('keeps the write lock through a context switch until an in-flight attach SETTLES', async () => {
+      // A reset discards the reply but the attach is still being recorded upstream. Releasing the
+      // lock on the reset let A -> B -> A start a second write that the first could then overwrite.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      const reply = new Subject<AudienceAttachExistingResult>();
+      attachExistingAudience.mockReturnValue(reply);
+      click('campaigns-audience-use-direct');
+      const seen: boolean[] = [];
+      fixture.componentInstance.audienceWriteInFlight.subscribe((busy) => seen.push(busy));
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-a');
+      fixture.detectChanges();
+      const gate = fixture.componentInstance as unknown as { canAttach: () => boolean; canCompose: () => boolean };
+      expect(gate.canAttach(), 'a second attach could start while the first was on the wire').toBe(false);
+      expect(seen.at(-1), 'Stage was released while the attach was still recording').toBe(true);
+
+      reply.next({
+        master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' },
+        suppressionListIds: [],
+        audience: { id: 'a', briefId: 'brief-a', platform: 'hubspot', status: 'built', version: 1 },
+      } as AudienceAttachExistingResult);
+      reply.complete();
+      fixture.detectChanges();
+      expect(seen.at(-1), 'the lock never released after the attach settled').toBe(false);
+    });
+
+    it('reports an abandoned attach that succeeds, so the parent shows what upstream recorded', async () => {
+      // The lock releases when the attach settles; without the report the parent kept showing the
+      // OLD audience after A -> B -> A, while upstream now resolved the newly attached one.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      const reply = new Subject<AudienceAttachExistingResult>();
+      attachExistingAudience.mockReturnValue(reply);
+      click('campaigns-audience-use-direct');
+      const attached: CampaignAudience[] = [];
+      fixture.componentInstance.audienceAttached.subscribe((row) => attached.push(row));
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+      const row = { id: 'aud-a', briefId: 'brief-a', platform: 'hubspot', status: 'built', version: 2 } as CampaignAudience;
+      reply.next({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: [], audience: row } as AudienceAttachExistingResult);
+      reply.complete();
+
+      expect(attached, 'the recorded row was swallowed by the generation guard').toEqual([row]);
+    });
+
+    it('resets hand-edited work for event B when event A is handed back', async () => {
+      // Comparing advertised URLs saw "A -> A" and kept B's lists, which compose then sent with A's brief.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      typeEventUrl('https://events.example.org/event-b');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('initialEventUrl', '');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-a');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "B's hand-built selection survived under A").toBeNull();
+    });
+
+    it("reseeds a URL typed for one event, before any discovery, when a different event's brief arrives", async () => {
+      // The seed never overwrites a dirty field, so B's typed URL survived into C's brief and the next
+      // discovery composed B's lists with C's brief id.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      fixture.componentRef.setInput('eventKey', 'event-a');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/event-b');
+
+      fixture.componentRef.setInput('eventKey', 'event-c');
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-c');
+      fixture.detectChanges();
+
+      expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value, "B's typed URL survived into C").toBe(
+        'https://events.example.org/event-c'
+      );
+    });
+
+    it('keeps a URL typed before the first brief when that brief advertises it', async () => {
+      await render({ briefId: '' });
+      typeEventUrl('https://events.example.org/event-b');
+
+      fixture.componentRef.setInput('eventKey', 'event-b');
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value).toBe('https://events.example.org/event-b');
+    });
+
+    it("starts over when a different event's brief arrives after a foundation switch that kept the brief", async () => {
+      // The parent keeps its brief across a foundation switch, so forgetting the event on screen made
+      // the next brief read as "the first after exploratory work" and E's lists survived into F's brief.
+      await render({ initialEventUrl: '', briefId: 'brief-e' });
+      fixture.componentRef.setInput('eventKey', 'event-e');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('projectSlug', 'other-foundation');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/shared');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('eventKey', 'event-f');
+      fixture.componentRef.setInput('briefId', 'brief-f');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "E's lists survived into F's brief").toBeNull();
+    });
+
+    it("reseeds a URL typed after a foundation switch when the new project's first brief is for another event", async () => {
+      // The key is empty after the switch, so the reseed (gated on a previous key) skipped the first
+      // brief, and the typed URL's lists would be built against the new brief id.
+      await render({ initialEventUrl: 'https://events.example.org/event-e', briefId: 'brief-e' });
+      fixture.componentRef.setInput('eventKey', 'event-e');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('projectSlug', 'other-foundation');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/event-x');
+
+      fixture.componentRef.setInput('eventKey', 'event-f');
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-f');
+      fixture.componentRef.setInput('briefId', 'brief-f');
+      fixture.detectChanges();
+
+      expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value, "X's typed URL survived into F's first brief").toBe(
+        'https://events.example.org/event-f'
+      );
+    });
+
+    it("keeps work discovered after a foundation switch when the new project's first brief advertises that URL", async () => {
+      // The parent keeps the OLD project's brief across the switch; remembering its key compared the
+      // new project's first brief against it and wiped work discovered for that very event.
+      await render({ initialEventUrl: 'https://events.example.org/event-e', briefId: 'brief-e' });
+      fixture.componentRef.setInput('eventKey', 'event-e');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('projectSlug', 'other-foundation');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/event-f');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('eventKey', 'event-f');
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-f');
+      fixture.componentRef.setInput('briefId', 'brief-f');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "F's own first brief wiped the work discovered for F").not.toBeNull();
+    });
+
+    it('files the unattached warning for an abandoned compose that created a list', async () => {
+      // An event change now strands a compose in the SAME project; its reply was swallowed by the
+      // generation guard, so the parent's warning -- the only route back to a billed list -- was lost.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      fixture.componentRef.setInput('eventKey', 'event-a');
+      fixture.detectChanges();
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      const reply = new Subject<AudienceComposeMasterResult>();
+      composeAudienceMaster.mockReturnValue(reply);
+      click('campaigns-audience-compose');
+      const unattached: AudienceComposedList[] = [];
+      fixture.componentInstance.audienceComposeUnattached.subscribe((e) => unattached.push(e.master));
+
+      fixture.componentRef.setInput('eventKey', 'event-b');
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+      const master = { listId: '900', name: 'Master', hubspotUrl: 'u' };
+      reply.next({ master, sourceListIds: ['101'], recorded: false });
+      reply.complete();
+
+      expect(unattached, "the abandoned compose's real list was never reported").toEqual([master]);
+    });
+
+    it('starts over when the FIRST brief after exploratory work advertises no URL', async () => {
+      // A brief with no URL is no evidence the work was for its event.
+      await render({ briefId: '' });
+      typeEventUrl('https://events.example.org/event-a');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('eventKey', 'event-b');
+      fixture.componentRef.setInput('briefId', 'brief-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "A's lists survived into a URL-less brief B").toBeNull();
+    });
+
+    it("starts over when the same event's advertised URL is removed", async () => {
+      await render({ initialEventUrl: 'https://events.example.org/old', briefId: 'brief-a' });
+      fixture.componentRef.setInput('eventKey', 'event-a');
+      fixture.detectChanges();
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('initialEventUrl', '');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), 'lists from a removed URL survived').toBeNull();
+    });
+
+    it('keeps exploratory work when the FIRST brief is for the URL the operator discovered', async () => {
+      await render({ briefId: '' });
+      typeEventUrl('https://events.example.org/event-b');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('eventKey', 'event-b');
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.componentRef.setInput('briefId', 'brief-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "B's own first brief wiped the B work").not.toBeNull();
+    });
+
+    it('starts over on a different event key even when the edited URL matches the new brief', async () => {
+      // Fail-safe: two events can share a URL, and a wrong guess composes A's lists with B's brief.
+      await render({ initialEventUrl: 'https://events.example.org/shared', briefId: 'brief-a' });
+      fixture.componentRef.setInput('eventKey', 'event-a');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/shared');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('eventKey', 'event-b');
+      fixture.componentRef.setInput('briefId', 'brief-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "A's lists survived into B on a shared URL").toBeNull();
+    });
+
+    it("starts over when the same event's advertised URL is corrected", async () => {
+      // The slug-based key does not change, but the lists came from the old URL.
+      await render({ initialEventUrl: 'https://events.example.org/old', briefId: 'brief-a' });
+      fixture.componentRef.setInput('eventKey', 'event-a');
+      fixture.detectChanges();
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/corrected');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), 'lists from the old URL survived a correction').toBeNull();
+    });
+
+    it('holds Stage while a compose a reset abandoned is still being created', async () => {
+      // `composing` is cleared by the reset so the new context is not stuck on a spinner, but the
+      // HubSpot lists are still being created -- Stage must not unlock on the old audience.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      const reply = new Subject<never>();
+      composeAudienceMaster.mockReturnValue(reply);
+      click('campaigns-audience-compose');
+      const seen: boolean[] = [];
+      fixture.componentInstance.audienceWriteInFlight.subscribe((busy) => seen.push(busy));
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+      expect(seen.at(-1), 'Stage unlocked mid-compose').toBe(true);
+
+      reply.error(new HttpErrorResponse({ status: 500 }));
+      fixture.detectChanges();
+      expect(seen.at(-1), 'the lock never released after the compose settled').toBe(false);
+    });
+
+    it("drops a discovery still streaming when a different event's brief arrives", async () => {
+      // `hasDiscovered` turns true only on the final frame, so a mid-stream switch let A's frames
+      // finish under B's brief.
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
+      fixture.detectChanges();
+      completeDiscovery();
+
+      expect(host().querySelector('[data-testid="audience-card-grid-toggle-101"]'), "event A's late frames landed under event B").toBeNull();
+    });
+
+    it.each([
+      ['both events have no registration URL', '', ''],
+      ['both events advertise the same registration URL', 'https://events.example.org/register', 'https://events.example.org/register'],
+    ])("resets when a different event's brief arrives and %s", async (_label, urlA, urlB) => {
+      // Identified by URL alone, two different events looked identical and A's lists were composed
+      // with B's brief.
+      await render({ initialEventUrl: urlA, briefId: 'brief-a' });
+      fixture.componentRef.setInput('eventKey', 'kubecon-eu');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/kubecon-eu');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('eventKey', 'open-source-summit');
+      fixture.componentRef.setInput('initialEventUrl', urlB);
+      fixture.componentRef.setInput('briefId', 'brief-b');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "event A's selection survived into event B").toBeNull();
+    });
+
+    it('keeps the selection when the SAME event is handed back (another stage, or a re-proceed)', async () => {
+      await render({ initialEventUrl: 'https://events.example.org/event-a', briefId: 'brief-a' });
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('briefId', 'brief-a-cfp');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "the operator's selection was discarded for the same event").not.toBeNull();
+    });
+
+    it('does not rediscover while an attach is on the wire', async () => {
+      // Discovery resets the run, which released the write guard and discarded the attach's reply.
+      await renderWithDiscovery({ briefId: 'brief-1' });
+      click('audience-card-grid-toggle-101');
+      attachExistingAudience.mockReturnValue(new Subject());
+      click('campaigns-audience-use-direct');
+
+      const discover = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-discover"]');
+      expect(discover?.disabled, 'Discover stayed live during an attach').toBe(true);
+      discoverAudience.mockClear();
+      (fixture.componentInstance as unknown as { onDiscover(): void }).onDiscover();
+      expect(discoverAudience, 'a rediscovery started during an attach').not.toHaveBeenCalled();
+    });
+
+    it('reports an audience write in flight to the parent, and its end', async () => {
+      await renderWithDiscovery({ briefId: 'brief-1' });
+      const seen: boolean[] = [];
+      fixture.componentInstance.audienceWriteInFlight.subscribe((busy) => seen.push(busy));
+      click('audience-card-grid-toggle-101');
+      const reply = new Subject<AudienceAttachExistingResult>();
+      attachExistingAudience.mockReturnValue(reply);
+      click('campaigns-audience-use-direct');
+      fixture.detectChanges();
+      expect(seen.at(-1), 'the parent was not told a write started').toBe(true);
+
+      reply.next({
+        master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' },
+        suppressionListIds: [],
+        audience: { id: 'a', briefId: 'brief-1', platform: 'hubspot', status: 'built', version: 1 },
+      } as AudienceAttachExistingResult);
+      reply.complete();
+      fixture.detectChanges();
+      expect(seen.at(-1), 'the parent was not told the write ended').toBe(false);
+    });
+
     it('blocks compose and direct attach while the audience read is still in flight', async () => {
       // The restore opens this tab BEFORE its audience read returns. On a slow read the failure
       // flag is still false, so gating on it alone let the operator compose a second master on
@@ -1336,7 +1819,8 @@ describe('AudienceBuilderTabComponent', () => {
       // next run let it be dismissed implicitly — the operator could return to the original
       // project and compose duplicates having never read it. Only an explicit acknowledgement
       // clears it.
-      composeAudienceMaster.mockReturnValue(new Subject<never>());
+      const abandoned = new Subject<never>();
+      composeAudienceMaster.mockReturnValue(abandoned);
       await renderWithDiscovery();
       click('audience-card-grid-toggle-101');
       click('campaigns-audience-compose');
@@ -1356,6 +1840,9 @@ describe('AudienceBuilderTabComponent', () => {
         'a discovery implicitly dismissed a warning about a write it cannot reconcile'
       ).not.toBeNull();
 
+      // The acknowledgement is only accepted once the abandoned request has settled.
+      abandoned.error(new HttpErrorResponse({ status: 504 }));
+      fixture.detectChanges();
       click('campaigns-audience-compose-stranded-dismiss');
       fixture.detectChanges();
 
