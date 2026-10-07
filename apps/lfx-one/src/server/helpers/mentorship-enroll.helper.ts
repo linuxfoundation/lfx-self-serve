@@ -173,20 +173,24 @@ const splitTechnologies = (industry: string | null | undefined): string[] => {
 };
 
 /**
- * What the wizard copies from an upstream enroll template. `project` is `null` unless the template names a project uid, and a
- * missing text field is `''`. Every imported prerequisite is a selected, editable one (`custom`); it asks for a file when upstream
- * set `submitFile`, and a `null` due date is left out. Terms are not part of the template, and neither is a logo.
+ * What the wizard copies from an upstream enroll template. `project` is `null` unless the template names a project uid, name and
+ * slug, since create needs all three, and a missing text field is `''`. Every imported prerequisite is a selected, editable one
+ * (`custom`) until the wizard matches it to a standard prerequisite; it asks for a file when upstream set `submitFile`, and a
+ * `null` due date is left out. Terms are not part of the template, and neither is a logo.
  */
 export const toMentorshipEnrollImport = (template: MentorshipUpstreamEnrollTemplate): MentorshipEnrollImport => {
   const { program } = template;
   const projectId = parseTrimmedString(program.project_uid);
+  const projectName = parseTrimmedString(program.project_name);
+  const projectSlug = parseTrimmedString(program.project_slug);
   const projectLogoUrl = parseTrimmedString(program.project_logo_url);
 
   return {
     name: program.name,
-    project: projectId
-      ? { id: projectId, name: program.project_name ?? '', slug: program.project_slug ?? '', ...(projectLogoUrl ? { logoUrl: projectLogoUrl } : {}) }
-      : null,
+    project:
+      projectId && projectName && projectSlug
+        ? { id: projectId, name: projectName, slug: projectSlug, ...(projectLogoUrl ? { logoUrl: projectLogoUrl } : {}) }
+        : null,
     description: program.description ?? '',
     repositoryUrl: program.repo_link ?? '',
     websiteUrl: program.website_url ?? '',

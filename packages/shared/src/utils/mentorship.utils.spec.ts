@@ -482,7 +482,7 @@ describe('formFromMentorshipEnrollImport', () => {
     ],
   };
 
-  it('copies the details, technologies, skills and prerequisites', () => {
+  it('copies the details, technologies and skills', () => {
     const form = formFromMentorshipEnrollImport('mp_1', imported);
 
     expect(form).toMatchObject({
@@ -497,7 +497,51 @@ describe('formFromMentorshipEnrollImport', () => {
       technologies: ['Go', 'Kubernetes'],
       skills: ['Java', 'Database'],
     });
-    expect(form.prerequisites).toEqual(imported.prerequisites);
+  });
+
+  it('selects the standard prerequisites the program used and adds the rest as custom ones', () => {
+    const form = formFromMentorshipEnrollImport('mp_1', imported);
+    const standard = createEmptyMentorshipEnrollForm().prerequisites;
+
+    expect(form.prerequisites).toHaveLength(standard.length + 1);
+    expect(form.prerequisites.find((item) => item.id === 'prereq-resume')).toEqual({ ...standard[0], required: true });
+    expect(form.prerequisites.filter((item) => item.required && !item.custom).map((item) => item.id)).toEqual(['prereq-resume']);
+    expect(form.prerequisites.at(-1)).toEqual(imported.prerequisites[1]);
+  });
+
+  it('matches standard names ignoring case and gives the Coding Challenge back its URL', () => {
+    const form = formFromMentorshipEnrollImport('mp_1', {
+      ...imported,
+      prerequisites: [
+        {
+          id: 'imported-0',
+          name: 'coding challenge',
+          description: 'Complete a code challenge\n\nChallenge: https://challenge.example/task',
+          required: true,
+          requireFile: false,
+          custom: true,
+        },
+      ],
+    });
+
+    expect(form.prerequisites.find((item) => item.id === 'prereq-coding')).toMatchObject({ required: true, challengeUrl: 'https://challenge.example/task' });
+    expect(form.prerequisites.some((item) => item.custom)).toBe(false);
+  });
+
+  it('passes the prerequisites step for a program created from the standard list', () => {
+    const form = formFromMentorshipEnrollImport('mp_1', {
+      ...imported,
+      prerequisites: ['Resume', 'School Enrollment Verification', 'Participation permission from school or employer'].map((name, index) => ({
+        id: `imported-${index}`,
+        name,
+        description: 'Stored description',
+        required: true,
+        requireFile: false,
+        custom: true,
+      })),
+    });
+
+    expect(getMentorshipEnrollStepErrors('prerequisites', { ...form, termsAccepted: true })).toEqual({});
   });
 
   it('does not share its lists with the import', () => {
@@ -505,7 +549,7 @@ describe('formFromMentorshipEnrollImport', () => {
 
     expect(form.technologies).not.toBe(imported.technologies);
     expect(form.skills).not.toBe(imported.skills);
-    expect(form.prerequisites[0]).not.toBe(imported.prerequisites[0]);
+    expect(form.prerequisites.at(-1)).not.toBe(imported.prerequisites[1]);
   });
 
   it('starts with one default term, no logo and the terms not accepted', () => {

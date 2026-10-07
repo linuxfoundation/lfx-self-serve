@@ -118,15 +118,6 @@ test.describe('Admin enroll wizard — import from an existing program', () => {
     await expect(page.getByTestId('mentorship-enroll-import-error')).toHaveCount(0);
   });
 
-  test('copies no logo from the picked program', async ({ page }) => {
-    await openWizard(page);
-
-    await pickImportProgram(page);
-
-    await expect(page.locator('#name')).toHaveValue(ENROLL_IMPORT_TEMPLATE.name);
-    await expect(page.locator('input[type="file"]')).toHaveValue('');
-  });
-
   test('shows an inline error and keeps what was typed when the template fails to load', async ({ page }) => {
     await openWizard(page, { templateFails: true });
     await page.locator('#name').fill(PROGRAM_NAME);

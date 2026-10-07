@@ -83,6 +83,7 @@ import type {
   MentorshipEnrollValidationInput,
   MentorshipLfProject,
   MentorshipNoteDisplay,
+  MentorshipPrerequisite,
   MentorshipProgramMentee,
   MentorshipProgramTerm,
   MentorshipRegisterFailureOptions,
@@ -306,8 +307,31 @@ export function formFromMentorshipEnrollImport(importProgramId: string, data: Me
     codeOfConductUrl: data.codeOfConductUrl,
     skills: [...data.skills],
     terms: [createDefaultMentorshipTerm()],
-    prerequisites: data.prerequisites.map((item) => ({ ...item })),
+    prerequisites: mergeImportedMentorshipPrerequisites(data.prerequisites),
   };
+}
+
+/**
+ * Lays the imported prerequisites over the standard list. An imported item named like a standard prerequisite (ignoring
+ * case) selects that standard row, and the Coding Challenge gets back the URL the create request appended to its
+ * description as a `Challenge:` line. Every other imported item becomes a custom prerequisite, and the standard rows the
+ * program did not use stay in the list unselected.
+ */
+function mergeImportedMentorshipPrerequisites(imported: MentorshipPrerequisite[]): MentorshipPrerequisite[] {
+  const standard = createEmptyMentorshipEnrollForm().prerequisites;
+  const custom: MentorshipPrerequisite[] = [];
+  for (const item of imported) {
+    const name = item.name.trim().toLowerCase();
+    const index = standard.findIndex((entry) => !entry.required && entry.name.toLowerCase() === name);
+    if (index === -1) {
+      custom.push({ ...item });
+      continue;
+    }
+    const entry = { ...standard[index], required: true };
+    if (entry.challengeUrl !== undefined) entry.challengeUrl = /\n\s*Challenge:\s*(\S+)\s*$/.exec(item.description)?.[1] ?? '';
+    standard[index] = entry;
+  }
+  return [...standard, ...custom];
 }
 
 /**

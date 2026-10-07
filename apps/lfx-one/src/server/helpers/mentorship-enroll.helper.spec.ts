@@ -236,8 +236,16 @@ describe('toMentorshipEnrollImport', () => {
     expect(toMentorshipEnrollImport(template({ project_uid: '  ', project_name: 'Orphan' })).project).toBeNull();
   });
 
-  it('leaves the project logo out when it is empty and a missing project name or slug as empty text', () => {
-    expect(toMentorshipEnrollImport(template({ project_uid: PROJECT_UID, project_logo_url: '' })).project).toEqual({ id: PROJECT_UID, name: '', slug: '' });
+  it('has no project when the template leaves out the project name or slug, so the admin picks one', () => {
+    expect(toMentorshipEnrollImport(template({ project_uid: PROJECT_UID, project_slug: 'example-project' })).project).toBeNull();
+    expect(toMentorshipEnrollImport(template({ project_uid: PROJECT_UID, project_name: 'Example Project', project_slug: ' ' })).project).toBeNull();
+  });
+
+  it('leaves the project logo out when it is empty', () => {
+    expect(
+      toMentorshipEnrollImport(template({ project_uid: PROJECT_UID, project_name: 'Example Project', project_slug: 'example-project', project_logo_url: '' }))
+        .project
+    ).toEqual({ id: PROJECT_UID, name: 'Example Project', slug: 'example-project' });
   });
 
   it('turns missing or null text fields into empty text', () => {

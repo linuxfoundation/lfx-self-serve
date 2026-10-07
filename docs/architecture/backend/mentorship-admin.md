@@ -176,9 +176,11 @@ Two writes behind the Enroll wizard, each behind `blockDuringImpersonation` and 
 
 `GET /api/mentorship/admin/programs/:programId/enroll-template` is a read, so `blockDuringImpersonation` does not apply. It validates `programId` as a UUID (400 otherwise) and forwards to upstream `GET /mentorship/v1/programs/{id}/enroll-template` with the caller's bearer token through `proxyMentorshipRequest`, so upstream decides whether the caller may read that program (403 and 404 reach the wizard as they are). The source program is never written.
 
-- Upstream answers `{ program, skills, prerequisites }` in snake_case, with `skills` and `prerequisites` left out when empty. `toMentorshipEnrollImport` in `mentorship-enroll.helper.ts` maps it to `MentorshipEnrollImport`: text fields default to an empty string, and `project` is `null` unless the template carries a project uid.
+- Upstream answers `{ program, skills, prerequisites }`. `program` is snake_case. `skills` is always sent, possibly empty, and `prerequisites` is left out when empty. `prerequisites` is the program's stored task templates as they are, so its keys are camelCase (`submitFile`, `dueDate`).
+- `toMentorshipEnrollImport` in `mentorship-enroll.helper.ts` maps the answer to `MentorshipEnrollImport`: text fields default to an empty string, and `project` is `null` unless the template carries a project uid, name and slug (create needs all three, so the admin picks the project otherwise).
 - Technologies come from `program.industry`, a comma-separated string: split, trimmed, blanks dropped, and repeats removed ignoring case (the first spelling wins). This is the same field the create route writes.
-- Each prerequisite becomes a custom one: `required: true`, `requireFile` when upstream has a `submitFile`, and `dueDate` kept only when set. Ids are `imported-<index>`.
+- The BFF maps each prerequisite to a custom one: `required: true`, `requireFile` when upstream has a `submitFile`, and `dueDate` kept only when set. Ids are `imported-<index>`.
+- `formFromMentorshipEnrollImport` then lays them over the standard list. An item named like a standard prerequisite (ignoring case) selects that standard row, and the Coding Challenge gets back the URL that create appended to its description as a `Challenge:` line. The other items stay custom, and the standard rows the program did not use stay unselected.
 - Terms and the logo are not copied, and `termsAccepted` is not set. `formFromMentorshipEnrollImport` gives the new form one default term and no logo.
 - Logs carry the program id and the prerequisite count only, never a name, description, URL or skill.
 

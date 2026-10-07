@@ -538,6 +538,7 @@ export interface MentorshipUpstreamEnrollTemplate {
     project_logo_url?: string | null;
   };
   skills?: string[] | null;
+  /** The program's stored task templates, passed through as they are, so their keys are camelCase unlike `program`'s. */
   prerequisites?: { name: string; description?: string | null; submitFile?: string | null; dueDate?: string | null }[] | null;
 }
 
