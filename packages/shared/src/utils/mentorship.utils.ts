@@ -1233,12 +1233,13 @@ export function matchesMentorshipPersonSearch(person: MentorshipProgramMentee | 
 }
 
 /**
- * Whether every prerequisite task has been submitted. A person with no tasks assigned
- * has not completed anything, so an empty assignment is never "complete".
+ * Whether every prerequisite task has been submitted, judged as upstream's `tasks_submitted` status filter
+ * judges it: an application with no tasks has none outstanding, so it counts as complete. Without counts (a
+ * cross-program application carries none) nothing is known to be submitted.
  */
 function mentorshipPrerequisitesComplete(person: MentorshipApplicationProgress): boolean {
-  const total = person.tasksTotal ?? 0;
-  return total > 0 && (person.tasksSubmitted ?? 0) >= total;
+  if (person.tasksTotal === undefined) return false;
+  return (person.tasksSubmitted ?? 0) >= person.tasksTotal;
 }
 
 /**

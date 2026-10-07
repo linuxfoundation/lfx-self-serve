@@ -240,9 +240,10 @@ export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
 export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn'] as const;
 
 /**
- * Mentee lifecycle statuses on the admin Current Mentees / Past Mentees tabs.
+ * Mentee lifecycle statuses an application holds on the wire.
  * Superset of mentor statuses; mentees additionally reach `graduated`.
- * Declaration order is the status filter's option order.
+ * Declaration order is the Past Mentees status filter's option order; Current Mentees
+ * filters on `MENTORSHIP_APPLICANT_DISPLAY_STATUSES` instead.
  */
 export const MENTORSHIP_MENTEE_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn', 'graduated'] as const;
 

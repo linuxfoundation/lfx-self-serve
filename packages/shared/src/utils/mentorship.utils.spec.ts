@@ -1173,7 +1173,9 @@ describe('program detail helpers', () => {
 
     expect(mentorshipApplicantDisplayStatus(applicant({ tasksSubmitted: 2, tasksTotal: 5 }))).toBe('applied');
     expect(mentorshipApplicantDisplayStatus(applicant({ tasksSubmitted: 5, tasksTotal: 5 }))).toBe('tasks-completed');
-    // No prerequisites assigned is not the same as having completed them.
+    // No prerequisites leaves none outstanding, as upstream's tasks_submitted filter reads it.
+    expect(mentorshipApplicantDisplayStatus(applicant({ tasksSubmitted: 0, tasksTotal: 0 }))).toBe('tasks-completed');
+    // Without counts, as on a cross-program application, nothing is known to be submitted.
     expect(mentorshipApplicantDisplayStatus(applicant({}))).toBe('applied');
     // Every resolved status displays as itself, whatever the task counts say.
     expect(mentorshipApplicantDisplayStatus(applicant({ status: 'accepted', tasksSubmitted: 1, tasksTotal: 5 }))).toBe('accepted');
