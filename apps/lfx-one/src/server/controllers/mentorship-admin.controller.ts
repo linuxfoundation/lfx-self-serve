@@ -32,7 +32,7 @@ import { AuthenticationError, MicroserviceError, ServiceValidationError } from '
 import { parseMentorshipAdminTaskUpdate } from '../helpers/mentorship-admin-task.helper';
 import { parseMentorshipAdminTermInput } from '../helpers/mentorship-admin-term.helper';
 import { parseMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
-import { parseMentorshipEnrollCreateRequest } from '../helpers/mentorship-enroll.helper';
+import { parseMentorshipEnrollCreateRequest, parseMentorshipEnrollUpdateRequest } from '../helpers/mentorship-enroll.helper';
 import { parseMentorshipMentorTaskCreateRequest } from '../helpers/mentorship-mentor-task.helper';
 import { parseMentorshipAdminPaging, parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
@@ -417,6 +417,27 @@ export class MentorshipAdminController {
 
       logger.success(req, operation, startTime, { programId: program.id, status: program.status });
       res.status(201).json(program);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/mentorship/admin/programs/:programId — the edit wizard's program fields; terms and the logo have their own routes
+  public async updateProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'update_mentorship_admin_program';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      const body = parseMentorshipEnrollUpdateRequest(req.body, operation);
+      const program = await this.mentorshipAdminService.updateProgram(req, programId, body);
+
+      logger.success(req, operation, startTime, { programId: program.id, status: program.status });
+      res.json(program);
     } catch (error) {
       next(error);
     }

@@ -8,7 +8,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { FormGroup } from '@angular/forms';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter, Router } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import {
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_FORM_INCOMPLETE,
@@ -20,16 +20,21 @@ import {
   MENTORSHIP_ENROLL_PROJECT_REQUIRED,
   MENTORSHIP_ENROLL_SUBMIT_FAILED,
   MENTORSHIP_ENROLL_SUBMIT_SUCCESS,
+  MENTORSHIP_ENROLL_TERM_DELETE_CONFLICT,
+  MENTORSHIP_ENROLL_UPDATE_SUCCESS,
   MENTORSHIP_ENROLL_UPLOADS_UNAVAILABLE,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiLookupStatus,
   MentorshipEnrollFieldErrors,
+  MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
   MentorshipEnrollStep,
   MentorshipLfProject,
   MentorshipNameLookupStatus,
+  MentorshipProgramTerm,
+  MentorshipProgramTermRow,
 } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
@@ -58,6 +63,8 @@ class StubDetailsStepComponent {
   public readonly errors = input<MentorshipEnrollFieldErrors>({});
   public readonly project = model<MentorshipLfProject | null>(null);
   public readonly logoFile = model<File | null>(null);
+  public readonly programId = input('');
+  public readonly currentLogoUrl = input('');
   public readonly ciiLookupStatusChange = output<MentorshipCiiLookupStatus>();
   public readonly nameLookupStatusChange = output<MentorshipNameLookupStatus>();
 }
@@ -66,6 +73,7 @@ class StubDetailsStepComponent {
 class StubSetupStepComponent {
   public readonly form = input.required<FormGroup>();
   public readonly errors = input<MentorshipEnrollFieldErrors>({});
+  public readonly closedTerms = input<MentorshipProgramTerm[]>([]);
 }
 
 @Component({ selector: 'lfx-mentorship-enroll-prerequisites-step', template: '' })
@@ -73,6 +81,7 @@ class StubPrerequisitesStepComponent {
   public readonly form = input.required<FormGroup>();
   public readonly errors = input<MentorshipEnrollFieldErrors>({});
   public readonly locked = input(false);
+  public readonly showTermsAcknowledgement = input(true);
 }
 
 const PROJECT = { id: 'proj-gridflow', name: 'GridFlow', slug: 'gridflow' } as unknown as MentorshipLfProject;
@@ -512,5 +521,188 @@ describe('EnrollProgramComponent', () => {
       expect(router.navigate).toHaveBeenCalledWith(['/mentorship/admin']);
       expect(confirm).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('EnrollProgramComponent — edit mode', () => {
+  const PROGRAM_ID = 'prog-1';
+  const termRow = (id: string, status: 'open' | 'closed', name = id): MentorshipProgramTermRow => ({
+    id,
+    name,
+    status,
+    pending: 0,
+    declined: 0,
+    accepted: 0,
+    graduated: 0,
+    startDate: '2020-03-01',
+    endDate: '2020-05-31',
+    applicationStartDate: '2020-01-01',
+    applicationEndDate: '2020-02-01',
+  });
+  const TEMPLATE: MentorshipEnrollImport = {
+    name: 'GridFlow Mentorship Program',
+    project: { id: 'proj-gridflow', name: 'GridFlow', slug: 'gridflow' },
+    description: '<p>Build a data pipeline.</p>',
+    repositoryUrl: 'https://github.com/lfenergy/gridflow',
+    websiteUrl: '',
+    codeOfConductUrl: '',
+    ciiProjectId: '',
+    technologies: ['GO'],
+    skills: ['Go'],
+    prerequisites: [{ id: 'imported-0', name: 'Essay', description: 'Why you.', required: true, requireFile: false, custom: true, dueDate: '2020-01-15' }],
+    logoUrl: 'https://cdn.example/logo.png',
+  };
+
+  let fixture: ComponentFixture<EnrollProgramComponent>;
+  let component: EnrollProgramComponent;
+  let toast: ReturnType<typeof vi.fn>;
+  let router: Router;
+  let calls: string[];
+  let service: Record<string, ReturnType<typeof vi.fn>>;
+
+  const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
+  const byTestId = (id: string): HTMLElement | null => element().querySelector<HTMLElement>(`[data-testid="${id}"]`);
+  const clickUpdate = (): void => {
+    component['step'].set('prerequisites');
+    fixture.detectChanges();
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-enroll-next"] button')!.click();
+    fixture.detectChanges();
+  };
+  /** A service method that answers `value` and records its name and string arguments, so the order of the writes can be checked. */
+  const recorded = <T>(name: string, value: T) =>
+    vi.fn((...args: unknown[]) => {
+      calls.push([name, ...args.filter((arg) => typeof arg === 'string')].join(' '));
+      return of(value);
+    });
+
+  beforeEach(async () => {
+    toast = vi.fn();
+    calls = [];
+    service = {
+      getEnrollTemplate: vi.fn(() => of(TEMPLATE)),
+      getProgramTerms: vi.fn(() => of({ data: [termRow('t-a', 'open', 'Spring'), termRow('t-b', 'open'), termRow('t-old', 'closed')], total: 3 })),
+      updateProgram: recorded('updateProgram', PROGRAM),
+      deleteTerm: recorded('deleteTerm', undefined),
+      updateTerm: recorded('updateTerm', termRow('t-a', 'open')),
+      createTerm: recorded('createTerm', termRow('t-new', 'open')),
+      uploadProgramLogo: vi.fn(() => of({ logoUrl: 'https://cdn.example/new.png' })),
+      createProgram: vi.fn(),
+    };
+
+    TestBed.configureTestingModule({
+      imports: [EnrollProgramComponent],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({ programId: PROGRAM_ID }) } } },
+        { provide: MessageService, useValue: { add: toast } },
+        { provide: MentorshipAdminService, useValue: service },
+      ],
+    });
+
+    await TestBed.overrideComponent(EnrollProgramComponent, {
+      remove: {
+        imports: [EnrollStepperComponent, EnrollDetailsStepComponent, EnrollSetupStepComponent, EnrollPrerequisitesStepComponent],
+      },
+      add: {
+        imports: [StubStepperComponent, StubDetailsStepComponent, StubSetupStepComponent, StubPrerequisitesStepComponent],
+      },
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(EnrollProgramComponent);
+    component = fixture.componentInstance;
+    router = TestBed.inject(Router);
+    vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    fixture.detectChanges();
+  });
+
+  it('fills the form from the program and shows the edit title, the Update button and the closed terms', () => {
+    expect(service['getEnrollTemplate']).toHaveBeenCalledWith(PROGRAM_ID);
+    expect(byTestId('mentorship-enroll-title')?.textContent).toContain('Edit program');
+    expect(component['form'].controls.name.value).toBe('GridFlow Mentorship Program');
+    expect(component['form'].controls.terms.value.map((term) => term.id)).toEqual(['t-a', 't-b']);
+    expect(component['closedTerms']().map((term) => term.id)).toEqual(['t-old']);
+    expect(component['selectedProject']()).toEqual(TEMPLATE.project);
+    expect(component['form'].controls.logoPreviewUrl.value).toBe(TEMPLATE.logoUrl);
+
+    component['step'].set('prerequisites');
+    fixture.detectChanges();
+    expect(byTestId('mentorship-enroll-next')?.textContent).toContain('Update');
+  });
+
+  it('updates the program, then deletes, updates and creates terms, and goes back to the program without a logo upload', () => {
+    const [spring] = component['form'].controls.terms.value;
+    component['form'].controls.terms.setValue([
+      { ...spring, name: 'Spring renamed' },
+      { id: 'term-new-1', name: 'Fall', startDate: '2099-09-01', endDate: '2099-11-01', applicationStartDate: '2099-06-01', applicationEndDate: '2099-07-01' },
+    ]);
+
+    clickUpdate();
+
+    expect(calls).toEqual([`updateProgram ${PROGRAM_ID}`, `deleteTerm ${PROGRAM_ID} t-b`, `updateTerm ${PROGRAM_ID} t-a`, `createTerm ${PROGRAM_ID}`]);
+    expect(service['updateProgram'].mock.calls[0][1]).not.toHaveProperty('terms');
+    expect(service['createProgram']).not.toHaveBeenCalled();
+    expect(service['uploadProgramLogo']).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: MENTORSHIP_ENROLL_UPDATE_SUCCESS }));
+    expect(router.navigate).toHaveBeenCalledWith(['/mentorship/admin', PROGRAM_ID]);
+  });
+
+  it('uploads a newly picked logo after the update, with no 403 back-off', () => {
+    component['logoFile'].set(LOGO);
+
+    clickUpdate();
+
+    expect(service['uploadProgramLogo']).toHaveBeenCalledWith(PROGRAM_ID, LOGO, false);
+  });
+
+  it('puts back a term upstream will not delete, says why, and does not repeat saved writes on retry', () => {
+    service['deleteTerm'].mockReturnValueOnce(throwError(() => httpError(409)));
+    component['form'].controls.terms.setValue(component['form'].controls.terms.value.filter((term) => term.id !== 't-b'));
+
+    clickUpdate();
+
+    expect(byTestId('mentorship-enroll-submit-error')?.textContent).toContain(MENTORSHIP_ENROLL_TERM_DELETE_CONFLICT);
+    expect(component['form'].controls.terms.value.map((term) => term.id)).toEqual(['t-a', 't-b']);
+    expect(component['form'].enabled).toBe(true);
+
+    calls = [];
+    clickUpdate();
+
+    expect(calls).toEqual([`updateProgram ${PROGRAM_ID}`]);
+    expect(router.navigate).toHaveBeenCalledWith(['/mentorship/admin', PROGRAM_ID]);
+  });
+
+  it('shows Retry when the program cannot be read, and reads it again', () => {
+    service['getEnrollTemplate'].mockReturnValueOnce(throwError(() => httpError(500)));
+    component['onRetryLoad']();
+    fixture.detectChanges();
+
+    expect(byTestId('mentorship-enroll-load-error')).not.toBeNull();
+
+    component['onRetryLoad']();
+    fixture.detectChanges();
+
+    expect(byTestId('mentorship-enroll-load-error')).toBeNull();
+    expect(component['editLoad']()).toBe('ready');
+  });
+
+  it('cancel goes back to the program, and leaving asks only after a change', async () => {
+    expect(await component.canLeave()).toBe(true);
+
+    component['onCancel']();
+    expect(router.navigate).toHaveBeenCalledWith(['/mentorship/admin', PROGRAM_ID]);
+
+    const confirmationService = fixture.debugElement.injector.get(ConfirmationService);
+    const confirm = vi.fn((options: Confirmation) => {
+      options.accept?.();
+      return confirmationService;
+    });
+    confirmationService.confirm = confirm;
+    component['form'].controls.name.setValue('Renamed Program');
+
+    expect(await component.canLeave()).toBe(true);
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ header: 'Discard changes' }));
   });
 });

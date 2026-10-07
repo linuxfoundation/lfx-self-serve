@@ -375,6 +375,7 @@ describe('EnrollDetailsStepComponent — import from an existing program', () =>
     technologies: ['GO', 'Kubernetes'],
     skills: ['Documentation'],
     prerequisites: [{ id: 'imported-0', name: 'Read the guide', description: 'Chapter one', required: true, requireFile: false, custom: true }],
+    logoUrl: '',
   };
   let fixture: ComponentFixture<EnrollDetailsStepComponent>;
   let form: FormGroup;

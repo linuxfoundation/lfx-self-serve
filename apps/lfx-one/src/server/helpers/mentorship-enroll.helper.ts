@@ -8,10 +8,12 @@ import {
   MentorshipEnrollCreateTerm,
   MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
+  MentorshipEnrollUpdateRequest,
   MentorshipProgramLogoUploadResult,
   MentorshipUpstreamCreatedProgram,
   MentorshipUpstreamEnrollTemplate,
   MentorshipUpstreamLogoUpload,
+  MentorshipUpstreamProgramUpdate,
 } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
 
@@ -79,16 +81,13 @@ const parsePrerequisite = (value: unknown, index: number, operation: string): Me
 };
 
 /**
- * Validates the body of `POST /api/mentorship/admin/programs` and rebuilds it from the known fields only, so a stray `logo_url`,
- * `status` or term `id` never reaches upstream. It checks the shape the upstream create needs (a project, the text fields, at
- * least one skill, 1 to `MENTORSHIP_MAX_OPEN_TERMS` terms, accepted terms), trims every text field but a prerequisite
- * description, and leaves lengths, URLs and dates to the wizard and upstream, which both check them. A field inside a list is
- * named by its index (`terms[1].startDate`). The optional text fields, `industry` among them, are kept only when not blank.
- * Nothing in the body is logged.
+ * Validates the program fields that the create and update bodies share and rebuilds them from the known fields only, so a stray
+ * `logo_url`, `status` or term `id` never reaches upstream. It checks for a project, the required text fields and at least one
+ * skill, trims every text field but a prerequisite description, and leaves lengths, URLs and dates to the wizard and upstream,
+ * which both check them. A field inside a list is named by its index (`prerequisites[1].name`). The optional text fields,
+ * `industry` among them, are kept only when not blank. Nothing in the body is logged.
  */
-export const parseMentorshipEnrollCreateRequest = (body: unknown, operation: string): MentorshipEnrollCreateRequest => {
-  const raw = asRecord(body);
-
+const parseProgramFields = (raw: Record<string, unknown>, operation: string): MentorshipEnrollUpdateRequest => {
   const projectId = parseTrimmedString(raw['projectId']) ?? '';
   if (!isUuid(projectId)) {
     throw ServiceValidationError.forField('projectId', 'projectId must be a UUID.', { operation });
@@ -105,20 +104,11 @@ export const parseMentorshipEnrollCreateRequest = (body: unknown, operation: str
     throw ServiceValidationError.forField('skills', 'skills must be a list of at least one skill.', { operation });
   }
 
-  const rawTerms = raw['terms'];
-  if (!Array.isArray(rawTerms) || rawTerms.length === 0 || rawTerms.length > MENTORSHIP_MAX_OPEN_TERMS) {
-    throw ServiceValidationError.forField('terms', `terms must hold 1 to ${MENTORSHIP_MAX_OPEN_TERMS} terms.`, { operation });
-  }
-
   if (!Array.isArray(raw['prerequisites'])) {
     throw ServiceValidationError.forField('prerequisites', 'prerequisites must be a list.', { operation });
   }
 
-  if (raw['termsAccepted'] !== true) {
-    throw ServiceValidationError.forField('termsAccepted', 'The terms must be accepted.', { operation });
-  }
-
-  const request: MentorshipEnrollCreateRequest = {
+  const request: MentorshipEnrollUpdateRequest = {
     projectId,
     projectSlug,
     projectName,
@@ -126,9 +116,7 @@ export const parseMentorshipEnrollCreateRequest = (body: unknown, operation: str
     description,
     repositoryUrl,
     skills: rawSkills.map((skill) => (skill as string).trim()),
-    terms: rawTerms.map((term, index) => parseTerm(term, index, operation)),
     prerequisites: (raw['prerequisites'] as unknown[]).map((item, index) => parsePrerequisite(item, index, operation)),
-    termsAccepted: true,
   };
 
   const projectLogoUrl = parseTrimmedString(raw['projectLogoUrl']);
@@ -145,7 +133,61 @@ export const parseMentorshipEnrollCreateRequest = (body: unknown, operation: str
   return request;
 };
 
-/** The id, slug and status the wizard keeps from an upstream create. A program with no slug falls back to its id. */
+/**
+ * Validates the body of `POST /api/mentorship/admin/programs`: the shared program fields, 1 to `MENTORSHIP_MAX_OPEN_TERMS` terms,
+ * and accepted terms. A field inside a list is named by its index (`terms[1].startDate`).
+ */
+export const parseMentorshipEnrollCreateRequest = (body: unknown, operation: string): MentorshipEnrollCreateRequest => {
+  const raw = asRecord(body);
+  const fields = parseProgramFields(raw, operation);
+
+  const rawTerms = raw['terms'];
+  if (!Array.isArray(rawTerms) || rawTerms.length === 0 || rawTerms.length > MENTORSHIP_MAX_OPEN_TERMS) {
+    throw ServiceValidationError.forField('terms', `terms must hold 1 to ${MENTORSHIP_MAX_OPEN_TERMS} terms.`, { operation });
+  }
+
+  if (raw['termsAccepted'] !== true) {
+    throw ServiceValidationError.forField('termsAccepted', 'The terms must be accepted.', { operation });
+  }
+
+  return {
+    ...fields,
+    terms: rawTerms.map((term, index) => parseTerm(term, index, operation)),
+    termsAccepted: true,
+  };
+};
+
+/**
+ * Validates the body of `PATCH /api/mentorship/admin/programs/:programId`: the shared program fields only. Terms go through the
+ * term routes and the logo through its own route, so a `terms` or `termsAccepted` sent here is dropped.
+ */
+export const parseMentorshipEnrollUpdateRequest = (body: unknown, operation: string): MentorshipEnrollUpdateRequest =>
+  parseProgramFields(asRecord(body), operation);
+
+/**
+ * The update body as upstream `PATCH /programs/{id}` takes it: snake_case keys, a partial merge. Each optional text field is sent,
+ * `''` when blank, so an admin can clear it. Prerequisites become `task_templates` the way upstream create converts them: only the
+ * picked (`required`) ones are kept, and `submitFile` is `'required'` when the mentee must attach a file.
+ */
+export const toMentorshipUpstreamProgramUpdate = (request: MentorshipEnrollUpdateRequest): MentorshipUpstreamProgramUpdate => ({
+  name: request.name,
+  description: request.description,
+  repo_link: request.repositoryUrl,
+  website_url: request.websiteUrl ?? '',
+  code_of_conduct: request.codeOfConductUrl ?? '',
+  cii_project_id: request.ciiProjectId ?? '',
+  industry: request.industry ?? '',
+  skills: request.skills,
+  task_templates: request.prerequisites
+    .filter((item) => item.required)
+    .map((item) => ({ name: item.name, description: item.description, submitFile: item.requireFile ? 'required' : null, dueDate: item.dueDate })),
+  project_uid: request.projectId,
+  project_slug: request.projectSlug,
+  project_name: request.projectName,
+  project_logo_url: request.projectLogoUrl ?? '',
+});
+
+/** The id, slug and status the wizard keeps from an upstream create or update. A program with no slug falls back to its id. */
 export const toMentorshipEnrollProgramRef = (program: MentorshipUpstreamCreatedProgram): MentorshipEnrollProgramRef => ({
   id: program.id,
   slug: program.slug || program.id,
@@ -176,7 +218,7 @@ const splitTechnologies = (industry: string | null | undefined): string[] => {
  * What the wizard copies from an upstream enroll template. `project` is `null` unless the template names a project uid, name and
  * slug, since create needs all three, and a missing text field is `''`. Every imported prerequisite is a selected, editable one
  * (`custom`) until the wizard matches it to a standard prerequisite; it asks for a file when upstream's `submitFile` is not blank, and a
- * `null` due date is left out. Terms are not part of the template, and neither is a logo.
+ * `null` due date is left out. Terms are not part of the template. `logoUrl` is the program's logo, `''` when it has none.
  */
 export const toMentorshipEnrollImport = (template: MentorshipUpstreamEnrollTemplate): MentorshipEnrollImport => {
   const { program } = template;
@@ -196,6 +238,7 @@ export const toMentorshipEnrollImport = (template: MentorshipUpstreamEnrollTempl
     websiteUrl: program.website_url ?? '',
     codeOfConductUrl: program.code_of_conduct ?? '',
     ciiProjectId: program.cii_project_id ?? '',
+    logoUrl: parseTrimmedString(program.logo_url) ?? '',
     technologies: splitTechnologies(program.industry),
     skills: [...(template.skills ?? [])],
     prerequisites: (template.prerequisites ?? []).map((item, index) => ({

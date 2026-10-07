@@ -9,6 +9,7 @@ import {
   MENTORSHIP_CUSTOM_PREREQ_NAME_MAX,
   createDefaultMentorshipTerm,
   createEmptyMentorshipEnrollForm,
+  MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
   MENTORSHIP_ENROLL_LOGO_EMPTY,
   MENTORSHIP_ENROLL_LOGO_EXTENSIONS,
@@ -76,10 +77,13 @@ import type {
   MentorshipApplicantTaskStatus,
   MentorshipApplicationProgress,
   MentorshipEnrollCreateRequest,
+  MentorshipEnrollEditBaseline,
   MentorshipEnrollFieldErrors,
   MentorshipEnrollForm,
   MentorshipEnrollImport,
   MentorshipEnrollStep,
+  MentorshipEnrollTermChanges,
+  MentorshipEnrollUpdateRequest,
   MentorshipEnrollValidationInput,
   MentorshipLfProject,
   MentorshipNoteDisplay,
@@ -92,7 +96,12 @@ import type {
   MentorshipTaskFormValue,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
-import type { MentorshipAdminTaskUpdate, MentorshipProgramMentor, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
+import type {
+  MentorshipAdminTaskUpdate,
+  MentorshipAdminTermInput,
+  MentorshipProgramMentor,
+  MentorshipProgramTermRow,
+} from '../interfaces/mentorship-admin.interface';
 import type {
   MentorshipMentorProfileDetails,
   MentorshipMentorProfileFieldErrors,
@@ -248,14 +257,8 @@ export function lastDayOfMentorshipMonth(isoMonthStart: string): string {
  * form says the terms are accepted, so `termsAccepted` is always `true`.
  */
 export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidationInput, project: MentorshipLfProject): MentorshipEnrollCreateRequest {
-  const request: MentorshipEnrollCreateRequest = {
-    projectId: project.id,
-    projectSlug: project.slug,
-    projectName: project.name,
-    name: form.name.trim(),
-    description: form.description,
-    repositoryUrl: form.repositoryUrl.trim(),
-    skills: uniqueMentorshipList(form.skills),
+  return {
+    ...toMentorshipEnrollUpdateRequest(form, project),
     terms: form.terms.map((term) => ({
       name: term.name.trim(),
       startDate: term.startDate,
@@ -263,6 +266,23 @@ export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidation
       applicationStartDate: term.applicationStartDate,
       applicationEndDate: term.applicationEndDate,
     })),
+    termsAccepted: true,
+  };
+}
+
+/**
+ * The wizard form as the edit wizard's update body: the create body's program fields, without terms (they are saved through
+ * the term routes) or terms acceptance. A blank optional field is left out; the BFF sends it on as `''`, which clears it.
+ */
+export function toMentorshipEnrollUpdateRequest(form: MentorshipEnrollValidationInput, project: MentorshipLfProject): MentorshipEnrollUpdateRequest {
+  const request: MentorshipEnrollUpdateRequest = {
+    projectId: project.id,
+    projectSlug: project.slug,
+    projectName: project.name,
+    name: form.name.trim(),
+    description: form.description,
+    repositoryUrl: form.repositoryUrl.trim(),
+    skills: uniqueMentorshipList(form.skills),
     prerequisites: form.prerequisites.map((item) => {
       const description = item.description.trim();
       const challengeUrl = item.challengeUrl?.trim();
@@ -274,7 +294,6 @@ export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidation
         dueDate: item.dueDate || null,
       };
     }),
-    termsAccepted: true,
   };
 
   if (project.logoUrl) request.projectLogoUrl = project.logoUrl;
@@ -287,6 +306,58 @@ export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidation
   const industry = uniqueMentorshipList(form.technologies).join(', ');
   if (industry) request.industry = industry;
   return request;
+}
+
+/** A saved term as the wizard holds it. The term dialog picks months, so both term dates become the first of their month. */
+export function toMentorshipEnrollTerm(
+  row: Pick<MentorshipProgramTermRow, 'id' | 'name' | 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
+): MentorshipProgramTerm {
+  const toMonthStart = (date: string): string => {
+    const parsed = parseMentorshipMonthYear(date);
+    return parsed ? mentorshipMonthYearToStartDate(parsed.month, parsed.year) : date;
+  };
+  return {
+    id: row.id,
+    name: row.name,
+    startDate: toMonthStart(row.startDate),
+    endDate: toMonthStart(row.endDate),
+    applicationStartDate: row.applicationStartDate,
+    applicationEndDate: row.applicationEndDate,
+  };
+}
+
+/** A wizard term as the body of the term routes. */
+export function toMentorshipAdminTermInput(term: MentorshipProgramTerm): MentorshipAdminTermInput {
+  return {
+    name: term.name.trim(),
+    startDate: term.startDate,
+    endDate: term.endDate,
+    applicationStartDate: term.applicationStartDate,
+    applicationEndDate: term.applicationEndDate,
+  };
+}
+
+/**
+ * The term writes that turn `saved` into `current`. Terms are matched by id: one only in `current` is new, one only in
+ * `saved` was deleted, and one in both is updated when its name (trimmed) or a date changed.
+ */
+export function diffMentorshipEnrollTerms(saved: MentorshipProgramTerm[], current: MentorshipProgramTerm[]): MentorshipEnrollTermChanges {
+  const savedById = new Map(saved.map((term) => [term.id, term]));
+  const currentIds = new Set(current.map((term) => term.id));
+  const changed = (before: MentorshipProgramTerm, after: MentorshipProgramTerm): boolean =>
+    before.name.trim() !== after.name.trim() ||
+    before.startDate !== after.startDate ||
+    before.endDate !== after.endDate ||
+    before.applicationStartDate !== after.applicationStartDate ||
+    before.applicationEndDate !== after.applicationEndDate;
+  return {
+    created: current.filter((term) => !savedById.has(term.id)),
+    updated: current.filter((term) => {
+      const before = savedById.get(term.id);
+      return before !== undefined && changed(before, term);
+    }),
+    deleted: saved.filter((term) => !currentIds.has(term.id)).map((term) => term.id),
+  };
 }
 
 /**
@@ -308,6 +379,20 @@ export function formFromMentorshipEnrollImport(importProgramId: string, data: Me
     skills: [...data.skills],
     terms: [createDefaultMentorshipTerm()],
     prerequisites: mergeImportedMentorshipPrerequisites(data.prerequisites),
+  };
+}
+
+/**
+ * The wizard form for editing a program: its details and prerequisites as import copies them, its open terms, and its current
+ * logo as the preview. The terms were accepted when the program was created, so `termsAccepted` is `true`.
+ */
+export function formFromMentorshipEnrollEdit(data: MentorshipEnrollImport, terms: MentorshipProgramTerm[]): MentorshipEnrollForm {
+  return {
+    ...formFromMentorshipEnrollImport('', data),
+    terms: terms.map((term) => ({ ...term })),
+    logoFileName: data.logoUrl ? MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL : '',
+    logoPreviewUrl: data.logoUrl,
+    termsAccepted: true,
   };
 }
 
@@ -551,7 +636,11 @@ export function getMentorshipEnrollTermDateErrors(
  * The `details` step only requires a selected project; the picker offers live query-service
  * projects, so there is no client-side allowlist to check the id against.
  */
-export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollValidationInput): MentorshipEnrollFieldErrors {
+export function getMentorshipEnrollStepErrors(
+  step: MentorshipEnrollStep,
+  form: MentorshipEnrollValidationInput,
+  edit?: MentorshipEnrollEditBaseline
+): MentorshipEnrollFieldErrors {
   if (step === 'details') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (isBlank(form.name)) {
@@ -582,9 +671,10 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     if (form.codeOfConductUrl.trim() && !isMentorshipHttpUrl(form.codeOfConductUrl)) {
       errors.codeOfConductUrl = MENTORSHIP_INVALID_URL;
     }
-    if (isBlank(form.logoFileName)) {
+    // An edit keeps the program's logo unless a new file is picked, and a picked file is checked as it is picked.
+    if (!edit && isBlank(form.logoFileName)) {
       errors.logoFileName = 'Logo is required.';
-    } else if (!isMentorshipLogoFileName(form.logoFileName)) {
+    } else if (!edit && !isMentorshipLogoFileName(form.logoFileName)) {
       errors.logoFileName = 'Program logo is not the right file type.';
     }
     if (form.ciiProjectId.trim() && !isMentorshipCiiProjectId(form.ciiProjectId)) {
@@ -596,7 +686,8 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
   if (step === 'setup') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (!form.skills.length) errors.skills = 'Add at least one skill.';
-    if (!form.terms.length) {
+    // A program being edited may have only closed terms left, which the wizard does not hold, so it needs no open term.
+    if (!form.terms.length && !edit) {
       errors.terms = 'Add at least one program term.';
     } else if (form.terms.length > MENTORSHIP_MAX_OPEN_TERMS) {
       errors.terms = MENTORSHIP_MAX_OPEN_TERMS_MESSAGE;
@@ -608,7 +699,10 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
             ? `Term name must be ${MENTORSHIP_TERM_NAME_MAX} characters or fewer.`
             : MENTORSHIP_TERM_FIELDS_ERROR;
       } else {
-        const firstTermError = form.terms.map((term) => Object.values(getMentorshipEnrollTermDateErrors(term))[0]).find(Boolean);
+        const savedTerms = new Map((edit?.terms ?? []).map((term) => [term.id, term]));
+        const firstTermError = form.terms
+          .map((term) => Object.values(getMentorshipEnrollTermDateErrors(term, new Date(), savedTerms.get(term.id)))[0])
+          .find(Boolean);
         if (firstTermError) errors.terms = firstTermError;
       }
     }
@@ -617,11 +711,14 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
 
   const errors: MentorshipEnrollFieldErrors = {};
   const todayFloor = mentorshipDateOnlyFloor();
+  const savedPrerequisites = new Map((edit?.prerequisites ?? []).map((item) => [item.id, item]));
   const incompleteCustom = form.prerequisites.some((item) => {
     if (!item.custom) return false;
     if (isBlank(item.name) || item.name.trim().length > MENTORSHIP_CUSTOM_PREREQ_NAME_MAX) return true;
-    if (isBlank(item.dueDate ?? '') || !isMentorshipIsoDate(item.dueDate ?? '')) return true;
-    if ((item.dueDate ?? '') < todayFloor) return true;
+    // A due date the program already had, even none or a past one, stays valid while it is left unchanged.
+    const keepsSavedDueDate = savedPrerequisites.has(item.id) && (savedPrerequisites.get(item.id)?.dueDate ?? '') === (item.dueDate ?? '');
+    if (!keepsSavedDueDate && (isBlank(item.dueDate ?? '') || !isMentorshipIsoDate(item.dueDate ?? ''))) return true;
+    if (!keepsSavedDueDate && (item.dueDate ?? '') < todayFloor) return true;
     return isBlank(item.description) || item.description.trim().length > MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX;
   });
   const coding = form.prerequisites.find((item) => item.id === 'prereq-coding');

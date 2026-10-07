@@ -478,6 +478,59 @@ export interface MentorshipEnrollCreateRequest {
   termsAccepted: true;
 }
 
+/**
+ * Request body for `PATCH /api/mentorship/admin/programs/:programId`: the create body without its terms and terms acceptance.
+ * Terms are saved through the term routes, and the logo through its own route.
+ */
+export type MentorshipEnrollUpdateRequest = Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'>;
+
+/** One prerequisite as upstream stores it in a program's `task_templates`. `submitFile` is `'required'` when the mentee must attach a file. */
+export interface MentorshipUpstreamTaskTemplate {
+  name: string;
+  description: string;
+  submitFile: 'required' | null;
+  dueDate: string | null;
+}
+
+/**
+ * Upstream body for `PATCH /mentorship/v1/programs/{id}`, a partial merge with snake_case keys. Every optional text field is
+ * sent, `''` when blank, so an admin can clear it.
+ */
+export interface MentorshipUpstreamProgramUpdate {
+  name: string;
+  description: string;
+  repo_link: string;
+  website_url: string;
+  code_of_conduct: string;
+  cii_project_id: string;
+  industry: string;
+  skills: string[];
+  task_templates: MentorshipUpstreamTaskTemplate[];
+  project_uid: string;
+  project_slug: string;
+  project_name: string;
+  project_logo_url: string;
+}
+
+/** The term writes one Update makes, worked out from the terms the program had and the terms in the wizard. */
+export interface MentorshipEnrollTermChanges {
+  /** Terms the admin added in the wizard; their ids are local only. */
+  created: MentorshipProgramTerm[];
+  /** Saved terms whose name or dates changed. */
+  updated: MentorshipProgramTerm[];
+  /** Ids of saved terms the admin deleted. */
+  deleted: string[];
+}
+
+/**
+ * What the program looked like when the edit wizard opened. Validation compares against it, so a date the program already had
+ * stays valid after it has passed.
+ */
+export interface MentorshipEnrollEditBaseline {
+  terms: MentorshipProgramTerm[];
+  prerequisites: MentorshipPrerequisite[];
+}
+
 /** Response from `POST /api/mentorship/admin/programs`: what the wizard keeps so a failed logo upload can retry without a second create. */
 export interface MentorshipEnrollProgramRef {
   id: string;
@@ -491,10 +544,13 @@ export interface MentorshipProgramLogoUploadResult {
   logoUrl: string;
 }
 
-/** The two calls one Submit makes, in order. There is no review step: create already leaves the program `pending`. */
-export type MentorshipEnrollSubmitStep = 'create' | 'logo';
+/**
+ * The calls one Submit makes, in order. There is no review step: create already leaves the program `pending`. An edit's Update
+ * makes `update`, then `terms`, then `logo`.
+ */
+export type MentorshipEnrollSubmitStep = 'create' | 'update' | 'terms' | 'logo';
 
-export type MentorshipEnrollSubmitPhase = 'idle' | 'creating' | 'uploading-logo' | 'failed' | 'done';
+export type MentorshipEnrollSubmitPhase = 'idle' | 'creating' | 'updating' | 'saving-terms' | 'uploading-logo' | 'failed' | 'done';
 
 /** Shown in the wizard after a failed submit. `step` says which write failed; `message` is the banner text. */
 export interface MentorshipEnrollSubmitFailure {
@@ -536,6 +592,7 @@ export interface MentorshipUpstreamEnrollTemplate {
     project_slug?: string | null;
     project_name?: string | null;
     project_logo_url?: string | null;
+    logo_url?: string | null;
   };
   skills?: string[] | null;
   /** The program's stored task templates, passed through as they are, so their keys are camelCase unlike `program`'s. */
@@ -555,4 +612,6 @@ export interface MentorshipEnrollImport {
   technologies: string[];
   skills: string[];
   prerequisites: MentorshipPrerequisite[];
+  /** The program's current logo, `''` when it has none. Import leaves it out; the edit wizard shows it. */
+  logoUrl: string;
 }

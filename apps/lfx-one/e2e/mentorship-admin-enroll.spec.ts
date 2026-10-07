@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Admin enroll wizard — leaving the wizard (linuxfoundation/lfx-mentorship#259).
+ * Admin enroll wizard — leaving the wizard (linuxfoundation/lfx-mentorship#259), and editing a program (#265).
  *
  * The wizard asks before the admin leaves with answers they would lose. Cancel and "My Programs" only navigate;
  * the route guard on `admin/enroll` does the asking, so an untouched wizard leaves silently and a typed one
@@ -23,9 +23,12 @@ import { expect, Page, Route, test } from '@playwright/test';
 import { skipWhenAuthMissing } from './helpers/auth.helper';
 import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import {
+  ENROLL_EDIT_PROGRAM_ID,
+  ENROLL_EDIT_TEMPLATE,
   ENROLL_IMPORT_SOURCE_ID,
   ENROLL_IMPORT_SOURCE_NAME,
   ENROLL_IMPORT_TEMPLATE,
+  stubEnrollEditReads,
   stubEnrollImportReads,
   stubEnrollWizardReads,
 } from './helpers/mentorship-admin-enroll.helper';
@@ -140,5 +143,48 @@ test.describe('Admin enroll wizard — import from an existing program', () => {
 
     await expect(page.locator('#name')).toHaveValue(PROGRAM_NAME);
     expect(writes).toEqual([]);
+  });
+});
+
+test.describe('Admin enroll wizard — edit a program', () => {
+  const EDIT_URL = `${ENROLL_URL}?programId=${ENROLL_EDIT_PROGRAM_ID}`;
+  /** Next waits for the name check, so a spec that moves on waits for its answer first. */
+  let nameChecked: Promise<unknown>;
+
+  test.beforeEach(async ({ page }) => {
+    await enableMentorshipFlag(page);
+    await stubEnrollWizardReads(page, fulfillJson);
+    await stubEnrollEditReads(page, fulfillJson);
+    nameChecked = page.waitForResponse(/\/api\/mentorship\/programs\/name-available/);
+    await openMentorPage(page, EDIT_URL);
+    await expect(page.getByTestId('mentorship-enroll-title')).toHaveText('Edit program', { timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+  });
+
+  test('fills the details from the program and leaves out Import', async ({ page }) => {
+    await expect(page.locator('#name')).toHaveValue(ENROLL_EDIT_TEMPLATE.name);
+    await expect(page.locator('#repositoryUrl')).toHaveValue(ENROLL_EDIT_TEMPLATE.repositoryUrl);
+    await expect(page.locator('#importProgramId')).toHaveCount(0);
+    await expect(page.getByTestId('mentorship-enroll-back-to-programs')).toContainText('Back to Program');
+  });
+
+  test('saves with one PATCH, no term write and no logo upload, then goes back to the program', async ({ page }) => {
+    const writes: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() !== 'GET' && request.url().includes('/api/mentorship/')) writes.push(`${request.method()} ${new URL(request.url()).pathname}`);
+    });
+    await page.route(`**/api/mentorship/admin/programs/${ENROLL_EDIT_PROGRAM_ID}`, (route) =>
+      route.request().method() === 'PATCH' ? fulfillJson(route, { id: ENROLL_EDIT_PROGRAM_ID, slug: 'example', status: 'published' }) : route.fallback()
+    );
+    const next = page.getByTestId('mentorship-enroll-next').getByRole('button');
+    await nameChecked;
+
+    await next.click();
+    await expect(page.getByTestId('mentorship-enroll-closed-term')).toContainText('Fall');
+    await next.click();
+    await expect(next).toHaveText('Update');
+    await next.click();
+
+    await expect(page).toHaveURL(new RegExp(`/mentorship/admin/${ENROLL_EDIT_PROGRAM_ID}$`));
+    expect(writes).toEqual([`PATCH /api/mentorship/admin/programs/${ENROLL_EDIT_PROGRAM_ID}`]);
   });
 });

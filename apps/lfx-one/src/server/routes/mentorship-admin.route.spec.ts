@@ -36,6 +36,10 @@ const createProgramHandler = vi.fn((_req: express.Request, res: express.Response
   res.status(201).json({ id: 'program' });
 });
 
+const updateProgramHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.json({ id: 'program' });
+});
+
 const enrollTemplateHandler = vi.fn((_req: express.Request, res: express.Response) => {
   res.json({ name: 'Example Program' });
 });
@@ -48,6 +52,7 @@ const logoHandler = vi.fn((req: express.Request, res: express.Response) => {
 vi.mock('../controllers/mentorship-admin.controller', () => ({
   MentorshipAdminController: class {
     public createProgram = createProgramHandler;
+    public updateProgram = updateProgramHandler;
     public getEnrollTemplate = enrollTemplateHandler;
     public uploadProgramLogo = logoHandler;
     public updateApplicationNote = noteHandler;
@@ -221,6 +226,31 @@ describe('mentorship admin router — program create impersonation gate', () => 
 
     expect(res.status).toBe(201);
     expect(createProgramHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mentorship admin router — program update impersonation gate', () => {
+  const patchProgram = (): Promise<Response> =>
+    fetch(`${baseUrl}/api/mentorship/admin/programs/${PROGRAM_ID}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Example Program' }),
+    });
+
+  it('refuses the program update with 403 while impersonating and never reaches the controller', async () => {
+    const res = await patchProgram();
+
+    expect(res.status).toBe(403);
+    expect(updateProgramHandler).not.toHaveBeenCalled();
+  });
+
+  it('admits the program update when not impersonating', async () => {
+    impersonatingStub = false;
+
+    const res = await patchProgram();
+
+    expect(res.status).toBe(200);
+    expect(updateProgramHandler).toHaveBeenCalledTimes(1);
   });
 });
 

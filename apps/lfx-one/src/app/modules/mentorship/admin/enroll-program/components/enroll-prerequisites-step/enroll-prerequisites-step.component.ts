@@ -29,6 +29,8 @@ export class EnrollPrerequisitesStepComponent {
   public readonly errors = input<MentorshipEnrollFieldErrors>({});
   /** Set once the program is saved, so the answers can no longer change. */
   public readonly locked = input(false);
+  /** The edit wizard leaves this out: the terms were accepted when the program was enrolled. */
+  public readonly showTermsAcknowledgement = input(true);
 
   protected readonly prereqIntro = MENTORSHIP_ENROLL_PREREQ_INTRO;
   protected readonly termsIntro = MENTORSHIP_ENROLL_TERMS_INTRO;

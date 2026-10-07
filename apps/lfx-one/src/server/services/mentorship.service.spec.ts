@@ -118,6 +118,21 @@ describe('MentorshipService enroll name availability', () => {
     expect(result).toEqual({ available });
   });
 
+  it('asks upstream to leave out an edited program', async () => {
+    proxyRequest.mockResolvedValue({ available: true });
+
+    await service.isProgramNameAvailable(buildReq(), 'Program', 'program-uuid');
+
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/programs/name-availability',
+      'GET',
+      { name: 'Program', exclude_program_id: 'program-uuid' },
+      undefined
+    );
+  });
+
   it('never logs the program name', async () => {
     proxyRequest.mockResolvedValue({ available: true });
 

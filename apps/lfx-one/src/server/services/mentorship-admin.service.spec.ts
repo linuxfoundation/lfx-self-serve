@@ -1081,6 +1081,37 @@ describe('MentorshipAdminService program create and logo upload', () => {
     expect(spy.mock.calls[0].slice(2, 6)).toEqual([PROGRAMS_PATH, 'POST', undefined, createBody]);
   });
 
+  it('patches the program with the snake_case update body and returns the id, slug and status', async () => {
+    const spy = vi
+      .spyOn(MicroserviceProxyService.prototype, 'proxyRequest')
+      .mockResolvedValue({ id: PROGRAM_ID, slug: 'private-program-name', status: 'published' } as never);
+    const updateBody = {
+      projectId: createBody.projectId,
+      projectSlug: createBody.projectSlug,
+      projectName: createBody.projectName,
+      name: createBody.name,
+      description: createBody.description,
+      repositoryUrl: createBody.repositoryUrl,
+      skills: createBody.skills,
+      prerequisites: [],
+    };
+
+    await expect(service.updateProgram(buildReq(), PROGRAM_ID, updateBody)).resolves.toEqual({
+      id: PROGRAM_ID,
+      slug: 'private-program-name',
+      status: 'published',
+    });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0].slice(2, 5)).toEqual([`${PROGRAMS_PATH}/${PROGRAM_ID}`, 'PATCH', undefined]);
+    expect(spy.mock.calls[0][5]).toMatchObject({
+      name: updateBody.name,
+      repo_link: updateBody.repositoryUrl,
+      skills: updateBody.skills,
+      project_uid: updateBody.projectId,
+    });
+  });
+
   it('falls back to the id when the created program has no slug', async () => {
     vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ id: PROGRAM_ID, status: 'pending' } as never);
 

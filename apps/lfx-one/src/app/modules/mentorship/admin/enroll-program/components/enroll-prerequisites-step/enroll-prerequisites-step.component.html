@@ -89,5 +89,7 @@
     <p class="text-xs text-gray-500">Add materials unique to your program.</p>
   </div>
 
-  <lfx-mentorship-terms-acknowledgement [form]="form()" [intro]="termsIntro" idPrefix="mentorship-enroll" [error]="errors().termsAccepted" />
+  @if (showTermsAcknowledgement()) {
+    <lfx-mentorship-terms-acknowledgement [form]="form()" [intro]="termsIntro" idPrefix="mentorship-enroll" [error]="errors().termsAccepted" />
+  }
 </div>

@@ -29,6 +29,7 @@ import {
   MentorshipEnrollCreateRequest,
   MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
+  MentorshipEnrollUpdateRequest,
   MentorshipMentorTaskCreateRequest,
   MentorshipMentorTaskCreateResponse,
   MentorshipProgramLogoUploadResult,
@@ -73,7 +74,12 @@ import {
 import { buildMentorshipUpstreamTaskUpdate } from '../helpers/mentorship-admin-task.helper';
 import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { saveMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
-import { toMentorshipEnrollImport, toMentorshipEnrollProgramRef, toMentorshipProgramLogoUploadResult } from '../helpers/mentorship-enroll.helper';
+import {
+  toMentorshipEnrollImport,
+  toMentorshipEnrollProgramRef,
+  toMentorshipProgramLogoUploadResult,
+  toMentorshipUpstreamProgramUpdate,
+} from '../helpers/mentorship-enroll.helper';
 import { createMentorshipMenteeTasks } from '../helpers/mentorship-mentor-task.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
 import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask } from '../helpers/mentorship-program-application.helper';
@@ -462,6 +468,24 @@ export class MentorshipAdminService {
       body
     );
     return toMentorshipEnrollProgramRef(created);
+  }
+
+  /**
+   * Saves the edit wizard's program fields with upstream's partial update, which leaves the status as it is. Terms and the logo
+   * have their own routes. Upstream's 400, 403 and 404 pass through. Nothing in the body is logged.
+   */
+  public async updateProgram(req: Request, programId: string, body: MentorshipEnrollUpdateRequest): Promise<MentorshipEnrollProgramRef> {
+    logger.debug(req, 'mentorship_admin_update_program', 'Updating program', { programId });
+
+    const updated = await proxyMentorshipRequest<MentorshipUpstreamCreatedProgram>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}`,
+      'PATCH',
+      undefined,
+      toMentorshipUpstreamProgramUpdate(body)
+    );
+    return toMentorshipEnrollProgramRef(updated);
   }
 
   /**

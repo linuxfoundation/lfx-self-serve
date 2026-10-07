@@ -824,6 +824,7 @@ describe('MentorshipAdminController', () => {
       ['createTasks', 'createTasks', {}, {}],
       ['updateTask', 'updateTask', { taskId: PROGRAM_ID }, {}],
       ['updateProgramMentor', 'updateProgramMentor', { programId: PROGRAM_ID, memberId: PROGRAM_ID }, {}],
+      ['updateProgram', 'updateProgram', { programId: PROGRAM_ID }, {}],
       ['createTerm', 'createTerm', { programId: PROGRAM_ID }, {}],
       ['updateTerm', 'updateTerm', { programId: PROGRAM_ID, termId: PROGRAM_ID }, {}],
       ['closeTerm', 'closeTerm', { programId: PROGRAM_ID, termId: PROGRAM_ID }, {}],
@@ -914,6 +915,42 @@ describe('MentorshipAdminController', () => {
       await controller.createProgram(createReq(createBody), writeRes(), next);
 
       expect(next).toHaveBeenCalledWith(conflict);
+    });
+
+    it('updates a program from its known fields and answers with its id, slug and status', async () => {
+      const ref = { id: PROGRAM_ID, slug: 'private-program-name', status: 'published' };
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'updateProgram').mockResolvedValue(ref);
+      const out = writeRes();
+      const updateReq = {
+        ...buildReq({}, { programId: PROGRAM_ID }),
+        body: { ...createBody, status: 'pending', logo_url: 'https://x.example/a.png' },
+      } as Request;
+
+      await controller.updateProgram(updateReq, out, next);
+
+      const fields: Record<string, unknown> = { ...createBody };
+      delete fields['terms'];
+      delete fields['termsAccepted'];
+      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, fields);
+      expect(out.json).toHaveBeenCalledWith(ref);
+      expect(vi.mocked(logger.success)).toHaveBeenCalledWith(expect.anything(), 'update_mentorship_admin_program', 0, {
+        programId: PROGRAM_ID,
+        status: 'published',
+      });
+      const logged = JSON.stringify([...vi.mocked(logger.startOperation).mock.calls, ...vi.mocked(logger.success).mock.calls].map((call) => call.slice(1)));
+      expect(logged).not.toContain('private-program-description');
+    });
+
+    it.each([
+      ['a program id that is not a UUID', { programId: 'program-1' }, createBody],
+      ['no skills', { programId: PROGRAM_ID }, { ...createBody, skills: [] }],
+    ])('rejects %s on update with a 400 and no upstream call', async (_label, params, body) => {
+      const update = vi.spyOn(MentorshipAdminService.prototype, 'updateProgram');
+
+      await controller.updateProgram({ ...buildReq({}, params), body } as Request, writeRes(), next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(update).not.toHaveBeenCalled();
     });
 
     it('sends a PNG on with its content type and answers 201 with the logo URL', async () => {
