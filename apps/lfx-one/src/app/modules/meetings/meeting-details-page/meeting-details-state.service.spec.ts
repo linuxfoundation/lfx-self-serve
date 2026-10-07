@@ -816,6 +816,69 @@ describe('MeetingDetailsStateService', () => {
       expect(state.myRsvp()).toBeUndefined();
     });
 
+    // Checked against the route synchronously: right after a navigation, before the fetch for the new
+    // occurrence has even started, a late save for the old one is already dropped.
+    it('drops a late save for the occurrence the page has just left', async () => {
+      const first = new Date(Date.now() + 3 * DAY);
+      const second = new Date(Date.now() + 10 * DAY);
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: upcoming({
+            start_time: first.toISOString(),
+            recurrence: { type: 2 },
+            occurrences: [
+              { occurrence_id: '1760000000', start_time: first.toISOString(), duration: 60 },
+              { occurrence_id: '1760600000', start_time: second.toISOString(), duration: 60 },
+            ],
+          } as unknown as Partial<Meeting>),
+          project,
+        })
+      );
+      const state = create();
+      await load();
+
+      getMyRsvp.mockReturnValue(new Subject<MeetingRsvp | null>());
+      queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
+      state.setMyRsvp(MEETING_ID, '1760000000', rsvp('accepted'));
+
+      // Not even briefly: an async key would still hold the old occurrence here and let it through.
+      expect(state.myRsvp()).not.toBe('accepted');
+      await load();
+      expect(state.myRsvp()).toBeUndefined();
+    });
+
+    // A failure must not stick for the rest of the visit: one immediate retry, then one per clock
+    // tick while it keeps failing, and none once it succeeds.
+    it('retries a failed fetch, then once per clock tick until it succeeds', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      try {
+        getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
+        getMyRsvp.mockReturnValue(throwError(() => ({ status: 503 })));
+        const state = create();
+        vi.advanceTimersByTime(1);
+        await load();
+        await load();
+        expect(getMyRsvp).toHaveBeenCalledTimes(2);
+        expect(state.myRsvp()).toBeUndefined();
+
+        vi.advanceTimersByTime(30_000);
+        await load();
+        expect(getMyRsvp).toHaveBeenCalledTimes(3);
+
+        getMyRsvp.mockReturnValue(of(rsvp('accepted')));
+        vi.advanceTimersByTime(30_000);
+        await load();
+        expect(getMyRsvp).toHaveBeenCalledTimes(4);
+        expect(state.myRsvp()).toBe('accepted');
+
+        vi.advanceTimersByTime(60_000);
+        await load();
+        expect(getMyRsvp).toHaveBeenCalledTimes(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     // E2-05's save is async: one that lands after the page moved on must not mark the new view.
     it('drops a saved answer for an occurrence or meeting the page is no longer on', async () => {
       getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));

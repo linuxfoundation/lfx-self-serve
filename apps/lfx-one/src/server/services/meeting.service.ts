@@ -1699,50 +1699,44 @@ export class MeetingService {
       occurrence_id: occurrenceId,
     });
 
-    try {
-      // Resolve the user's registrant(s) first — handles accounts with multiple emails where the
-      // RSVP record's email differs from the auth email. RSVPs reliably carry registrant_id,
-      // unlike username which is often null on RSVP records.
-      // registrant.username stores the plain LFID, which getEffectiveUsername resolves (the LF
-      // username claim, or the impersonation target's username).
-      const email = getEffectiveEmail(req) ?? undefined;
-      const username = getEffectiveUsername(req) ?? undefined;
+    // A failed lookup propagates (the controller passes it to `apiErrorHandler`), so a caller can tell
+    // "could not load" from "has not answered" (`null`): the V2 status pill must not read a failure as
+    // "Awaiting your RSVP" (E2-04). V1's client still reads any failure as `null`.
+    // Resolve the user's registrant(s) first — handles accounts with multiple emails where the
+    // RSVP record's email differs from the auth email. RSVPs reliably carry registrant_id,
+    // unlike username which is often null on RSVP records.
+    // registrant.username stores the plain LFID, which getEffectiveUsername resolves (the LF
+    // username claim, or the impersonation target's username).
+    const email = getEffectiveEmail(req) ?? undefined;
+    const username = getEffectiveUsername(req) ?? undefined;
 
-      if (!email && !username) {
-        logger.warning(req, 'get_meeting_rsvp_for_current_user', 'No email or username in auth context, returning null', {
-          meeting_id: meetingUid,
-        });
-        return null;
-      }
-
-      const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username);
-      if (registrants.length === 0) {
-        return null;
-      }
-      // A user can have multiple registrant rows for the same meeting (occurrence-specific
-      // invites or re-registrations). Match RSVPs against any of them so all the user's
-      // responses are visible.
-      const registrantIds = new Set(registrants.map((r) => r.uid));
-
-      const allRsvps = await this.getMeetingRsvps(req, meetingUid);
-      const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id));
-
-      // Delegate to the shared scope resolver so this endpoint and
-      // `calculateRsvpCounts` stay in lockstep. It normalises seconds ↔ ms on
-      // occurrence_id (LFXV2-2864) and walks the user's RSVPs newest-first,
-      // returning the first one applicable to the target occurrence (see
-      // resolver docs) — replacing the previous strict-equality match which
-      // never fired for occurrence-scoped rows and the arbitrary
-      // `userRsvps[0]` fallback which surfaced order-dependent wrong answers.
-      return selectApplicableRsvp(occurrenceId, userRsvps);
-    } catch (error) {
-      logger.warning(req, 'get_meeting_rsvp_for_current_user', 'Failed to fetch user RSVP, returning null', {
+    if (!email && !username) {
+      logger.warning(req, 'get_meeting_rsvp_for_current_user', 'No email or username in auth context, returning null', {
         meeting_id: meetingUid,
-        occurrence_id: occurrenceId,
-        error: error instanceof Error ? error.message : 'Unknown error',
       });
       return null;
     }
+
+    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username);
+    if (registrants.length === 0) {
+      return null;
+    }
+    // A user can have multiple registrant rows for the same meeting (occurrence-specific
+    // invites or re-registrations). Match RSVPs against any of them so all the user's
+    // responses are visible.
+    const registrantIds = new Set(registrants.map((r) => r.uid));
+
+    const allRsvps = await this.getMeetingRsvps(req, meetingUid);
+    const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id));
+
+    // Delegate to the shared scope resolver so this endpoint and
+    // `calculateRsvpCounts` stay in lockstep. It normalises seconds ↔ ms on
+    // occurrence_id (LFXV2-2864) and walks the user's RSVPs newest-first,
+    // returning the first one applicable to the target occurrence (see
+    // resolver docs) — replacing the previous strict-equality match which
+    // never fired for occurrence-scoped rows and the arbitrary
+    // `userRsvps[0]` fallback which surfaced order-dependent wrong answers.
+    return selectApplicableRsvp(occurrenceId, userRsvps);
   }
 
   /**

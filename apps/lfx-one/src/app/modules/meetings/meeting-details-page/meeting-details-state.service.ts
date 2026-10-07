@@ -106,8 +106,33 @@ export class MeetingDetailsStateService {
   private readonly optimisticInvitedId = signal<string | null>(null);
   /** RSVPs saved from this page (E2-05), applied ahead of the indexer; see {@link setMyRsvp}. */
   private readonly myRsvpUpdates$ = new Subject<MeetingRsvp>();
-  /** The meeting and occurrence `myRsvp` is currently fetched for; `null` when it is not fetched. */
-  private myRsvpKey: { meetingId: string; occurrenceId: string | undefined } | null = null;
+  /** Set while the last `myRsvp` fetch failed, so the request is retried on the clock. */
+  private readonly myRsvpFailed = signal(false);
+  /**
+   * What `myRsvp` is fetched for, derived synchronously from the route: `null` when it is not
+   * fetched. `retry` is `0` normally and the clock's time while the last fetch failed, so a failure
+   * is retried once straight away and then on each clock tick, instead of sticking for the rest of
+   * the visit.
+   */
+  private readonly myRsvpRequest: Signal<{ meetingId: string; occurrenceId: string | undefined; retry: number } | null> = computed(() => {
+    const meeting = this.meeting();
+    const eligible =
+      !!meeting &&
+      this.matchesRoute() &&
+      this.userService.authenticated() &&
+      this.isInvited(meeting) &&
+      isMeetingInviteResponsesEnabled(meeting) &&
+      !this.loadedViaPastMeetingId() &&
+      this.timeState() !== 'ended';
+    if (!eligible || !meeting) {
+      return null;
+    }
+    return {
+      meetingId: meeting.id,
+      occurrenceId: resolveRsvpOccurrenceId(meeting, { occurrence: this.selectedOccurrence() }),
+      retry: this.myRsvpFailed() ? this.now().getTime() : 0,
+    };
+  });
   /** Meetings this page has auto-joined, so a remounted Join control does not open them again. */
   private readonly autoJoinedMeetingIds = new Set<string>();
   /** The meeting password for lookups: `?password=`, or else the composer's navigation state. */
@@ -250,7 +275,8 @@ export class MeetingDetailsStateService {
    * page has moved to another occurrence or meeting is dropped: that one fetches its own answer.
    */
   public setMyRsvp(meetingId: string, occurrenceId: string | undefined, rsvp: MeetingRsvp): void {
-    const key = this.myRsvpKey;
+    // Read synchronously: right after a navigation the route already points at the new view.
+    const key = this.myRsvpRequest();
     if (!key || key.meetingId !== meetingId || key.occurrenceId !== occurrenceId) {
       return;
     }
@@ -369,27 +395,11 @@ export class MeetingDetailsStateService {
     if (!isPlatformBrowser(this.platformId)) {
       return signal<RsvpResponse | null | undefined>(undefined).asReadonly();
     }
-    // What the fetch is made of: re-selected on each clock tick, so deduplicated on its values.
-    const request = toObservable(
-      computed(() => {
-        const meeting = this.meeting();
-        const timeState = this.timeState();
-        const eligible =
-          !!meeting &&
-          this.matchesRoute() &&
-          this.userService.authenticated() &&
-          this.isInvited(meeting) &&
-          isMeetingInviteResponsesEnabled(meeting) &&
-          !this.loadedViaPastMeetingId() &&
-          timeState !== 'ended';
-        if (!eligible || !meeting) {
-          return null;
-        }
-        return { meetingId: meeting.id, occurrenceId: resolveRsvpOccurrenceId(meeting, { occurrence: this.selectedOccurrence() }) };
-      })
-    ).pipe(
-      distinctUntilChanged((a, b) => a?.meetingId === b?.meetingId && a?.occurrenceId === b?.occurrenceId),
-      tap((key) => (this.myRsvpKey = key))
+    // Deduplicated on its values: the occurrence is re-selected on each clock tick, and a re-lookup
+    // hands out a new meeting object, neither of which should refetch over a saved answer.
+    const request = toObservable(this.myRsvpRequest).pipe(
+      // A retry tick refetches; the drop back to `retry: 0` after a success does not.
+      distinctUntilChanged((a, b) => a?.meetingId === b?.meetingId && a?.occurrenceId === b?.occurrenceId && (b?.retry === 0 || a?.retry === b?.retry))
     );
 
     return toSignal(
@@ -403,8 +413,13 @@ export class MeetingDetailsStateService {
           }
           return this.meetingService.getMeetingRsvpForCurrentUserOrFail(event.key.meetingId, event.key.occurrenceId).pipe(
             map((rsvp): RsvpResponse | null | undefined => rsvp?.response_type ?? null),
-            // Unknown, not "not answered": the pill falls back to the time state.
-            catchError(() => of<RsvpResponse | null | undefined>(undefined)),
+            tap(() => this.myRsvpFailed.set(false)),
+            // Unknown, not "not answered": the pill falls back to the time state, and the request is
+            // retried (see `myRsvpRequest`).
+            catchError(() => {
+              this.myRsvpFailed.set(true);
+              return of<RsvpResponse | null | undefined>(undefined);
+            }),
             startWith<RsvpResponse | null | undefined>(undefined)
           );
         })

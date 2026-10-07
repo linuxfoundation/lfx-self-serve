@@ -1990,3 +1990,32 @@ describe('MeetingService.createMeeting attendee visibility lock', () => {
     expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(false);
   });
 });
+
+// E2-04: "could not load" must reach the caller as an error, never as "has not answered" (`null`).
+describe('MeetingService.getMeetingRsvpForCurrentUser', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    vi.mocked(getEffectiveEmail).mockReturnValue('dana.reyes@acme-motors.example');
+    service = new MeetingService();
+  });
+
+  it('propagates a failed registrant lookup', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockRejectedValue(new Error('query service down'));
+
+    await expect(service.getMeetingRsvpForCurrentUser(req, 'meeting-1')).rejects.toThrow('query service down');
+  });
+
+  it('propagates a failed RSVP lookup', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'reg-1' }] as never);
+    vi.spyOn(service, 'getMeetingRsvps').mockRejectedValue(new Error('itx down'));
+
+    await expect(service.getMeetingRsvpForCurrentUser(req, 'meeting-1')).rejects.toThrow('itx down');
+  });
+
+  it('still answers null for a viewer with no registrant row', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([]);
+
+    await expect(service.getMeetingRsvpForCurrentUser(req, 'meeting-1')).resolves.toBeNull();
+  });
+});
