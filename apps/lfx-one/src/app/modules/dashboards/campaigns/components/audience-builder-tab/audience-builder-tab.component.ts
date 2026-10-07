@@ -869,12 +869,13 @@ export class AudienceBuilderTabComponent {
       .pipe(distinctUntilChanged(), pairwise(), takeUntilDestroyed(this.destroyRef))
       .subscribe(([previousProject]) => {
         this.resetForNewContext(previousProject);
-        // NOT cleared to '': the parent keeps its brief across a foundation switch, so the event on
-        // screen is unchanged and `eventKey` will not re-emit. Forgetting it made the next brief read
-        // as "the first after exploratory work", and work discovered here for event E survived into
-        // event F's brief whenever F shared E's URL or had none.
-        lastEventKey = this.eventKey().trim().toLowerCase() || this.initialEventUrl();
-        lastAdvertisedUrl = this.initialEventUrl();
+        // Cleared: the parent keeps its brief across a foundation switch, but that brief is the OLD
+        // project's event, so remembering its key compared the new project's first brief against it
+        // and wiped work discovered here for that very event. Work in the new project is exploratory
+        // until its first brief arrives, and the first-brief rule keeps it only when it was discovered
+        // for the URL that brief advertises -- a brief with no URL, or another URL, starts over.
+        lastEventKey = '';
+        lastAdvertisedUrl = '';
         this.capabilitiesFailed.set(false);
         // reset(), not setValue(''): the dirty flag is project-scoped state too. setValue leaves
         // the control dirty, and the `initialEventUrl` seed below only fires while it is pristine

@@ -3399,7 +3399,13 @@ export class CampaignsComponent {
       // The cause is not surfaced: a create failure can carry upstream detail, and the job
       // result collapses every dispatcher error to one string anyway.
       this.emailStaging.set('error');
-      this.emailStagingMessage.set('Staging failed. Check the HubSpot connection and try again.');
+      // After dispatch the create may already be running, and the stage is held as unresolved:
+      // "try again" there invited a duplicate draft, so the copy points at HubSpot instead.
+      this.emailStagingMessage.set(
+        dispatched !== null
+          ? 'Staging ended without an answer and a draft may still be created. Check HubSpot before staging again.'
+          : 'Staging failed. Check the HubSpot connection and try again.'
+      );
     }
   }
 

@@ -3610,6 +3610,34 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingMessage()).toContain('Check HubSpot');
     });
 
+    it('does not advise a retry when the create failed after it was dispatched', async () => {
+      // The stage is held as unresolved because the create may already be running; "try again"
+      // contradicted that hold and invited a duplicate draft.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 504 })) as never);
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(internals().emailStagingHeld(), 'fixture precondition: the dispatched stage is held').toBe(true);
+      expect(internals().emailStagingMessage()).toContain('Check HubSpot before staging again');
+      expect(internals().emailStagingMessage()).not.toContain('try again');
+    });
+
+    it('keeps the retry advice for a failure before anything was dispatched', async () => {
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(internals() as unknown as { ensureEmailBriefId(): Promise<string> }, 'ensureEmailBriefId').mockRejectedValue(new Error('persist failed'));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(create).not.toHaveBeenCalled();
+      expect(internals().emailStagingMessage()).toContain('try again');
+    });
+
     it('holds a DISPATCHED stage when a brief reset cancels its poll', async () => {
       // The reset idles the display state, but the create cannot be recalled and its job may still
       // resolve the brief's audience -- releasing let A -> B -> A replace it underneath the job.

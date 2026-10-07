@@ -989,6 +989,27 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "E's lists survived into F's brief").toBeNull();
     });
 
+    it("keeps work discovered after a foundation switch when the new project's first brief advertises that URL", async () => {
+      // The parent keeps the OLD project's brief across the switch; remembering its key compared the
+      // new project's first brief against it and wiped work discovered for that very event.
+      await render({ initialEventUrl: 'https://events.example.org/event-e', briefId: 'brief-e' });
+      fixture.componentRef.setInput('eventKey', 'event-e');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('projectSlug', 'other-foundation');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/event-f');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      fixture.componentRef.setInput('eventKey', 'event-f');
+      fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-f');
+      fixture.componentRef.setInput('briefId', 'brief-f');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), "F's own first brief wiped the work discovered for F").not.toBeNull();
+    });
+
     it('files the unattached warning for an abandoned compose that created a list', async () => {
       // An event change now strands a compose in the SAME project; its reply was swallowed by the
       // generation guard, so the parent's warning -- the only route back to a billed list -- was lost.
