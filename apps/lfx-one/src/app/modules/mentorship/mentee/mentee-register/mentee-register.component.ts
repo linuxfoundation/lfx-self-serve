@@ -48,6 +48,7 @@ import { startWith } from 'rxjs';
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
 import { SkillsPickerComponent } from '../../components/skills-picker/skills-picker.component';
 import { TermsAcknowledgementComponent } from '../../components/terms-acknowledgement/terms-acknowledgement.component';
+import { MenteeCountrySectionComponent } from './components/mentee-country-section/mentee-country-section.component';
 import { MenteeDemographicsSectionComponent } from './components/mentee-demographics-section/mentee-demographics-section.component';
 import { MenteeEligibilitySectionComponent } from './components/mentee-eligibility-section/mentee-eligibility-section.component';
 
@@ -70,6 +71,7 @@ import { MenteeEligibilitySectionComponent } from './components/mentee-eligibili
     CheckboxComponent,
     RichEditorComponent,
     TextareaComponent,
+    MenteeCountrySectionComponent,
     MenteeDemographicsSectionComponent,
     MenteeEligibilitySectionComponent,
     ProfileCardComponent,
@@ -112,6 +114,7 @@ export class MenteeRegisterComponent {
     skillsHave: new FormControl<string[]>([], { nonNullable: true }),
     skillsWant: new FormControl<string[]>([], { nonNullable: true }),
     additionalNotes: new FormControl('', { nonNullable: true }),
+    country: new FormControl('', { nonNullable: true }),
     ageConsent: new FormControl(false, { nonNullable: true }),
     age: new FormControl('', { nonNullable: true }),
     raceEthnicityConsent: new FormControl(false, { nonNullable: true }),

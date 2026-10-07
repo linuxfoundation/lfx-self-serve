@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ASSIGNED_COUNTRY_CODES } from '../constants/campaign.constants';
 import { MONTH_OPTIONS } from '../constants/profile.constants';
 import {
   MENTORSHIP_CII_INVALID_ID,
@@ -33,6 +34,8 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
+  MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE,
+  MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_PREFER_NOT_TO_SAY,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS,
@@ -388,8 +391,8 @@ function isSameMentorshipList(a: readonly string[], b: readonly string[]): boole
  * editor's HTML and is sent when it differs from the stored `seed.aboutMe`: the editor writes to the
  * form only when the mentee types, so an untouched introduction is never sent. `skillSet` is present
  * when the skills (trimmed, blanks dropped, order-sensitive) or the trimmed notes differ from `seed`,
- * and then always carries all three fields, since upstream replaces the whole column. Never emits
- * demographics or socioeconomics.
+ * and then always carries all three fields, since upstream replaces the whole column. `country` is sent
+ * when the picked code differs from `seed.country`. Never emits demographics or socioeconomics.
  */
 export function buildMentorshipMenteeProfileUpdate(
   seed: MentorshipMenteeProfileDetails,
@@ -410,6 +413,10 @@ export function buildMentorshipMenteeProfileUpdate(
     additionalNotes !== (seed.additionalNotes ?? '').trim();
   if (skillsChanged) {
     request.skillSet = { skillsHave, skillsWant, ...(additionalNotes ? { additionalNotes } : {}) };
+  }
+
+  if (value.country !== (seed.country ?? '')) {
+    request.country = value.country;
   }
 
   return request;
@@ -782,6 +789,7 @@ export function createEmptyMentorshipMenteeForm(): MentorshipMenteeRegisterForm 
     skillsHave: [],
     skillsWant: [],
     additionalNotes: '',
+    country: '',
     ageConsent: false,
     age: '',
     raceEthnicityConsent: false,
@@ -828,6 +836,16 @@ export function getMentorshipMenteeIntroductionError(html: string): string | und
 }
 
 /**
+ * The rule a mentee country is held to, on register and in the profile edit drawer, in the browser and in
+ * the BFF: required, and one of the assigned ISO 3166-1 alpha-2 codes the dropdown offers. Returns the
+ * message, or `undefined` when valid.
+ */
+export function getMentorshipMenteeCountryError(country: string): string | undefined {
+  if (isBlank(country)) return MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE;
+  return ASSIGNED_COUNTRY_CODES.has(country) ? undefined : MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE;
+}
+
+/**
  * The register rules, expressed over the wire request so the browser and the BFF share them. Keys are
  * assigned in form order because the submit toast shows `Object.values(errors)[0]`. A skill outside
  * `MENTORSHIP_SKILL_OPTIONS` can only come from a tampered request (the picker offers nothing else),
@@ -838,7 +856,7 @@ export function getMentorshipMenteeIntroductionError(html: string): string | und
 export function getMentorshipMenteeRegisterRequestErrors(
   input: Pick<
     MentorshipMenteeRegisterRequest,
-    'introduction' | 'skillsHave' | 'skillsWant' | 'ageEligible' | 'workAuthorized' | 'noDuplicateProfile' | 'complianceAccepted' | 'termsAccepted'
+    'introduction' | 'skillsHave' | 'skillsWant' | 'country' | 'ageEligible' | 'workAuthorized' | 'noDuplicateProfile' | 'complianceAccepted' | 'termsAccepted'
   >
 ): MentorshipMenteeRegisterFieldErrors {
   const errors: MentorshipMenteeRegisterFieldErrors = {};
@@ -851,6 +869,8 @@ export function getMentorshipMenteeRegisterRequestErrors(
   if (!input.skillsWant.length) errors.skillsWant = 'Add at least one skill you would like to improve.';
   else if (input.skillsWant.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsWant = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
   else if (hasUnknownMentorshipSkill(input.skillsWant)) errors.skillsWant = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
+  const countryError = getMentorshipMenteeCountryError(input.country);
+  if (countryError) errors.country = countryError;
   if (!isMentorshipTermsAccepted(input.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';
   if (!isMentorshipTermsAccepted(input.workAuthorized)) errors.workAuthorized = 'Please confirm you are authorized to work in your country of residence.';
   if (!isMentorshipTermsAccepted(input.noDuplicateProfile)) errors.noDuplicateProfile = 'Please confirm you do not already have a mentee profile.';
@@ -887,6 +907,7 @@ export function buildMentorshipMenteeRegisterRequest(
     skillsHave: [...form.skillsHave],
     skillsWant: [...form.skillsWant],
     additionalNotes: form.additionalNotes.trim(),
+    country: form.country,
     ...(Object.keys(demographics).length ? { demographics } : {}),
     ageEligible: isMentorshipTermsAccepted(form.ageEligible),
     workAuthorized: isMentorshipTermsAccepted(form.workAuthorized),

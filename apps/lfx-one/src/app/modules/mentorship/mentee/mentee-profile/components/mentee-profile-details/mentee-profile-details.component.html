@@ -77,4 +77,13 @@
       <p class="text-sm text-gray-500 italic" data-testid="mentorship-mentee-profile-details-notes-empty">{{ notesEmpty }}</p>
     }
   </div>
+
+  <div class="flex flex-col gap-2" data-testid="mentorship-mentee-profile-details-country">
+    <span class="text-xs font-semibold text-gray-400">{{ countryLabel }}</span>
+    @if (country()) {
+      <p class="text-sm text-gray-700 leading-6" data-testid="mentorship-mentee-profile-details-country-text">{{ country() }}</p>
+    } @else {
+      <p class="text-sm text-gray-500 italic" data-testid="mentorship-mentee-profile-details-country-empty">{{ countryEmpty }}</p>
+    }
+  </div>
 </section>

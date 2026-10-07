@@ -17,6 +17,8 @@ import {
 } from '../constants/mentorship-enroll.constants';
 import {
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
+  MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE,
+  MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE,
   MENTORSHIP_MENTEE_INTRODUCTION_MAX,
   MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
@@ -1214,12 +1216,22 @@ describe('getMentorshipMenteeRegisterErrors', () => {
       introduction: 'Introduction is required.',
       skillsHave: 'Add at least one skill you currently have.',
       skillsWant: 'Add at least one skill you would like to improve.',
+      country: MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE,
       ageEligible: 'Please confirm you are 18 years of age or older.',
       workAuthorized: 'Please confirm you are authorized to work in your country of residence.',
       noDuplicateProfile: 'Please confirm you do not already have a mentee profile.',
       complianceAccepted: 'Please confirm the compliance statement.',
       termsAccepted: 'Please accept the terms and conditions.',
     });
+  });
+
+  it('requires an assigned ISO country code', () => {
+    const form = { ...VALID_MENTEE_REGISTER_FORM };
+
+    expect(getMentorshipMenteeRegisterErrors({ ...form, country: 'US' }).country).toBeUndefined();
+    expect(getMentorshipMenteeRegisterErrors({ ...form, country: '  ' }).country).toBe(MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE);
+    expect(getMentorshipMenteeRegisterErrors({ ...form, country: 'United States' }).country).toBe(MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE);
+    expect(getMentorshipMenteeRegisterErrors({ ...form, country: 'us' }).country).toBe(MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE);
   });
 
   it('accepts a fully populated form — additional notes and demographic answers stay optional', () => {
@@ -1230,6 +1242,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
       introduction: '<p>Backend engineer looking to break into distributed systems.</p>',
       skillsHave: ['Java'],
       skillsWant: ['Kubernetes'],
+      country: 'KE',
       ageEligible: true,
       workAuthorized: true,
       noDuplicateProfile: true,
@@ -1304,6 +1317,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
       introduction: '<p>Hi</p>',
       skillsHave: ['Java'],
       skillsWant: ['Kubernetes'],
+      country: 'KE',
       // Array form, not boolean.
       ageEligible: ['yes'] as unknown as boolean,
       workAuthorized: ['yes'] as unknown as boolean,
@@ -1324,6 +1338,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
       introduction: '<p>Hi</p>',
       skillsHave: ['Java'],
       skillsWant: ['Kubernetes'],
+      country: 'KE',
       ageEligible: true,
       workAuthorized: true,
       noDuplicateProfile: true,
@@ -1356,6 +1371,7 @@ const VALID_MENTEE_REGISTER_FORM: MentorshipMenteeRegisterForm = {
   introduction: '<p>Test intro</p>',
   skillsHave: ['Java'],
   skillsWant: ['Python'],
+  country: 'KE',
   ageEligible: true,
   workAuthorized: true,
   noDuplicateProfile: true,
@@ -1371,6 +1387,7 @@ describe('buildMentorshipMenteeRegisterRequest', () => {
     expect(request.skillsHave).toEqual(['Java']);
     expect(request.skillsWant).toEqual(['Python']);
     expect(request.additionalNotes).toBe('Test notes.');
+    expect(request.country).toBe('KE');
   });
 
   it('includes only the demographic answers whose consent is checked and non-empty', () => {
@@ -1433,6 +1450,7 @@ describe('getMentorshipMenteeRegisterRequestErrors', () => {
       introduction: '',
       skillsHave: [],
       skillsWant: [],
+      country: '',
       ageEligible: false,
       workAuthorized: false,
       noDuplicateProfile: false,
@@ -1444,6 +1462,7 @@ describe('getMentorshipMenteeRegisterRequestErrors', () => {
       'introduction',
       'skillsHave',
       'skillsWant',
+      'country',
       'ageEligible',
       'workAuthorized',
       'noDuplicateProfile',
@@ -2205,12 +2224,14 @@ describe('buildMentorshipMenteeProfileUpdate', () => {
     skillsHave: ['Go', 'Python'],
     skillsWant: ['Kubernetes'],
     additionalNotes: 'Evenings only',
+    country: 'KE',
   };
   const unchanged: MentorshipMenteeProfileFormValue = {
     introduction: '<p>Hello world</p>',
     skillsHave: ['Go', 'Python'],
     skillsWant: ['Kubernetes'],
     additionalNotes: 'Evenings only',
+    country: 'KE',
   };
 
   it('returns an empty request when nothing changed', () => {
@@ -2261,8 +2282,15 @@ describe('buildMentorshipMenteeProfileUpdate', () => {
       skillsHave: ['Rust'],
       skillsWant: ['Go'],
       additionalNotes: 'x',
+      country: 'NG',
     });
-    expect(Object.keys(request).sort()).toEqual(['introduction', 'skillSet']);
+    expect(Object.keys(request).sort()).toEqual(['country', 'introduction', 'skillSet']);
+  });
+
+  it('sends the country only when it differs from the stored one', () => {
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, country: 'NG' })).toEqual({ country: 'NG' });
+    expect(buildMentorshipMenteeProfileUpdate({ ...seed, country: undefined }, { ...unchanged, country: 'KE' })).toEqual({ country: 'KE' });
+    expect(buildMentorshipMenteeProfileUpdate({ ...seed, country: undefined }, { ...unchanged, country: '' })).toEqual({});
   });
 });
 

@@ -6,10 +6,16 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ValidatorFn, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
+import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
+  COUNTRIES,
   MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL,
   MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX,
+  MENTORSHIP_MENTEE_COUNTRY_INTRO,
+  MENTORSHIP_MENTEE_COUNTRY_LABEL,
+  MENTORSHIP_MENTEE_COUNTRY_PLACEHOLDER,
+  MENTORSHIP_MENTEE_COUNTRY_TITLE,
   MENTORSHIP_MENTEE_INTRODUCTION_PLACEHOLDER,
   MENTORSHIP_MENTEE_PROFILE_ABOUT_INTRO,
   MENTORSHIP_MENTEE_PROFILE_ABOUT_PROMPTS,
@@ -26,7 +32,12 @@ import {
   MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeProfileDetails, MentorshipMenteeProfileUpdateResponse } from '@lfx-one/shared/interfaces';
-import { buildMentorshipMenteeProfileUpdate, getMentorshipMenteeIntroductionError, isMentorshipMenteeProfileUpdateEmpty } from '@lfx-one/shared/utils';
+import {
+  buildMentorshipMenteeProfileUpdate,
+  getMentorshipMenteeCountryError,
+  getMentorshipMenteeIntroductionError,
+  isMentorshipMenteeProfileUpdateEmpty,
+} from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 import { filter, merge, startWith } from 'rxjs';
 
@@ -49,11 +60,16 @@ function boundedStringList(): ValidatorFn {
   };
 }
 
+/** The register rule for the country (`getMentorshipMenteeCountryError`), so the drawer, the form and the BFF agree. */
+function mentorshipCountry(): ValidatorFn {
+  return (control) => (getMentorshipMenteeCountryError(typeof control.value === 'string' ? control.value : '') ? { country: true } : null);
+}
+
 /**
  * Right-side mentee profile edit drawer, opened from the "Edit Mentee Profile" button
  * on the standalone mentee profile page. Fields map to `user_profiles`: About Me ←
  * `introduction`, skills ← `skill_set.skills` / `improvementSkills`, additional notes
- * ← `skill_set.comments`. About Me uses the register form's rich editor and rule, so the stored HTML
+ * ← `skill_set.comments`, country ← `address.country`. About Me uses the register form's rich editor and rule, so the stored HTML
  * round-trips unchanged.
  *
  * Save sends only the groups the mentee changed (see `buildMentorshipMenteeProfileUpdate`) and
@@ -61,7 +77,7 @@ function boundedStringList(): ValidatorFn {
  */
 @Component({
   selector: 'lfx-mentorship-mentee-profile-edit-drawer',
-  imports: [DrawerModule, ButtonComponent, RichEditorComponent, TextareaComponent, SkillsPickerComponent],
+  imports: [DrawerModule, ButtonComponent, RichEditorComponent, SelectComponent, TextareaComponent, SkillsPickerComponent],
   templateUrl: './mentee-profile-edit-drawer.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -88,14 +104,21 @@ export class MenteeProfileEditDrawerComponent {
   protected readonly skillsWantLabel = MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL;
   protected readonly additionalNotesLabel = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL;
   protected readonly additionalNotesMax = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX;
+  protected readonly countryTitle = MENTORSHIP_MENTEE_COUNTRY_TITLE;
+  protected readonly countryIntro = MENTORSHIP_MENTEE_COUNTRY_INTRO;
+  protected readonly countryLabel = MENTORSHIP_MENTEE_COUNTRY_LABEL;
+  protected readonly countryPlaceholder = MENTORSHIP_MENTEE_COUNTRY_PLACEHOLDER;
+  protected readonly countryOptions = [...COUNTRIES];
 
   // The introduction is checked by `getMentorshipMenteeIntroductionError` on Save rather than by a validator,
-  // so a stored introduction the mentee leaves untouched never blocks a skills-only save.
+  // so a stored introduction the mentee leaves untouched never blocks a skills-only save. The country is required,
+  // as on register, so a profile saved before the field existed must pick one on its next save.
   protected readonly form = new FormGroup({
     introduction: new FormControl('', { nonNullable: true }),
     skillsHave: new FormControl<string[]>([], { nonNullable: true, validators: [requiredStringList(), boundedStringList()] }),
     skillsWant: new FormControl<string[]>([], { nonNullable: true, validators: [requiredStringList(), boundedStringList()] }),
     additionalNotes: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX)] }),
+    country: new FormControl('', { nonNullable: true, validators: [mentorshipCountry()] }),
   });
 
   /** The message for the last failed Save, shown inline. Cleared on the next Save, on any edit and on re-seed. */
@@ -103,6 +126,7 @@ export class MenteeProfileEditDrawerComponent {
   private readonly seedProfile = signal<MentorshipMenteeProfileDetails | null>(null);
   private readonly saveAttempted = signal(false);
   private readonly introductionValue = toSignal(this.form.controls.introduction.valueChanges, { initialValue: '' });
+  private readonly countryValue = toSignal(this.form.controls.country.valueChanges, { initialValue: '' });
   // Per-control ticks: parent `form.statusChanges` does not emit when overall
   // status stays INVALID, so filling one required picker would leave its error up.
   private readonly skillPickerTick = toSignal(
@@ -117,6 +141,8 @@ export class MenteeProfileEditDrawerComponent {
 
   protected readonly skillsHaveError = computed(() => this.skillPickerError('skillsHave', 'Add at least one skill you currently have.'));
   protected readonly skillsWantError = computed(() => this.skillPickerError('skillsWant', 'Add at least one skill you would like to improve.'));
+  /** Shown after a Save attempt, and updated as the mentee picks. */
+  protected readonly countryError = computed(() => (this.saveAttempted() ? getMentorshipMenteeCountryError(this.countryValue()) : undefined));
   /** Shown after a Save attempt, and only for an edited introduction: the stored one is never sent unless changed. */
   protected readonly introductionError = computed(() => {
     const introduction = this.introductionValue();
@@ -198,6 +224,7 @@ export class MenteeProfileEditDrawerComponent {
       skillsHave: profile.skillsHave ?? [],
       skillsWant: profile.skillsWant ?? [],
       additionalNotes: profile.additionalNotes ?? '',
+      country: profile.country ?? '',
     });
     this.form.markAsPristine();
     this.form.markAsUntouched();
