@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AUDIENCE_ATTACH_MAX_LIST_IDS } from '@lfx-one/shared/constants';
 import { DatePipe } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
+import { AUDIENCE_ATTACH_MAX_LIST_IDS } from '@lfx-one/shared/constants';
 
 import type { AudienceLastSentEmail, AudienceListBrief, AudienceListRef, AudienceMasterListBrief } from '@lfx-one/shared/interfaces';
 
