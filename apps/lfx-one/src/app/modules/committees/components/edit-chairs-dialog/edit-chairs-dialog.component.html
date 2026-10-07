@@ -1,22 +1,31 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6" data-testid="committee-edit-chairs-dialog">
+<div class="flex flex-col gap-5" data-testid="committee-edit-chairs-dialog">
+  <!-- Chairs -->
   <div class="flex flex-col gap-2">
     <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Chair</label>
-    @for (row of chairRows(); track row.uid) {
-      <div class="flex items-center justify-between gap-2 px-3 py-2 bg-gray-50 rounded-md" data-testid="chair-row">
-        <span class="text-sm text-gray-800">{{ row.label }}</span>
-        <lfx-button
-          icon="pi pi-times"
-          severity="secondary"
-          [text]="true"
-          size="small"
-          [ariaLabel]="'Remove ' + row.label + ' as chair'"
-          data-testid="remove-chair-btn"
-          (onClick)="removeChair(row.uid)"></lfx-button>
+
+    @if (chairRows().length) {
+      <div class="flex flex-wrap gap-2" data-testid="chair-chip-list">
+        @for (row of chairRows(); track row.uid) {
+          <span
+            class="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 border border-blue-200"
+            data-testid="chair-row">
+            {{ row.label }}
+            <button
+              type="button"
+              class="flex items-center justify-center rounded-full w-4 h-4 text-blue-400 hover:bg-blue-200 hover:text-blue-700 transition-colors"
+              [attr.aria-label]="'Remove ' + row.label + ' as chair'"
+              data-testid="remove-chair-btn"
+              (click)="removeChair(row.uid)">
+              <i class="pi pi-times text-[10px]"></i>
+            </button>
+          </span>
+        }
       </div>
     }
+
     <lfx-select
       [form]="addChairForm"
       control="uid"
@@ -24,27 +33,36 @@
       optionLabel="label"
       optionValue="value"
       placeholder="Add a chair..."
-      [showClear]="true"
       [filter]="true"
       filterBy="label"
       filterPlaceholder="Search members..."
       (onChange)="onChairSelected($event)"></lfx-select>
   </div>
+
+  <!-- Vice Chairs -->
   <div class="flex flex-col gap-2">
     <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Vice Chair</label>
-    @for (row of viceChairRows(); track row.uid) {
-      <div class="flex items-center justify-between gap-2 px-3 py-2 bg-gray-50 rounded-md" data-testid="vice-chair-row">
-        <span class="text-sm text-gray-800">{{ row.label }}</span>
-        <lfx-button
-          icon="pi pi-times"
-          severity="secondary"
-          [text]="true"
-          size="small"
-          [ariaLabel]="'Remove ' + row.label + ' as vice chair'"
-          data-testid="remove-vice-chair-btn"
-          (onClick)="removeViceChair(row.uid)"></lfx-button>
+
+    @if (viceChairRows().length) {
+      <div class="flex flex-wrap gap-2" data-testid="vice-chair-chip-list">
+        @for (row of viceChairRows(); track row.uid) {
+          <span
+            class="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 border border-blue-200"
+            data-testid="vice-chair-row">
+            {{ row.label }}
+            <button
+              type="button"
+              class="flex items-center justify-center rounded-full w-4 h-4 text-blue-400 hover:bg-blue-200 hover:text-blue-700 transition-colors"
+              [attr.aria-label]="'Remove ' + row.label + ' as vice chair'"
+              data-testid="remove-vice-chair-btn"
+              (click)="removeViceChair(row.uid)">
+              <i class="pi pi-times text-[10px]"></i>
+            </button>
+          </span>
+        }
       </div>
     }
+
     <lfx-select
       [form]="addViceChairForm"
       control="uid"
@@ -52,13 +70,13 @@
       optionLabel="label"
       optionValue="value"
       placeholder="Add a vice chair..."
-      [showClear]="true"
       [filter]="true"
       filterBy="label"
       filterPlaceholder="Search members..."
       (onChange)="onViceChairSelected($event)"></lfx-select>
   </div>
 </div>
+
 <div class="flex justify-end gap-2 mt-4">
   <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancel()"></lfx-button>
   <lfx-button label="Save" severity="info" size="small" (onClick)="save()"></lfx-button>
