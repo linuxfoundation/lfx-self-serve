@@ -240,13 +240,36 @@ export interface CommitteeNewsletterListResponse {
 /**
  * Row of GET /api/newsletters/my-newsletters: a sent newsletter reachable
  * through one of the user's current committee memberships, enriched with
- * project metadata for the Me-lens list (same enrichment fields as my-votes).
+ * owner and immediate-parent metadata for the Me-lens list.
  */
 export interface MyNewsletter extends CommitteeNewsletter {
   project_name?: string;
   project_slug?: string;
   is_foundation?: boolean;
   parent_project_uid?: string;
+  parent_project_name?: string;
+  parent_is_foundation?: boolean;
+}
+
+/** Completeness concerns issue enumeration, not delivery or optional metadata. */
+export interface MyNewslettersResponse {
+  newsletters: MyNewsletter[];
+  complete: boolean;
+}
+
+export type MyNewslettersApiResponse = MyNewslettersResponse | MyNewsletter[];
+
+export interface CommitteeNewsletterFeedResult {
+  newsletters: CommitteeNewsletter[];
+  complete: boolean;
+}
+
+export interface MyNewslettersState {
+  loading: boolean;
+  error: boolean;
+  newsletters: MyNewsletter[];
+  /** Null means completeness is unavailable, including legacy array responses. */
+  complete: boolean | null;
 }
 
 /**

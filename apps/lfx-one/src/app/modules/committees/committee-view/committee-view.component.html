@@ -483,7 +483,12 @@
         }
         @case ('votes') {
           @if (isVotesTabVisible()) {
-            <lfx-committee-votes [committee]="committee()!" [canEdit]="canEdit()" />
+            <lfx-committee-votes
+              [committee]="committee()!"
+              [canEdit]="canEdit()"
+              [votes]="votes()"
+              [votesLoading]="votesLoading()"
+              (refresh)="onVotesRefreshed()" />
           }
         }
         @case ('meetings') {
@@ -492,11 +497,16 @@
             [canEdit]="canEdit()"
             [isVisitor]="isVisitorForPrivacy()"
             [initialTimeFilter]="meetingsTimeFilter()"
-            [meetings]="upcomingMeetings()"
+            [meetings]="upcomingMeetingsFiltered()"
             [meetingsLoading]="meetingsLoading()" />
         }
         @case ('surveys') {
-          <lfx-committee-surveys [committee]="committee()!" [canEdit]="canEdit()" />
+          <lfx-committee-surveys
+            [committee]="committee()!"
+            [canEdit]="canEdit()"
+            [surveys]="surveys()"
+            [surveysLoading]="surveysLoading()"
+            (refresh)="onSurveysRefreshed()" />
         }
         @case ('documents') {
           <lfx-committee-documents [committee]="committee()!" [canEdit]="canEdit()" />
