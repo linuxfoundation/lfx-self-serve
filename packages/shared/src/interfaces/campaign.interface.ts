@@ -1384,7 +1384,8 @@ export interface CampaignCreateResponse {
  * Deliberately NOT a `CampaignCreateResult`. That interface carries `type`, `campaignName`,
  * `adGroupCount`, `keywordCount`, `adCount`, `campaignUrl` and `steps`, and campaign-service's
  * `platform-result` carries none of them — it knows the platform, whether the create
- * succeeded, the upstream campaign id, and the failure reason. Widening this into a
+ * succeeded, the upstream campaign id, the failure reason, and for HubSpot a link to the draft
+ * when it could build one. Widening this into a
  * `CampaignCreateResult` with zeros and empty strings would make the implementation tab
  * render "0 ad groups · 0 keywords · 0 ads" and an empty link for a campaign that really has
  * them, which reports a successful create as an empty one. A separate, smaller type keeps the
