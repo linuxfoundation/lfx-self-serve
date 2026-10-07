@@ -3,7 +3,6 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -24,7 +23,7 @@ import { MentorshipProgram } from '@lfx-one/shared/interfaces';
 import { getMentorshipEnrollLogoError, stableKeyIndex } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MessageService } from 'primeng/api';
-import { finalize } from 'rxjs';
+import { finalize, take } from 'rxjs';
 
 /**
  * Compact card for the mentorship admin list. Mirrors `InitiativeCardComponent`
@@ -59,6 +58,8 @@ export class ProgramCardComponent {
 
   // ─── Simple WritableSignals ────────────────────────────────────────────────
   protected readonly busy = signal(false);
+  /** Set when the card is destroyed, so an upload that lands afterwards does not emit to a list that no longer holds it. */
+  private destroyed = false;
 
   // ─── Computed ──────────────────────────────────────────────────────────────
   protected readonly seasonLine = computed(() => {
@@ -80,6 +81,10 @@ export class ProgramCardComponent {
     return name.length > 0 ? name[0].toUpperCase() : '?';
   });
 
+  public constructor() {
+    this.destroyRef.onDestroy(() => (this.destroyed = true));
+  }
+
   // ─── Protected Methods ─────────────────────────────────────────────────────
   protected onCardClick(): void {
     this.cardClick.emit(this.program().id);
@@ -91,7 +96,10 @@ export class ProgramCardComponent {
     fileInput.click();
   }
 
-  /** Uploads the picked logo. The program was created earlier, so a 403 is a real refusal and is not retried. */
+  /**
+   * Uploads the picked logo. The program was created earlier, so a 403 is a real refusal and is not retried. The upload is
+   * never cancelled by the card going away (a search, filter, reload or navigation), so it still finishes and toasts.
+   */
   protected onLogoPicked(event: Event): void {
     const fileInput = event.target as HTMLInputElement;
     const file = fileInput.files?.[0];
@@ -108,13 +116,13 @@ export class ProgramCardComponent {
     this.mentorshipAdminService
       .uploadProgramLogo(this.program().id, file, false)
       .pipe(
-        finalize(() => this.busy.set(false)),
-        takeUntilDestroyed(this.destroyRef)
+        take(1),
+        finalize(() => this.busy.set(false))
       )
       .subscribe({
         next: () => {
           this.showToast('success', 'Success', MENTORSHIP_PROGRAM_CARD_LOGO_ADDED);
-          this.changed.emit();
+          if (!this.destroyed) this.changed.emit();
         },
         error: (error: unknown) => this.showToast('error', 'Error', this.logoErrorMessage(error)),
       });

@@ -18,7 +18,7 @@ import {
 import { MentorshipProgram } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProgramCardComponent } from './program-card.component';
@@ -84,7 +84,7 @@ describe('ProgramCardComponent', () => {
     const root = create({ logoMissing: false, logoUrl: 'https://cdn.example/logo.png' });
 
     expect(root.querySelector('[data-testid="mentorship-program-card-hint"]')).toBeNull();
-    expect(root.querySelector('[data-testid="mentorship-program-card-finish"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mentorship-program-card-add-logo"]')).toBeNull();
     expect(root.querySelector('[data-testid="mentorship-program-card-logo-input"]')).toBeNull();
   });
 
@@ -92,7 +92,7 @@ describe('ProgramCardComponent', () => {
     const root = create();
 
     expect(root.querySelector('[data-testid="mentorship-program-card-hint"]')?.textContent?.trim()).toBe(MENTORSHIP_PROGRAM_CARD_LOGO_MISSING);
-    expect((root.querySelector('[data-testid="mentorship-program-card-finish"]') as HTMLElement & { label?: string }).label).toBe(
+    expect((root.querySelector('[data-testid="mentorship-program-card-add-logo"]') as HTMLElement & { label?: string }).label).toBe(
       MENTORSHIP_PROGRAM_CARD_ADD_LOGO
     );
     expect(root.querySelector('[data-testid="mentorship-program-card-logo-input"]')).not.toBeNull();
@@ -102,7 +102,7 @@ describe('ProgramCardComponent', () => {
     const root = create();
     const cardClicks = vi.fn();
     fixture.componentInstance.cardClick.subscribe(cardClicks);
-    const finish = root.querySelector('[data-testid="mentorship-program-card-finish"]') as HTMLElement;
+    const finish = root.querySelector('[data-testid="mentorship-program-card-add-logo"]') as HTMLElement;
 
     finish.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     finish.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
@@ -134,6 +134,22 @@ describe('ProgramCardComponent', () => {
     expect(uploadProgramLogo).toHaveBeenCalledWith('prog_1', expect.any(File), false);
     expect(lastToastDetail()).toBe(MENTORSHIP_PROGRAM_CARD_LOGO_ADDED);
     expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets an upload finish after the card is destroyed: it still toasts, but emits nothing', () => {
+    const response = new Subject<{ logoUrl: string }>();
+    uploadProgramLogo.mockReturnValue(response);
+    create();
+    const changed = vi.fn();
+    fixture.componentInstance.changed.subscribe(changed);
+
+    pick(png());
+    fixture.destroy();
+    expect(response.observed).toBe(true);
+    response.next({ logoUrl: 'https://cdn.example/logo.png' });
+
+    expect(lastToastDetail()).toBe(MENTORSHIP_PROGRAM_CARD_LOGO_ADDED);
+    expect(changed).not.toHaveBeenCalled();
   });
 
   it('refuses a file of the wrong type without uploading', () => {

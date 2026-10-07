@@ -141,20 +141,20 @@ test.describe('Admin programs list — logo missing structure', () => {
 
   test('nests the hint, the button and a hidden image input in the flagged card only', async ({ page }) => {
     await expect(card(page, FIRST_ID).getByTestId('mentorship-program-card-hint')).toBeVisible();
-    await expect(card(page, FIRST_ID).getByTestId('mentorship-program-card-finish')).toBeVisible();
+    await expect(card(page, FIRST_ID).getByTestId('mentorship-program-card-add-logo')).toBeVisible();
     const input = card(page, FIRST_ID).getByTestId('mentorship-program-card-logo-input');
     await expect(input).toBeHidden();
     await expect(input).toHaveAttribute('type', 'file');
     await expect(input).toHaveAttribute('accept', /image\/png/);
 
     await expect(card(page, SECOND_ID).getByTestId('mentorship-program-card-hint')).toHaveCount(0);
-    await expect(card(page, SECOND_ID).getByTestId('mentorship-program-card-finish')).toHaveCount(0);
+    await expect(card(page, SECOND_ID).getByTestId('mentorship-program-card-add-logo')).toHaveCount(0);
     await expect(card(page, SECOND_ID).getByTestId('mentorship-program-card-logo-input')).toHaveCount(0);
   });
 
   test('the button opens a file chooser without leaving the list', async ({ page }) => {
     const chooser = page.waitForEvent('filechooser');
-    await card(page, FIRST_ID).getByTestId('mentorship-program-card-finish').locator('button').click();
+    await card(page, FIRST_ID).getByTestId('mentorship-program-card-add-logo').locator('button').click();
 
     expect((await chooser).isMultiple()).toBe(false);
     await expect(page).toHaveURL(/\/mentorship\/admin$/);
@@ -172,9 +172,9 @@ test.describe('Admin programs list — logo missing structure', () => {
       .getByTestId('mentorship-program-card-logo-input')
       .setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) });
 
-    await expect(card(page, FIRST_ID).getByTestId('mentorship-program-card-finish').locator('button')).toBeDisabled();
+    await expect(card(page, FIRST_ID).getByTestId('mentorship-program-card-add-logo').locator('button')).toBeDisabled();
     release();
-    await expect(card(page, FIRST_ID).getByTestId('mentorship-program-card-finish').locator('button')).toBeEnabled();
+    await expect(card(page, FIRST_ID).getByTestId('mentorship-program-card-add-logo').locator('button')).toBeEnabled();
     await expect(card(page, FIRST_ID).getByTestId('mentorship-program-card-hint')).toBeVisible();
   });
 });

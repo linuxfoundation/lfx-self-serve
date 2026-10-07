@@ -201,7 +201,7 @@ test.describe('Admin programs list — logo missing', () => {
   async function addLogo(page: Page, id: string): Promise<void> {
     const chooser = page.waitForEvent('filechooser');
     await card(page, id)
-      .getByTestId('mentorship-program-card-finish')
+      .getByTestId('mentorship-program-card-add-logo')
       .getByRole('button', { name: new RegExp(MENTORSHIP_PROGRAM_CARD_ADD_LOGO) })
       .click();
     await (await chooser).setFiles(PNG);
@@ -215,11 +215,11 @@ test.describe('Admin programs list — logo missing', () => {
 
     for (const id of [PENDING_NO_LOGO_ID, PUBLISHED_NO_LOGO_ID]) {
       await expect(card(page, id).getByTestId('mentorship-program-card-hint')).toHaveText('Logo missing');
-      await expect(card(page, id).getByTestId('mentorship-program-card-finish')).toContainText('Add logo');
+      await expect(card(page, id).getByTestId('mentorship-program-card-add-logo')).toContainText('Add logo');
     }
     for (const id of [PENDING_WITH_LOGO_ID, REJECTED_NO_LOGO_ID]) {
       await expect(card(page, id).getByTestId('mentorship-program-card-hint')).toHaveCount(0);
-      await expect(card(page, id).getByTestId('mentorship-program-card-finish')).toHaveCount(0);
+      await expect(card(page, id).getByTestId('mentorship-program-card-add-logo')).toHaveCount(0);
     }
   });
 
@@ -261,7 +261,7 @@ test.describe('Admin programs list — logo missing', () => {
 
     await expect(page.getByText(MENTORSHIP_PROGRAM_CARD_LOGO_FORBIDDEN)).toBeVisible();
     await expect(card(page, PUBLISHED_NO_LOGO_ID).getByTestId('mentorship-program-card-hint')).toBeVisible();
-    await expect(card(page, PUBLISHED_NO_LOGO_ID).getByTestId('mentorship-program-card-finish')).toBeVisible();
+    await expect(card(page, PUBLISHED_NO_LOGO_ID).getByTestId('mentorship-program-card-add-logo')).toBeVisible();
     await expect(page).toHaveURL(/\/mentorship\/admin$/);
     expect(logoRequests).toBe(1);
   });
