@@ -502,7 +502,7 @@ describe('OrgEasyclaSignHandoffComponent', () => {
 
       expect(control.getAttribute('aria-busy')).toBe('true');
       expect(control.disabled).toBe(true);
-      (fixture.componentInstance as unknown as { onReviewCopyDownload(): void }).onReviewCopyDownload();
+      fixture.componentInstance['onReviewCopyDownload']();
       expect(getCclaPreview).toHaveBeenCalledTimes(1);
 
       preview$.error({ status: 404 });

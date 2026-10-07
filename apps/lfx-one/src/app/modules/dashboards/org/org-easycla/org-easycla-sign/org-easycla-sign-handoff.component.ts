@@ -145,7 +145,10 @@ export class OrgEasyclaSignHandoffComponent {
           downloadFromUrl(url, orgClaReviewCopyFilename(data.claGroupName));
           setTimeout(() => URL.revokeObjectURL(url), 0);
         },
-        error: () => this.reviewCopyFailed.set(true),
+        error: (error: HttpErrorResponse) => {
+          console.error('Failed to download the CCLA review copy:', error.status, error.message);
+          this.reviewCopyFailed.set(true);
+        },
       });
   }
 

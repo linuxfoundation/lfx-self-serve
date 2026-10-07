@@ -217,7 +217,7 @@ export const ORG_CLA_NOT_STARTED_COPY = {
 
 /**
  * Fallback filename on the BFF `Content-Disposition` for the watermarked review copy (#2317).
- * The unsigned overview saves `${claGroupName}-ccla-review.pdf` at the call site instead.
+ * The browser saves under `orgClaReviewCopyFilename`, which falls back to this when there is no group name.
  */
 export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agreement.pdf';
 
