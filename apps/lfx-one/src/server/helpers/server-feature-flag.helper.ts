@@ -156,7 +156,11 @@ export enum ServerFeatureFlag {
   CampaignServiceDemandGen = 'LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN',
 
   /**
-   * Gates whether a Performance Max, Video or Display Google campaign may be requested at all.
+   * Gates whether a Performance Max, Video or Display Google campaign may be OFFERED at all.
+   *
+   * Offering is not unlocking. On, this permits a Performance Max or Display create and lets the
+   * Video box render disabled-with-a-reason instead of vanishing; no value of it permits a Video
+   * CREATE, which `GOOGLE_VIDEO_CREATE_SUPPORTED` refuses unconditionally one layer up.
    *
    * The same question `CampaignServiceDemandGen` asks, about a later set of channels: does the
    * DEPLOYED campaign-service understand `googleAdsConfig.channel` values beyond `search` and

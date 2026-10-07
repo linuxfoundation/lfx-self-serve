@@ -14,6 +14,7 @@ import {
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
+  GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   JOB_LOST_MESSAGE,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
@@ -437,8 +438,9 @@ function cutoverOwnsCreate(): boolean {
  * The INVERSE of the Demand Gen rule above, and deliberately so. Demand Gen is reported available
  * while the cutover is dark because the legacy creator serves it; these three are reported
  * UNavailable in exactly that state, because the legacy creator does not know them and would
- * build a Search campaign for any of them without saying so (`normalizeBudgetSplit` in
- * `campaign-proxy.service.ts` treats every type but `demand-gen` as Search). So the capability
+ * build a DEMAND GEN campaign for any of them without saying so: `executeGoogleCampaignCreation`
+ * in `campaign-proxy.service.ts` branches `campaignType === 'search' ? createSearchCampaign :
+ * createDemandGenCampaign`, so every unknown type lands in the second arm. So the capability
  * needs the cutover to own the create AND the channel flag to be on — both, not either.
  */
 function canCreateGoogleChannels(): boolean {
@@ -1381,8 +1383,10 @@ export class CampaignServiceClient {
       return {
         enabled: true,
         jobId: null,
-        error:
-          'Video campaigns cannot be created through the Google Ads API yet. Build the campaign in Google Ads directly — once it exists, it can be adopted, monitored and optimized here.',
+        // The SAME constant the legacy road and the disabled tick-box use. Three surfaces answer
+        // the same permanent limitation; wording them separately is three places to miss when Google
+        // ships the API, and three slightly different answers to the same user question today.
+        error: GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
       };
     }
 

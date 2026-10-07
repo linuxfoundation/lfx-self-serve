@@ -34,6 +34,7 @@ import {
   normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
   CAMPAIGN_PLATFORMS,
+  GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_NAME_TOKENS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
@@ -472,14 +473,6 @@ export class ImplementationTabComponent implements OnInit {
   );
 
   /**
-   * The geo targets a Reddit dispatch will actually carry.
-   *
-   * Same reason as `redditEffectiveKeywords`: `submit()` falls back to the form's country code
-   * when the brief recommends no geos, so rendering only `redditGeoTargets()` shows an empty
-   * list for a request that targets somewhere specific. A section built so the operator can
-   * review what dispatches has to show the value that dispatches.
-   */
-  /**
    * The form's country code as a SIGNAL.
    *
    * `campaignForm.controls.countryCode.value` is a plain read — not a reactive dependency — so a
@@ -856,7 +849,11 @@ export class ImplementationTabComponent implements OnInit {
       // guard's own comments record. The three channels below cannot be reached at all unless the
       // cutover owns creation (`canCreateGoogleChannels` upstream requires it), so for them the
       // create is certain to be refused and stopping here saves the user a terminal failure.
-      const flagged = channels.filter((c) => c !== 'search' && c !== 'demand-gen');
+      // Derived from the shared constant, not an inverse literal. Both server consumers of this
+      // same policy read it (`campaign.controller.ts`, `campaign-service.service.ts`); a channel
+      // added to `GOOGLE_CAMPAIGN_CHANNELS` that does NOT require the flag would be misclassified
+      // here while those two stayed correct.
+      const flagged = channels.filter((c) => (GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG as readonly string[]).includes(c));
       if (flagged.length > 0 && channels.length > 1) return false;
     }
     if (googleSelected && this.campaignForm.invalid) return false;

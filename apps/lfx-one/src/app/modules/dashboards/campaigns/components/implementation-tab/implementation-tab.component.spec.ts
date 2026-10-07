@@ -3463,8 +3463,8 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
  * A separate describe rather than extra rows in the one above, because the two capabilities are
  * independent and derived by OPPOSITE rules upstream: `demandGenEnabled` is TRUE while the create
  * cutover is dark (the legacy creator serves Demand Gen), `googleChannelsEnabled` is FALSE there
- * (the legacy creator does not know these three and would build a funded Search campaign for them
- * and report success). Every assertion below is written so that collapsing the two inputs into one
+ * (the legacy creator does not know these three and would build a funded DEMAND GEN campaign for
+ * them and report success). Every assertion below is written so that collapsing the two inputs into one
  * would break it.
  */
 describe('ImplementationTabComponent google channels capability gate', () => {

@@ -522,7 +522,10 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN:
     value:
 
-  # Gates whether Performance Max, Video and Display Google campaigns may be requested at all.
+  # Gates whether Performance Max, Video and Display Google campaigns may be OFFERED at all.
+  # Offering is not unlocking: turning this on allows a Performance Max or Display campaign to be
+  # created, and allows the Video box to appear disabled with its reason rather than vanish. No
+  # value of this flag permits a Video CREATE — see the Video paragraph at the end.
   #
   # The same question DEMAND_GEN asks, about a later campaign-service: "does the DEPLOYED service
   # know these googleAdsConfig.channel values?". What goes wrong when it does not depends on how

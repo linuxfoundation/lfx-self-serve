@@ -52,6 +52,8 @@ import {
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
+  GOOGLE_VIDEO_CREATE_SUPPORTED,
+  GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   ISO_CALENDAR_DATE_PATTERN,
   KEYWORD_ACTION_PLATFORMS,
   LINKEDIN_MIN_DAILY_BUDGET_USD,
@@ -767,15 +769,21 @@ export class CampaignController {
       // Performance Max, Video and Display exist ONLY on the cutover path, for the same reason
       // HubSpot does — but with a worse failure mode, so this guard is not optional.
       //
-      // The legacy in-process path understands two campaign types: `normalizeBudgetSplit`
-      // (`campaign-proxy.service.ts`) maps `demand-gen` to `displayPct` and treats everything
-      // else as Search. It does not reject an unknown type; it BUILDS A SEARCH CAMPAIGN for it,
-      // with real budget, and reports success. A user who ticked Performance Max while the
-      // cutover was dark would get a Search campaign they never asked for and no error saying so
-      // — the silent-Search outcome, here reached by the legacy road. Note this is the road that
-      // still has it: `CampaignServiceGoogleChannels` guards a cutover path where the same
-      // mistake is silent only against a campaign-service predating LFXV2-3257, and is a named
-      // refusal against any later one. On THIS path it is silent against every version.
+      // The legacy in-process path branches on ONE type. `executeGoogleCampaignCreation`
+      // (`campaign-proxy.service.ts`) dispatches `campaignType === 'search' ? createSearchCampaign
+      // : createDemandGenCampaign`, and nothing between here and that loop filters the list. It
+      // does not reject an unknown type; it BUILDS A DEMAND GEN CAMPAIGN for it, funded, and
+      // reports success. (`normalizeBudgetSplit` does not choose the type — it only splits the
+      // budget, and for a Performance-Max-only request neither of its branches matches, so the
+      // campaign is funded from the raw `displayPct`.) A user who ticked Performance Max while
+      // the cutover was dark would get a Demand Gen campaign they never asked for and no error
+      // saying so.
+      //
+      // The cutover road fails differently, which is why the two are not described in one
+      // sentence: `CampaignServiceGoogleChannels` guards a path where an unknown channel is a
+      // silent SEARCH campaign only against a campaign-service predating LFXV2-3257, and a named
+      // refusal against any later one. On THIS path it is a silent Demand Gen against every
+      // version. Different wrong campaign, same silence, same bill.
       //
       // `demand-gen` and `search` are deliberately NOT refused here: the legacy path serves both.
       const legacyUnsupported = GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG.find((c) => body?.campaignTypes?.includes(c));
@@ -785,9 +793,19 @@ export class CampaignController {
           projectSlug,
           channel: legacyUnsupported,
         });
+        // Video gets the API-limit reason, not the cutover one. The cutover message tells an
+        // operator that enabling something will fix this; for Video nothing will, because
+        // `CreateVideoCampaign` refuses unconditionally upstream and `GOOGLE_VIDEO_CREATE_SUPPORTED`
+        // is `false`. The cutover road already declines to say "ask an administrator" for Video
+        // for exactly this reason; the two roads must not give contradictory answers for the same
+        // channel. Reusing the shared constant rather than writing a second string keeps them one
+        // edit apart when Google ships the API.
         res.json({
           jobId: '',
-          error: `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[legacyUnsupported]} campaigns require the campaign-service cutover to be enabled. The legacy creation path can only create Search and Demand Gen.`,
+          error:
+            legacyUnsupported === 'video' && !GOOGLE_VIDEO_CREATE_SUPPORTED
+              ? GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON
+              : `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[legacyUnsupported]} campaigns require the campaign-service cutover to be enabled. The legacy creation path can only create Search and Demand Gen.`,
         });
         return;
       }

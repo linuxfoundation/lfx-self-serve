@@ -6,6 +6,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   MAX_BULK_KEYWORD_ACTIONS,
   MAX_HUBSPOT_BODY_HTML_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
@@ -1087,13 +1088,13 @@ describe('CampaignController.createCampaign cutover', () => {
    * The legacy fall-through refusal.
    *
    * With the cutover dark the legacy in-process path owns creation, and it does not reject an
-   * unknown campaign type — `normalizeBudgetSplit` maps `demand-gen` to `displayPct` and treats
-   * EVERYTHING else as Search. So an unrefused Performance Max request does not fail; it creates a
-   * funded Search campaign and reports success. Refusing is the only outcome that tells the truth.
+   * unknown campaign type — `executeGoogleCampaignCreation` sends everything that is not
+   * `search` to `createDemandGenCampaign`. So an unrefused Performance Max request does not
+   * fail; it creates a funded DEMAND GEN campaign and reports success. Refusing is the only
+   * outcome that tells the truth.
    */
   it.each([
     ['performance-max' as const, 'Performance Max'],
-    ['video' as const, 'Video'],
     ['display' as const, 'Display'],
   ])('refuses a %s create outright while the cutover is dark', async (channel, label) => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
@@ -1105,6 +1106,36 @@ describe('CampaignController.createCampaign cutover', () => {
     const body = vi.mocked(res.json).mock.calls[0][0] as { jobId: string; error: string };
     expect(body.jobId).toBe('');
     expect(body.error).toContain(label);
+    // The cutover IS the fix for these two, so the message is allowed to say so.
+    expect(body.error).toContain('cutover');
+  });
+
+  /**
+   * Video is refused by the same guard but must NOT be given the same reason.
+   *
+   * The other two are waiting on a deployment; Video is waiting on Google, and
+   * `CreateVideoCampaign` refuses unconditionally upstream whatever this deployment does. A
+   * message promising that a cutover will fix it sends an operator to enable a flag that changes
+   * nothing. The cutover road already refuses to say "ask an administrator" for Video — asserted
+   * one layer over in `campaign-service.service.spec.ts` — and this pins the legacy road to the
+   * same answer so the two cannot drift apart.
+   *
+   * Asserting the absence of 'cutover' as well as the presence of the reason is what makes this
+   * mutation-proof: a revert to the shared string still contains the word "Video", so a
+   * `toContain(label)` assertion alone would stay green.
+   */
+  it('refuses a video create with the API limit, not the cutover message, while the cutover is dark', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['video'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const body = vi.mocked(res.json).mock.calls[0][0] as { jobId: string; error: string };
+    expect(body.jobId).toBe('');
+    expect(body.error).toBe(GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON);
+    expect(body.error).not.toContain('cutover');
+    expect(body.error).not.toContain('administrator');
   });
 
   /**
