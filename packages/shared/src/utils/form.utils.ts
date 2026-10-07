@@ -79,7 +79,7 @@ export function markMeetingFormForValidation(form: FormGroup): void {
 }
 
 /**
- * Locks attendee visibility off for board meetings (and restricted ones, when `restrictedLocks` is set).
+ * Locks attendee visibility off for board and restricted meetings (board only with `allowRestricted`, meeting v2 composer).
  * @description Forces `show_meeting_attendees` to false and disables the control when
  * {@link isShowMeetingAttendeesLocked} is true; re-enables it otherwise. Composer and manage
  * share this helper so the two surfaces cannot drift.

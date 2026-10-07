@@ -894,13 +894,12 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
     expect(service.form().get('restricted')?.value).toBe(false);
   });
 
-  it('leaves attendee visibility to the organizer when the meeting is restricted', () => {
+  it('leaves attendee visibility to the organizer when the meeting is restricted (composer v2 rule)', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
     service.form().get('show_meeting_attendees')?.setValue(true);
 
     service.form().get('restricted')?.setValue(true);
 
-    // Composer v2 locks board meetings only; restricted (invite-only) meetings may share their guest list.
     expect(service.form().get('show_meeting_attendees')?.disabled).toBe(false);
     expect(service.form().get('show_meeting_attendees')?.value).toBe(true);
   });
@@ -1493,6 +1492,15 @@ describe('MeetingComposerFormService \u2014 edit-mode hydration', () => {
 
   // Upstream types the field as a free-form string, so a stored value this build has no card for is
   // possible. Blanking it would silently rewrite the organizer's meeting on the next save.
+  // Existing restricted meetings are untouched by composer v2: a stored `true` saved before the composer
+  // allowed sharing opens as off, so a save can't re-assert it.
+  it('opens an existing restricted meeting with attendee sharing off, whatever it stored', () => {
+    const service = openEdit({ restricted: true, show_meeting_attendees: true }, of([]));
+
+    expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
+    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(false);
+  });
+
   it('keeps a stored type the composer does not recognize', () => {
     const service = openEdit({ meeting_type: 'Retrospective' }, of([]));
 

@@ -544,8 +544,14 @@ export class MeetingService {
     };
 
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board meeting into sharing its guest list in calendar invites.
-    if (isShowMeetingAttendeesLocked(createPayload.meeting_type, createPayload.restricted)) {
+    // to opt a board meeting into sharing its guest list in calendar invites. A restricted meeting
+    // keeps an explicit `true` — only the meeting v2 composer sends one (the pre-v2 wizard locks the
+    // control off) — and is forced off otherwise, as before.
+    if (
+      isShowMeetingAttendeesLocked(createPayload.meeting_type, createPayload.restricted, {
+        allowRestricted: createPayload.show_meeting_attendees === true,
+      })
+    ) {
       createPayload.show_meeting_attendees = false;
     }
 
@@ -619,19 +625,15 @@ export class MeetingService {
     const meetingType = submittedType || existingMeeting.meeting_type;
     const restricted = meetingData.restricted ?? existingMeeting.restricted;
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board meeting into sharing its guest list in calendar invites.
-    if (isShowMeetingAttendeesLocked(meetingType, restricted)) {
+    // to opt a board meeting into sharing its guest list in calendar invites. A restricted meeting
+    // keeps an explicit `true` (only the meeting v2 composer sends one) and is forced off otherwise.
+    if (isShowMeetingAttendeesLocked(meetingType, restricted, { allowRestricted: meetingData.show_meeting_attendees === true })) {
       updatePayload.show_meeting_attendees = false;
-    } else if (
-      meetingData.show_meeting_attendees == null &&
-      isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted, { restrictedLocks: true })
-    ) {
-      // A meeting locked under the pre-v2 rule (`restrictedLocks: true`: Board or restricted), saved
-      // with no choice of its own (a partial body). Upstream keeps whatever the body omits, and a row
-      // written before the lock existed can still hold `true` no organizer chose, so the save writes an
-      // explicit `false` rather than letting that value start sharing the guest list. It can't tell a
-      // stale `true` from a v2 opt-in, so it fails closed. Saves that send a value — both UIs always do —
-      // are not covered: stale pre-lock rows must be backfilled to `false` before this rule ships.
+    } else if (meetingData.show_meeting_attendees == null && isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted)) {
+      // Unlocking a locked meeting with no choice of its own. Upstream keeps whatever the body
+      // omits, and a row written before the lock existed can still hold `true`, so the stale value
+      // would survive the unlock and start sharing the guest list. A locked meeting never carried
+      // an organizer decision to inherit — the same reading `getSavedAttendeeVisibility` gives the form.
       updatePayload.show_meeting_attendees = false;
     }
 

@@ -62,11 +62,11 @@ export class MeetingCommitteeManagerComponent {
    */
   public readonly savedAttendeeVisibility = input<boolean | null>(null);
   /**
-   * Whether restricted meetings lock the attendee toggle too — the pre-v2 rule.
-   * @description The v2 composer leaves it off (board meetings only); the pre-v2 wizard's registrants
-   * manager sets it so flag-off organizers keep the lock they have always had.
+   * Meeting v2 composer only: restricted meetings may opt in, so only board meetings lock the toggle.
+   * @description Off by default, which keeps the pre-v2 wizard's registrants manager on the rule it has
+   * always had (board or restricted).
    */
-  public readonly restrictedLocksAttendees = input<boolean>(false);
+  public readonly allowRestrictedAttendees = input<boolean>(false);
 
   // Outputs
   public readonly committeesChange: OutputEmitterRef<MeetingCommittee[]> = output<MeetingCommittee[]>();
@@ -124,7 +124,7 @@ export class MeetingCommitteeManagerComponent {
   private readonly optionsRetryToken = signal(0);
 
   /**
-   * Last known lock for the attendees toggle (board, plus restricted under the pre-v2 rule).
+   * Last known board/restricted lock for the attendees toggle.
    * @description `applyCommitteeAttendeePreference` must re-run when the lock lifts so a skipped
    * committee preference is not dropped, but not when the organizer switches between unlocked
    * types — that would turn the toggle back on after they explicitly turned it off.
@@ -260,12 +260,12 @@ export class MeetingCommitteeManagerComponent {
             return EMPTY;
           }
           this.attendeeVisibilityLocked = isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value, {
-            restrictedLocks: this.restrictedLocksAttendees(),
+            allowRestricted: this.allowRestrictedAttendees(),
           });
           this.seedSessionAttendeeChoice(form, this.attendeeVisibilityLocked);
           return merge(
             merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges).pipe(
-              map(() => isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value, { restrictedLocks: this.restrictedLocksAttendees() }))
+              map(() => isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value, { allowRestricted: this.allowRestrictedAttendees() }))
             ),
             this.watchAttendeeEdits(form)
           );
@@ -578,7 +578,7 @@ export class MeetingCommitteeManagerComponent {
 
   /**
    * Turns on the meeting-level attendees toggle when a selected committee has it enabled,
-   * unless the meeting's lock (board, plus restricted under the pre-v2 rule) holds the control off.
+   * unless board/restricted meetings lock the control off.
    * @description An organizer who turned the toggle off outranks every committee default, so
    * neither picking a new committee nor lifting the lock can put it back on.
    *
@@ -601,7 +601,7 @@ export class MeetingCommitteeManagerComponent {
     }
     if (
       isShowMeetingAttendeesLocked(this.form().get('meeting_type')?.value, this.form().get('restricted')?.value, {
-        restrictedLocks: this.restrictedLocksAttendees(),
+        allowRestricted: this.allowRestrictedAttendees(),
       })
     ) {
       this.committeeOwnsAttendeeToggle = true;

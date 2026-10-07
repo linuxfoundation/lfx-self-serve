@@ -7,13 +7,14 @@ import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
-import { SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
+import { COMPOSER_ATTENDEE_LOCK, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import type { ComposerGuestRow, CommitteeMember, ManualGuestDialogResult, MeetingCommittee, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
 import {
   avatarInitials,
   getSavedAttendeeVisibility,
   getShowMeetingAttendeesLockedNote,
   isMeetingInviteResponsesEnabled,
+  isShowMeetingAttendeesLocked,
   isSameOccurrenceId,
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
@@ -54,10 +55,24 @@ export class ComposerGuestsComponent {
   private readonly meetingTypeValue: Signal<string | null> = controlValueSignal<string>(this.form, 'meeting_type');
   private readonly restrictedValue: Signal<boolean | null> = controlValueSignal<boolean>(this.form, 'restricted');
   protected readonly showAttendeesToggleNote: Signal<string | null> = computed(() =>
-    getShowMeetingAttendeesLockedNote(this.meetingTypeValue(), this.restrictedValue())
+    getShowMeetingAttendeesLockedNote(this.meetingTypeValue(), this.restrictedValue(), COMPOSER_ATTENDEE_LOCK)
   );
   /** The organizer's saved sharing decision, for the group picker; `null` on a create. */
-  protected readonly savedAttendeeVisibility: Signal<boolean | null> = computed(() => getSavedAttendeeVisibility(this.formService.meeting()));
+  /**
+   * The loaded meeting's sharing decision for the group picker; `null` when there is none to report.
+   * @description Read through the default (pre-v2) lock, like hydration. A board meeting still reports no
+   * decision, as everywhere else. A restricted meeting — locked before the composer allowed sharing — reads
+   * as decided *off* instead, so a linked group's default can't switch sharing on for an existing meeting
+   * just because it was opened here.
+   */
+  protected readonly savedAttendeeVisibility: Signal<boolean | null> = computed(() => {
+    const meeting = this.formService.meeting();
+    const saved = getSavedAttendeeVisibility(meeting);
+    if (saved !== null || !meeting) {
+      return saved;
+    }
+    return isShowMeetingAttendeesLocked(meeting.meeting_type, meeting.restricted, COMPOSER_ATTENDEE_LOCK) ? null : false;
+  });
 
   /**
    * The committees currently on the form, for the group manager to render as selected.

@@ -1,29 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SHOW_MEETING_ATTENDEES_LEGACY_LOCKED_NOTE, SHOW_MEETING_ATTENDEES_LOCKED_NOTE } from '../constants/meeting.constants';
+import { SHOW_MEETING_ATTENDEES_BOARD_LOCKED_NOTE, SHOW_MEETING_ATTENDEES_LOCKED_NOTE } from '../constants/meeting.constants';
 import { MeetingType } from '../enums';
 import type { Meeting, ShowMeetingAttendeesLockOptions } from '../interfaces';
 
 /**
  * Whether the show-attendees-in-calendar-invites toggle is locked off.
- * @description Locked for `meeting_type === Board`. Restricted (invite-only) meetings may opt in —
- * sharing the guest list is the organizer's explicit choice — except in the pre-v2 wizard, which
- * passes `restrictedLocks` to keep the lock it has always shown. `visibility === private` is a
- * separate axis and is never locked here. The lock tracks the meeting's current type on each
- * write; changing `meeting_type` away from Board lifts it.
+ * @description Locked for `meeting_type === Board` or `restricted === true` (invite-only).
+ * `visibility === private` is a separate axis and is not locked here — a private unrestricted
+ * meeting can still share its guest list in invites if the organizer opts in. `allowRestricted`
+ * (meeting v2 composer only) lifts the restricted half, so only Board locks. The lock tracks
+ * the meeting's current type and restricted flag on each write; changing `meeting_type` away
+ * from Board lifts it. A Board meeting stays locked if the organizer only turns `restricted`
+ * off.
  *
  * Both inputs are normalized, because neither is schema-validated on the way in: they reach us
- * from v1 through the ITX proxy, which does not normalize casing, trim, or coerce types. A stored
- * `"board"` or a request body carrying `"Board "` must lock the same as the canonical form — the
- * Board check always applies. `restricted` only takes part under `restrictedLocks`, where a
- * stringified `"true"` likewise locks the same as `true`; failing open on any of those
- * differences would share exactly the guest list this guards.
+ * from v1 through the ITX proxy, which does not normalize casing, trim, or coerce types. A
+ * stored `"board"`, a request body carrying `"Board "`, and a stringified `"true"` for
+ * `restricted` all have to lock the same as their canonical forms — failing open on any of
+ * those differences would share exactly the guest list this guards.
  *
  * Values outside the declared contract come from an unvalidated request body, so they are read
  * defensively rather than trusted: a non-string `meeting_type` is compared as "not Board"
  * instead of being passed to `.trim()` (which would turn a malformed body into a 500 on the
- * BFF), and, under `restrictedLocks`, a non-string `restricted` locks on anything truthy.
+ * BFF), and a non-string `restricted` locks on anything truthy.
  *
  * This lives apart from the other meeting-privacy helpers because the BFF enforces the same
  * rule on write: everything here imports enums and constants only, so the server can load the
@@ -36,7 +37,7 @@ export function isShowMeetingAttendeesLocked(
   options: ShowMeetingAttendeesLockOptions = {}
 ): boolean {
   const restrictedValue = typeof restricted === 'string' ? restricted.trim().toLowerCase() === 'true' : !!restricted;
-  if (options.restrictedLocks && restrictedValue) {
+  if (restrictedValue && !options.allowRestricted) {
     return true;
   }
   if (typeof meetingType !== 'string') {
@@ -47,10 +48,9 @@ export function isShowMeetingAttendeesLocked(
 
 /**
  * The note explaining why the attendees toggle is unavailable, or `null` when it is available.
- * @description The condition and the copy live together here rather than being restated in each
- * component. The two surfaces differ by rule: the v2 composer's Guests section locks board
- * meetings only and shows {@link SHOW_MEETING_ATTENDEES_LOCKED_NOTE}; the pre-v2 wizard's
- * registrants manager passes `restrictedLocks` and shows {@link SHOW_MEETING_ATTENDEES_LEGACY_LOCKED_NOTE}.
+ * @description Both surfaces that render the toggle — the composer's Guests section and the
+ * manage page's registrants manager — show the same note under the same condition, so the
+ * condition and the copy live together here rather than being restated in each component.
  */
 export function getShowMeetingAttendeesLockedNote(
   meetingType: string | null | undefined,
@@ -60,7 +60,7 @@ export function getShowMeetingAttendeesLockedNote(
   if (!isShowMeetingAttendeesLocked(meetingType, restricted, options)) {
     return null;
   }
-  return options.restrictedLocks ? SHOW_MEETING_ATTENDEES_LEGACY_LOCKED_NOTE : SHOW_MEETING_ATTENDEES_LOCKED_NOTE;
+  return options.allowRestricted ? SHOW_MEETING_ATTENDEES_BOARD_LOCKED_NOTE : SHOW_MEETING_ATTENDEES_LOCKED_NOTE;
 }
 
 /**
@@ -79,10 +79,9 @@ export function getShowMeetingAttendeesLockedNote(
  * unlocked type would share a guest list they were last shown as private.
  */
 export function getSavedAttendeeVisibility(
-  meeting: Pick<Meeting, 'meeting_type' | 'restricted' | 'show_meeting_attendees'> | null | undefined,
-  options: ShowMeetingAttendeesLockOptions = {}
+  meeting: Pick<Meeting, 'meeting_type' | 'restricted' | 'show_meeting_attendees'> | null | undefined
 ): boolean | null {
-  if (!meeting || isShowMeetingAttendeesLocked(meeting.meeting_type, meeting.restricted, options)) {
+  if (!meeting || isShowMeetingAttendeesLocked(meeting.meeting_type, meeting.restricted)) {
     return null;
   }
   return meeting.show_meeting_attendees ?? false;
@@ -90,9 +89,8 @@ export function getSavedAttendeeVisibility(
 
 /**
  * Whether the meeting's guest list may be shown to invitees who are not organizers.
- * @description Reads the stored flag through the lock, so a Board meeting still carrying
- * `show_meeting_attendees: true` stays private. A restricted meeting shares its list when its
- * organizer turned the flag on. The BFF roster gate and the card
+ * @description Reads the stored flag through the lock, so a legacy Board or restricted meeting
+ * still carrying `show_meeting_attendees: true` stays private. The BFF roster gate and the card
  * and join-page gates share this predicate so they cannot disagree about who sees the list.
  */
 export function isMeetingAttendeeListShared(meeting: Pick<Meeting, 'meeting_type' | 'restricted' | 'show_meeting_attendees'> | null | undefined): boolean {

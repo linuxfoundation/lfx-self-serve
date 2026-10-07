@@ -120,7 +120,7 @@ picker lists only meetings the caller organizes, to match.
 can view the meeting list the guests. Both endpoints first call
 `MeetingService.canViewMeetingRoster`: organizers always pass, and invitees (matched by email or
 username, like the `invited` flag) pass only when
-`show_meeting_attendees` is on and the meeting isn't Board (`isMeetingAttendeeListShared`). Everyone else gets `[]`. `my-meeting-registrants` applies the same
+`show_meeting_attendees` is on and the meeting isn't Board or restricted (`isMeetingAttendeeListShared`). Everyone else gets `[]`. `my-meeting-registrants` applies the same
 rule. Invitees still see the invited count, from `registrant_count` on the public meeting response.
 
 `GET /api/past-meetings/:uid/participants` has the same viewer filter, so it calls

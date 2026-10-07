@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ArtifactVisibility, MeetingType, MeetingVisibility, CancelOnCommitteeRemoval } from '../enums';
-import type { AttachmentCategory, CardSelectorOption, MeetingTypeConfig, MeetingComposerPreviewFeature } from '../interfaces';
+import type { AttachmentCategory, CardSelectorOption, MeetingTypeConfig, MeetingComposerPreviewFeature, ShowMeetingAttendeesLockOptions } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
 /**
@@ -742,11 +742,14 @@ export const SHOW_MEETING_ATTENDEES_FEATURE = {
   color: lfxColors.blue[500],
 };
 
-/** Note shown when the attendees toggle is locked off: board meetings only (meeting v2 composer and the server rule). */
-export const SHOW_MEETING_ATTENDEES_LOCKED_NOTE = 'Not available for board meetings';
+/** Note shown when the attendees toggle is locked off for board or restricted meetings. */
+export const SHOW_MEETING_ATTENDEES_LOCKED_NOTE = 'Not available for board or restricted meetings';
 
-/** Note the pre-v2 wizard shows, where restricted meetings stay locked too. */
-export const SHOW_MEETING_ATTENDEES_LEGACY_LOCKED_NOTE = 'Not available for board or restricted meetings';
+/** Note the meeting v2 composer shows, where only board meetings lock the toggle (`allowRestricted`). */
+export const SHOW_MEETING_ATTENDEES_BOARD_LOCKED_NOTE = 'Not available for board meetings';
+
+/** The meeting v2 composer's attendee-lock rule: board meetings only. */
+export const COMPOSER_ATTENDEE_LOCK: ShowMeetingAttendeesLockOptions = { allowRestricted: true };
 
 // ============================================================================
 // Meeting Duration Options

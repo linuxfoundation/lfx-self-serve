@@ -297,10 +297,9 @@ export interface Meeting {
   youtube_upload_enabled: boolean | null;
   /**
    * Share the guest list in calendar invites: when on, each guest's ICS lists the other
-   * attendees and their last known RSVP instead of the recipient alone. Board meetings can never
-   * opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF forces the field off on
-   * write. Restricted (invite-only) meetings may opt in; only the pre-v2 wizard still locks them in
-   * its own UI. In LFX it also decides whether an invitee who is not an
+   * attendees and their last known RSVP instead of the recipient alone. Board and restricted
+   * meetings can never opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF
+   * forces the field off on write. In LFX it also decides whether an invitee who is not an
    * organizer can see the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]`
    * to them when it is off, and the meeting card and meeting page hide their guest lists to match.
    * `GET /api/meetings/:uid/registrants` (tolerant listing) and `GET /api/meetings/:uid/rsvp`
@@ -2147,11 +2146,11 @@ export interface MeetingComposerEditScope {
 /** Options for the show-attendees lock (`isShowMeetingAttendeesLocked` and its helpers). */
 export interface ShowMeetingAttendeesLockOptions {
   /**
-   * Lock restricted (invite-only) meetings too — the pre-v2 rule.
-   * @description Off by default: the current rule locks board meetings only. The pre-v2 wizard passes
-   * `true` so flag-off organizers keep the lock they have always had.
+   * Let restricted (invite-only) meetings opt in — only board meetings lock.
+   * @description Meeting v2 composer only (`meeting-v2-enabled`). Everything else — the pre-v2 wizard and
+   * every read of a stored meeting — keeps the default rule, so existing meetings are unaffected.
    */
-  restrictedLocks?: boolean;
+  allowRestricted?: boolean;
 }
 
 /** Composer surface: the full sectioned drawer, or the condensed quick create dialog. */

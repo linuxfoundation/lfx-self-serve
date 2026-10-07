@@ -1863,7 +1863,7 @@ describe('MeetingService.updateMeeting attendee visibility lock', () => {
     expect(payload.show_meeting_attendees).toBe(false);
   });
 
-  it('lets a restricted meeting opt in to sharing its guest list', async () => {
+  it('keeps an explicit opt-in on a restricted meeting (only the meeting v2 composer sends one)', async () => {
     proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, organizers: [] });
     proxyRequestWithResponse.mockResolvedValueOnce({});
 
@@ -1873,9 +1873,7 @@ describe('MeetingService.updateMeeting attendee visibility lock', () => {
     expect(payload.show_meeting_attendees).toBe(true);
   });
 
-  it('writes an explicit false for a restricted meeting saved without a choice (a partial body)', async () => {
-    // Restricted meetings were locked under the pre-v2 rule, so a stored `true` can predate the
-    // organizer ever being able to choose it. Upstream keeps what the body omits, so it is cleared here.
+  it('still forces show_meeting_attendees off on a restricted meeting saved without an explicit opt-in', async () => {
     proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, show_meeting_attendees: true, organizers: [] });
     proxyRequestWithResponse.mockResolvedValueOnce({});
 
@@ -1994,11 +1992,19 @@ describe('MeetingService.createMeeting attendee visibility lock', () => {
     expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(false);
   });
 
-  it("keeps a restricted meeting's opt-in on create", async () => {
+  it('keeps an explicit opt-in on a restricted meeting (only the meeting v2 composer sends one)', async () => {
     proxyRequest.mockResolvedValueOnce({ id: 'meeting-1' }).mockResolvedValueOnce({ id: 'meeting-1', restricted: true });
 
-    await service.createMeeting(req, { ...baseCreate, meeting_type: 'Technical', restricted: true, show_meeting_attendees: true });
+    await service.createMeeting(req, { ...baseCreate, meeting_type: 'Technical', restricted: true });
 
     expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(true);
+  });
+
+  it('forces show_meeting_attendees off on a restricted meeting created without an explicit opt-in', async () => {
+    proxyRequest.mockResolvedValueOnce({ id: 'meeting-1' }).mockResolvedValueOnce({ id: 'meeting-1', restricted: true });
+
+    await service.createMeeting(req, { ...baseCreate, meeting_type: 'Technical', restricted: true, show_meeting_attendees: false });
+
+    expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(false);
   });
 });
