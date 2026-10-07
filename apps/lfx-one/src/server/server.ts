@@ -4,7 +4,7 @@
 import { APP_BASE_HREF } from '@angular/common';
 import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
-import { GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
+import { GW_EMBED_ROUTE_PREFIXES, GW_EMBED_STYLESHEET_ROUTE } from '@lfx-one/shared/constants';
 import { AuthContext, RuntimeConfig, ServerRequestContext, User } from '@lfx-one/shared/interfaces';
 import { redactLoggedUrl } from '@lfx-one/shared/utils/auth-fragment.utils';
 import express, { NextFunction, Request, Response } from 'express';
@@ -39,6 +39,7 @@ import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
 import formationsRouter from './routes/formations.route';
 import projectApplicationsRouter from './routes/project-applications.route';
+import gwEmbedStylesheetRouter from './routes/gw-embed-stylesheet.route';
 import gwProxyRouter from './routes/gw-proxy.route';
 import impersonationRouter from './routes/impersonation.route';
 import mailingListsRouter from './routes/mailing-lists.route';
@@ -386,6 +387,9 @@ app.use('/public/api/foundations', publicFoundationsRouter);
 app.use('/public/api/groups', publicGroupsRouter);
 app.use('/public/api/profile', publicProfileRouter);
 app.use('/public/api/projects', publicProjectsRouter);
+// The Gatewaze embed's stylesheet, scoped to the LFX chrome and cached by hashed name. Public:
+// the loader fetches it without credentials and the content is public (see the controller).
+app.use(GW_EMBED_STYLESHEET_ROUTE, gwEmbedStylesheetRouter);
 
 app.use('/api/projects', projectsRouter);
 app.use('/api/committees', committeesRouter);
@@ -562,6 +566,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     // "not configured" message, which is the right outcome for a misconfiguration.
     gwSupabaseAnonKey: resolvePublishableGwSupabaseKey(req),
     gwLfidStartUrl: process.env['GW_LFID_START_URL'] || '',
+    gwEmbedUrl: process.env['GW_EMBED_URL'] || '',
   };
 
   logger.debug(req, 'intercom_ssr_context', 'Intercom SSR inputs resolved', {
