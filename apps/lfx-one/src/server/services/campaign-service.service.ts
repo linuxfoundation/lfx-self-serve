@@ -1140,10 +1140,12 @@ export class CampaignServiceClient {
         return { enabled: true, error: 'The saved audience for this brief could not be read. Reload to try again.' };
       }
       const rows = response.data.audiences;
-      const usable = rows.filter((row): row is CampaignServiceAudienceList => Boolean(row?.id));
+      const usable = rows.filter((row): row is CampaignServiceAudienceList => this.isReadableAudienceRow(row));
       // A row that is not a row is malformed too, for the same reason as the missing array above.
       // Filtering `[null]` or `[{ id: '' }]` down to `[]` reported a response that DID carry an
       // audience -- just not a readable one -- as a verified absence, and that re-opened compose.
+      // An `id` alone is not a row either: `{ id: 'a' }` mapped to an audience with no platform, so
+      // the restore found no HubSpot row and read the malformed response as a verified absence.
       // Partial loss counts: the newest row is the one dispatch uses, and it may be the dropped one.
       if (usable.length !== rows.length) {
         logger.warning(req, 'list_audiences', 'Audience read-back returned unreadable rows', { total: rows.length, usable: usable.length });
@@ -2060,6 +2062,20 @@ export class CampaignServiceClient {
    * `etag` is NOT set here: `listAudiences` has none to take, and a mapper that guessed one would
    * hand the caller a token that means nothing upstream.
    */
+  /**
+   * Whether a `list-audiences` row carries every field the wire contract REQUIRES, with the right
+   * type. Anything less is unreadable, not "a row with blanks": the restore keys on `platform` and
+   * `brief_id`, so a partial row read as a verified absence and re-opened a non-idempotent compose.
+   * `status` only has to be a non-empty string -- an unrecognised value is mapped to `failed` below.
+   */
+  private isReadableAudienceRow(row: CampaignServiceAudienceList | null | undefined): boolean {
+    if (!row || typeof row !== 'object') {
+      return false;
+    }
+    const requiredStrings = [row.id, row.project_id, row.brief_id, row.platform, row.status];
+    return requiredStrings.every((value) => typeof value === 'string' && value !== '') && typeof row.version === 'number' && Number.isFinite(row.version);
+  }
+
   private toCampaignAudience(row: CampaignServiceAudienceList): CampaignAudience {
     return {
       id: row.id,

@@ -2436,6 +2436,14 @@ describe('CampaignServiceClient.listAudiences', () => {
     ['a null row', [null]],
     ['a row with no id', [{ ...audience, id: '' }]],
     ['a readable row beside an unreadable one', [{ ...audience, id: '' }, audience]],
+    // An id alone is not a row: `{ id: 'a' }` mapped to an audience with no platform, so the
+    // restore found no HubSpot row and read the response as a verified absence.
+    ['a row with only an id', [{ id: 'a' }]],
+    ['a row with no platform', [{ ...audience, platform: '' }]],
+    ['a row with no brief id', [{ ...audience, brief_id: undefined }]],
+    ['a row with no project id', [{ ...audience, project_id: '' }]],
+    ['a row with no status', [{ ...audience, status: undefined }]],
+    ['a row whose version is not a number', [{ ...audience, version: '1' }]],
   ])('reports %s as an unreadable read, not as an empty or partial one', async (_label, audiences) => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences }));
 
