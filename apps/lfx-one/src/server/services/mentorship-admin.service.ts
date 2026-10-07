@@ -26,15 +26,20 @@ import {
   MentorshipAdminTermsQuery,
   MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
+  MentorshipEnrollCreateRequest,
+  MentorshipEnrollProgramRef,
   MentorshipMentorTaskCreateRequest,
   MentorshipMentorTaskCreateResponse,
+  MentorshipProgramLogoUploadResult,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipProgramTermRow,
   MentorshipTermRowStatus,
   MentorshipUpstreamAdministeredProgram,
   MentorshipUpstreamApplication,
+  MentorshipUpstreamCreatedProgram,
   MentorshipUpstreamListResponse,
+  MentorshipUpstreamLogoUpload,
   MentorshipUpstreamMemberManagementRow,
   MentorshipUpstreamProgramApplicationRow,
   MentorshipUpstreamProgramHeader,
@@ -66,6 +71,7 @@ import {
 import { buildMentorshipUpstreamTaskUpdate } from '../helpers/mentorship-admin-task.helper';
 import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { saveMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
+import { toMentorshipEnrollProgramRef, toMentorshipProgramLogoUploadResult } from '../helpers/mentorship-enroll.helper';
 import { createMentorshipMenteeTasks } from '../helpers/mentorship-mentor-task.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
 import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask } from '../helpers/mentorship-program-application.helper';
@@ -435,6 +441,45 @@ export class MentorshipAdminService {
     const declinedCount = typeof result?.declined_count === 'number' ? result.declined_count : 0;
     logger.debug(req, 'mentorship_admin_decline_pending_for_term', 'Pending applications declined', { programId, termId, declinedCount });
     return { declinedCount };
+  }
+
+  /**
+   * Creates a program from the enroll wizard. Upstream leaves it `pending`, which is awaiting review, so there is no submit
+   * call. The body is already rebuilt from known fields. Upstream's 400 and 409 (a taken name or slug) pass through. Nothing in
+   * the body is logged.
+   */
+  public async createProgram(req: Request, body: MentorshipEnrollCreateRequest): Promise<MentorshipEnrollProgramRef> {
+    logger.debug(req, 'mentorship_admin_create_program', 'Creating program', { termCount: body.terms.length });
+
+    const created = await proxyMentorshipRequest<MentorshipUpstreamCreatedProgram>(
+      this.microserviceProxy,
+      req,
+      MENTORSHIP_PROGRAMS_PATH,
+      'POST',
+      undefined,
+      body
+    );
+    return toMentorshipEnrollProgramRef(created);
+  }
+
+  /**
+   * Sends a program's logo bytes on to upstream with the caller's content type. Upstream's 400, 403, 404, 409, 413, 415 and 503
+   * pass through. The bytes are not logged.
+   */
+  public async uploadProgramLogo(req: Request, programId: string, logo: Buffer, contentType: string): Promise<MentorshipProgramLogoUploadResult> {
+    logger.debug(req, 'mentorship_admin_upload_program_logo', 'Uploading program logo', { programId, sizeBytes: logo.byteLength, contentType });
+
+    const uploaded = await proxyMentorshipRequest<MentorshipUpstreamLogoUpload>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/logo-upload`,
+      'POST',
+      undefined,
+      logo,
+      undefined,
+      { 'Content-Type': contentType }
+    );
+    return toMentorshipProgramLogoUploadResult(uploaded);
   }
 
   /**
