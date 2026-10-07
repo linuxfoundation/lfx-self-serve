@@ -221,6 +221,11 @@ export const ORG_CLA_NOT_STARTED_COPY = {
  */
 export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agreement.pdf';
 
+export const ORG_CLA_REVIEW_COPY_FAILURE = {
+  summary: 'Download failed',
+  detail: 'Could not download a review copy of the CCLA. Please try again.',
+} as const;
+
 /**
  * The leftover EasyCLA address, `/org/easycla` (#1983). Still routed for three consumers:
  * corporate-signing returns minted before lfx-self-serve#2743 deployed, returns minted by any

@@ -45,6 +45,21 @@ SPDX-License-Identifier: MIT
           <i class="fa-light fa-circle-check mt-0.5 text-xl text-emerald-700" aria-hidden="true"></i>
           <p class="text-sm text-slate-600">{{ copy.ready.body }}</p>
         </div>
+        <div class="flex flex-col gap-2">
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 self-start text-sm font-medium text-blue-600 hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+            [disabled]="reviewCopyDownloading()"
+            [attr.aria-busy]="reviewCopyDownloading()"
+            (click)="onReviewCopyDownload()"
+            data-testid="org-easycla-sign-review-copy">
+            <i class="fa-light fa-download" aria-hidden="true"></i>
+            {{ reviewCopyLabel }}
+          </button>
+          @if (reviewCopyFailed()) {
+            <p class="text-sm text-red-700" role="alert" data-testid="org-easycla-sign-review-copy-error">{{ reviewCopyFailure }}</p>
+          }
+        </div>
         <div class="mt-2 flex justify-end">
           <lfx-button [label]="copy.ready.continueLabel" (onClick)="onReviewAndSign()" data-testid="org-easycla-sign-review" />
         </div>
