@@ -2951,6 +2951,41 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/health-overview-signals
+   * The Overview findings list for every selectable period, keyed by range
+   */
+  public async getHealthOverviewSignals(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_health_overview_signals');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_health_overview_signals',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_health_overview_signals',
+        });
+      }
+
+      const response = await this.projectService.getHealthOverviewSignals(foundationSlug);
+
+      logger.success(req, 'get_health_overview_signals', startTime, {
+        foundation_slug: foundationSlug,
+        range_count: Object.keys(response).length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/event-growth
    * Get event growth metrics (total attendees, top events by attendance/revenue)
    */

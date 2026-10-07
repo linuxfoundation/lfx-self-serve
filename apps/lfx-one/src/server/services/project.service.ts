@@ -14,9 +14,14 @@ import {
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
   HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
+  HEALTH_METRICS_OVERVIEW_TILE_LINKS,
   HEALTH_METRICS_RANGES,
   HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
   HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS,
+  HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS,
+  HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS,
+  HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS,
+  HEALTH_OVERVIEW_SIGNAL_PERIOD_RANGES,
   NATS_CONFIG,
   PAID_CAMPAIGN_LIMIT,
   PENDING_ACTION_SEVERITY,
@@ -98,8 +103,11 @@ import {
   HealthEventsMonthlyResponse,
   HealthMetricsAggregatedRow,
   HealthMetricsAreaState,
+  HealthMetricsAreaStateDetail,
   HealthMetricsDailyResponse,
+  HealthMetricsFinding,
   HealthMetricsOverviewArea,
+  HealthMetricsOverviewFindingsByRange,
   HealthMetricsOverviewFoundationSummary,
   HealthMetricsOverviewKpisByRange,
   HealthMetricsOverviewRevenueByRange,
@@ -107,6 +115,7 @@ import {
   HealthOverviewAllPeriodsRow,
   HealthOverviewEngagementCounts,
   HealthOverviewKpisRow,
+  HealthOverviewSignalRow,
   KeywordAttributionRow,
   KeywordPerformanceResponse,
   KeywordPerformanceRow,
@@ -1724,6 +1733,7 @@ export class ProjectService {
    */
   public async getFoundationProfileSummary(foundationSlug: string): Promise<HealthMetricsOverviewFoundationSummary> {
     interface HealthOverviewProfileRow {
+      MEMBER_COUNT: number | null;
       PROJECT_COUNT: number | null;
       MEMBERSHIP_TIER_COUNT: number | null;
       BOARD_SEAT_COUNT: number | null;
@@ -1732,6 +1742,7 @@ export class ProjectService {
 
     const query = `
       SELECT
+        member_count,
         project_count,
         membership_tier_count,
         board_seat_count,
@@ -1775,6 +1786,7 @@ export class ProjectService {
 
     return {
       dataAvailable: true,
+      size: format(row.MEMBER_COUNT, (count) => `${ProjectService.formatExactCount(count)} ${count === 1 ? 'member' : 'members'}`),
       projects: format(row.PROJECT_COUNT, (count) => String(count)),
       tiers: format(row.MEMBERSHIP_TIER_COUNT, (count) => `${count} ${count === 1 ? 'tier' : 'tiers'}`),
       board: format(row.BOARD_SEAT_COUNT, (count) => `${count} ${count === 1 ? 'seat' : 'seats'}`),
@@ -6262,6 +6274,7 @@ export class ProjectService {
         streams: rows.map((row) => ({
           key: String(row['REVENUE_DOMAIN'] ?? '').toLowerCase(),
           value: ProjectService.toNullableNumber(row[ProjectService.revenueAlias('REVENUE_USD', range)]),
+          share: ProjectService.toNullableNumber(row[ProjectService.revenueAlias('REVENUE_SHARE_PCT', range)]),
         })),
       };
     }
@@ -6296,6 +6309,9 @@ export class ProjectService {
           )
           .join(',\n        ')},
         members_renewing_90d_value_usd AS MEMBERS_RENEWING_90D_VALUE_USD,
+        members_renewing_90d_org_count AS MEMBERS_RENEWING_90D_ORG_COUNT,
+        members_renewing_90d_unsecured_org_count AS MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT,
+        members_renewing_90d_unsecured_value_usd AS MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD,
         members_status AS MEMBERS_STATUS,
         non_members_pipeline_value_usd AS NON_MEMBERS_PIPELINE_VALUE_USD,
         non_members_status AS NON_MEMBERS_STATUS
@@ -6337,6 +6353,70 @@ export class ProjectService {
         [...engagementStates(range), ...ProjectService.buildHealthOverviewKpiAreaStates(ProjectService.projectKpiRow(wideRow, range))],
       ])
     );
+  }
+
+  /**
+   * Get the Overview findings list from `HEALTH_OVERVIEW_SIGNALS`, for every period in one read. Rows
+   * already carry their copy; this maps band, category and signal key onto the finding's classification,
+   * area and drill-in. A row with an unknown period, band or category is dropped rather than misfiled.
+   */
+  public async getHealthOverviewSignals(foundationSlug: string): Promise<HealthMetricsOverviewFindingsByRange> {
+    logger.debug(undefined, 'get_health_overview_signals', 'Fetching health overview signals', { foundation_slug: foundationSlug });
+
+    const query = `
+      SELECT
+        period_slug AS PERIOD_SLUG,
+        signal_key AS SIGNAL_KEY,
+        severity_band AS SEVERITY_BAND,
+        category AS CATEGORY,
+        headline AS HEADLINE,
+        body AS BODY,
+        metric_value AS METRIC_VALUE,
+        metric_caption AS METRIC_CAPTION,
+        metric_secondary AS METRIC_SECONDARY
+      FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_SIGNALS
+      WHERE foundation_slug = ?
+      ORDER BY period_slug, severity_rank, sort_rank
+    `;
+
+    let result: SnowflakeQueryResult<HealthOverviewSignalRow>;
+    try {
+      result = await this.snowflakeService.execute<HealthOverviewSignalRow>(query, [foundationSlug], { expectMissingObject: true });
+    } catch (error) {
+      if (!SnowflakeService.isMissingObjectError(error)) throw error;
+      logger.warning(
+        undefined,
+        'get_health_overview_signals',
+        'Health overview signals query hit a missing-object/not-authorized error; returning no findings',
+        {
+          foundation_slug: foundationSlug,
+          err: error,
+        }
+      );
+      return {};
+    }
+
+    const byRange: HealthMetricsOverviewFindingsByRange = {};
+    let droppedCount = 0;
+    for (const row of result.rows ?? []) {
+      const finding = ProjectService.toHealthOverviewFinding(row);
+      if (!finding) {
+        droppedCount++;
+        continue;
+      }
+      const findings = (byRange[finding.range] ??= []);
+      // Rows arrive ordered, so the index within the period is its display rank.
+      findings.push({ ...finding.finding, sortRank: findings.length });
+    }
+
+    logger.debug(undefined, 'get_health_overview_signals', 'Fetched health overview signals', {
+      foundation_slug: foundationSlug,
+      row_count: result.rows?.length ?? 0,
+      // Rows with no headline or an unmapped period, band or category; non-zero flags model drift.
+      dropped_count: droppedCount,
+    });
+
+    return byRange;
   }
 
   /**
@@ -9103,6 +9183,7 @@ export class ProjectService {
         // present shows the chip — a set goal with no status yet renders "Awaiting data", matching
         // how trn/mem/non already treat a null status column.
         showStatus: eventsGoalPct != null || row.EVENTS_STATUS != null,
+        statDetail: ProjectService.buildHealthOverviewEventsDetail(row),
       }),
       trn: () => ({
         area: 'trn',
@@ -9119,6 +9200,7 @@ export class ProjectService {
         statSource: 'HEALTH_OVERVIEW_KPIS.members_status',
         classification: resolveHealthMetricsOverviewKpiClassification(row.MEMBERS_STATUS),
         evaluatedAt,
+        statDetail: ProjectService.buildHealthOverviewMembersDetail(row),
       }),
       non: () => ({
         area: 'non',
@@ -9143,6 +9225,60 @@ export class ProjectService {
     return Array.from(HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS)
       .map((area) => areaStateBuilders[area]?.())
       .filter((state): state is HealthMetricsAreaState => state !== undefined);
+  }
+
+  /** One signal row as a finding, or null when it has no headline or its period, band or category is unmapped. */
+  private static toHealthOverviewFinding(row: HealthOverviewSignalRow): { range: HealthMetricsRange; finding: Omit<HealthMetricsFinding, 'sortRank'> } | null {
+    // Own-key lookups only: a model value like "constructor" must not resolve an inherited member.
+    const lookup = <T>(map: Readonly<Record<string, T>>, key: string | null): T | undefined => (key !== null && Object.hasOwn(map, key) ? map[key] : undefined);
+    const range = lookup(HEALTH_OVERVIEW_SIGNAL_PERIOD_RANGES, row.PERIOD_SLUG);
+    const classification = lookup(HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS, row.SEVERITY_BAND);
+    const area = lookup(HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS, row.CATEGORY);
+    if (!row.HEADLINE || !range || !classification || !area) return null;
+
+    const linkTarget = lookup(HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS, row.SIGNAL_KEY) ?? HEALTH_METRICS_OVERVIEW_TILE_LINKS[area].linkTarget;
+    return {
+      range,
+      finding: {
+        classification,
+        area,
+        title: row.HEADLINE,
+        sentence: row.BODY ?? '',
+        keyValue: row.METRIC_VALUE ?? HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
+        keyLabel: row.METRIC_CAPTION ?? '',
+        ...(row.METRIC_SECONDARY ? { keySecondary: row.METRIC_SECONDARY } : {}),
+        linkTarget,
+        // The model carries no evaluation timestamp for a signal.
+        evaluatedAt: '',
+      },
+    };
+  }
+
+  /** Exact, grouped count ("1,234"); the compact form would turn a registration total into "1.2K". */
+  private static formatExactCount(count: number): string {
+    return count.toLocaleString('en-US');
+  }
+
+  /** "1,234 registrations · goal 1,500"; the goal part drops when unset, the line when the count is unmeasured. */
+  private static buildHealthOverviewEventsDetail(row: HealthOverviewKpisRow): HealthMetricsAreaStateDetail | undefined {
+    const count = row.EVENTS_REGISTRATIONS_COUNT;
+    if (count === null) return undefined;
+    const goal = row.EVENTS_REGISTRATIONS_GOAL;
+    const registrations = `${ProjectService.formatExactCount(count)} ${count === 1 ? 'registration' : 'registrations'}`;
+    return { text: goal === null ? registrations : `${registrations} · goal ${ProjectService.formatExactCount(goal)}` };
+  }
+
+  /** "3 of 7 unsecured · $185K"; any unsecured renewal raises the chip to a warning, and either count unmeasured drops the line. */
+  private static buildHealthOverviewMembersDetail(row: HealthOverviewKpisRow): HealthMetricsAreaStateDetail | undefined {
+    const orgCount = row.MEMBERS_RENEWING_90D_ORG_COUNT;
+    const unsecuredCount = row.MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT;
+    if (orgCount === null || unsecuredCount === null) return undefined;
+    const unsecuredValue = row.MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD;
+    const counts = `${ProjectService.formatExactCount(unsecuredCount)} of ${ProjectService.formatExactCount(orgCount)} unsecured`;
+    return {
+      text: unsecuredValue === null ? counts : `${counts} · ${formatCurrency(unsecuredValue)}`,
+      tone: unsecuredCount > 0 ? 'watch' : 'none',
+    };
   }
 
   /**
@@ -9208,12 +9344,17 @@ export class ProjectService {
       row[ProjectService.kpiAlias(column, range)];
 
     return {
+      EVENTS_REGISTRATIONS_COUNT: ProjectService.toNullableNumber(period('EVENTS_REGISTRATIONS_COUNT')),
+      EVENTS_REGISTRATIONS_GOAL: ProjectService.toNullableNumber(period('EVENTS_REGISTRATIONS_GOAL')),
       EVENTS_PCT_OF_REGISTRATION_GOAL: ProjectService.toNullableNumber(period('EVENTS_PCT_OF_REGISTRATION_GOAL')),
       EVENTS_STATUS: ProjectService.toNullableString(period('EVENTS_STATUS')),
       CERTIFICATIONS_EARNED_COUNT: ProjectService.toNullableNumber(period('CERTIFICATIONS_EARNED_COUNT')),
       TRAINING_STATUS: ProjectService.toNullableString(period('TRAINING_STATUS')),
       CONTRIBUTORS_COUNT: ProjectService.toNullableNumber(period('CONTRIBUTORS_COUNT')),
       MEMBERS_RENEWING_90D_VALUE_USD: ProjectService.toNullableNumber(row['MEMBERS_RENEWING_90D_VALUE_USD']),
+      MEMBERS_RENEWING_90D_ORG_COUNT: ProjectService.toNullableNumber(row['MEMBERS_RENEWING_90D_ORG_COUNT']),
+      MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT: ProjectService.toNullableNumber(row['MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT']),
+      MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD: ProjectService.toNullableNumber(row['MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD']),
       MEMBERS_STATUS: ProjectService.toNullableString(row['MEMBERS_STATUS']),
       NON_MEMBERS_PIPELINE_VALUE_USD: ProjectService.toNullableNumber(row['NON_MEMBERS_PIPELINE_VALUE_USD']),
       NON_MEMBERS_STATUS: ProjectService.toNullableString(row['NON_MEMBERS_STATUS']),

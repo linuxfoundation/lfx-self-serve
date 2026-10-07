@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { Component, computed, inject, input, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   HEALTH_METRICS_OVERVIEW_AREAS,
@@ -21,6 +21,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SkeletonModule } from 'primeng/skeleton';
 import { Observable, of, startWith, switchMap, tap } from 'rxjs';
 
 import { HealthMetricsOverviewFindingItemComponent } from './health-metrics-overview-finding-item/health-metrics-overview-finding-item.component';
@@ -33,6 +34,7 @@ import type {
   HealthMetricsFinding,
   HealthMetricsOverviewArea,
   HealthMetricsOverviewFindingGroup,
+  HealthMetricsOverviewFindingsByRange,
   HealthMetricsOverviewFindingViewModel,
   HealthMetricsOverviewFoundationSummary,
   HealthMetricsOverviewKpisByRange,
@@ -44,7 +46,7 @@ import type {
 
 @Component({
   selector: 'lfx-health-metrics-overview',
-  imports: [NgClass, HealthMetricsOverviewTileComponent, HealthMetricsOverviewFindingItemComponent, HealthMetricsOverviewRailComponent],
+  imports: [NgClass, SkeletonModule, HealthMetricsOverviewTileComponent, HealthMetricsOverviewFindingItemComponent, HealthMetricsOverviewRailComponent],
   templateUrl: './health-metrics-overview.component.html',
   styleUrl: './health-metrics-overview.component.scss',
 })
@@ -53,9 +55,6 @@ export class HealthMetricsOverviewComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly analyticsService = inject(AnalyticsService);
   private readonly platformId = inject(PLATFORM_ID);
-
-  // Empty until the findings feed is wired up — the list renders its "not available yet" state.
-  public readonly findings = input<HealthMetricsFinding[]>([]);
 
   // Period selection and the sticky-header offset live on the gate-provided chrome service so they
   // persist across tab switches — see HealthMetricsChromeService.
@@ -77,10 +76,15 @@ export class HealthMetricsOverviewComponent {
   protected readonly kpiByRange: Signal<HealthMetricsOverviewKpisByRange> = this.initKpiByRange();
   protected readonly kpiAreaStates = computed<HealthMetricsAreaState[]>(() => this.kpiByRange()[this.selectedRange()] ?? []);
 
+  // Findings from HEALTH_OVERVIEW_SIGNALS, every period in one read, projected by the selected period.
+  protected readonly findingsLoading = signal(true);
+  protected readonly findingsByRange: Signal<HealthMetricsOverviewFindingsByRange> = this.initFindingsByRange();
+  protected readonly findings = computed<HealthMetricsFinding[]>(() => this.findingsByRange()[this.selectedRange()] ?? []);
+
   protected readonly tiles: Signal<HealthMetricsOverviewTileViewModel[]> = this.initTiles();
   protected readonly findingGroups: Signal<HealthMetricsOverviewFindingGroup[]> = this.initFindingGroups();
   // Live-fetched from HEALTH_OVERVIEW_PROFILE, keyed off the selected foundation only — re-fetches
-  // whenever the foundation changes (unlike findings, which have no live source yet).
+  // whenever the foundation changes.
   protected readonly foundationSummary: Signal<HealthMetricsOverviewFoundationSummary> = this.initFoundationSummary();
 
   protected readonly hasFindings = computed(() => this.findingGroups().length > 0);
@@ -95,8 +99,12 @@ export class HealthMetricsOverviewComponent {
     return this.initByRangeFetch(this.kpiAreaStatesLoading, {}, (slug) => this.analyticsService.getHealthOverviewKpis(slug));
   }
 
+  private initFindingsByRange(): Signal<HealthMetricsOverviewFindingsByRange> {
+    return this.initByRangeFetch(this.findingsLoading, {}, (slug) => this.analyticsService.getHealthOverviewSignals(slug));
+  }
+
   /**
-   * Foundation-only fetch for the two all-periods endpoints — one read per foundation change, never
+   * Foundation-only fetch for the all-periods endpoints — one read per foundation change, never
    * per period change. Mirrors initFoundationSummary's SSR guard and in-switchMap empty-slug handling.
    */
   private initByRangeFetch<T>(loading: WritableSignal<boolean>, emptyValue: T, fetchFn: (slug: string) => Observable<T>): Signal<T> {
@@ -139,7 +147,7 @@ export class HealthMetricsOverviewComponent {
     if (!isPlatformBrowser(this.platformId)) {
       // Never subscribe the fetch pipeline during SSR (see ssr-safety.md), and leave
       // foundationSummaryLoading at its static `true` default so the serialized skeleton matches
-      // the client's pre-hydration state — same guard initByRangeFetch applies to the two
+      // the client's pre-hydration state — same guard initByRangeFetch applies to the
       // all-periods fetches. Resolving straight to the loaded default here previously caused a
       // hydration mismatch: the server always finished "loaded" while the client always starts "loading".
       return computed(() => HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
@@ -241,6 +249,7 @@ export class HealthMetricsOverviewComponent {
       emphasis: finding.emphasis,
       keyValue: finding.keyValue,
       keyLabel: finding.keyLabel,
+      keySecondary: finding.keySecondary,
       sortRank: finding.sortRank,
       evaluatedAt: finding.evaluatedAt,
       linkHref,

@@ -608,6 +608,7 @@ export const HEALTH_METRICS_NPS_DEFAULT_SUMMARY: NpsSummaryResponse = {
  */
 export const HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: HealthMetricsOverviewFoundationSummary = {
   dataAvailable: false,
+  size: '—',
   projects: '—',
   tiers: '—',
   board: '—',
