@@ -146,6 +146,43 @@ describe('CommitteeViewComponent', () => {
     expect(getMeetingsByCommittee).toHaveBeenCalledTimes(1);
   });
 
+  describe('Members tab badge', () => {
+    it('shows roster length (not total_members) for a writer who is not a regular member', () => {
+      // The admin has total_members=0 on the committee object, but the roster fetch returns 3 rows.
+      currentCommittee = {
+        ...committee,
+        total_members: 0,
+        my_role: undefined,
+        writer: true,
+        member_visibility: 'basic_profile',
+      } as unknown as Committee;
+      getCommitteeMembers.mockReturnValue(of([{ uid: 'm1' }, { uid: 'm2' }, { uid: 'm3' }]));
+
+      const component = createComponent();
+      flush();
+
+      const membersTab = component.tabConfig.find((t) => t.key === 'members');
+      expect(membersTab?.badge?.()).toBe(3);
+    });
+
+    it('falls back to total_members when the roster is not fetched (invite-only member)', () => {
+      currentCommittee = {
+        ...committee,
+        total_members: 5,
+        my_role: 'member',
+        writer: false,
+        auditor: false,
+        member_visibility: 'hidden',
+      } as unknown as Committee;
+
+      const component = createComponent();
+      flush();
+
+      const membersTab = component.tabConfig.find((t) => t.key === 'members');
+      expect(membersTab?.badge?.()).toBe(5);
+    });
+  });
+
   describe('member_visibility gating', () => {
     const tabKeys = (component: CommitteeViewComponent): string[] => component.visibleTabs().map((tab) => tab.key);
 

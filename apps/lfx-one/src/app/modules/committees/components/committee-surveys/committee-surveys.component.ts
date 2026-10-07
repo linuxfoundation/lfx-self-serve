@@ -47,6 +47,11 @@ export class CommitteeSurveysComponent {
   // Data
   public createSurveyQueryParams: Signal<Record<string, string>> = this.initCreateSurveyQueryParams();
 
+  /** surveys-table's refresh output, fired after a successful delete — propagates to parent. */
+  public refreshSurveys(): void {
+    this.refresh.emit();
+  }
+
   public viewSurveyResults(survey: Survey): void {
     this.selectedSurveyId.set(survey.uid);
     this.selectedSurvey.set(survey);

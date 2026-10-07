@@ -1552,7 +1552,10 @@ export class CommitteeViewComponent {
             // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over
             // stale index rows — same transformation the child component previously applied.
             map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
-            catchError(() => of([])),
+            catchError(() => {
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load votes. Please try again.' });
+              return of([]);
+            }),
             finalize(() => this.votesLoading.set(false))
           );
         })
@@ -1576,7 +1579,10 @@ export class CommitteeViewComponent {
           }
           this.surveysLoading.set(true);
           return this.surveyService.getSurveysByCommittee(committee.uid, 'last_modified_at.desc').pipe(
-            catchError(() => of([])),
+            catchError(() => {
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load surveys. Please try again.' });
+              return of([]);
+            }),
             finalize(() => this.surveysLoading.set(false))
           );
         })
