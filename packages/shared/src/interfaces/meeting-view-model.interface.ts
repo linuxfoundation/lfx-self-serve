@@ -91,13 +91,17 @@ export type MeetingViewerRole = 'visitor' | 'outsider' | 'registrant' | 'organiz
 export type ActionSlotKind = 'join' | 'rsvp' | 'register' | 'invitation-required' | 'guest-join' | 'tools' | 'no-access' | 'rsvp-unavailable' | 'none';
 
 /**
- * The V2 Join control's state (E2-01, FR-027): the join URL is fetched for the signed-in viewer
- * once the slot resolves to `join`. `loading` is also what the server renders, since the fetch is
- * browser-only.
+ * The state of a V2 join link (E2-01 FR-027, E2-06 FR-025): the signed-in Join control's, fetched
+ * with the account's email, and the guest form's, fetched with the email typed in. `loading` is
+ * also what the server renders, since the fetch is browser-only; `idle` is the guest form's state
+ * until its fields are valid, when there is nothing to fetch yet.
  */
 export interface MeetingJoinUrlState {
-  status: 'loading' | 'ready' | 'error';
-  /** The Zoom link with the viewer's display-name params, once `ready`. */
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  /**
+   * The join link, once `ready`: bare from `MeetingJoinUrlService`, with the Zoom display-name params
+   * once a component adds them (`buildJoinUrlWithParams`).
+   */
   url?: string;
   /** The BFF's message, or a generic one, once `error`. */
   error?: string;

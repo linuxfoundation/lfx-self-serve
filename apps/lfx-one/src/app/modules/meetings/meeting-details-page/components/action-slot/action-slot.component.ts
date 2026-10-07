@@ -16,6 +16,7 @@ import { take } from 'rxjs';
 
 import { PublicRegistrationModalComponent } from '../../../components/public-registration-modal/public-registration-modal.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
+import { MeetingGuestJoinComponent } from '../guest-join/guest-join.component';
 import { MeetingJoinActionComponent } from '../join-action/join-action.component';
 
 /**
@@ -24,10 +25,10 @@ import { MeetingJoinActionComponent } from '../join-action/join-action.component
  * always carries it as `data-kind`. `none` is a decision ("nothing to offer this viewer") and
  * renders an empty slot, never a missing one (SC-004).
  *
- * `join` (FR-027), `register` (E2-02, FR-021) and `invitation-required` (E2-03, FR-022) are
- * complete here. The other kinds carry one line of copy until the issue that owns each one builds
- * its full design, so no viewer meets an empty rail meanwhile: `rsvp` E2-04 and E2-05, `guest-join`
- * E2-06, `rsvp-unavailable` N-01, and `tools` E4.
+ * `join` (FR-027), `register` (E2-02, FR-021), `invitation-required` (E2-03, FR-022) and
+ * `guest-join` (E2-06, FR-025) are complete here. The other kinds carry one line of copy until the
+ * issue that owns each one builds its full design, so no viewer meets an empty rail meanwhile:
+ * `rsvp` E2-04 and E2-05, `rsvp-unavailable` N-01, and `tools` E4.
  *
  * Inside the join window the slot is Join only, as in V1 (FR-029, decided 2026-10-06). Before the
  * window, a viewer who will be able to join then is told the early-join rule here, under the slot,
@@ -35,7 +36,7 @@ import { MeetingJoinActionComponent } from '../join-action/join-action.component
  */
 @Component({
   selector: 'lfx-meeting-action-slot',
-  imports: [ButtonComponent, MeetingJoinActionComponent, NgTemplateOutlet, OpenIntercomDirective],
+  imports: [ButtonComponent, MeetingGuestJoinComponent, MeetingJoinActionComponent, NgTemplateOutlet, OpenIntercomDirective],
   providers: [DialogService],
   templateUrl: './action-slot.component.html',
 })
