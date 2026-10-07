@@ -13,6 +13,7 @@ import { RouteLoadingComponent } from '@components/loading/route-loading.compone
 import {
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
+  MENTORSHIP_ADMIN_TERMS_MAX_PAGES,
   MENTORSHIP_CII_CHECKING,
   MENTORSHIP_CII_INVALID_ID,
   MENTORSHIP_CII_UNAVAILABLE,
@@ -515,19 +516,19 @@ export class EnrollProgramComponent {
     this.editLoad.set('ready');
   }
 
-  /** Every term of the program, read page by page at the largest page size. */
+  /**
+   * Every term of the program, read a page at the upstream maximum until `total` is covered, as the Terms tab reads them. The next
+   * page is decided from `total`, not the page's row count, because the BFF drops terms that are neither open nor closed.
+   */
   private readAllTerms(programId: string): Observable<MentorshipProgramTermRow[]> {
-    const readPage = (offset: number) =>
-      this.mentorshipAdminService
-        .getProgramTerms(programId, { offset, limit: MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT })
-        .pipe(map((response) => ({ offset, response })));
+    const limit = MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT;
+    const readPage = (offset: number) => this.mentorshipAdminService.getProgramTerms(programId, { offset, limit });
     return readPage(0).pipe(
-      // An empty page ends the walk too, so a total that overstates the terms cannot loop.
-      expand(({ offset, response }) => {
-        const next = offset + response.data.length;
-        return response.data.length > 0 && next < response.total ? readPage(next) : EMPTY;
+      expand((page, index) => {
+        const nextOffset = (index + 1) * limit;
+        return nextOffset < page.total && index + 1 < MENTORSHIP_ADMIN_TERMS_MAX_PAGES ? readPage(nextOffset) : EMPTY;
       }),
-      reduce((terms, { response }) => [...terms, ...response.data], [] as MentorshipProgramTermRow[])
+      reduce((terms, page) => [...terms, ...page.data], [] as MentorshipProgramTermRow[])
     );
   }
 

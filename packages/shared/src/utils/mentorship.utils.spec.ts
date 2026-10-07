@@ -679,6 +679,13 @@ describe('formFromMentorshipEnrollEdit', () => {
     expect(getMentorshipEnrollStepErrors('prerequisites', form, edit)).toEqual({});
   });
 
+  it('skips the date rules for a saved term left as it was, even one that breaks them', () => {
+    const legacy = { ...term, applicationEndDate: '2020-03-10' };
+    const form = formFromMentorshipEnrollEdit(data, [legacy]);
+
+    expect(getMentorshipEnrollStepErrors('setup', form, { terms: [legacy], prerequisites: [] }).terms).toBeUndefined();
+  });
+
   it('still checks a past date the admin changed', () => {
     const form = formFromMentorshipEnrollEdit(data, [term]);
     const edit = { terms: [term], prerequisites: [] };

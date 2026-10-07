@@ -326,6 +326,18 @@ export function toMentorshipEnrollTerm(
   };
 }
 
+/** Whether `after` is the saved term `before` unchanged: the same name (trimmed) and dates. `false` when there is no saved term. */
+function isSameMentorshipTerm(before: MentorshipProgramTerm | undefined, after: MentorshipProgramTerm): boolean {
+  return (
+    before !== undefined &&
+    before.name.trim() === after.name.trim() &&
+    before.startDate === after.startDate &&
+    before.endDate === after.endDate &&
+    before.applicationStartDate === after.applicationStartDate &&
+    before.applicationEndDate === after.applicationEndDate
+  );
+}
+
 /** A wizard term as the body of the term routes. */
 export function toMentorshipAdminTermInput(term: MentorshipProgramTerm): MentorshipAdminTermInput {
   return {
@@ -344,18 +356,9 @@ export function toMentorshipAdminTermInput(term: MentorshipProgramTerm): Mentors
 export function diffMentorshipEnrollTerms(saved: MentorshipProgramTerm[], current: MentorshipProgramTerm[]): MentorshipEnrollTermChanges {
   const savedById = new Map(saved.map((term) => [term.id, term]));
   const currentIds = new Set(current.map((term) => term.id));
-  const changed = (before: MentorshipProgramTerm, after: MentorshipProgramTerm): boolean =>
-    before.name.trim() !== after.name.trim() ||
-    before.startDate !== after.startDate ||
-    before.endDate !== after.endDate ||
-    before.applicationStartDate !== after.applicationStartDate ||
-    before.applicationEndDate !== after.applicationEndDate;
   return {
     created: current.filter((term) => !savedById.has(term.id)),
-    updated: current.filter((term) => {
-      const before = savedById.get(term.id);
-      return before !== undefined && changed(before, term);
-    }),
+    updated: current.filter((term) => savedById.has(term.id) && !isSameMentorshipTerm(savedById.get(term.id), term)),
     deleted: saved.filter((term) => !currentIds.has(term.id)).map((term) => term.id),
   };
 }
@@ -699,8 +702,10 @@ export function getMentorshipEnrollStepErrors(
             ? `Term name must be ${MENTORSHIP_TERM_NAME_MAX} characters or fewer.`
             : MENTORSHIP_TERM_FIELDS_ERROR;
       } else {
+        // An edit sends nothing for a saved term the admin left as it was, so only new and changed terms are checked.
         const savedTerms = new Map((edit?.terms ?? []).map((term) => [term.id, term]));
         const firstTermError = form.terms
+          .filter((term) => !isSameMentorshipTerm(savedTerms.get(term.id), term))
           .map((term) => Object.values(getMentorshipEnrollTermDateErrors(term, new Date(), savedTerms.get(term.id)))[0])
           .find(Boolean);
         if (firstTermError) errors.terms = firstTermError;
