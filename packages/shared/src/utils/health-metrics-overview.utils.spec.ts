@@ -423,10 +423,23 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
     ]);
   });
 
-  it('takes the legend percent from the model share rather than recomputing it from value/total', () => {
+  it('takes the legend percent and bar width from the model share rather than recomputing them from value/total', () => {
     const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ total: 100, streams: [{ key: 'training', value: 25, share: 31.6 }] }));
     expect(streams[0].percentLabel).toBe('32%');
-    expect(streams[0].widthPercent).toBe(25);
+    expect(streams[0].widthPercent).toBe(31.6);
+  });
+
+  it('draws no segment for a null share and clamps an out-of-range share to the bar', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(
+      revenue({
+        streams: [
+          { key: 'events', value: 40, share: null },
+          { key: 'memberships', value: 60, share: 120 },
+          { key: 'training', value: 1, share: -5 },
+        ],
+      })
+    );
+    expect(streams.map((stream) => stream.widthPercent)).toEqual([0, 100, 0]);
   });
 
   it('renders "—" for the percent when the model has no share, keeping the value', () => {
@@ -435,7 +448,7 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
     expect(streams[0].valueLabel).not.toBe('—');
   });
 
-  it('sizes every bar segment at 0 when the total is 0, instead of dividing by zero', () => {
+  it('sizes the bar segment at 0 when the total and share are 0', () => {
     const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ total: 0, streams: [{ key: 'training', value: 0, share: 0 }] }));
     expect(streams[0].percentLabel).toBe('0%');
     expect(streams[0].widthPercent).toBe(0);
@@ -446,9 +459,9 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
       revenue({
         total: 3,
         streams: [
-          { key: 'memberships', value: 1, share: 33.3 },
-          { key: 'events', value: 1, share: 33.3 },
-          { key: 'training', value: 1, share: 33.3 },
+          { key: 'memberships', value: 1, share: 33.33 },
+          { key: 'events', value: 1, share: 33.33 },
+          { key: 'training', value: 1, share: 33.34 },
         ],
       })
     );

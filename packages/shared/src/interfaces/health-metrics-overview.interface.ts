@@ -392,7 +392,7 @@ export interface HealthMetricsOverviewRevenueStreamViewModel {
   dotClass: string;
   /** Rounded "N%" legend text, or "—" when the stream has no value — see `widthPercent` for the bar segment. */
   percentLabel: string;
-  /** Unrounded percent share, for the segmented bar's `[style.width.%]` — rounding each stream independently before sizing can leave a visible gap even when the raw shares sum to 100%. */
+  /** The model's unrounded share, clamped to 0–100 (0 when unmeasured), for the bar's `[style.width.%]` — rounding each stream first could leave a gap. */
   widthPercent: number;
   valueLabel: string;
 }

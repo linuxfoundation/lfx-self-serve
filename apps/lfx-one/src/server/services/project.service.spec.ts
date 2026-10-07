@@ -2638,6 +2638,16 @@ describe('ProjectService — getHealthOverviewKpis', () => {
     expect(result?.find((state) => state.area === 'mem')?.statDetail).toEqual({ text: '0 of 4 unsecured', tone: 'none' });
   });
 
+  it('hides the members line instead of claiming "0 of N unsecured" when the unsecured count is unmeasured', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [buildKpiWideRow({ MEMBERS_RENEWING_90D_ORG_COUNT: 7, MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT: null })],
+    });
+
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
+
+    expect(result?.find((state) => state.area === 'mem')?.statDetail).toBeUndefined();
+  });
+
   it('hides both detail lines when their counts are unmeasured', async () => {
     execute.mockResolvedValueOnce({
       rows: [buildKpiWideRow({ EVENTS_REGISTRATIONS_COUNT: null, EVENTS_REGISTRATIONS_GOAL: 1500, MEMBERS_RENEWING_90D_ORG_COUNT: null })],
@@ -2731,10 +2741,17 @@ describe('ProjectService — getHealthOverviewSignals', () => {
         signalRow({ HEADLINE: '' }),
       ],
     });
+    debug.mockClear();
 
     const result = await service.getHealthOverviewSignals('cncf');
 
     expect(result).toEqual({});
+    expect(debug).toHaveBeenCalledWith(
+      undefined,
+      'get_health_overview_signals',
+      expect.any(String),
+      expect.objectContaining({ row_count: 6, dropped_count: 6 })
+    );
   });
 
   it('returns no findings instead of a 5xx when the table is not deployed yet', async () => {

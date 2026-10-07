@@ -6397,9 +6397,13 @@ export class ProjectService {
     }
 
     const byRange: HealthMetricsOverviewFindingsByRange = {};
+    let droppedCount = 0;
     for (const row of result.rows ?? []) {
       const finding = ProjectService.toHealthOverviewFinding(row);
-      if (!finding) continue;
+      if (!finding) {
+        droppedCount++;
+        continue;
+      }
       const findings = (byRange[finding.range] ??= []);
       // Rows arrive ordered, so the index within the period is its display rank.
       findings.push({ ...finding.finding, sortRank: findings.length });
@@ -6408,6 +6412,8 @@ export class ProjectService {
     logger.debug(undefined, 'get_health_overview_signals', 'Fetched health overview signals', {
       foundation_slug: foundationSlug,
       row_count: result.rows?.length ?? 0,
+      // Rows with no headline or an unmapped period, band or category; non-zero flags model drift.
+      dropped_count: droppedCount,
     });
 
     return byRange;
@@ -9262,11 +9268,11 @@ export class ProjectService {
     return { text: goal === null ? registrations : `${registrations} · goal ${ProjectService.formatExactCount(goal)}` };
   }
 
-  /** "3 of 7 unsecured · $185K"; any unsecured renewal raises the chip to a warning. */
+  /** "3 of 7 unsecured · $185K"; any unsecured renewal raises the chip to a warning, and either count unmeasured drops the line. */
   private static buildHealthOverviewMembersDetail(row: HealthOverviewKpisRow): HealthMetricsAreaStateDetail | undefined {
     const orgCount = row.MEMBERS_RENEWING_90D_ORG_COUNT;
-    if (orgCount === null) return undefined;
-    const unsecuredCount = row.MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT ?? 0;
+    const unsecuredCount = row.MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT;
+    if (orgCount === null || unsecuredCount === null) return undefined;
     const unsecuredValue = row.MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD;
     const counts = `${ProjectService.formatExactCount(unsecuredCount)} of ${ProjectService.formatExactCount(orgCount)} unsecured`;
     return {

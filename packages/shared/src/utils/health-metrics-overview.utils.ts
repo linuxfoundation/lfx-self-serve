@@ -205,8 +205,8 @@ export function buildHealthMetricsOverviewRevenueStreams(revenue: HealthMetricsO
     if (stream.value === null) {
       return { key: stream.key, label: meta.label, dotClass: meta.dotClass, percentLabel: '—', widthPercent: 0, valueLabel: '—' };
     }
-    // The legend shows the model's share; the bar stays value/total, unrounded, so its segments fill 100%.
-    const widthPercent = revenue.total > 0 ? (stream.value / revenue.total) * 100 : 0;
+    // Legend and bar both read the model's share, so they can't disagree; an unmeasured share draws no segment.
+    const widthPercent = stream.share === null ? 0 : Math.min(100, Math.max(0, stream.share));
     return {
       key: stream.key,
       label: meta.label,
