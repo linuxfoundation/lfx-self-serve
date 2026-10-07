@@ -103,11 +103,11 @@ export class MeetupsService {
       if (scoped) {
         const communitySql = isPast
           ? `SELECT DISTINCT TRIM(COMMUNITY) AS COMMUNITY FROM ${this.table('OCG_PAST_MEETUPS')}
-             WHERE EMAIL = ? AND NULLIF(TRIM(COMMUNITY), '') IS NOT NULL
+             WHERE LOWER(EMAIL) = LOWER(?) AND NULLIF(TRIM(COMMUNITY), '') IS NOT NULL
              ORDER BY COMMUNITY`
           : `SELECT DISTINCT TRIM(m.COMMUNITY) AS COMMUNITY
              FROM ${this.table('OCG_UPCOMING_MEETUPS')} m
-             JOIN ${this.table('OCG_UPCOMING_MEETUPS_ROLES')} r ON r.EMAIL = ? AND r.EVENT_ID = m.EVENT_ID
+             JOIN ${this.table('OCG_UPCOMING_MEETUPS_ROLES')} r ON LOWER(r.EMAIL) = LOWER(?) AND r.EVENT_ID = m.EVENT_ID
              WHERE NULLIF(TRIM(m.COMMUNITY), '') IS NOT NULL
              ORDER BY COMMUNITY`;
         const [communityResult, roleResult] = await Promise.all([
@@ -175,7 +175,7 @@ export class MeetupsService {
           r.ROLES
         FROM ${this.table('OCG_UPCOMING_MEETUPS')} m
         LEFT JOIN ${this.table('OCG_UPCOMING_MEETUPS_ROLES')} r
-          ON r.EMAIL = ?
+          ON LOWER(r.EMAIL) = LOWER(?)
           AND r.EVENT_ID = m.EVENT_ID
       ),
       filtered AS (
@@ -250,7 +250,7 @@ export class MeetupsService {
           GROUP_SLUG,
           EVENT_SLUG
         FROM ${this.table('OCG_PAST_MEETUPS')}
-        WHERE EMAIL = ?
+        WHERE LOWER(EMAIL) = LOWER(?)
           ${searchQueryFilter}
           ${communityFilter}
           ${roleFilterResult.filter}
