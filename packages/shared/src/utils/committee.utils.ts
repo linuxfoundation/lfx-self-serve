@@ -7,9 +7,12 @@ import type { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo
 import type { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
 import type { CommitteeMember } from '../interfaces/member.interface';
 import type { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
+import type { PersonaType } from '../interfaces/persona.interface';
 import type { StatCardItem } from '../interfaces/stat-card.interface';
 import {
   CATEGORY_BEHAVIORAL_CLASS,
+  COMMITTEE_CATEGORIES,
+  FILTERED_COMMITTEE_CATEGORIES,
   FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL,
   GROUPS_ENGAGEMENT_ICON_CLASS,
   OTHER_GROUPS_LABEL,
@@ -117,6 +120,11 @@ export function buildCommitteeCreateQueryParams(committee: Committee): Record<st
     params['project'] = committee.project_slug;
   }
   return params;
+}
+
+/** Categories a persona may pick when creating a group; Maintainers get the restricted set. */
+export function getSelectableCommitteeCategories(persona: PersonaType): { label: string; value: string }[] {
+  return persona === 'maintainer' ? FILTERED_COMMITTEE_CATEGORIES : COMMITTEE_CATEGORIES;
 }
 
 // ── Per-type query helpers ──────────────────────────────────────────────────

@@ -18,8 +18,9 @@ import {
   ProjectContext,
   SucceededMemberOperations,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation } from '@lfx-one/shared/utils';
+import { computeIsFoundation, getSelectableCommitteeCategories } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
@@ -59,6 +60,7 @@ export class CommitteeManageComponent {
   private readonly messageService = inject(MessageService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
+  private readonly personaService = inject(PersonaService);
   private readonly destroyRef = inject(DestroyRef);
   // Mode and state signals
   public mode = signal<'create' | 'edit'>('create');
@@ -140,6 +142,7 @@ export class CommitteeManageComponent {
     // lens kind (mirror: meeting-manage post-GH-1432).
     syncEntityProjectContext(this.committeeEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
     this.initCommitteeContextFallback();
+    this.initCategoryFromUrl();
 
     // Initialize step based on mode
     this.currentStep = toSignal(
@@ -469,6 +472,17 @@ export class CommitteeManageComponent {
         const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
         applyEntityProjectContext(this.projectContextService, context, computeIsFoundation(project), syncUrl);
       });
+  }
+
+  /** Preselects a create link's `?category=` (e.g. from the newsletter audience step) when this persona can pick it; edit ignores it. */
+  private initCategoryFromUrl(): void {
+    const category = this.route.snapshot.queryParamMap.get('category');
+    if (!category || this.route.snapshot.paramMap.has('id')) {
+      return;
+    }
+    if (getSelectableCommitteeCategories(this.personaService.currentPersona()).some((option) => option.value === category)) {
+      this.form.get('category')?.setValue(category);
+    }
   }
 
   /**

@@ -203,4 +203,37 @@ describe('CommitteeManageComponent', () => {
 
     expect(navigate).toHaveBeenCalledWith([], { queryParams: { step: 1 }, queryParamsHandling: 'merge' });
   });
+
+  describe('category preselection from ?category=', () => {
+    const useRoute = (params: Record<string, string>, query: Record<string, string>) =>
+      TestBed.overrideProvider(ActivatedRoute, {
+        useValue: {
+          paramMap: of(convertToParamMap(params)),
+          queryParamMap: of(convertToParamMap(query)),
+          snapshot: { queryParamMap: convertToParamMap(query), paramMap: convertToParamMap(params) },
+        },
+      });
+
+    it('preselects a category the persona can pick on the create route', async () => {
+      useRoute({}, { project: PROJECT_SLUG, category: 'Newsletter' });
+      const fixture = await createComponent();
+
+      expect(fixture.componentInstance.form.get('category')?.value).toBe('Newsletter');
+    });
+
+    it('ignores a category outside the persona’s selectable set', async () => {
+      useRoute({}, { project: PROJECT_SLUG, category: 'Board' });
+      const fixture = await createComponent();
+
+      expect(fixture.componentInstance.form.get('category')?.value).toBe('');
+    });
+
+    it('ignores the param on the edit route so it never overrides a saved category', async () => {
+      getCommittee.mockReturnValue(of(null));
+      useRoute({ id: COMMITTEE_UID }, { category: 'Newsletter' });
+      const fixture = await createComponent();
+
+      expect(fixture.componentInstance.form.get('category')?.value).toBe('');
+    });
+  });
 });
