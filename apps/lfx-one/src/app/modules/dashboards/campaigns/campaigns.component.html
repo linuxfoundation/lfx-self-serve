@@ -327,7 +327,10 @@
           [audienceReadUnavailable]="emailAudienceReadUnavailable()"
           [audienceScope]="emailAudienceScope()"
           [existingAudience]="emailAudience()"
+          [briefState]="emailBriefState()"
+          [briefSaveMessage]="emailBriefSaveMessage()"
           (retryAudienceRead)="onRetryAudienceRead()"
+          (retryBrief)="onRetryEmailBrief()"
           (audienceAttached)="onAudienceComposed($event)"
           (audienceComposeUnattached)="onAudienceComposeUnattached($event)"
           (continueToEmail)="onContinueToEmailStep()" />
@@ -656,14 +659,21 @@
                       <p class="text-sm text-gray-600" data-testid="campaigns-email-audience-summary">{{ summary }}</p>
                     }
                     @if (audience.suppressionListIds?.length) {
-                      <p class="text-xs text-gray-500">{{ audience.suppressionListIds?.length }} suppression list(s) applied</p>
+                      <p class="text-xs text-gray-500">{{ audience.suppressionListIds?.length }} exclusion list(s) applied</p>
                     }
-                    <!-- The master list id, shown rather than linked. Every HubSpot link in this
+                    <!-- Several lists attached directly, with no master combining them: the send
+                         goes to each of them, so they are listed rather than a single master id. -->
+                    @if ((audience.includeListIds?.length ?? 0) > 1) {
+                      <p class="text-xs text-gray-500" data-testid="campaigns-email-audience-include-lists">
+                        Sends to {{ audience.includeListIds?.length }} lists directly (no master list):
+                        <span class="font-mono">{{ audience.includeListIds?.join(', ') }}</span>
+                      </p>
+                    } @else if (audience.platformMasterListId; as masterListId) {
+                      <!-- The master list id, shown rather than linked. Every HubSpot link in this
                          app is built SERVER-side, where the portal id lives; assembling one here
                          would guess a portal and hand the operator a URL that resolves to the
                          wrong account's list -- worse than an id they can paste into search. The
                          id was recorded in the row and rendered nowhere until now. -->
-                    @if (audience.platformMasterListId; as masterListId) {
                       <p class="text-xs text-gray-500" data-testid="campaigns-email-audience-master-list">
                         Master list <span class="font-mono">{{ masterListId }}</span>
                       </p>
@@ -899,13 +909,13 @@
                     </div>
 
                     <div class="flex flex-col gap-1">
-                      <label class="text-xs font-medium text-gray-700" for="abtest-body-b">Variant B body</label>
-                      <lfx-textarea
+                      <label class="text-xs font-medium text-gray-700" id="abtest-body-b-label">Variant B body</label>
+                      <lfx-rich-editor
                         [form]="abTestForm"
                         control="bodyHtmlB"
-                        inputId="abtest-body-b"
-                        [rows]="6"
-                        placeholder="Enter or generate the HTML body for variant B"
+                        ariaLabelledBy="abtest-body-b-label"
+                        placeholder="Write or generate the body for variant B"
+                        [editorStyle]="{ minHeight: '160px' }"
                         dataTest="campaigns-email-abtest-body-b" />
                     </div>
 
@@ -1038,6 +1048,16 @@
                     [attr.role]="emailStaging() === 'error' ? 'alert' : 'status'"
                     data-testid="campaigns-email-stage-message">
                     {{ message }}
+                    @if (emailStaging() === 'done' && emailStagingDraftUrl(); as draftUrl) {
+                      <a
+                        [href]="draftUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="font-medium underline hover:no-underline"
+                        data-testid="campaigns-email-stage-draft-link"
+                        >Open in HubSpot</a
+                      >
+                    }
                   </p>
                 }
               </div>
@@ -1416,10 +1436,20 @@
   }
 </div>
 
-<!-- The hero banner is NAMED, never loaded: binding the scraped URL into an <img [src]> would
-     make the OPERATOR'S browser fetch it, before campaign-service's dial-time guard runs.
+<!-- The hero banner is NAMED for every host, and LOADED only for an https image on an exact
+     EMAIL_HERO_PREVIEW_HOSTS host (`emailHeroPreviewUrl`): binding any other scraped URL into an <img [src]> would make
+     the OPERATOR'S browser fetch it, before campaign-service's dial-time guard runs.
      Defined once and used from each preview panel, so the three cannot drift apart. -->
 <ng-template #heroBannerNote>
+  @if (emailHeroPreviewUrl(); as heroSrc) {
+    <img
+      [src]="heroSrc"
+      alt="Event banner that will be attached"
+      referrerpolicy="no-referrer"
+      loading="lazy"
+      class="block max-h-48 w-full border-b border-gray-100 bg-gray-50 object-cover"
+      data-testid="campaigns-email-preview-hero-image" />
+  }
   <div class="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-600" data-testid="campaigns-email-preview-hero">
     <i class="fa-light fa-image text-gray-400" aria-hidden="true"></i>
     <span

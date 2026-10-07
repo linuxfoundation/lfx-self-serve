@@ -12,7 +12,7 @@
   } @else {
     <p class="text-xs text-gray-500" data-testid="audience-card-grid-summary">
       {{ totalLists() }} list{{ totalLists() === 1 ? '' : 's' }} across {{ populated().length }} signal{{ populated().length === 1 ? '' : 's' }}. Tick the ones
-      this send should include.
+      this send should include, or choose Exclude to keep a list's contacts off the send.
     </p>
 
     <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -31,7 +31,10 @@
 
           <div class="flex flex-col gap-2">
             @for (list of bucket.lists; track list.listId) {
-              <div class="flex items-start gap-2 rounded-md border border-gray-100 bg-gray-50 p-2 hover:border-gray-200">
+              <div
+                class="flex items-start gap-2 rounded-md border p-2"
+                [class]="list.excluded ? 'border-red-200 bg-red-50' : 'border-gray-100 bg-gray-50 hover:border-gray-200'"
+                [attr.data-testid]="'audience-card-grid-row-' + list.listId">
                 <input
                   type="checkbox"
                   class="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300"
@@ -41,10 +44,27 @@
                   [attr.id]="'audience-list-' + list.listId"
                   [attr.data-testid]="'audience-card-grid-toggle-' + list.listId"
                   [attr.aria-label]="'Include ' + list.name" />
-                <div class="flex min-w-0 flex-col gap-1">
-                  <label class="cursor-pointer text-xs font-medium break-words text-gray-900" [attr.for]="'audience-list-' + list.listId">{{
-                    list.name
-                  }}</label>
+                <div class="flex min-w-0 flex-1 flex-col gap-1">
+                  <div class="flex items-start justify-between gap-2">
+                    <label class="cursor-pointer text-xs font-medium break-words text-gray-900" [attr.for]="'audience-list-' + list.listId">{{
+                      list.name
+                    }}</label>
+                    <!-- Exclude is the other side of the same choice: marking it unticks Include. -->
+                    <button
+                      type="button"
+                      (click)="onToggleExclude(list.listId)"
+                      [disabled]="disabled()"
+                      [attr.aria-pressed]="list.excluded"
+                      [class]="
+                        list.excluded
+                          ? 'shrink-0 rounded-md border border-red-300 bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 disabled:opacity-50'
+                          : 'shrink-0 rounded-md border border-gray-300 bg-white px-2 py-0.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50'
+                      "
+                      [attr.aria-label]="(list.excluded ? 'Stop excluding ' : 'Exclude ') + list.name"
+                      [attr.data-testid]="'audience-card-grid-exclude-' + list.listId">
+                      {{ list.excluded ? 'Excluded' : 'Exclude' }}
+                    </button>
+                  </div>
                   <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
                     <span>{{ list.sizeText }}</span>
                     @if (list.listType) {

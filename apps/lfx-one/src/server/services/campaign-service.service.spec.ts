@@ -137,6 +137,16 @@ describe('adaptJobPollResponse', () => {
     });
   });
 
+  it('passes the HubSpot draft link through to the platform result', () => {
+    const adapted = adaptJobPollResponse({
+      job_id: 'j1',
+      status: 'succeeded',
+      result: [{ platform: 'hubspot', ok: true, campaign_id: 'c1', hubspot_url: 'https://app.hubspot.com/email/1/edit/c1/settings' }],
+    });
+
+    expect(adapted.platformResults?.[0].hubspotUrl).toBe('https://app.hubspot.com/email/1/edit/c1/settings');
+  });
+
   // A partial job created real campaigns. Reporting the JOB as failed would hide them; each
   // platform's own `ok` flag carries the per-platform truth.
   it('maps partial to done and keeps both the succeeded and the failed platform', () => {

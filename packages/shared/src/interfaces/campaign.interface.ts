@@ -770,6 +770,12 @@ export interface CampaignAudience {
   briefId: string;
   platform: string;
   platformMasterListId?: string;
+  /**
+   * Every list the send includes, when the audience was attached from several existing lists
+   * rather than one composed master. Absent on a composed or single-list audience, where
+   * `platformMasterListId` alone is the send list.
+   */
+  includeListIds?: string[];
   suppressionListIds?: string[];
   inclusionSummary?: string;
   status: CampaignAudienceStatus;
@@ -1378,7 +1384,8 @@ export interface CampaignCreateResponse {
  * Deliberately NOT a `CampaignCreateResult`. That interface carries `type`, `campaignName`,
  * `adGroupCount`, `keywordCount`, `adCount`, `campaignUrl` and `steps`, and campaign-service's
  * `platform-result` carries none of them — it knows the platform, whether the create
- * succeeded, the upstream campaign id, and the failure reason. Widening this into a
+ * succeeded, the upstream campaign id, the failure reason, and for HubSpot a link to the draft
+ * when it could build one. Widening this into a
  * `CampaignCreateResult` with zeros and empty strings would make the implementation tab
  * render "0 ad groups · 0 keywords · 0 ads" and an empty link for a campaign that really has
  * them, which reports a successful create as an empty one. A separate, smaller type keeps the
@@ -1389,6 +1396,8 @@ export interface CampaignPlatformResult {
   ok: boolean;
   /** Upstream platform campaign id. Present when ok, and also when the create succeeded but recording it did not — so the orphaned id is not lost. */
   campaignId?: string;
+  /** HubSpot app link to the created draft. Absent when campaign-service could not build one (unknown portal id). */
+  hubspotUrl?: string;
   error?: string;
 }
 
@@ -3544,12 +3553,29 @@ export interface AudienceComposeMasterPartial {
  * Nothing is created in HubSpot. Upstream reads every id back from the project's portal before
  * recording it, so a mistyped or foreign id is a 404 rather than a send that fails at dispatch.
  */
-export interface AudienceAttachExistingRequest {
+export type AudienceAttachExistingRequest = AudienceAttachExistingRequestBase &
+  (
+    | {
+        /** A single include list the send goes to. */
+        masterListId: string;
+        includeListIds?: never;
+      }
+    | {
+        /** Several existing include lists the send goes to directly — no master list is composed. */
+        includeListIds: string[];
+        masterListId?: never;
+      }
+  );
+
+/**
+ * The fields every attach carries. The BFF refuses a request with both include forms or neither,
+ * and one with no suppression list, so the type states the same contract: exactly one of
+ * `masterListId` / `includeListIds`, and `suppressionListIds` always present.
+ */
+export interface AudienceAttachExistingRequestBase {
   briefId: string;
-  /** The single include list the send goes to. */
-  masterListId: string;
-  /** Existing lists the send suppresses. */
-  suppressionListIds?: string[];
+  /** Existing lists the send suppresses. At least one: every send keeps a suppression list. */
+  suppressionListIds: string[];
   /** Human-readable note recorded on the audience row; upstream derives one when omitted. */
   inclusionSummary?: string;
 }
@@ -3559,6 +3585,24 @@ export interface AudienceAttachExistingResult {
   master: AudienceComposedList;
   suppressionListIds: string[];
   audience: CampaignAudience;
+}
+
+/**
+ * Where the email's saved plan (brief) stands, as far as attaching lists to it is concerned.
+ *
+ * The brief is saved automatically when the Audience tab opens, so an empty brief id is almost
+ * never "no plan yet": it is a save still running, a save that failed, or a plan that is saved but
+ * not approved. Each needs different copy, and only `failed` can be retried from the Audience tab.
+ * `unopened` is a save refused because this send already has a saved brief the page never loaded;
+ * retrying cannot help, only restoring that brief can. `none` is the exploratory path -- no email
+ * plan to attach to at all.
+ */
+export type AudienceBriefState = 'none' | 'resolving' | 'ready' | 'unapproved' | 'unopened' | 'failed';
+
+/** A list identified by id and display name, as the Audience tab's include/exclude actions carry it. */
+export interface AudienceListRef {
+  listId: string;
+  name: string;
 }
 
 // --- Audience QA -----------------------------------------------------------
