@@ -987,6 +987,7 @@ export class ImplementationTabComponent implements OnInit {
 
   // === Reactive Signals (from form valueChanges) ===
   protected readonly displayBudgetPct: Signal<number> = this.initDisplayBudgetPct();
+  protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();
   protected readonly campaignName: Signal<string> = this.initCampaignName();
 
   // === Form Array Accessors ===
@@ -2144,6 +2145,31 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   // === Private Initializers ===
+  /**
+   * Whether the budget-split slider changes anything the user is about to create.
+   *
+   * It only ever has, for exactly one pair. On the LEGACY in-process road,
+   * `normalizeBudgetSplit` (`campaign-proxy.service.ts`) reads the percentage only when both
+   * `search` and `demand-gen` are present — a Search-only selection is forced to 100/0, a Demand
+   * Gen-only selection to 0/100, and `performance-max`, `video` and `display` are not consulted at
+   * all because that road never builds them. On the CUTOVER road the controller does compute
+   * `budget * pct` for a multi-channel selection, but campaign-service refuses every multi-channel
+   * Google create outright (one config, one channel), so no selection reaches a platform with a
+   * split applied.
+   *
+   * So the slider is shown for Search + Demand Gen and withheld otherwise. Previously it rendered
+   * for every Google selection and labelled its second half "Display" — a channel the split has
+   * never funded, next to real Display and Performance Max boxes that it does not fund either.
+   * The control is left in the form regardless; hiding it must not drop a restored draft's value.
+   */
+  private initBudgetSplitApplies(): Signal<boolean> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const channels = this.selectedGoogleChannels();
+      return channels.includes('search') && channels.includes('demand-gen');
+    });
+  }
+
   private initDisplayBudgetPct(): Signal<number> {
     return toSignal(
       this.campaignForm.controls.searchBudgetPct.valueChanges.pipe(

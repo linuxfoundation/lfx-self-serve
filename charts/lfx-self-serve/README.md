@@ -332,8 +332,10 @@ Gen already is, which is the guess the mechanism exists to avoid.
 creates a Video campaign, so campaign-service refuses one in the first statement of
 `CreateVideoCampaign`. The box is offered but disabled in the Implementation tab, and the server
 refuses a `video` create whatever this value is set to — so turning this on offers Performance Max
-and Display. Video is fully supported everywhere else: it can be adopted, monitored and optimized
-here once the campaign is built by hand in Google Ads.
+and Display. campaign-service can adopt a Video campaign built by hand in Google Ads, but LFX One
+does not expose that: there is no adoption screen here, and the monitoring GAQL asks Google only
+for `SEARCH` and `DEMAND_GEN` campaigns, so a hand-built Video campaign is not reported on either.
+Setting this flag changes none of that.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` moves campaign pause/resume onto campaign-service,
 and what it buys is REACH rather than a different backend. The path it replaces is a `switch` over

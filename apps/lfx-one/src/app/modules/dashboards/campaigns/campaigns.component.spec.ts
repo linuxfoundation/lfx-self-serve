@@ -6870,6 +6870,7 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     selectedTab: WritableSignal<CampaignTab>;
     briefOutput: WritableSignal<CampaignBriefOutput | null>;
     implementationDraft: WritableSignal<CampaignImplementationDraft | null>;
+    briefCampaignsDemandGenEnabled: WritableSignal<boolean | null>;
     selectTab(tab: CampaignTab, owner: CampaignDeliveryType): void;
     onProceedToImplementation(brief: CampaignBriefOutput): void;
     resetToPlanning(): void;
@@ -6917,20 +6918,29 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
    */
   it('restores the budget-split LABEL, not just the slider value', async () => {
     internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    // The slider is shown for the one pair whose budget it actually splits, Search + Demand Gen,
+    // so the capability has to be answered and the box ticked before it is in the DOM at all.
+    internals().briefCampaignsDemandGenEnabled.set(true);
     internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const demandGen = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('input[formControlName="includeDemandGen"]');
+    expect(demandGen).not.toBeNull();
+    demandGen!.click();
     fixture.detectChanges();
     await fixture.whenStable();
 
     const slider = budgetSlider();
     expect(slider).not.toBeNull();
 
-    // Drag the split to 30% search / 70% display.
+    // Drag the split to 30% search / 70% demand gen.
     slider!.value = '30';
     slider!.dispatchEvent(new Event('input'));
     fixture.detectChanges();
     await fixture.whenStable();
     expect(budgetLabel()).toContain('Search 30%');
-    expect(budgetLabel()).toContain('Display 70%');
+    expect(budgetLabel()).toContain('Demand Gen 70%');
 
     // Leave and come back — this destroys the component.
     internals().selectTab('insights', 'paid-marketing');
@@ -6943,7 +6953,39 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     // The control restores either way; the LABEL is what the suppressed emission broke.
     expect(budgetSlider()!.value).toBe('30');
     expect(budgetLabel()).toContain('Search 30%');
-    expect(budgetLabel()).toContain('Display 70%');
+    expect(budgetLabel()).toContain('Demand Gen 70%');
+  });
+
+  /**
+   * The slider is not a permanent fixture of the Google section (#3317, Copilot).
+   *
+   * It splits a budget between Search and Demand Gen and nothing else — `normalizeBudgetSplit` on
+   * the legacy road consults no other channel, and campaign-service refuses every multi-channel
+   * create on the cutover road. Rendering it beside Performance Max and Display, labelled
+   * "Display", told the user they were dividing a budget that was never divided.
+   */
+  it('withholds the budget-split slider when the split funds nothing', async () => {
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    internals().briefCampaignsDemandGenEnabled.set(true);
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // Search alone — the default — funds one campaign with the whole budget.
+    expect(budgetSlider()).toBeNull();
+
+    const demandGen = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('input[formControlName="includeDemandGen"]');
+    demandGen!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(budgetSlider()).not.toBeNull();
+
+    // Demand Gen alone takes the whole budget too, so the split goes away again.
+    const search = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('input[formControlName="includeSearch"]');
+    search!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(budgetSlider()).toBeNull();
   });
 
   it('carries a typed headline back after a trip to another tab', async () => {
