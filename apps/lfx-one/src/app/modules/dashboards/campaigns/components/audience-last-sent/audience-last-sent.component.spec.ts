@@ -60,6 +60,7 @@ describe('AudienceLastSentComponent', () => {
       attachedMasterId?: string | null;
       attachedExclusionIds?: readonly string[];
       attachedIncludeIds?: readonly string[];
+      pendingExclusionIds?: readonly string[];
       attachUnavailableMessage?: string;
     } = {}
   ): void {
@@ -71,6 +72,7 @@ describe('AudienceLastSentComponent', () => {
     // Defaults to `attachedListId`: the recorded exclusions match the ticks unless a test says not.
     fixture.componentRef.setInput('attachedMasterId', inputs.attachedMasterId === undefined ? (inputs.attachedListId ?? null) : inputs.attachedMasterId);
     fixture.componentRef.setInput('attachedExclusionIds', inputs.attachedExclusionIds ?? []);
+    fixture.componentRef.setInput('pendingExclusionIds', inputs.pendingExclusionIds ?? []);
     // Defaults to `canAttach`: most tests here predate the separate master-reuse gate and mean
     // "attaching is possible", not "the suppression lookup has not settled".
     fixture.componentRef.setInput('canUseExistingMaster', inputs.canUseExistingMaster ?? inputs.canAttach ?? false);
@@ -226,6 +228,41 @@ describe('AudienceLastSentComponent', () => {
       });
 
       expect(host().textContent ?? '').toContain('Same lists used for this email');
+    });
+
+    it('stops marking a send attached once a new exclusion is ticked, so it can be recorded', () => {
+      // A recorded set that merely CONTAINED the send's own suppressions kept "Use these lists"
+      // disabled after the step-3 ticks changed, with no way to record the new exclusion.
+      render({
+        emails: [email({ suppressionLists: [brief({ listId: '901', name: 'Opt-outs' })] })],
+        attachedListId: '301',
+        attachedExclusionIds: ['901'],
+        pendingExclusionIds: ['950'],
+        canAttach: true,
+      });
+
+      expect(host().textContent ?? '', 'a send was still reported attached after a new tick').not.toContain('Same lists used for this email');
+      const button = host().querySelector<HTMLButtonElement>('[data-testid="audience-last-sent-use-' + email({}).emailId + '"]');
+      expect(button?.disabled, 'the new exclusion could not be recorded').toBe(false);
+    });
+
+    it('keeps a send attached when the recorded exclusions are its own plus the current ticks', () => {
+      render({
+        emails: [email({ suppressionLists: [brief({ listId: '901', name: 'Opt-outs' })] })],
+        attachedListId: '301',
+        attachedExclusionIds: ['950', '901'],
+        pendingExclusionIds: ['950'],
+      });
+
+      expect(host().textContent ?? '').toContain('Same lists used for this email');
+    });
+
+    it('disables "Use these lists" while existing lists cannot be reused, even when attaching is otherwise open', () => {
+      // The handler refused silently when the suppression read had not settled; the button was live.
+      render({ emails: [email({})], canAttach: true, canUseExistingMaster: false });
+
+      const button = host().querySelector<HTMLButtonElement>('[data-testid="audience-last-sent-use-' + email({}).emailId + '"]');
+      expect(button?.disabled).toBe(true);
     });
 
     it("ignores exclusion ORDER, which is the portal's and not the operator's", () => {
@@ -396,16 +433,17 @@ describe('AudienceLastSentComponent', () => {
       expect(seen, 'a master was reused before the suppression read settled').toEqual([]);
     });
 
-    it("still reuses a prior send's lists while suppression is unsettled", () => {
-      // The deliberate asymmetry: a prior send carries its OWN exclusions rather than the ticked
-      // ones, so a pending lookup cannot empty them and the gate would only block useful work.
+    it("does not reuse a prior send's lists while suppression is unsettled", () => {
+      // Reusing a send now records the step-3 ticks beside the send's own exclusions, so it shares
+      // the settled-suppression gate; the builder tab's handler refuses in that state, and a live
+      // button there did nothing at all.
       const seen: AudienceLastSentEmail[] = [];
       fixture.componentInstance.useSendLists.subscribe((e) => seen.push(e));
       render({ emails: [email()], canAttach: true, canUseExistingMaster: false });
 
       click('audience-last-sent-use-em-1');
 
-      expect(seen.map((e) => e.emailId)).toEqual(['em-1']);
+      expect(seen).toEqual([]);
     });
 
     it('explains why nothing can be attached when there is no brief', () => {

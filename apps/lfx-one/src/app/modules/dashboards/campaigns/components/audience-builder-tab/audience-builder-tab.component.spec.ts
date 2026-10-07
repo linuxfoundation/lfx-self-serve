@@ -703,6 +703,26 @@ describe('AudienceBuilderTabComponent', () => {
       expect(btn?.disabled, 'compose stayed enabled with an unresolved include/exclude conflict').toBe(true);
     });
 
+    it('says so when no suppression list resolves in the portal, rather than asking for a tick', async () => {
+      // "Select at least one suppression list" was an instruction the operator could not follow:
+      // an unresolved row carries no list id and cannot be ticked.
+      getAudienceSuppressionLists.mockReturnValue(
+        of([{ key: 'lf_events_gdpr', label: 'LF Events GDPR', listId: '', name: '', category: 'standard', hubspotUrl: '' }])
+      );
+      await renderWithDiscovery({ briefId: 'brief-1' });
+      const tab = fixture.componentInstance as unknown as { attachUnavailableMessage: () => string };
+
+      expect(tab.attachUnavailableMessage()).toContain('No suppression list resolves in this HubSpot portal');
+    });
+
+    it('asks for a tick when a suppression list resolves but none is ticked', async () => {
+      await renderWithDiscovery({ briefId: 'brief-1' });
+      click('audience-suppression-grid-toggle-lf_events_gdpr');
+      const tab = fixture.componentInstance as unknown as { attachUnavailableMessage: () => string };
+
+      expect(tab.attachUnavailableMessage()).toContain('Select at least one suppression list');
+    });
+
     it('blocks existing-master reuse while a list is ticked on both sides', async () => {
       // `onUseMasterList` submits `excludeIds()`, which DROPS a list ticked on both sides -- so
       // reusing a master here silently lost a suppression the panel still showed as applied.

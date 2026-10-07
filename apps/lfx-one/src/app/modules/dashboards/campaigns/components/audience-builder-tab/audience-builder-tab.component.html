@@ -38,7 +38,8 @@
     </div>
   }
   <!-- Why nothing can be attached yet. The parent saves this email's plan when the tab opens, so an
-       empty brief id is a save in flight, a save that failed, or a plan not yet approved -- never
+       empty brief id is a save in flight, a save that failed, a plan not yet approved, or a brief
+       this session does not own -- never
        "go and save it", which is what this used to say in every case. -->
   @if (briefId() === '' && briefState() !== 'none' && briefState() !== 'ready') {
     <div
@@ -363,6 +364,7 @@
         [attachedMasterId]="attachedMasterId()"
         [attachedExclusionIds]="attachedExclusions()"
         [attachedIncludeIds]="attachedIncludeIds()"
+        [pendingExclusionIds]="excludeIds()"
         (addList)="onAddListBrief($event)"
         (excludeList)="onExcludeList($event)"
         (addMasterList)="onAddMasterList($event)"

@@ -26,6 +26,9 @@ import {
   EVENT_TERM_YEAR_PATTERN,
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
+  EMAIL_HERO_PREVIEW_HOSTS,
+  EMAIL_HERO_PREVIEW_IMAGE_PATH,
+  HUBSPOT_APP_HOST_PATTERN,
 } from '@lfx-one/shared/constants';
 import type {
   AudienceBriefState,
@@ -1143,8 +1146,9 @@ export class CampaignsComponent {
   protected readonly emailBriefResolving = signal(false);
   /**
    * How the last Audience-tab warm-up save ended when it produced no usable id: the brief was
-   * saved but not approved, or the save failed outright. `'none'` otherwise. Cleared with the id.
-   * Only ever `'none'`, `'unapproved'` or `'failed'`.
+   * saved but not approved, the save failed outright, or a brief this session does not own
+   * already exists. `'none'` otherwise. Cleared with the id. Only ever `'none'`, `'unapproved'`,
+   * `'failed'` or `'unopened'`.
    */
   private readonly emailBriefSaveOutcome = signal<AudienceBriefState>('none');
   /**
@@ -1639,7 +1643,7 @@ export class CampaignsComponent {
    * draft is staged, and the brief carries only the scraped URL at preview time. So the preview
    * names the image rather than loading it: the operator still sees that a banner will be
    * attached and where it came from, and no request leaves the browser. The one exception is an
-   * https `linuxfoundation.org` host, which `emailHeroPreviewUrl` renders as the real banner.
+   * image on one of `EMAIL_HERO_PREVIEW_HOSTS`, which `emailHeroPreviewUrl` renders as the real banner.
    */
   protected readonly emailHeroImageHost = computed<string>(() => {
     // `new URL('')` throws, so the try/catch covers the empty case too -- an explicit
@@ -1656,21 +1660,21 @@ export class CampaignsComponent {
    * The hero URL, but ONLY when it is safe to let the operator's browser fetch it; '' otherwise.
    *
    * The "name, never load" rule above exists because a scraped hostname can resolve to a private
-   * address. That risk does not apply to the Foundation's own event sites, so an https URL whose
-   * host is `linuxfoundation.org` or a subdomain of it is rendered as the real banner. The match
-   * is on the parsed hostname (a suffix test on the raw string would accept
-   * `evil.com/?.linuxfoundation.org`), and any other host keeps the named-only note.
+   * address. That risk does not apply to the Foundation's own event sites, so an https URL on one
+   * of `EMAIL_HERO_PREVIEW_HOSTS`, with an image path and no query, is rendered as the real banner.
+   * The match is on the parsed hostname (a suffix test on the raw string would accept
+   * `evil.com/?.linuxfoundation.org`), and any other URL keeps the named-only note.
    *
-   * Trade-off, accepted: every `*.linuxfoundation.org` subdomain is trusted, not only the event
-   * hosts, and the operator's browser sends its cookies for that site on the image request. The
-   * URL is scraped from an event page, so this relies on the Foundation's own zone serving only
-   * images at those URLs; narrow it to an exact-host set if that stops being true.
+   * Exact hosts and an image path, not the `*.linuxfoundation.org` zone: LFX One and the SSO host
+   * live in that zone, and the image request carries the operator's same-site cookies, so a
+   * scraped `og:image` of the app's own `/logout` signed the operator out as the preview rendered.
    */
   protected readonly emailHeroPreviewUrl = computed<string>(() => {
     try {
       const url = new URL(this.emailHeroImageUrl());
-      const trusted = url.hostname === 'linuxfoundation.org' || url.hostname.endsWith('.linuxfoundation.org');
-      return url.protocol === 'https:' && trusted ? url.href : '';
+      const safe =
+        url.protocol === 'https:' && EMAIL_HERO_PREVIEW_HOSTS.has(url.hostname) && url.search === '' && EMAIL_HERO_PREVIEW_IMAGE_PATH.test(url.pathname);
+      return safe ? url.href : '';
     } catch {
       return '';
     }
@@ -2715,7 +2719,7 @@ export class CampaignsComponent {
     void this.restoreEmailAudience(this.activeFoundationSlug(), this.emailAudienceReadBriefId);
   }
 
-  /** The Audience tab asked to retry the brief save that failed or left it unapproved. */
+  /** The Audience tab asked to retry the brief save. It offers Retry only after a failed save. */
   protected onRetryEmailBrief(): void {
     this.warmEmailBriefId();
   }
@@ -3639,6 +3643,20 @@ export class CampaignsComponent {
       });
   }
   /**
+   * The staged draft's link, only when it points at HubSpot's app (`HUBSPOT_APP_HOST_PATTERN`);
+   * '' otherwise. The value comes from campaign-service and is not checked on the way through the
+   * BFF, so the host is pinned here, the same way list links are pinned server-side.
+   */
+  private hubspotDraftUrl(raw: string | undefined): string {
+    const href = canonicalHttpUrl(raw);
+    try {
+      return href !== '' && new URL(href).protocol === 'https:' && HUBSPOT_APP_HOST_PATTERN.test(new URL(href).hostname) ? href : '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
    * Abandon an in-flight staging poll and return the button to idle.
    *
    * CANCEL, do not merely bump past it: `pollStagingJob` never reads `emailStagingGeneration`,
@@ -4085,7 +4103,7 @@ export class CampaignsComponent {
           // then what the operator pastes into HubSpot's search. `canonicalHttpUrl` keeps a
           // non-http(s) value out of the `[href]`.
           const draftId = hubspotResult?.campaignId ?? '';
-          this.emailStagingDraftUrl.set(canonicalHttpUrl(hubspotResult?.hubspotUrl));
+          this.emailStagingDraftUrl.set(this.hubspotDraftUrl(hubspotResult?.hubspotUrl));
           this.emailStagingMessage.set(
             draftId === ''
               ? 'Draft created in HubSpot. Review and send it from there.'

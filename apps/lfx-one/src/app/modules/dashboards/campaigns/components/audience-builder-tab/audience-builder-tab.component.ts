@@ -137,8 +137,8 @@ export class AudienceBuilderTabComponent {
    * Why `briefId` is empty, when it is.
    *
    * The parent saves the brief on its own as this tab opens, so an empty id almost never means
-   * "the plan was not saved". It means the save is still running, failed, or produced a brief that
-   * is not approved. Telling the operator to save the plan on the Plan tab sent them to a step they
+   * "the plan was not saved". It means the save is still running, failed, produced a brief that
+   * is not approved, or found a brief this session does not own (`'unopened'`). Telling the operator to save the plan on the Plan tab sent them to a step they
    * had already done, with no way to recover.
    */
   public readonly briefState = input<AudienceBriefState>('none');
@@ -863,8 +863,21 @@ export class AudienceBuilderTabComponent {
     if (this.briefId() === '') {
       return this.briefStateMessage();
     }
-    if (this.suppressionMissing() && !this.suppressionLoading()) {
-      return 'Select at least one suppression list in step 3 first. Every send must keep at least one suppression list.';
+    if (this.suppressionLoading()) {
+      return 'The suppression lists are still loading in step 3.';
+    }
+    if (this.suppressionFailed()) {
+      return 'The suppression lists in step 3 could not be loaded. Reload them before attaching.';
+    }
+    if (this.suppressionMissing()) {
+      // Nothing to tick is a different problem from nothing ticked: telling the operator to select a
+      // list when none resolves in this portal gave them an instruction they could not follow.
+      return this.suppressionLists().some((list) => list.listId !== '')
+        ? 'Select at least one suppression list in step 3 first. Every send must keep at least one suppression list.'
+        : 'No suppression list resolves in this HubSpot portal, and every send must keep at least one. Ask a HubSpot admin to create the hygiene lists.';
+    }
+    if (this.conflictingIds().length > 0) {
+      return 'A list is ticked both to send to and to suppress. Untick one side first.';
     }
     return '';
   });

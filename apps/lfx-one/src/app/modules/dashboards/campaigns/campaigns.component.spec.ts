@@ -3354,9 +3354,15 @@ describe('CampaignsComponent — email delivery channel', () => {
       ['an https HubSpot link', 'https://app.hubspot.com/email/123/edit/c1/settings', 'https://app.hubspot.com/email/123/edit/c1/settings'],
       ['a non-http(s) link', 'javascript:alert(1)', ''],
       ['no link', undefined, ''],
+      ['a regional HubSpot app host', 'https://app-eu1.hubspot.com/email/123/edit/c1/settings', 'https://app-eu1.hubspot.com/email/123/edit/c1/settings'],
+      ['an https link off HubSpot', 'https://evil.example/email/123', ''],
+      ['a look-alike HubSpot host', 'https://app.hubspot.com.evil.example/email/123', ''],
+      ['plain http to HubSpot', 'http://app.hubspot.com/email/123', ''],
     ])('links the staged draft only for a safe URL: %s', async (_label, hubspotUrl, expected) => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
+      // The link renders on the Implement tab; without it the anchor assertion read an absent element.
+      internals().selectedEmailTab.set('implementation');
       internals().selectedEmailTemplateId.set('hs-1');
       fixture.detectChanges();
 
@@ -5858,6 +5864,14 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(previewFor('https://linuxfoundation.org.evil.com/hero.png')).toBe('');
       expect(previewFor('http://events.linuxfoundation.org/hero.png')).toBe('');
       expect(previewFor('https://cdn.example.com/hero.png')).toBe('');
+      // Exact hosts and an image path: LFX One and SSO live in the linuxfoundation.org zone, and the
+      // image request carries same-site cookies, so a scraped og:image of the app's own /logout
+      // signed the operator out as the preview rendered.
+      expect(previewFor('https://app.lfx.linuxfoundation.org/logout'), 'the app host is in the zone, not on the list').toBe('');
+      expect(previewFor('https://sso.linuxfoundation.org/hero.png'), 'a zone subdomain off the list').toBe('');
+      expect(previewFor('https://events.linuxfoundation.org/logout'), 'an allowed host with a non-image path').toBe('');
+      expect(previewFor('https://events.linuxfoundation.org/hero.png?next=/logout'), 'a query string').toBe('');
+      expect(previewFor('https://events.linuxfoundation.org/uploads/HERO.JPG')).toBe('https://events.linuxfoundation.org/uploads/HERO.JPG');
     });
 
     it('stages the call to action whose destination was refused, as text', async () => {
