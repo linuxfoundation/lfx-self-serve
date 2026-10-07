@@ -14,11 +14,11 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
  */
 
-import { expect, Route, test } from '@playwright/test';
+import { expect, Page, Route, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
 import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
-import { stubEnrollWizardReads } from './helpers/mentorship-admin-enroll.helper';
+import { ENROLL_IMPORT_SOURCE_ID, ENROLL_IMPORT_SOURCE_NAME, stubEnrollImportReads, stubEnrollWizardReads } from './helpers/mentorship-admin-enroll.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -64,5 +64,49 @@ test.describe('Admin enroll wizard — structure', () => {
     await expect(confirmation).toBeVisible();
     await expect(confirmation.getByRole('button')).toHaveCount(2);
     await expect(confirmation.getByRole('button', { name: 'Stay', exact: true })).toBeVisible();
+  });
+});
+
+test.describe('Admin enroll wizard — import structure', () => {
+  const openWizard = async (page: Page, options: { templateFails?: boolean } = {}): Promise<void> => {
+    await enableMentorshipFlag(page);
+    await stubEnrollWizardReads(page, fulfillJson);
+    await stubEnrollImportReads(page, fulfillJson, options);
+    await openMentorPage(page, '/mentorship/admin/enroll');
+    await expect(page.getByTestId('mentorship-enroll-title')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+  };
+
+  const pickImportProgram = async (page: Page): Promise<void> => {
+    await page.locator('#importProgramId').click();
+    await page.getByRole('option', { name: ENROLL_IMPORT_SOURCE_NAME, exact: true }).click();
+  };
+
+  test('shows no import error before a program is picked', async ({ page }) => {
+    await openWizard(page);
+
+    await expect(page.getByTestId('mentorship-enroll-import-error')).toHaveCount(0);
+  });
+
+  test('announces the import error as an alert after the template fails to load', async ({ page }) => {
+    await openWizard(page, { templateFails: true });
+
+    await pickImportProgram(page);
+
+    const error = page.getByTestId('mentorship-enroll-import-error');
+    await expect(error).toBeVisible();
+    await expect(error).toHaveAttribute('role', 'alert');
+  });
+
+  test('sends no write request to the source program after an import', async ({ page }) => {
+    const writes: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() !== 'GET' && new URL(request.url()).pathname.includes(ENROLL_IMPORT_SOURCE_ID)) writes.push(request.url());
+    });
+    await openWizard(page);
+
+    await pickImportProgram(page);
+    await expect(page.getByTestId('mentorship-enroll-details')).toBeVisible();
+
+    expect(writes).toEqual([]);
   });
 });

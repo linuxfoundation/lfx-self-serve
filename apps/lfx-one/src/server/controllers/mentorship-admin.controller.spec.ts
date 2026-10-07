@@ -149,6 +149,42 @@ describe('MentorshipAdminController', () => {
     });
   });
 
+  describe('getEnrollTemplate', () => {
+    const template = { name: 'private-program-name', prerequisites: [{ id: 'imported-0' }, { id: 'imported-1' }] } as never;
+
+    it('answers with the mapped template and logs only the id and the prerequisite count', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getEnrollTemplate').mockResolvedValue(template);
+
+      await controller.getEnrollTemplate(buildReq({}, { programId: ` ${PROGRAM_ID} ` }), res, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID);
+      expect(res.json).toHaveBeenCalledWith(template);
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'get_mentorship_admin_enroll_template', expect.anything(), {
+        programId: PROGRAM_ID,
+        count: 2,
+      });
+    });
+
+    it('rejects a program id that is not a UUID with a 400 and no upstream call', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getEnrollTemplate');
+
+      await controller.getEnrollTemplate(buildReq({}, { programId: 'program-one' }), res, next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it.each([403, 404])('passes an upstream %i to next', async (status) => {
+      const error = Object.assign(new Error('upstream'), { statusCode: status });
+      vi.spyOn(MentorshipAdminService.prototype, 'getEnrollTemplate').mockRejectedValue(error);
+
+      await controller.getEnrollTemplate(buildReq({}, { programId: PROGRAM_ID }), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.json).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getProgramMentees', () => {
     const emptyPage = { data: [], total: 0 };
 
@@ -779,6 +815,7 @@ describe('MentorshipAdminController', () => {
   describe('with no signed-in user', () => {
     it.each([
       ['getProgram', 'getProgramPage', { programId: PROGRAM_ID }, {}],
+      ['getEnrollTemplate', 'getEnrollTemplate', { programId: PROGRAM_ID }, {}],
       ['getProgramMentees', 'getProgramMentees', { programId: PROGRAM_ID }, { type: 'current' }],
       ['getProgramMentors', 'getProgramMentors', { programId: PROGRAM_ID }, {}],
       ['getProgramTerms', 'getProgramTerms', { programId: PROGRAM_ID }, {}],

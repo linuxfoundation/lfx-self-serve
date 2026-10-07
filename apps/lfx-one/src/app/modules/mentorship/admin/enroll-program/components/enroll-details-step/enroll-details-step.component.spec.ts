@@ -9,6 +9,7 @@ import { FilterService } from 'primeng/api';
 import {
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_ENROLL_IMPORT_FAILED,
   MENTORSHIP_ENROLL_LOGO_MAX_BYTES,
   MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE,
   MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE,
@@ -17,6 +18,7 @@ import {
   MENTORSHIP_LF_PROJECT_REMOTE_FILTER_FIELD,
   MENTORSHIP_RICH_TEXT_RAW_MAX,
 } from '@lfx-one/shared/constants';
+import { MentorshipEnrollImport } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { Observable, of, throwError } from 'rxjs';
@@ -354,6 +356,143 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
     fixture.detectChanges();
     await fixture.whenStable();
 
+    expect(fixture.componentInstance.project()).toBeNull();
+  });
+});
+
+describe('EnrollDetailsStepComponent — import from an existing program', () => {
+  const alpha = { id: 'uid-alpha', name: 'Alpha', slug: 'alpha' };
+  const template: MentorshipEnrollImport = {
+    name: 'Example Program',
+    project: alpha,
+    description: '<p>About it</p>',
+    repositoryUrl: 'https://repo.example/org/program',
+    websiteUrl: 'https://program.example',
+    codeOfConductUrl: 'https://program.example/coc',
+    ciiProjectId: '1234',
+    technologies: ['GO', 'Kubernetes'],
+    skills: ['Documentation'],
+    prerequisites: [{ id: 'imported-0', name: 'Read the guide', description: 'Chapter one', required: true, requireFile: false, custom: true }],
+  };
+  let fixture: ComponentFixture<EnrollDetailsStepComponent>;
+  let form: FormGroup;
+  let getEnrollTemplate: ReturnType<typeof vi.fn>;
+
+  const importSelect = (): StubSelectComponent =>
+    fixture.debugElement
+      .queryAll(By.directive(StubSelectComponent))
+      .map((debugEl) => debugEl.componentInstance as StubSelectComponent)
+      .find((select) => select.inputId() === 'importProgramId') as StubSelectComponent;
+
+  const importOptionIds = (): string[] => (importSelect().options() as { value: string }[]).map((option) => option.value);
+  const importError = (): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="mentorship-enroll-import-error"]');
+
+  const pickImport = async (programId: string): Promise<void> => {
+    form.controls['importProgramId'].setValue(programId);
+    importSelect().onChange.emit({ value: programId });
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  const setUp = async (templateResponse: Observable<MentorshipEnrollImport>): Promise<void> => {
+    getEnrollTemplate = vi.fn(() => templateResponse);
+    TestBed.overrideComponent(EnrollDetailsStepComponent, { set: { imports: [ReactiveFormsModule, StubSelectComponent], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
+
+    await TestBed.configureTestingModule({
+      imports: [EnrollDetailsStepComponent],
+      providers: [
+        {
+          provide: MentorshipAdminService,
+          useValue: {
+            getPrograms: () =>
+              of({
+                data: [
+                  { id: 'program-a', name: 'Program A' },
+                  { id: 'program-b', name: 'Program B' },
+                ],
+              }),
+            getEnrollTemplate,
+          },
+        },
+        {
+          provide: MentorshipService,
+          useValue: { getLfProjects: () => of({ data: [] }), getCiiBadge: () => of(null), isProgramNameAvailable: () => of({ available: true }) },
+        },
+      ],
+    }).compileComponents();
+
+    const defaults = createEmptyMentorshipEnrollForm() as unknown as Record<string, unknown>;
+    form = new FormGroup(Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, new FormControl(value)])));
+
+    fixture = TestBed.createComponent(EnrollDetailsStepComponent);
+    fixture.componentRef.setInput('form', form);
+    fixture.detectChanges();
+  };
+
+  it('offers every program the admin manages, with None first', async () => {
+    await setUp(of(template));
+
+    expect(importOptionIds()).toEqual(['', 'program-a', 'program-b']);
+  });
+
+  it('fills the form from the template and keeps its project, though the picker has not loaded it', async () => {
+    await setUp(of(template));
+
+    await pickImport('program-a');
+
+    expect(getEnrollTemplate).toHaveBeenCalledWith('program-a');
+    expect(form.controls['name'].value).toBe('Example Program');
+    expect(form.controls['technologies'].value).toEqual(['GO', 'Kubernetes']);
+    expect(form.controls['skills'].value).toEqual(['Documentation']);
+    expect(form.controls['projectId'].value).toBe(alpha.id);
+    expect(form.controls['importProgramId'].value).toBe('program-a');
+    expect(fixture.componentInstance.project()).toEqual(alpha);
+    expect(importError()).toBeNull();
+  });
+
+  it('clears the logo the admin had picked, since the logo is not copied', async () => {
+    await setUp(of(template));
+    form.controls['logoFileName'].setValue('mine.png');
+    fixture.componentInstance.logoFile.set(new File(['png'], 'mine.png', { type: 'image/png' }));
+
+    await pickImport('program-a');
+
+    expect(fixture.componentInstance.logoFile()).toBeNull();
+    expect(form.controls['logoFileName'].value).toBe('');
+  });
+
+  it('shows the error, resets the select and leaves the rest of the form alone when the template fails', async () => {
+    await setUp(throwError(() => new Error('upstream down')));
+    form.controls['name'].setValue('Typed by hand');
+
+    await pickImport('program-a');
+
+    expect(importError()?.textContent).toContain(MENTORSHIP_ENROLL_IMPORT_FAILED);
+    expect(form.controls['importProgramId'].value).toBe('');
+    expect(form.controls['name'].value).toBe('Typed by hand');
+  });
+
+  it('drops the error on the next pick', async () => {
+    await setUp(throwError(() => new Error('upstream down')));
+    await pickImport('program-a');
+    expect(importError()).not.toBeNull();
+
+    getEnrollTemplate.mockReturnValue(of(template));
+    await pickImport('program-b');
+
+    expect(importError()).toBeNull();
+    expect(form.controls['name'].value).toBe('Example Program');
+  });
+
+  it('starts over without reading a template when None is picked', async () => {
+    await setUp(of(template));
+    await pickImport('program-a');
+
+    await pickImport('');
+
+    expect(getEnrollTemplate).toHaveBeenCalledTimes(1);
+    expect(form.controls['name'].value).toBe('');
+    expect(form.controls['projectId'].value).toBe('');
     expect(fixture.componentInstance.project()).toBeNull();
   });
 });

@@ -96,6 +96,26 @@ export class MentorshipAdminController {
     }
   }
 
+  // GET /api/mentorship/admin/programs/:programId/enroll-template — the details the enroll wizard copies from an existing program
+  public async getEnrollTemplate(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_mentorship_admin_enroll_template';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      const template = await this.mentorshipAdminService.getEnrollTemplate(req, programId);
+
+      logger.success(req, operation, startTime, { programId, count: template.prerequisites.length });
+      res.json(template);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/mentorship/admin/programs/:programId/mentees?type=current|past&status&termId&search&offset&limit
   public async getProgramMentees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_mentorship_admin_program_mentees';

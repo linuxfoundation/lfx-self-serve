@@ -7,6 +7,8 @@ import {
   MENTORSHIP_CHALLENGE_URL_REQUIRED,
   MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX,
   MENTORSHIP_CUSTOM_PREREQ_NAME_MAX,
+  createDefaultMentorshipTerm,
+  createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
   MENTORSHIP_ENROLL_LOGO_EMPTY,
   MENTORSHIP_ENROLL_LOGO_EXTENSIONS,
@@ -75,6 +77,8 @@ import type {
   MentorshipApplicationProgress,
   MentorshipEnrollCreateRequest,
   MentorshipEnrollFieldErrors,
+  MentorshipEnrollForm,
+  MentorshipEnrollImport,
   MentorshipEnrollStep,
   MentorshipEnrollValidationInput,
   MentorshipLfProject,
@@ -282,6 +286,28 @@ export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidation
   const industry = uniqueMentorshipList(form.technologies).join(', ');
   if (industry) request.industry = industry;
   return request;
+}
+
+/**
+ * The wizard form for an imported program. The template's details and prerequisites are copied; the terms are not, so the
+ * form gets one default term, and the logo is not, so the admin picks one. `termsAccepted` starts over as `false`.
+ */
+export function formFromMentorshipEnrollImport(importProgramId: string, data: MentorshipEnrollImport): MentorshipEnrollForm {
+  return {
+    ...createEmptyMentorshipEnrollForm(),
+    importProgramId,
+    name: data.name,
+    projectId: data.project?.id ?? '',
+    technologies: [...data.technologies],
+    description: data.description,
+    repositoryUrl: data.repositoryUrl,
+    websiteUrl: data.websiteUrl,
+    ciiProjectId: data.ciiProjectId,
+    codeOfConductUrl: data.codeOfConductUrl,
+    skills: [...data.skills],
+    terms: [createDefaultMentorshipTerm()],
+    prerequisites: data.prerequisites.map((item) => ({ ...item })),
+  };
 }
 
 /**

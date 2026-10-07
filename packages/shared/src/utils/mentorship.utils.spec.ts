@@ -56,7 +56,7 @@ import type {
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskView,
 } from '../interfaces/mentorship-mentee.interface';
-import type { MentorshipEnrollValidationInput, MentorshipLfProject, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
+import type { MentorshipEnrollImport, MentorshipEnrollValidationInput, MentorshipLfProject, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import type { MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
 import type { MentorshipMentorRegisterForm } from '../interfaces/mentorship-mentor.interface';
 import {
@@ -81,6 +81,7 @@ import {
   mentorshipTaskDueCutoffMs,
   formatMentorshipShortMonthYear,
   filterMentorshipApplicantTasks,
+  formFromMentorshipEnrollImport,
   formatMentorshipApplicantTaskDueLabel,
   formatMentorshipReviewUpdatedLabel,
   mentorshipMenteeTaskCompletion,
@@ -461,6 +462,64 @@ describe('toMentorshipEnrollCreateRequest', () => {
     for (const key of ['logoFileName', 'logoPreviewUrl', 'importProgramId', 'status', 'logo_url', 'logoUrl']) {
       expect(request).not.toHaveProperty(key);
     }
+  });
+});
+
+describe('formFromMentorshipEnrollImport', () => {
+  const imported: MentorshipEnrollImport = {
+    name: 'Existing Program',
+    project: { id: '11111111-1111-4111-8111-111111111111', name: 'Project One', slug: 'project-one' },
+    description: '<p>Copied description</p>',
+    repositoryUrl: 'https://github.com/example/repo',
+    websiteUrl: 'https://example.org',
+    codeOfConductUrl: 'https://example.org/coc',
+    ciiProjectId: '1842',
+    technologies: ['Go', 'Kubernetes'],
+    skills: ['Java', 'Database'],
+    prerequisites: [
+      { id: 'imported-0', name: 'Resume', description: 'Upload it', required: true, requireFile: true, custom: true },
+      { id: 'imported-1', name: 'Essay', description: '', required: true, requireFile: false, custom: true, dueDate: '2027-01-15' },
+    ],
+  };
+
+  it('copies the details, technologies, skills and prerequisites', () => {
+    const form = formFromMentorshipEnrollImport('mp_1', imported);
+
+    expect(form).toMatchObject({
+      importProgramId: 'mp_1',
+      name: 'Existing Program',
+      projectId: '11111111-1111-4111-8111-111111111111',
+      description: '<p>Copied description</p>',
+      repositoryUrl: 'https://github.com/example/repo',
+      websiteUrl: 'https://example.org',
+      codeOfConductUrl: 'https://example.org/coc',
+      ciiProjectId: '1842',
+      technologies: ['Go', 'Kubernetes'],
+      skills: ['Java', 'Database'],
+    });
+    expect(form.prerequisites).toEqual(imported.prerequisites);
+  });
+
+  it('does not share its lists with the import', () => {
+    const form = formFromMentorshipEnrollImport('mp_1', imported);
+
+    expect(form.technologies).not.toBe(imported.technologies);
+    expect(form.skills).not.toBe(imported.skills);
+    expect(form.prerequisites[0]).not.toBe(imported.prerequisites[0]);
+  });
+
+  it('starts with one default term, no logo and the terms not accepted', () => {
+    const form = formFromMentorshipEnrollImport('mp_1', imported);
+
+    expect(form.terms).toHaveLength(1);
+    expect(form.terms[0]).toEqual(createDefaultMentorshipTerm());
+    expect(form.logoFileName).toBe('');
+    expect(form.logoPreviewUrl).toBe('');
+    expect(form.termsAccepted).toBe(false);
+  });
+
+  it('leaves the project empty when the template has none', () => {
+    expect(formFromMentorshipEnrollImport('mp_1', { ...imported, project: null }).projectId).toBe('');
   });
 });
 

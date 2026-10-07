@@ -27,6 +27,7 @@ import {
   MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
   MentorshipEnrollCreateRequest,
+  MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
   MentorshipMentorTaskCreateRequest,
   MentorshipMentorTaskCreateResponse,
@@ -38,6 +39,7 @@ import {
   MentorshipUpstreamAdministeredProgram,
   MentorshipUpstreamApplication,
   MentorshipUpstreamCreatedProgram,
+  MentorshipUpstreamEnrollTemplate,
   MentorshipUpstreamListResponse,
   MentorshipUpstreamLogoUpload,
   MentorshipUpstreamMemberManagementRow,
@@ -71,7 +73,7 @@ import {
 import { buildMentorshipUpstreamTaskUpdate } from '../helpers/mentorship-admin-task.helper';
 import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { saveMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
-import { toMentorshipEnrollProgramRef, toMentorshipProgramLogoUploadResult } from '../helpers/mentorship-enroll.helper';
+import { toMentorshipEnrollImport, toMentorshipEnrollProgramRef, toMentorshipProgramLogoUploadResult } from '../helpers/mentorship-enroll.helper';
 import { createMentorshipMenteeTasks } from '../helpers/mentorship-mentor-task.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
 import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask } from '../helpers/mentorship-program-application.helper';
@@ -460,6 +462,22 @@ export class MentorshipAdminService {
       body
     );
     return toMentorshipEnrollProgramRef(created);
+  }
+
+  /**
+   * Reads the details of an existing program for the enroll wizard's import. Upstream's 403, 404 and 5xx pass through. Nothing
+   * in the template is logged.
+   */
+  public async getEnrollTemplate(req: Request, programId: string): Promise<MentorshipEnrollImport> {
+    logger.debug(req, 'mentorship_admin_get_enroll_template', 'Reading enroll template', { programId });
+
+    const template = await proxyMentorshipRequest<MentorshipUpstreamEnrollTemplate>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/enroll-template`,
+      'GET'
+    );
+    return toMentorshipEnrollImport(template);
   }
 
   /**

@@ -24,6 +24,9 @@
         (onChange)="onImportProgram()"
         dataTest="mentorship-enroll-import" />
       <p class="text-xs text-gray-500">Copies details, skills and prerequisites from a program you have run before.</p>
+      @if (importError()) {
+        <p class="text-xs text-red-600" role="alert" data-testid="mentorship-enroll-import-error">{{ importError() }}</p>
+      }
     </div>
 
     <div class="flex flex-col gap-1">
