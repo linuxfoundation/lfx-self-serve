@@ -528,6 +528,19 @@ describe('formFromMentorshipEnrollImport', () => {
     expect(form.prerequisites.some((item) => item.custom)).toBe(false);
   });
 
+  it('leaves the Coding Challenge URL empty unless the last line is a Challenge: line', () => {
+    const urlFor = (description: string): string | undefined =>
+      formFromMentorshipEnrollImport('mp_1', {
+        ...imported,
+        prerequisites: [{ id: 'imported-0', name: 'Coding Challenge', description, required: true, requireFile: false, custom: true }],
+      }).prerequisites.find((item) => item.id === 'prereq-coding')?.challengeUrl;
+
+    expect(urlFor('Challenge: https://challenge.example/task')).toBe('');
+    expect(urlFor('Intro\n\nChallenge: https://challenge.example/task\nMore text')).toBe('');
+    expect(urlFor(`Intro${'\n'.repeat(50_000)}`)).toBe('');
+    expect(urlFor('Intro\n\tChallenge:  https://challenge.example/task  \n')).toBe('https://challenge.example/task');
+  });
+
   it('passes the prerequisites step for a program created from the standard list', () => {
     const form = formFromMentorshipEnrollImport('mp_1', {
       ...imported,

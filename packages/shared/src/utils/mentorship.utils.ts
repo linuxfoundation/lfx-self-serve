@@ -328,10 +328,21 @@ function mergeImportedMentorshipPrerequisites(imported: MentorshipPrerequisite[]
       continue;
     }
     const entry = { ...standard[index], required: true };
-    if (entry.challengeUrl !== undefined) entry.challengeUrl = /\n\s*Challenge:\s*(\S+)\s*$/.exec(item.description)?.[1] ?? '';
+    if (entry.challengeUrl !== undefined) entry.challengeUrl = importedChallengeUrl(item.description);
     standard[index] = entry;
   }
   return [...standard, ...custom];
+}
+
+/**
+ * The URL on the description's last line when that line is `Challenge: <url>`, else `''`. Only the last line is matched,
+ * so a long stored description never makes the pattern backtrack.
+ */
+function importedChallengeUrl(description: string): string {
+  const text = description.trimEnd();
+  const newline = text.lastIndexOf('\n');
+  if (newline === -1) return '';
+  return /^[ \t]*Challenge:[ \t]*(\S+)$/.exec(text.slice(newline + 1))?.[1] ?? '';
 }
 
 /**

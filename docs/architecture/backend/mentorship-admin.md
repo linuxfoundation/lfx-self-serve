@@ -143,7 +143,7 @@ Create, edit, close, re-open and delete a term, each behind `blockDuringImperson
 - On a caller's first visit upstream answers not-provisioned, so `proxyMentorshipRequest` provisions them (`PUT /me`) and retries, as on the mentor and mentee pages. A not-provisioned error that still reaches the service (while impersonating, which never provisions, or when the retry is refused too) gives an empty page and a warn log with no user identifiers. Any other error propagates, and the page shows its failed-load state with Retry.
 - Upstream lists only direct `program_admin` memberships. Admins who only inherit access from the project are not listed yet.
 - The list now carries upstream program ids, while the program detail still resolves mock ids only, so opening a listed program shows the not-found state until the detail moves to the mentorship service (linuxfoundation/lfx-mentorship#233).
-- The Enroll form's "import from program" picker lists every program the list returns (up to `MENTORSHIP_PROGRAMS_MAX_LIMIT`), with "None" first. See [Import from an existing program](#import-from-an-existing-program).
+- The Enroll form's "import from program" picker lists every program the admin manages, with "None" first. It reads the list page by page at `MENTORSHIP_PROGRAMS_MAX_LIMIT` until `total` is reached or a page comes back empty. See [Import from an existing program](#import-from-an-existing-program).
 
 ### Status mapping
 
@@ -179,12 +179,12 @@ Two writes behind the Enroll wizard, each behind `blockDuringImpersonation` and 
 - Upstream answers `{ program, skills, prerequisites }`. `program` is snake_case. `skills` is always sent, possibly empty, and `prerequisites` is left out when empty. `prerequisites` is the program's stored task templates as they are, so its keys are camelCase (`submitFile`, `dueDate`).
 - `toMentorshipEnrollImport` in `mentorship-enroll.helper.ts` maps the answer to `MentorshipEnrollImport`: text fields default to an empty string, and `project` is `null` unless the template carries a project uid, name and slug (create needs all three, so the admin picks the project otherwise).
 - Technologies come from `program.industry`, a comma-separated string: split, trimmed, blanks dropped, and repeats removed ignoring case (the first spelling wins). This is the same field the create route writes.
-- The BFF maps each prerequisite to a custom one: `required: true`, `requireFile` when upstream has a `submitFile`, and `dueDate` kept only when set. Ids are `imported-<index>`.
-- `formFromMentorshipEnrollImport` then lays them over the standard list. An item named like a standard prerequisite (ignoring case) selects that standard row, and the Coding Challenge gets back the URL that create appended to its description as a `Challenge:` line. The other items stay custom, and the standard rows the program did not use stay unselected.
+- The BFF maps each prerequisite to a custom one: `required: true`, `requireFile` when upstream's `submitFile` is not blank, and `dueDate` kept only when set. Ids are `imported-<index>`.
+- `formFromMentorshipEnrollImport` then lays them over the standard list. An item named like a standard prerequisite (ignoring case) selects that standard row, and the Coding Challenge gets back the URL that create appended to its description as a `Challenge:` line (only the description's last line is checked). The other items stay custom, and the standard rows the program did not use stay unselected.
 - Terms and the logo are not copied, and `termsAccepted` is not set. `formFromMentorshipEnrollImport` gives the new form one default term and no logo.
 - Logs carry the program id and the prerequisite count only, never a name, description, URL or skill.
 
-In the wizard, picking a program reads its template (a newer pick drops the read of an older one), fills the form, clears any logo the admin had picked, and sets the project picker's value to the template's project even when the picker has not loaded it. A failed read shows `MENTORSHIP_ENROLL_IMPORT_FAILED` under the select, puts the select back to "None" and leaves the rest of the form as it was, so enrolling from scratch still works. Picking "None" resets the form.
+In the wizard, picking a program reads its template (a newer pick drops the read of an older one), fills the form, clears any logo the admin had picked, and sets the project picker's value to the template's project even when the picker has not loaded it. A failed read shows `MENTORSHIP_ENROLL_IMPORT_FAILED` under the select, puts the select back to "None" and leaves the rest of the form as it was, so enrolling from scratch still works. Leaving the step before the read returns cancels it and puts the select back to "None" too. Picking "None" resets the form.
 
 ## Wizard create flow
 

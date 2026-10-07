@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, model, output, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, model, output, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -49,6 +49,7 @@ import {
   MentorshipEnrollImport,
   MentorshipLfProject,
   MentorshipNameLookupStatus,
+  MentorshipProgram,
 } from '@lfx-one/shared/interfaces';
 import {
   formFromMentorshipEnrollImport,
@@ -65,11 +66,13 @@ import {
   debounceTime,
   distinctUntilChanged,
   EMPTY,
+  expand,
   map,
   merge,
   mergeMap,
   Observable,
   of,
+  reduce,
   share,
   startWith,
   Subject,
@@ -124,6 +127,8 @@ export class EnrollDetailsStepComponent {
   /** True from a keystroke that changes the search until its read starts, so the debounce never looks like "no results". */
   private readonly lfSearchPending = signal(false);
   private lfSearch = '';
+  /** The program whose template read is in flight, `''` when none is. */
+  private pendingImportId = '';
   /** Short-page cursors followed without a scroll since the current search's first page. */
   private lfAutoFollows = 0;
 
@@ -256,16 +261,21 @@ export class EnrollDetailsStepComponent {
         if (found) this.project.set(found);
       });
 
-    this.mentorshipAdminService
-      .getPrograms({ limit: MENTORSHIP_PROGRAMS_MAX_LIMIT })
+    this.readImportPrograms()
       .pipe(takeUntilDestroyed())
       .subscribe({
-        next: (response) => {
-          this.importOptions.set([{ value: '', label: 'None' }, ...response.data.map((program) => ({ value: program.id, label: program.name }))]);
+        next: (programs) => {
+          this.importOptions.set([{ value: '', label: 'None' }, ...programs.map((program) => ({ value: program.id, label: program.name }))]);
           this.importLoading.set(false);
         },
         error: () => this.importLoading.set(false),
       });
+
+    // Leaving the step cancels a template read still in flight, so put the picker back on None rather than leave it naming
+    // a program whose details never reached the form.
+    inject(DestroyRef).onDestroy(() => {
+      if (this.pendingImportId) this.form().controls['importProgramId']?.setValue('');
+    });
 
     this.importSelection$
       .pipe(
@@ -357,6 +367,7 @@ export class EnrollDetailsStepComponent {
   protected onImportProgram(): void {
     const importId = (this.form().controls['importProgramId']?.value as string) ?? '';
     this.importError.set('');
+    this.pendingImportId = importId;
     if (importId) {
       this.importSelection$.next(importId);
       return;
@@ -442,6 +453,20 @@ export class EnrollDetailsStepComponent {
     return cached?.id === projectId ? cached : undefined;
   }
 
+  /** Every program the admin manages, read page by page since one read returns at most `MENTORSHIP_PROGRAMS_MAX_LIMIT`. */
+  private readImportPrograms(): Observable<MentorshipProgram[]> {
+    const readPage = (offset: number) =>
+      this.mentorshipAdminService.getPrograms({ offset, limit: MENTORSHIP_PROGRAMS_MAX_LIMIT }).pipe(map((response) => ({ offset, response })));
+    return readPage(0).pipe(
+      // An empty page ends the walk too, so a total that overstates the programs cannot loop.
+      expand(({ offset, response }) => {
+        const next = offset + response.data.length;
+        return response.data.length > 0 && next < response.total ? readPage(next) : EMPTY;
+      }),
+      reduce((programs, { response }) => [...programs, ...response.data], [] as MentorshipProgram[])
+    );
+  }
+
   private readImport(programId: string): Observable<{ programId: string; data: MentorshipEnrollImport }> {
     return this.mentorshipAdminService.getEnrollTemplate(programId).pipe(
       map((data) => ({ programId, data })),
@@ -453,6 +478,7 @@ export class EnrollDetailsStepComponent {
   }
 
   private applyImport(programId: string, data: MentorshipEnrollImport): void {
+    this.pendingImportId = '';
     this.resetLogo();
     this.form().patchValue(formFromMentorshipEnrollImport(programId, data));
     // Set before the projectId watcher runs: it keeps this project when the id matches, and would otherwise clear it
@@ -462,6 +488,7 @@ export class EnrollDetailsStepComponent {
 
   /** The form is left as it was, so a failed import never costs the admin what they already typed (FR-011). */
   private failImport(): void {
+    this.pendingImportId = '';
     this.importError.set(MENTORSHIP_ENROLL_IMPORT_FAILED);
     this.form().controls['importProgramId']?.setValue('');
   }

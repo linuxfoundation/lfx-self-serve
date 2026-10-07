@@ -175,7 +175,7 @@ const splitTechnologies = (industry: string | null | undefined): string[] => {
 /**
  * What the wizard copies from an upstream enroll template. `project` is `null` unless the template names a project uid, name and
  * slug, since create needs all three, and a missing text field is `''`. Every imported prerequisite is a selected, editable one
- * (`custom`) until the wizard matches it to a standard prerequisite; it asks for a file when upstream set `submitFile`, and a
+ * (`custom`) until the wizard matches it to a standard prerequisite; it asks for a file when upstream's `submitFile` is not blank, and a
  * `null` due date is left out. Terms are not part of the template, and neither is a logo.
  */
 export const toMentorshipEnrollImport = (template: MentorshipUpstreamEnrollTemplate): MentorshipEnrollImport => {
@@ -203,7 +203,7 @@ export const toMentorshipEnrollImport = (template: MentorshipUpstreamEnrollTempl
       name: item.name,
       description: item.description ?? '',
       required: true,
-      requireFile: item.submitFile !== null && item.submitFile !== undefined,
+      requireFile: Boolean(item.submitFile),
       custom: true,
       ...(item.dueDate ? { dueDate: item.dueDate } : {}),
     })),

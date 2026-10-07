@@ -16,12 +16,13 @@ import {
   MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
   MENTORSHIP_LF_PROJECT_REMOTE_FILTER_FIELD,
+  MENTORSHIP_PROGRAMS_MAX_LIMIT,
   MENTORSHIP_RICH_TEXT_RAW_MAX,
 } from '@lfx-one/shared/constants';
 import { MentorshipEnrollImport } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EnrollDetailsStepComponent } from './enroll-details-step.component';
@@ -394,7 +395,18 @@ describe('EnrollDetailsStepComponent — import from an existing program', () =>
     await fixture.whenStable();
   };
 
-  const setUp = async (templateResponse: Observable<MentorshipEnrollImport>): Promise<void> => {
+  const twoPrograms = (): Observable<unknown> =>
+    of({
+      data: [
+        { id: 'program-a', name: 'Program A' },
+        { id: 'program-b', name: 'Program B' },
+      ],
+    });
+
+  const setUp = async (
+    templateResponse: Observable<MentorshipEnrollImport>,
+    getPrograms: (...args: unknown[]) => Observable<unknown> = twoPrograms
+  ): Promise<void> => {
     getEnrollTemplate = vi.fn(() => templateResponse);
     TestBed.overrideComponent(EnrollDetailsStepComponent, { set: { imports: [ReactiveFormsModule, StubSelectComponent], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
 
@@ -403,16 +415,7 @@ describe('EnrollDetailsStepComponent — import from an existing program', () =>
       providers: [
         {
           provide: MentorshipAdminService,
-          useValue: {
-            getPrograms: () =>
-              of({
-                data: [
-                  { id: 'program-a', name: 'Program A' },
-                  { id: 'program-b', name: 'Program B' },
-                ],
-              }),
-            getEnrollTemplate,
-          },
+          useValue: { getPrograms, getEnrollTemplate },
         },
         {
           provide: MentorshipService,
@@ -433,6 +436,39 @@ describe('EnrollDetailsStepComponent — import from an existing program', () =>
     await setUp(of(template));
 
     expect(importOptionIds()).toEqual(['', 'program-a', 'program-b']);
+  });
+
+  it('reads every page of programs, not only the first', async () => {
+    const programs = Array.from({ length: MENTORSHIP_PROGRAMS_MAX_LIMIT + 3 }, (_, index) => ({ id: `program-${index}`, name: `Program ${index}` }));
+    const getPrograms = vi.fn((params: { offset: number; limit: number }) =>
+      of({ data: programs.slice(params.offset, params.offset + params.limit), total: programs.length })
+    );
+
+    await setUp(of(template), getPrograms as (...args: unknown[]) => Observable<unknown>);
+
+    expect(getPrograms.mock.calls.map(([params]) => params.offset)).toEqual([0, MENTORSHIP_PROGRAMS_MAX_LIMIT]);
+    expect(importOptionIds()).toEqual(['', ...programs.map((program) => program.id)]);
+  });
+
+  it('puts the picker back on None when the step closes before the template arrives', async () => {
+    const template$ = new Subject<MentorshipEnrollImport>();
+    await setUp(template$);
+
+    await pickImport('program-a');
+    fixture.destroy();
+    template$.next(template);
+
+    expect(form.controls['importProgramId'].value).toBe('');
+    expect(form.controls['name'].value).toBe('');
+  });
+
+  it('keeps the picked program when the step closes after the template arrived', async () => {
+    await setUp(of(template));
+
+    await pickImport('program-a');
+    fixture.destroy();
+
+    expect(form.controls['importProgramId'].value).toBe('program-a');
   });
 
   it('fills the form from the template and keeps its project, though the picker has not loaded it', async () => {

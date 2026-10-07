@@ -283,6 +283,12 @@ describe('toMentorshipEnrollImport', () => {
     expect(result.prerequisites[1]).not.toHaveProperty('dueDate');
   });
 
+  it('asks for no file when submitFile is blank', () => {
+    const result = toMentorshipEnrollImport(template({}, { prerequisites: [{ name: 'Essay', submitFile: '' }] }));
+
+    expect(result.prerequisites[0].requireFile).toBe(false);
+  });
+
   it('tolerates a template with no prerequisites', () => {
     expect(toMentorshipEnrollImport(template({}, { prerequisites: undefined })).prerequisites).toEqual([]);
   });
