@@ -522,6 +522,29 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN:
     value:
 
+  # Gates whether Performance Max, Video and Display Google campaigns may be requested at all.
+  #
+  # The same question DEMAND_GEN asks, about a later campaign-service: "does the DEPLOYED service
+  # know these googleAdsConfig.channel values?". The failure it prevents is the same silent,
+  # expensive one — Go's JSON decoder does not reject an unknown channel value, so a service that
+  # predates them falls through to its default SEARCH campaign: real budget, no keywords, and by
+  # its own documentation it "can never serve". The job reports success and the wrong campaign is
+  # found later in Google Ads with money already spent.
+  #
+  # SEPARATE from DEMAND_GEN rather than folded into it. A deployment running LFXV2-3257 has had
+  # Demand Gen for months with that flag on, and widening it would turn these three on everywhere
+  # Demand Gen already is — precisely the guess this mechanism exists to avoid.
+  #
+  # Video is NOT unlocked by this flag, and no flag unlocks it. The Google Ads API has no call
+  # that creates a Video campaign, so campaign-service refuses one in the first statement of
+  # CreateVideoCampaign; the box is disabled in the form and the request is refused on the server
+  # whatever this is set to. Turning this on offers Performance Max and Display.
+  #
+  # Leaving it off is SAFE and is the default. Order: deploy a campaign-service that understands
+  # the three channels, confirm it, THEN set this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS:
+    value:
+
   # Gates FGA-based (marketing_auditor / campaign_manager) authorization on the marketing
   # analytics routes (analytics.route.ts) and campaigns routes (campaigns.route.ts). Same
   # accepted values and same default-deny as the campaign-service flags above.

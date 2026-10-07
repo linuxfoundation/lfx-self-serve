@@ -13,6 +13,7 @@ import {
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
+  GOOGLE_VIDEO_CREATE_SUPPORTED,
   JOB_LOST_MESSAGE,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
@@ -1371,6 +1372,31 @@ export class CampaignServiceClient {
     // A SEPARATE flag from Demand Gen's, deliberately: a deployment that has had Demand Gen since
     // LFXV2-3257 is not thereby ready for the three newer channels, and reusing the flag would
     // turn them on everywhere Demand Gen is already on.
+    // Video is refused UNCONDITIONALLY, before the capability flag is even consulted.
+    //
+    // The flag answers "has this deployment been cut over to the newer channels?", and for
+    // Performance Max and Display that is the whole question. Video has a second one stacked on
+    // top of it that no deployment can answer yes to: `CreateVideoCampaign` returns
+    // `ErrVideoCreateUnsupported` as its FIRST statement, because the Google Ads API has no
+    // mutate that creates a Video campaign. So a caller that reaches this method with `video` —
+    // a direct API client, or a UI whose disabled tick-box was worked around — is handed a job id
+    // for a dispatch that is already certain to fail, and learns that only when the job dies.
+    //
+    // The usual objection to a second guard here is over-refusal: a local rule can refuse a create
+    // the server would have accepted. That objection cannot apply to this one. The server accepts
+    // `video` creates NEVER, so there is no accepted create for this to take away, and
+    // `GOOGLE_VIDEO_CREATE_SUPPORTED` is the same constant the tick-box is disabled from — when
+    // Google ships the API, flipping it re-opens the UI and this guard in one edit rather than
+    // leaving a stale refusal behind.
+    if (!GOOGLE_VIDEO_CREATE_SUPPORTED && selectedGoogleChannels.includes('video')) {
+      return {
+        enabled: true,
+        jobId: null,
+        error:
+          'Video campaigns cannot be created through the Google Ads API yet. Build the campaign in Google Ads directly — once it exists, it can be adopted, monitored and optimized here.',
+      };
+    }
+
     const flaggedChannel = selectedGoogleChannels.find((c) => (GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG as readonly string[]).includes(c));
     if (flaggedChannel && !isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceGoogleChannels)) {
       return {

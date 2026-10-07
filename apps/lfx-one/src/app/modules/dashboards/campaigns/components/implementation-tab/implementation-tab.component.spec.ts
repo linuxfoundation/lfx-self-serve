@@ -3622,12 +3622,13 @@ describe('ImplementationTabComponent google channels capability gate', () => {
     });
     // The capability inputs are set LAST, after the form is in its final state.
     //
-    // `canSubmit` is a `computed` that reads `campaignForm.controls.*.value` DIRECTLY — a plain
-    // property read, not a signal — so a `patchValue` does not invalidate it. Its only live
-    // dependencies are `selectedPlatforms()` and the two capability signals, which means a seed
-    // that set the capability first would leave `canSubmit` memoized against the pre-patch form
-    // and every assertion below would be reading a stale `false`. (That non-reactivity predates
-    // this change; the ordering here works with it rather than papering over it.)
+    // `canSubmit` is a `computed` that reads `campaignForm.controls.*.value` DIRECTLY — plain
+    // property reads, not signals. `campaignFormRevision` is what makes a `patchValue` invalidate
+    // the memo at all, and `canSubmit reacts to a channel ticked after it was last read` below is
+    // the test that holds that bridge in place. The ordering here is kept anyway: it is the state
+    // a real user reaches — a form filled in, then a capability resolving — and it means this seed
+    // does not depend on the bridge to be correct, so a regression there shows up as that one
+    // named failure rather than as every Google assertion in this file going red at once.
     if ('demandGen' in caps) fixture.componentRef.setInput('demandGenEnabled', caps.demandGen);
     if ('googleChannels' in caps) fixture.componentRef.setInput('googleChannelsEnabled', caps.googleChannels);
     fixture.detectChanges();
@@ -3660,6 +3661,51 @@ describe('ImplementationTabComponent google channels capability gate', () => {
   it('allows a flagged channel on its own', () => {
     const c = seedGoogleForm({ includeDisplay: true }, { googleChannels: true });
     expect(c['canSubmit']()).toBe(true);
+  });
+
+  /**
+   * The bridge that makes every assertion above mean anything on a live page.
+   *
+   * `canSubmit` reads the form directly — `campaignForm.invalid`, `form.eventName.value`, and
+   * `selectedGoogleChannels()`, which is `getRawValue()` underneath. None of those is a reactive
+   * dependency, so the memo only ever recomputed when one of the few SIGNALS it also reads moved.
+   * Ticking a Google channel moves none of them: the checkboxes are form controls and nothing
+   * else changes with them. The button therefore kept whatever state it had, and the mixed-channel
+   * rule directly above — whose only inputs ARE those checkboxes — never reached the screen.
+   *
+   * The sequencing is the whole test. `canSubmit()` is read FIRST, with no channel selected, so
+   * the memo is warm and holding `false`; the channel is then ticked with no `setInput` and no
+   * `detectChanges` to invalidate it by another route; and only then is it read again. Remove
+   * `campaignFormRevision` from `canSubmit` and the second read returns the cached `false`.
+   */
+  it('canSubmit reacts to a channel ticked after it was last read', () => {
+    const c = seedGoogleForm({}, { googleChannels: true });
+
+    // Warm the memo in the no-channel state. Not an incidental assertion — if this were already
+    // true, the flip below would prove nothing.
+    expect(c['canSubmit']()).toBe(false);
+
+    c['campaignForm'].controls.includeDisplay.setValue(true);
+
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /**
+   * And the same bridge in the other direction, through `statusChanges` rather than
+   * `valueChanges`: clearing a required field leaves the form INVALID without the Google
+   * checkboxes moving at all. `merge(valueChanges, statusChanges)` is what carries this one —
+   * `setValue('')` does emit both, but the assertion is about the state `canSubmit` reports, and
+   * it is the case a reviewer reaches for when asking why `statusChanges` is in that merge.
+   */
+  it('canSubmit reacts to a required field being emptied after it was last read', () => {
+    const c = seedGoogleForm({ includeDisplay: true }, { googleChannels: true });
+
+    expect(c['canSubmit']()).toBe(true);
+
+    c['campaignForm'].controls.budgetUsd.setValue(null);
+
+    expect(c['campaignForm'].invalid).toBe(true);
+    expect(c['canSubmit']()).toBe(false);
   });
 
   /**
