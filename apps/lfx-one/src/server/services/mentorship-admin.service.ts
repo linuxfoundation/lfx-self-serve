@@ -53,6 +53,7 @@ import {
   MentorshipUpstreamTask,
   MentorshipUpstreamTermManagementRow,
 } from '@lfx-one/shared/interfaces';
+import { lastDayOfMentorshipMonth } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import {
@@ -613,9 +614,12 @@ export class MentorshipAdminService {
     }
   }
 
-  /** The term routes' body: the name, and the dates as `toMentorshipUpstreamTermDates` sends them (the UI treats a term as running through its end month). */
+  /**
+   * The term routes' body: the name and the dates as `toMentorshipUpstreamTermDates` sends them, the term end first moved to the last
+   * day of its month: the dialog picks months, and the UI treats a term as running through its end month.
+   */
   private toUpstreamTermBody(input: MentorshipAdminTermInput): Record<string, string> {
-    return { name: input.name, ...toMentorshipUpstreamTermDates(input) };
+    return { name: input.name, ...toMentorshipUpstreamTermDates({ ...input, endDate: lastDayOfMentorshipMonth(input.endDate) }) };
   }
 
   /** Maps upstream's answer to a write; a status missing or one the table can't show falls back to `fallbackStatus`, the rest to the input. */

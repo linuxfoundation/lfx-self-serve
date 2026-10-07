@@ -249,6 +249,12 @@ describe('toMentorshipUpstreamProgramUpdate', () => {
     });
   });
 
+  it('sends a term end date as given, so a stored mid-month end is not moved', () => {
+    const request = parseMentorshipEnrollUpdateRequest(validBody({ terms: [term({ endDate: '2030-05-20' })] }), 'update');
+
+    expect(toMentorshipUpstreamProgramUpdate(request).terms?.[0].end_date_time).toBe('2030-05-20T23:59:59.999Z');
+  });
+
   it('sends the open terms as UTC instants, a saved one with its id', () => {
     const SAVED_TERM = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
     const request = parseMentorshipEnrollUpdateRequest(validBody({ terms: [{ ...term(), id: SAVED_TERM }, term({ name: 'Term 2' })] }), 'update');

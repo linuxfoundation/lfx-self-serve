@@ -17,7 +17,7 @@ import {
   MentorshipUpstreamOpenTerm,
   MentorshipUpstreamProgramUpdate,
 } from '@lfx-one/shared/interfaces';
-import { isUuid, lastDayOfMentorshipMonth, toMentorshipUtcEndOfDayInstant, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
+import { isUuid, toMentorshipUtcEndOfDayInstant, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
 
 import { ServiceValidationError } from '../errors';
 import { parseTrimmedString } from './mentorship-params.helper';
@@ -188,15 +188,16 @@ export const parseMentorshipEnrollUpdateRequest = (body: unknown, operation: str
 };
 
 /**
- * A term's dates as upstream takes them: RFC 3339 instants in UTC. Each date goes as the start of its day, except the application
- * end, which goes as the end of its day so the term takes applications through that whole date, and the term end, which goes as
- * the end of the last day of its month, since the term dialog picks months.
+ * A term's dates as upstream takes them: RFC 3339 instants in UTC. The start dates go as the start of their day, and the two end
+ * dates as the end of theirs, so the term runs, and takes applications, through that whole date. The end date is sent as given:
+ * the term routes move it to the last day of its month first, while the edit wizard already does so for the dates it changes and
+ * sends a term's stored dates back as they are.
  */
 export const toMentorshipUpstreamTermDates = (
   term: Pick<MentorshipEnrollUpdateTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
 ): Omit<MentorshipUpstreamOpenTerm, 'id' | 'name'> => ({
   start_date_time: toMentorshipUtcInstant(term.startDate),
-  end_date_time: toMentorshipUtcEndOfDayInstant(lastDayOfMentorshipMonth(term.endDate)),
+  end_date_time: toMentorshipUtcEndOfDayInstant(term.endDate),
   application_start_date: toMentorshipUtcInstant(term.applicationStartDate),
   application_end_date: toMentorshipUtcEndOfDayInstant(term.applicationEndDate),
 });

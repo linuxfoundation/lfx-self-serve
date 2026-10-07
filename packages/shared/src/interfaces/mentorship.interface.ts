@@ -478,6 +478,16 @@ export interface MentorshipEnrollCreateRequest {
   termsAccepted: true;
 }
 
+/**
+ * A saved open term in the edit wizard. `term` is the term as the wizard holds it, its term dates moved to the first of their month
+ * for the month pickers; `stored` holds the dates upstream has, which Update sends back as they are while the admin leaves the
+ * term's dates alone, so an edit elsewhere never moves them.
+ */
+export interface MentorshipEnrollSavedTerm {
+  term: MentorshipProgramTerm;
+  stored: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>;
+}
+
 /** One open term in the update body: `id` names a saved open term to change, and a term without one is created. */
 export interface MentorshipEnrollUpdateTerm extends MentorshipEnrollCreateTerm {
   id?: string;

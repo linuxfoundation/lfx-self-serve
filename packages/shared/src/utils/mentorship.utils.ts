@@ -85,6 +85,7 @@ import type {
   MentorshipEnrollFieldErrors,
   MentorshipEnrollForm,
   MentorshipEnrollImport,
+  MentorshipEnrollSavedTerm,
   MentorshipEnrollStep,
   MentorshipEnrollUpdateRequest,
   MentorshipEnrollValidationInput,
@@ -264,19 +265,39 @@ export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidation
 
 /**
  * The wizard form as the edit wizard's update body: the program fields as create sends them, and the open terms as the program's
- * full set. A term whose id is in `savedTermIds` keeps it, so upstream changes that term; one the admin added goes without an id
- * and is created; a saved term left out is deleted. With no open terms, `terms` is left out and upstream keeps them as they are.
+ * full set. A term in `saved` keeps its id, so upstream changes that term; while its dates are as loaded it sends the stored dates,
+ * not the month-start ones the wizard shows, so editing anything else never moves them. A term the admin added goes without an id
+ * and is created, and a saved term left out is deleted. With no open terms, `terms` is left out and upstream keeps them as they are.
  */
 export function toMentorshipEnrollUpdateRequest(
   form: MentorshipEnrollValidationInput,
   project: MentorshipLfProject,
-  savedTermIds: ReadonlySet<string>
+  saved: ReadonlyMap<string, MentorshipEnrollSavedTerm>
 ): MentorshipEnrollUpdateRequest {
   const request: MentorshipEnrollUpdateRequest = toMentorshipEnrollProgramFields(form, project);
   if (form.terms.length) {
-    request.terms = form.terms.map((term) => ({ ...(savedTermIds.has(term.id) ? { id: term.id } : {}), ...toMentorshipEnrollRequestTerm(term) }));
+    request.terms = form.terms.map((term) => {
+      const savedTerm = saved.get(term.id);
+      if (!savedTerm) return toMentorshipEnrollRequestTerm(term);
+      const datesUnchanged =
+        savedTerm.term.startDate === term.startDate &&
+        savedTerm.term.endDate === term.endDate &&
+        savedTerm.term.applicationStartDate === term.applicationStartDate &&
+        savedTerm.term.applicationEndDate === term.applicationEndDate;
+      return { id: term.id, ...(datesUnchanged ? { name: term.name.trim(), ...savedTerm.stored } : toMentorshipEnrollRequestTerm(term)) };
+    });
   }
   return request;
+}
+
+/** A saved open term as the edit wizard keeps it: the term as the form shows it, and the dates upstream holds. */
+export function toMentorshipEnrollSavedTerm(
+  row: Pick<MentorshipProgramTermRow, 'id' | 'name' | 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
+): MentorshipEnrollSavedTerm {
+  return {
+    term: toMentorshipEnrollTerm(row),
+    stored: { startDate: row.startDate, endDate: row.endDate, applicationStartDate: row.applicationStartDate, applicationEndDate: row.applicationEndDate },
+  };
 }
 
 /** A wizard term as create and update send it: the name trimmed and the end month as its last day. */

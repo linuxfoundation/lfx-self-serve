@@ -551,7 +551,7 @@ describe('EnrollProgramComponent — edit mode', () => {
   };
   const TEMPLATE: MentorshipEnrollImport = {
     name: 'GridFlow Mentorship Program',
-    project: { id: 'proj-gridflow', name: 'GridFlow', slug: 'gridflow' },
+    project: { id: 'proj-gridflow', name: 'GridFlow', slug: 'gridflow', logoUrl: 'https://cdn.example/project.png' },
     description: '<p>Build a data pipeline.</p>',
     repositoryUrl: 'https://github.com/lfenergy/gridflow',
     websiteUrl: '',
@@ -661,6 +661,42 @@ describe('EnrollProgramComponent — edit mode', () => {
     expect(service['uploadProgramLogo']).not.toHaveBeenCalled();
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: MENTORSHIP_ENROLL_UPDATE_SUCCESS }));
     expect(router.navigate).toHaveBeenCalledWith(['/mentorship/admin', PROGRAM_ID]);
+  });
+
+  it("keeps the program's stored project, logo included, when the picker swapped in its own row for the same project", () => {
+    component['selectedProject'].set({ id: 'proj-gridflow', name: 'GridFlow', slug: 'gridflow' });
+
+    clickUpdate();
+
+    expect(service['updateProgram'].mock.calls[0][1]).toMatchObject({ projectId: 'proj-gridflow', projectLogoUrl: 'https://cdn.example/project.png' });
+  });
+
+  it('sends the picked project when the admin moves the program to another one', () => {
+    component['selectedProject'].set({ id: 'proj-other', name: 'Other', slug: 'other' });
+
+    clickUpdate();
+
+    const body = service['updateProgram'].mock.calls[0][1];
+    expect(body).toMatchObject({ projectId: 'proj-other', projectSlug: 'other', projectName: 'Other' });
+    expect(body).not.toHaveProperty('projectLogoUrl');
+  });
+
+  it('does not ask to discard saved answers when only the logo upload failed', async () => {
+    const confirmationService = fixture.debugElement.injector.get(ConfirmationService);
+    const confirm = vi.fn((options: Confirmation) => {
+      options.accept?.();
+      return confirmationService;
+    });
+    confirmationService.confirm = confirm;
+    component['form'].controls.name.setValue('Renamed Program');
+    component['logoFile'].set(LOGO);
+    service['uploadProgramLogo'].mockReturnValueOnce(throwError(() => httpError(500)));
+
+    clickUpdate();
+    component['logoFile'].set(null);
+
+    expect(await component.canLeave()).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   it('uploads a newly picked logo after the update, with no 403 back-off', () => {

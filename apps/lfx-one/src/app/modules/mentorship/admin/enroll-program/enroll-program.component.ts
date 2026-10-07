@@ -52,6 +52,7 @@ import {
   MentorshipEnrollForm,
   MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
+  MentorshipEnrollSavedTerm,
   MentorshipEnrollStep,
   MentorshipEnrollSubmitFailure,
   MentorshipEnrollSubmitPhase,
@@ -68,6 +69,7 @@ import {
   isSameMentorshipTerm,
   isMentorshipTermsAccepted,
   toMentorshipEnrollCreateRequest,
+  toMentorshipEnrollSavedTerm,
   toMentorshipEnrollTerm,
   toMentorshipEnrollUpdateRequest,
 } from '@lfx-one/shared/utils';
@@ -136,8 +138,8 @@ export class EnrollProgramComponent {
 
   /** What an untouched form reads as, the loaded program's answers in an edit; Cancel only asks when the answers differ from it. */
   private initialValue = JSON.stringify(this.form.getRawValue());
-  /** The open terms upstream holds for the edited program, as last read. Update sends their ids, so upstream changes them in place. */
-  private savedTerms: MentorshipProgramTerm[] = [];
+  /** The open terms upstream holds for the edited program, as last read, by id. Update sends their ids, so upstream changes them in place. */
+  private savedTerms = new Map<string, MentorshipEnrollSavedTerm>();
   /** The logo file an edit last uploaded. The answers unlock after a failed Update, so the admin may pick another file. */
   private uploadedLogo: File | null = null;
   /**
@@ -145,6 +147,11 @@ export class EnrollProgramComponent {
    * wizard does not have. The next Update reads the terms first, so it does not create them twice.
    */
   private termsOutOfSync = false;
+  /**
+   * The edited program's project as upstream holds it. The picker can swap in its own row for the same project, which may lack the
+   * logo, so Update sends this one while the project is unchanged and never clears the stored project logo.
+   */
+  private loadedProject: MentorshipLfProject | null = null;
 
   /** The program being edited, `''` when enrolling a new one. */
   protected readonly editProgramId = this.route.snapshot.queryParamMap.get('programId')?.trim() ?? '';
@@ -392,10 +399,14 @@ export class EnrollProgramComponent {
     this.syncSavedTerms(programId)
       .pipe(
         concatMap(() => {
-          const savedIds = new Set(this.savedTerms.map((term) => term.id));
-          return this.mentorshipAdminService.updateProgram(programId, toMentorshipEnrollUpdateRequest(this.form.getRawValue(), project, savedIds));
+          const sentProject = this.loadedProject?.id === project.id ? this.loadedProject : project;
+          return this.mentorshipAdminService.updateProgram(programId, toMentorshipEnrollUpdateRequest(this.form.getRawValue(), sentProject, this.savedTerms));
         }),
-        tap(() => (this.termsOutOfSync = true)),
+        tap(() => {
+          this.termsOutOfSync = true;
+          // The answers are saved now, so leaving after a failed logo upload only asks about the logo.
+          this.initialValue = JSON.stringify(this.form.getRawValue());
+        }),
         concatMap(() => {
           const logo = this.logoFile();
           if (!logo || logo === this.uploadedLogo) return of(null);
@@ -421,17 +432,15 @@ export class EnrollProgramComponent {
     return this.readAllTerms(programId).pipe(
       tap((rows) => {
         this.termsOutOfSync = false;
-        const open = rows.filter((row) => row.status === 'open').map(toMentorshipEnrollTerm);
-        const openIds = new Set(open.map((term) => term.id));
+        this.savedTerms = this.toSavedTerms(rows);
         const formIds = new Set(this.form.controls.terms.value.map((term) => term.id));
-        const unclaimed = open.filter((term) => !formIds.has(term.id));
+        const unclaimed = [...this.savedTerms.values()].map((saved) => saved.term).filter((term) => !formIds.has(term.id));
         const terms = this.form.controls.terms.value.map((term) => {
-          if (openIds.has(term.id)) return term;
+          if (this.savedTerms.has(term.id)) return term;
           const index = unclaimed.findIndex((row) => isSameMentorshipTerm(row, term));
           return index === -1 ? term : { ...term, id: unclaimed.splice(index, 1)[0].id };
         });
         this.form.controls.terms.setValue(terms, { emitEvent: false });
-        this.savedTerms = open;
       })
     );
   }
@@ -439,7 +448,7 @@ export class EnrollProgramComponent {
   /** Upstream saved nothing, so the saved terms the admin removed go back in the list. */
   private restoreRemovedTerms(): void {
     const formIds = new Set(this.form.controls.terms.value.map((term) => term.id));
-    const removed = this.savedTerms.filter((term) => !formIds.has(term.id)).map((term) => ({ ...term }));
+    const removed = [...this.savedTerms.values()].filter((saved) => !formIds.has(saved.term.id)).map((saved) => ({ ...saved.term }));
     this.form.controls.terms.setValue([...this.form.controls.terms.value, ...removed], { emitEvent: false });
   }
 
@@ -497,9 +506,10 @@ export class EnrollProgramComponent {
     const openTerms = rows.filter((row) => row.status === 'open').map(toMentorshipEnrollTerm);
     this.form.setValue(formFromMentorshipEnrollEdit(data, openTerms));
     this.selectedProject.set(data.project);
+    this.loadedProject = data.project;
     this.currentLogoUrl.set(data.logoUrl);
     this.closedTerms.set(rows.filter((row) => row.status === 'closed').map(toMentorshipEnrollTerm));
-    this.savedTerms = openTerms.map((term) => ({ ...term }));
+    this.savedTerms = this.toSavedTerms(rows);
     this.termsOutOfSync = false;
     this.editBaseline.set({
       terms: openTerms.map((term) => ({ ...term })),
@@ -507,6 +517,11 @@ export class EnrollProgramComponent {
     });
     this.initialValue = JSON.stringify(this.form.getRawValue());
     this.editLoad.set('ready');
+  }
+
+  /** The open terms among `rows`, by id, each with the dates upstream holds. */
+  private toSavedTerms(rows: MentorshipProgramTermRow[]): Map<string, MentorshipEnrollSavedTerm> {
+    return new Map(rows.filter((row) => row.status === 'open').map((row) => [row.id, toMentorshipEnrollSavedTerm(row)]));
   }
 
   /**
@@ -608,7 +623,8 @@ export class EnrollProgramComponent {
   }
 
   private hasUnsavedAnswers(): boolean {
-    return !!this.logoFile() || JSON.stringify(this.form.getRawValue()) !== this.initialValue;
+    const logo = this.logoFile();
+    return (!!logo && logo !== this.uploadedLogo) || JSON.stringify(this.form.getRawValue()) !== this.initialValue;
   }
 
   private nameLookupMessage(status: MentorshipNameLookupStatus): string {

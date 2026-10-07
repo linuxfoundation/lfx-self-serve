@@ -92,6 +92,7 @@ import {
   filterMentorshipApplicantTasks,
   formFromMentorshipEnrollEdit,
   formFromMentorshipEnrollImport,
+  toMentorshipEnrollSavedTerm,
   toMentorshipEnrollTerm,
   toMentorshipEnrollUpdateRequest,
   formatMentorshipApplicantTaskDueLabel,
@@ -755,21 +756,51 @@ describe('toMentorshipEnrollUpdateRequest', () => {
     const form = filled();
     const created = toMentorshipEnrollCreateRequest(form, project);
 
-    expect({ ...toMentorshipEnrollUpdateRequest(form, project, new Set()), termsAccepted: true }).toEqual(created);
+    expect({ ...toMentorshipEnrollUpdateRequest(form, project, new Map()), termsAccepted: true }).toEqual(created);
     expect(created.industry).toBe('Go, Rust');
   });
 
-  it('sends the open terms as the full set: saved ones with their id, added ones without', () => {
-    const form = { ...filled(), terms: [term('saved-1', ' Spring '), term('term-new-1', 'Fall')] };
+  /** A saved term upstream holds with a mid-month start and end, as the wizard keeps it. */
+  const saved = (id: string, name: string) =>
+    toMentorshipEnrollSavedTerm({
+      id,
+      name,
+      startDate: '2030-03-15',
+      endDate: '2030-05-20',
+      applicationStartDate: '2030-01-01',
+      applicationEndDate: '2030-02-01',
+    });
 
-    expect(toMentorshipEnrollUpdateRequest(form, project, new Set(['saved-1', 'saved-2'])).terms).toEqual([
-      { id: 'saved-1', name: 'Spring', startDate: '2030-03-01', endDate: '2030-05-31', applicationStartDate: '2030-01-01', applicationEndDate: '2030-02-01' },
+  it('sends the open terms as the full set: saved ones with their id, added ones without', () => {
+    const savedTerm = saved('saved-1', 'Spring');
+    const moved = { ...savedTerm.term, name: ' Spring ', startDate: '2030-04-01' };
+    const form = { ...filled(), terms: [moved, term('term-new-1', 'Fall')] };
+
+    expect(toMentorshipEnrollUpdateRequest(form, project, new Map([['saved-1', savedTerm]])).terms).toEqual([
+      { id: 'saved-1', name: 'Spring', startDate: '2030-04-01', endDate: '2030-05-31', applicationStartDate: '2030-01-01', applicationEndDate: '2030-02-01' },
       { name: 'Fall', startDate: '2030-03-01', endDate: '2030-05-31', applicationStartDate: '2030-01-01', applicationEndDate: '2030-02-01' },
     ]);
   });
 
   it('leaves the terms out when the program has no open term', () => {
-    expect(toMentorshipEnrollUpdateRequest({ ...filled(), terms: [] }, project, new Set())).not.toHaveProperty('terms');
+    expect(toMentorshipEnrollUpdateRequest({ ...filled(), terms: [] }, project, new Map())).not.toHaveProperty('terms');
+  });
+
+  it('sends the stored dates of a saved term whose dates the admin left alone, even when it is renamed', () => {
+    const savedTerm = saved('saved-1', 'Spring');
+    const form = { ...filled(), terms: [{ ...savedTerm.term, name: 'Spring renamed' }] };
+
+    expect(savedTerm.term).toMatchObject({ startDate: '2030-03-01', endDate: '2030-05-01' });
+    expect(toMentorshipEnrollUpdateRequest(form, project, new Map([['saved-1', savedTerm]])).terms).toEqual([
+      {
+        id: 'saved-1',
+        name: 'Spring renamed',
+        startDate: '2030-03-15',
+        endDate: '2030-05-20',
+        applicationStartDate: '2030-01-01',
+        applicationEndDate: '2030-02-01',
+      },
+    ]);
   });
 });
 
