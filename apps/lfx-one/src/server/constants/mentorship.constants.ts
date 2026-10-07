@@ -108,14 +108,13 @@ export const MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES: readonly MentorshipUpstream
 
 /**
  * How a program's own status reads on its page when the program is not published. A published program reads
- * `open` or `completed` from its terms. The header route has no `admin_status`, so this mirrors upstream's grouping.
+ * `open` or `completed` from its terms. The header route has no `admin_status`, so the BFF maps the status itself;
+ * any other value reads as pending review and is flagged as unknown.
  */
 export const MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS: Readonly<Record<string, MentorshipProgramStatus>> = {
-  submitted: 'pending-review',
   pending: 'pending-review',
   rejected: 'rejected',
   hidden: 'hidden',
-  archived: 'hidden',
 };
 
 /** Upstream `admin_status` of an administered program, as the BFF shows it. Upstream groups the program status with its terms. */

@@ -466,6 +466,21 @@ export function getMentorshipTermDateErrors(
 }
 
 /**
+ * Term date errors for the enroll wizard: the shared term rules, then the application windows upstream create refuses,
+ * reported on `applicationEndDate`. The term dialog and the setup step both use it, so a term the dialog saves passes Next.
+ */
+export function getMentorshipEnrollTermDateErrors(
+  term: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>,
+  today = new Date(),
+  original?: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
+): MentorshipTermDateErrors {
+  const errors = getMentorshipTermDateErrors(term, today, original);
+  if (Object.keys(errors).length) return errors;
+  const windowError = getMentorshipEnrollTermWindowError(term);
+  return windowError ? { applicationEndDate: windowError } : errors;
+}
+
+/**
  * Field-keyed validation errors for a single enroll wizard step.
  *
  * The `details` step only requires a selected project; the picker offers live query-service
@@ -528,9 +543,7 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
             ? `Term name must be ${MENTORSHIP_TERM_NAME_MAX} characters or fewer.`
             : MENTORSHIP_TERM_FIELDS_ERROR;
       } else {
-        const firstTermError = form.terms
-          .map((term) => Object.values(getMentorshipTermDateErrors(term))[0] ?? getMentorshipEnrollTermWindowError(term))
-          .find(Boolean);
+        const firstTermError = form.terms.map((term) => Object.values(getMentorshipEnrollTermDateErrors(term))[0]).find(Boolean);
         if (firstTermError) errors.terms = firstTermError;
       }
     }

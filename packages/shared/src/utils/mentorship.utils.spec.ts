@@ -92,6 +92,7 @@ import {
   mentorshipApplicantTaskRows,
   getMentorshipEnrollLogoError,
   getMentorshipEnrollStepErrors,
+  getMentorshipEnrollTermDateErrors,
   getMentorshipMenteeIntroductionError,
   getMentorshipMenteeRegisterErrors,
   getMentorshipMenteeRegisterRequestErrors,
@@ -478,6 +479,26 @@ describe('buildMentorshipProgramsUrl', () => {
   it("links one program's page, URL-encoding its id", () => {
     expect(buildMentorshipProgramsUrl('https://mentorship.example.org/', 'prog_gridflow')).toBe('https://mentorship.example.org/programs/prog_gridflow');
     expect(buildMentorshipProgramsUrl('https://mentorship.example.org', 'prog/with space')).toBe('https://mentorship.example.org/programs/prog%2Fwith%20space');
+  });
+});
+
+describe('getMentorshipEnrollTermDateErrors', () => {
+  const term = { startDate: '2099-06-01', endDate: '2099-08-01', applicationStartDate: '2099-03-01' };
+
+  it('reports the windows upstream create refuses on the application end date', () => {
+    expect(getMentorshipEnrollTermDateErrors({ ...term, applicationEndDate: '2099-03-01' })).toEqual({
+      applicationEndDate: 'Application end date must be after the application start date.',
+    });
+    expect(getMentorshipEnrollTermDateErrors({ ...term, applicationEndDate: '2099-06-15' })).toEqual({
+      applicationEndDate: 'Application end date must be before the term start month.',
+    });
+    expect(getMentorshipEnrollTermDateErrors({ ...term, applicationEndDate: '2099-05-31' })).toEqual({});
+  });
+
+  it('reports the shared term rules first', () => {
+    expect(getMentorshipEnrollTermDateErrors({ ...term, applicationEndDate: '2099-02-01' })).toEqual({
+      applicationEndDate: 'Application end date must be on or after the application start date.',
+    });
   });
 });
 

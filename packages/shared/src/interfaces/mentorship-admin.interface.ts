@@ -35,7 +35,7 @@ export interface MentorshipProgramStats {
  * - `pending-review` — pending, awaiting review
  * - `completed` — published, with only closed terms
  * - `rejected` — rejected
- * - `hidden` — archived or hidden
+ * - `hidden` — hidden
  */
 export type MentorshipProgramStatus = (typeof MENTORSHIP_PROGRAM_STATUSES)[number];
 
