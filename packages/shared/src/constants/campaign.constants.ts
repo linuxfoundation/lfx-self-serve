@@ -1676,10 +1676,13 @@ export const GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG = ['performance-max', 'vide
  * `ErrVideoCreateUnsupported` sentinel in its FIRST statement, before any request is sent, so a
  * `video` create can only ever come back as a refusal. No flag anywhere can make it succeed.
  *
- * Everything else about the channel is live upstream — fetching, reporting, ADOPTION of a campaign
- * built by hand in Google Ads, the activation gate, monitoring — which is why `video` keeps its
- * place in {@link GOOGLE_CAMPAIGN_CHANNELS}, its label, its name token and its form control. Only
- * the create is impossible, and only the create is withheld here.
+ * The rest of the channel exists upstream in campaign-service — fetching, adoption of a campaign
+ * built by hand in Google Ads, the activation gate — which is why `video` keeps its place in
+ * {@link GOOGLE_CAMPAIGN_CHANNELS}, its label, its name token and its form control. None of that
+ * is reachable from LFX One today: there is no adoption route or screen here, and the monitoring
+ * GAQL in `campaign-metrics.service.ts` filters to SEARCH and DEMAND_GEN, so a hand-built Video
+ * campaign is not reported on either. Say nothing to a user about those upstream capabilities
+ * until this application actually exposes them.
  *
  * Flipping this to `true` is the whole change on the day Google ships the API.
  */
@@ -1694,9 +1697,14 @@ export const GOOGLE_VIDEO_CREATE_SUPPORTED = false;
  * case — the limitation is Google's, it is permanent until Google changes it, and a user who sees
  * Search, Performance Max and Display but no Video has no way to learn why. Saying so costs one
  * line and closes the question.
+ *
+ * It states the limitation and points at the system that can do the thing. It deliberately does
+ * NOT promise that a Video campaign built in Google Ads can then be adopted, reported on or
+ * optimized here — see {@link GOOGLE_VIDEO_CREATE_SUPPORTED} for why none of that is reachable
+ * from this application. A refusal message is a claim about what this product will do; extend it
+ * only when the code behind each clause exists at this surface.
  */
-export const GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON =
-  'The Google Ads API cannot create Video campaigns. Build the campaign in Google Ads and it can be adopted here for reporting and optimization.';
+export const GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON = 'The Google Ads API cannot create Video campaigns. Build the campaign directly in Google Ads.';
 
 /**
  * The channel token the generated campaign NAME carries, per Google channel.
