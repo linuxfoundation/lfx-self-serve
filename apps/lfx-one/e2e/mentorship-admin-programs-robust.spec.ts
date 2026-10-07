@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Admin programs list — structural / data-testid contract (linuxfoundation/lfx-mentorship#232).
+ * Admin programs list — structural / data-testid contract (linuxfoundation/lfx-mentorship#232), including the
+ * "Logo missing" hint, its "Add logo" button and hidden file input (linuxfoundation/lfx-mentorship#261).
  *
  * Companion to `mentorship-admin-programs.spec.ts` (content). This spec asserts presence, nesting, the
  * dynamic card-id suffixes, and the error/empty structural states without user-facing copy.
- * Every read is stubbed with synthetic data and reached by client-side navigation.
+ * Every read is stubbed with synthetic data and reached by client-side navigation; the logo upload is stubbed too.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -117,5 +118,63 @@ test.describe('Admin programs list — failed load', () => {
     await expect(error).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
     await expect(error.getByTestId('mentorship-admin-programs-retry')).toBeVisible();
     await expect(page.getByTestId('mentorship-programs-empty-state')).toHaveCount(0);
+  });
+});
+
+test.describe('Admin programs list — logo missing structure', () => {
+  const LOGO_ROUTE = '**/api/mentorship/admin/programs/*/logo';
+  const card = (page: Page, id: string) => page.getByTestId(`mentorship-program-card-${id}`);
+
+  test.beforeEach(async ({ page }) => {
+    await enableMentorshipFlag(page);
+    // The first row lacks its logo (as the BFF flags it); the second does not.
+    await stubPrograms(page, {
+      ...POPULATED,
+      data: [
+        { ...POPULATED.data[0], logoMissing: true },
+        { ...POPULATED.data[1], logoMissing: false },
+      ],
+    });
+    await openMentorPage(page, ADMIN_URL);
+    await expect(card(page, FIRST_ID)).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+  });
+
+  test('nests the hint, the button and a hidden image input in the flagged card only', async ({ page }) => {
+    await expect(card(page, FIRST_ID).getByTestId('mentorship-program-card-hint')).toBeVisible();
+    await expect(card(page, FIRST_ID).getByTestId('mentorship-program-card-finish')).toBeVisible();
+    const input = card(page, FIRST_ID).getByTestId('mentorship-program-card-logo-input');
+    await expect(input).toBeHidden();
+    await expect(input).toHaveAttribute('type', 'file');
+    await expect(input).toHaveAttribute('accept', /image\/png/);
+
+    await expect(card(page, SECOND_ID).getByTestId('mentorship-program-card-hint')).toHaveCount(0);
+    await expect(card(page, SECOND_ID).getByTestId('mentorship-program-card-finish')).toHaveCount(0);
+    await expect(card(page, SECOND_ID).getByTestId('mentorship-program-card-logo-input')).toHaveCount(0);
+  });
+
+  test('the button opens a file chooser without leaving the list', async ({ page }) => {
+    const chooser = page.waitForEvent('filechooser');
+    await card(page, FIRST_ID).getByTestId('mentorship-program-card-finish').locator('button').click();
+
+    expect((await chooser).isMultiple()).toBe(false);
+    await expect(page).toHaveURL(/\/mentorship\/admin$/);
+  });
+
+  test('the button is busy and disabled while the upload runs, and the card keeps its hint after a failure', async ({ page }) => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route(LOGO_ROUTE, async (route) => {
+      await held;
+      await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: 'forbidden' }) });
+    });
+
+    await card(page, FIRST_ID)
+      .getByTestId('mentorship-program-card-logo-input')
+      .setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]) });
+
+    await expect(card(page, FIRST_ID).getByTestId('mentorship-program-card-finish').locator('button')).toBeDisabled();
+    release();
+    await expect(card(page, FIRST_ID).getByTestId('mentorship-program-card-finish').locator('button')).toBeEnabled();
+    await expect(card(page, FIRST_ID).getByTestId('mentorship-program-card-hint')).toBeVisible();
   });
 });

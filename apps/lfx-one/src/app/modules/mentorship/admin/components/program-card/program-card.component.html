@@ -32,6 +32,43 @@
         </span>
       </div>
       <span class="text-base font-bold text-gray-900 truncate">{{ program().name }}</span>
+
+      <!-- Logo missing: clicks and Enter/Space here (incl. on the busy, disabled button) must not reach the card's navigation -->
+      @if (program().logoMissing) {
+        <div
+          class="flex items-center gap-2 flex-wrap"
+          (click)="$event.stopPropagation()"
+          (keydown.enter)="$event.stopPropagation()"
+          (keydown.space)="$event.stopPropagation()">
+          <span
+            class="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700"
+            data-testid="mentorship-program-card-hint">
+            <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i>
+            {{ logoMissingLabel }}
+          </span>
+          <lfx-button
+            [label]="addLogoLabel"
+            icon="fa-light fa-upload"
+            severity="secondary"
+            size="small"
+            [outlined]="true"
+            [loading]="busy()"
+            [disabled]="busy()"
+            [ariaLabel]="addLogoLabel + ' for ' + program().name"
+            (onClick)="onAddLogo($event, logoInput)"
+            data-testid="mentorship-program-card-finish" />
+          <input
+            #logoInput
+            type="file"
+            class="hidden"
+            tabindex="-1"
+            aria-hidden="true"
+            [accept]="logoAccept"
+            (click)="$event.stopPropagation()"
+            (change)="onLogoPicked($event)"
+            data-testid="mentorship-program-card-logo-input" />
+        </div>
+      }
     </div>
 
     <div class="flex-shrink-0 text-gray-300 sm:hidden" aria-hidden="true">
