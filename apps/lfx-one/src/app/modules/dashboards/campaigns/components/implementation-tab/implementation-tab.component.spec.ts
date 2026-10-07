@@ -4293,21 +4293,32 @@ describe('ImplementationTabComponent google creative sections', () => {
   it('omits empty creative fields and empty creatives entirely', () => {
     const c = seedChannel(fixture, { includeDisplay: true });
 
-    expect(c['googleCreativePayload'](['display'])).toEqual({});
+    expect(c['googleCreativePayload']()).toEqual({});
 
     c['campaignForm'].controls.displayCreative.patchValue({ headlines: '  \n \n', businessName: '   ' });
-    expect(c['googleCreativePayload'](['display'])).toEqual({});
+    expect(c['googleCreativePayload']()).toEqual({});
 
     c['campaignForm'].controls.displayCreative.patchValue({ headlines: 'One\nTwo\n', businessName: '  Acme  ' });
-    expect(c['googleCreativePayload'](['display'])).toEqual({ displayCreative: { headlines: ['One', 'Two'], businessName: 'Acme' } });
+    expect(c['googleCreativePayload']()).toEqual({ displayCreative: { headlines: ['One', 'Two'], businessName: 'Acme' } });
   });
 
-  /** A creative is only sent for a channel the request actually asks for. */
+  /**
+   * A creative is only sent for a channel whose section is actually rendered.
+   *
+   * The payload reads `googleCreativeSections()` — the same signal the template renders — rather
+   * than a second reading of the ticked channels, so the rule is proved by changing what is
+   * SELECTED, not by what the caller passes. A filled-in creative left behind by a since-unticked
+   * channel must not reach the wire.
+   */
   it('sends no creative for an unselected channel', () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     c['campaignForm'].controls.displayCreative.patchValue({ headlines: 'One' });
+    expect(c['googleCreativePayload']()).toEqual({ displayCreative: { headlines: ['One'] } });
 
-    expect(c['googleCreativePayload'](['search'])).toEqual({});
+    c['campaignForm'].patchValue({ includeDisplay: false });
+    fixture.detectChanges();
+
+    expect(c['googleCreativePayload']()).toEqual({});
   });
 
   /**

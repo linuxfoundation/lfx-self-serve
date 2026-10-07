@@ -63,6 +63,8 @@ import {
   LINKEDIN_MIN_DAILY_BUDGET_USD,
   LINKEDIN_MIN_LIFETIME_BUDGET_USD,
   MAX_BULK_KEYWORD_ACTIONS,
+  MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
+  MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
   MAX_HUBSPOT_BODY_HTML_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
@@ -433,6 +435,21 @@ export class CampaignController {
           );
           return;
         }
+      }
+
+      // The same bound for the other half of this handler. `googleCreative` and `googleBidding`
+      // filter, trim and re-allocate every string they are handed, and nothing upstream of them
+      // bounds the count — so this runs before `createConfigEnvelope` for the reason the HubSpot
+      // check above does.
+      const oversizedGoogleField = this.oversizedGoogleCreativeField(body);
+      if (oversizedGoogleField !== null) {
+        next(
+          ServiceValidationError.forField(oversizedGoogleField.field, oversizedGoogleField.message, {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
       }
 
       const configEnvelope = this.createConfigEnvelope(body);
@@ -3058,6 +3075,59 @@ export class CampaignController {
    * than throwing, so a channel gaining a creative upstream is one table entry here and not a
    * crash in the meantime.
    */
+  /**
+   * The first Google creative or bidding field that breaks a resource bound, or null when none does.
+   *
+   * Walks the raw body rather than the normalised output, because the allocation this bounds happens
+   * DURING normalisation — a check on the result would run after the work it is meant to prevent.
+   * Shape-only, like everything else on this road: a non-string entry is left for the normalisers to
+   * drop and is not counted against the length bound.
+   *
+   * Names the offending field in the refusal so an operator who somehow reaches it is told which one,
+   * matching the HubSpot sibling rather than failing the create anonymously.
+   */
+  private oversizedGoogleCreativeField(body: CampaignCreateRequest): { field: string; message: string } | null {
+    const raw = body as unknown as Record<string, unknown>;
+    const candidates: [string, unknown][] = Object.values(GOOGLE_CREATIVE_REQUEST_KEYS).map((key) => [key, raw[key]]);
+    candidates.push(['conversionActions', raw['conversionActions']]);
+
+    for (const [key, source] of candidates) {
+      // A creative key holds an object of fields; `conversionActions` is a bare list on the body.
+      const entries: [string, unknown][] = this.boundableEntries(key, source);
+
+      for (const [field, value] of entries) {
+        if (Array.isArray(value)) {
+          if (value.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
+            return { field, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
+          }
+          const long = value.find((entry) => typeof entry === 'string' && entry.length > MAX_GOOGLE_CREATIVE_FIELD_LENGTH);
+          if (long !== undefined) {
+            return { field, message: `an entry exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
+          }
+          continue;
+        }
+        if (typeof value === 'string' && value.length > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
+          return { field, message: `the value exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * The one source above, flattened into the `[label, value]` pairs the bound is applied to.
+   *
+   * A creative key holds an object whose fields are each bounded under their own `key.field` label;
+   * `conversionActions` is a bare list on the body and is bounded as one value under its own key.
+   * Anything else — absent, a scalar, a shape the normaliser will drop — yields nothing to check.
+   */
+  private boundableEntries(key: string, source: unknown): [string, unknown][] {
+    if (Array.isArray(source)) return [[key, source]];
+    if (!source || typeof source !== 'object') return [];
+    return Object.entries(source as Record<string, unknown>).map(([field, value]) => [`${key}.${field}`, value]);
+  }
+
   private googleCreative(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
     const spec = GOOGLE_CREATIVE_FIELDS[channel];
     if (!spec) return {};

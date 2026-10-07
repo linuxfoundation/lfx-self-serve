@@ -8,6 +8,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   MAX_BULK_KEYWORD_ACTIONS,
+  MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
+  MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
   MAX_HUBSPOT_BODY_HTML_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
@@ -1068,10 +1070,28 @@ describe('CampaignController.createCampaign cutover', () => {
    * not fit — after the budget mutate on nothing, since the refusal is the client's own preflight.
    */
   it.each([
-    ['demand-gen' as const, 'demandGenCreative', { headlines: [' Join us '], descriptions: ['Register'], logoUrls: ['https://cdn.example/logo.png'] }],
-    ['performance-max' as const, 'performanceMaxCreative', { headlines: ['H1', 'H2', 'H3'], descriptions: ['D1'], finalUrl: ' https://example.com/ ' }],
-    ['display' as const, 'displayCreative', { headlines: ['H1'], longHeadline: 'A single long headline', descriptions: ['D1'] }],
-  ])('forwards the %s creative under its own request key', async (channel, key, creative) => {
+    [
+      'demand-gen' as const,
+      'demandGenCreative',
+      { headlines: [' Join us '], descriptions: ['Register'], logoImages: [' https://cdn.example/logo.png '] },
+      'logoImages',
+      ['https://cdn.example/logo.png'],
+    ],
+    [
+      'performance-max' as const,
+      'performanceMaxCreative',
+      { headlines: ['H1', 'H2', 'H3'], descriptions: ['D1'], squareMarketingImages: [' https://cdn.example/square.png ', 'https://cdn.example/two.png'] },
+      'squareMarketingImages',
+      ['https://cdn.example/square.png', 'https://cdn.example/two.png'],
+    ],
+    [
+      'display' as const,
+      'displayCreative',
+      { headlines: ['H1'], longHeadline: 'A single long headline', descriptions: ['D1'], logoImages: ['https://cdn.example/logo.png'] },
+      'logoImages',
+      ['https://cdn.example/logo.png'],
+    ],
+  ])('forwards the %s creative under its own request key', async (channel, key, creative, imageField, expectedImages) => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
@@ -1081,6 +1101,11 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent[key]).toBeDefined();
     // Trimmed, never counted — every width and count rule is the upstream client's preflight.
     expect((sent[key] as Record<string, unknown>)['headlines']).toEqual(channel === 'demand-gen' ? ['Join us'] : creative.headlines);
+    // The image lists travel under the SAME per-channel names the catalogue declares. Asserted
+    // because a field name the catalogue does not hold is dropped in silence: the two fixtures this
+    // replaces named `logoUrls` and `finalUrl`, neither of which exists, so the case passed on the
+    // headline alone and no test covered image forwarding at all.
+    expect((sent[key] as Record<string, unknown>)[imageField]).toEqual(expectedImages);
   });
 
   /** A creative keyed to a channel that was not selected is not the selected channel's creative. */
@@ -1119,6 +1144,53 @@ describe('CampaignController.createCampaign cutover', () => {
 
     const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
     expect(sent).not.toHaveProperty('displayCreative');
+  });
+
+  /**
+   * The resource bounds, refused BEFORE `createConfigEnvelope` for the reason the HubSpot sibling
+   * is: the normalizer filters, trims and re-allocates every string it is handed, and nothing
+   * upstream of it bounds the count. Shape-only — the widths and counts the catalogue declares are
+   * the client's preflight, which is why these ceilings sit far above anything legitimate.
+   */
+  it.each([
+    ['a list above the entry cap', { displayCreative: { headlines: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `H${i}`) } }],
+    ['an oversized entry inside a list', { displayCreative: { headlines: ['x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1)] } }],
+    ['an oversized scalar field', { displayCreative: { longHeadline: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }],
+    ['an oversized conversion-action list', { conversionActions: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `a-${i}`) }],
+  ])('refuses %s before normalising or dispatching', async (_label, overrides) => {
+    const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['display'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(createConfigEnvelope).not.toHaveBeenCalled();
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+  });
+
+  /** Exactly at each ceiling is accepted — the bound refuses what is above it, nothing else. */
+  it('accepts a creative exactly at both caps', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          campaignTypes: ['display'],
+          displayCreative: {
+            headlines: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES }, (_v, i) => `H${i}`),
+            longHeadline: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH),
+          },
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(((sent['displayCreative'] as Record<string, unknown>)['headlines'] as string[]).length).toBe(MAX_GOOGLE_CREATIVE_LIST_ENTRIES);
   });
 
   /**

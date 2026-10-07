@@ -1922,6 +1922,22 @@ export const AUDIENCE_ATTACH_MAX_LIST_IDS = 50;
 export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
 
 /**
+ * Resource bounds on the Google creative and bidding strings the create route normalises.
+ *
+ * The same hazard `MAX_HUBSPOT_BODY_HTML_LENGTH` answers, reached through the other half of the same
+ * handler: the route has no body validator, so a 15 MB body of two hundred thousand headline strings
+ * is filtered, trimmed and re-allocated before any upstream or ownership check runs.
+ *
+ * Deliberately FAR above anything legitimate, because these are resource bounds and not content
+ * rules — every width and count in `GOOGLE_CREATIVE_FIELD_SPECS` is the upstream client's preflight
+ * to enforce, and this layer stays shape-only. The widest catalogue list holds 20 entries and the
+ * widest text field 90 characters, so nothing a real operator can produce comes near either ceiling;
+ * refusing here can therefore never refuse a create upstream would have accepted.
+ */
+export const MAX_GOOGLE_CREATIVE_LIST_ENTRIES = 100;
+export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;
+
+/**
  * The Google channels this application can ask campaign-service to create, in the order the
  * Implementation tab offers them. Each maps one-to-one onto `googleAdsConfig.channel` upstream
  * (`internal/dispatch/googleads.go`).

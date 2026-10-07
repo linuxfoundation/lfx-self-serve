@@ -8,6 +8,7 @@ import type {
   CAMPAIGN_METRICS_WINDOWS,
   GOOGLE_BIDDING_STRATEGIES,
   GOOGLE_CAMPAIGN_CHANNELS,
+  GOOGLE_CHANNELS_WITH_CREATIVE,
   MICROSOFT_KEYWORDS_WINDOWS,
 } from '../constants/campaign.constants';
 
@@ -1411,6 +1412,16 @@ export interface GoogleCreativeFieldSpec {
 }
 
 /**
+ * The Google channels that carry a creative object — the three `GOOGLE_CHANNELS_WITH_CREATIVE` names.
+ *
+ * Derived from the constant rather than spelled out, so the three creative catalogues keyed by it
+ * and anything that indexes them stay provably the same set. Narrower than `GoogleCampaignChannel`
+ * on purpose: Search composes its ad from the top-level copy arrays and Video cannot be created at
+ * all, so neither has an entry in `GOOGLE_CREATIVE_FIELD_SPECS` to index.
+ */
+export type GoogleCreativeChannel = (typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number];
+
+/**
  * One channel's creative section, resolved for rendering.
  *
  * Everything a template needs to draw the section and bind it to the right nested form group,
@@ -1420,7 +1431,7 @@ export interface GoogleCreativeFieldSpec {
  * lives.
  */
 export interface GoogleCreativeSection {
-  channel: GoogleCampaignChannel;
+  channel: GoogleCreativeChannel;
   /** The channel's own display label, as the channel checkboxes name it. */
   label: string;
   /** The nested `campaignForm` group holding this channel's controls. */

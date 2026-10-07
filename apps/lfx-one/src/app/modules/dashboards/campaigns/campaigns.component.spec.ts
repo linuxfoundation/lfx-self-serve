@@ -1318,18 +1318,16 @@ describe('CampaignsComponent brief persistence', () => {
        * properly needs a capability read that does not require a brief id at all.
        */
       it('sends no capability request when brief persistence is disabled', async () => {
-        const list = vi
-          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(
-            of({
-              campaigns: [],
-              possiblyStale: true,
-              statusToggleEnabled: false,
-              demandGenEnabled: true,
-              googleChannelsEnabled: false,
-              googleCreativeEnabled: false,
-            })
-          );
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: true,
+            statusToggleEnabled: false,
+            demandGenEnabled: true,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+          })
+        );
 
         persistBrief.mockReturnValue(of({ enabled: false, briefId: '', etag: null, created: false, approved: false }));
         proceed();
@@ -1559,18 +1557,16 @@ describe('CampaignsComponent brief persistence', () => {
        * strength of a read that no longer succeeds. Asserts the value, not merely that the arm ran.
        */
       it('clears a previously known capability when a later read fails', async () => {
-        const list = vi
-          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(
-            of({
-              campaigns: [],
-              possiblyStale: false,
-              statusToggleEnabled: false,
-              demandGenEnabled: true,
-              googleChannelsEnabled: false,
-              googleCreativeEnabled: false,
-            })
-          );
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: true,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+          })
+        );
 
         await withSavedBrief();
         await fixture.whenStable();
@@ -1700,18 +1696,16 @@ describe('CampaignsComponent brief persistence', () => {
        * value is identical either way — only the number of requests distinguishes them.
        */
       it('does not refetch the capability once it is known', async () => {
-        const list = vi
-          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(
-            of({
-              campaigns: [],
-              possiblyStale: false,
-              statusToggleEnabled: false,
-              demandGenEnabled: true,
-              googleChannelsEnabled: false,
-              googleCreativeEnabled: false,
-            })
-          );
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: true,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+          })
+        );
 
         await withSavedBrief();
         await fixture.whenStable();
@@ -1727,18 +1721,16 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       it('clears the previous brief campaigns when the foundation changes', async () => {
-        const list = vi
-          .spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns')
-          .mockReturnValue(
-            of({
-              campaigns: [indexed()],
-              possiblyStale: false,
-              statusToggleEnabled: true,
-              demandGenEnabled: false,
-              googleChannelsEnabled: false,
-              googleCreativeEnabled: true,
-            })
-          );
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [indexed()],
+            possiblyStale: false,
+            statusToggleEnabled: true,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: true,
+          })
+        );
         await withSavedBrief();
         load();
         await fixture.whenStable();

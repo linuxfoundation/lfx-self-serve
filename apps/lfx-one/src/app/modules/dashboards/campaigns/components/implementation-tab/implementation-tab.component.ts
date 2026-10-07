@@ -53,6 +53,7 @@ import {
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
+  GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
@@ -240,7 +241,14 @@ export class ImplementationTabComponent implements OnInit {
    */
   public readonly googleCreativeEnabled = input<boolean | null>(null);
 
-  /** Render the creative sections only on an explicit yes. `null` (unknown) withholds them. */
+  /**
+   * Render the cutover-only Google controls on an explicit yes. `null` (unknown) withholds them.
+   *
+   * "Creative" names the capability after the first surface that needed it, but it gates BOTH
+   * cutover-only sections — the per-channel creative and the bidding plan. They share one answer
+   * because they share one cause: both ride on `googleAdsConfig`, and the legacy creator reads
+   * neither. A second flag would be a second way to say the same thing, and the two could drift.
+   */
   protected readonly googleCreativeAvailable = computed<boolean>(() => this.googleCreativeEnabled() === true);
 
   /**
@@ -769,10 +777,14 @@ export class ImplementationTabComponent implements OnInit {
    * The event country as Google would read it: trimmed and upper-cased, because the map's keys are
    * upper-case and `countryCode` is a free-text control an operator can type `de` into.
    *
-   * Empty is a real answer and is deliberately NOT turned into an empty geo list — an empty list is
-   * not a refusal, it is a campaign with no geographic restriction, which is the one outcome nobody
-   * asked for. It stays a single empty entry so the BFF's guard refuses the create, and the section
-   * says so before the operator gets there.
+   * Empty is a real answer, and it is NOT a refusal anywhere on the road: the BFF drops blank
+   * entries BEFORE its shape test and omits the key on an empty result, and campaign-service accepts
+   * a Google create with no geo targeting and logs that the campaign will serve wherever the ad
+   * account allows. So a blank `countryCode` with no chips buys an UNRESTRICTED campaign against a
+   * real budget, and the only thing standing in front of that is the alert the section renders —
+   * which says exactly this, and must keep saying it. Nothing here turns it into a refusal on the
+   * client either: upstream accepts the empty case, and a guard that refuses a create upstream would
+   * have taken is the one failure mode worse than the warning.
    *
    * Read through a `typeof` guard rather than straight off the signal, for the same reason
    * `normalizeGeoTargets` guards each entry: `applyDraft` patches `countryCode` from the saved
@@ -1192,6 +1204,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleTakesTargetCpa: Signal<boolean> = this.initGoogleTakesTargetCpa();
   protected readonly googleTakesTargetRoas: Signal<boolean> = this.initGoogleTakesTargetRoas();
   protected readonly googleTakesCpcBid: Signal<boolean> = this.initGoogleTakesCpcBid();
+  private readonly googleStrategyNeedsTarget: Signal<boolean> = this.initGoogleStrategyNeedsTarget();
   protected readonly googleTakesConversionActions: Signal<boolean> = this.initGoogleTakesConversionActions();
   protected readonly googleBiddingError: Signal<string | null> = this.initGoogleBiddingError();
   protected readonly campaignName: Signal<string> = this.initCampaignName();
@@ -1773,7 +1786,7 @@ export class ImplementationTabComponent implements OnInit {
       // only when something was actually typed into it. Google-gated for the same reason the
       // section is: a LinkedIn-only create must not carry a Google creative the operator left
       // behind from an earlier selection.
-      ...(platforms.includes('google-ads') ? this.googleCreativePayload(campaignTypes) : {}),
+      ...(platforms.includes('google-ads') ? this.googleCreativePayload() : {}),
       // The bidding plan, Google-gated for the same reason the creative is, and already narrowed
       // to the fields the effective strategy and channel actually take.
       ...(platforms.includes('google-ads') ? this.googleBiddingPayload() : {}),
@@ -2612,9 +2625,10 @@ export class ImplementationTabComponent implements OnInit {
    * forgotten; one validator on the array is decided once.
    *
    * Nothing re-runs a validator when a SIBLING control changes, so ticking or unticking a channel
-   * box does not by itself move this array's validity — the constructor subscription that watches
-   * the two channel controls is what revalidates both arrays, and this validator is inert without
-   * it.
+   * box does not by itself move this array's validity — the constructor `effect` that watches
+   * `searchCopyApplies` is what revalidates both arrays, and this validator is inert without it.
+   * The gate is watched rather than the two checkboxes because it has a third input: unticking
+   * Google in the parent moves `showGoogleSection()` without either checkbox emitting.
    *
    * The `searchCopyApplies` guard is for construction order: `fb.array(…, { validators })`
    * validates immediately, which happens while `campaignForm` itself is still being built and the
@@ -2708,11 +2722,21 @@ export class ImplementationTabComponent implements OnInit {
    * Null whenever Google is unselected or no channel is ticked: there is no "default channel" to
    * fall back on, and a picker rendered against a guess would be offering options for a campaign
    * nobody asked for.
+   *
+   * Null on the legacy road as well, on the same rule as the creative sections and for the same
+   * reason: every field this gates rides on the `googleAdsConfig` envelope, and the in-process
+   * creator reads none of it — its Search body hard-codes `maximize_conversions` and its Demand Gen
+   * body hard-codes `target_spend`. Rendering the picker there would take a Manual CPC bid from an
+   * operator and create the campaign on automated bidding they did not choose, against a real
+   * budget. Nulling here withholds the whole plan in one place: `googleBiddingError` and
+   * `googleBiddingPayload` both open on this channel, so neither a stale value nor a stranded
+   * validation error survives the gate.
    */
   private initGoogleBiddingChannel(): Signal<GoogleCampaignChannel | null> {
     return computed(() => {
       void this.campaignFormRevision();
       if (!this.showGoogleSection()) return null;
+      if (!this.googleCreativeAvailable()) return null;
       const channels = this.selectedGoogleChannels();
       if (channels.length === 0) return null;
       return channels.includes('search') ? 'search' : channels[0];
@@ -2792,6 +2816,22 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * Whether the chosen strategy REQUIRES its target rather than merely accepting one.
+   *
+   * Read inside the CPA and the ROAS branches alike, which is safe because the two strategy sets
+   * are disjoint: within `googleTakesTargetCpa()` the only member that needs a target is
+   * `target-cpa`, and within `googleTakesTargetRoas()` it is `target-roas`. One signal rather than
+   * two literals so that a future strategy added to the shared set starts being enforced here
+   * instead of silently going unchecked.
+   */
+  private initGoogleStrategyNeedsTarget(): Signal<boolean> {
+    return computed(() => {
+      const strategy = this.googleBiddingStrategy();
+      return strategy !== null && (GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES as readonly string[]).includes(strategy);
+    });
+  }
+
+  /**
    * Whether this channel can name its conversion actions at create time.
    *
    * A CHANNEL question, not a strategy one: `campaign.selective_optimization` is defined for
@@ -2830,14 +2870,14 @@ export class ImplementationTabComponent implements OnInit {
       if (this.googleTakesTargetCpa()) {
         const error = this.googleBidAmountError(form.googleTargetCpa.value, 'Target CPA', GOOGLE_ADS_BIDDING_BOUNDS.targetCpa);
         if (error) return error;
-        if (this.googleBiddingStrategy() === 'target-cpa' && form.googleTargetCpa.value.trim() === '') {
+        if (this.googleStrategyNeedsTarget() && form.googleTargetCpa.value.trim() === '') {
           return 'Target CPA strategy needs a target CPA.';
         }
       }
       if (this.googleTakesTargetRoas()) {
         const error = this.googleBidAmountError(form.googleTargetRoas.value, 'Target ROAS', GOOGLE_ADS_BIDDING_BOUNDS.targetRoas);
         if (error) return error;
-        if (this.googleBiddingStrategy() === 'target-roas' && form.googleTargetRoas.value.trim() === '') {
+        if (this.googleStrategyNeedsTarget() && form.googleTargetRoas.value.trim() === '') {
           return 'Target ROAS strategy needs a target ROAS.';
         }
       }
@@ -3033,11 +3073,17 @@ export class ImplementationTabComponent implements OnInit {
    * OMITTED rather than sent as `''` or `[]`, and a channel whose whole creative is empty emits no
    * key at all — because an empty array is a positive statement ("no images") where absence means
    * "none asked for", and upstream treats the two differently on the reciprocal image fields.
+   *
+   * Which channels it walks comes from `googleCreativeSections()` — the SAME signal the template
+   * renders — rather than from a second reading of the ticked channels. The two conditions had
+   * already diverged: the sections withhold everything on the legacy road and drop Demand Gen
+   * beside Search, while a `channels.includes(...)` test knows neither rule and would put a
+   * creative on the wire that the operator was never shown. Reading the rendered set makes "we
+   * send only what could be seen" true by construction instead of by two gates agreeing.
    */
-  private googleCreativePayload(channels: CampaignType[]): Record<string, Record<string, string | string[]>> {
+  private googleCreativePayload(): Record<string, Record<string, string | string[]>> {
     const payload: Record<string, Record<string, string | string[]>> = {};
-    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
-      if (!channels.includes(channel)) continue;
+    for (const { channel } of this.googleCreativeSections()) {
       const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[channel]].getRawValue();
       const creative: Record<string, string | string[]> = {};
       for (const field of GOOGLE_CREATIVE_FIELD_SPECS[channel]) {
