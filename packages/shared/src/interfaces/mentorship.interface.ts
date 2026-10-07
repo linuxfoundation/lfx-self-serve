@@ -10,6 +10,7 @@ import type {
   MENTORSHIP_PROGRAM_REVIEW_DECISIONS,
   MENTORSHIP_UPSTREAM_PROGRAM_STATUSES,
 } from '../constants/mentorship.constants';
+import type { PaginatedResponse } from './api.interface';
 
 /** Wizard step keys for `/mentorship/admin/enroll`. */
 export type MentorshipEnrollStep = 'details' | 'setup' | 'prerequisites';
@@ -98,13 +99,13 @@ export interface MentorshipEnrollFieldErrors {
 export interface MentorshipLfProject {
   id: string;
   name: string;
+  /** Required by the upstream create body as `projectSlug`. */
+  slug: string;
   logoUrl?: string;
 }
 
-export type MentorshipLfProjectsResponse = {
-  data: MentorshipLfProject[];
-  total: number;
-};
+/** One lazy-load page of LF projects; `page_token` is the cursor for the next page and is left out once the list is exhausted. */
+export type MentorshipLfProjectsResponse = PaginatedResponse<MentorshipLfProject>;
 
 /** LFX user option surfaced in the admin Mentors tab "invite mentor" picker. */
 export interface MentorshipInvitableUser {
@@ -119,7 +120,7 @@ export type MentorshipInvitableUsersResponse = {
   total: number;
 };
 
-/** Result of the mock unique-name check. */
+/** Result of the program-name availability lookup. */
 export interface MentorshipNameAvailability {
   available: boolean;
 }

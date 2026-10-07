@@ -216,11 +216,11 @@ describe('getMentorshipEnrollStepErrors', () => {
     expect(isMentorshipEnrollStepValid('details', createValidDetailsForm())).toBe(true);
   });
 
-  it('rejects an unknown projectId that is not in the known project options', () => {
+  it('accepts any non-blank projectId because the picker offers live query-service projects', () => {
     const form = createValidDetailsForm();
-    form.projectId = 'proj-unknown-not-in-allowlist';
+    form.projectId = '0d3f1c52-7a1e-4b8e-9d5c-1a2b3c4d5e6f';
 
-    expect(getMentorshipEnrollStepErrors('details', form).projectId).toBe('Select a valid Linux Foundation project.');
+    expect(getMentorshipEnrollStepErrors('details', form).projectId).toBeUndefined();
   });
 
   it('rejects a whitespace-only projectId as blank', () => {
@@ -235,13 +235,6 @@ describe('getMentorshipEnrollStepErrors', () => {
     form.projectId = '  proj-gridflow  ';
 
     expect(getMentorshipEnrollStepErrors('details', form).projectId).toBeUndefined();
-  });
-
-  it('rejects a case-variant of a valid projectId (IDs are case-sensitive)', () => {
-    const form = createValidDetailsForm();
-    form.projectId = 'PROJ-GRIDFLOW';
-
-    expect(getMentorshipEnrollStepErrors('details', form).projectId).toBe('Select a valid Linux Foundation project.');
   });
 
   it('rejects a non-numeric CII project ID', () => {

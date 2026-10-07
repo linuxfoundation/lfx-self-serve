@@ -63,11 +63,18 @@
         optionValue="value"
         placeholder="Select Linux Foundation Open Source Project..."
         [filter]="true"
+        [filterBy]="lfRemoteFilterField"
+        filterMatchMode="notEquals"
         [lazy]="true"
         [virtualScroll]="true"
         [virtualScrollItemSize]="lfProjectItemSize"
         [loading]="lfProjectsLoading()"
-        scrollHeight="300px"
+        [emptyMessage]="lfEmptyMessage()"
+        [emptyFilterMessage]="lfEmptyMessage()"
+        [resetFilterOnHide]="true"
+        [overlayOptions]="lfOverlayOptions"
+        [virtualScrollOptions]="lfScrollerOptions"
+        [scrollHeight]="lfScrollHeight()"
         styleClass="w-full"
         (onFilter)="onLfFilter($event)"
         (onLazyLoad)="onLfLazyLoad($event)"
@@ -97,6 +104,18 @@
           </div>
         </ng-template>
       </lfx-select>
+      @if (lfProjectsFailed()) {
+        <div class="flex flex-wrap items-center gap-2" role="alert" data-testid="mentorship-enroll-project-failed">
+          <p class="text-xs text-red-600">{{ projectsUnavailable }}</p>
+          <lfx-button
+            label="Try again"
+            [text]="true"
+            size="small"
+            styleClass="!px-0 !text-blue-600"
+            (onClick)="retryLfProjects()"
+            data-testid="mentorship-enroll-project-retry" />
+        </div>
+      }
       @if (errors().projectId) {
         <p class="text-xs text-red-600">{{ errors().projectId }}</p>
       }
