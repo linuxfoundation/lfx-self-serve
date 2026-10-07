@@ -135,8 +135,11 @@ The server implements **graceful degradation** for rendering errors:
 In-place not-found and unavailable views set `ServerRequestContext.notFound` or
 `ServerRequestContext.unavailable` during rendering. The SSR handler rewrites a
 200 response to 404 or 503 respectively, retaining the requested URL and rendered
-shell. The unavailable view's **Try again** action re-navigates to the original
-browser path, including its project query parameter.
+shell. The unavailable view's **Try again** action re-navigates to the failed
+destination captured in guard redirect navigation state, including query parameters
+and fragments. This is distinct from the previous address during in-app navigation.
+When navigation state is absent (SSR/hydration), it falls back to the current browser
+path with its fragment, which retains the directly requested address.
 
 ## 🚀 Production Deployment Architecture
 

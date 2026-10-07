@@ -18,15 +18,19 @@ export class UnavailableComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
+  private readonly retryUrl: string | undefined;
 
   public constructor() {
+    // Capture while navigation is active: skipLocationChange keeps the previous SPA address.
+    const retryUrl = this.router.getCurrentNavigation()?.extras.state?.['retryUrl'];
+    this.retryUrl = typeof retryUrl === 'string' ? retryUrl : undefined;
     if (isPlatformServer(this.platformId) && this.reqContext) {
       this.reqContext.unavailable = true;
     }
   }
 
   public retry(): void {
-    const path = this.location.path();
+    const path = this.retryUrl ?? this.location.path(true);
     void this.router.navigateByUrl(!path || path.startsWith('/unavailable') ? '/' : path);
   }
 }

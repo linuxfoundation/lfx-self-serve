@@ -24,7 +24,7 @@ import { isTransientHttpError, retryTransientHttpError } from '../utils/http-err
  *
  * Strict lookup preserves HTTP status so an outage is never classified as missing.
  */
-export const projectQueryParamGuard: CanActivateFn = (route) => {
+export const projectQueryParamGuard: CanActivateFn = (route, state) => {
   const projectService = inject(ProjectService);
   const projectContextService = inject(ProjectContextService);
   const router = inject(Router);
@@ -73,8 +73,11 @@ export const projectQueryParamGuard: CanActivateFn = (route) => {
       }
       return true;
     }),
-    catchError((error: unknown) =>
-      of(new RedirectCommand(router.parseUrl(isTransientHttpError(error) ? '/unavailable' : '/not-found'), { skipLocationChange: true }))
-    )
+    catchError((error: unknown) => {
+      if (isTransientHttpError(error)) {
+        return of(new RedirectCommand(router.parseUrl('/unavailable'), { skipLocationChange: true, state: { retryUrl: state.url } }));
+      }
+      return of(new RedirectCommand(router.parseUrl('/not-found'), { skipLocationChange: true }));
+    })
   );
 };

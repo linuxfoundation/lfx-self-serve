@@ -62,7 +62,7 @@ describe('projectQueryParamGuard', () => {
   // The guard may return a synchronous boolean or an Observable; normalise to a
   // Promise so every test can simply `await runGuard(route)`.
   const runGuard = (route: ActivatedRouteSnapshot): Promise<boolean | UrlTree | RedirectCommand> => {
-    const result = TestBed.runInInjectionContext(() => projectQueryParamGuard(route, {} as never)) as
+    const result = TestBed.runInInjectionContext(() => projectQueryParamGuard(route, { url: '/project/groups?project=my-project#section' } as never)) as
       | boolean
       | UrlTree
       | RedirectCommand
@@ -196,6 +196,7 @@ describe('projectQueryParamGuard', () => {
     expect(cmd).toBeInstanceOf(RedirectCommand);
     expect(cmd.navigationBehaviorOptions?.skipLocationChange).toBe(true);
     expect(parseUrl).toHaveBeenCalledWith('/unavailable');
+    expect(cmd.navigationBehaviorOptions?.state).toEqual({ retryUrl: '/project/groups?project=my-project#section' });
     expect(lookup).toHaveBeenCalledTimes(2);
     expect(setProject).not.toHaveBeenCalled();
     expect(setFoundation).not.toHaveBeenCalled();
