@@ -22,8 +22,6 @@ import {
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
   MENTORSHIP_ENROLL_LOGO_ACCEPT,
   MENTORSHIP_ENROLL_LOGO_HELPER,
-  MENTORSHIP_ENROLL_LOGO_MAX_BYTES,
-  MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
   MENTORSHIP_ENROLL_NAME_CHECKING,
   MENTORSHIP_ENROLL_NAME_MAX,
   MENTORSHIP_ENROLL_NAME_MIN,
@@ -46,7 +44,7 @@ import {
   mentorshipCiiProjectUrl,
 } from '@lfx-one/shared/constants';
 import { MentorshipCiiLookupStatus, MentorshipEnrollFieldErrors, MentorshipLfProject, MentorshipNameLookupStatus } from '@lfx-one/shared/interfaces';
-import { isMentorshipCiiProjectId, isMentorshipLogoFileName, isMentorshipRichTextOverRawMax, mentorshipDescriptionLength } from '@lfx-one/shared/utils';
+import { getMentorshipEnrollLogoError, isMentorshipCiiProjectId, isMentorshipRichTextOverRawMax, mentorshipDescriptionLength } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { OverlayOptions } from 'primeng/api';
@@ -79,6 +77,8 @@ export class EnrollDetailsStepComponent {
   public readonly errors = input<MentorshipEnrollFieldErrors>({});
   /** The project chosen in the picker; the wizard needs its slug and name to create the program. */
   public readonly project = model<MentorshipLfProject | null>(null);
+  /** The picked logo file; the form keeps only its name and preview, and the wizard uploads this after the create. */
+  public readonly logoFile = model<File | null>(null);
   public readonly ciiLookupStatusChange = output<MentorshipCiiLookupStatus>();
   public readonly nameLookupStatusChange = output<MentorshipNameLookupStatus>();
 
@@ -340,6 +340,7 @@ export class EnrollDetailsStepComponent {
     const fileEl = this.fileInput()?.nativeElement;
     if (fileEl) fileEl.value = '';
     this.form().patchValue(formFromImportedMentorshipProgram(importId));
+    this.logoFile.set(null);
     this.logoError.set('');
   }
 
@@ -382,19 +383,15 @@ export class EnrollDetailsStepComponent {
       this.clearLogo();
       return;
     }
-    if (!isMentorshipLogoFileName(file.name)) {
-      this.logoError.set(MENTORSHIP_ENROLL_LOGO_TYPE_ERROR);
-      input.value = '';
-      this.clearLogo();
-      return;
-    }
-    if (file.size > MENTORSHIP_ENROLL_LOGO_MAX_BYTES) {
-      this.logoError.set('File must be 2 MB or smaller.');
+    const fileError = getMentorshipEnrollLogoError(file);
+    if (fileError) {
+      this.logoError.set(fileError);
       input.value = '';
       this.clearLogo();
       return;
     }
     this.revokeLogoPreview();
+    this.logoFile.set(file);
     this.form().patchValue({
       logoFileName: file.name,
       logoPreviewUrl: URL.createObjectURL(file),
@@ -428,6 +425,7 @@ export class EnrollDetailsStepComponent {
 
   private clearLogo(): void {
     this.revokeLogoPreview();
+    this.logoFile.set(null);
     this.form().patchValue({ logoFileName: '', logoPreviewUrl: '' });
   }
 

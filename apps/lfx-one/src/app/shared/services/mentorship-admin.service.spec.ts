@@ -4,6 +4,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE } from '@lfx-one/shared/constants';
 import {
   MentorshipAdminDeclinePendingResponse,
   MentorshipAdminMenteesResponse,
@@ -340,6 +341,90 @@ describe('MentorshipAdminService', () => {
     expect(status).toBe(413);
     expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] uploadProgramLogo failed', { status: 413, statusText: 'Payload Too Large' });
     expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-logo');
+  });
+
+  describe('uploadProgramLogo retries', () => {
+    const logoUrl = '/api/mentorship/admin/programs/prog_1/logo';
+    const file = new File([new Uint8Array([1])], 'logo.png', { type: 'image/png' });
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('backs a 403 off by 1 s, 2 s and 4 s, then gives up with the 403', () => {
+      let status: number | undefined;
+      service.uploadProgramLogo('prog_1', file).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+      for (const delay of [0, 1000, 2000, 4000]) {
+        vi.advanceTimersByTime(delay);
+        http.expectOne(logoUrl).flush({}, { status: 403, statusText: 'Forbidden' });
+      }
+
+      expect(status).toBe(403);
+    });
+
+    it('succeeds when a 403 clears on a later attempt', () => {
+      let result: string | undefined;
+      service.uploadProgramLogo('prog_1', file).subscribe((value) => (result = value.logoUrl));
+
+      http.expectOne(logoUrl).flush({}, { status: 403, statusText: 'Forbidden' });
+      vi.advanceTimersByTime(1000);
+      http.expectOne(logoUrl).flush({ logoUrl: 'https://cdn.example/logo.png' });
+
+      expect(result).toBe('https://cdn.example/logo.png');
+    });
+
+    it('does not back off the impersonation read-only 403', () => {
+      let status: number | undefined;
+      service.uploadProgramLogo('prog_1', file).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+      http.expectOne(logoUrl).flush({ code: MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE }, { status: 403, statusText: 'Forbidden' });
+      vi.advanceTimersByTime(10000);
+
+      http.expectNone(logoUrl);
+      expect(status).toBe(403);
+    });
+
+    it('does not back a 403 off when retryForbidden is false', () => {
+      let status: number | undefined;
+      service.uploadProgramLogo('prog_1', file, false).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+      http.expectOne(logoUrl).flush({}, { status: 403, statusText: 'Forbidden' });
+      vi.advanceTimersByTime(10000);
+
+      http.expectNone(logoUrl);
+      expect(status).toBe(403);
+    });
+
+    it('retries another failure once after a short delay', () => {
+      let status: number | undefined;
+      service.uploadProgramLogo('prog_1', file).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+      http.expectOne(logoUrl).flush({}, { status: 502, statusText: 'Bad Gateway' });
+      expect(status).toBeUndefined();
+      vi.advanceTimersByTime(1000);
+      http.expectOne(logoUrl).flush({}, { status: 502, statusText: 'Bad Gateway' });
+      vi.advanceTimersByTime(10000);
+
+      http.expectNone(logoUrl);
+      expect(status).toBe(502);
+    });
+
+    it.each([400, 401, 413, 415])('does not retry a %i', (code) => {
+      let status: number | undefined;
+      service.uploadProgramLogo('prog_1', file).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+      http.expectOne(logoUrl).flush({}, { status: code, statusText: 'Refused' });
+      vi.advanceTimersByTime(10000);
+
+      http.expectNone(logoUrl);
+      expect(status).toBe(code);
+    });
   });
 
   it('logs a failed mentor change by status only and lets it reach the caller', () => {

@@ -146,28 +146,49 @@ Create, edit, close, re-open and delete a term, each behind `blockDuringImperson
 
 ### Status mapping
 
+A program's status is one of `pending`, `published`, `rejected` or `hidden`. Create leaves it `pending`; from there it moves to `published`, `rejected` or `hidden`, and a `published` program can later be `hidden`. There is no submit step.
+
 Upstream works out `admin_status` from the program status and its terms. The BFF renames it (`_` to `-`):
 
 | Upstream `admin_status` | Shown as       | Upstream program status                         |
 | ----------------------- | -------------- | ----------------------------------------------- |
-| `pending_review`        | Pending Review | `draft`, `submitted`                            |
+| `pending_review`        | Pending Review | `pending`                                       |
 | `open`                  | Open           | `published` with an open term, or with no terms |
 | `completed`             | Completed      | `published` with only closed terms              |
 | `rejected`              | Rejected       | `rejected`                                      |
-| `hidden`                | Hidden         | `archived`, `hidden`                            |
+| `hidden`                | Hidden         | `hidden`                                        |
 
-An unrecognised `admin_status` is shown as Pending Review and logged (program id and value only).
+An unrecognised `admin_status` is shown as Pending Review and logged (program id and value only). The program header reads the program status itself (`MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS`: `pending`, `rejected`, `hidden`); any other unpublished value is shown as Pending Review and logged the same way.
 
 ## Program create and logo upload
 
 Two writes behind the Enroll wizard, each behind `blockDuringImpersonation` and with the caller's bearer token through `proxyMentorshipRequest`, so a first-time caller is provisioned and retried.
 
 - `POST /api/mentorship/admin/programs` takes `MentorshipEnrollCreateRequest` (camelCase) and answers 201 with `{ id, slug, status }`. `parseMentorshipEnrollCreateRequest` in `mentorship-enroll.helper.ts` rebuilds the body from known keys only and answers 400 on the failing field: a UUID `projectId`, non-empty `projectSlug`, `projectName`, `name`, `description` and `repositoryUrl`, a non-empty `skills` list, 1–`MENTORSHIP_MAX_OPEN_TERMS` terms with five date and name fields, a `prerequisites` list whose `required` and `requireFile` are booleans when sent (left out means `false`) and whose `description` and `dueDate` are text when sent (left out or `null` means empty), and `termsAccepted: true`. A prerequisite's `required` means the admin picked it; upstream saves only picked ones. The dates are date-only `YYYY-MM-DD` and go upstream as sent: the wizard sends a term's `endDate` as the last day of its end month and folds a coding challenge's URL into the prerequisite description, since upstream has no field for it. A field inside a list is named by its index (`terms[1].startDate`, `prerequisites[0].name`). Every text field but a prerequisite description is trimmed, and the optional ones are kept only when not blank. The optional `industry` holds the wizard's Technologies as one string joined with a comma and a space; upstream keeps it apart from `skills`. `logo_url`, `logoUrl`, `status`, a term `id` and `logoFileName` are never forwarded.
-- Upstream `POST /mentorship/v1/programs` leaves the program `pending`, which is "in review". There is no submit route and no publish call, so creating the program is what sends it to review. `slug` falls back to the id when upstream returns none.
+- Upstream `POST /mentorship/v1/programs` leaves the program `pending`, which is "in review". There is no submit route and no publish call, so creating the program is what sends it to review; a reviewer then publishes, rejects or hides it. `slug` falls back to the id when upstream returns none.
 - `POST /api/mentorship/admin/programs/:programId/logo` takes the raw file as the body with `Content-Type: image/png` or `image/jpeg` (`MENTORSHIP_ENROLL_LOGO_MIME_TYPES`) and answers 201 with `{ logoUrl }`, upstream's `public_url`. The BFF forwards the buffer and its content type to `POST /mentorship/v1/programs/{id}/logo-upload`. The wizard calls it after create, with the new program id, and then keeps the returned URL.
 - `express.raw` runs on this route only, limited to `MENTORSHIP_ENROLL_LOGO_MAX_BYTES`. A larger body is a 413 (`PAYLOAD_TOO_LARGE`), converted from the parser's `entity.too.large` before the error handler flattens it to a 500. `express.raw` skips a type that is not on the list, so the controller answers 415 (`UNSUPPORTED_MEDIA_TYPE`) for it first and 400 on the `logo` field for an empty body.
 - Logs carry the program id, status, term count, size in bytes and content type only, never a name, description, URL or file name.
-- **Known gaps.** A dev environment without object storage answers the logo upload with a 503. A user who has just created a program can get a 403 on the upload until the permission grant lands; in a later PR the wizard retries that 403 up to 3 times, after 1, 2 and 4 seconds, and retries any other temporary logo failure once. The app service has no retry on either call. Upstream stores the date-only term dates at 00:00 UTC, refuses a term whose application window is a single day (application end must fall strictly after application start, and before the term starts), and drops any prerequisite sent with `required: false` without an error; the BFF passes all three through unchecked, so the wizard has to match them.
+- **Known gaps.** A dev environment without object storage answers the logo upload with a 503. A user who has just created a program can get a 403 on the upload until the permission grant lands; the app service's `uploadProgramLogo` retries that 403 up to 3 times, after 1, 2 and 4 seconds (see [Wizard create flow](#wizard-create-flow)). The create call is never retried. Upstream stores the date-only term dates at 00:00 UTC, refuses a term whose application window is a single day (application end must fall strictly after application start, and before the term starts), and drops any prerequisite sent with `required: false` without an error; the BFF passes all three through unchecked, so the wizard has to match them. The wizard's term dialog and setup step both refuse those two application windows (`getMentorshipEnrollTermDateErrors`); the program-detail Terms tab edits through a separate BFF route and keeps its own date rules.
+
+## Wizard create flow
+
+`EnrollProgramComponent` sends the two writes above in order: create, then the logo. There is no submit step, so a created program is already `pending` (in review). The wizard's `submitPhase` tracks those two requests only; it is not a program status.
+
+- **Request mapping.** `toMentorshipEnrollCreateRequest` (`@lfx-one/shared/utils`) builds the body from the form and the picked `MentorshipLfProject`. It trims text, leaves out empty optional fields, de-duplicates Technologies and Skills, sets a term's `endDate` to the last day of its end month, and appends a coding challenge's URL to its prerequisite description as `Challenge: <url>`.
+
+  | Form field   | Request field                             | Mapping                                                |
+  | ------------ | ----------------------------------------- | ------------------------------------------------------ |
+  | Technologies | `industry`                                | de-duplicated, joined with `', '`; left out when empty |
+  | Skills       | `skills`                                  | de-duplicated                                          |
+  | Project      | `projectId`, `projectSlug`, `projectName` | from the picked project                                |
+
+- **Before create.** Submit checks every step again, since an earlier step's dates can pass while the admin is on a later one, and returns the admin to the first step that fails. A project id the picker never resolved to a project is a project-field error. `getMentorshipEnrollLogoError` refuses a logo whose name or `File.type` is not PNG or JPEG (an empty type included, since the upload sends `type` as its Content-Type), an empty file, and one over `MENTORSHIP_ENROLL_LOGO_MAX_BYTES`.
+- **State.** `submitPhase` runs `idle → creating → uploading-logo → done`, or `failed` from either write. The wizard keeps the created `{ id, slug, status }`, so a retry skips a create that already succeeded, and it keeps the `File` so a retry resends the logo. Next shows a busy button, and a second click while a write is in flight is ignored. The answers lock when the create is sent, so what is saved is what is shown.
+- **Create errors.** A 409 puts `MENTORSHIP_ENROLL_NAME_TAKEN` on the name field and returns the admin to the details step. A 403 with `MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE` shows the server-authored message; any other failure shows `MENTORSHIP_ENROLL_SUBMIT_FAILED`. The answers unlock again, and upstream error text is never shown.
+- **Logo errors (partial save).** Once the create succeeds the answers are locked and Back is off. If the logo upload then fails, the program exists without a logo, so the wizard stays on the last step with a banner and a Retry button. A 413, 415 or 400 and a 503 add a field error beside the banner (`MENTORSHIP_ENROLL_LOGO_FAILURE_FIELD_ERRORS`). The banner also carries its own file input; a valid file replaces the logo for the next Retry.
+- **Retries.** `uploadProgramLogo` retries a 403 up to 3 times (1, 2 and 4 seconds, `MENTORSHIP_ENROLL_WRITE_RETRY_DELAYS_MS`) unless it is the impersonation read-only 403, and any other failure once after 1 second. A 400, 401, 413 or 415 is not retried: the file or the sign-in was refused (`MENTORSHIP_ENROLL_LOGO_NO_RETRY_STATUSES`). The submit is torn down if the wizard is destroyed.
+- **Leaving.** The `admin/enroll` route has a `canDeactivate` that calls the component's `canLeave()`. Cancel and "My Programs" only navigate, so the guard decides once: it blocks the navigation while a write is in flight, then asks with the "Logo missing" prompt after a partial save, with the cancel prompt when answers would be lost, and not at all once the submit is done.
 
 ## Enroll lookups
 

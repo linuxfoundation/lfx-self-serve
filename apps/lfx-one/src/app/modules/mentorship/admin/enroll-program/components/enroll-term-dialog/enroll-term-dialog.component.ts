@@ -11,7 +11,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { MENTORSHIP_TERM_NAME_MAX, MENTORSHIP_TERM_YEAR_OPTIONS, MONTH_OPTIONS } from '@lfx-one/shared/constants';
 import { MentorshipProgramTerm, MentorshipTermFormDialogData } from '@lfx-one/shared/interfaces';
 import {
-  getMentorshipTermDateErrors,
+  getMentorshipEnrollTermDateErrors,
   mentorshipMonthYearToStartDate,
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
@@ -99,7 +99,7 @@ export class EnrollTermDialogComponent {
     const applicationStartDate = toMentorshipDateOnly(applicationStart);
     const applicationEndDate = toMentorshipDateOnly(applicationEnd);
     // Pass the term being edited so dates it already had in the past stay valid when left unchanged.
-    const dateErrors = getMentorshipTermDateErrors({ startDate, endDate, applicationStartDate, applicationEndDate }, new Date(), this.data.term);
+    const dateErrors = getMentorshipEnrollTermDateErrors({ startDate, endDate, applicationStartDate, applicationEndDate }, new Date(), this.data.term);
     if (Object.keys(dateErrors).length) {
       this.showErrors.set(true);
       this.dateErrors.set(Object.fromEntries(Object.entries(dateErrors).map(([key, value]) => [key, value ?? ''])));

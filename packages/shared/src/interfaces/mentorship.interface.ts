@@ -491,6 +491,17 @@ export interface MentorshipProgramLogoUploadResult {
   logoUrl: string;
 }
 
+/** The two calls one Submit makes, in order. There is no review step: create already leaves the program `pending`. */
+export type MentorshipEnrollSubmitStep = 'create' | 'logo';
+
+export type MentorshipEnrollSubmitPhase = 'idle' | 'creating' | 'uploading-logo' | 'failed' | 'done';
+
+/** Shown in the wizard after a failed submit. `step` says which write failed; `message` is the banner text. */
+export interface MentorshipEnrollSubmitFailure {
+  step: MentorshipEnrollSubmitStep;
+  message: string;
+}
+
 /** The upstream fields the BFF reads from the program a create returns. */
 export interface MentorshipUpstreamCreatedProgram {
   id: string;

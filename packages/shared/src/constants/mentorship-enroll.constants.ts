@@ -61,6 +61,9 @@ export const MENTORSHIP_ENROLL_LOGO_MAX_BYTES = 2 * 1024 * 1024;
 export const MENTORSHIP_ENROLL_LOGO_MIME_TYPES = ['image/png', 'image/jpeg'] as const;
 export const MENTORSHIP_ENROLL_LOGO_HELPER = 'JPG, PNG · 420px × 420px · Max 2 MB';
 export const MENTORSHIP_ENROLL_LOGO_TYPE_ERROR = 'Program logo is not the right file type.';
+export const MENTORSHIP_ENROLL_LOGO_TOO_LARGE = 'Program logo must be 2 MB or smaller.';
+export const MENTORSHIP_ENROLL_LOGO_EMPTY = 'Program logo file is empty.';
+export const MENTORSHIP_ENROLL_PROJECT_REQUIRED = 'Select a Linux Foundation project.';
 
 export const MENTORSHIP_ENROLL_DETAILS_INTRO = 'Describe the program and the project it belongs to. This is what candidates read on your program page.';
 export const MENTORSHIP_ENROLL_SETUP_INTRO = 'Define the skills mentees need and the term schedule for this program.';
@@ -82,6 +85,25 @@ export const MENTORSHIP_ENROLL_COC_INTRO =
 export const MENTORSHIP_ENROLL_FORM_INCOMPLETE = 'Something on the form is not complete or invalid. Please correct the highlighted fields before continuing.';
 export const MENTORSHIP_ENROLL_CANCEL_CONFIRM = 'You will lose your changes—are you sure you wish to cancel?';
 export const MENTORSHIP_ENROLL_DELETE_TERM_CONFIRM = 'Are you sure you want to delete this term?';
+export const MENTORSHIP_ENROLL_LEAVE_LOGO_MISSING_CONFIRM =
+  'The program is saved, but its logo is missing. You can add it later from the program card. Leave anyway?';
+/** Seconds-scale back-off for a logo upload that meets a 403 while the creator's `writer` grant is still being written (R6). */
+export const MENTORSHIP_ENROLL_WRITE_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+export const MENTORSHIP_ENROLL_LOGO_AUTO_RETRY_DELAY_MS = 1000;
+/** Statuses that mean the file or the sign-in is at fault, so repeating the upload cannot help. */
+export const MENTORSHIP_ENROLL_LOGO_NO_RETRY_STATUSES = [400, 401, 413, 415] as const;
+export const MENTORSHIP_ENROLL_SUBMIT_SUCCESS = 'Program submitted for review.';
+export const MENTORSHIP_ENROLL_SUBMIT_FAILED = "We couldn't save the program. Your answers are kept, so you can try again.";
+export const MENTORSHIP_ENROLL_LOGO_NOT_UPLOADED = "Program saved and sent for review, but the logo didn't upload.";
+export const MENTORSHIP_ENROLL_UPLOADS_UNAVAILABLE = 'Uploads are unavailable right now. Try again later.';
+export const MENTORSHIP_ENROLL_RETRY_LABEL = 'Retry';
+/** The logo field's message for the status a failed upload ends with; any other status leaves the field alone and only the banner shows. */
+export const MENTORSHIP_ENROLL_LOGO_FAILURE_FIELD_ERRORS: Readonly<Record<number, string>> = {
+  400: MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
+  413: MENTORSHIP_ENROLL_LOGO_TOO_LARGE,
+  415: MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
+  503: MENTORSHIP_ENROLL_UPLOADS_UNAVAILABLE,
+};
 export const MENTORSHIP_ENROLL_NAME_TAKEN = 'This program name is taken.';
 export const MENTORSHIP_ENROLL_NAME_CHECKING = 'Checking program name...';
 export const MENTORSHIP_ENROLL_NAME_UNAVAILABLE = 'Could not verify the program name. Please try again.';

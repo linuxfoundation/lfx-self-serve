@@ -97,12 +97,9 @@ describe('mapMentorshipAdminHeaderProgram', () => {
   });
 
   it.each([
-    ['draft', 'pending-review'],
-    ['submitted', 'pending-review'],
     ['pending', 'pending-review'],
     ['rejected', 'rejected'],
     ['hidden', 'hidden'],
-    ['archived', 'hidden'],
   ])('reads the unpublished status %s as %s', (status, expected) => {
     expect(mapMentorshipAdminHeaderProgram(header(status), { has_open_term: true, has_closed_term: false })).toMatchObject({
       program: { status: expected },
@@ -110,7 +107,7 @@ describe('mapMentorshipAdminHeaderProgram', () => {
     });
   });
 
-  it.each(['mystery', 'constructor'])('reads the unknown status "%s" as pending-review and flags it', (status) => {
+  it.each(['mystery', 'constructor', 'submitted', 'archived'])('reads the unknown status "%s" as pending-review and flags it', (status) => {
     expect(mapMentorshipAdminHeaderProgram(header(status))).toMatchObject({ program: { status: 'pending-review' }, unknownStatus: true });
   });
 

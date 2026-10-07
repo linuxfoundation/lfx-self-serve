@@ -32,10 +32,10 @@ export interface MentorshipProgramStats {
 /**
  * Program status as the admin list shows it (upstream `admin_status`, `_` written as `-`):
  * - `open` — published, with an open term or no terms yet
- * - `pending-review` — draft or submitted, awaiting approval
+ * - `pending-review` — pending, awaiting review
  * - `completed` — published, with only closed terms
  * - `rejected` — rejected
- * - `hidden` — archived or hidden
+ * - `hidden` — hidden
  */
 export type MentorshipProgramStatus = (typeof MENTORSHIP_PROGRAM_STATUSES)[number];
 
