@@ -105,6 +105,8 @@ interface CampaignServiceJobPollResponse {
     platform: string;
     ok: boolean;
     campaign_id?: string;
+    /** HubSpot app URL of the created draft; campaign-service builds it from the connection's portal id. */
+    hubspot_url?: string;
     error?: string;
   }[];
   error?: string;
@@ -3288,6 +3290,7 @@ export function adaptJobPollResponse(response: CampaignServiceJobPollResponse): 
     platform: r.platform,
     ok: r.ok,
     campaignId: r.campaign_id,
+    hubspotUrl: r.hubspot_url,
     error: r.error,
   }));
 
