@@ -619,7 +619,7 @@ describe('GwModuleOutletComponent', () => {
       expect(loaderMount).toHaveBeenCalledTimes(1);
       const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
       expect(ctx.source.baseUrl).toBe(EMBED_URL);
-      expect(ctx.signIn.startUrl).toBe('https://sso.example.test/start');
+      expect(ctx.signIn.lfidStartUrl).toBe('https://sso.example.test/start');
       expect(ctx.source.resolveStylesheetUrl?.(`${EMBED_URL}/admin-embed-def.css`)).toBe(`${GW_EMBED_STYLESHEET_ROUTE}/admin-embed-def.css`);
       resolveReady(MANIFEST);
       await pending;
