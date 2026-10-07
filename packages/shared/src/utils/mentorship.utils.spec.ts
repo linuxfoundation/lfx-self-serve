@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   createDefaultMentorshipTerm,
+  MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL,
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
   MENTORSHIP_ENROLL_LOGO_EMPTY,
@@ -58,7 +59,13 @@ import type {
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskView,
 } from '../interfaces/mentorship-mentee.interface';
-import type { MentorshipEnrollImport, MentorshipEnrollValidationInput, MentorshipLfProject, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
+import type {
+  MentorshipEnrollImport,
+  MentorshipEnrollValidationInput,
+  MentorshipLfProject,
+  MentorshipProgramMentee,
+  MentorshipProgramTerm,
+} from '../interfaces/mentorship.interface';
 import type { MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
 import type { MentorshipMentorRegisterForm } from '../interfaces/mentorship-mentor.interface';
 import {
@@ -83,7 +90,11 @@ import {
   mentorshipTaskDueCutoffMs,
   formatMentorshipShortMonthYear,
   filterMentorshipApplicantTasks,
+  formFromMentorshipEnrollEdit,
   formFromMentorshipEnrollImport,
+  toMentorshipEnrollSavedTerm,
+  toMentorshipEnrollTerm,
+  toMentorshipEnrollUpdateRequest,
   formatMentorshipApplicantTaskDueLabel,
   formatMentorshipReviewUpdatedLabel,
   mentorshipMenteeTaskCompletion,
@@ -482,6 +493,7 @@ describe('formFromMentorshipEnrollImport', () => {
       { id: 'imported-0', name: 'Resume', description: 'Upload the most recent version of your resume.', required: true, requireFile: true, custom: true },
       { id: 'imported-1', name: 'Essay', description: '', required: true, requireFile: false, custom: true, dueDate: '2027-01-15' },
     ],
+    logoUrl: 'https://cdn.example/logo.png',
   };
 
   it('copies the details, technologies and skills', () => {
@@ -610,6 +622,185 @@ describe('formFromMentorshipEnrollImport', () => {
 
   it('leaves the project empty when the template has none', () => {
     expect(formFromMentorshipEnrollImport('mp_1', { ...imported, project: null }).projectId).toBe('');
+  });
+});
+
+describe('formFromMentorshipEnrollEdit', () => {
+  const data: MentorshipEnrollImport = {
+    name: 'Existing Program',
+    project: { id: '11111111-1111-4111-8111-111111111111', name: 'Project One', slug: 'project-one' },
+    description: '<p>About</p>',
+    repositoryUrl: 'https://github.com/example/repo',
+    websiteUrl: '',
+    codeOfConductUrl: '',
+    ciiProjectId: '',
+    technologies: ['Go'],
+    skills: ['Java'],
+    prerequisites: [],
+    logoUrl: 'https://cdn.example/logo.png',
+  };
+  const term: MentorshipProgramTerm = {
+    id: 'term-uuid-1',
+    name: 'Spring',
+    startDate: '2020-03-01',
+    endDate: '2020-05-01',
+    applicationStartDate: '2020-01-01',
+    applicationEndDate: '2020-02-01',
+  };
+
+  it("keeps the program's terms and logo, and counts the terms as accepted", () => {
+    const form = formFromMentorshipEnrollEdit(data, [term]);
+
+    expect(form.importProgramId).toBe('');
+    expect(form.name).toBe('Existing Program');
+    expect(form.terms).toEqual([term]);
+    expect(form.terms[0]).not.toBe(term);
+    expect(form.logoFileName).toBe(MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL);
+    expect(form.logoPreviewUrl).toBe('https://cdn.example/logo.png');
+    expect(form.termsAccepted).toBe(true);
+  });
+
+  it('leaves the logo empty for a program without one', () => {
+    const form = formFromMentorshipEnrollEdit({ ...data, logoUrl: '' }, []);
+
+    expect(form.logoFileName).toBe('');
+    expect(form.logoPreviewUrl).toBe('');
+  });
+
+  it("passes validation with the program's own past dates and no logo", () => {
+    const form = formFromMentorshipEnrollEdit({ ...data, logoUrl: '' }, [term]);
+    form.prerequisites = [
+      { id: 'imported-0', name: 'Essay', description: 'Why you.', required: true, requireFile: false, custom: true, dueDate: '2020-01-15' },
+    ];
+    const edit = { terms: [term], prerequisites: form.prerequisites.map((item) => ({ ...item })) };
+
+    expect(getMentorshipEnrollStepErrors('details', form, edit)).toEqual({});
+    expect(getMentorshipEnrollStepErrors('setup', form, edit)).toEqual({});
+    expect(getMentorshipEnrollStepErrors('prerequisites', form, edit)).toEqual({});
+  });
+
+  it('needs an open term only when the program had one', () => {
+    const form = { ...formFromMentorshipEnrollEdit(data, []), skills: ['Go'] };
+
+    expect(getMentorshipEnrollStepErrors('setup', form, { terms: [], prerequisites: [] })).toEqual({});
+    expect(getMentorshipEnrollStepErrors('setup', form, { terms: [term], prerequisites: [] }).terms).toBe('Add at least one program term.');
+  });
+
+  it('skips the date rules for a saved term left as it was, even one that breaks them', () => {
+    const legacy = { ...term, applicationEndDate: '2020-03-10' };
+    const form = formFromMentorshipEnrollEdit(data, [legacy]);
+
+    expect(getMentorshipEnrollStepErrors('setup', form, { terms: [legacy], prerequisites: [] }).terms).toBeUndefined();
+  });
+
+  it('lets the admin rename a saved term whose one-day application window the Terms tab allowed', () => {
+    const oneDay = { ...term, applicationStartDate: '2020-02-01', applicationEndDate: '2020-02-01' };
+    const renamed = { ...oneDay, name: 'Spring renamed' };
+    const form = formFromMentorshipEnrollEdit(data, [renamed]);
+
+    expect(getMentorshipEnrollTermDateErrors(renamed, new Date(), oneDay)).toEqual({});
+    expect(getMentorshipEnrollStepErrors('setup', form, { terms: [oneDay], prerequisites: [] }).terms).toBeUndefined();
+  });
+
+  it('still checks a past date the admin changed', () => {
+    const form = formFromMentorshipEnrollEdit(data, [term]);
+    const edit = { terms: [term], prerequisites: [] };
+    const changed = { ...term, applicationStartDate: '2020-01-02' };
+
+    expect(getMentorshipEnrollStepErrors('setup', { ...form, terms: [changed] }, edit).terms).toBe('Application start date cannot be before today.');
+  });
+});
+
+describe('toMentorshipEnrollTerm', () => {
+  it('moves both term dates to the first of their month and keeps the application window', () => {
+    expect(
+      toMentorshipEnrollTerm({
+        id: 't-1',
+        name: 'Spring',
+        startDate: '2030-03-15',
+        endDate: '2030-05-31',
+        applicationStartDate: '2030-01-10',
+        applicationEndDate: '2030-02-20',
+      })
+    ).toEqual({
+      id: 't-1',
+      name: 'Spring',
+      startDate: '2030-03-01',
+      endDate: '2030-05-01',
+      applicationStartDate: '2030-01-10',
+      applicationEndDate: '2030-02-20',
+    });
+  });
+});
+
+describe('toMentorshipEnrollUpdateRequest', () => {
+  const project = { id: 'p-1', name: 'Project', slug: 'project' } as MentorshipLfProject;
+  const term = (id: string, name: string): MentorshipProgramTerm => ({
+    id,
+    name,
+    startDate: '2030-03-01',
+    endDate: '2030-05-01',
+    applicationStartDate: '2030-01-01',
+    applicationEndDate: '2030-02-01',
+  });
+  const filled = () =>
+    Object.assign(createEmptyMentorshipEnrollForm(), {
+      name: ' Program ',
+      description: '<p>x</p>',
+      repositoryUrl: 'https://repo.example',
+      skills: ['Go'],
+      technologies: ['Go', 'Rust'],
+    });
+
+  it('is the create body without terms acceptance when no term is saved yet', () => {
+    const form = filled();
+    const created = toMentorshipEnrollCreateRequest(form, project);
+
+    expect({ ...toMentorshipEnrollUpdateRequest(form, project, new Map()), termsAccepted: true }).toEqual(created);
+    expect(created.industry).toBe('Go, Rust');
+  });
+
+  /** A saved term upstream holds with a mid-month start and end, as the wizard keeps it. */
+  const saved = (id: string, name: string) =>
+    toMentorshipEnrollSavedTerm({
+      id,
+      name,
+      startDate: '2030-03-15',
+      endDate: '2030-05-20',
+      applicationStartDate: '2030-01-01',
+      applicationEndDate: '2030-02-01',
+    });
+
+  it('sends the open terms as the full set: saved ones with their id, added ones without', () => {
+    const savedTerm = saved('saved-1', 'Spring');
+    const moved = { ...savedTerm.term, name: ' Spring ', startDate: '2030-04-01' };
+    const form = { ...filled(), terms: [moved, term('term-new-1', 'Fall')] };
+
+    expect(toMentorshipEnrollUpdateRequest(form, project, new Map([['saved-1', savedTerm]])).terms).toEqual([
+      { id: 'saved-1', name: 'Spring', startDate: '2030-04-01', endDate: '2030-05-31', applicationStartDate: '2030-01-01', applicationEndDate: '2030-02-01' },
+      { name: 'Fall', startDate: '2030-03-01', endDate: '2030-05-31', applicationStartDate: '2030-01-01', applicationEndDate: '2030-02-01' },
+    ]);
+  });
+
+  it('leaves the terms out when the program has no open term', () => {
+    expect(toMentorshipEnrollUpdateRequest({ ...filled(), terms: [] }, project, new Map())).not.toHaveProperty('terms');
+  });
+
+  it('sends the stored dates of a saved term whose dates the admin left alone, even when it is renamed', () => {
+    const savedTerm = saved('saved-1', 'Spring');
+    const form = { ...filled(), terms: [{ ...savedTerm.term, name: 'Spring renamed' }] };
+
+    expect(savedTerm.term).toMatchObject({ startDate: '2030-03-01', endDate: '2030-05-01' });
+    expect(toMentorshipEnrollUpdateRequest(form, project, new Map([['saved-1', savedTerm]])).terms).toEqual([
+      {
+        id: 'saved-1',
+        name: 'Spring renamed',
+        startDate: '2030-03-15',
+        endDate: '2030-05-20',
+        applicationStartDate: '2030-01-01',
+        applicationEndDate: '2030-02-01',
+      },
+    ]);
   });
 });
 

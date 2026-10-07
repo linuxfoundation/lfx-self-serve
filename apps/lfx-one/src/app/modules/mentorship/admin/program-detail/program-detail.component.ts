@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
@@ -22,7 +22,6 @@ import { MentorsTabComponent } from './components/mentors-tab/mentors-tab.compon
 import { PastMenteesTabComponent } from './components/past-mentees-tab/past-mentees-tab.component';
 import { ProgramDetailHeaderComponent } from './components/program-detail-header/program-detail-header.component';
 import { TermsTabComponent } from './components/terms-tab/terms-tab.component';
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 
 /** Why the page could not be shown: the caller may not manage the program, it does not exist, or the read failed. */
 type ProgramPageError = 'no-access' | 'not-found' | 'failed';
@@ -51,7 +50,7 @@ type ProgramPageError = 'no-access' | 'not-found' | 'failed';
 export class ProgramDetailComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly mentorshipAdminService = inject(MentorshipAdminService);
-  private readonly comingSoon = inject(MentorshipComingSoonService);
+  private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly isLoading = signal(true);
@@ -80,8 +79,9 @@ export class ProgramDetailComponent {
     this.activeTab.set(tab);
   }
 
+  /** Opens the enroll wizard in edit mode for this program. */
   protected onEditProgram(): void {
-    this.comingSoon.notify('Edit program');
+    void this.router.navigate(['/mentorship/admin/enroll'], { queryParams: { programId: this.programId() } });
   }
 
   /** Reads the page again, keeping the tab the admin is on. */

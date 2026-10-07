@@ -15,7 +15,7 @@ import { getUsernameFromAuth } from '../utils/auth-helper';
 export class MentorshipController {
   private readonly mentorshipService = new MentorshipService();
 
-  // GET /api/mentorship/programs/name-available
+  // GET /api/mentorship/programs/name-available — `excludeProgramId` lets the edit wizard check a program's name without the program itself
   public async isProgramNameAvailable(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_name_available');
 
@@ -34,7 +34,12 @@ export class MentorshipController {
         });
       }
 
-      const result = await this.mentorshipService.isProgramNameAvailable(req, name);
+      const excludeProgramId = parseTrimmedString(req.query['excludeProgramId']);
+      if (excludeProgramId !== undefined && !isUuid(excludeProgramId)) {
+        throw ServiceValidationError.forField('excludeProgramId', 'excludeProgramId must be a UUID.', { operation: 'get_mentorship_name_available' });
+      }
+
+      const result = await this.mentorshipService.isProgramNameAvailable(req, name, excludeProgramId);
       logger.success(req, 'get_mentorship_name_available', startTime, { available: result.available });
       res.json(result);
     } catch (error) {

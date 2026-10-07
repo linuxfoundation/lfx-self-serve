@@ -26,6 +26,7 @@ import {
   MentorshipEnrollCreateRequest,
   MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
+  MentorshipEnrollUpdateRequest,
   MentorshipMentorTaskCreateRequest,
   MentorshipMentorTaskCreateResponse,
   MentorshipProgramLogoUploadResult,
@@ -174,6 +175,16 @@ export class MentorshipAdminService {
    */
   public createProgram(body: MentorshipEnrollCreateRequest): Observable<MentorshipEnrollProgramRef> {
     return this.http.post<MentorshipEnrollProgramRef>('/api/mentorship/admin/programs', body).pipe(take(1), this.logFailure('createProgram'));
+  }
+
+  /**
+   * Saves the edit wizard's program fields; upstream leaves the program's status as it is. Terms go through the term methods and
+   * the logo through `uploadProgramLogo`. Every failure reaches the caller as the error; there is no retry here.
+   */
+  public updateProgram(programId: string, body: MentorshipEnrollUpdateRequest): Observable<MentorshipEnrollProgramRef> {
+    return this.http
+      .patch<MentorshipEnrollProgramRef>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}`, body)
+      .pipe(take(1), this.logFailure('updateProgram'));
   }
 
   /**

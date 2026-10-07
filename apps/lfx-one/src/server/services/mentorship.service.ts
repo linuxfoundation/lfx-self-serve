@@ -85,14 +85,15 @@ export class MentorshipService {
   private readonly microserviceProxy = new MicroserviceProxyService();
   private readonly emailVerificationService = new EmailVerificationService();
 
-  public async isProgramNameAvailable(req: Request, name: string): Promise<MentorshipNameAvailability> {
-    logger.debug(req, 'mentorship_name_available', 'Checking mentorship program name availability');
+  /** `excludeProgramId` leaves that program out, so an edited program's own name reads as available. */
+  public async isProgramNameAvailable(req: Request, name: string, excludeProgramId?: string): Promise<MentorshipNameAvailability> {
+    logger.debug(req, 'mentorship_name_available', 'Checking mentorship program name availability', { excludeProgramId });
     const result = await proxyMentorshipRequest<MentorshipNameAvailability>(
       this.microserviceProxy,
       req,
       `${MENTORSHIP_PROGRAMS_PATH}/name-availability`,
       'GET',
-      { name: name.trim() }
+      excludeProgramId ? { name: name.trim(), exclude_program_id: excludeProgramId } : { name: name.trim() }
     ).catch((error: unknown) => {
       throw withoutQueryInErrorPath(error);
     });

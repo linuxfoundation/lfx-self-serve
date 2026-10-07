@@ -10,9 +10,11 @@ import { describe, expect, it } from 'vitest';
 import { ServiceValidationError } from '../errors';
 import {
   parseMentorshipEnrollCreateRequest,
+  parseMentorshipEnrollUpdateRequest,
   toMentorshipEnrollImport,
   toMentorshipEnrollProgramRef,
   toMentorshipProgramLogoUploadResult,
+  toMentorshipUpstreamProgramUpdate,
 } from './mentorship-enroll.helper';
 
 const OPERATION = 'create_mentorship_admin_program';
@@ -169,6 +171,114 @@ describe('parseMentorshipEnrollCreateRequest', () => {
   });
 });
 
+describe('parseMentorshipEnrollUpdateRequest', () => {
+  const UPDATE = 'update_mentorship_admin_program';
+
+  it('keeps the program fields and the terms, and drops terms acceptance', () => {
+    expect(parseMentorshipEnrollUpdateRequest(validBody({ industry: ' Go, Rust ' }), UPDATE)).toEqual({
+      projectId: PROJECT_ID,
+      projectSlug: 'example-project',
+      projectName: 'Example Project',
+      name: 'Example Program',
+      description: '<p>Build things.</p>',
+      repositoryUrl: 'https://github.com/example/repo',
+      skills: ['Go', 'Testing'],
+      prerequisites: [{ name: 'Resume', description: 'Upload it.', required: true, requireFile: true, dueDate: null }],
+      industry: 'Go, Rust',
+      terms: [term()],
+    });
+  });
+
+  it('needs no terms and no terms acceptance', () => {
+    expect(parseMentorshipEnrollUpdateRequest(validBody({ terms: undefined, termsAccepted: undefined }), UPDATE)).not.toHaveProperty('terms');
+  });
+
+  it('keeps the open terms, with the UUID id of a saved one', () => {
+    const SAVED_TERM = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+    const request = parseMentorshipEnrollUpdateRequest(validBody({ terms: [{ ...term(), id: SAVED_TERM }, term({ name: ' Term 2 ' })] }), UPDATE);
+
+    expect(request.terms).toEqual([{ id: SAVED_TERM, ...term() }, term({ name: 'Term 2' })]);
+  });
+
+  it.each([
+    ['an empty list', []],
+    ['five terms', Array.from({ length: 5 }, () => term())],
+    ['a term id that is not a UUID', [{ ...term(), id: 'term-1' }]],
+    ['a term without a name', [term({ name: ' ' })]],
+  ])('refuses terms with %s', (_label, terms) => {
+    expect(() => parseMentorshipEnrollUpdateRequest(validBody({ terms }), UPDATE)).toThrow(ServiceValidationError);
+  });
+
+  it('refuses a body without a project or skills, as create does', () => {
+    expect(() => parseMentorshipEnrollUpdateRequest(validBody({ projectId: 'not-a-uuid' }), UPDATE)).toThrow(ServiceValidationError);
+    expect(() => parseMentorshipEnrollUpdateRequest(validBody({ skills: [] }), UPDATE)).toThrow(ServiceValidationError);
+  });
+});
+
+describe('toMentorshipUpstreamProgramUpdate', () => {
+  it('maps to snake_case, sends blank optional fields as empty text, and keeps only the picked prerequisites as task templates', () => {
+    const request = parseMentorshipEnrollUpdateRequest(
+      validBody({
+        terms: undefined,
+        prerequisites: [
+          { name: 'Resume', description: 'Upload it.', required: true, requireFile: true, dueDate: null },
+          { name: 'Essay', description: 'Why you.', required: true, requireFile: false, dueDate: '2030-01-15' },
+          { name: 'Cover Letter', description: 'Unpicked.', required: false, requireFile: true, dueDate: null },
+        ],
+      }),
+      'update_mentorship_admin_program'
+    );
+
+    expect(toMentorshipUpstreamProgramUpdate(request)).toEqual({
+      name: 'Example Program',
+      description: '<p>Build things.</p>',
+      repo_link: 'https://github.com/example/repo',
+      website_url: '',
+      code_of_conduct: '',
+      cii_project_id: '',
+      industry: '',
+      skills: ['Go', 'Testing'],
+      task_templates: [
+        { name: 'Resume', description: 'Upload it.', submitFile: 'required', dueDate: null },
+        { name: 'Essay', description: 'Why you.', submitFile: null, dueDate: '2030-01-15' },
+      ],
+      project_uid: PROJECT_ID,
+      project_slug: 'example-project',
+      project_name: 'Example Project',
+      project_logo_url: '',
+    });
+  });
+
+  it('sends a term end date as given, so a stored mid-month end is not moved', () => {
+    const request = parseMentorshipEnrollUpdateRequest(validBody({ terms: [term({ endDate: '2030-05-20' })] }), 'update');
+
+    expect(toMentorshipUpstreamProgramUpdate(request).terms?.[0].end_date_time).toBe('2030-05-20T23:59:59.999Z');
+  });
+
+  it('sends the open terms as UTC instants, a saved one with its id', () => {
+    const SAVED_TERM = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+    const request = parseMentorshipEnrollUpdateRequest(validBody({ terms: [{ ...term(), id: SAVED_TERM }, term({ name: 'Term 2' })] }), 'update');
+
+    expect(toMentorshipUpstreamProgramUpdate(request).terms).toEqual([
+      {
+        id: SAVED_TERM,
+        name: 'Term 1',
+        start_date_time: '2030-03-01T00:00:00Z',
+        end_date_time: '2030-05-31T23:59:59.999Z',
+        application_start_date: '2030-01-01T00:00:00Z',
+        application_end_date: '2030-02-28T23:59:59.999Z',
+      },
+      {
+        name: 'Term 2',
+        start_date_time: '2030-03-01T00:00:00Z',
+        end_date_time: '2030-05-31T23:59:59.999Z',
+        application_start_date: '2030-01-01T00:00:00Z',
+        application_end_date: '2030-02-28T23:59:59.999Z',
+      },
+    ]);
+  });
+});
+
 describe('toMentorshipEnrollProgramRef', () => {
   it('keeps the id, slug and status', () => {
     expect(toMentorshipEnrollProgramRef({ id: 'p-1', slug: 'example-program', status: 'pending' })).toEqual({
@@ -228,7 +338,13 @@ describe('toMentorshipEnrollImport', () => {
       technologies: ['Go', 'Kubernetes'],
       skills: ['Go'],
       prerequisites: [],
+      logoUrl: '',
     });
+  });
+
+  it("keeps the program's logo for the edit wizard", () => {
+    expect(toMentorshipEnrollImport(template({ logo_url: ' https://cdn.example/logo.png ' })).logoUrl).toBe('https://cdn.example/logo.png');
+    expect(toMentorshipEnrollImport(template({ logo_url: null })).logoUrl).toBe('');
   });
 
   it('has no project when the template has no project uid', () => {

@@ -16,6 +16,7 @@ import {
   MENTORSHIP_CII_INVALID_ID,
   MENTORSHIP_CII_UNAVAILABLE,
   MENTORSHIP_CODE_OF_CONDUCT_TEMPLATE_URL,
+  MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL,
   MENTORSHIP_ENROLL_COC_INTRO,
   MENTORSHIP_ENROLL_DETAILS_INTRO,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
@@ -78,6 +79,7 @@ import {
   startWith,
   Subject,
   switchMap,
+  take,
   takeUntil,
   tap,
   timer,
@@ -96,6 +98,10 @@ export class EnrollDetailsStepComponent {
   public readonly project = model<MentorshipLfProject | null>(null);
   /** The picked logo file; the form keeps only its name and preview, and the wizard uploads this after the create. */
   public readonly logoFile = model<File | null>(null);
+  /** The program being edited, `''` when enrolling a new one. Editing hides import and checks the name without this program. */
+  public readonly programId = input('');
+  /** The edited program's logo, `''` when it has none. Clearing a picked file goes back to it. */
+  public readonly currentLogoUrl = input('');
   public readonly ciiLookupStatusChange = output<MentorshipCiiLookupStatus>();
   public readonly nameLookupStatusChange = output<MentorshipNameLookupStatus>();
 
@@ -162,6 +168,7 @@ export class EnrollDetailsStepComponent {
     initialValue: {} as Record<string, unknown>,
   });
 
+  protected readonly editing = computed(() => this.programId() !== '');
   protected readonly nameLength = computed(() => String(this.formSnapshot()['name'] ?? this.form().controls['name']?.value ?? '').length);
   private readonly descriptionHtml = computed(() => String(this.formSnapshot()['description'] ?? this.form().controls['description']?.value ?? ''));
   protected readonly descriptionTooLarge = computed(() => isMentorshipRichTextOverRawMax(this.descriptionHtml()));
@@ -222,7 +229,7 @@ export class EnrollDetailsStepComponent {
       switchMap(({ name }) => {
         if (name.length < MENTORSHIP_ENROLL_NAME_MIN) return of({ status: 'idle' as const });
         return timer(300).pipe(
-          switchMap(() => this.mentorshipService.isProgramNameAvailable(name)),
+          switchMap(() => this.mentorshipService.isProgramNameAvailable(name, this.programId())),
           map((result) => ({ status: result.available ? ('available' as const) : ('taken' as const) })),
           catchError(() => of({ status: 'unavailable' as const })),
           startWith({ status: 'loading' as const })
@@ -262,8 +269,13 @@ export class EnrollDetailsStepComponent {
         if (found) this.project.set(found);
       });
 
-    this.readImportPrograms()
-      .pipe(takeUntilDestroyed())
+    // Inputs are bound by the first emission, so an edit never reads the program list it has no picker for.
+    toObservable(this.programId)
+      .pipe(
+        take(1),
+        switchMap((programId) => (programId ? EMPTY : this.readImportPrograms())),
+        takeUntilDestroyed()
+      )
       .subscribe({
         next: (programs) => {
           this.importOptions.set([{ value: '', label: 'None' }, ...programs.map((program) => ({ value: program.id, label: program.name }))]);
@@ -511,10 +523,12 @@ export class EnrollDetailsStepComponent {
     this.lfProjectsFailed.set(true);
   }
 
+  /** Drops a picked file. An edit goes back to the program's current logo, which stays unless a new file is picked. */
   private clearLogo(): void {
     this.revokeLogoPreview();
     this.logoFile.set(null);
-    this.form().patchValue({ logoFileName: '', logoPreviewUrl: '' });
+    const currentLogoUrl = this.currentLogoUrl();
+    this.form().patchValue({ logoFileName: currentLogoUrl ? MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL : '', logoPreviewUrl: currentLogoUrl });
   }
 
   private revokeLogoPreview(): void {

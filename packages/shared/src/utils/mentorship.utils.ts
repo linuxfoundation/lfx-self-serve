@@ -9,6 +9,7 @@ import {
   MENTORSHIP_CUSTOM_PREREQ_NAME_MAX,
   createDefaultMentorshipTerm,
   createEmptyMentorshipEnrollForm,
+  MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
   MENTORSHIP_ENROLL_LOGO_EMPTY,
   MENTORSHIP_ENROLL_LOGO_EXTENSIONS,
@@ -79,10 +80,14 @@ import type {
   MentorshipApplicantTaskStatus,
   MentorshipApplicationProgress,
   MentorshipEnrollCreateRequest,
+  MentorshipEnrollCreateTerm,
+  MentorshipEnrollEditBaseline,
   MentorshipEnrollFieldErrors,
   MentorshipEnrollForm,
   MentorshipEnrollImport,
+  MentorshipEnrollSavedTerm,
   MentorshipEnrollStep,
+  MentorshipEnrollUpdateRequest,
   MentorshipEnrollValidationInput,
   MentorshipLfProject,
   MentorshipNoteDisplay,
@@ -251,7 +256,67 @@ export function lastDayOfMentorshipMonth(isoMonthStart: string): string {
  * form says the terms are accepted, so `termsAccepted` is always `true`.
  */
 export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidationInput, project: MentorshipLfProject): MentorshipEnrollCreateRequest {
-  const request: MentorshipEnrollCreateRequest = {
+  return {
+    ...toMentorshipEnrollProgramFields(form, project),
+    terms: form.terms.map((term) => toMentorshipEnrollRequestTerm(term)),
+    termsAccepted: true,
+  };
+}
+
+/**
+ * The wizard form as the edit wizard's update body: the program fields as create sends them, and the open terms as the program's
+ * full set. A term in `saved` keeps its id, so upstream changes that term; while its dates are as loaded it sends the stored dates,
+ * not the month-start ones the wizard shows, so editing anything else never moves them. A term the admin added goes without an id
+ * and is created, and a saved term left out is deleted. With no open terms, `terms` is left out and upstream keeps them as they are.
+ */
+export function toMentorshipEnrollUpdateRequest(
+  form: MentorshipEnrollValidationInput,
+  project: MentorshipLfProject,
+  saved: ReadonlyMap<string, MentorshipEnrollSavedTerm>
+): MentorshipEnrollUpdateRequest {
+  const request: MentorshipEnrollUpdateRequest = toMentorshipEnrollProgramFields(form, project);
+  if (form.terms.length) {
+    request.terms = form.terms.map((term) => {
+      const savedTerm = saved.get(term.id);
+      if (!savedTerm) return toMentorshipEnrollRequestTerm(term);
+      const datesUnchanged =
+        savedTerm.term.startDate === term.startDate &&
+        savedTerm.term.endDate === term.endDate &&
+        savedTerm.term.applicationStartDate === term.applicationStartDate &&
+        savedTerm.term.applicationEndDate === term.applicationEndDate;
+      return { id: term.id, ...(datesUnchanged ? { name: term.name.trim(), ...savedTerm.stored } : toMentorshipEnrollRequestTerm(term)) };
+    });
+  }
+  return request;
+}
+
+/** A saved open term as the edit wizard keeps it: the term as the form shows it, and the dates upstream holds. */
+export function toMentorshipEnrollSavedTerm(
+  row: Pick<MentorshipProgramTermRow, 'id' | 'name' | 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
+): MentorshipEnrollSavedTerm {
+  return {
+    term: toMentorshipEnrollTerm(row),
+    stored: { startDate: row.startDate, endDate: row.endDate, applicationStartDate: row.applicationStartDate, applicationEndDate: row.applicationEndDate },
+  };
+}
+
+/** A wizard term as create and update send it: the name trimmed and the end month as its last day. */
+function toMentorshipEnrollRequestTerm(term: MentorshipProgramTerm): MentorshipEnrollCreateTerm {
+  return {
+    name: term.name.trim(),
+    startDate: term.startDate,
+    endDate: lastDayOfMentorshipMonth(term.endDate),
+    applicationStartDate: term.applicationStartDate,
+    applicationEndDate: term.applicationEndDate,
+  };
+}
+
+/** The program fields create and update share. A blank optional field is left out; the BFF sends an update's as `''`, which clears it. */
+function toMentorshipEnrollProgramFields(
+  form: MentorshipEnrollValidationInput,
+  project: MentorshipLfProject
+): Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'> {
+  const request: Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'> = {
     projectId: project.id,
     projectSlug: project.slug,
     projectName: project.name,
@@ -259,13 +324,6 @@ export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidation
     description: form.description,
     repositoryUrl: form.repositoryUrl.trim(),
     skills: uniqueMentorshipList(form.skills),
-    terms: form.terms.map((term) => ({
-      name: term.name.trim(),
-      startDate: term.startDate,
-      endDate: lastDayOfMentorshipMonth(term.endDate),
-      applicationStartDate: term.applicationStartDate,
-      applicationEndDate: term.applicationEndDate,
-    })),
     prerequisites: form.prerequisites.map((item) => {
       const description = item.description.trim();
       const challengeUrl = item.challengeUrl?.trim();
@@ -277,7 +335,6 @@ export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidation
         dueDate: item.dueDate || null,
       };
     }),
-    termsAccepted: true,
   };
 
   if (project.logoUrl) request.projectLogoUrl = project.logoUrl;
@@ -290,6 +347,36 @@ export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidation
   const industry = uniqueMentorshipList(form.technologies).join(', ');
   if (industry) request.industry = industry;
   return request;
+}
+
+/** A saved term as the wizard holds it. The term dialog picks months, so both term dates become the first of their month. */
+export function toMentorshipEnrollTerm(
+  row: Pick<MentorshipProgramTermRow, 'id' | 'name' | 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
+): MentorshipProgramTerm {
+  const toMonthStart = (date: string): string => {
+    const parsed = parseMentorshipMonthYear(date);
+    return parsed ? mentorshipMonthYearToStartDate(parsed.month, parsed.year) : date;
+  };
+  return {
+    id: row.id,
+    name: row.name,
+    startDate: toMonthStart(row.startDate),
+    endDate: toMonthStart(row.endDate),
+    applicationStartDate: row.applicationStartDate,
+    applicationEndDate: row.applicationEndDate,
+  };
+}
+
+/** Whether `after` is the saved term `before` unchanged: the same name (trimmed) and dates. `false` when there is no saved term. */
+export function isSameMentorshipTerm(before: MentorshipProgramTerm | undefined, after: MentorshipProgramTerm): boolean {
+  return (
+    before !== undefined &&
+    before.name.trim() === after.name.trim() &&
+    before.startDate === after.startDate &&
+    before.endDate === after.endDate &&
+    before.applicationStartDate === after.applicationStartDate &&
+    before.applicationEndDate === after.applicationEndDate
+  );
 }
 
 /**
@@ -311,6 +398,20 @@ export function formFromMentorshipEnrollImport(importProgramId: string, data: Me
     skills: [...data.skills],
     terms: [createDefaultMentorshipTerm()],
     prerequisites: mergeImportedMentorshipPrerequisites(data.prerequisites),
+  };
+}
+
+/**
+ * The wizard form for editing a program: its details and prerequisites as import copies them, its open terms, and its current
+ * logo as the preview. The terms were accepted when the program was created, so `termsAccepted` is `true`.
+ */
+export function formFromMentorshipEnrollEdit(data: MentorshipEnrollImport, terms: MentorshipProgramTerm[]): MentorshipEnrollForm {
+  return {
+    ...formFromMentorshipEnrollImport('', data),
+    terms: terms.map((term) => ({ ...term })),
+    logoFileName: data.logoUrl ? MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL : '',
+    logoPreviewUrl: data.logoUrl,
+    termsAccepted: true,
   };
 }
 
@@ -540,12 +641,21 @@ export function getMentorshipTermDateErrors(
 /**
  * Term date errors for the enroll wizard: the shared term rules, then the application windows upstream create refuses,
  * reported on `applicationEndDate`. The term dialog and the setup step both use it, so a term the dialog saves passes Next.
+ * A saved term (`original`) whose dates are all unchanged has nothing to check, so renaming it never trips a rule its dates
+ * were saved under, such as the one-day application window the Terms tab allows.
  */
 export function getMentorshipEnrollTermDateErrors(
   term: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>,
   today = new Date(),
   original?: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
 ): MentorshipTermDateErrors {
+  const datesUnchanged =
+    original !== undefined &&
+    term.startDate === original.startDate &&
+    term.endDate === original.endDate &&
+    term.applicationStartDate === original.applicationStartDate &&
+    term.applicationEndDate === original.applicationEndDate;
+  if (datesUnchanged) return {};
   const errors = getMentorshipTermDateErrors(term, today, original);
   if (Object.keys(errors).length) return errors;
   const windowError = getMentorshipEnrollTermWindowError(term);
@@ -558,7 +668,11 @@ export function getMentorshipEnrollTermDateErrors(
  * The `details` step only requires a selected project; the picker offers live query-service
  * projects, so there is no client-side allowlist to check the id against.
  */
-export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollValidationInput): MentorshipEnrollFieldErrors {
+export function getMentorshipEnrollStepErrors(
+  step: MentorshipEnrollStep,
+  form: MentorshipEnrollValidationInput,
+  edit?: MentorshipEnrollEditBaseline
+): MentorshipEnrollFieldErrors {
   if (step === 'details') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (isBlank(form.name)) {
@@ -589,9 +703,10 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     if (form.codeOfConductUrl.trim() && !isMentorshipHttpUrl(form.codeOfConductUrl)) {
       errors.codeOfConductUrl = MENTORSHIP_INVALID_URL;
     }
-    if (isBlank(form.logoFileName)) {
+    // An edit keeps the program's logo unless a new file is picked, and a picked file is checked as it is picked.
+    if (!edit && isBlank(form.logoFileName)) {
       errors.logoFileName = 'Logo is required.';
-    } else if (!isMentorshipLogoFileName(form.logoFileName)) {
+    } else if (!edit && !isMentorshipLogoFileName(form.logoFileName)) {
       errors.logoFileName = 'Program logo is not the right file type.';
     }
     if (form.ciiProjectId.trim() && !isMentorshipCiiProjectId(form.ciiProjectId)) {
@@ -603,7 +718,8 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
   if (step === 'setup') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (!form.skills.length) errors.skills = 'Add at least one skill.';
-    if (!form.terms.length) {
+    // A program being edited that had only closed terms may stay that way; upstream keeps a program's last open term otherwise.
+    if (!form.terms.length && (!edit || edit.terms.length > 0)) {
       errors.terms = 'Add at least one program term.';
     } else if (form.terms.length > MENTORSHIP_MAX_OPEN_TERMS) {
       errors.terms = MENTORSHIP_MAX_OPEN_TERMS_MESSAGE;
@@ -615,7 +731,12 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
             ? `Term name must be ${MENTORSHIP_TERM_NAME_MAX} characters or fewer.`
             : MENTORSHIP_TERM_FIELDS_ERROR;
       } else {
-        const firstTermError = form.terms.map((term) => Object.values(getMentorshipEnrollTermDateErrors(term))[0]).find(Boolean);
+        // An edit sends nothing for a saved term the admin left as it was, so only new and changed terms are checked.
+        const savedTerms = new Map((edit?.terms ?? []).map((term) => [term.id, term]));
+        const firstTermError = form.terms
+          .filter((term) => !isSameMentorshipTerm(savedTerms.get(term.id), term))
+          .map((term) => Object.values(getMentorshipEnrollTermDateErrors(term, new Date(), savedTerms.get(term.id)))[0])
+          .find(Boolean);
         if (firstTermError) errors.terms = firstTermError;
       }
     }
@@ -624,11 +745,14 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
 
   const errors: MentorshipEnrollFieldErrors = {};
   const todayFloor = mentorshipDateOnlyFloor();
+  const savedPrerequisites = new Map((edit?.prerequisites ?? []).map((item) => [item.id, item]));
   const incompleteCustom = form.prerequisites.some((item) => {
     if (!item.custom) return false;
     if (isBlank(item.name) || item.name.trim().length > MENTORSHIP_CUSTOM_PREREQ_NAME_MAX) return true;
-    if (isBlank(item.dueDate ?? '') || !isMentorshipIsoDate(item.dueDate ?? '')) return true;
-    if ((item.dueDate ?? '') < todayFloor) return true;
+    // A due date the program already had, even none or a past one, stays valid while it is left unchanged.
+    const keepsSavedDueDate = savedPrerequisites.has(item.id) && (savedPrerequisites.get(item.id)?.dueDate ?? '') === (item.dueDate ?? '');
+    if (!keepsSavedDueDate && (isBlank(item.dueDate ?? '') || !isMentorshipIsoDate(item.dueDate ?? ''))) return true;
+    if (!keepsSavedDueDate && (item.dueDate ?? '') < todayFloor) return true;
     return isBlank(item.description) || item.description.trim().length > MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX;
   });
   const coding = form.prerequisites.find((item) => item.id === 'prereq-coding');
