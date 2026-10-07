@@ -229,7 +229,7 @@ export class CommitteeManageComponent {
       control?.markAsDirty();
     });
 
-    if (this.form.invalid) {
+    if (this.form.invalid || (!this.isEditMode() && !this.isStepValid(this.formSteps.CATEGORY))) {
       this.messageService.add({
         severity: 'error',
         summary: 'Validation Error',
@@ -474,15 +474,31 @@ export class CommitteeManageComponent {
       });
   }
 
-  /** Preselects a create link's `?category=` (e.g. from the newsletter audience step) when this persona can pick it; edit ignores it. */
+  /** Applies a create link's category once persona detection settles, then clears selections that become unavailable. Edit preserves saved categories. */
   private initCategoryFromUrl(): void {
     const category = this.route.snapshot.queryParamMap.get('category');
-    if (!category || this.route.snapshot.paramMap.has('id')) {
+    if (this.route.snapshot.paramMap.has('id')) {
       return;
     }
-    if (getSelectableCommitteeCategories(this.personaService.currentPersona()).some((option) => option.value === category)) {
-      this.form.get('category')?.setValue(category);
-    }
+    const personaState = computed(() => ({ loaded: this.personaService.personaLoaded(), persona: this.personaService.currentPersona() }));
+    let initialized = false;
+    toObservable(personaState)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(({ loaded, persona }) => {
+        if (!loaded) return;
+        const control = this.form.get('category');
+        const categories = getSelectableCommitteeCategories(persona);
+        if (!initialized) {
+          initialized = true;
+          // A user may have picked a category while detection was pending; do not overwrite it.
+          if (!control?.value && category && categories.some((option) => option.value === category)) {
+            control?.setValue(category);
+          }
+        }
+        if (control?.value && !categories.some((option) => option.value === control.value)) {
+          control.setValue('');
+        }
+      });
   }
 
   /**
@@ -664,7 +680,13 @@ export class CommitteeManageComponent {
   private isStepValid(step: number): boolean {
     switch (step) {
       case this.formSteps.CATEGORY:
-        // Category must be selected
+        // Create checks read the current persona synchronously too, before the normalization stream settles.
+        if (!this.isEditMode()) {
+          return (
+            this.personaService.personaLoaded() &&
+            getSelectableCommitteeCategories(this.personaService.currentPersona()).some((option) => option.value === this.form.get('category')?.value)
+          );
+        }
         return !!(this.form.get('category')?.value && this.form.get('category')?.valid);
 
       case this.formSteps.BASIC_INFO:
