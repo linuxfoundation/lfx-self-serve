@@ -28,10 +28,11 @@ import { TermsTabComponent } from './components/terms-tab/terms-tab.component';
 type ProgramPageError = 'no-access' | 'not-found' | 'failed';
 
 /**
- * Admin program-detail page. Loads a program by id and hosts the four underline tabs (current mentees, past
- * mentees, mentors, terms); a pending program has no mentees or mentors yet, so it shows Terms only. The header, the four counts and the term options come from one BFF read; Current
- * Mentees then reads its own pages. A failed read shows an inline error with Retry, or a no-access or not-found
- * state for a 403 or a 404. Past Mentees, Mentors and Terms each read their own pages.
+ * Admin program-detail page. Loads a program by id and hosts the underline tabs (current mentees, past mentees,
+ * mentors, terms); a pending program has no mentees or mentors yet, so it shows Terms only. The header, the four
+ * counts and the term options come from one BFF read; Current Mentees then reads its own pages. A failed read shows
+ * an inline error with Retry, or a no-access or not-found state for a 403 or a 404. Past Mentees, Mentors and Terms
+ * each read their own pages.
  */
 @Component({
   selector: 'lfx-mentorship-program-detail',
