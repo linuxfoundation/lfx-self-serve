@@ -497,7 +497,7 @@
             [canEdit]="canEdit()"
             [isVisitor]="isVisitorForPrivacy()"
             [initialTimeFilter]="meetingsTimeFilter()"
-            [meetings]="upcomingMeetings()"
+            [meetings]="upcomingMeetingsFiltered()"
             [meetingsLoading]="meetingsLoading()" />
         }
         @case ('surveys') {

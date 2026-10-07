@@ -368,6 +368,18 @@ export class CommitteeViewComponent {
   // consume this; fetched once here and passed down to both to avoid a duplicate round-trip). --
   public meetingsLoading = signal(true);
   public upcomingMeetings: Signal<Meeting[]> = this.initUpcomingMeetings();
+  // Client-side filter matching the predicate committee-meetings uses: only meetings where at least
+  // one occurrence is non-cancelled and non-ended (for recurring), or the meeting itself hasn't
+  // ended (for one-time). This is what the Meetings tab's "Upcoming" view actually shows, so the
+  // badge count is guaranteed to match the tab list.
+  public upcomingMeetingsFiltered: Signal<Meeting[]> = computed(() =>
+    this.upcomingMeetings().filter((m) => {
+      if (m.occurrences?.length) {
+        return m.occurrences.some((o) => o.status !== 'cancel' && !hasMeetingEnded(m, o));
+      }
+      return !hasMeetingEnded(m);
+    })
+  );
 
   // -- Tab visibility signals --
   // Same rule the BFF roster endpoint enforces (basic_profile, writer or auditor), plus the
@@ -415,18 +427,9 @@ export class CommitteeViewComponent {
       label: 'Meetings',
       icon: 'fa-calendar',
       visible: () => this.isMemberOrAdmin() || !!this.committee()?.calendar?.public,
-      // Count only meetings the tab's Upcoming view would actually show — same predicate
-      // committee-meetings uses: exclude ended non-recurring meetings and recurring meetings
-      // where all remaining occurrences are cancelled or ended.
-      badge: () => {
-        if (this.meetingsLoading()) return null;
-        return this.upcomingMeetings().filter((m) => {
-          if (m.occurrences?.length) {
-            return m.occurrences.some((o) => o.status !== 'cancel' && !hasMeetingEnded(m, o));
-          }
-          return !hasMeetingEnded(m);
-        }).length;
-      },
+      // Derived from upcomingMeetingsFiltered (a proper computed() signal) so the badge count
+      // always equals the length of the list passed to the Meetings tab.
+      badge: () => (this.meetingsLoading() ? null : this.upcomingMeetingsFiltered().length),
     },
     {
       key: 'surveys',
