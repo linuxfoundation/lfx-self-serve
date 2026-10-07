@@ -688,4 +688,30 @@ describe('attachExisting', () => {
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith(attached);
   });
+
+  // Several existing lists used as they are, with no master list: upstream sends to all of them.
+  it('forwards several include lists in place of a master', async () => {
+    proxyMethods.attachExisting.mockResolvedValue(attached);
+
+    await controller.attachExisting(buildReq({ briefId: 'brief-1', includeListIds: [' 101 ', '102'], suppressionListIds: ['201'] }), buildRes(), next);
+
+    expect(proxyMethods.attachExisting).toHaveBeenCalledWith(expect.anything(), 'tlf', {
+      briefId: 'brief-1',
+      includeListIds: ['101', '102'],
+      suppressionListIds: ['201'],
+    });
+  });
+
+  it.each([
+    ['both a master and include lists', { masterListId: '501', includeListIds: ['101'] }, 'includeListIds'],
+    ['neither a master nor include lists', {}, 'masterListId'],
+    ['an empty include list', { includeListIds: [] }, 'includeListIds'],
+    ['a blank include id', { includeListIds: ['101', ' '] }, 'includeListIds'],
+    ['too many include ids', { includeListIds: Array.from({ length: 51 }, (_unused, i) => `${i}`) }, 'includeListIds'],
+  ])('refuses %s', async (_label, overrides, field) => {
+    await controller.attachExisting(buildReq({ briefId: 'brief-1', ...overrides }), buildRes(), next);
+
+    expect(proxyMethods.attachExisting).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field }]);
+  });
 });

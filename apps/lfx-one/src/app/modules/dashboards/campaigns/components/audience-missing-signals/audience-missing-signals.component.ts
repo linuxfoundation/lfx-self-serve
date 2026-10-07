@@ -7,7 +7,7 @@ import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs';
 
 import { AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS, AUDIENCE_SIGNAL_INFO, AUDIENCE_SPEAKER_SCOPES } from '@lfx-one/shared/constants';
-import type { AudienceListSearchResult, AudienceSignal } from '@lfx-one/shared/interfaces';
+import type { AudienceListRef, AudienceListSearchResult, AudienceSignal } from '@lfx-one/shared/interfaces';
 
 /**
  * "Qualifying lists not found" — the signals discovery could not fill, and a manual escape hatch.
@@ -33,12 +33,16 @@ export class AudienceMissingSignalsComponent {
   public readonly searchResults = input<readonly AudienceListSearchResult[]>([]);
   public readonly searching = input(false);
   public readonly selectedIds = input<ReadonlySet<string>>(new Set<string>());
+  /** Lists marked as exclusions, so a search result's Exclude button reads as on. */
+  public readonly excludedIds = input<ReadonlySet<string>>(new Set<string>());
   public readonly disabled = input(false);
 
   // === Outputs ===
   /** A debounced, de-duplicated typeahead query. The container owns the request. */
   public readonly search = output<string>();
   public readonly addList = output<AudienceListSearchResult>();
+  /** Mark (or unmark) a search result as an exclusion: its contacts are kept off this send. */
+  public readonly excludeList = output<AudienceListRef>();
 
   // === Forms ===
   protected readonly searchControl = new FormControl('', { nonNullable: true });
@@ -59,7 +63,13 @@ export class AudienceMissingSignalsComponent {
    */
   protected readonly searchRows = computed(() => {
     const selected = this.selectedIds();
-    return this.searchResults().map((list) => ({ ...list, selected: selected.has(list.listId), sizeText: this.sizeLabel(list.size) }));
+    const excluded = this.excludedIds();
+    return this.searchResults().map((list) => ({
+      ...list,
+      selected: selected.has(list.listId),
+      excluded: excluded.has(list.listId),
+      sizeText: this.sizeLabel(list.size),
+    }));
   });
 
   public constructor() {
@@ -102,6 +112,12 @@ export class AudienceMissingSignalsComponent {
   protected onAdd(list: AudienceListSearchResult): void {
     if (!this.disabled()) {
       this.addList.emit(list);
+    }
+  }
+
+  protected onExclude(list: AudienceListSearchResult): void {
+    if (!this.disabled()) {
+      this.excludeList.emit({ listId: list.listId, name: list.name });
     }
   }
 }
