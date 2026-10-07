@@ -688,6 +688,38 @@ describe('CurrentMenteesTabComponent', () => {
       expect(submittedOf('app_1')).toBe(2);
     });
 
+    it('reads the page again when a status change moves the row out of the Applied filter', () => {
+      const patch = fixture.componentInstance['patchSavedTask'];
+      getProgramMentees.mockReturnValue(of({ data: [mentee({ tasksSubmitted: 4, tasksTotal: 5 })], total: 1 }));
+      fixture.componentInstance['form'].controls.status.setValue('applied');
+      settle();
+      clickViewTasks('app_1');
+      const reads = getProgramMentees.mock.calls.length;
+      getProgramMentees.mockReturnValue(of({ data: [], total: 0 }));
+
+      patch('app_1', { ...tasks()[1], status: 'completed' });
+      settle();
+
+      expect(getProgramMentees.mock.calls.length).toBe(reads + 1);
+      expect(lastQuery()).toMatchObject({ status: 'applied' });
+      expect(fixture.componentInstance['applications']()).toEqual([]);
+      expect(fixture.componentInstance['total']()).toBe(0);
+    });
+
+    it('keeps the page when a status change leaves the row in its filter', () => {
+      const patch = fixture.componentInstance['patchSavedTask'];
+      fixture.componentInstance['form'].controls.status.setValue('applied');
+      settle();
+      clickViewTasks('app_1');
+      const reads = getProgramMentees.mock.calls.length;
+
+      patch('app_1', { ...tasks()[1], status: 'completed' });
+      settle();
+
+      expect(submittedOf('app_1')).toBe(3);
+      expect(getProgramMentees.mock.calls.length).toBe(reads);
+    });
+
     it('never takes the submitted count below zero', () => {
       const patch = fixture.componentInstance['patchSavedTask'];
       getProgramMentees.mockReturnValue(of({ data: [mentee({ tasksSubmitted: 0 })], total: 1 }));

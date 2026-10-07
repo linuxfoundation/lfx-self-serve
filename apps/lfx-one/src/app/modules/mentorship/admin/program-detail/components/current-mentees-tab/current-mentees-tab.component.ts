@@ -324,7 +324,21 @@ export class CurrentMenteesTabComponent {
     const previous = state.tasks.find((current) => current.id === task.id);
     this.setTasksState(applicationId, { status: 'loaded', tasks: state.tasks.map((current) => (current.id === task.id ? task : current)) });
     if (previous) this.shiftSubmittedCount(applicationId, mentorshipTaskSubmittedCount(task.status) - mentorshipTaskSubmittedCount(previous.status));
+    this.reloadIfRowLeftStatusFilter(applicationId);
   };
+
+  /**
+   * Applied and Tasks Completed filter on task progress, so a status change can move a row out of the results. Reads
+   * the page again when it does, so the row leaves and the total follows; the row stays expanded if upstream still lists it.
+   */
+  private reloadIfRowLeftStatusFilter(applicationId: string): void {
+    const status = this.status();
+    if (this.destroyed || (status !== 'applied' && status !== 'tasks-completed')) return;
+    const row = this.applications().find((application) => application.id === applicationId);
+    if (!row || mentorshipApplicantDisplayStatus(row) === status) return;
+    if (this.expandedTaskMenteeIds()[applicationId]) this.rereadTasksForId = applicationId;
+    this.reloadCount.update((count) => count + 1);
+  }
 
   /** Keeps the row's submitted count, which Graduate's warning reads, in step with a status change, without reading the page again. */
   private shiftSubmittedCount(applicationId: string, delta: number): void {
