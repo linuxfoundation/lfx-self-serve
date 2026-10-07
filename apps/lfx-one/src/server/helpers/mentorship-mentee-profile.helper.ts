@@ -30,6 +30,7 @@ const mapDemographics = (profile: MentorshipUpstreamUserProfile): MentorshipMent
  */
 export const mapMentorshipMenteeProfile = (profile: MentorshipUpstreamUserProfile): MentorshipMenteeProfileResponse => {
   const skillSet = asRecord(profile.skill_set);
+  const country = asString(asRecord(profile.address)?.['country']);
 
   return {
     profile: {
@@ -37,6 +38,7 @@ export const mapMentorshipMenteeProfile = (profile: MentorshipUpstreamUserProfil
       skillsHave: asStringArray(skillSet?.['skills']),
       skillsWant: asStringArray(skillSet?.['improvementSkills']),
       additionalNotes: asString(skillSet?.['comments']),
+      ...(country !== undefined ? { country } : {}),
     },
     history: [],
     demographics: mapDemographics(profile),

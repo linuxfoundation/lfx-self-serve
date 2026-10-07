@@ -52,6 +52,7 @@ describe('MentorshipMenteeController', () => {
       skillsHave: ['Java'],
       skillsWant: ['Python'],
       additionalNotes: ' Test notes ',
+      country: 'KE',
       ageEligible: true,
       workAuthorized: true,
       noDuplicateProfile: true,

@@ -101,6 +101,7 @@ describe('MentorshipMenteeService.registerMenteeProfile', () => {
     skillsHave: ['Java'],
     skillsWant: ['Python'],
     additionalNotes: 'Test notes',
+    country: 'KE',
     demographics: { age: '20-39', education: 'college' },
     ageEligible: true,
     workAuthorized: true,
@@ -139,6 +140,7 @@ describe('MentorshipMenteeService.registerMenteeProfile', () => {
       age_eligible: true,
       work_eligible: true,
       skill_set: { skills: ['Java'], improvementSkills: ['Python'], comments: 'Test notes' },
+      address: { country: 'KE' },
       demographics: { age: '20-39' },
       socioeconomics: { educationLevel: 'college' },
     });
@@ -662,6 +664,19 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
       skill_set: { legacyLevel: 'beginner', skills: ['Go'], improvementSkills: ['Rust'] },
       demographics: { age: 30, gender: 'male', legacyField: 'kept' },
     });
+  });
+
+  it('reads the stored row before a country change and keeps the legacy address keys', async () => {
+    const storedRow = { ...updatedRow, address: { country: 'US', city: 'Test City', zipCode: '00000' } };
+    proxyRequest.mockResolvedValueOnce(storedRow).mockResolvedValueOnce({ ...updatedRow, address: { country: 'KE', city: 'Test City', zipCode: '00000' } });
+
+    const result = await service.updateMenteeProfile(buildReq(), { country: 'KE' });
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'PATCH', undefined, {
+      address: { country: 'KE', city: 'Test City', zipCode: '00000' },
+    });
+    expect(result.profile.country).toBe('KE');
   });
 
   it.each([
