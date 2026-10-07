@@ -388,7 +388,9 @@ export class MentorsTabComponent {
     this.candidateSearch$
       .pipe(
         switchMap((search) => {
-          if (search.length < MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH || search.length > MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH) {
+          // Code points, as upstream counts runes: an emoji is one character, not two UTF-16 units.
+          const length = Array.from(search).length;
+          if (length < MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH || length > MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH) {
             return of({ search, data: [] as MentorshipAdminMentorCandidate[], error: null as unknown });
           }
           return this.mentorshipAdminService.getMentorCandidates(this.programId(), search).pipe(
@@ -410,7 +412,7 @@ export class MentorsTabComponent {
    * account-creation hint: a single word can be a name or an LF username of someone who already has an account.
    */
   private candidatesEmptyMessageFor(search: string, error: unknown): string {
-    if (search.length > MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH) return MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE;
+    if (Array.from(search).length > MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH) return MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE;
     if (error) {
       const status = error instanceof HttpErrorResponse ? error.status : 0;
       if (status === 400) return MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE;

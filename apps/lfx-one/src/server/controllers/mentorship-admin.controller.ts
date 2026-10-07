@@ -619,12 +619,14 @@ export class MentorshipAdminController {
 
   /**
    * The search comes in the body so it never reaches the logged request URL, and never goes into a log line here.
-   * Upstream refuses a search under the minimum with a 400; refusing it here saves the round trip.
+   * Upstream refuses a search under the minimum with a 400; refusing it here saves the round trip. Length is counted in
+   * code points, as upstream counts runes, so an emoji is one character, not two UTF-16 units.
    */
   private parseMentorCandidatesSearch(body: unknown, operation: string): string {
     const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
     const search = typeof raw['search'] === 'string' ? raw['search'].trim() : '';
-    if (search.length < MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH || search.length > MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH) {
+    const length = Array.from(search).length;
+    if (length < MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH || length > MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH) {
       throw ServiceValidationError.forField(
         'search',
         `search must be ${MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH} to ${MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH} characters.`,

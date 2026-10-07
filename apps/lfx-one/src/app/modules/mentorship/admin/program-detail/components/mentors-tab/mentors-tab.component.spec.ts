@@ -181,6 +181,12 @@ describe('MentorsTabComponent', () => {
       expect(fixture.componentInstance['candidatesEmptyMessage']()).toBe(MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE);
     });
 
+    it('does not send a single emoji, which upstream counts as one character', () => {
+      search('😀');
+
+      expect(getMentorCandidates).not.toHaveBeenCalled();
+    });
+
     it('does not ask upstream below two trimmed characters', () => {
       search(' p ');
 
