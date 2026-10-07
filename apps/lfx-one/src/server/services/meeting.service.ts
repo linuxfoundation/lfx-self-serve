@@ -1726,7 +1726,9 @@ export class MeetingService {
     // responses are visible.
     const registrantIds = new Set(registrants.map((r) => r.uid));
 
-    const allRsvps = await this.getMeetingRsvps(req, meetingUid);
+    // The raw page walk, strict: `getMeetingRsvps` reads a failure as no RSVPs. Its filtering to
+    // active registrants is already done here by matching the user's own (active) registrant ids.
+    const allRsvps = await this.getRawMeetingRsvps(req, meetingUid, undefined, true);
     const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id));
 
     // Delegate to the shared scope resolver so this endpoint and

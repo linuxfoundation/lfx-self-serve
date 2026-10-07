@@ -879,6 +879,29 @@ describe('MeetingDetailsStateService', () => {
       }
     });
 
+    it('stops retrying a failed fetch once the viewer saves an answer', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      try {
+        getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
+        getMyRsvp.mockReturnValue(throwError(() => ({ status: 503 })));
+        const state = create();
+        vi.advanceTimersByTime(1);
+        await load();
+        await load();
+        const callsBeforeSave = getMyRsvp.mock.calls.length;
+
+        state.setMyRsvp(MEETING_ID, undefined, rsvp('maybe'));
+        getMyRsvp.mockReturnValue(of(null));
+        vi.advanceTimersByTime(60_000);
+        await load();
+
+        expect(getMyRsvp).toHaveBeenCalledTimes(callsBeforeSave);
+        expect(state.myRsvp()).toBe('maybe');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     // E2-05's save is async: one that lands after the page moved on must not mark the new view.
     it('drops a saved answer for an occurrence or meeting the page is no longer on', async () => {
       getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));

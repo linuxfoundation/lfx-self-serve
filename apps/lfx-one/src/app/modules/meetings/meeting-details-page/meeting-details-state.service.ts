@@ -280,6 +280,9 @@ export class MeetingDetailsStateService {
     if (!key || key.meetingId !== meetingId || key.occurrenceId !== occurrenceId) {
       return;
     }
+    // A saved answer settles an earlier failed fetch: stop retrying, or the next retry could put an
+    // index-lagged answer back over it. The key's drop to `retry: 0` does not refetch.
+    this.myRsvpFailed.set(false);
     this.myRsvpUpdates$.next(rsvp);
   }
 
