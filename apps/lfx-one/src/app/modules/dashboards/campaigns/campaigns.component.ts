@@ -118,7 +118,11 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
 function withUnlinkedCta(body: string, unlinkedLabel: string): string {
   if (unlinkedLabel === '') return body;
   const fragment = `<div><strong>${escapeHtml(unlinkedLabel)}</strong></div>`;
-  return body.includes(stripResourceLoadingHtml(fragment)) ? body : `${body}${fragment}`;
+  // The rich editor re-serializes a hand-edited body with `<p>` where the server wrote `<div>`,
+  // so the folded label is looked for in both shapes.
+  const asParagraph = fragment.replace(/^<div>/, '<p>').replace(/<\/div>$/, '</p>');
+  const alreadyFolded = [fragment, asParagraph].some((candidate) => body.includes(stripResourceLoadingHtml(candidate)));
+  return alreadyFolded ? body : `${body}${fragment}`;
 }
 
 @Component({
@@ -1469,7 +1473,8 @@ export class CampaignsComponent {
    * omits AND made the BROWSER fetch it, which the server-side guard cannot prevent. Same
    * validator as the controller, so the two cannot drift.
    *
-   * NOT rendered in the preview, and that is deliberate.
+   * Rendered in the preview ONLY for https `linuxfoundation.org` hosts, through
+   * `emailHeroPreviewUrl`; every other host is named, never loaded.
    *
    * `canonicalHttpUrl` is a literal/name denylist: it does NOT resolve DNS, so a hostname that
    * resolves to a private address still passes it. campaign-service's dial-time guard covers
@@ -1477,10 +1482,10 @@ export class CampaignsComponent {
    * value into an `<img [src]>` made the operator's browser fetch an arbitrary host from inside
    * their network, and `referrerpolicy` suppressed the referrer without stopping the request.
    *
-   * The preview therefore NAMES the image rather than loading it (see `emailHeroImageHost`).
-   * This value is still what gets STAGED -- campaign-service fetches and re-hosts it behind its
-   * own guard at that point -- so it remains the right thing to send, and the wrong thing to
-   * render.
+   * The preview therefore NAMES the image rather than loading it, except for the allowlisted
+   * hosts above (see `emailHeroImageHost`). This value is still what gets STAGED --
+   * campaign-service fetches and re-hosts it behind its own guard at that point -- so it remains
+   * the right thing to send, and the wrong thing to render for any other host.
    */
   protected readonly emailHeroImageUrl = computed<string>(() => {
     if (!this.emailBodyIsStageable()) return '';
@@ -1626,7 +1631,8 @@ export class CampaignsComponent {
    * There is no re-hosted asset to show instead -- campaign-service re-hosts the bytes when the
    * draft is staged, and the brief carries only the scraped URL at preview time. So the preview
    * names the image rather than loading it: the operator still sees that a banner will be
-   * attached and where it came from, and no request leaves the browser.
+   * attached and where it came from, and no request leaves the browser. The one exception is an
+   * https `linuxfoundation.org` host, which `emailHeroPreviewUrl` renders as the real banner.
    */
   protected readonly emailHeroImageHost = computed<string>(() => {
     // `new URL('')` throws, so the try/catch covers the empty case too -- an explicit
@@ -1647,6 +1653,11 @@ export class CampaignsComponent {
    * host is `linuxfoundation.org` or a subdomain of it is rendered as the real banner. The match
    * is on the parsed hostname (a suffix test on the raw string would accept
    * `evil.com/?.linuxfoundation.org`), and any other host keeps the named-only note.
+   *
+   * Trade-off, accepted: every `*.linuxfoundation.org` subdomain is trusted, not only the event
+   * hosts, and the operator's browser sends its cookies for that site on the image request. The
+   * URL is scraped from an event page, so this relies on the Foundation's own zone serving only
+   * images at those URLs; narrow it to an exact-host set if that stops being true.
    */
   protected readonly emailHeroPreviewUrl = computed<string>(() => {
     try {

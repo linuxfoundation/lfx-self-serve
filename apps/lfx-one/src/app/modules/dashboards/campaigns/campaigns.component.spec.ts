@@ -1897,6 +1897,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     onGenerateEmailCopy(): Promise<void>;
     emailStaging: WritableSignal<'idle' | 'staging' | 'done' | 'error'>;
     emailStagingMessage: WritableSignal<string>;
+    emailStagingDraftUrl: Signal<string>;
     canStageEmail: Signal<boolean>;
     onStageEmailSend(): Promise<void>;
     // Read-only now: the form is the source of truth and these derive from it, so a test
@@ -2488,6 +2489,24 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       const bOut = internals().abTestBodyHtmlBForSend();
       expect(bOut.split('Register Now').length - 1).toBe(1);
+    });
+
+    it('does not fold the refused CTA twice after the rich editor rewrites the folded label as a paragraph', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>A body</p>',
+        cta: 'Register Now',
+        ctaUrl: 'https://evil.example/phish',
+      } as unknown as EmailBriefCopy);
+      // What the editor writes back once the operator types: `<div>` becomes `<p>`.
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p><p><strong>Register Now</strong></p>');
+      fixture.detectChanges();
+
+      expect(internals().emailCtaUnlinkedLabel()).toBe('Register Now');
+      expect(internals().abTestBodyHtmlBForSend().split('Register Now').length - 1).toBe(1);
     });
 
     it.each([
@@ -3263,6 +3282,36 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       expect(internals().emailStaging()).toBe('error');
       expect(internals().emailStagingMessage()).toContain('could not be cloned');
+    });
+
+    it.each([
+      ['an https HubSpot link', 'https://app.hubspot.com/email/123/edit/c1/settings', 'https://app.hubspot.com/email/123/edit/c1/settings'],
+      ['a non-http(s) link', 'javascript:alert(1)', ''],
+      ['no link', undefined, ''],
+    ])('links the staged draft only for a safe URL: %s', async (_label, hubspotUrl, expected) => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      internals().emailBriefId.set(audience.briefId);
+      internals().onAudienceComposed(audience);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({
+          campaigns: [],
+          errors: [],
+          platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'c1', hubspotUrl }],
+        } as unknown as CampaignJobOutcome)
+      );
+
+      await internals().onStageEmailSend();
+      fixture.detectChanges();
+
+      expect(internals().emailStaging()).toBe('done');
+      expect(internals().emailStagingDraftUrl()).toBe(expected);
+      const anchor = fixture.nativeElement.querySelector('[data-testid="campaigns-email-stage-draft-link"]') as HTMLAnchorElement | null;
+      expect(anchor?.getAttribute('href') ?? '').toBe(expected);
     });
 
     /** An ABSENT platformResults must still succeed — it is optional on the contract. */
@@ -5736,7 +5785,8 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       expect(previewFor('https://events.linuxfoundation.org/hero.png')).toBe('https://events.linuxfoundation.org/hero.png');
       expect(previewFor('https://linuxfoundation.org/hero.png')).toBe('https://linuxfoundation.org/hero.png');
-      // Parsed-hostname match, not a string suffix: the lookalikes below all END in the trusted name.
+      // Parsed-hostname match, not a string suffix: the first three below look like the trusted
+      // name but are not it; then a non-https scheme, and an unrelated host as the control.
       expect(previewFor('https://evil.com/?.linuxfoundation.org')).toBe('');
       expect(previewFor('https://notlinuxfoundation.org/hero.png')).toBe('');
       expect(previewFor('https://linuxfoundation.org.evil.com/hero.png')).toBe('');
