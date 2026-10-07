@@ -9,6 +9,7 @@
       [text]="true"
       size="small"
       styleClass="!text-red-600 !px-0"
+      [disabled]="locked()"
       (onClick)="onDelete()"
       [attr.data-testid]="'mentorship-enroll-custom-prereq-delete-' + index()" />
   </div>

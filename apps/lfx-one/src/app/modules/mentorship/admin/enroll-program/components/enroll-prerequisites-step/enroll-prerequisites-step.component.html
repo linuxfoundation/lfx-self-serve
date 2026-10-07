@@ -52,7 +52,8 @@
               <td class="px-4 py-4">
                 <button
                   type="button"
-                  class="text-xl text-gray-500 hover:text-blue-600"
+                  class="text-xl text-gray-500 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  [disabled]="locked()"
                   [attr.aria-pressed]="item.required"
                   [attr.aria-label]="'Toggle required for ' + item.name"
                   (click)="toggleRequired(item.id)">
@@ -71,6 +72,7 @@
       [item]="item"
       [index]="index + 1"
       [showErrors]="showCustomErrors()"
+      [locked]="locked()"
       (itemChange)="updateCustomPrerequisite($event)"
       (deleted)="deleteCustomPrerequisite(item.id)" />
   }
@@ -81,6 +83,7 @@
       icon="fa-light fa-plus"
       severity="primary"
       size="small"
+      [disabled]="locked()"
       (onClick)="addCustomPrerequisite()"
       data-testid="mentorship-enroll-add-prereq" />
     <p class="text-xs text-gray-500">Add materials unique to your program.</p>

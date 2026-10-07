@@ -9,6 +9,7 @@ import { FilterService } from 'primeng/api';
 import {
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_ENROLL_LOGO_MAX_BYTES,
   MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE,
   MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE,
   MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS,
@@ -354,5 +355,80 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
     await fixture.whenStable();
 
     expect(fixture.componentInstance.project()).toBeNull();
+  });
+});
+
+describe('EnrollDetailsStepComponent — logo file', () => {
+  let fixture: ComponentFixture<EnrollDetailsStepComponent>;
+  let form: FormGroup;
+
+  const pickLogo = (file: File | null): void => {
+    const input = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    Object.defineProperty(input, 'files', { value: file ? [file] : [], configurable: true });
+    input!.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+  };
+
+  beforeEach(async () => {
+    TestBed.overrideComponent(EnrollDetailsStepComponent, { set: { imports: [ReactiveFormsModule, StubSelectComponent], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
+
+    await TestBed.configureTestingModule({
+      imports: [EnrollDetailsStepComponent],
+      providers: [
+        { provide: MentorshipAdminService, useValue: { getPrograms: () => of({ data: [] }) } },
+        {
+          provide: MentorshipService,
+          useValue: {
+            getLfProjects: () => of({ data: [] }),
+            getCiiBadge: () => of(null),
+            isProgramNameAvailable: () => of({ available: true }),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const defaults = createEmptyMentorshipEnrollForm() as unknown as Record<string, unknown>;
+    form = new FormGroup(Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, new FormControl(value)])));
+
+    URL.createObjectURL = vi.fn(() => 'blob:http://localhost/preview');
+    URL.revokeObjectURL = vi.fn();
+
+    fixture = TestBed.createComponent(EnrollDetailsStepComponent);
+    fixture.componentRef.setInput('form', form);
+    fixture.detectChanges();
+  });
+
+  it('exposes a valid picked file through the logoFile model', () => {
+    const file = new File(['png'], 'logo.png', { type: 'image/png' });
+
+    pickLogo(file);
+
+    expect(fixture.componentInstance.logoFile()).toBe(file);
+    expect(form.controls['logoFileName'].value).toBe('logo.png');
+  });
+
+  it('refuses a file of the wrong type and keeps the model empty', () => {
+    pickLogo(new File(['gif'], 'logo.gif', { type: 'image/gif' }));
+
+    expect(fixture.componentInstance.logoFile()).toBeNull();
+    expect(form.controls['logoFileName'].value).toBe('');
+  });
+
+  it('refuses a file over the size cap', () => {
+    const big = new File(['x'], 'logo.png', { type: 'image/png' });
+    Object.defineProperty(big, 'size', { value: MENTORSHIP_ENROLL_LOGO_MAX_BYTES + 1 });
+
+    pickLogo(big);
+
+    expect(fixture.componentInstance.logoFile()).toBeNull();
+  });
+
+  it('clears the model when the picker is emptied', () => {
+    pickLogo(new File(['png'], 'logo.png', { type: 'image/png' }));
+
+    pickLogo(null);
+
+    expect(fixture.componentInstance.logoFile()).toBeNull();
   });
 });

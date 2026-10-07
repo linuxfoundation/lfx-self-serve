@@ -3,20 +3,35 @@
 
 import { Component, input, model, output } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideHttpClient } from '@angular/common/http';
-import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
-import { createEmptyMentorshipEnrollForm, MENTORSHIP_COMING_SOON_DETAIL } from '@lfx-one/shared/constants';
+import {
+  createEmptyMentorshipEnrollForm,
+  MENTORSHIP_ENROLL_FORM_INCOMPLETE,
+  MENTORSHIP_ENROLL_LEAVE_LOGO_MISSING_CONFIRM,
+  MENTORSHIP_ENROLL_LOGO_NOT_UPLOADED,
+  MENTORSHIP_ENROLL_LOGO_TOO_LARGE,
+  MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
+  MENTORSHIP_ENROLL_NAME_TAKEN,
+  MENTORSHIP_ENROLL_SUBMIT_FAILED,
+  MENTORSHIP_ENROLL_SUBMIT_SUCCESS,
+  MENTORSHIP_ENROLL_UPLOADS_UNAVAILABLE,
+  MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
+} from '@lfx-one/shared/constants';
 import {
   MentorshipCiiLookupStatus,
   MentorshipEnrollFieldErrors,
+  MentorshipEnrollProgramRef,
   MentorshipEnrollStep,
   MentorshipLfProject,
   MentorshipNameLookupStatus,
 } from '@lfx-one/shared/interfaces';
+import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
+import { NEVER, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EnrollDetailsStepComponent } from './components/enroll-details-step/enroll-details-step.component';
@@ -40,6 +55,7 @@ class StubDetailsStepComponent {
   public readonly form = input.required<FormGroup>();
   public readonly errors = input<MentorshipEnrollFieldErrors>({});
   public readonly project = model<MentorshipLfProject | null>(null);
+  public readonly logoFile = model<File | null>(null);
   public readonly ciiLookupStatusChange = output<MentorshipCiiLookupStatus>();
   public readonly nameLookupStatusChange = output<MentorshipNameLookupStatus>();
 }
@@ -54,15 +70,26 @@ class StubSetupStepComponent {
 class StubPrerequisitesStepComponent {
   public readonly form = input.required<FormGroup>();
   public readonly errors = input<MentorshipEnrollFieldErrors>({});
+  public readonly locked = input(false);
 }
+
+const PROJECT = { id: 'proj-gridflow', name: 'GridFlow', slug: 'gridflow' } as unknown as MentorshipLfProject;
+const PROGRAM: MentorshipEnrollProgramRef = { id: 'prog-1', slug: 'gridflow-mentorship', status: 'pending' };
+const LOGO = new File(['png'], 'logo.png', { type: 'image/png' });
+
+const httpError = (status: number, body: unknown = null): HttpErrorResponse => new HttpErrorResponse({ status, error: body });
 
 describe('EnrollProgramComponent', () => {
   let fixture: ComponentFixture<EnrollProgramComponent>;
   let component: EnrollProgramComponent;
   let toast: ReturnType<typeof vi.fn>;
   let router: Router;
+  let confirm: ReturnType<typeof vi.fn>;
+  let createProgram: ReturnType<typeof vi.fn>;
+  let uploadProgramLogo: ReturnType<typeof vi.fn>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
+  const byTestId = (id: string): HTMLElement | null => element().querySelector<HTMLElement>(`[data-testid="${id}"]`);
 
   /** Fills every required field so a spec can isolate a single concern. */
   const fillValidForm = (): void => {
@@ -80,6 +107,8 @@ describe('EnrollProgramComponent', () => {
       prerequisites,
       termsAccepted: true,
     });
+    component['selectedProject'].set(PROJECT);
+    component['logoFile'].set(LOGO);
     fixture.detectChanges();
   };
 
@@ -91,15 +120,18 @@ describe('EnrollProgramComponent', () => {
     fixture.detectChanges();
   };
 
-  /** Queries the real submit button rendered by `ButtonComponent`. */
-  const submitButton = (): HTMLButtonElement => {
+  /** Clicks the real submit button rendered by `ButtonComponent`. */
+  const clickSubmit = (): void => {
     const btn = element().querySelector<HTMLButtonElement>('[data-testid="mentorship-enroll-next"] button');
     expect(btn).not.toBeNull();
-    return btn!;
+    btn!.click();
+    fixture.detectChanges();
   };
 
   beforeEach(async () => {
     toast = vi.fn();
+    createProgram = vi.fn(() => of(PROGRAM));
+    uploadProgramLogo = vi.fn(() => of({ logoUrl: 'https://cdn.example/logo.png' }));
 
     TestBed.configureTestingModule({
       imports: [EnrollProgramComponent],
@@ -109,6 +141,7 @@ describe('EnrollProgramComponent', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: MessageService, useValue: { add: toast } },
+        { provide: MentorshipAdminService, useValue: { createProgram, uploadProgramLogo } },
       ],
     });
 
@@ -128,59 +161,274 @@ describe('EnrollProgramComponent', () => {
     vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
     const confirmationService = fixture.debugElement.injector.get(ConfirmationService);
-    confirmationService.confirm = vi.fn((options: Confirmation) => {
+    confirm = vi.fn((options: Confirmation) => {
       options.accept?.();
       return confirmationService;
     });
+    confirmationService.confirm = confirm;
 
     fixture.detectChanges();
   });
 
   it('renders the enrollment wizard shell', () => {
-    expect(element().querySelector('[data-testid="mentorship-enroll"]')).not.toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-enroll-title"]')?.textContent).toContain('Enroll a Program');
+    expect(byTestId('mentorship-enroll')).not.toBeNull();
+    expect(byTestId('mentorship-enroll-title')?.textContent).toContain('Enroll a Program');
   });
 
-  it('shows a coming-soon toast when the submit button is clicked', () => {
-    setPrerequisitesStep();
+  describe('submit', () => {
+    it('creates the program, uploads the logo, toasts and navigates to the admin page', () => {
+      setPrerequisitesStep();
 
-    submitButton().click();
+      clickSubmit();
 
-    expect(toast).toHaveBeenCalledTimes(1);
-    expect(toast.mock.calls[0][0]).toMatchObject({
-      severity: 'info',
-      summary: 'Submit enrollment',
-      detail: MENTORSHIP_COMING_SOON_DETAIL,
+      expect(createProgram).toHaveBeenCalledTimes(1);
+      expect(createProgram.mock.calls[0][0]).toMatchObject({ name: 'GridFlow Mentorship Program', industry: 'GO', termsAccepted: true });
+      expect(uploadProgramLogo).toHaveBeenCalledWith(PROGRAM.id, LOGO);
+      expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: MENTORSHIP_ENROLL_SUBMIT_SUCCESS }));
+      expect(router.navigate).toHaveBeenCalledWith(['/mentorship/admin']);
+    });
+
+    it('shows a busy button and ignores a second click while the create is in flight', () => {
+      createProgram.mockReturnValue(NEVER);
+      setPrerequisitesStep();
+
+      clickSubmit();
+      clickSubmit();
+
+      expect(createProgram).toHaveBeenCalledTimes(1);
+      expect(component['submitting']()).toBe(true);
+      expect(element().querySelector('[data-testid="mentorship-enroll-next"] button')?.hasAttribute('disabled')).toBe(true);
+    });
+
+    it('sends the admin back to the details step when the logo or project is missing', () => {
+      setPrerequisitesStep();
+      component['logoFile'].set(null);
+
+      clickSubmit();
+
+      expect(createProgram).not.toHaveBeenCalled();
+      expect(component['step']()).toBe('details');
+      expect(element().textContent).toContain(MENTORSHIP_ENROLL_FORM_INCOMPLETE);
     });
   });
 
-  it('does not navigate away after submission, so the user keeps their work', () => {
-    setPrerequisitesStep();
+  describe('create failures', () => {
+    it('maps a 409 to the name field on the details step', () => {
+      createProgram.mockReturnValue(throwError(() => httpError(409)));
+      setPrerequisitesStep();
 
-    submitButton().click();
+      clickSubmit();
 
-    expect(toast).toHaveBeenCalledTimes(1);
-    expect(router.navigate).not.toHaveBeenCalled();
+      expect(component['step']()).toBe('details');
+      expect(component['nameLookupStatus']()).toBe('taken');
+      expect(component['stepErrors']().name).toBe(MENTORSHIP_ENROLL_NAME_TAKEN);
+      expect(byTestId('mentorship-enroll-submit-error')).toBeNull();
+      expect(uploadProgramLogo).not.toHaveBeenCalled();
+    });
+
+    it('blocks Next on the details step until the name changes after a 409', () => {
+      createProgram.mockReturnValue(throwError(() => httpError(409)));
+      setPrerequisitesStep();
+      clickSubmit();
+      component['nameLookupStatus'].set('available');
+
+      component['onNext']();
+      expect(component['step']()).toBe('details');
+
+      component['form'].controls.name.setValue('GridFlow Mentorship Program 2');
+      expect(component['nameTakenOnCreate']()).toBe(false);
+    });
+
+    it.each([400, 0, 500, 502])('shows the generic banner for a %i and never the upstream text', (status) => {
+      createProgram.mockReturnValue(throwError(() => httpError(status, { message: 'upstream detail' })));
+      setPrerequisitesStep();
+
+      clickSubmit();
+
+      const banner = byTestId('mentorship-enroll-submit-error');
+      expect(banner?.textContent).toContain(MENTORSHIP_ENROLL_SUBMIT_FAILED);
+      expect(banner?.textContent).not.toContain('upstream detail');
+      expect(byTestId('mentorship-enroll-partial-save')).toBeNull();
+      expect(router.navigate).not.toHaveBeenCalled();
+    });
+
+    it('shows the generic banner for a plain 403', () => {
+      createProgram.mockReturnValue(throwError(() => httpError(403, { message: 'forbidden detail' })));
+      setPrerequisitesStep();
+
+      clickSubmit();
+
+      expect(byTestId('mentorship-enroll-submit-error')?.textContent).toContain(MENTORSHIP_ENROLL_SUBMIT_FAILED);
+    });
+
+    it('keeps the form editable so the admin can resubmit after a create failure', () => {
+      createProgram.mockReturnValueOnce(throwError(() => httpError(500)));
+      setPrerequisitesStep();
+
+      clickSubmit();
+      expect(component['form'].enabled).toBe(true);
+
+      clickSubmit();
+      expect(createProgram).toHaveBeenCalledTimes(2);
+      expect(router.navigate).toHaveBeenCalledWith(['/mentorship/admin']);
+    });
+
+    it('shows the server-authored message for an impersonation read-only 403', () => {
+      createProgram.mockReturnValue(
+        throwError(() => httpError(403, { code: MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE, message: 'Read-only while impersonating.' }))
+      );
+      setPrerequisitesStep();
+
+      clickSubmit();
+
+      expect(byTestId('mentorship-enroll-submit-error')?.textContent).toContain('Read-only while impersonating.');
+    });
   });
 
-  it('does not issue any HTTP request on submission', () => {
-    setPrerequisitesStep();
-    const httpTesting = TestBed.inject(HttpTestingController);
+  describe('logo failures (partial save)', () => {
+    it('keeps the wizard on the last step with the partial-save banner after a logo failure', () => {
+      uploadProgramLogo.mockReturnValue(throwError(() => httpError(502)));
+      setPrerequisitesStep();
 
-    submitButton().click();
+      clickSubmit();
 
-    expect(toast).toHaveBeenCalledTimes(1);
-    httpTesting.verify();
+      expect(byTestId('mentorship-enroll-partial-save')?.textContent).toContain(MENTORSHIP_ENROLL_LOGO_NOT_UPLOADED);
+      expect(component['step']()).toBe('prerequisites');
+      expect(router.navigate).not.toHaveBeenCalled();
+      expect(component['form'].disabled).toBe(true);
+    });
+
+    it('disables Back once the program is saved', () => {
+      uploadProgramLogo.mockReturnValue(throwError(() => httpError(502)));
+      setPrerequisitesStep();
+
+      clickSubmit();
+
+      expect(element().querySelector('[data-testid="mentorship-enroll-back"] button')?.hasAttribute('disabled')).toBe(true);
+    });
+
+    it.each([
+      [413, MENTORSHIP_ENROLL_LOGO_TOO_LARGE],
+      [415, MENTORSHIP_ENROLL_LOGO_TYPE_ERROR],
+      [400, MENTORSHIP_ENROLL_LOGO_TYPE_ERROR],
+      [503, MENTORSHIP_ENROLL_UPLOADS_UNAVAILABLE],
+    ])('maps a logo %i to a field error beside the banner', (status, message) => {
+      uploadProgramLogo.mockReturnValue(throwError(() => httpError(status)));
+      setPrerequisitesStep();
+
+      clickSubmit();
+
+      expect(byTestId('mentorship-enroll-partial-save')).not.toBeNull();
+      expect(byTestId('mentorship-enroll-partial-save-logo-error')?.textContent).toContain(message);
+    });
+
+    it('shows only the banner for any other logo status', () => {
+      uploadProgramLogo.mockReturnValue(throwError(() => httpError(403)));
+      setPrerequisitesStep();
+
+      clickSubmit();
+
+      expect(byTestId('mentorship-enroll-partial-save')).not.toBeNull();
+      expect(byTestId('mentorship-enroll-partial-save-logo-error')).toBeNull();
+    });
+
+    it('retries without creating the program a second time', () => {
+      uploadProgramLogo.mockReturnValueOnce(throwError(() => httpError(502)));
+      setPrerequisitesStep();
+      clickSubmit();
+
+      byTestId('mentorship-enroll-partial-save-retry')?.querySelector('button')?.click();
+      fixture.detectChanges();
+
+      expect(createProgram).toHaveBeenCalledTimes(1);
+      expect(uploadProgramLogo).toHaveBeenCalledTimes(2);
+      expect(router.navigate).toHaveBeenCalledWith(['/mentorship/admin']);
+    });
+
+    it('uploads a replacement logo picked in the banner on the next retry', () => {
+      uploadProgramLogo.mockReturnValueOnce(throwError(() => httpError(415)));
+      setPrerequisitesStep();
+      clickSubmit();
+
+      const replacement = new File(['jpg'], 'replacement.jpg', { type: 'image/jpeg' });
+      const input = byTestId('mentorship-enroll-partial-save-logo-input') as HTMLInputElement;
+      Object.defineProperty(input, 'files', { value: [replacement], configurable: true });
+      input.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      byTestId('mentorship-enroll-partial-save-retry')?.querySelector('button')?.click();
+      fixture.detectChanges();
+
+      expect(uploadProgramLogo).toHaveBeenLastCalledWith(PROGRAM.id, replacement);
+    });
+
+    it('rejects a replacement logo of the wrong type without replacing the file', () => {
+      uploadProgramLogo.mockReturnValue(throwError(() => httpError(502)));
+      setPrerequisitesStep();
+      clickSubmit();
+
+      const bad = new File(['gif'], 'logo.gif', { type: 'image/gif' });
+      const input = byTestId('mentorship-enroll-partial-save-logo-input') as HTMLInputElement;
+      Object.defineProperty(input, 'files', { value: [bad], configurable: true });
+      input.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      expect(byTestId('mentorship-enroll-partial-save-logo-error')?.textContent).toContain(MENTORSHIP_ENROLL_LOGO_TYPE_ERROR);
+      expect(component['logoFile']()).toBe(LOGO);
+    });
   });
 
-  it('preserves form values and logo preview after the coming-soon toast', () => {
-    setPrerequisitesStep();
-    component['form'].controls.logoPreviewUrl.setValue('blob:http://localhost/fake-preview');
+  describe('canLeave', () => {
+    it('lets an untouched wizard leave without asking', async () => {
+      expect(await component.canLeave()).toBe(true);
+      expect(confirm).not.toHaveBeenCalled();
+    });
 
-    submitButton().click();
+    it('asks before leaving with unsaved answers', async () => {
+      component['form'].controls.name.setValue('Half typed');
 
-    expect(toast).toHaveBeenCalledTimes(1);
-    expect(component['form'].controls.name.value).toBe('GridFlow Mentorship Program');
-    expect(component['form'].controls.logoPreviewUrl.value).toBe('blob:http://localhost/fake-preview');
+      expect(await component.canLeave()).toBe(true);
+      expect(confirm).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays when the admin rejects the cancel prompt', async () => {
+      confirm.mockImplementation((options: Confirmation) => {
+        options.reject?.();
+        return undefined;
+      });
+      component['form'].controls.name.setValue('Half typed');
+
+      expect(await component.canLeave()).toBe(false);
+    });
+
+    it('asks with the "Logo missing" prompt after a partial save', async () => {
+      uploadProgramLogo.mockReturnValue(throwError(() => httpError(502)));
+      setPrerequisitesStep();
+      clickSubmit();
+
+      expect(await component.canLeave()).toBe(true);
+
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({ header: 'Logo missing', message: MENTORSHIP_ENROLL_LEAVE_LOGO_MISSING_CONFIRM, acceptLabel: 'Leave', rejectLabel: 'Stay' })
+      );
+    });
+
+    it('does not ask after a complete submit', async () => {
+      setPrerequisitesStep();
+      clickSubmit();
+      confirm.mockClear();
+
+      expect(await component.canLeave()).toBe(true);
+      expect(confirm).not.toHaveBeenCalled();
+    });
+
+    it('cancel and My Programs only navigate; the route guard does the asking', () => {
+      component['form'].controls.name.setValue('Half typed');
+
+      component['onCancel']();
+
+      expect(router.navigate).toHaveBeenCalledWith(['/mentorship/admin']);
+      expect(confirm).not.toHaveBeenCalled();
+    });
   });
 });

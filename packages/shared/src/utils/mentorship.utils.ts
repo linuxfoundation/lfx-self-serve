@@ -9,6 +9,9 @@ import {
   MENTORSHIP_CUSTOM_PREREQ_NAME_MAX,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
   MENTORSHIP_ENROLL_LOGO_EXTENSIONS,
+  MENTORSHIP_ENROLL_LOGO_MAX_BYTES,
+  MENTORSHIP_ENROLL_LOGO_TOO_LARGE,
+  MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
   MENTORSHIP_ENROLL_NAME_MAX,
   MENTORSHIP_ENROLL_NAME_MIN,
   MENTORSHIP_INVALID_URL,
@@ -67,9 +70,11 @@ import type {
   MentorshipApplicantTaskRow,
   MentorshipApplicantTaskStatus,
   MentorshipApplicationProgress,
+  MentorshipEnrollCreateRequest,
   MentorshipEnrollFieldErrors,
   MentorshipEnrollStep,
   MentorshipEnrollValidationInput,
+  MentorshipLfProject,
   MentorshipNoteDisplay,
   MentorshipProgramMentee,
   MentorshipProgramTerm,
@@ -202,11 +207,65 @@ export function isMentorshipLogoFileName(fileName: string): boolean {
   return (MENTORSHIP_ENROLL_LOGO_EXTENSIONS as readonly string[]).includes(ext);
 }
 
+/** The message for a logo the wizard, the partial-save banner or the program card refuses to send, or `''` when the file is fine. */
+export function getMentorshipEnrollLogoError(file: { name: string; size: number }): string {
+  if (!isMentorshipLogoFileName(file.name)) return MENTORSHIP_ENROLL_LOGO_TYPE_ERROR;
+  if (file.size > MENTORSHIP_ENROLL_LOGO_MAX_BYTES) return MENTORSHIP_ENROLL_LOGO_TOO_LARGE;
+  return '';
+}
+
 export function lastDayOfMentorshipMonth(isoMonthStart: string): string {
   const parsed = parseMentorshipMonthYear(isoMonthStart);
   if (!parsed) return isoMonthStart;
   const last = new Date(Number(parsed.year), Number(parsed.month), 0);
   return toMentorshipDateOnly(last);
+}
+
+/**
+ * The wizard form as the upstream create body. Technologies go to `industry` as one `', '`-joined string and never
+ * into `skills`; terms and prerequisites carry no id (upstream generates its own). The caller sends this only once the
+ * form says the terms are accepted, so `termsAccepted` is always `true`.
+ */
+export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidationInput, project: MentorshipLfProject): MentorshipEnrollCreateRequest {
+  const request: MentorshipEnrollCreateRequest = {
+    projectId: project.id,
+    projectSlug: project.slug,
+    projectName: project.name,
+    name: form.name.trim(),
+    description: form.description,
+    repositoryUrl: form.repositoryUrl.trim(),
+    skills: uniqueMentorshipList(form.skills),
+    terms: form.terms.map((term) => ({
+      name: term.name.trim(),
+      startDate: term.startDate,
+      endDate: lastDayOfMentorshipMonth(term.endDate),
+      applicationStartDate: term.applicationStartDate,
+      applicationEndDate: term.applicationEndDate,
+    })),
+    prerequisites: form.prerequisites.map((item) => {
+      const description = item.description.trim();
+      const challengeUrl = item.challengeUrl?.trim();
+      return {
+        name: item.name.trim(),
+        description: challengeUrl ? `${description}\n\nChallenge: ${challengeUrl}` : description,
+        required: item.required,
+        requireFile: item.requireFile === true,
+        dueDate: item.dueDate || null,
+      };
+    }),
+    termsAccepted: true,
+  };
+
+  if (project.logoUrl) request.projectLogoUrl = project.logoUrl;
+  const websiteUrl = form.websiteUrl.trim();
+  if (websiteUrl) request.websiteUrl = websiteUrl;
+  const codeOfConductUrl = form.codeOfConductUrl.trim();
+  if (codeOfConductUrl) request.codeOfConductUrl = codeOfConductUrl;
+  const ciiProjectId = form.ciiProjectId.trim();
+  if (ciiProjectId) request.ciiProjectId = ciiProjectId;
+  const industry = uniqueMentorshipList(form.technologies).join(', ');
+  if (industry) request.industry = industry;
+  return request;
 }
 
 /**
@@ -226,6 +285,17 @@ export function isMentorshipRichTextOverRawMax(html: string): boolean {
 
 function cleanMentorshipSkillList(skills: readonly string[] | null | undefined): string[] {
   return (skills ?? []).map((skill) => skill.trim()).filter((skill) => skill !== '');
+}
+
+/** Trims each item and drops blanks and case-insensitive repeats, keeping the first spelling and the order. */
+function uniqueMentorshipList(items: readonly string[] | null | undefined): string[] {
+  const seen = new Set<string>();
+  return cleanMentorshipSkillList(items).filter((item) => {
+    const key = item.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function isSameMentorshipList(a: readonly string[], b: readonly string[]): boolean {

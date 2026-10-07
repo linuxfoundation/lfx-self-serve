@@ -1,11 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
+import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   createEmptyMentorshipEnrollForm,
@@ -14,29 +16,39 @@ import {
   MENTORSHIP_CII_UNAVAILABLE,
   MENTORSHIP_ENROLL_CANCEL_CONFIRM,
   MENTORSHIP_ENROLL_FORM_INCOMPLETE,
+  MENTORSHIP_ENROLL_LEAVE_LOGO_MISSING_CONFIRM,
+  MENTORSHIP_ENROLL_LOGO_ACCEPT,
+  MENTORSHIP_ENROLL_LOGO_FAILURE_FIELD_ERRORS,
+  MENTORSHIP_ENROLL_LOGO_NOT_UPLOADED,
   MENTORSHIP_ENROLL_NAME_CHECKING,
   MENTORSHIP_ENROLL_NAME_MAX,
   MENTORSHIP_ENROLL_NAME_MIN,
   MENTORSHIP_ENROLL_NAME_TAKEN,
   MENTORSHIP_ENROLL_NAME_UNAVAILABLE,
+  MENTORSHIP_ENROLL_RETRY_LABEL,
   MENTORSHIP_ENROLL_STEP_LABELS,
   MENTORSHIP_ENROLL_STEPS_ORDER,
+  MENTORSHIP_ENROLL_SUBMIT_FAILED,
+  MENTORSHIP_ENROLL_SUBMIT_SUCCESS,
+  MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiLookupStatus,
   MentorshipEnrollForm,
+  MentorshipEnrollProgramRef,
   MentorshipEnrollStep,
+  MentorshipEnrollSubmitFailure,
+  MentorshipEnrollSubmitPhase,
   MentorshipLfProject,
   MentorshipNameLookupStatus,
   MentorshipPrerequisite,
   MentorshipProgramTerm,
 } from '@lfx-one/shared/interfaces';
-import { getMentorshipEnrollStepErrors, isMentorshipTermsAccepted } from '@lfx-one/shared/utils';
+import { getMentorshipEnrollLogoError, getMentorshipEnrollStepErrors, isMentorshipTermsAccepted, toMentorshipEnrollCreateRequest } from '@lfx-one/shared/utils';
+import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { map, startWith, tap } from 'rxjs';
-
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+import { concatMap, defer, map, of, startWith, tap } from 'rxjs';
 
 import { EnrollDetailsStepComponent } from './components/enroll-details-step/enroll-details-step.component';
 import { EnrollPrerequisitesStepComponent } from './components/enroll-prerequisites-step/enroll-prerequisites-step.component';
@@ -67,7 +79,8 @@ export class EnrollProgramComponent {
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly comingSoon = inject(MentorshipComingSoonService);
+  private readonly mentorshipAdminService = inject(MentorshipAdminService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly form = new FormGroup({
     importProgramId: new FormControl('', { nonNullable: true }),
@@ -90,9 +103,27 @@ export class EnrollProgramComponent {
     termsAccepted: new FormControl(false, { nonNullable: true }),
   });
 
+  /** What an untouched form reads as; Cancel only asks when the answers differ from it. */
+  private readonly initialValue = JSON.stringify(this.form.getRawValue());
+
   protected readonly step = signal<MentorshipEnrollStep>('details');
   protected readonly showErrors = signal(false);
+  protected readonly formIncompleteShown = signal(false);
+  // The details step is destroyed when the admin moves on, so the wizard keeps the picked project and logo.
   protected readonly selectedProject = signal<MentorshipLfProject | null>(null);
+  protected readonly logoFile = signal<File | null>(null);
+  protected readonly logoFieldError = signal('');
+  protected readonly nameTakenOnCreate = signal(false);
+  protected readonly submitPhase = signal<MentorshipEnrollSubmitPhase>('idle');
+  protected readonly createdProgram = signal<MentorshipEnrollProgramRef | null>(null);
+  protected readonly logoUploaded = signal(false);
+  protected readonly submitFailure = signal<MentorshipEnrollSubmitFailure | null>(null);
+  protected readonly submitting = computed(() => this.submitPhase() === 'creating' || this.submitPhase() === 'uploading-logo');
+  /** The program exists but its logo is not up: the banner offers Retry and a replacement logo. */
+  protected readonly partialSave = computed(() => this.createdProgram() !== null && this.submitPhase() !== 'done');
+  protected readonly logoAccept = MENTORSHIP_ENROLL_LOGO_ACCEPT;
+  protected readonly retryLabel = MENTORSHIP_ENROLL_RETRY_LABEL;
+  protected readonly logoNotUploaded = MENTORSHIP_ENROLL_LOGO_NOT_UPLOADED;
   protected readonly ciiLookupStatus = signal<MentorshipCiiLookupStatus>('idle');
   protected readonly nameLookupStatus = signal<MentorshipNameLookupStatus>('idle');
   protected readonly formIncomplete = MENTORSHIP_ENROLL_FORM_INCOMPLETE;
@@ -114,7 +145,9 @@ export class EnrollProgramComponent {
   protected readonly stepErrors = computed(() => {
     if (!this.showErrors()) return {};
     this.formSnapshot();
-    return getMentorshipEnrollStepErrors(this.step(), this.toEnrollForm(this.form.getRawValue()));
+    const errors = getMentorshipEnrollStepErrors(this.step(), this.toEnrollForm(this.form.getRawValue()));
+    if (this.step() === 'details' && this.nameTakenOnCreate()) return { ...errors, name: MENTORSHIP_ENROLL_NAME_TAKEN };
+    return errors;
   });
 
   protected readonly hasStepErrors = computed(() => Object.keys(this.stepErrors()).length > 0);
@@ -133,7 +166,23 @@ export class EnrollProgramComponent {
     return 'Submit';
   });
 
+  public constructor() {
+    this.form.controls.name.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.nameTakenOnCreate.set(false));
+    this.destroyRef.onDestroy(() => this.revokeLogoPreview());
+  }
+
+  /** Route guard hook: asks before the admin leaves with unsaved answers, or after a save that is missing its logo. */
+  public canLeave(): boolean | Promise<boolean> {
+    if (this.submitPhase() === 'done') return true;
+    if (this.createdProgram() && !this.logoUploaded()) {
+      return this.askToLeave('Logo missing', MENTORSHIP_ENROLL_LEAVE_LOGO_MISSING_CONFIRM, 'Leave');
+    }
+    if (!this.hasUnsavedAnswers()) return true;
+    return this.askToLeave('Cancel enrollment', MENTORSHIP_ENROLL_CANCEL_CONFIRM, 'Yes, cancel');
+  }
+
   protected onBack(): void {
+    this.formIncompleteShown.set(false);
     const current = this.step();
     if (current === 'details') {
       this.onCancel();
@@ -146,6 +195,7 @@ export class EnrollProgramComponent {
   }
 
   protected onNext(): void {
+    this.formIncompleteShown.set(false);
     const current = this.step();
     const errors = getMentorshipEnrollStepErrors(current, this.toEnrollForm(this.form.getRawValue()));
     const firstError = Object.values(errors)[0];
@@ -156,7 +206,8 @@ export class EnrollProgramComponent {
     }
 
     const programName = this.form.controls.name.value.trim();
-    if (current === 'details' && programName.length >= MENTORSHIP_ENROLL_NAME_MIN && this.nameLookupStatus() !== 'available') {
+    const nameUnavailable = this.nameLookupStatus() !== 'available' || this.nameTakenOnCreate();
+    if (current === 'details' && programName.length >= MENTORSHIP_ENROLL_NAME_MIN && nameUnavailable) {
       this.showErrors.set(true);
       this.messageService.add({ severity: 'warn', summary: 'Check this step', detail: this.nameLookupMessage(this.nameLookupStatus()), life: 4000 });
       return;
@@ -195,28 +246,126 @@ export class EnrollProgramComponent {
     this.nameLookupStatus.set(status);
   }
 
+  /** Navigates away and lets the route guard ask; Cancel and the "My Programs" link share this. */
   protected onCancel(): void {
-    this.confirmationService.confirm({
-      header: 'Cancel enrollment',
-      message: MENTORSHIP_ENROLL_CANCEL_CONFIRM,
-      icon: 'fa-light fa-triangle-exclamation',
-      acceptLabel: 'Yes, cancel',
-      rejectLabel: 'Stay',
-      acceptButtonStyleClass: 'p-button-sm p-button-danger',
-      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
-      accept: () => {
-        this.revokeLogoPreview();
-        void this.router.navigate(['/mentorship/admin']);
-      },
+    void this.router.navigate(['/mentorship/admin']);
+  }
+
+  /** Picks a replacement logo from the partial-save banner; the next Retry uploads it. */
+  protected onReplaceLogo(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    const fileError = getMentorshipEnrollLogoError(file);
+    if (fileError) {
+      this.logoFieldError.set(fileError);
+      input.value = '';
+      return;
+    }
+    this.logoFieldError.set('');
+    this.logoFile.set(file);
+    this.logoUploaded.set(false);
+  }
+
+  /** Create, then upload the logo. A retry skips whichever step already succeeded. */
+  protected submitEnrollment(): void {
+    if (this.submitting()) return;
+    const project = this.selectedProject();
+    if (!this.logoFile() || !project) {
+      this.formIncompleteShown.set(true);
+      this.showErrors.set(true);
+      this.step.set('details');
+      this.scrollToTop();
+      return;
+    }
+
+    this.submitFailure.set(null);
+    this.logoFieldError.set('');
+    defer(() => {
+      const existing = this.createdProgram();
+      if (existing) return of(existing);
+      this.submitPhase.set('creating');
+      return this.mentorshipAdminService.createProgram(toMentorshipEnrollCreateRequest(this.form.getRawValue(), project)).pipe(
+        tap((program) => {
+          this.createdProgram.set(program);
+          // What was saved must stay what is shown.
+          this.form.disable({ emitEvent: false });
+        })
+      );
+    })
+      .pipe(
+        concatMap((program) =>
+          defer(() => {
+            const logo = this.logoFile();
+            if (this.logoUploaded() || !logo) return of(program);
+            this.submitPhase.set('uploading-logo');
+            return this.mentorshipAdminService.uploadProgramLogo(program.id, logo).pipe(tap(() => this.logoUploaded.set(true)));
+          })
+        )
+      )
+      .subscribe({
+        next: () => this.finishSubmit(),
+        error: (error: unknown) => this.failSubmit(error),
+      });
+  }
+
+  private finishSubmit(): void {
+    this.submitPhase.set('done');
+    this.messageService.add({ severity: 'success', summary: 'Success', detail: MENTORSHIP_ENROLL_SUBMIT_SUCCESS, life: 4000 });
+    void this.router.navigate(['/mentorship/admin']);
+  }
+
+  private failSubmit(error: unknown): void {
+    this.submitPhase.set('failed');
+    if (this.createdProgram()) {
+      this.failLogoUpload(this.statusOf(error));
+      return;
+    }
+    this.failCreate(error);
+  }
+
+  private failCreate(error: unknown): void {
+    const status = this.statusOf(error);
+    if (status === 409) {
+      this.nameTakenOnCreate.set(true);
+      this.nameLookupStatus.set('taken');
+      this.showErrors.set(true);
+      this.step.set('details');
+      this.scrollToTop();
+      return;
+    }
+    const readOnly = error instanceof HttpErrorResponse && status === 403 && error.error?.code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE;
+    const message = readOnly ? serverAuthoredMessage(error, MENTORSHIP_ENROLL_SUBMIT_FAILED) : MENTORSHIP_ENROLL_SUBMIT_FAILED;
+    this.submitFailure.set({ step: 'create', message });
+  }
+
+  private failLogoUpload(status: number): void {
+    this.logoFieldError.set(MENTORSHIP_ENROLL_LOGO_FAILURE_FIELD_ERRORS[status] ?? '');
+    this.submitFailure.set({ step: 'logo', message: MENTORSHIP_ENROLL_LOGO_NOT_UPLOADED });
+  }
+
+  private askToLeave(header: string, message: string, acceptLabel: string): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      this.confirmationService.confirm({
+        header,
+        message,
+        icon: 'fa-light fa-triangle-exclamation',
+        acceptLabel,
+        rejectLabel: 'Stay',
+        acceptButtonStyleClass: 'p-button-sm p-button-danger',
+        rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+        accept: () => resolve(true),
+        reject: () => resolve(false),
+      });
     });
   }
 
-  /**
-   * The upstream mentorship-service is not wired yet; show a coming-soon toast
-   * and stay on the wizard so the user does not lose their work.
-   */
-  private submitEnrollment(): void {
-    this.comingSoon.notify('Submit enrollment');
+  private statusOf(error: unknown): number {
+    return error instanceof HttpErrorResponse ? error.status : 0;
+  }
+
+  private hasUnsavedAnswers(): boolean {
+    return !!this.logoFile() || JSON.stringify(this.form.getRawValue()) !== this.initialValue;
   }
 
   private nameLookupMessage(status: MentorshipNameLookupStatus): string {

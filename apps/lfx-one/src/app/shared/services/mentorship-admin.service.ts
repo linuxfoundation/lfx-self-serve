@@ -4,6 +4,12 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
+  MENTORSHIP_ENROLL_LOGO_AUTO_RETRY_DELAY_MS,
+  MENTORSHIP_ENROLL_LOGO_NO_RETRY_STATUSES,
+  MENTORSHIP_ENROLL_WRITE_RETRY_DELAYS_MS,
+  MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
+} from '@lfx-one/shared/constants';
+import {
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminDeclinePendingResponse,
   MentorshipAdminMentorStatusUpdate,
@@ -26,7 +32,7 @@ import {
   MentorshipProgramStatus,
   MentorshipProgramTermRow,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, take, throwError } from 'rxjs';
+import { catchError, Observable, retry, take, throwError, timer } from 'rxjs';
 
 import { strictHttpParams } from '../utils/http-params.utils';
 
@@ -165,13 +171,34 @@ export class MentorshipAdminService {
   /**
    * Uploads a program's logo as a raw `image/png` or `image/jpeg` body and resolves with its public URL. The BFF answers 415 for another
    * type and 413 above the size limit.
+   *
+   * A 403 right after the create can be the permission grant not having landed yet, so it is retried with a back-off (1 s, 2 s, 4 s)
+   * unless it is the impersonation read-only refusal; `retryForbidden = false` turns that back-off off. Any other failure except a
+   * file the server refuses (400, 401, 413, 415) is retried once after a short delay.
    */
-  public uploadProgramLogo(programId: string, file: File): Observable<MentorshipProgramLogoUploadResult> {
+  public uploadProgramLogo(programId: string, file: File, retryForbidden = true): Observable<MentorshipProgramLogoUploadResult> {
     return this.http
       .post<MentorshipProgramLogoUploadResult>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/logo`, file, {
         headers: { 'Content-Type': file.type },
       })
-      .pipe(take(1), this.logFailure('uploadProgramLogo'));
+      .pipe(
+        retry({
+          count: MENTORSHIP_ENROLL_WRITE_RETRY_DELAYS_MS.length,
+          delay: (error: HttpErrorResponse, attempt: number) => {
+            const forbidden = error.status === 403 && error.error?.code !== MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE;
+            if (forbidden && retryForbidden) {
+              return timer(MENTORSHIP_ENROLL_WRITE_RETRY_DELAYS_MS[attempt - 1]);
+            }
+            const fileRefused = (MENTORSHIP_ENROLL_LOGO_NO_RETRY_STATUSES as readonly number[]).includes(error.status);
+            if (attempt === 1 && error.status !== 403 && !fileRefused) {
+              return timer(MENTORSHIP_ENROLL_LOGO_AUTO_RETRY_DELAY_MS);
+            }
+            return throwError(() => error);
+          },
+        }),
+        take(1),
+        this.logFailure('uploadProgramLogo')
+      );
   }
 
   /** Creates an open term; the BFF refuses it with a 409 when the program already has four open terms. */

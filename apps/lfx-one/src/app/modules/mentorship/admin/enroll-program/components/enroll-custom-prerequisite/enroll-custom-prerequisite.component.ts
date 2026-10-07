@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -23,6 +23,8 @@ export class EnrollCustomPrerequisiteComponent {
   public readonly item = input.required<MentorshipPrerequisite>();
   public readonly index = input.required<number>();
   public readonly showErrors = input(false);
+  /** Set once the program is saved, so the answers can no longer change. */
+  public readonly locked = input(false);
   public readonly itemChange = output<MentorshipPrerequisite>();
   public readonly deleted = output<void>();
 
@@ -75,6 +77,14 @@ export class EnrollCustomPrerequisiteComponent {
     this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
       this.emitChange();
       this.formSnapshot.set(this.form.getRawValue());
+    });
+
+    effect(() => {
+      if (this.locked()) {
+        this.form.disable({ emitEvent: false });
+      } else {
+        this.form.enable({ emitEvent: false });
+      }
     });
   }
 
