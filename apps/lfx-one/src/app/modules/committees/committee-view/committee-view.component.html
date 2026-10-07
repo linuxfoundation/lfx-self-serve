@@ -193,12 +193,20 @@
             <div class="flex items-center gap-2 flex-wrap flex-1 min-w-0">
               <h1 class="font-display font-light text-[20px]" data-testid="committee-view-name">{{ committee()?.name }}</h1>
               @if (committee()?.public) {
-                <lfx-tag value="Public" severity="success" data-testid="committee-view-visibility-public"></lfx-tag>
+                <lfx-tag value="Public" severity="success" icon="fa-light fa-globe" data-testid="committee-view-visibility-public"></lfx-tag>
               } @else {
-                <lfx-tag value="Private" severity="secondary" data-testid="committee-view-visibility-private"></lfx-tag>
+                <lfx-tag value="Private" severity="danger" icon="fa-light fa-shield" data-testid="committee-view-visibility-private"></lfx-tag>
               }
               @if (membershipStatus(); as status) {
-                <lfx-tag [value]="status.label" [severity]="status.severity" data-testid="committee-view-membership-status"></lfx-tag>
+                <lfx-tag
+                  [value]="status.label"
+                  [severity]="status.severity"
+                  [icon]="status.icon"
+                  [pTooltip]="membershipTooltipHtml()"
+                  [escape]="false"
+                  tooltipPosition="bottom"
+                  tooltipStyleClass="text-xs max-w-xs"
+                  data-testid="committee-view-membership-status"></lfx-tag>
               }
             </div>
             <!-- Join / Apply / Contact Admin / Leave actions.
