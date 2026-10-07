@@ -363,6 +363,7 @@ describe('MentorsTabComponent', () => {
 
     it.each([
       ['requested', ['accept', 'decline']],
+      ['pending', ['accept', 'decline']],
       ['invited', ['revoke']],
       ['active', ['remove']],
       ['declined', []],

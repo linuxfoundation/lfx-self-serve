@@ -25,7 +25,7 @@ import {
   MENTOR_ACTIVE_ID,
   MENTOR_DECLINED_ID,
   MENTOR_INVITED_ID,
-  MENTOR_REQUESTED_AGAIN_ID,
+  MENTOR_PENDING_ID,
   MENTOR_REQUESTED_ID,
   MentorStubState,
   newMentorStubState,
@@ -81,7 +81,7 @@ test.describe('Admin Mentors tab — manage mentors', () => {
 
     await expect(rowAction(page, 'accept', MENTOR_REQUESTED_ID)).toBeVisible();
     await expect(rowAction(page, 'decline', MENTOR_REQUESTED_ID)).toBeVisible();
-    await expect(rowAction(page, 'accept', MENTOR_REQUESTED_AGAIN_ID)).toBeVisible();
+    await expect(rowAction(page, 'accept', MENTOR_PENDING_ID)).toBeVisible();
     await expect(rowAction(page, 'revoke', MENTOR_INVITED_ID)).toHaveAccessibleName('Revoke invite Test Mentor Invited');
     await expect(rowAction(page, 'remove', MENTOR_ACTIVE_ID)).toBeVisible();
     await expect(page.getByTestId(`mentorship-mentor-row-${MENTOR_DECLINED_ID}`).getByRole('button')).toHaveCount(0);
@@ -108,16 +108,16 @@ test.describe('Admin Mentors tab — manage mentors', () => {
   test('declines a mentor request only after the confirmation, and not when it is cancelled', async ({ page }) => {
     await open(page, state);
 
-    await rowAction(page, 'decline', MENTOR_REQUESTED_AGAIN_ID).click();
+    await rowAction(page, 'decline', MENTOR_PENDING_ID).click();
     await page.locator('.p-confirmdialog').getByRole('button', { name: 'Cancel', exact: true }).click();
     expect(state.writes).toHaveLength(0);
 
-    await rowAction(page, 'decline', MENTOR_REQUESTED_AGAIN_ID).click();
+    await rowAction(page, 'decline', MENTOR_PENDING_ID).click();
     await confirm(page, 'Decline');
 
     await expect(page.getByText('Mentor declined.')).toBeVisible();
-    expect(state.writes.map((write) => [write.id, write.body])).toEqual([[MENTOR_REQUESTED_AGAIN_ID, { status: 'declined' }]]);
-    await expect(rowAction(page, 'accept', MENTOR_REQUESTED_AGAIN_ID)).toHaveCount(0);
+    expect(state.writes.map((write) => [write.id, write.body])).toEqual([[MENTOR_PENDING_ID, { status: 'declined' }]]);
+    await expect(rowAction(page, 'accept', MENTOR_PENDING_ID)).toHaveCount(0);
   });
 
   test('revokes an invite by declining it', async ({ page }) => {

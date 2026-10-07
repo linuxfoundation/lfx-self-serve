@@ -258,10 +258,11 @@ export const MENTORSHIP_MENTOR_STATUS_LABELS: Record<MentorshipMentorStatus, str
  * Mentor lifecycle on the admin Mentors tab, which reads every `program_members` status upstream keeps
  * (`active` is the accepted mentor). Declaration order is the status filter's option order.
  */
-export const MENTORSHIP_ADMIN_MENTOR_STATUSES = ['requested', 'invited', 'active', 'declined', 'withdrawn'] as const;
+export const MENTORSHIP_ADMIN_MENTOR_STATUSES = ['requested', 'pending', 'invited', 'active', 'declined', 'withdrawn'] as const;
 
 export const MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS: Record<MentorshipAdminMentorStatus, string> = {
   requested: 'Requested',
+  pending: 'Pending',
   invited: 'Invited',
   active: 'Accepted',
   declined: 'Declined',
@@ -270,6 +271,7 @@ export const MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS: Record<MentorshipAdminMentor
 
 export const MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipAdminMentorStatus, string> = {
   requested: 'bg-amber-100 text-amber-700',
+  pending: 'bg-amber-100 text-amber-700',
   invited: 'bg-blue-100 text-blue-700',
   active: 'bg-emerald-100 text-emerald-700',
   declined: 'bg-red-100 text-red-600',
@@ -329,6 +331,10 @@ export const MENTORSHIP_ADMIN_MENTOR_CHANGED_MESSAGE = 'This mentor changed. The
 /** Mentors tab row actions by the mentor's status, in display order. Upstream's DELETE only withdraws an active mentor, so Remove covers it. */
 export const MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS: Record<MentorshipAdminMentorStatus, readonly MentorshipAdminMentorAction[]> = {
   requested: [
+    { key: 'accept', label: 'Accept', status: 'active' },
+    { key: 'decline', label: 'Decline', status: 'declined' },
+  ],
+  pending: [
     { key: 'accept', label: 'Accept', status: 'active' },
     { key: 'decline', label: 'Decline', status: 'declined' },
   ],

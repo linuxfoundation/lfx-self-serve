@@ -258,7 +258,7 @@ export class MentorshipAdminService {
 
   /**
    * One page of a program's mentors, from one upstream member-management read. The BFF sends no `member_type`: the
-   * handler ignores it. A status this does not know reads as requested (Accept or Decline) and is logged without the mentor's name.
+   * handler ignores it. A status this does not know reads as pending and is logged without the mentor's name.
    * A caller with no mentorship record has no mentors.
    */
   public async getProgramMentors(req: Request, programId: string, query: MentorshipAdminMentorsQuery): Promise<MentorshipAdminMentorsResponse> {
@@ -294,7 +294,7 @@ export class MentorshipAdminService {
     const data = (upstream.data ?? []).map((row) => {
       const { mentor, unknownStatus } = mapMentorshipAdminMentorRow(row);
       if (unknownStatus) {
-        logger.warning(req, 'mentorship_admin_get_program_mentors', 'Unknown upstream member status; showing it as requested', {
+        logger.warning(req, 'mentorship_admin_get_program_mentors', 'Unknown upstream member status; showing it as pending', {
           programId,
           memberId: row.id,
           status: row.status,

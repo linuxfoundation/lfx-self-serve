@@ -176,6 +176,7 @@ describe('mapMentorshipAdminMentorRow', () => {
 
   it.each([
     ['requested', 'requested'],
+    ['pending', 'pending'],
     ['invited', 'invited'],
     ['active', 'active'],
     ['approved', 'active'],
@@ -185,8 +186,8 @@ describe('mapMentorshipAdminMentorRow', () => {
     expect(mapMentorshipAdminMentorRow(memberRow({ status }))).toMatchObject({ mentor: { status: expected }, unknownStatus: false });
   });
 
-  it.each([undefined, 'mystery', 'constructor', 'pending'])('reads the unknown status %s as requested and flags it', (status) => {
-    expect(mapMentorshipAdminMentorRow(memberRow({ status }))).toMatchObject({ mentor: { status: 'requested' }, unknownStatus: true });
+  it.each([undefined, 'mystery', 'constructor'])('reads the unknown status %s as pending and flags it', (status) => {
+    expect(mapMentorshipAdminMentorRow(memberRow({ status }))).toMatchObject({ mentor: { status: 'pending' }, unknownStatus: true });
   });
 
   it('falls back from name to username to email to empty, and drops an absent avatar', () => {

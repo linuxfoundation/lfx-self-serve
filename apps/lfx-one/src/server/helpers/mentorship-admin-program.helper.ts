@@ -97,7 +97,7 @@ export const mapMentorshipAdminMentorRow = (row: MentorshipUpstreamMemberManagem
       name: row.name || row.username || row.email || '',
       email: row.email ?? '',
       ...(row.avatar_url ? { avatarUrl: row.avatar_url } : {}),
-      status: status ?? 'requested',
+      status: status ?? 'pending',
       ...(invitedOn ? { invitedOn } : {}),
       profileCreated: row.profile_created,
     },

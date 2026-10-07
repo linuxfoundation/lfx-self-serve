@@ -143,11 +143,11 @@ export const MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM: Readonly<Record<string
 
 /**
  * How an upstream program member status reads on the admin Mentors tab. Upstream keeps `active` for an accepted
- * mentor; `approved` is the older name for it and reads the same. Mentors no longer have a `pending` status (a mentor
- * is `requested` or `invited`), so a stray `pending` row reads as unknown and is logged.
+ * mentor; `approved` is the older name for it and reads the same.
  */
 export const MENTORSHIP_ADMIN_MENTOR_STATUS_MAP: Readonly<Record<string, MentorshipAdminMentorStatus>> = {
   requested: 'requested',
+  pending: 'pending',
   invited: 'invited',
   active: 'active',
   approved: 'active',

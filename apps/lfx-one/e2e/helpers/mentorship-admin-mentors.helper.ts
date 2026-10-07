@@ -18,7 +18,7 @@ const MENTOR_WRITE_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}
 /** One mentor per status that offers an action, plus one that offers none. Ids are `adminMentorId(n)`. */
 export const MENTOR_ACTION_MENTORS: MentorshipProgramMentor[] = [
   { name: 'Test Mentor Requested', status: 'requested' },
-  { name: 'Test Mentor Requested Again', status: 'requested' },
+  { name: 'Test Mentor Pending', status: 'pending' },
   { name: 'Test Mentor Invited', status: 'invited' },
   { name: 'Test Mentor Active', status: 'active' },
   { name: 'Test Mentor Declined', status: 'declined' },
@@ -32,7 +32,7 @@ export const MENTOR_ACTION_MENTORS: MentorshipProgramMentor[] = [
 }));
 
 export const MENTOR_REQUESTED_ID = MENTOR_ACTION_MENTORS[0].id;
-export const MENTOR_REQUESTED_AGAIN_ID = MENTOR_ACTION_MENTORS[1].id;
+export const MENTOR_PENDING_ID = MENTOR_ACTION_MENTORS[1].id;
 export const MENTOR_INVITED_ID = MENTOR_ACTION_MENTORS[2].id;
 export const MENTOR_ACTIVE_ID = MENTOR_ACTION_MENTORS[3].id;
 export const MENTOR_DECLINED_ID = MENTOR_ACTION_MENTORS[4].id;
