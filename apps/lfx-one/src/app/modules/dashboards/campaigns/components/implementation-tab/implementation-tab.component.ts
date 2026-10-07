@@ -488,6 +488,11 @@ export class ImplementationTabComponent implements OnInit {
    * `populateFromBrief` assigns AFTER patching the form, so the recommended geos arrive with
    * nothing left to re-run the map. Both inputs have to be signals for the derivation to hold.
    */
+  private readonly countryCodeValue = toSignal(
+    this.campaignForm.controls.countryCode.valueChanges.pipe(startWith(this.campaignForm.controls.countryCode.value)),
+    { initialValue: this.campaignForm.controls.countryCode.value }
+  );
+
   /**
    * A counter that ticks on every form edit, so `canSubmit` can be a real `computed`.
    *
@@ -515,11 +520,6 @@ export class ImplementationTabComponent implements OnInit {
       startWith(0)
     ),
     { initialValue: 0 }
-  );
-
-  private readonly countryCodeValue = toSignal(
-    this.campaignForm.controls.countryCode.valueChanges.pipe(startWith(this.campaignForm.controls.countryCode.value)),
-    { initialValue: this.campaignForm.controls.countryCode.value }
   );
 
   /**

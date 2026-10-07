@@ -772,8 +772,10 @@ export class CampaignController {
       // else as Search. It does not reject an unknown type; it BUILDS A SEARCH CAMPAIGN for it,
       // with real budget, and reports success. A user who ticked Performance Max while the
       // cutover was dark would get a Search campaign they never asked for and no error saying so
-      // — the same silent-Search outcome `CampaignServiceGoogleChannels` guards upstream, reached
-      // by the other road.
+      // — the silent-Search outcome, here reached by the legacy road. Note this is the road that
+      // still has it: `CampaignServiceGoogleChannels` guards a cutover path where the same
+      // mistake is silent only against a campaign-service predating LFXV2-3257, and is a named
+      // refusal against any later one. On THIS path it is silent against every version.
       //
       // `demand-gen` and `search` are deliberately NOT refused here: the legacy path serves both.
       const legacyUnsupported = GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG.find((c) => body?.campaignTypes?.includes(c));
