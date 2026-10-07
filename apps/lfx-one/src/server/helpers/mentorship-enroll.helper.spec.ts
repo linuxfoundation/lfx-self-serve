@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
+
 import { MENTORSHIP_MAX_OPEN_TERMS } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 
@@ -80,6 +82,28 @@ describe('parseMentorshipEnrollCreateRequest', () => {
     expect(parsed['terms']).toEqual([term()]);
   });
 
+  it('trims the text fields but leaves a prerequisite description as sent', () => {
+    const parsed = parseMentorshipEnrollCreateRequest(
+      validBody({
+        projectId: ` ${PROJECT_ID} `,
+        name: '  Example Program ',
+        skills: [' Go', 'Testing '],
+        websiteUrl: ' https://example.org ',
+        terms: [term({ name: ' Term 1 ', startDate: ' 2030-03-01 ' })],
+        prerequisites: [{ name: ' Resume ', description: ' Upload it. ', dueDate: ' 2030-02-01 ' }],
+      }),
+      OPERATION
+    );
+
+    expect(parsed.projectId).toBe(PROJECT_ID);
+    expect(parsed.name).toBe('Example Program');
+    expect(parsed.skills).toEqual(['Go', 'Testing']);
+    expect(parsed.websiteUrl).toBe('https://example.org');
+    expect(parsed.terms[0].name).toBe('Term 1');
+    expect(parsed.terms[0].startDate).toBe('2030-03-01');
+    expect(parsed.prerequisites[0]).toEqual({ name: 'Resume', description: ' Upload it. ', required: false, requireFile: false, dueDate: '2030-02-01' });
+  });
+
   it('keeps a prerequisite due date and defaults the flags to false', () => {
     const parsed = parseMentorshipEnrollCreateRequest(validBody({ prerequisites: [{ name: 'Task', dueDate: '2030-02-01' }] }), OPERATION);
 
@@ -109,11 +133,12 @@ describe('parseMentorshipEnrollCreateRequest', () => {
     ['a skill that is not a string', validBody({ skills: [1] }), 'skills'],
     ['no terms', validBody({ terms: [] }), 'terms'],
     ['more terms than the program may hold', validBody({ terms: Array.from({ length: MENTORSHIP_MAX_OPEN_TERMS + 1 }, () => term()) }), 'terms'],
-    ['a term that is not an object', validBody({ terms: ['Term 1'] }), 'name'],
-    ['a term with no start date', validBody({ terms: [term({ startDate: undefined })] }), 'startDate'],
-    ['a term with no application end date', validBody({ terms: [term({ applicationEndDate: '' })] }), 'applicationEndDate'],
+    ['a term that is not an object', validBody({ terms: ['Term 1'] }), 'terms[0].name'],
+    ['a term with a blank name', validBody({ terms: [term({ name: '  ' })] }), 'terms[0].name'],
+    ['a term with no start date', validBody({ terms: [term({ startDate: undefined })] }), 'terms[0].startDate'],
+    ['a second term with no application end date', validBody({ terms: [term(), term({ applicationEndDate: '' })] }), 'terms[1].applicationEndDate'],
     ['prerequisites that are not a list', validBody({ prerequisites: undefined }), 'prerequisites'],
-    ['a prerequisite with no name', validBody({ prerequisites: [{ description: 'x' }] }), 'name'],
+    ['a prerequisite with no name', validBody({ prerequisites: [{ description: 'x' }] }), 'prerequisites[0].name'],
     ['terms that are not accepted', validBody({ termsAccepted: false }), 'termsAccepted'],
     ['terms accepted as text', validBody({ termsAccepted: 'true' }), 'termsAccepted'],
   ])('rejects %s with a 400 on the field', (_label, body, field) => {

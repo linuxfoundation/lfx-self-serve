@@ -11,60 +11,57 @@ import {
   MentorshipUpstreamCreatedProgram,
   MentorshipUpstreamLogoUpload,
 } from '@lfx-one/shared/interfaces';
-import { isUuid } from '@lfx-one/shared/utils/string.utils';
+import { isUuid } from '@lfx-one/shared/utils';
 
 import { ServiceValidationError } from '../errors';
+import { parseTrimmedString } from './mentorship-params.helper';
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 
-const requireString = (raw: Record<string, unknown>, field: string, operation: string): string => {
-  const value = raw[field];
-  if (typeof value !== 'string' || !value.trim()) {
-    throw ServiceValidationError.forField(field, `${field} is required.`, { operation });
+/** A required text field, trimmed. `path` names it in the 400 (`terms[0].name`) when it sits inside a list. */
+const requireString = (raw: Record<string, unknown>, field: string, operation: string, path = field): string => {
+  const value = parseTrimmedString(raw[field]);
+  if (!value) {
+    throw ServiceValidationError.forField(path, `${path} is required.`, { operation });
   }
   return value;
 };
 
-/** An optional text field: kept when it is a non-empty string, left out otherwise. */
-const optionalString = (raw: Record<string, unknown>, field: string): string | undefined => {
-  const value = raw[field];
-  return typeof value === 'string' && value.trim() ? value : undefined;
-};
-
-const parseTerm = (value: unknown, operation: string): MentorshipEnrollCreateTerm => {
+const parseTerm = (value: unknown, index: number, operation: string): MentorshipEnrollCreateTerm => {
   const raw = asRecord(value);
+  const at = (field: string): string => requireString(raw, field, operation, `terms[${index}].${field}`);
   return {
-    name: requireString(raw, 'name', operation),
-    startDate: requireString(raw, 'startDate', operation),
-    endDate: requireString(raw, 'endDate', operation),
-    applicationStartDate: requireString(raw, 'applicationStartDate', operation),
-    applicationEndDate: requireString(raw, 'applicationEndDate', operation),
+    name: at('name'),
+    startDate: at('startDate'),
+    endDate: at('endDate'),
+    applicationStartDate: at('applicationStartDate'),
+    applicationEndDate: at('applicationEndDate'),
   };
 };
 
-const parsePrerequisite = (value: unknown, operation: string): MentorshipEnrollCreatePrerequisite => {
+const parsePrerequisite = (value: unknown, index: number, operation: string): MentorshipEnrollCreatePrerequisite => {
   const raw = asRecord(value);
-  const dueDate = raw['dueDate'];
   return {
-    name: requireString(raw, 'name', operation),
+    name: requireString(raw, 'name', operation, `prerequisites[${index}].name`),
     description: typeof raw['description'] === 'string' ? raw['description'] : '',
     required: raw['required'] === true,
     requireFile: raw['requireFile'] === true,
-    dueDate: typeof dueDate === 'string' && dueDate ? dueDate : null,
+    dueDate: parseTrimmedString(raw['dueDate']) ?? null,
   };
 };
 
 /**
  * Validates the body of `POST /api/mentorship/admin/programs` and rebuilds it from the known fields only, so a stray `logo_url`,
  * `status` or term `id` never reaches upstream. It checks the shape the upstream create needs (a project, the text fields, at
- * least one skill, 1 to `MENTORSHIP_MAX_OPEN_TERMS` terms, accepted terms) and leaves lengths, URLs and dates to the wizard
- * and upstream, which both check them. Nothing in the body is logged.
+ * least one skill, 1 to `MENTORSHIP_MAX_OPEN_TERMS` terms, accepted terms), trims every text field but a prerequisite
+ * description, and leaves lengths, URLs and dates to the wizard and upstream, which both check them. A field inside a list is
+ * named by its index (`terms[1].startDate`). Nothing in the body is logged.
  */
 export const parseMentorshipEnrollCreateRequest = (body: unknown, operation: string): MentorshipEnrollCreateRequest => {
   const raw = asRecord(body);
 
-  const projectId = typeof raw['projectId'] === 'string' ? raw['projectId'].trim() : '';
+  const projectId = parseTrimmedString(raw['projectId']) ?? '';
   if (!isUuid(projectId)) {
     throw ServiceValidationError.forField('projectId', 'projectId must be a UUID.', { operation });
   }
@@ -76,7 +73,7 @@ export const parseMentorshipEnrollCreateRequest = (body: unknown, operation: str
   const repositoryUrl = requireString(raw, 'repositoryUrl', operation);
 
   const rawSkills = raw['skills'];
-  if (!Array.isArray(rawSkills) || rawSkills.length === 0 || !rawSkills.every((skill) => typeof skill === 'string' && skill.trim())) {
+  if (!Array.isArray(rawSkills) || rawSkills.length === 0 || !rawSkills.every((skill) => parseTrimmedString(skill))) {
     throw ServiceValidationError.forField('skills', 'skills must be a list of at least one skill.', { operation });
   }
 
@@ -100,16 +97,16 @@ export const parseMentorshipEnrollCreateRequest = (body: unknown, operation: str
     name,
     description,
     repositoryUrl,
-    skills: rawSkills as string[],
-    terms: rawTerms.map((term) => parseTerm(term, operation)),
-    prerequisites: (raw['prerequisites'] as unknown[]).map((item) => parsePrerequisite(item, operation)),
+    skills: rawSkills.map((skill) => (skill as string).trim()),
+    terms: rawTerms.map((term, index) => parseTerm(term, index, operation)),
+    prerequisites: (raw['prerequisites'] as unknown[]).map((item, index) => parsePrerequisite(item, index, operation)),
     termsAccepted: true,
   };
 
-  const projectLogoUrl = optionalString(raw, 'projectLogoUrl');
-  const websiteUrl = optionalString(raw, 'websiteUrl');
-  const codeOfConductUrl = optionalString(raw, 'codeOfConductUrl');
-  const ciiProjectId = optionalString(raw, 'ciiProjectId');
+  const projectLogoUrl = parseTrimmedString(raw['projectLogoUrl']);
+  const websiteUrl = parseTrimmedString(raw['websiteUrl']);
+  const codeOfConductUrl = parseTrimmedString(raw['codeOfConductUrl']);
+  const ciiProjectId = parseTrimmedString(raw['ciiProjectId']);
   if (projectLogoUrl) request.projectLogoUrl = projectLogoUrl;
   if (websiteUrl) request.websiteUrl = websiteUrl;
   if (codeOfConductUrl) request.codeOfConductUrl = codeOfConductUrl;
