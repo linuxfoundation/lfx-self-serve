@@ -2236,7 +2236,6 @@ describe('CampaignServiceClient.createCampaigns', () => {
    */
   it.each([
     ['performance-max', 'Performance Max', 'a3f1c2d4-0000-4000-8000-000000000021'],
-    ['video', 'Video', 'a3f1c2d4-0000-4000-8000-000000000022'],
     ['display', 'Display', 'a3f1c2d4-0000-4000-8000-000000000023'],
   ])('dispatches a %s-only create when the deployment reports the capability', async (channel, _label, jobId) => {
     bothFlagsOn();
@@ -2256,9 +2255,40 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.error).toBeNull();
   });
 
+  /**
+   * Video is NOT in the table above and must never be put back into it.
+   *
+   * The other two channels are gated on a deployment capability; Video is gated on the Google Ads
+   * API, which has no mutate that creates a Video campaign at all. `CreateVideoCampaign` returns
+   * `ErrVideoCreateUnsupported` as its first statement, so there is no deployment — present or
+   * future, flag on or off — that turns a `video` create into a job worth tracking.
+   *
+   * Pinned with the flag ON deliberately: with it off the capability guard below would refuse this
+   * anyway and the test would stay green with the unconditional guard deleted. The flag-on case is
+   * the only one that distinguishes the two, which is why it is the one asserted.
+   */
+  it('refuses a video create even when the deployment reports every channel capability', async () => {
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600, channel: 'video' } },
+      { campaignTypes: ['video'] }
+    );
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.jobId).toBeNull();
+    // The message names the API limit, not a capability the administrator could switch on —
+    // "ask an administrator" would send the operator somewhere that cannot help them.
+    expect(res.error).toContain('cannot be created through the Google Ads API yet');
+    expect(res.error).not.toContain('administrator');
+  });
+
   it.each([
     ['performance-max', 'Performance Max'],
-    ['video', 'Video'],
     ['display', 'Display'],
   ])('refuses a %s create when the deployed service cannot understand the channel', async (channel, label) => {
     googleChannelsUnsupported();

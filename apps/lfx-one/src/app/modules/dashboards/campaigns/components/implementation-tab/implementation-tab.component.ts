@@ -42,7 +42,7 @@ import {
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { map, skip, startWith, Subscription, take } from 'rxjs';
+import { map, merge, scan, skip, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -488,6 +488,35 @@ export class ImplementationTabComponent implements OnInit {
    * `populateFromBrief` assigns AFTER patching the form, so the recommended geos arrive with
    * nothing left to re-run the map. Both inputs have to be signals for the derivation to hold.
    */
+  /**
+   * A counter that ticks on every form edit, so `canSubmit` can be a real `computed`.
+   *
+   * `canSubmit` reads the form DIRECTLY in a dozen places — `form.eventName.value`,
+   * `campaignForm.invalid`, and `selectedGoogleChannels()`, which is `getRawValue()` underneath.
+   * None of those is a reactive dependency, so the memo only ever recomputed when one of the
+   * handful of SIGNALS it also reads changed: `selectedPlatforms`, the capability inputs, the
+   * Meta/Reddit/Microsoft/LinkedIn signal-backed fields. Edits confined to the form itself left a
+   * stale answer on screen, and the Google channel checkboxes are exactly that case — nothing
+   * else moves when one is ticked, so the Create button kept whatever state it had. Flagged
+   * independently by three reviewers on #3318 against the mixed-channel rule below, which is the
+   * newest rule whose only inputs are those checkboxes.
+   *
+   * A counter rather than the form's value: `valueChanges` emits `Partial<…>` (it omits DISABLED
+   * controls) while every reader here wants `getRawValue()`, so bridging the VALUE would hand
+   * `canSubmit` a second, subtly different view of the form to drift against. The counter carries
+   * no data — it exists only to invalidate the memo, leaving the existing reads as the one source.
+   *
+   * `statusChanges` is merged in for the cases where validity moves without a value emission:
+   * `disable()`/`enable()` on a control, and a `setErrors` from outside the validators.
+   */
+  private readonly campaignFormRevision = toSignal(
+    merge(this.campaignForm.valueChanges, this.campaignForm.statusChanges).pipe(
+      scan((revision: number) => revision + 1, 0),
+      startWith(0)
+    ),
+    { initialValue: 0 }
+  );
+
   private readonly countryCodeValue = toSignal(
     this.campaignForm.controls.countryCode.valueChanges.pipe(startWith(this.campaignForm.controls.countryCode.value)),
     { initialValue: this.campaignForm.controls.countryCode.value }
@@ -799,6 +828,10 @@ export class ImplementationTabComponent implements OnInit {
   });
 
   protected readonly canSubmit = computed(() => {
+    // Read FIRST and for its side effect only — see `campaignFormRevision`. Every direct form read
+    // below is non-reactive, so without this dependency the memo never re-runs on a form edit.
+    // First, not last, because an early `return false` must not skip registering it.
+    void this.campaignFormRevision();
     const platforms = this.selectedPlatforms();
     const googleSelected = platforms.includes('google-ads');
     const linkedInSelected = platforms.includes('linkedin-ads');

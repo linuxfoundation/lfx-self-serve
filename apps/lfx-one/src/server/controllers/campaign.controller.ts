@@ -595,10 +595,16 @@ export class CampaignController {
       // comparison is STRICT on both sides, so a one-day campaign entered as the same date twice
       // is refused, which is the likeliest way an operator trips this.
       //
-      // Only these two are checked. Google and LinkedIn take no flight window on this path, and
+      // Only these two are checked. LinkedIn takes no flight window on this path, and
       // `buildMicrosoftConfig` deliberately DROPS `startDate`/`endDate` because `microsoftConfig`
       // declares no scheduling fields — so a window that never reaches the wire must not be
       // judged here.
+      //
+      // Google DOES carry one (`googleFlightWindow`) and is still excluded, because its test is a
+      // DIFFERENT one: `validateFlightWindow` refuses on `end.Before(start)`, not on
+      // `!end.After(start)`, so Google accepts a same-day flight that Meta and Reddit refuse.
+      // Judging it with this predicate would refuse a create Google would have taken — and it
+      // refuses malformed and reversed windows itself, before its first mutate, naming the value.
       //
       // Meta additionally refuses a start date already in the past, which is NOT replicated: it
       // compares against the pod's current UTC calendar day, so a create submitted near the date
@@ -2903,6 +2909,7 @@ export class CampaignController {
       return {
         budget: body.budgetUsd ?? 0,
         channel: selectedChannels[0],
+        ...this.googleFlightWindow(body),
         ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}),
       };
     }
@@ -2934,6 +2941,7 @@ export class CampaignController {
       // too, but naming it keeps the two branches of this function symmetrical and makes
       // a future default change unable to repoint this one silently.
       channel: 'search',
+      ...this.googleFlightWindow(body),
       headlines: body.headlines ?? [],
       descriptions: body.descriptions ?? [],
       // The service's keyword shape is `{text, matchType}` with an upper-case enum; the UI carries
@@ -2945,6 +2953,41 @@ export class CampaignController {
       // to the dispatcher today; only one of them stays true if that default is ever tightened.
       ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}),
     };
+  }
+
+  /**
+   * The campaign's flight window, for whichever Google channel is being built.
+   *
+   * `googleAdsConfig` has carried `startDate`/`endDate` all along — `internal/dispatch/googleads.go`
+   * declares both and `applyCampaignConfig` writes them, and the client's `validateFlightWindow`
+   * turns them into `campaign.start_date_time` / `end_date_time` for EVERY kind, not only Search.
+   * This builder was the only thing not sending them, so the dates the operator entered on the
+   * Implementation tab were dropped at this boundary and Google applied its own defaults instead:
+   * the campaign starts when someone enables it and then runs until someone stops it. The form
+   * REQUIRES both fields (`canSubmit`), so the operator has no way to know their schedule was
+   * ignored — which is what makes this worth fixing rather than documenting.
+   *
+   * Emitted on BOTH branches of `buildGoogleAdsConfig`. The gap was never specific to the
+   * non-Search channels this PR adds; Search has had it since the cutover, and splitting the fix
+   * would leave the two branches disagreeing about whether a flight window is a thing Google takes.
+   *
+   * Forwarded VERBATIM rather than validated. `<input type="date">` yields exactly the
+   * `YYYY-MM-DD` upstream wants, and anything else is refused by `validateFlightWindow` BEFORE the
+   * first mutate — named, with the offending value in the message, and with no budget stranded.
+   * Judging the shape here could only turn that named refusal into this method's vaguer one, or
+   * refuse a value Go would have taken. Note also that Google's comparison is `end.Before(start)`,
+   * NOT the strict `!end.After(start)` Meta and Reddit use, so `isReversedFlightWindow` is the
+   * wrong test for this platform: a same-day flight is legal here and that guard would refuse it.
+   *
+   * An absent or blank value omits the key, matching how `geoTargets` reaches its upstream default.
+   */
+  private googleFlightWindow(body: CampaignCreateRequest): Record<string, string> {
+    const window: Record<string, string> = {};
+    const startDate = typeof body?.startDate === 'string' ? body.startDate.trim() : '';
+    const endDate = typeof body?.endDate === 'string' ? body.endDate.trim() : '';
+    if (startDate) window['startDate'] = startDate;
+    if (endDate) window['endDate'] = endDate;
+    return window;
   }
 
   /**

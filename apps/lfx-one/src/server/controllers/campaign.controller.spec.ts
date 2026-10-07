@@ -773,11 +773,16 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(envelopeFor(createCampaigns)).not.toHaveProperty('redditConfig');
   });
 
+  // The flight window is on the base fixture, not only on the tests that assert it, because the
+  // form REQUIRES both dates — every real Google create carries them, and a fixture that omits
+  // them would let a regression that drops them again pass every assertion below.
   const googleBody = (overrides: Record<string, unknown> = {}) => ({
     platforms: ['google-ads'],
     campaignTypes: ['search'],
     budgetUsd: 1000,
     searchBudgetPct: 60,
+    startDate: '2026-04-01',
+    endDate: '2026-04-30',
     headlines: ['H1'],
     descriptions: ['D1'],
     keywords: [{ term: 'kubernetes', matchType: 'Exact', intentLevel: 'high', notes: 'n' }],
@@ -798,6 +803,11 @@ describe('CampaignController.createCampaign cutover', () => {
       budget: 1000,
       // Named explicitly since LFXV2-3257 — see buildGoogleAdsConfig.
       channel: 'search',
+      // The flight window the operator entered. Forwarded verbatim; campaign-service applies it
+      // via `applyCampaignConfig`, and without it Google defaults to a campaign that starts when
+      // enabled and never ends.
+      startDate: '2026-04-01',
+      endDate: '2026-04-30',
       headlines: ['H1'],
       descriptions: ['D1'],
       // `text`, not `term`, and an upper-case enum: the service's keyword shape.
@@ -867,6 +877,8 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
       budget: 1000,
       channel: 'demand-gen',
+      startDate: '2026-04-01',
+      endDate: '2026-04-30',
     });
   });
 
@@ -928,6 +940,8 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
       budget: 500,
       channel: 'demand-gen',
+      startDate: '2026-04-01',
+      endDate: '2026-04-30',
     });
   });
 
@@ -976,9 +990,64 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
         budget: 500,
         channel,
+        // The flight window reaches the NON-Search branch too. It is the same campaign-level
+        // `start_date_time`/`end_date_time` on every kind — the client's `validateFlightWindow`
+        // runs before the cascade picks one — so a fix applied to Search alone would leave these
+        // three silently unscheduled.
+        startDate: '2026-04-01',
+        endDate: '2026-04-30',
       });
     }
   );
+
+  /**
+   * The flight window's absent case, pinned on BOTH branches.
+   *
+   * A blank date omits the key rather than sending `''`. The two are equivalent to the dispatcher
+   * today (`validateFlightWindow` tests `startDate != ""`), so this is a contract assertion, not a
+   * behaviour one — the same reason `geoTargets` reaches its default by the absent-key route.
+   */
+  it.each([
+    ['search' as const, 1000],
+    ['performance-max' as const, 1000],
+  ])('omits the flight window on a %s create when the dates are blank', async (channel, budget) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: [channel], startDate: '   ', endDate: undefined }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['budget']).toBe(budget);
+    expect(sent).not.toHaveProperty('startDate');
+    expect(sent).not.toHaveProperty('endDate');
+  });
+
+  /**
+   * A malformed or reversed window travels on to Go rather than being judged here, for the reason
+   * `isReversedFlightWindow` records: `validateFlightWindow` refuses it BEFORE the first mutate,
+   * names the offending value, and strands no budget. Judging it locally could only replace that
+   * named refusal with a vaguer one — or refuse a window Google accepts, since Google's test is
+   * `end.Before(start)` and a SAME-DAY flight is legal there while Meta and Reddit refuse it.
+   */
+  it.each([
+    ['a reversed window', '2026-04-30', '2026-04-01'],
+    ['a same-day window Google accepts', '2026-04-01', '2026-04-01'],
+    ['a shape this cannot read', '2026-4-1', 'next friday'],
+  ])('forwards %s to Go rather than refusing it here', async (_label, startDate, endDate) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ startDate, endDate }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['startDate']).toBe(startDate);
+    expect(sent['endDate']).toBe(endDate);
+  });
 
   /**
    * The split arm, for a channel that is not demand-gen. The two demand-gen tests above cannot
