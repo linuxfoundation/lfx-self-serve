@@ -126,10 +126,11 @@ test.describe('Admin program detail — header and tabs', () => {
     await expect(page.getByRole('menuitem')).toHaveText(['Create task', 'Graduate', 'Decline', 'Withdraw']);
   });
 
-  test('names every wire status in the status filter, and lists only the open terms', async ({ page }) => {
+  test('names the statuses the table shows in the status filter, and lists only the open terms', async ({ page }) => {
     expect(await selectOptions(page, 'mentorship-current-mentees-status')).toEqual([
       'All statuses',
-      'Pending',
+      'Applied',
+      'Tasks Completed',
       'Accepted',
       'Declined',
       'Withdrawn',
@@ -169,15 +170,15 @@ test.describe('Admin program detail — paging, filters and search', () => {
     await expect(page.getByTestId(`mentorship-current-mentee-row-${adminApplicationId(11)}`)).toBeVisible();
   });
 
-  test('sends Pending as status=pending and returns to the first page', async ({ page }) => {
+  test('sends Applied as status=applied and returns to the first page', async ({ page }) => {
     await page.getByRole('button', { name: 'Next Page' }).click();
     await expect(page.getByText(PAGE_TWO_LABEL)).toBeVisible();
 
-    await chooseOption(page, 'mentorship-current-mentees-status', 'Pending');
+    await chooseOption(page, 'mentorship-current-mentees-status', 'Applied');
 
     await expect(page.getByTestId(`mentorship-current-mentee-row-${FIRST_ID}`)).toBeVisible();
     const last = requests.mentees[requests.mentees.length - 1];
-    expect(last.get('status')).toBe('pending');
+    expect(last.get('status')).toBe('applied');
     expect(last.get('offset')).toBe('0');
     await expect(page.getByTestId(`mentorship-current-mentee-row-${adminApplicationId(3)}`)).toHaveCount(0);
   });

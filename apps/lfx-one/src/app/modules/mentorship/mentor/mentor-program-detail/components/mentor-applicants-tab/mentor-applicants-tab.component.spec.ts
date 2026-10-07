@@ -185,6 +185,12 @@ describe('MentorApplicantsTabComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-applicant-view-tasks-app_no_tasks"]')).toBeNull();
   });
 
+  it('badges a pending applicant with no tasks as Tasks Completed, as the admin tab and upstream read it', () => {
+    setup([applicant({ id: 'app_no_tasks', tasks: [], tasksSubmitted: 0, tasksTotal: 0 })]);
+
+    expect(fixture.componentInstance['rows']().map((row) => row.statusLabel)).toEqual(['Tasks Completed']);
+  });
+
   it('does not render View Tasks for an applicant whose tasks were not read, whatever upstream counts', () => {
     // When the server reads tasks per mentee, the other applicants keep upstream's counts but carry no tasks.
     setup([applicant({ id: 'app_unread', tasks: undefined, tasksSubmitted: 1, tasksTotal: 3 })]);

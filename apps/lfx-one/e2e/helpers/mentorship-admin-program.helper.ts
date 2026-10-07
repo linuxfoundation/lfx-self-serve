@@ -166,6 +166,14 @@ export async function stubAdminProgramPageError(page: Page, status: number): Pro
   await page.route(PROGRAM_ROUTE, (route) => fulfillJson(route, { error: 'stubbed' }, status));
 }
 
+/** Whether an application matches the mentees `status` filter. `applied` and `tasks-completed` split `pending` on its tasks, as upstream does. */
+function matchesStatusFilter(application: MentorshipProgramApplicant, status: string): boolean {
+  const tasksOutstanding = (application.tasksSubmitted ?? 0) < (application.tasksTotal ?? 0);
+  if (status === 'applied') return application.status === 'pending' && tasksOutstanding;
+  if (status === 'tasks-completed') return application.status === 'pending' && !tasksOutstanding;
+  return application.status === status;
+}
+
 /**
  * Answers the mentees read from the 37 synthetic applications, honoring `offset`, `limit`, `status` and `search`.
  * Pass `failWith` to answer every read with that error status instead. `notes`, keyed by application id, is read on
@@ -180,7 +188,9 @@ export async function stubAdminMentees(page: Page, requests: AdminProgramRequest
     const status = params.get('status');
     const search = params.get('search')?.toLowerCase();
     const source = params.get('type') === 'past' ? ADMIN_PAST_APPLICATIONS : ADMIN_APPLICATIONS;
-    const matching = source.filter((application) => (!status || application.status === status) && (!search || application.name.toLowerCase().includes(search)));
+    const matching = source.filter(
+      (application) => (!status || matchesStatusFilter(application, status)) && (!search || application.name.toLowerCase().includes(search))
+    );
     const offset = Number(params.get('offset') ?? 0);
     const limit = Number(params.get('limit') ?? ADMIN_MENTEES_PAGE_SIZE);
     const data = matching

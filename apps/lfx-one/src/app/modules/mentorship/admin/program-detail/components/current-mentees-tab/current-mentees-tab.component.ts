@@ -32,6 +32,7 @@ import {
   MENTORSHIP_ADMIN_WITHDRAW_CONFIRM_MESSAGE,
   MENTORSHIP_ALL_OPEN_TERMS_OPTION_LABEL,
   MENTORSHIP_ALL_STATUSES_OPTION_LABEL,
+  MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
   MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL,
   MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_STATUS_LABELS,
@@ -41,8 +42,6 @@ import {
   MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
   MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
-  MENTORSHIP_MENTEE_STATUS_LABELS,
-  MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_NOTE_DIALOG_HEADER,
 } from '@lfx-one/shared/constants';
 import {
@@ -50,10 +49,10 @@ import {
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminTasksState,
   MentorshipAdminTermOption,
+  MentorshipApplicantDisplayStatus,
   MentorshipApplicantTask,
   MentorshipCurrentMenteeAction,
   MentorshipAttendanceType,
-  MentorshipMenteeStatus,
   MentorshipMentorTaskCreateRequest,
   MentorshipProgramApplicant,
   MentorshipRowAction,
@@ -155,15 +154,15 @@ export class CurrentMenteesTabComponent {
   protected readonly menteesLoadErrorMessage = MENTORSHIP_ADMIN_MENTEES_LOAD_ERROR_MESSAGE;
   protected readonly tasksLoadErrorMessage = MENTORSHIP_ADMIN_TASKS_LOAD_ERROR_MESSAGE;
 
-  /** Every status an application can hold, sent as the wire `status`. */
-  protected readonly statusOptions: FilterOption<MentorshipMenteeStatus | null>[] = [
+  /** The statuses the table shows, so pending reads as Applied or Tasks Completed; the BFF maps each to the wire `status`. */
+  protected readonly statusOptions: FilterOption<MentorshipApplicantDisplayStatus | null>[] = [
     { label: MENTORSHIP_ALL_STATUSES_OPTION_LABEL, value: null },
-    ...MENTORSHIP_MENTEE_STATUSES.map((status) => ({ label: MENTORSHIP_MENTEE_STATUS_LABELS[status], value: status })),
+    ...MENTORSHIP_APPLICANT_DISPLAY_STATUSES.map((status) => ({ label: MENTORSHIP_APPLICANT_STATUS_LABELS[status], value: status })),
   ];
 
   protected readonly form = new FormGroup({
     search: new FormControl('', { nonNullable: true }),
-    status: new FormControl<MentorshipMenteeStatus | null>(null),
+    status: new FormControl<MentorshipApplicantDisplayStatus | null>(null),
     term: new FormControl<string | null>(null),
   });
 
@@ -180,7 +179,7 @@ export class CurrentMenteesTabComponent {
   protected readonly tasksByApplication = signal<ReadonlyMap<string, MentorshipAdminTasksState>>(new Map());
 
   private readonly search = signal('');
-  private readonly status = signal<MentorshipMenteeStatus | null>(null);
+  private readonly status = signal<MentorshipApplicantDisplayStatus | null>(null);
   private readonly termId = signal<string | null>(null);
   private readonly reloadCount = signal(0);
   /** True while a decision write is in flight; Decline by Term is disabled and a second decision is refused meanwhile. */
@@ -325,7 +324,21 @@ export class CurrentMenteesTabComponent {
     const previous = state.tasks.find((current) => current.id === task.id);
     this.setTasksState(applicationId, { status: 'loaded', tasks: state.tasks.map((current) => (current.id === task.id ? task : current)) });
     if (previous) this.shiftSubmittedCount(applicationId, mentorshipTaskSubmittedCount(task.status) - mentorshipTaskSubmittedCount(previous.status));
+    this.reloadIfRowLeftStatusFilter(applicationId);
   };
+
+  /**
+   * Applied and Tasks Completed filter on task progress, so a status change can move a row out of the results. Reads
+   * the page again when it does, so the row leaves and the total follows; the row stays expanded if upstream still lists it.
+   */
+  private reloadIfRowLeftStatusFilter(applicationId: string): void {
+    const status = this.status();
+    if (this.destroyed || (status !== 'applied' && status !== 'tasks-completed')) return;
+    const row = this.applications().find((application) => application.id === applicationId);
+    if (!row || mentorshipApplicantDisplayStatus(row) === status) return;
+    if (this.expandedTaskMenteeIds()[applicationId]) this.rereadTasksForId = applicationId;
+    this.reloadCount.update((count) => count + 1);
+  }
 
   /** Keeps the row's submitted count, which Graduate's warning reads, in step with a status change, without reading the page again. */
   private shiftSubmittedCount(applicationId: string, delta: number): void {

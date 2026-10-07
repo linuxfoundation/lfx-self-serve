@@ -12,6 +12,7 @@ import type {
   MENTORSHIP_TERM_ROW_STATUSES,
 } from '../constants/mentorship.constants';
 import type {
+  MentorshipApplicantDisplayStatus,
   MentorshipApplicantTask,
   MentorshipApplicantTaskStatus,
   MentorshipMenteeStatus,
@@ -210,6 +211,12 @@ export interface MentorshipDeclineByTermDialogData {
 /** One of the two mentee tabs of an admin program page. */
 export type MentorshipAdminMenteeTab = (typeof MENTORSHIP_ADMIN_MENTEE_TABS)[number];
 
+/**
+ * The status filter of a mentee tab. Current Mentees filters on the statuses its table shows, so `pending` splits
+ * into `applied` and `tasks-completed`; Past Mentees filters on the wire status.
+ */
+export type MentorshipAdminMenteeStatusFilter = MentorshipMenteeStatus | MentorshipApplicantDisplayStatus;
+
 /** Count badges on the live admin program page. A count is `null` when its upstream read failed; the tab shows a dash. */
 export interface MentorshipAdminProgramTabCounts {
   currentMentees: number | null;
@@ -303,8 +310,8 @@ export interface MentorshipAdminTasksState {
 /** Query of `GET /api/mentorship/admin/programs/:programId/mentees`. */
 export interface MentorshipAdminMenteesQuery {
   type: MentorshipAdminMenteeTab;
-  /** One wire status. */
-  status?: MentorshipMenteeStatus;
+  /** One display status on `current`, one wire status on `past`. */
+  status?: MentorshipAdminMenteeStatusFilter;
   /** UUID of one term. */
   termId?: string;
   search?: string;
