@@ -219,9 +219,12 @@ describe('MeetingActionSlotComponent', () => {
     ['declined', "You can't attend."],
   ] as [RsvpResponse | null | undefined, string][])('says the RSVP is %s', (answer, message) => {
     myRsvp.set(answer);
+    myRsvpAttr.set(answer === undefined ? null : (answer ?? 'none'));
     render('rsvp');
 
     expect(text('meeting-action-message')).toBe(message);
+    // Absent while unknown, `none` when not answered (testid-contract.md).
+    expect(query('meeting-action-message')?.getAttribute('data-my-rsvp')).toBe(answer === undefined ? null : (answer ?? 'none'));
   });
 
   // E2-06 (FR-025).

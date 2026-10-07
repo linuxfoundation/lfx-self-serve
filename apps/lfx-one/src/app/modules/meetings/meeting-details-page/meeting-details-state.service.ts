@@ -106,6 +106,8 @@ export class MeetingDetailsStateService {
   private readonly optimisticInvitedId = signal<string | null>(null);
   /** RSVPs saved from this page (E2-05), applied ahead of the indexer; see {@link setMyRsvp}. */
   private readonly myRsvpUpdates$ = new Subject<MeetingRsvp>();
+  /** The meeting and occurrence `myRsvp` is currently fetched for; `null` when it is not fetched. */
+  private myRsvpKey: { meetingId: string; occurrenceId: string | undefined } | null = null;
   /** Meetings this page has auto-joined, so a remounted Join control does not open them again. */
   private readonly autoJoinedMeetingIds = new Set<string>();
   /** The meeting password for lookups: `?password=`, or else the composer's navigation state. */
@@ -243,8 +245,15 @@ export class MeetingDetailsStateService {
    * query service has indexed it, so a fetch already in flight could still return the old answer:
    * the saved one switches it out (V1's `rsvpUpdateCounter` guards the same race), and the request
    * key is deduplicated, so nothing refetches it until the occurrence or meeting changes.
+   *
+   * `meetingId` and `occurrenceId` are what the RSVP was saved for. A save that completes after the
+   * page has moved to another occurrence or meeting is dropped: that one fetches its own answer.
    */
-  public setMyRsvp(rsvp: MeetingRsvp): void {
+  public setMyRsvp(meetingId: string, occurrenceId: string | undefined, rsvp: MeetingRsvp): void {
+    const key = this.myRsvpKey;
+    if (!key || key.meetingId !== meetingId || key.occurrenceId !== occurrenceId) {
+      return;
+    }
     this.myRsvpUpdates$.next(rsvp);
   }
 
@@ -378,7 +387,10 @@ export class MeetingDetailsStateService {
         }
         return { meetingId: meeting.id, occurrenceId: resolveRsvpOccurrenceId(meeting, { occurrence: this.selectedOccurrence() }) };
       })
-    ).pipe(distinctUntilChanged((a, b) => a?.meetingId === b?.meetingId && a?.occurrenceId === b?.occurrenceId));
+    ).pipe(
+      distinctUntilChanged((a, b) => a?.meetingId === b?.meetingId && a?.occurrenceId === b?.occurrenceId),
+      tap((key) => (this.myRsvpKey = key))
+    );
 
     return toSignal(
       merge(request.pipe(map((key) => ({ key }))), this.myRsvpUpdates$.pipe(map((rsvp) => ({ rsvp })))).pipe(

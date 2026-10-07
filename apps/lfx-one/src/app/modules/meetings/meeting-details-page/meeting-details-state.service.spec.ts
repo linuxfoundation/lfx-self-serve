@@ -764,11 +764,68 @@ describe('MeetingDetailsStateService', () => {
       const state = create();
       await load();
 
-      state.setMyRsvp(rsvp('maybe'));
+      state.setMyRsvp(MEETING_ID, undefined, rsvp('maybe'));
       inFlight.next(null);
 
       expect(state.myRsvp()).toBe('maybe');
       expect(state.meetingStatus()).toBe('maybe');
+    });
+
+    // The saved answer must survive the page's own re-lookups: the request key is deduplicated, so a
+    // lagging refetch never overwrites it.
+    it('keeps a saved answer when the meeting is looked up again', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
+      const state = create();
+      await load();
+      state.setMyRsvp(MEETING_ID, undefined, rsvp('declined'));
+
+      queryParamMap$.next(convertToParamMap({ utm: 'refresh' }));
+      await load();
+
+      expect(getMyRsvp).toHaveBeenCalledTimes(1);
+      expect(state.myRsvp()).toBe('declined');
+    });
+
+    it('fetches again for another occurrence, and is unknown meanwhile', async () => {
+      const first = new Date(Date.now() + 3 * DAY);
+      const second = new Date(Date.now() + 10 * DAY);
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: upcoming({
+            start_time: first.toISOString(),
+            recurrence: { type: 2 },
+            occurrences: [
+              { occurrence_id: '1760000000', start_time: first.toISOString(), duration: 60 },
+              { occurrence_id: '1760600000', start_time: second.toISOString(), duration: 60 },
+            ],
+          } as unknown as Partial<Meeting>),
+          project,
+        })
+      );
+      getMyRsvp.mockReturnValue(of(rsvp('accepted')));
+      const state = create();
+      await load();
+      expect(state.myRsvp()).toBe('accepted');
+
+      const pending = new Subject<MeetingRsvp | null>();
+      getMyRsvp.mockReturnValue(pending);
+      queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
+      await load();
+
+      expect(getMyRsvp).toHaveBeenLastCalledWith(MEETING_ID, '1760600000');
+      expect(state.myRsvp()).toBeUndefined();
+    });
+
+    // E2-05's save is async: one that lands after the page moved on must not mark the new view.
+    it('drops a saved answer for an occurrence or meeting the page is no longer on', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
+      const state = create();
+      await load();
+
+      state.setMyRsvp('another-meeting', undefined, rsvp('accepted'));
+      state.setMyRsvp(MEETING_ID, '1760000000', rsvp('accepted'));
+
+      expect(state.myRsvp()).toBeNull();
     });
   });
 
