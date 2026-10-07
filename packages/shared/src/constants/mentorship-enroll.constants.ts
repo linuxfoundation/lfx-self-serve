@@ -441,6 +441,9 @@ export function createEmptyMentorshipEnrollForm(): MentorshipEnrollForm {
 /** Shown under the import select when the template could not be loaded; the form is left as it was. */
 export const MENTORSHIP_ENROLL_IMPORT_FAILED = "Couldn't load that program. You can still enroll from scratch.";
 
+/** Shown under the import select when the program list could not be loaded, so an empty select does not read as no programs. */
+export const MENTORSHIP_ENROLL_IMPORT_LIST_FAILED = "Couldn't load your programs to import from. You can still enroll from scratch.";
+
 export function mentorshipPolicyHref(label: string): string {
   return MENTORSHIP_POLICY_LINKS.find((link) => link.label === label)?.href ?? '#';
 }

@@ -312,10 +312,12 @@ export function formFromMentorshipEnrollImport(importProgramId: string, data: Me
 }
 
 /**
- * Lays the imported prerequisites over the standard list. An imported item named like a standard prerequisite (ignoring
- * case) selects that standard row, and the Coding Challenge gets back the URL the create request appended to its
- * description as a `Challenge:` line. Every other imported item becomes a custom prerequisite, and the standard rows the
- * program did not use stay in the list unselected.
+ * Lays the imported prerequisites over the standard list. An imported item selects a standard row only when it is that row
+ * as create sends it: the same name (ignoring case), description and file requirement, and no due date. The Coding
+ * Challenge is compared without the `Challenge:` line create appends to its description, and gets that URL back. A
+ * standard row's text, file requirement and due date cannot be edited, so any other imported item, a changed standard one
+ * included, becomes a custom prerequisite that keeps its stored values. The standard rows the program did not use stay in
+ * the list unselected.
  */
 function mergeImportedMentorshipPrerequisites(imported: MentorshipPrerequisite[]): MentorshipPrerequisite[] {
   const standard = createEmptyMentorshipEnrollForm().prerequisites;
@@ -323,26 +325,28 @@ function mergeImportedMentorshipPrerequisites(imported: MentorshipPrerequisite[]
   for (const item of imported) {
     const name = item.name.trim().toLowerCase();
     const index = standard.findIndex((entry) => !entry.required && entry.name.toLowerCase() === name);
-    if (index === -1) {
+    const entry = index === -1 ? undefined : standard[index];
+    const challenge = entry?.challengeUrl !== undefined ? splitImportedChallenge(item.description) : { text: item.description.trim(), url: '' };
+    const isStandard = entry !== undefined && challenge.text === entry.description && Boolean(item.requireFile) === Boolean(entry.requireFile) && !item.dueDate;
+    if (!isStandard) {
       custom.push({ ...item });
       continue;
     }
-    const entry = { ...standard[index], required: true };
-    if (entry.challengeUrl !== undefined) entry.challengeUrl = importedChallengeUrl(item.description);
-    standard[index] = entry;
+    standard[index] = { ...entry, required: true, ...(entry.challengeUrl !== undefined ? { challengeUrl: challenge.url } : {}) };
   }
   return [...standard, ...custom];
 }
 
 /**
- * The URL on the description's last line when that line is `Challenge: <url>`, else `''`. Only the last line is matched,
- * so a long stored description never makes the pattern backtrack.
+ * Splits a Coding Challenge description into its text and the URL on its last line when that line is `Challenge: <url>`.
+ * Without such a line the URL is `''` and the text is the whole description. Only the last line is matched, so a long
+ * stored description never makes the pattern backtrack.
  */
-function importedChallengeUrl(description: string): string {
-  const text = description.trimEnd();
+function splitImportedChallenge(description: string): { text: string; url: string } {
+  const text = description.trim();
   const newline = text.lastIndexOf('\n');
-  if (newline === -1) return '';
-  return /^[ \t]*Challenge:[ \t]*(\S+)$/.exec(text.slice(newline + 1))?.[1] ?? '';
+  const url = newline === -1 ? '' : (/^[ \t]*Challenge:[ \t]*(\S+)$/.exec(text.slice(newline + 1))?.[1] ?? '');
+  return url ? { text: text.slice(0, newline).trimEnd(), url } : { text, url: '' };
 }
 
 /**

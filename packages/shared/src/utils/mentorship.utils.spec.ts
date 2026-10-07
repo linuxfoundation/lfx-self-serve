@@ -477,7 +477,7 @@ describe('formFromMentorshipEnrollImport', () => {
     technologies: ['Go', 'Kubernetes'],
     skills: ['Java', 'Database'],
     prerequisites: [
-      { id: 'imported-0', name: 'Resume', description: 'Upload it', required: true, requireFile: true, custom: true },
+      { id: 'imported-0', name: 'Resume', description: 'Upload the most recent version of your resume.', required: true, requireFile: true, custom: true },
       { id: 'imported-1', name: 'Essay', description: '', required: true, requireFile: false, custom: true, dueDate: '2027-01-15' },
     ],
   };
@@ -528,32 +528,63 @@ describe('formFromMentorshipEnrollImport', () => {
     expect(form.prerequisites.some((item) => item.custom)).toBe(false);
   });
 
-  it('leaves the Coding Challenge URL empty unless the last line is a Challenge: line', () => {
-    const urlFor = (description: string): string | undefined =>
-      formFromMentorshipEnrollImport('mp_1', {
+  it('reads the Coding Challenge URL only from a Challenge: line at the end of its description', () => {
+    const importCoding = (description: string) => {
+      const prerequisites = formFromMentorshipEnrollImport('mp_1', {
         ...imported,
         prerequisites: [{ id: 'imported-0', name: 'Coding Challenge', description, required: true, requireFile: false, custom: true }],
-      }).prerequisites.find((item) => item.id === 'prereq-coding')?.challengeUrl;
+      }).prerequisites;
+      const coding = prerequisites.find((item) => item.id === 'prereq-coding');
+      return { selected: coding?.required, url: coding?.challengeUrl, custom: prerequisites.filter((item) => item.custom).map((item) => item.description) };
+    };
+    const base = 'Complete a code challenge';
 
-    expect(urlFor('Challenge: https://challenge.example/task')).toBe('');
-    expect(urlFor('Intro\n\nChallenge: https://challenge.example/task\nMore text')).toBe('');
-    expect(urlFor(`Intro${'\n'.repeat(50_000)}`)).toBe('');
-    expect(urlFor('Intro\n\tChallenge:  https://challenge.example/task  \n')).toBe('https://challenge.example/task');
+    expect(importCoding(`${base}\n\tChallenge:  https://challenge.example/task  \n`)).toEqual({
+      selected: true,
+      url: 'https://challenge.example/task',
+      custom: [],
+    });
+    expect(importCoding(base)).toEqual({ selected: true, url: '', custom: [] });
+    for (const description of [
+      'Challenge: https://challenge.example/task',
+      `${base}\n\nChallenge: https://challenge.example/task\nMore text`,
+      `${base}${'\n'.repeat(50_000)}More text`,
+    ]) {
+      expect(importCoding(description)).toEqual({ selected: false, url: '', custom: [description] });
+    }
+  });
+
+  it('keeps a standard prerequisite the program changed as a custom one with its stored values', () => {
+    const resume = { name: 'Resume', description: 'Upload the most recent version of your resume.', required: true, requireFile: true, custom: true };
+    const changed = [
+      { ...resume, id: 'imported-0', description: 'Upload a one-page resume.' },
+      { ...resume, id: 'imported-1', requireFile: false },
+      { ...resume, id: 'imported-2', dueDate: '2027-01-15' },
+    ];
+
+    for (const item of changed) {
+      const form = formFromMentorshipEnrollImport('mp_1', { ...imported, prerequisites: [item] });
+
+      expect(form.prerequisites.find((entry) => entry.id === 'prereq-resume')?.required).toBe(false);
+      expect(form.prerequisites.at(-1)).toEqual(item);
+    }
   });
 
   it('passes the prerequisites step for a program created from the standard list', () => {
+    const used = createEmptyMentorshipEnrollForm().prerequisites.filter((item) => item.challengeUrl === undefined);
     const form = formFromMentorshipEnrollImport('mp_1', {
       ...imported,
-      prerequisites: ['Resume', 'School Enrollment Verification', 'Participation permission from school or employer'].map((name, index) => ({
+      prerequisites: used.map((item, index) => ({
         id: `imported-${index}`,
-        name,
-        description: 'Stored description',
+        name: item.name,
+        description: item.description,
         required: true,
-        requireFile: false,
+        requireFile: item.requireFile === true,
         custom: true,
       })),
     });
 
+    expect(form.prerequisites.filter((item) => item.required).map((item) => item.id)).toEqual(used.map((item) => item.id));
     expect(getMentorshipEnrollStepErrors('prerequisites', { ...form, termsAccepted: true })).toEqual({});
   });
 

@@ -20,6 +20,7 @@ import {
   MENTORSHIP_ENROLL_DETAILS_INTRO,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
   MENTORSHIP_ENROLL_IMPORT_FAILED,
+  MENTORSHIP_ENROLL_IMPORT_LIST_FAILED,
   MENTORSHIP_ENROLL_LOGO_ACCEPT,
   MENTORSHIP_ENROLL_LOGO_HELPER,
   MENTORSHIP_ENROLL_NAME_CHECKING,
@@ -268,7 +269,11 @@ export class EnrollDetailsStepComponent {
           this.importOptions.set([{ value: '', label: 'None' }, ...programs.map((program) => ({ value: program.id, label: program.name }))]);
           this.importLoading.set(false);
         },
-        error: () => this.importLoading.set(false),
+        // Any failed page fails the whole list, since a partial list would hide programs with no sign that it is short.
+        error: () => {
+          this.importError.set(MENTORSHIP_ENROLL_IMPORT_LIST_FAILED);
+          this.importLoading.set(false);
+        },
       });
 
     // Leaving the step cancels a template read still in flight, so put the picker back on None rather than leave it naming

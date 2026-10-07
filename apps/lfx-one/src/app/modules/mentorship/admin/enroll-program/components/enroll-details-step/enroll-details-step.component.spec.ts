@@ -10,6 +10,7 @@ import {
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
   MENTORSHIP_ENROLL_IMPORT_FAILED,
+  MENTORSHIP_ENROLL_IMPORT_LIST_FAILED,
   MENTORSHIP_ENROLL_LOGO_MAX_BYTES,
   MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE,
   MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE,
@@ -448,6 +449,21 @@ describe('EnrollDetailsStepComponent — import from an existing program', () =>
 
     expect(getPrograms.mock.calls.map(([params]) => params.offset)).toEqual([0, MENTORSHIP_PROGRAMS_MAX_LIMIT]);
     expect(importOptionIds()).toEqual(['', ...programs.map((program) => program.id)]);
+    expect(importError()).toBeNull();
+  });
+
+  it('says the programs could not be loaded when any page fails, offering only None', async () => {
+    const programs = Array.from({ length: MENTORSHIP_PROGRAMS_MAX_LIMIT + 3 }, (_, index) => ({ id: `program-${index}`, name: `Program ${index}` }));
+    const getPrograms = vi.fn((params: { offset: number; limit: number }) =>
+      params.offset === 0 ? of({ data: programs.slice(0, params.limit), total: programs.length }) : throwError(() => new Error('upstream down'))
+    );
+
+    await setUp(of(template), getPrograms as (...args: unknown[]) => Observable<unknown>);
+    fixture.detectChanges();
+
+    expect(importOptionIds()).toEqual(['']);
+    expect(importSelect().loading()).toBe(false);
+    expect(importError()?.textContent).toContain(MENTORSHIP_ENROLL_IMPORT_LIST_FAILED);
   });
 
   it('puts the picker back on None when the step closes before the template arrives', async () => {
