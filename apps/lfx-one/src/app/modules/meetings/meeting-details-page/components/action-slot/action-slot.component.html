@@ -80,10 +80,8 @@
         </div>
       }
       @case ('rsvp') {
-        <!-- E2-05 adds the RSVP card; until then the viewer's own answer (E2-04), once it has loaded. -->
-        <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message" [attr.data-my-rsvp]="myRsvpAttr()">
-          {{ rsvpMessage() }}
-        </p>
+        <!-- E2-05 (FR-023 / FR-024): the "Will you attend?" card, with the viewer's own answer (E2-04). -->
+        <lfx-meeting-rsvp-card />
       }
       @case ('rsvp-unavailable') {
         <!-- N-01 designs this state. -->
