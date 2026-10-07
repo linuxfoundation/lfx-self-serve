@@ -85,9 +85,8 @@ export class ProgramCardComponent {
     this.cardClick.emit(this.program().id);
   }
 
-  /** Opens the file picker without letting the click reach the card, which would open the program. */
-  protected onAddLogo(event: Event, fileInput: HTMLInputElement): void {
-    event.stopPropagation();
+  /** Opens the file picker. The hint row sits beside the card's clickable row, so this never opens the program. */
+  protected onAddLogo(fileInput: HTMLInputElement): void {
     if (this.busy()) return;
     fileInput.click();
   }

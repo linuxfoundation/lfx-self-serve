@@ -24,7 +24,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProgramCardComponent } from './program-card.component';
 
 interface CardInternals {
-  onAddLogo: (event: Event, fileInput: HTMLInputElement) => void;
+  onAddLogo: (fileInput: HTMLInputElement) => void;
   onLogoPicked: (event: Event) => void;
 }
 
@@ -98,24 +98,29 @@ describe('ProgramCardComponent', () => {
     expect(root.querySelector('[data-testid="mentorship-program-card-logo-input"]')).not.toBeNull();
   });
 
-  it('opens the file picker without emitting cardClick', () => {
+  it("keeps the button outside the card's clickable row, so it never opens the program", () => {
     const root = create();
     const cardClicks = vi.fn();
     fixture.componentInstance.cardClick.subscribe(cardClicks);
-    const input = root.querySelector<HTMLInputElement>('[data-testid="mentorship-program-card-logo-input"]') as HTMLInputElement;
-    const openPicker = vi.spyOn(input, 'click').mockImplementation(() => undefined);
-    const event = new MouseEvent('click', { bubbles: true });
-    const stop = vi.spyOn(event, 'stopPropagation');
+    const finish = root.querySelector('[data-testid="mentorship-program-card-finish"]') as HTMLElement;
 
-    internals().onAddLogo(event, input);
-    (root.querySelector('[data-testid="mentorship-program-card-finish"]') as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    (root.querySelector('[data-testid="mentorship-program-card-finish"]') as HTMLElement).dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
-    );
+    finish.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    finish.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
-    expect(stop).toHaveBeenCalled();
-    expect(openPicker).toHaveBeenCalledTimes(1);
+    expect(finish.closest('[role="button"]')).toBeNull();
     expect(cardClicks).not.toHaveBeenCalled();
+  });
+
+  it('opens the file picker, but not while an upload runs', () => {
+    const root = create();
+    const input = root.querySelector('[data-testid="mentorship-program-card-logo-input"]') as HTMLInputElement;
+    const openPicker = vi.spyOn(input, 'click').mockImplementation(() => undefined);
+
+    internals().onAddLogo(input);
+    (fixture.componentInstance as unknown as { busy: { set: (value: boolean) => void } }).busy.set(true);
+    internals().onAddLogo(input);
+
+    expect(openPicker).toHaveBeenCalledTimes(1);
   });
 
   it('uploads the logo without the 403 back-off, toasts "Logo added." and emits changed', () => {
