@@ -1435,8 +1435,8 @@
   }
 </div>
 
-<!-- The hero banner is NAMED for every host, and LOADED only for https `linuxfoundation.org`
-     hosts (`emailHeroPreviewUrl`): binding any other scraped URL into an <img [src]> would make
+<!-- The hero banner is NAMED for every host, and LOADED only for an https image on an exact
+     EMAIL_HERO_PREVIEW_HOSTS host (`emailHeroPreviewUrl`): binding any other scraped URL into an <img [src]> would make
      the OPERATOR'S browser fetch it, before campaign-service's dial-time guard runs.
      Defined once and used from each preview panel, so the three cannot drift apart. -->
 <ng-template #heroBannerNote>

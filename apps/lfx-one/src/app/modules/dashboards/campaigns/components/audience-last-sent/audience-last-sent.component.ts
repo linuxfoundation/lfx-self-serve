@@ -195,7 +195,9 @@ export class AudienceLastSentComponent {
       // after the ticks changed, with no way to record the new ones.
       const sameIncludes = usable.length > 0 && usable.length === attachedIncludes.size && usable.every((list) => attachedIncludes.has(list.listId));
       const includeIds = new Set(usable.map((list) => list.listId));
-      const expectedExclusions = new Set([...email.suppressionLists.map((list) => list.listId), ...this.pendingExclusionIds()].filter((id) => !includeIds.has(id)));
+      const expectedExclusions = new Set(
+        [...email.suppressionLists.map((list) => list.listId), ...this.pendingExclusionIds()].filter((id) => !includeIds.has(id))
+      );
       const exclusionsCovered = expectedExclusions.size === recordedExclusions.size && [...expectedExclusions].every((id) => recordedExclusions.has(id));
       return {
         ...email,
