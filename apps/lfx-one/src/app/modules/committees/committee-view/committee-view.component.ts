@@ -24,6 +24,7 @@ import {
   CommitteeTab,
   CommitteeUser,
   getCommitteeCategorySeverity,
+  MembershipTagDisplay,
   TagSeverity,
 } from '@lfx-one/shared';
 import {
@@ -129,9 +130,13 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
   'LF Staff': 'Linux Foundation staff supporting the group',
 };
 
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function buildTooltipHtml(title: string, bullets: string[]): string {
-  const items = bullets.map((b) => `<li>${b}</li>`).join('');
-  return `<div><strong>${title}</strong><ul class="list-disc pl-4 mt-1 space-y-0.5">${items}</ul></div>`;
+  const items = bullets.map((b) => `<div class="flex gap-1"><span>•</span><span>${b}</span></div>`).join('');
+  return `<div><strong>${escapeHtml(title)}</strong><div class="flex flex-col gap-0.5 pl-2 mt-1">${items}</div></div>`;
 }
 
 @Component({
@@ -346,7 +351,7 @@ export class CommitteeViewComponent {
   });
 
   /** Resolved membership status label, severity, and icon for display in the group header. Null while loading. */
-  public membershipStatus: Signal<{ label: string; severity: TagSeverity; icon: string } | null> = computed(() => {
+  public membershipStatus: Signal<MembershipTagDisplay | null> = computed(() => {
     if (this.myRoleLoading()) return null;
     if (this.canEdit()) return { label: 'Manager', severity: 'info', icon: 'fa-light fa-user-gear' };
     if (this.canReview()) return { label: 'Auditor', severity: 'secondary', icon: 'fa-light fa-user-magnifying-glass' };
