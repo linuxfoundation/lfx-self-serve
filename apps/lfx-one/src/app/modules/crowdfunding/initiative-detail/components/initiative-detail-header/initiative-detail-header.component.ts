@@ -49,7 +49,7 @@ export class InitiativeDetailHeaderComponent {
         {
           label: 'Activate Initiative',
           icon: 'fa-solid fa-circle-check',
-          description: 'Make this initiative publicly visible and allow it to accept donations again.',
+          description: 'Make this initiative publicly visible and allow it to accept donations again. Canceled recurring donations are not restored.',
           command: () => this.confirmActivate(),
         },
       ];
@@ -58,7 +58,7 @@ export class InitiativeDetailHeaderComponent {
       {
         label: 'Archive Initiative',
         icon: 'fa-solid fa-box-archive',
-        description: 'Hide this initiative from public view. No new donations will be accepted while archived.',
+        description: 'Hide this initiative from public view. No new donations will be accepted and all active recurring donations will be canceled.',
         command: () => this.confirmArchive(),
       },
     ];
@@ -84,7 +84,8 @@ export class InitiativeDetailHeaderComponent {
     this.confirmationService.confirm({
       key: 'initiative-status',
       header: 'Activate Initiative',
-      message: 'Are you sure you want to activate this initiative? It will be publicly visible and accept donations again.',
+      message:
+        'Are you sure you want to activate this initiative? It will be publicly visible and accept donations again. Recurring donations canceled while it was archived will not resume; donors must subscribe again.',
       acceptLabel: 'Activate',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-sm',
@@ -97,7 +98,8 @@ export class InitiativeDetailHeaderComponent {
     this.confirmationService.confirm({
       key: 'initiative-status',
       header: 'Archive Initiative',
-      message: 'Are you sure you want to archive this initiative? It will be hidden from public view and no new donations will be accepted while archived.',
+      message:
+        'Are you sure you want to archive this initiative? It will be hidden from public view, no new donations will be accepted, and all active recurring donations will be canceled. Donors will have to subscribe again if you reactivate it.',
       acceptLabel: 'Archive',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',

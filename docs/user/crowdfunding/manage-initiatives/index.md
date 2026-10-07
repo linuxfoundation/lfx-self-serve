@@ -47,7 +47,7 @@ The detail page is organized into a header and two tabs.
 
 ## Archive an initiative
 
-Archiving an initiative changes its status to Hidden. The initiative no longer appears publicly and stops accepting new donations. Existing recurring donors are not automatically notified and their subscriptions are not cancelled — they will need to cancel their recurring donations manually. See [Manage Recurring Donations](../manage-recurring-donations/) for how donors can cancel a subscription.
+Archiving an initiative changes its status to Hidden. The initiative no longer appears publicly and stops accepting new donations. All active recurring donations to the initiative are cancelled, so donors are not charged again. This cannot be undone: if you later reactivate the initiative, donors must subscribe again. See [Manage Recurring Donations](../manage-recurring-donations/) for how donors manage a subscription.
 
 1. Open a **Published** initiative from the [View Initiatives](../view-initiatives/) page.
 2. Select the **More** menu (⋯) in the initiative header.
@@ -58,7 +58,7 @@ The initiative moves to the **Archived** group in the initiatives list.
 
 ## Activate an archived initiative
 
-Activating an initiative changes its status back to Published. The initiative becomes publicly visible and resumes accepting donations.
+Activating an initiative changes its status back to Published. The initiative becomes publicly visible and resumes accepting donations. Recurring donations cancelled while it was archived are not restored.
 
 1. Open an **Archived** initiative from the [View Initiatives](../view-initiatives/) page.
 2. Select the **More** menu (⋯) in the initiative header.
@@ -81,7 +81,7 @@ Each initiative has a fund type that describes its purpose:
 ## Frequently asked
 
 **What happens to recurring donors when I archive an initiative?**
-Archiving an initiative stops the initiative from accepting new donations, but it does not automatically cancel the recurring subscriptions of existing donors. Donors who have an active recurring donation to the initiative will continue to be charged until they cancel their subscriptions manually.
+Archiving an initiative stops it from accepting new donations and cancels all active recurring donations to it. Donors are not charged again, and they must subscribe again if you reactivate the initiative.
 
 **Can I reactivate an archived initiative?**
 Yes. An archived initiative can be reactivated at any time by selecting **Activate Initiative** from the **More** menu (⋯). The initiative will return to Published status and resume accepting donations.
