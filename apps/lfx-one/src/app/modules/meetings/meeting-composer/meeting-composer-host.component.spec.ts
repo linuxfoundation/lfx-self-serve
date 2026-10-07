@@ -597,7 +597,7 @@ describe('MeetingComposerHostComponent', () => {
       await flush();
 
       expect(component['editScope']()).toEqual({ kind: 'occurrence', label: 'Wed, Jan 9, 2030 · 10:00 AM EST' });
-      expect(component['sections']().map((section) => section.id)).toEqual(['details-access', 'date-schedule', 'agenda-resources']);
+      expect(component['sections']().map((section) => section.id)).toEqual(['details-access', 'date-schedule', 'guests', 'agenda-resources']);
     });
 
     it('reopens on the whole series when the organizer switches scope', async () => {

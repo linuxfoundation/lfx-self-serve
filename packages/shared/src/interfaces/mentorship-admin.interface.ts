@@ -11,8 +11,14 @@ import type {
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_TERM_ROW_STATUSES,
 } from '../constants/mentorship.constants';
-import type { MentorshipApplicantTask, MentorshipMenteeStatus, MentorshipProgramApplicant, MentorshipProgramPersonBase } from './mentorship.interface';
-import type { MentorshipUpstreamProgramTerm } from './mentorship-mentee.interface';
+import type {
+  MentorshipApplicantTask,
+  MentorshipApplicantTaskStatus,
+  MentorshipMenteeStatus,
+  MentorshipProgramApplicant,
+  MentorshipProgramPersonBase,
+} from './mentorship.interface';
+import type { MentorshipUpstreamProgramTerm, MentorshipUpstreamTaskStatus } from './mentorship-mentee.interface';
 
 /**
  * Enrollment / graduation counters shown on the admin program card.
@@ -26,10 +32,10 @@ export interface MentorshipProgramStats {
 /**
  * Program status as the admin list shows it (upstream `admin_status`, `_` written as `-`):
  * - `open` — published, with an open term or no terms yet
- * - `pending-review` — draft or submitted, awaiting approval
+ * - `pending-review` — pending, awaiting review
  * - `completed` — published, with only closed terms
  * - `rejected` — rejected
- * - `hidden` — archived or hidden
+ * - `hidden` — hidden
  */
 export type MentorshipProgramStatus = (typeof MENTORSHIP_PROGRAM_STATUSES)[number];
 
@@ -47,6 +53,8 @@ export interface MentorshipProgram {
   stats: MentorshipProgramStats;
   /** Optional program logo. When absent, the card renders an initials avatar. */
   logoUrl?: string;
+  /** True when upstream status is `pending` or `published` and the program has no logo (R12). List rows only. */
+  logoMissing?: boolean;
   createdOn: string;
   updatedOn: string;
 }
@@ -110,6 +118,32 @@ export interface MentorshipAdminTermInput {
   endDate: string;
   applicationStartDate: string;
   applicationEndDate: string;
+}
+
+/**
+ * Body of `PATCH /api/mentorship/admin/tasks/:taskId`. Every field is optional and an absent one is left unchanged, but at least
+ * one is required: the status select sends `status` alone, the edit dialog sends whichever fields it changed. `dueDate` is a date-only
+ * `YYYY-MM-DD`, and an empty string clears it. `requiresFileSubmission` turns the mentee's file requirement on or off.
+ */
+export interface MentorshipAdminTaskUpdate {
+  name?: string;
+  description?: string;
+  dueDate?: string;
+  requiresFileSubmission?: boolean;
+  status?: MentorshipApplicantTaskStatus;
+}
+
+/**
+ * Body of `PATCH /mentorship/v1/tasks/{id}`. A field left out is unchanged; an empty `submit_file` or `due_date` clears it.
+ * `submit_file` is `required` when the mentee must upload a file. Upstream refuses `application_status`, `program_term_status`
+ * and `file` here, so none is sent.
+ */
+export interface MentorshipUpstreamTaskUpdate {
+  name?: string;
+  description?: string;
+  status?: MentorshipUpstreamTaskStatus;
+  submit_file?: string;
+  due_date?: string;
 }
 
 /**

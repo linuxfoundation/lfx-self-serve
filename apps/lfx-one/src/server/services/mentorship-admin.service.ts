@@ -20,20 +20,28 @@ import {
   MentorshipAdminMentorStatusUpdate,
   MentorshipAdminProgramPage,
   MentorshipAdminProgramTabCounts,
+  MentorshipAdminTaskUpdate,
   MentorshipAdminTermInput,
   MentorshipAdminTermOption,
   MentorshipAdminTermsQuery,
   MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
+  MentorshipEnrollCreateRequest,
+  MentorshipEnrollImport,
+  MentorshipEnrollProgramRef,
   MentorshipMentorTaskCreateRequest,
   MentorshipMentorTaskCreateResponse,
+  MentorshipProgramLogoUploadResult,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipProgramTermRow,
   MentorshipTermRowStatus,
   MentorshipUpstreamAdministeredProgram,
   MentorshipUpstreamApplication,
+  MentorshipUpstreamCreatedProgram,
+  MentorshipUpstreamEnrollTemplate,
   MentorshipUpstreamListResponse,
+  MentorshipUpstreamLogoUpload,
   MentorshipUpstreamMemberManagementRow,
   MentorshipUpstreamProgramApplicationRow,
   MentorshipUpstreamProgramHeader,
@@ -53,6 +61,7 @@ import {
   MENTORSHIP_APPLICATIONS_PATH,
   MENTORSHIP_ME_PROGRAMS_PATH,
   MENTORSHIP_PROGRAMS_PATH,
+  MENTORSHIP_TASKS_PATH,
 } from '../constants';
 import { ConflictError, MicroserviceError } from '../errors';
 import {
@@ -61,8 +70,10 @@ import {
   mapMentorshipAdminProgram,
   mapMentorshipAdminTermRow,
 } from '../helpers/mentorship-admin-program.helper';
+import { buildMentorshipUpstreamTaskUpdate } from '../helpers/mentorship-admin-task.helper';
 import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { saveMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
+import { toMentorshipEnrollImport, toMentorshipEnrollProgramRef, toMentorshipProgramLogoUploadResult } from '../helpers/mentorship-enroll.helper';
 import { createMentorshipMenteeTasks } from '../helpers/mentorship-mentor-task.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
 import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask } from '../helpers/mentorship-program-application.helper';
@@ -382,6 +393,26 @@ export class MentorshipAdminService {
   }
 
   /**
+   * Edits one task and returns it as the row reads it, so the page patches the row in place instead of reading the list
+   * again. Upstream checks the caller mentors or manages the task's program and is not its assignee (403), answers 404 for
+   * an unknown task and 400 for a submitted task that requires a file with none uploaded; its status passes through. Only
+   * the task id and the names of the fields sent are logged, never the task's text.
+   */
+  public async updateTask(req: Request, taskId: string, update: MentorshipAdminTaskUpdate): Promise<MentorshipApplicantTask> {
+    logger.debug(req, 'mentorship_admin_update_task', 'Updating task', { taskId, fields: Object.keys(update) });
+
+    const task = await proxyMentorshipRequest<MentorshipUpstreamTask>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`,
+      'PATCH',
+      undefined,
+      buildMentorshipUpstreamTaskUpdate(update)
+    );
+    return mapMentorshipProgramTask(task);
+  }
+
+  /**
    * Moves one mentor member to `active`, `declined` or `withdrawn`. Upstream checks the caller administers the program
    * and that the move is allowed from the mentor's current status; its 403, 404 and 409 pass through.
    */
@@ -412,6 +443,61 @@ export class MentorshipAdminService {
     const declinedCount = typeof result?.declined_count === 'number' ? result.declined_count : 0;
     logger.debug(req, 'mentorship_admin_decline_pending_for_term', 'Pending applications declined', { programId, termId, declinedCount });
     return { declinedCount };
+  }
+
+  /**
+   * Creates a program from the enroll wizard. Upstream leaves it `pending`, which is awaiting review, so there is no submit
+   * call. The body is already rebuilt from known fields. Upstream's 400 and 409 (a taken name or slug) pass through. Nothing in
+   * the body is logged.
+   */
+  public async createProgram(req: Request, body: MentorshipEnrollCreateRequest): Promise<MentorshipEnrollProgramRef> {
+    logger.debug(req, 'mentorship_admin_create_program', 'Creating program', { termCount: body.terms.length });
+
+    const created = await proxyMentorshipRequest<MentorshipUpstreamCreatedProgram>(
+      this.microserviceProxy,
+      req,
+      MENTORSHIP_PROGRAMS_PATH,
+      'POST',
+      undefined,
+      body
+    );
+    return toMentorshipEnrollProgramRef(created);
+  }
+
+  /**
+   * Reads the details of an existing program for the enroll wizard's import. Upstream's 403, 404 and 5xx pass through. Nothing
+   * in the template is logged.
+   */
+  public async getEnrollTemplate(req: Request, programId: string): Promise<MentorshipEnrollImport> {
+    logger.debug(req, 'mentorship_admin_get_enroll_template', 'Reading enroll template', { programId });
+
+    const template = await proxyMentorshipRequest<MentorshipUpstreamEnrollTemplate>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/enroll-template`,
+      'GET'
+    );
+    return toMentorshipEnrollImport(template);
+  }
+
+  /**
+   * Sends a program's logo bytes on to upstream with the caller's content type. Upstream's 400, 403, 404, 409, 413, 415 and 503
+   * pass through. The bytes are not logged.
+   */
+  public async uploadProgramLogo(req: Request, programId: string, logo: Buffer, contentType: string): Promise<MentorshipProgramLogoUploadResult> {
+    logger.debug(req, 'mentorship_admin_upload_program_logo', 'Uploading program logo', { programId, sizeBytes: logo.byteLength, contentType });
+
+    const uploaded = await proxyMentorshipRequest<MentorshipUpstreamLogoUpload>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/logo-upload`,
+      'POST',
+      undefined,
+      logo,
+      undefined,
+      { 'Content-Type': contentType }
+    );
+    return toMentorshipProgramLogoUploadResult(uploaded);
   }
 
   /**

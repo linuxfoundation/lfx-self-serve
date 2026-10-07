@@ -5,11 +5,13 @@ import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, HostListener, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
+import { CCLA_SIGN_COPY, ORG_CLA_NOT_STARTED_COPY, ORG_CLA_REVIEW_COPY_FAILURE } from '@lfx-one/shared/constants';
 import type { OrgClaSignHandoffDialogData, OrgClaSignResponse } from '@lfx-one/shared/interfaces';
+import { downloadFromUrl, orgClaReviewCopyFilename } from '@lfx-one/shared/utils';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { finalize } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 
@@ -43,11 +45,16 @@ export class OrgEasyclaSignHandoffComponent {
   private readonly config = inject<DynamicDialogConfig<OrgClaSignHandoffDialogData>>(DynamicDialogConfig);
 
   protected readonly copy = CCLA_SIGN_COPY;
+  protected readonly reviewCopyLabel = ORG_CLA_NOT_STARTED_COPY.downloadLabel;
   protected readonly headingId = OrgEasyclaSignHandoffComponent.headingId;
 
   protected readonly state = signal<'preparing' | 'ready' | 'failed'>('preparing');
   /** The CLA service's own words for a refusal it explained; the generic copy otherwise. */
   protected readonly failureMessage = signal<string>(CCLA_SIGN_COPY.failure.body);
+
+  protected readonly reviewCopyDownloading = signal(false);
+  protected readonly reviewCopyFailed = signal(false);
+  protected readonly reviewCopyFailure = ORG_CLA_REVIEW_COPY_FAILURE.detail;
 
   private readonly prepared = signal<OrgClaSignResponse | null>(null);
 
@@ -118,6 +125,31 @@ export class OrgEasyclaSignHandoffComponent {
     // Navigated to as returned. Composing this from a console base and the identifiers would
     // ignore the session the request just opened.
     this.document.location.href = prepared.signUrl;
+  }
+
+  protected onReviewCopyDownload(): void {
+    const data = this.config.data;
+    if (!data || this.reviewCopyDownloading()) return;
+
+    this.reviewCopyDownloading.set(true);
+    this.reviewCopyFailed.set(false);
+    this.claService
+      .getCclaPreview(data.orgUid, data.claGroupId)
+      .pipe(
+        finalize(() => this.reviewCopyDownloading.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (blob) => {
+          const url = URL.createObjectURL(blob);
+          downloadFromUrl(url, orgClaReviewCopyFilename(data.claGroupName));
+          setTimeout(() => URL.revokeObjectURL(url), 0);
+        },
+        error: (error: HttpErrorResponse) => {
+          console.error('Failed to download the CCLA review copy:', error.status, error.message);
+          this.reviewCopyFailed.set(true);
+        },
+      });
   }
 
   protected onCancel(): void {

@@ -27,6 +27,8 @@
         <lfx-mentorship-enroll-details-step
           [form]="form"
           [errors]="stepErrors()"
+          [(project)]="selectedProject"
+          [(logoFile)]="logoFile"
           (ciiLookupStatusChange)="onCiiLookupStatusChange($event)"
           (nameLookupStatusChange)="onNameLookupStatusChange($event)" />
       }
@@ -34,12 +36,48 @@
         <lfx-mentorship-enroll-setup-step [form]="form" [errors]="stepErrors()" />
       }
       @case ('prerequisites') {
-        <lfx-mentorship-enroll-prerequisites-step [form]="form" [errors]="stepErrors()" />
+        <lfx-mentorship-enroll-prerequisites-step [form]="form" [errors]="stepErrors()" [locked]="submitting() || programSaved()" />
       }
     }
 
-    @if (hasStepErrors()) {
+    @if (hasStepErrors() || formIncompleteShown()) {
       <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{{ formIncomplete }}</div>
+    }
+
+    @if (partialSave()) {
+      <div
+        class="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        role="alert"
+        data-testid="mentorship-enroll-partial-save">
+        <p>{{ submitFailure()?.message ?? logoNotUploaded }}</p>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium" for="mentorship-enroll-partial-save-logo-input">Choose a different logo</label>
+          <input
+            id="mentorship-enroll-partial-save-logo-input"
+            type="file"
+            class="text-xs"
+            [accept]="logoAccept"
+            [disabled]="submitting()"
+            (change)="onReplaceLogo($event)"
+            data-testid="mentorship-enroll-partial-save-logo-input" />
+          @if (logoFieldError()) {
+            <p class="text-xs text-red-600" data-testid="mentorship-enroll-partial-save-logo-error">{{ logoFieldError() }}</p>
+          }
+        </div>
+        <lfx-button
+          [label]="retryLabel"
+          severity="primary"
+          size="small"
+          styleClass="self-start"
+          [loading]="submitting()"
+          [disabled]="submitting()"
+          (onClick)="submitEnrollment()"
+          data-testid="mentorship-enroll-partial-save-retry" />
+      </div>
+    } @else if (submitFailure()) {
+      <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert" data-testid="mentorship-enroll-submit-error">
+        {{ submitFailure()?.message }}
+      </div>
     }
 
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2 pb-8">
@@ -50,9 +88,17 @@
         severity="secondary"
         [text]="true"
         size="small"
+        [disabled]="submitting() || programSaved()"
         (onClick)="onBack()"
         data-testid="mentorship-enroll-back" />
-      <lfx-button [label]="nextLabel()" severity="primary" size="small" (onClick)="onNext()" data-testid="mentorship-enroll-next" />
+      <lfx-button
+        [label]="nextLabel()"
+        severity="primary"
+        size="small"
+        [loading]="submitting()"
+        [disabled]="submitting()"
+        (onClick)="onNext()"
+        data-testid="mentorship-enroll-next" />
     </div>
   </div>
 </div>

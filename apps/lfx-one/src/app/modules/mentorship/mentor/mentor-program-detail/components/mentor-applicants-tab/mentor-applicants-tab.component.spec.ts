@@ -12,6 +12,7 @@ import { MessageService } from 'primeng/api';
 import { EMPTY } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AdminTaskUpdateService } from '../../../../services/admin-task-update.service';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 import { MentorApplicantsTabComponent } from './mentor-applicants-tab.component';
 
@@ -70,6 +71,8 @@ describe('MentorApplicantsTabComponent', () => {
           provide: MentorshipTaskDialogService,
           useValue: { openCreate: vi.fn().mockReturnValue(EMPTY), openCreateGroup: vi.fn().mockReturnValue(EMPTY), openEdit: vi.fn().mockReturnValue(EMPTY) },
         },
+        // The panel also injects the admin task-update service; mentor rows are not editable, so it is never called.
+        { provide: AdminTaskUpdateService, useValue: { update: vi.fn(), isUpdating: () => false } },
       ],
     });
 

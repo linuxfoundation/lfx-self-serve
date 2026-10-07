@@ -4,8 +4,8 @@
 /*
  * LFX theme for the embedded Gatewaze admin.
  *
- * Appended to the contained embed stylesheet by scripts/contain-gw-embed-css.mjs, so everything
- * here is already scoped to the embed's containers and cannot reach LFX chrome.
+ * Appended to the contained embed stylesheet by the server (gw-embed-stylesheet.service.ts),
+ * so everything here is already scoped to the embed's containers and cannot reach LFX chrome.
  *
  * The scope includes `#frame-root`, the Puck canvas root inside the editor's srcdoc iframe, so the
  * colour tokens and type scale reach the canvas too. That id exists only in that iframe, never in

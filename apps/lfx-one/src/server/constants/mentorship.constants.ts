@@ -68,6 +68,12 @@ export const MENTORSHIP_LIST_PAGE_SIZE = 100;
 /** Most pages one upstream mentorship list read follows, so a list that never ends cannot loop forever. */
 export const MENTORSHIP_LIST_MAX_PAGES = 50;
 
+/** Most query-service reads one enroll project-picker page spends filling itself when access filtering leaves pages short. */
+export const MENTORSHIP_LF_PROJECT_MAX_READS = 5;
+
+/** Largest project-picker page a caller may ask for; a larger `limit` is cut to this, a non-positive one raised to 1. */
+export const MENTORSHIP_LF_PROJECT_MAX_LIMIT = 50;
+
 /** Page size for a program's applications: the largest `limit` upstream accepts there, which resets anything above it to 10. */
 export const MENTORSHIP_PROGRAM_APPLICATIONS_PAGE_SIZE = 50;
 
@@ -102,15 +108,13 @@ export const MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES: readonly MentorshipUpstream
 
 /**
  * How a program's own status reads on its page when the program is not published. A published program reads
- * `open` or `completed` from its terms. The header route has no `admin_status`, so this mirrors upstream's grouping.
+ * `open` or `completed` from its terms. The header route has no `admin_status`, so the BFF maps the status itself;
+ * any other value reads as pending review and is flagged as unknown.
  */
 export const MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS: Readonly<Record<string, MentorshipProgramStatus>> = {
-  draft: 'pending-review',
-  submitted: 'pending-review',
   pending: 'pending-review',
   rejected: 'rejected',
   hidden: 'hidden',
-  archived: 'hidden',
 };
 
 /** Upstream `admin_status` of an administered program, as the BFF shows it. Upstream groups the program status with its terms. */
@@ -167,6 +171,14 @@ export const MENTORSHIP_MENTOR_PROGRAM_TASK_STATUS_MAP: Readonly<Record<Mentorsh
   in_progress: 'in-progress',
   submitted: 'submitted',
   complete: 'completed',
+};
+
+/** How a task status the admin picks is written upstream: the reverse of `MENTORSHIP_MENTOR_PROGRAM_TASK_STATUS_MAP`. */
+export const MENTORSHIP_ADMIN_TASK_STATUS_TO_UPSTREAM: Readonly<Record<MentorshipApplicantTaskStatus, MentorshipUpstreamTaskStatus>> = {
+  pending: 'incomplete',
+  'in-progress': 'in_progress',
+  submitted: 'submitted',
+  completed: 'complete',
 };
 
 /** Application statuses whose tasks the mentee views track; every other status is a past application. */

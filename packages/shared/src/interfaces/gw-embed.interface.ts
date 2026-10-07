@@ -37,9 +37,12 @@ export interface GwHostContext {
    * at that point would overwrite the pending nonce and break every host-initiated return.
    */
   signIn: {
-    lfidStartUrl: string;
+    /** The host's own sign-in entry point (LFID here). The embed never implements sign-in itself. */
+    startUrl: string;
     returnUrl: string;
   };
+  /** Where the loader fetches the embed from (`GW_EMBED_URL`) and how its stylesheet reaches the page. */
+  source: GwEmbedSource;
   storageKeySuffix?: string;
   portalContainer?: HTMLElement;
   /**
@@ -54,6 +57,34 @@ export interface GwHostContext {
   telemetry?: (event: { name: string; [key: string]: unknown }) => void;
 }
 
+/**
+ * The hosted embed's location, passed to the loader as `GwHostContext.source`.
+ *
+ * `@gatewaze/admin-embed` is a loader: the admin bundle itself is served by the Gatewaze
+ * deployment under `<baseUrl>/` (a `manifest.json` naming the current content-hashed entry and
+ * stylesheet, plus the files). The host picks up admin changes on the next page load with no
+ * release of its own; only a change to the loader's host contract needs the package bumped.
+ */
+export interface GwEmbedSource {
+  /** Absolute URL of the deployment's embed directory, e.g. `https://admin.example.org/embed`. */
+  baseUrl: string;
+  /**
+   * Swaps the manifest's stylesheet URL for the one to fetch. LFX One points this at its own
+   * `GW_EMBED_STYLESHEET_ROUTE`, which fetches the hashed file, scopes it to the host chrome and
+   * caches it, so the scoping runs once per build on the server rather than in every browser.
+   */
+  resolveStylesheetUrl?: (url: string) => string;
+}
+
+/**
+ * One scoped embed stylesheet as the server caches and serves it (`GwEmbedStylesheetService`):
+ * the contained Gatewaze CSS with the LFX theme layer appended, and the ETag derived from it.
+ */
+export interface GwEmbedScopedStylesheet {
+  css: string;
+  etag: string;
+}
+
 /** Fatal error shape reported by `@gatewaze/admin-embed` via `GwHostContext.onFatal`. */
 export interface GwEmbedFatalError {
   error_type: 'config_invalid' | 'import_failed' | 'mount_aborted' | 'render_crash';
@@ -61,25 +92,6 @@ export interface GwEmbedFatalError {
   message: string;
   field?: string;
   recoverable: boolean;
-}
-
-/**
- * Shape of `globalThis.__GATEWAZE_CONFIG__`, the embed's runtime-config global.
- *
- * The embed's Vite build rewrites every `import.meta.env.VITE_X` reference in its source to a bare
- * `globalThis.__GATEWAZE_CONFIG__.X` — esbuild's `define` only accepts literals or identifier
- * paths, so the rewrite cannot include an optional chain or a fallback. That makes the global a
- * hard requirement rather than an optimization: it must be an object before the embed chunk
- * evaluates, or module-level reads throw.
- *
- * These three are the keys the embed's own `mount()` writes. Its source references far more
- * `VITE_*` names than this; the rest read as `undefined` both here and after `mount()`, so the
- * host deliberately does not invent values for them.
- */
-export interface GwRuntimeConfig {
-  VITE_SUPABASE_URL: string;
-  VITE_SUPABASE_ANON_KEY: string;
-  VITE_API_URL: string;
 }
 
 /** Severity of a notification the embed hands to the host, mapped from its own toast levels. */
@@ -106,6 +118,23 @@ export interface GwEmbedNotification {
  */
 export interface GwEmbedMountHandle {
   unmount: () => void;
+  /**
+   * Resolves once the embed is mounted (with the deployment's manifest), or with `null` when
+   * loading failed — reported through `onFatal` — or `unmount()` was called first. Never rejects.
+   */
+  ready: Promise<GwEmbedManifest | null>;
+}
+
+/** The deployment's `<baseUrl>/manifest.json`, as the loader hands it back. */
+export interface GwEmbedManifest {
+  /** Host contract version the bundle implements; the loader refuses one it was not built for. */
+  contract: number;
+  /** Release the bundle was built from (the Gatewaze image tag). */
+  version: string;
+  entry: string;
+  stylesheet: string;
+  modules: string[];
+  builtAt: string;
 }
 
 /**

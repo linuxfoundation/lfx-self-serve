@@ -7,10 +7,18 @@ import {
   MENTORSHIP_CHALLENGE_URL_REQUIRED,
   MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX,
   MENTORSHIP_CUSTOM_PREREQ_NAME_MAX,
+  createDefaultMentorshipTerm,
+  createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_ENROLL_LOGO_EMPTY,
   MENTORSHIP_ENROLL_LOGO_EXTENSIONS,
+  MENTORSHIP_ENROLL_LOGO_MAX_BYTES,
+  MENTORSHIP_ENROLL_LOGO_MIME_TYPES,
+  MENTORSHIP_ENROLL_LOGO_TOO_LARGE,
+  MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
   MENTORSHIP_ENROLL_NAME_MAX,
   MENTORSHIP_ENROLL_NAME_MIN,
+  MENTORSHIP_ENROLL_PROJECT_REQUIRED,
   MENTORSHIP_INVALID_URL,
   MENTORSHIP_MAX_OPEN_TERMS,
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
@@ -18,7 +26,6 @@ import {
   MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE,
   MENTORSHIP_SKILL_OPTIONS,
   MENTORSHIP_TERM_NAME_MAX,
-  MOCK_MENTORSHIP_LF_PROJECTS,
 } from '../constants/mentorship-enroll.constants';
 import {
   MENTORSHIP_MENTEE_APPLICATION_PROGRESS_LABELS,
@@ -66,19 +73,26 @@ import type {
   MentorshipApplicantDisplayStatus,
   MentorshipApplicantTask,
   MentorshipApplicantTaskRow,
+  MentorshipApplicantTaskStatus,
   MentorshipApplicationProgress,
+  MentorshipEnrollCreateRequest,
   MentorshipEnrollFieldErrors,
+  MentorshipEnrollForm,
+  MentorshipEnrollImport,
   MentorshipEnrollStep,
   MentorshipEnrollValidationInput,
+  MentorshipLfProject,
   MentorshipNoteDisplay,
+  MentorshipPrerequisite,
   MentorshipProgramMentee,
   MentorshipProgramTerm,
   MentorshipRegisterFailureOptions,
   MentorshipRegisterSubmitFailure,
   MentorshipRowAction,
+  MentorshipTaskFormValue,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
-import type { MentorshipProgramMentor, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
+import type { MentorshipAdminTaskUpdate, MentorshipProgramMentor, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
 import type {
   MentorshipMentorProfileDetails,
   MentorshipMentorProfileFieldErrors,
@@ -201,11 +215,138 @@ export function isMentorshipLogoFileName(fileName: string): boolean {
   return (MENTORSHIP_ENROLL_LOGO_EXTENSIONS as readonly string[]).includes(ext);
 }
 
+/**
+ * The message for a logo the wizard, the partial-save banner or the program card refuses to send, or `''` when the file is fine.
+ * The upload sends `type` as its Content-Type, so a file whose type is empty or not on the route's list is refused here too.
+ */
+export function getMentorshipEnrollLogoError(file: { name: string; size: number; type: string }): string {
+  if (!isMentorshipLogoFileName(file.name) || !(MENTORSHIP_ENROLL_LOGO_MIME_TYPES as readonly string[]).includes(file.type)) {
+    return MENTORSHIP_ENROLL_LOGO_TYPE_ERROR;
+  }
+  if (file.size === 0) return MENTORSHIP_ENROLL_LOGO_EMPTY;
+  if (file.size > MENTORSHIP_ENROLL_LOGO_MAX_BYTES) return MENTORSHIP_ENROLL_LOGO_TOO_LARGE;
+  return '';
+}
+
+/** Upstream create refuses a single-day application window and one that does not end before the term starts. */
+function getMentorshipEnrollTermWindowError(term: Pick<MentorshipProgramTerm, 'startDate' | 'applicationStartDate' | 'applicationEndDate'>): string {
+  if (term.applicationEndDate <= term.applicationStartDate) return 'Application end date must be after the application start date.';
+  if (term.applicationEndDate >= term.startDate) return 'Application end date must be before the term start month.';
+  return '';
+}
+
 export function lastDayOfMentorshipMonth(isoMonthStart: string): string {
   const parsed = parseMentorshipMonthYear(isoMonthStart);
   if (!parsed) return isoMonthStart;
   const last = new Date(Number(parsed.year), Number(parsed.month), 0);
   return toMentorshipDateOnly(last);
+}
+
+/**
+ * The wizard form as the upstream create body. Technologies go to `industry` as one `', '`-joined string and never
+ * into `skills`; terms and prerequisites carry no id (upstream generates its own). The caller sends this only once the
+ * form says the terms are accepted, so `termsAccepted` is always `true`.
+ */
+export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidationInput, project: MentorshipLfProject): MentorshipEnrollCreateRequest {
+  const request: MentorshipEnrollCreateRequest = {
+    projectId: project.id,
+    projectSlug: project.slug,
+    projectName: project.name,
+    name: form.name.trim(),
+    description: form.description,
+    repositoryUrl: form.repositoryUrl.trim(),
+    skills: uniqueMentorshipList(form.skills),
+    terms: form.terms.map((term) => ({
+      name: term.name.trim(),
+      startDate: term.startDate,
+      endDate: lastDayOfMentorshipMonth(term.endDate),
+      applicationStartDate: term.applicationStartDate,
+      applicationEndDate: term.applicationEndDate,
+    })),
+    prerequisites: form.prerequisites.map((item) => {
+      const description = item.description.trim();
+      const challengeUrl = item.challengeUrl?.trim();
+      return {
+        name: item.name.trim(),
+        description: challengeUrl ? `${description}\n\nChallenge: ${challengeUrl}` : description,
+        required: item.required,
+        requireFile: item.requireFile === true,
+        dueDate: item.dueDate || null,
+      };
+    }),
+    termsAccepted: true,
+  };
+
+  if (project.logoUrl) request.projectLogoUrl = project.logoUrl;
+  const websiteUrl = form.websiteUrl.trim();
+  if (websiteUrl) request.websiteUrl = websiteUrl;
+  const codeOfConductUrl = form.codeOfConductUrl.trim();
+  if (codeOfConductUrl) request.codeOfConductUrl = codeOfConductUrl;
+  const ciiProjectId = form.ciiProjectId.trim();
+  if (ciiProjectId) request.ciiProjectId = ciiProjectId;
+  const industry = uniqueMentorshipList(form.technologies).join(', ');
+  if (industry) request.industry = industry;
+  return request;
+}
+
+/**
+ * The wizard form for an imported program. The template's details and prerequisites are copied; the terms are not, so the
+ * form gets one default term, and the logo is not, so the admin picks one. `termsAccepted` starts over as `false`.
+ */
+export function formFromMentorshipEnrollImport(importProgramId: string, data: MentorshipEnrollImport): MentorshipEnrollForm {
+  return {
+    ...createEmptyMentorshipEnrollForm(),
+    importProgramId,
+    name: data.name,
+    projectId: data.project?.id ?? '',
+    technologies: [...data.technologies],
+    description: data.description,
+    repositoryUrl: data.repositoryUrl,
+    websiteUrl: data.websiteUrl,
+    ciiProjectId: data.ciiProjectId,
+    codeOfConductUrl: data.codeOfConductUrl,
+    skills: [...data.skills],
+    terms: [createDefaultMentorshipTerm()],
+    prerequisites: mergeImportedMentorshipPrerequisites(data.prerequisites),
+  };
+}
+
+/**
+ * Lays the imported prerequisites over the standard list. An imported item selects a standard row only when it is that row
+ * as create sends it: the same name (ignoring case), description and file requirement, and no due date. The Coding
+ * Challenge is compared without the `Challenge:` line create appends to its description, and gets that URL back. A
+ * standard row's text, file requirement and due date cannot be edited, so any other imported item, a changed standard one
+ * included, becomes a custom prerequisite that keeps its stored values. The standard rows the program did not use stay in
+ * the list unselected.
+ */
+function mergeImportedMentorshipPrerequisites(imported: MentorshipPrerequisite[]): MentorshipPrerequisite[] {
+  const standard = createEmptyMentorshipEnrollForm().prerequisites;
+  const custom: MentorshipPrerequisite[] = [];
+  for (const item of imported) {
+    const name = item.name.trim().toLowerCase();
+    const index = standard.findIndex((entry) => !entry.required && entry.name.toLowerCase() === name);
+    const entry = index === -1 ? undefined : standard[index];
+    const challenge = entry?.challengeUrl !== undefined ? splitImportedChallenge(item.description) : { text: item.description.trim(), url: '' };
+    const isStandard = entry !== undefined && challenge.text === entry.description && Boolean(item.requireFile) === Boolean(entry.requireFile) && !item.dueDate;
+    if (!isStandard) {
+      custom.push({ ...item });
+      continue;
+    }
+    standard[index] = { ...entry, required: true, ...(entry.challengeUrl !== undefined ? { challengeUrl: challenge.url } : {}) };
+  }
+  return [...standard, ...custom];
+}
+
+/**
+ * Splits a Coding Challenge description into its text and the URL on its last line when that line is `Challenge: <url>`.
+ * Without such a line the URL is `''` and the text is the whole description. Only the last line is matched, so a long
+ * stored description never makes the pattern backtrack.
+ */
+function splitImportedChallenge(description: string): { text: string; url: string } {
+  const text = description.trim();
+  const newline = text.lastIndexOf('\n');
+  const url = newline === -1 ? '' : (/^[ \t]*Challenge:[ \t]*(\S+)$/.exec(text.slice(newline + 1))?.[1] ?? '');
+  return url ? { text: text.slice(0, newline).trimEnd(), url } : { text, url: '' };
 }
 
 /**
@@ -225,6 +366,17 @@ export function isMentorshipRichTextOverRawMax(html: string): boolean {
 
 function cleanMentorshipSkillList(skills: readonly string[] | null | undefined): string[] {
   return (skills ?? []).map((skill) => skill.trim()).filter((skill) => skill !== '');
+}
+
+/** Trims each item and drops blanks and case-insensitive repeats, keeping the first spelling and the order. */
+function uniqueMentorshipList(items: readonly string[] | null | undefined): string[] {
+  const seen = new Set<string>();
+  return cleanMentorshipSkillList(items).filter((item) => {
+    const key = item.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function isSameMentorshipList(a: readonly string[], b: readonly string[]): boolean {
@@ -379,11 +531,25 @@ export function getMentorshipTermDateErrors(
 }
 
 /**
+ * Term date errors for the enroll wizard: the shared term rules, then the application windows upstream create refuses,
+ * reported on `applicationEndDate`. The term dialog and the setup step both use it, so a term the dialog saves passes Next.
+ */
+export function getMentorshipEnrollTermDateErrors(
+  term: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>,
+  today = new Date(),
+  original?: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
+): MentorshipTermDateErrors {
+  const errors = getMentorshipTermDateErrors(term, today, original);
+  if (Object.keys(errors).length) return errors;
+  const windowError = getMentorshipEnrollTermWindowError(term);
+  return windowError ? { applicationEndDate: windowError } : errors;
+}
+
+/**
  * Field-keyed validation errors for a single enroll wizard step.
  *
- * **Note:** The `details` step validates `projectId` against `MOCK_MENTORSHIP_LF_PROJECTS`
- * — a temporary mock-backed allowlist that must be replaced with server-side validation
- * when the upstream mentorship-service project endpoint is wired up (see GH-2717).
+ * The `details` step only requires a selected project; the picker offers live query-service
+ * projects, so there is no client-side allowlist to check the id against.
  */
 export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollValidationInput): MentorshipEnrollFieldErrors {
   if (step === 'details') {
@@ -395,11 +561,7 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     }
     const projectId = form.projectId.trim();
     if (!projectId) {
-      errors.projectId = 'Select a Linux Foundation project.';
-    } else if (!MOCK_MENTORSHIP_LF_PROJECTS.some((project) => project.id === projectId)) {
-      // Temporary mock-backed allowlist — replace with server-side validation
-      // when the upstream mentorship-service project endpoint is wired up (GH-2717).
-      errors.projectId = 'Select a valid Linux Foundation project.';
+      errors.projectId = MENTORSHIP_ENROLL_PROJECT_REQUIRED;
     }
     if (!form.technologies.length) errors.technologies = 'Add at least one technology.';
     const descriptionError = mentorshipRichTextError(
@@ -446,7 +608,7 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
             ? `Term name must be ${MENTORSHIP_TERM_NAME_MAX} characters or fewer.`
             : MENTORSHIP_TERM_FIELDS_ERROR;
       } else {
-        const firstTermError = form.terms.map((term) => Object.values(getMentorshipTermDateErrors(term))[0]).find(Boolean);
+        const firstTermError = form.terms.map((term) => Object.values(getMentorshipEnrollTermDateErrors(term))[0]).find(Boolean);
         if (firstTermError) errors.terms = firstTermError;
       }
     }
@@ -998,6 +1160,26 @@ export function mentorshipApplicantTaskRows(tasks: ReadonlyArray<MentorshipAppli
     canView: !!task.hasSubmission,
     canDownload: !!task.hasSubmission,
   }));
+}
+
+/** 1 when the status counts toward upstream's `tasks_submitted` (Submitted or Completed), else 0, so a status change can shift that count by a difference. */
+export function mentorshipTaskSubmittedCount(status: MentorshipApplicantTaskStatus): number {
+  return status === 'submitted' || status === 'completed' ? 1 : 0;
+}
+
+/**
+ * The fields the task-edit dialog changed on a task, as the admin task update body: a field that still reads as it did is
+ * left out, so saving one change never re-sends (and so never re-validates upstream) the rest. A cleared due date goes as
+ * `''`, which upstream reads as clear it. Empty when nothing changed.
+ */
+export function buildMentorshipAdminTaskUpdate(task: MentorshipApplicantTask, value: MentorshipTaskFormValue): MentorshipAdminTaskUpdate {
+  const update: MentorshipAdminTaskUpdate = {};
+  if (value.name !== task.name) update.name = value.name;
+  if (value.description !== task.description) update.description = value.description;
+  if ((value.dueOn ?? '') !== (task.dueOn ?? '')) update.dueDate = value.dueOn ?? '';
+  if (value.requiresFileSubmission !== !!task.requiresFileSubmission) update.requiresFileSubmission = value.requiresFileSubmission;
+  if (value.status !== undefined && value.status !== task.status) update.status = value.status;
+  return update;
 }
 
 /** Inclusive UTC date range for term / invitation columns, e.g. `Jul 1, 2026 – Aug 31, 2026`. */

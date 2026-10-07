@@ -1,263 +1,222 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MAX_PAGE_LINKS } from '../constants/audience-builder.constants';
+import { decodeHTMLAttribute } from 'entities';
+import { Tokenizer } from 'htmlparser2';
+
+import { MAX_PAGE_LINKS, RAW_TEXT_CLOSER_SOLIDUS_RE, RAW_TEXT_CONTAINERS, TOKENIZER_RAW_TEXT_ELEMENTS } from '../constants/audience-builder.constants';
 
 /**
- * Opening `<a>` tags, bounded so the scan cannot backtrack.
+ * The FIRST `href` of every `<a>` a browser renders as a link, in document order, plus the first
+ * HTML `<base href>`.
  *
- * `[^<>]*`, never `[^>]*`. An unbounded `[^>]*` lets each `<a` scan to the end of the document
- * before failing, so a page of repeated `<a ` is QUADRATIC: measured 115ms at 20k tags, 454ms at
- * 40k, 8.5s at 80k, against a 5 MiB fetch cap. `matchAll` is synchronous and this runs inside the
- * scrape generator on an operator-supplied URL, so that is a freeze of the single-threaded SSR
- * process. Excluding `<` as well confines each attempt to one tag.
+ * What this protects against is a model INVENTING a URL, not a page planting one: the page is the
+ * authority on its own links, and its owner can publish any real link they like. So the aim is
+ * one-sided -- where this tokenizer and a browser could disagree, treat the region as inert; a real
+ * link may be dropped (verification then finds nothing), an inert one should not be accepted.
+ * Exceptions tried so far (honouring a self-closing slash inside SVG, rendering a declarative shadow
+ * root) were each a way back in, so none is made.
  *
- * The tag name ends at `>`, `/` or whitespace -- NOT at `\b`, which also matches between `a` and
- * the hyphen of a CUSTOM ELEMENT. `<a-button href="https://evil.example/fake">` was collected as
- * an anchor, so `verifyPageLink` vouched for a URL no `<a>` on the page carries, and a custom
- * element must contain a hyphen by spec -- which makes this reachable on any component-built
- * event page rather than exotic. `<article href=...>` was never affected: `\b` does not match
- * between two letters. Same shape as the `<scriptfoo>` bound in `nextInertRegion`, in the
- * opposite direction -- there a prefix matched too much, here a suffix did.
+ * KNOWN RESIDUAL GAPS. A flat tokenizer cannot match a browser exactly; only a spec tree builder
+ * can, and those are quadratic on hostile input (see below). These inputs can still yield a link a
+ * browser does not render, or the wrong `<base>`, and are accepted on the threat model above --
+ * each is markup only the page's own author can write, for a link they could simply publish:
+ * a raw-text closer hidden inside an attribute, comment or `<!x` in noscript/iframe/noembed/
+ * noframes or a self-closed raw-text element; raw-text elements inside SVG/MathML (`<svg><style>`
+ * with `<!--` or CDATA); comment and bogus-comment endings the tokenizer reads differently
+ * (`--!>`, `<!->`, HTML-content CDATA); `<frameset>` and `<select>` insertion modes; MathML `<a>`
+ * and `<base>`; and a real `<base>` inside a region suppressed here. Tracked in #3306 for a
+ * spec-parser-in-a-worker follow-up.
+ *
+ * Built on htmlparser2's TOKENIZER, which implements the tokenizing rules a hand-rolled scanner kept
+ * being defeated on: an `href` inside another attribute's value, anchor markup inside an attribute,
+ * bogus comments, U+00A0 read as tag-name whitespace, entities beyond `&amp;`. NOT on a tree
+ * builder -- parse5's and htmlparser2's `Parser` keep an open-element stack that hostile markup
+ * makes quadratic (400 KB of unclosed `<div>` took 20 s in parse5), against a 5 MiB fetch cap on a
+ * synchronous, single-threaded SSR path. Flat flags and one counter stand in for the stack, so the
+ * pass is a single linear walk.
+ *
+ * - `template` content is inert, declarative shadow roots included (rare on event pages, and their
+ *   validity depends on the host, which a flat scan cannot check). Templates nest, so a counter.
+ * - Raw-text elements are tracked EVERYWHERE, including inside a template: their content is text,
+ *   so a `</template>` written inside an `<iframe>` there must not close the template.
+ * - The `/` on a start tag is ignored for every element tracked here, as HTML ignores it on
+ *   non-void elements: `<textarea/>` still opens a textarea. The tokenizer leaves raw-text mode on a
+ *   self-closing tag, so those are flagged here instead; their content may then be read as markup,
+ *   but nothing found inside is kept.
+ * - A closer only counts when `/` directly precedes its name. `</ iframe>` is a bogus comment in a
+ *   browser (text, inside raw text); the tokenizer skips the space and reads a closer.
+ * - A script that enters the spec's double-escaped state (`<!--` then `<script` inside it) can run
+ *   past its first `</script>` in a browser, which the tokenizer does not model -- so the rest of
+ *   the document is treated as inert.
+ * - MathML is not tracked: `<math>` breaks out at so many HTML tags that an unclosed one would drop
+ *   every later link; its anchors are rare, and accepted.
+ * - `<base>` counts only outside `<svg>`. Attribute names match exactly, so `href` is read and
+ *   `xlink:href` is not.
  */
-const ANCHOR_TAG_RE = /<a(?=[\s/>])[^<>]*>/gi;
+function scanDocument(html: string): { hrefs: string[]; baseHref: string | null } {
+  const hrefs: string[] = [];
+  let baseHref: string | null = null;
+  const rawText = new Set<string>();
+  let templateDepth = 0;
+  let svgDepth = 0;
+  let plaintext = false;
+  let tag = '';
+  let tagEnd = 0;
+  let attrName = '';
+  let attrValue = '';
+  let href: string | null = null;
+  let scriptContentStart = -1;
 
-/**
- * `html` with the regions a browser never renders as markup blanked out.
- *
- * Scanning the raw source treated an anchor inside a COMMENT or a `<script>`/`<style>` body as a
- * real link, so `<!-- <a href="https://evil.example/fake">x</a> -->` entered the map and
- * `verifyPageLink` then vouched for a destination the page does not link to at all. A page author
- * -- or a model reading the same source -- can put anything there.
- *
- * Blanked to SPACES rather than removed, so every surviving tag keeps its original offset and the
- * `MAX_PAGE_LINKS` bound still measures the same document.
- *
- * Scanned with `indexOf` rather than `/<!--[\s\S]*?-->/g` and friends. A lazy `[\s\S]*?` runs to
- * the end of the input for every opener that has no closer, so an opener repeated k times costs
- * O(n^2): measured on `'<!--'.repeat(k)`, 20k chars took 19ms, 40k 75ms, 80k 297ms and 160k
- * 1250ms -- a clean 4x per doubling, and the fetch cap is 5 MiB. `extractPageLinks` runs this
- * synchronously on an operator-supplied URL's body, so one hostile page stalls every other
- * request on the single-threaded SSR process. Same class as the `ANCHOR_TAG_RE` bound above.
- * Each opener is found at most once across the whole pass -- which takes BOTH the `indexOf` scan
- * and the opener cache in `withoutInertRegions`. The scan alone was still quadratic on CLOSED
- * regions (measured at 365ms / 1442ms / 5741ms over 70k / 140k / 280k of `'<!---->'`), because
- * re-searching every kind from the cursor made a kind with no remaining opener scan to the end
- * of the input on each region. Both halves are needed; neither is linear by itself.
- *
- * An opener with NO closer blanks to the end of the input, which is what a browser renders: an
- * unterminated `<!--` or `<script>` swallows the rest of the document. Stopping at the opener
- * instead left every later anchor in the map, so one trailing `<!--` was enough to make
- * `verifyPageLink` vouch for destinations the page never shows.
- */
-function withoutInertRegions(html: string): string {
-  // ASCII-only, NOT `toLowerCase()`. `toLowerCase()` lower-cases the whole document, and some
-  // characters CHANGE LENGTH doing so -- `İ` (U+0130) becomes two code units -- which shifted every
-  // later offset relative to `html`. `İİİİİ<script>x</script><a href="...">` lost the real link,
-  // and an attacker-controlled prefix could shift a blank region off its script onto live markup.
-  // LF runs İstanbul events, so this was live rather than theoretical. A tag name is ASCII, so
-  // folding only `A-Z` is enough to match one and is guaranteed length-preserving.
-  const lower = asciiLower(html);
-  // Each kind's next opener, carried ACROSS iterations. Re-searching all three from `at` every
-  // time made a document of k CLOSED regions O(n*k): a kind with no remaining opener scanned to
-  // the end of the input on every one. Measured before this: 70k chars 365ms, 140k 1442ms, 280k
-  // 5741ms -- the same 4x per doubling as the lazy regex it replaced, just on a different input.
-  // A -1 stays -1 for the rest of the pass, and any other index is only re-searched once `at`
-  // passes it, so every opener is found at most once across the whole scan.
-  const next = INERT_REGIONS.map((kind) => openerIndex(lower, kind, 0));
-  const out: string[] = [];
-  let at = 0;
-  for (;;) {
-    const region = nextInertRegion(html, lower, at, next);
-    if (region === null) {
-      out.push(html.slice(at));
-      return out.join('');
+  const finishOpenTag = (selfClosingSyntax: boolean): void => {
+    if (plaintext) {
+      return;
     }
-    out.push(html.slice(at, region.start), ' '.repeat(region.end - region.start));
-    at = region.end;
-  }
+    if (href !== null && rawText.size === 0 && templateDepth === 0) {
+      if (tag === 'a') {
+        hrefs.push(href);
+      } else if (tag === 'base' && baseHref === null && svgDepth === 0) {
+        baseHref = href;
+      }
+    }
+    // Inside raw text nothing opens: it is text, and only its own closer ends it.
+    if (rawText.size > 0) {
+      return;
+    }
+    if (tag === 'plaintext') {
+      plaintext = true;
+    } else if (tag === 'template') {
+      templateDepth++;
+    } else if (tag === 'svg') {
+      if (!selfClosingSyntax) {
+        svgDepth++;
+      }
+    } else if (RAW_TEXT_CONTAINERS.has(tag) || (selfClosingSyntax && TOKENIZER_RAW_TEXT_ELEMENTS.has(tag))) {
+      // The second arm: a self-closed `<script/>` knocked the tokenizer out of raw-text mode, so its
+      // content is about to be tokenized as markup. Flag it, and keep nothing found inside.
+      rawText.add(tag);
+    } else if (tag === 'script') {
+      scriptContentStart = tagEnd + 1;
+    }
+  };
+
+  const tokenizer = new Tokenizer(
+    { xmlMode: false, decodeEntities: true },
+    {
+      onopentagname(start, end) {
+        tag = html.slice(start, end).toLowerCase();
+        href = null;
+      },
+      onattribname(start, end) {
+        attrName = html.slice(start, end).toLowerCase();
+        attrValue = '';
+      },
+      onattribdata(start, end) {
+        attrValue += html.slice(start, end);
+      },
+      onattribentity(codepoint) {
+        attrValue += String.fromCodePoint(codepoint);
+      },
+      onattribend() {
+        if (attrName === 'href' && href === null) {
+          href = attrValue;
+        }
+      },
+      onopentagend(endIndex) {
+        tagEnd = endIndex;
+        finishOpenTag(false);
+      },
+      onselfclosingtag(endIndex) {
+        tagEnd = endIndex;
+        finishOpenTag(true);
+      },
+      onclosetag(start, end) {
+        // `/` must directly precede the name: `</ iframe>` is a bogus comment, not a closer.
+        if (plaintext || html.charCodeAt(start - 1) !== 0x2f) {
+          return;
+        }
+        const name = html.slice(start, end).toLowerCase();
+        if (name === 'script' && scriptContentStart >= 0 && rawText.size === 0) {
+          if (enteredDoubleEscape(html.slice(scriptContentStart, start))) {
+            plaintext = true;
+          }
+          scriptContentStart = -1;
+        } else if (rawText.has(name)) {
+          rawText.delete(name);
+        } else if (rawText.size > 0) {
+          return;
+        } else if (name === 'template' && templateDepth > 0) {
+          templateDepth--;
+        } else if (name === 'svg' && svgDepth > 0) {
+          svgDepth--;
+        }
+      },
+      oncdata() {},
+      oncomment() {},
+      ondeclaration() {},
+      onend() {},
+      onprocessinginstruction() {},
+      ontext() {},
+      ontextentity() {},
+    }
+  );
+  tokenizer.write(html.replace(RAW_TEXT_CLOSER_SOLIDUS_RE, '</$1 '));
+  tokenizer.end();
+  return { hrefs, baseHref };
 }
 
 /**
- * `html` with `A-Z` folded to lower case and every other character untouched.
- *
- * Length-preserving by construction, which is the whole point: the offsets found in the result
- * index the same characters in the original. See `withoutInertRegions` for what went wrong when
- * this was `toLowerCase()`.
+ * Whether script data reached the spec's double-escaped state: an `<!--` followed later by a
+ * `<script` start. A browser can then run past the first `</script>`, which the tokenizer ends at.
+ * Deliberately broad -- it ignores whether the escape was left again -- because the cost of a false
+ * positive is only dropped links. Linear: two `indexOf`s.
  */
-function asciiLower(html: string): string {
-  return html.replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32));
+function enteredDoubleEscape(scriptData: string): boolean {
+  const lower = scriptData.toLowerCase();
+  const escape = lower.indexOf('<!--');
+  return escape >= 0 && lower.indexOf('<script', escape + 4) >= 0;
 }
 
 /**
- * Whether a matched tag-name prefix actually ENDS at `at` -- the `\b` the old regex carried.
+ * The URL a page's relative links resolve against: its first `<base href>`, or `fallback`.
  *
- * `<script>` and `<script src=x>` open an element; `<scriptfoo>` does not, and treating it as one
- * blanked to the end of the document. A tag name ends at `>`, `/`, or whitespace.
+ * A browser resolves relative anchors against the DOCUMENT base, not the URL that served the page.
+ * Ignoring it on a sub-path deployment (`<base href="/kubecon-eu/">` served from `/kubecon-eu`)
+ * turned a relative `agenda` into `/agenda` -- a 404 inside a sent email. Only an http(s) base is
+ * honoured; anything else falls back.
  */
-function opensAnElement(lower: string, at: number): boolean {
-  const next = lower[at];
-  return next === undefined || next === '>' || next === '/' || /\s/.test(next);
-}
-
-/** Every region kind, with the closer that ends it and how that closer is spelled. */
-const INERT_REGIONS: readonly {
-  readonly opener: string;
-  readonly closer: string;
-  readonly isTagName: boolean;
-  readonly closerNeedsGt: boolean;
-}[] = [
-  // `<!--` is not a tag name, so no name boundary follows it: `<!--<a href=...` opens a comment.
-  // Its closer is COMPLETE as written -- `-->` already carries its own `>`.
-  { opener: '<!--', closer: '-->', isTagName: false, closerNeedsGt: false },
-  // These closers stop at the tag NAME, so the region ends at the first `>` after it.
-  { opener: '<script', closer: '</script', isTagName: true, closerNeedsGt: true },
-  { opener: '<style', closer: '</style', isTagName: true, closerNeedsGt: true },
-];
-
-/**
- * The first inert region at or after `from`, or `null` when none remains.
- *
- * The opener search is case-insensitive because `<SCRIPT>` is the same element, and so is the
- * closer search: `</Script >` ends it. `indexOf` is case-SENSITIVE, so both sides work on an
- * ASCII-folded copy and index back into the original -- `asciiLower` is length-preserving by
- * construction, so the offsets stay aligned with `html`.
- *
- * The closer is matched WITHOUT its `>`, so `</script foo>` and `</script\n>` both close. A
- * browser ends the element at the tag name; requiring the exact `>` meant `</script >` did not
- * close and the rest of the document stayed live.
- *
- * A tag-name opener only counts when the NAME ends there -- see `opensAnElement`. A bare `indexOf`
- * prefix matched `<scriptfoo>`, which is an unknown element a browser renders normally, and blanked
- * the rest of the document: every real link on a page containing that string disappeared. `<!--`
- * carries `isTagName: false` and is exempt, because it is not a tag name and `<!--<a href=...` is
- * a comment; applying the check to it left unterminated comments entirely unblanked.
- *
- * The CLOSER is held to the same boundary, for the same reason in the other direction. A browser
- * ends script data only at `</script` followed by whitespace, `/` or `>`, so `</scriptfoo>` is
- * still script text. Accepting the prefix ended the region early and exposed an anchor-looking
- * string inside the script to `extractPageLinks` -- a URL the page never renders as a link.
- */
-function nextInertRegion(html: string, lower: string, from: number, next: number[]): { start: number; end: number } | null {
-  // The EARLIEST opener is chosen first, and only then is its own closer looked up. Taking the
-  // closer from whichever kind was examined last instead let a later kind overwrite the winner,
-  // so a `<script>` body between a comment and a `<style>` survived the pass entirely.
-  let winner: { start: number; kind: (typeof INERT_REGIONS)[number] } | null = null;
-  for (const [i, kind] of INERT_REGIONS.entries()) {
-    // Re-searched only when the cached hit now lies BEHIND the cursor. -1 is terminal: a kind with
-    // no opener left never has one again, so it is never searched for a second time.
-    if (next[i] !== -1 && (next[i] as number) < from) {
-      next[i] = openerIndex(lower, kind, from);
-    }
-    const start = next[i] as number;
-    if (start !== -1 && (winner === null || start < winner.start)) {
-      winner = { start, kind };
-    }
-  }
-  if (winner === null) {
-    return null;
-  }
-  const { start, kind } = winner;
-  const closeAt = closerIndex(lower, kind, start + kind.opener.length);
-  if (closeAt === -1) {
-    // No closer: the region runs to the end of the document, exactly as a browser treats it.
-    return { start, end: html.length };
-  }
-  const afterCloser = closeAt + kind.closer.length;
-  if (!kind.closerNeedsGt) {
-    return { start, end: afterCloser };
-  }
-  // `</script` stops at the tag name, so the region ends at the first `>` after it -- that is what
-  // lets `</script >` close. Searching for a `>` after a closer that ALREADY ends in one (`-->`)
-  // ran on past it and swallowed the next tag's `>`: `<!--x--><script>` had the script's own
-  // opening tag consumed by the comment, so the script body was never recognised as inert.
-  const gt = html.indexOf('>', afterCloser);
-  return { start, end: gt === -1 ? html.length : gt + 1 };
+export function documentBaseUrl(html: string, fallback: string): string {
+  return scanPageLinks(html, fallback).baseUrl;
 }
 
 /**
- * The first real closer of this kind at or after `from`, skipping tag-name prefix matches.
+ * `extractPageLinks` and `documentBaseUrl` from ONE tokenizer pass.
  *
- * Every search starts after the previous miss, so the scan for one region is linear in that
- * region's length, and regions never overlap.
+ * The scrape path needs both, and calling them separately tokenized a page of up to the 5 MiB fetch
+ * cap twice on the synchronous SSR thread. Best-effort and never throws: a page this cannot scan
+ * yields no links and the fallback base, the safe direction.
  */
-function closerIndex(lower: string, kind: (typeof INERT_REGIONS)[number], from: number): number {
-  let at = from;
-  for (;;) {
-    at = lower.indexOf(kind.closer, at);
-    if (at === -1 || !kind.isTagName || opensAnElement(lower, at + kind.closer.length)) {
-      return at;
-    }
-    at += kind.closer.length;
+export function scanPageLinks(html: string, fallback: string): { links: Map<string, string>; baseUrl: string } {
+  try {
+    const { hrefs, baseHref } = scanDocument(html);
+    const baseUrl = resolveBase(baseHref, fallback);
+    return { links: collectLinks(hrefs, baseUrl), baseUrl };
+  } catch {
+    return { links: new Map<string, string>(), baseUrl: fallback };
   }
 }
 
-/** The first real opener of this kind at or after `from`, skipping tag-name prefix matches. */
-function openerIndex(lower: string, kind: (typeof INERT_REGIONS)[number], from: number): number {
-  let at = from;
-  for (;;) {
-    at = lower.indexOf(kind.opener, at);
-    if (at === -1 || !kind.isTagName || opensAnElement(lower, at + kind.opener.length)) {
-      return at;
-    }
-    at += kind.opener.length;
+/** `baseHref` resolved against `fallback` when it is a usable http(s) base, else `fallback`. */
+function resolveBase(baseHref: string | null, fallback: string): string {
+  if (baseHref === null || baseHref.trim() === '') {
+    return fallback;
   }
-}
-
-/**
- * One attribute inside an already-isolated tag: its name, and its quoted value.
- *
- * Walked attribute by attribute rather than searched for `href=` directly. A regex that scans
- * the tag for `href=` finds it inside ANOTHER attribute's value, because the quotes around that
- * value are just characters to it:
- *
- *   <a title=" href='https://evil.example/agenda'" href="/real">
- *
- * picked `https://evil.example/agenda` -- and `verifyPageLink` would then vouch for a URL the
- * page never links to, carrying it into the brief as the event's agenda. Consuming the value as
- * a unit is what makes the quotes structural instead of incidental.
- *
- * A `/` delimits a name as well as whitespace. `<a/href="...">` is a real anchor carrying that
- * href -- confirmed against parse5, which is the spec tokenizer: after `<a` a `/` only begins a
- * self-closing tag when `>` follows, and is otherwise reconsumed in "before attribute name".
- * Requiring whitespace dropped the href and the page's own link went uncollected, which is the
- * quiet half of this helper's failure mode: refusing a real destination is the same bug as
- * accepting a forged one. It does NOT reopen the decoy above -- a `/` inside a quoted value is
- * still consumed as part of that value.
- *
- * `\s` before the name, not `\b`: `\b` also matches the tail of `data-href`, so a framework's
- * lazy-load attribute was read as the link the page renders.
- */
-const ATTR_RE = /[\s/]([a-zA-Z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
-
-/**
- * HTML entities for `&` as they appear in an href.
- *
- * A page writes `?a=1&amp;b=2`; `new URL` keeps that literal, so the stored link carried `&amp;`
- * while the extraction model returned the decoded `&`. The two then failed to compare equal and a
- * real agenda link with more than one query parameter was silently dropped.
- */
-const AMP_ENTITY_RE = /&(?:amp|#38|#[xX]26);/g;
-
-/**
- * The `href` an opening tag actually declares, or `''` when it declares none.
- *
- * The FIRST `href`, matching how a browser resolves a duplicate attribute: everything after the
- * first is ignored, so a page cannot show one link and have this read another.
- */
-function hrefOf(tag: string): string {
-  ATTR_RE.lastIndex = 0;
-  for (let attr = ATTR_RE.exec(tag); attr !== null; attr = ATTR_RE.exec(tag)) {
-    if (attr[1].toLowerCase() === 'href') {
-      // Three alternations: double-quoted, single-quoted, and UNQUOTED. HTML permits
-      // `href=/agenda` with no quotes, and a pattern that required them dropped a real event
-      // link -- rejecting the page's own destination is the same failure as accepting a forged
-      // one, just quieter.
-      const value = attr[2] ?? attr[3] ?? attr[4] ?? '';
-      return value.replace(AMP_ENTITY_RE, '&');
-    }
+  try {
+    const resolved = new URL(baseHref.trim(), fallback);
+    return resolved.protocol === 'http:' || resolved.protocol === 'https:' ? resolved.toString() : fallback;
+  } catch {
+    return fallback;
   }
-  return '';
 }
 
 /**
@@ -322,18 +281,22 @@ function pageHref(resolved: URL): string {
  * the safe direction — a brief with no agenda link is correct, a brief with a wrong one is not.
  */
 export function extractPageLinks(html: string, baseUrl: string): Map<string, string> {
+  return scanPageLinks(html, baseUrl).links;
+}
+
+/** The comparison-key -> page-href map for `hrefs`, resolved against the document base. */
+function collectLinks(hrefs: string[], base: string): Map<string, string> {
   const links = new Map<string, string>();
-  try {
-    for (const tag of withoutInertRegions(html).matchAll(ANCHOR_TAG_RE)) {
-      if (links.size >= MAX_PAGE_LINKS) break;
-      const raw = hrefOf(tag[0]);
-      if (raw === '') continue;
-      const normalized = normalizeForCompare(raw, baseUrl);
-      if (!normalized || links.has(normalized)) continue;
-      links.set(normalized, pageHref(new URL(raw, baseUrl)));
-    }
-  } catch {
-    return new Map<string, string>();
+  // Each distinct raw href is parsed once: a page of a million identical anchors otherwise paid
+  // a `new URL` per anchor without ever growing the map toward `MAX_PAGE_LINKS`.
+  const seen = new Set<string>();
+  for (const raw of hrefs) {
+    if (links.size >= MAX_PAGE_LINKS) break;
+    if (raw.trim() === '' || seen.has(raw)) continue;
+    seen.add(raw);
+    const normalized = normalizeForCompare(raw, base);
+    if (!normalized || links.has(normalized)) continue;
+    links.set(normalized, pageHref(new URL(raw, base)));
   }
   return links;
 }
@@ -374,7 +337,11 @@ export function verifyPageLink(candidate: unknown, pageLinks: Map<string, string
   if (typeof candidate !== 'string' || candidate.trim().length === 0) {
     return '';
   }
-  const normalized = normalizeForCompare(candidate, baseUrl);
+  // Decoded with the SAME decoder the tokenizer applies to the page's own hrefs (htmlparser2 decodes
+  // attribute values with `entities`), so both sides normalize identically. The extraction prompt
+  // asks for the href AS WRITTEN, so a model returns `&amp;` or `&colon;` where the page side holds
+  // the decoded character; a narrower decoder here rejected genuine page links.
+  const normalized = normalizeForCompare(decodeHTMLAttribute(candidate.trim()), baseUrl);
   if (!normalized) {
     return '';
   }
@@ -420,14 +387,16 @@ export function verifyPageLink(candidate: unknown, pageLinks: Map<string, string
  * into same-site URLs that passed coercion and shipped as the email's primary call to action. A
  * relative value can only have come from an href, so it is checkable against the page's anchors.
  *
- * `&amp;` is decoded on both paths, as `hrefOf` does for verified links: the extraction prompt asks
- * for the href as written, and a literal `&amp;` breaks the query string.
+ * Entities are decoded on both paths with the tokenizer's own attribute decoder: the extraction
+ * prompt asks for the href as written, and a literal `&amp;` or `&#47;` breaks the URL.
  */
 export function resolveRegistrationUrl(candidate: unknown, pageLinks: Map<string, string>, baseUrl: string): string {
   if (typeof candidate !== 'string' || candidate.trim().length === 0) {
     return '';
   }
-  const value = candidate.trim().replace(AMP_ENTITY_RE, '&');
+  // `\/` unescaped too: JSON-LD `offers.url` is commonly written with escaped slashes (PHP and
+  // WordPress `json_encode` default), and copied verbatim it became `https://host//register`.
+  const value = decodeHTMLAttribute(candidate.trim()).replace(/\\\//g, '/');
   let absolute: URL | null = null;
   try {
     absolute = new URL(value);

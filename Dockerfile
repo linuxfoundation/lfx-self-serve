@@ -38,6 +38,9 @@ RUN yarn workspace lfx-one-ui build:${BUILD_ENV}
 # templates into dist/, since certificate.service.ts resolves them relative
 # to the compiled server bundle, not the source tree.
 RUN cp -r apps/lfx-one/src/server/pdf-templates apps/lfx-one/dist/lfx-one/server/
+# Same for the embed theme layer: gw-embed-stylesheet.service.ts appends it to the scoped
+# Gatewaze stylesheet at runtime and resolves it beside the server bundle.
+RUN cp apps/lfx-one/src/styles/gw-embed-theme.css apps/lfx-one/dist/lfx-one/server/
 
 # Install production-only dependencies in a clean layer, so the runtime
 # stage below never inherits devDependencies (playwright, angular/cli,

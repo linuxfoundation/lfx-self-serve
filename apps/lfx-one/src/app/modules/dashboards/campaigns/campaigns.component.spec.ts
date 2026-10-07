@@ -31,6 +31,8 @@ import type {
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
 import { provideRouter } from '@angular/router';
+import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
+import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
@@ -145,6 +147,70 @@ describe('CampaignsComponent brief persistence', () => {
     TestBed.inject(PersonaService).currentPersona.set('contributor');
     fixture.detectChanges();
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-no-access"]')).not.toBeNull();
+  });
+
+  // The Optimize tab is destroyed whenever another tab is open, so the page (which stays mounted)
+  // is what scopes the root negative-keyword results: it reports its (project, brief), and leaving
+  // the page releases them.
+  it('scopes negative-keyword results to the page, and releases them when the page is destroyed', () => {
+    const service = TestBed.inject(CampaignNegativeKeywordsService);
+    const setScope = vi.spyOn(service, 'setScope');
+    const releaseScope = vi.spyOn(service, 'releaseScope');
+    // A page mounted after the spies, so its first report is observed.
+    const page = TestBed.createComponent(CampaignsComponent);
+    page.detectChanges();
+    TestBed.tick();
+
+    expect(setScope).toHaveBeenCalled();
+    const [projectSlug, briefId] = setScope.mock.calls[setScope.mock.calls.length - 1];
+    const component = page.componentInstance as unknown as { activeFoundationSlug(): string; briefPersistence(): { briefId: string | null } };
+    expect(projectSlug).toBe(component.activeFoundationSlug());
+    expect(briefId).toBe(component.briefPersistence().briefId ?? '');
+
+    page.destroy();
+    expect(releaseScope).toHaveBeenCalledTimes(1);
+  });
+
+  // A Proceed save sets the brief id to `null` while it runs (and a failed save leaves it `null`).
+  // The page reports it as the empty brief; the services read that as the same project's brief
+  // (see their specs), and removed keywords are scoped by the project alone.
+  it("reports the save's empty brief id to the services, and removed keywords by project only", () => {
+    const negatives = vi.spyOn(TestBed.inject(CampaignNegativeKeywordsService), 'setScope');
+    const removed = vi.spyOn(TestBed.inject(CampaignRemovedKeywordsService), 'setScope');
+    const page = TestBed.createComponent(CampaignsComponent);
+    const persistence = (page.componentInstance as unknown as { briefPersistence: WritableSignal<CampaignBriefPersistenceState> }).briefPersistence;
+    page.detectChanges();
+    TestBed.tick();
+
+    persistence.set({ status: 'saved', briefId: 'b-1', message: null, approved: false });
+    TestBed.tick();
+    persistence.set({ status: 'saving', briefId: null, message: null, approved: false });
+    TestBed.tick();
+
+    expect(negatives.mock.calls.at(-2)?.[1]).toBe('b-1');
+    expect(negatives.mock.calls.at(-1)?.[1]).toBe('');
+    expect(removed.mock.calls.every((call) => call.length === 1)).toBe(true);
+    page.destroy();
+  });
+
+  // A foundation switch from a saved brief: the old brief id can still be on the signal when the
+  // project changes, and the clear that follows must not read as a same-project save.
+  it('scopes a foundation switch from a saved brief to the new project with no brief', async () => {
+    const service = TestBed.inject(CampaignNegativeKeywordsService);
+    const setScope = vi.spyOn(service, 'setScope');
+    const page = TestBed.createComponent(CampaignsComponent);
+    const persistence = (page.componentInstance as unknown as { briefPersistence: WritableSignal<CampaignBriefPersistenceState> }).briefPersistence;
+    page.detectChanges();
+    persistence.set({ status: 'saved', briefId: 'b-old', message: null, approved: false });
+    TestBed.tick();
+
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-b', slug: 'foundation-b', name: 'Foundation B' }, false);
+    TestBed.tick();
+    await page.whenStable();
+    TestBed.tick();
+
+    expect(setScope.mock.calls.at(-1)).toEqual(['foundation-b', '']);
+    page.destroy();
   });
 
   it('switches to the Implementation tab before the save resolves', async () => {
@@ -6783,6 +6849,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     await TestBed.configureTestingModule({
       imports: [CampaignsComponent],
       providers: [
+        // The page scopes the root negative-keyword service, which injects the app-root MessageService.
+        { provide: MessageService, useValue: { add: vi.fn() } },
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
@@ -8370,6 +8438,8 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
     await TestBed.configureTestingModule({
       imports: [CampaignsComponent],
       providers: [
+        // The page scopes the root negative-keyword service, which injects the app-root MessageService.
+        { provide: MessageService, useValue: { add: vi.fn() } },
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),

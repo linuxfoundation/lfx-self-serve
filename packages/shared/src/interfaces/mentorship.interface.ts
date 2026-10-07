@@ -10,6 +10,7 @@ import type {
   MENTORSHIP_PROGRAM_REVIEW_DECISIONS,
   MENTORSHIP_UPSTREAM_PROGRAM_STATUSES,
 } from '../constants/mentorship.constants';
+import type { PaginatedResponse } from './api.interface';
 
 /** Wizard step keys for `/mentorship/admin/enroll`. */
 export type MentorshipEnrollStep = 'details' | 'setup' | 'prerequisites';
@@ -98,13 +99,13 @@ export interface MentorshipEnrollFieldErrors {
 export interface MentorshipLfProject {
   id: string;
   name: string;
+  /** Required by the upstream create body as `projectSlug`. */
+  slug: string;
   logoUrl?: string;
 }
 
-export type MentorshipLfProjectsResponse = {
-  data: MentorshipLfProject[];
-  total: number;
-};
+/** One lazy-load page of LF projects; `page_token` is the cursor for the next page and is left out once the list is exhausted. */
+export type MentorshipLfProjectsResponse = PaginatedResponse<MentorshipLfProject>;
 
 /** LFX user option surfaced in the admin Mentors tab "invite mentor" picker. */
 export interface MentorshipInvitableUser {
@@ -119,7 +120,7 @@ export type MentorshipInvitableUsersResponse = {
   total: number;
 };
 
-/** Result of the mock unique-name check. */
+/** Result of the program-name availability lookup. */
 export interface MentorshipNameAvailability {
   available: boolean;
 }
@@ -427,4 +428,131 @@ export interface MentorshipRegisterFailureOptions<TFieldErrors extends object> {
   fieldKeys: readonly (keyof TFieldErrors)[];
   /** Copy for a 422. Without it a 422 gets the fallback message, since the page has no eligibility statements to point at. */
   ineligibleMessage?: string;
+}
+
+// -- Admin enroll: create a program -------------------------------------------
+
+/**
+ * One term in the create body. No `id` (upstream generates it) and dates are date-only `YYYY-MM-DD`, which upstream stores
+ * at 00:00 UTC. Upstream needs `endDate` after `startDate`, and `applicationEndDate` strictly after `applicationStartDate`
+ * (a same-day window is refused) and before `startDate`.
+ */
+export interface MentorshipEnrollCreateTerm {
+  name: string;
+  startDate: string;
+  endDate: string;
+  applicationStartDate: string;
+  applicationEndDate: string;
+}
+
+/** One prerequisite in the create body. `dueDate` is a date-only `YYYY-MM-DD` or `null`. */
+export interface MentorshipEnrollCreatePrerequisite {
+  name: string;
+  description: string;
+  /** Whether the admin picked this prerequisite. Upstream saves only `true` items and drops a `false` one without an error. */
+  required: boolean;
+  requireFile: boolean;
+  dueDate: string | null;
+}
+
+/**
+ * Request body for `POST /api/mentorship/admin/programs`, sent on to upstream `POST /mentorship/v1/programs` as is. It has no
+ * `status`, `logoUrl` or term `id`: upstream sets the status to `pending`, and the logo goes up in a second call.
+ */
+export interface MentorshipEnrollCreateRequest {
+  projectId: string;
+  projectSlug: string;
+  projectName: string;
+  projectLogoUrl?: string;
+  name: string;
+  description: string;
+  repositoryUrl: string;
+  websiteUrl?: string;
+  codeOfConductUrl?: string;
+  ciiProjectId?: string;
+  /** The wizard's Technologies, joined with `', '`. Upstream keeps it apart from `skills`. */
+  industry?: string;
+  skills: string[];
+  terms: MentorshipEnrollCreateTerm[];
+  prerequisites: MentorshipEnrollCreatePrerequisite[];
+  termsAccepted: true;
+}
+
+/** Response from `POST /api/mentorship/admin/programs`: what the wizard keeps so a failed logo upload can retry without a second create. */
+export interface MentorshipEnrollProgramRef {
+  id: string;
+  /** Falls back to `id` when upstream returns no slug. */
+  slug: string;
+  status: string;
+}
+
+/** Response from `POST /api/mentorship/admin/programs/:programId/logo`. */
+export interface MentorshipProgramLogoUploadResult {
+  logoUrl: string;
+}
+
+/** The two calls one Submit makes, in order. There is no review step: create already leaves the program `pending`. */
+export type MentorshipEnrollSubmitStep = 'create' | 'logo';
+
+export type MentorshipEnrollSubmitPhase = 'idle' | 'creating' | 'uploading-logo' | 'failed' | 'done';
+
+/** Shown in the wizard after a failed submit. `step` says which write failed; `message` is the banner text. */
+export interface MentorshipEnrollSubmitFailure {
+  step: MentorshipEnrollSubmitStep;
+  message: string;
+}
+
+/** The upstream fields the BFF reads from the program a create returns. */
+export interface MentorshipUpstreamCreatedProgram {
+  id: string;
+  slug?: string;
+  status: string;
+}
+
+/** Upstream body from `POST /mentorship/v1/programs/{id}/logo-upload`. */
+export interface MentorshipUpstreamLogoUpload {
+  public_url: string;
+  filename: string;
+  content_type: string;
+  size: number;
+}
+
+/**
+ * Upstream body from `GET /mentorship/v1/programs/{id}/enroll-template`. Upstream omits an empty `prerequisites`, and a
+ * prerequisite's `description`, `submitFile` and `dueDate` are `null` when unset.
+ */
+export interface MentorshipUpstreamEnrollTemplate {
+  program: {
+    id: string;
+    name: string;
+    description?: string | null;
+    repo_link?: string | null;
+    website_url?: string | null;
+    code_of_conduct?: string | null;
+    cii_project_id?: string | null;
+    /** Comma-separated Technologies. */
+    industry?: string | null;
+    project_uid?: string | null;
+    project_slug?: string | null;
+    project_name?: string | null;
+    project_logo_url?: string | null;
+  };
+  skills?: string[] | null;
+  /** The program's stored task templates, passed through as they are, so their keys are camelCase unlike `program`'s. */
+  prerequisites?: { name: string; description?: string | null; submitFile?: string | null; dueDate?: string | null }[] | null;
+}
+
+/** Response from `GET /api/mentorship/admin/programs/:programId/enroll-template`: what the wizard copies from an existing program. */
+export interface MentorshipEnrollImport {
+  name: string;
+  /** `null` when the template has no project uid. */
+  project: MentorshipLfProject | null;
+  description: string;
+  repositoryUrl: string;
+  websiteUrl: string;
+  codeOfConductUrl: string;
+  ciiProjectId: string;
+  technologies: string[];
+  skills: string[];
+  prerequisites: MentorshipPrerequisite[];
 }

@@ -2141,6 +2141,12 @@ export interface KeywordActionOutcome {
   success: boolean;
   message: string;
   state: 'done' | 'unconfirmed' | 'failed';
+  /**
+   * The action this outcome answers, recorded when the response lands — not looked up from what was
+   * last asked, which a re-read or a newer click can change while the request is out. The Optimize
+   * tab's removed-keyword set is derived from this field, so it is the one record of a confirmed REMOVE.
+   */
+  action?: KeywordActionType;
 }
 
 // ---------------------------------------------------------------------------
@@ -2316,6 +2322,208 @@ export interface CampaignRow {
    * `aria-describedby` takes a LIST and a row can hold both an error and an unavailable reason.
    */
   describedBy: string | null;
+  /**
+   * Whether the row offers the budget editor. False when the platform has no budget-write support
+   * in campaign-service or the campaign was never created on its platform (no
+   * `platform_campaign_id`), both of which upstream refuses whatever the amount.
+   *
+   * Independent of `action`: the budget route has no deployment flag and a paused campaign's
+   * budget can still be changed, so neither the toggle's status nor its cutover gate applies.
+   */
+  budgetAvailable: boolean;
+  /** Why the budget editor is disabled — set when `budgetAvailable` is false, empty otherwise. */
+  budgetUnavailableReason: string;
+  /**
+   * Why the budget editor cannot submit RIGHT NOW although the row supports it, or `''`.
+   *
+   * Transient, unlike `budgetUnavailableReason`: a pause/resume on the row is in flight (both
+   * writes need the same validator, so the second would 412), or a 412 has already proved the
+   * row's validator stale and only a refresh can replace it.
+   */
+  budgetBlockedReason: string;
+  /**
+   * Whether the row offers the bid editor: a platform campaign-service can write a manual max CPC
+   * bid on (`BID_WRITABLE_CAMPAIGN_PLATFORMS`) and a campaign that exists on it. Whether the
+   * campaign's bid STRATEGY takes a manual bid is only known upstream, which refuses with 409.
+   */
+  bidAvailable: boolean;
+  /** Why the bid editor is disabled — set when `bidAvailable` is false, empty otherwise. */
+  bidUnavailableReason: string;
+  /** Why an available bid editor cannot submit RIGHT NOW (stale validator, another write in flight), or `''`. */
+  bidBlockedReason: string;
+  /** Whether the row shows the negative-keyword control at all: Microsoft Advertising campaigns only. */
+  negativeKeywordsOffered: boolean;
+  /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
+  negativeKeywordsAvailable: boolean;
+  /** Why the negative-keyword control is disabled — set when offered but not available, empty otherwise. */
+  negativeKeywordsUnavailableReason: string;
+}
+
+/** The bid the Optimize tab's bid editor submits, or that a change confirmed. */
+export interface CampaignBidChange {
+  /** Manual max cost-per-click, in the AD ACCOUNT's own currency, exactly as entered. Never converted or rounded. */
+  bid: number;
+}
+
+/**
+ * How a bid change that did not succeed is reported. The budget change's three states, for the
+ * same reasons: `failed` (a refusal, shown verbatim — including upstream's neutral 409 about the
+ * bidding setup), `conflict` (a 412) and `unconfirmed` (may have applied; verify before retrying).
+ */
+export type CampaignBidOutcome = CampaignBudgetOutcome;
+
+/** One match-type choice offered by the negative-keyword editor. */
+export interface CampaignNegativeKeywordMatchTypeOption {
+  value: CampaignNegativeKeywordMatchType;
+  label: string;
+}
+
+/** One line of the negative-keyword editor that cannot be sent, and why. */
+export interface NegativeKeywordInputProblem {
+  /** 1-based line number in the editor, as the operator sees it. */
+  line: number;
+  text: string;
+  reason: string;
+}
+
+/**
+ * The negative-keyword editor's text parsed into what would be sent.
+ *
+ * Blank lines are dropped; every other line is one keyword, kept as typed (upstream trims and
+ * collapses whitespace itself). `keywords[i]` is what `results[i]` of the response will answer.
+ */
+export interface ParsedNegativeKeywordInput {
+  keywords: string[];
+  problems: NegativeKeywordInputProblem[];
+}
+
+/** One sent negative keyword joined, by POSITION, to the outcome the response gave it. */
+export interface CampaignNegativeKeywordOutcomeRow {
+  /** The index in the request, which is also the index in `results`. */
+  index: number;
+  text: string;
+  matchType: CampaignNegativeKeywordMatchType;
+  outcome: CampaignNegativeKeywordOutcome;
+  label: string;
+  /** What to tell the operator beyond the label: the error code, or the verify-first advice. */
+  detail: string;
+}
+
+/**
+ * A negative-keywords request that produced no per-keyword results at all.
+ *
+ * `unconfirmed` when the request may have reached the platform (the BFF could not read the
+ * confirmation, or nobody answered): every keyword sent may or may not have been added.
+ */
+export interface CampaignNegativeKeywordsBatchOutcome {
+  state: 'failed' | 'unconfirmed';
+  message: string;
+}
+
+/**
+ * One campaign's latest negative-keyword request, as the Optimize tab keeps it ACROSS the editor's
+ * lifetime. A tab switch or a campaign-list re-read destroys the editor while the request runs on;
+ * this is what the editor (and the row) read back when they are drawn again.
+ */
+export interface CampaignNegativeKeywordsRequestState {
+  pending: boolean;
+  /** Per-keyword outcomes, in the order the keywords were SENT: never filtered or re-sorted. */
+  outcomeRows: CampaignNegativeKeywordOutcomeRow[];
+  /** The request's outcome when it produced no per-keyword results at all. */
+  batchOutcome: CampaignNegativeKeywordsBatchOutcome | null;
+  /** The keywords the batch outcome is about, so an unconfirmed batch can name them. */
+  batchKeywords: string[];
+  /** Every keyword sent, in order, so a remounted editor can restore the ones not confirmed added. */
+  sent: string[];
+  /** The match type the request was sent with, restored with them. */
+  matchType: CampaignNegativeKeywordMatchType;
+}
+
+/** One negative-keyword request, as the editor hands it to `CampaignNegativeKeywordsService`. */
+export interface CampaignNegativeKeywordsSubmission {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  campaignName: string;
+  /** Parsed once by the editor and sent as-is: the outcomes are zipped onto this exact list. */
+  keywords: string[];
+  matchType: CampaignNegativeKeywordMatchType;
+}
+
+/** One reporting-window choice of the Microsoft keyword table. */
+export interface MicrosoftKeywordsWindowOption {
+  value: MicrosoftKeywordsWindow;
+  label: string;
+}
+
+/** A pause/remove asked for on one Microsoft keyword row. */
+export interface MicrosoftKeywordActionRequest {
+  keyword: MicrosoftKeywordMetrics;
+  action: KeywordActionType;
+}
+
+/** A Microsoft keyword row as the table renders it, with its action state already looked up. */
+export interface MicrosoftKeywordDisplayRow {
+  /** The action-state key: platform-qualified, so a Microsoft id can never collide with a Google one. */
+  key: string;
+  keyword: MicrosoftKeywordMetrics;
+  inProgress: boolean;
+  result: KeywordActionOutcome | null;
+  /**
+   * True once a REMOVE of this keyword was confirmed on this page: it no longer exists, so no action
+   * is offered on it — even when a finished report read afterwards still lists it.
+   */
+  removed: boolean;
+  /**
+   * False when this row's `0` conversions may not be a measurement: the report left some rows'
+   * conversions blank (`conversionsComplete: false`) and Microsoft reports a blank as `0`.
+   */
+  conversionsMeasured: boolean;
+}
+
+/** The amount and pacing the Optimize tab's budget editor submits, or that a change confirmed. */
+export interface CampaignBudgetChange {
+  /** In the AD ACCOUNT's own currency, exactly as entered. Never converted or rounded. */
+  budget: number;
+  budgetType: CampaignBudgetType;
+}
+
+/**
+ * How a budget change that did not succeed is reported.
+ *
+ * Three states, because the operator has to act differently on each:
+ * - `failed`: campaign-service (or the BFF) answered with a refusal. Its message is shown verbatim.
+ * - `conflict`: a 412. The row's validator is stale, so the list must be re-read before retrying.
+ * - `unconfirmed`: nobody can say whether the platform applied the change. The operator must check
+ *   the ad platform before retrying, and nothing retries on their behalf.
+ */
+export interface CampaignBudgetOutcome {
+  state: 'failed' | 'conflict' | 'unconfirmed';
+  message: string;
+}
+
+/**
+ * The per-lever wording `classifyCampaignWriteFailure` reports an Optimize-tab write failure with.
+ * The classification itself is shared, so the budget, bid and negative-keyword levers cannot drift.
+ */
+export interface CampaignWriteFailureMessages {
+  /** What a 412 says. Omitted for a write sent without a validator, where a 412 is a plain refusal. */
+  conflict?: string;
+  /** What an outcome nobody could confirm says when the response carried no usable message. */
+  unconfirmed: string;
+  /** What a refusal says when the response carried no readable message. */
+  failureFallback: string;
+  /**
+   * When set, a BFF-relayed 503 is `failed` only when its message contains this wording; every other
+   * 503 is unconfirmed (the bid lever, whose unconfirmed and definite 503s share a status).
+   */
+  definiteFailureMarker?: string;
+}
+
+/** One pacing choice offered by the budget editor. */
+export interface CampaignBudgetTypeOption {
+  value: CampaignBudgetType;
+  label: string;
 }
 
 /**
@@ -2547,8 +2755,13 @@ export interface CampaignBudgetUpdateParams {
 }
 
 export interface CampaignBudgetUpdateResult {
-  /** The ROW's platform as campaign-service reports it. The request does not name one. */
-  platform: string;
+  /**
+   * The ROW's platform as campaign-service reports it, in the hyphenated paid-platform vocabulary
+   * (`google-ads`, …). The request does not name one, and upstream refuses unsupported platforms.
+   * `null` when the row carried a value outside `CampaignPlatform`: checked at runtime by the BFF,
+   * never cast, so an unknown value is not passed off as a known platform.
+   */
+  platform: CampaignPlatform | null;
   campaignId: string;
   /**
    * The amount requested, which the platform accepted; the platform may hold it rounded to its
@@ -2612,8 +2825,13 @@ export interface CampaignBidUpdateParams {
 }
 
 export interface CampaignBidUpdateResult {
-  /** The ROW's platform as campaign-service reports it. The request does not name one. */
-  platform: string;
+  /**
+   * The ROW's platform as campaign-service reports it, in the hyphenated paid-platform vocabulary
+   * (`google-ads`, …). The request does not name one, and upstream refuses unsupported platforms.
+   * `null` when the row carried a value outside `CampaignPlatform`: checked at runtime by the BFF,
+   * never cast, so an unknown value is not passed off as a known platform.
+   */
+  platform: CampaignPlatform | null;
   campaignId: string;
   /**
    * The bid requested, which the platform accepted. An echo of the request, like
@@ -2859,6 +3077,18 @@ export interface BriefMetricsRow {
 export type BriefMetricsActionPriority = 'HIGH' | 'MED';
 
 /**
+ * The stable rule tokens campaign-service's brief rule engine emits
+ * (`internal/service/rules/actions.go`, `Evaluate`).
+ *
+ * Closed here because the Optimize tab maps each one to the control that resolves it
+ * (`CAMPAIGN_ACTION_RULE_LEVERS`), and a `Record` over this union is what makes that mapping
+ * exhaustive at compile time. The WIRE is not closed: a token added upstream later still arrives,
+ * so every consumer that reads `rule` off a response must treat an unlisted value as unknown
+ * rather than trusting this union (see `campaignActionRuleLever`).
+ */
+export type BriefMetricsActionRule = 'zero_delivery' | 'underspending' | 'budget_constrained' | 'low_ctr' | 'no_conversions';
+
+/**
  * One thing an operator should look at, derived by campaign-service from the readable rows.
  *
  * `rule` is a STABLE TOKEN — group, filter or link on it. `issue` and `action` are for humans and
@@ -2869,13 +3099,50 @@ export type BriefMetricsActionPriority = 'HIGH' | 'MED';
  * impression floors and how paused campaigns are treated. This is the single-source version.
  */
 export interface BriefMetricsActionItem {
-  rule: 'zero_delivery' | 'underspending' | 'budget_constrained' | 'low_ctr' | 'no_conversions';
+  rule: BriefMetricsActionRule;
   priority: BriefMetricsActionPriority;
   campaign_id: string;
   /** `string` for the same reason as `BriefMetricsRow.platform` — `hubspot` is in scope. */
   platform: string;
   issue: string;
   action: string;
+}
+
+/**
+ * The Optimize tab control that resolves a monitor finding.
+ *
+ * - `budget`: the row's budget editor, opened and focused, never submitted on the operator's behalf.
+ * - `pause_resume`: the row's pause/resume toggle, through the same method and guards as the row.
+ * - `keywords`: the keyword actions (pause/remove per keyword) of the campaign's platform, Google Ads or Microsoft Advertising.
+ * - `none`: nothing in LFX One resolves it; the finding is shown with its advice only.
+ */
+export type CampaignOptimizeLever = 'budget' | 'pause_resume' | 'keywords' | 'none';
+
+/** A lever that maps to an actual control, i.e. every `CampaignOptimizeLever` except `none`. */
+export type CampaignOptimizeControlLever = Exclude<CampaignOptimizeLever, 'none'>;
+
+/**
+ * One monitor finding as the Optimize tab renders it: the rule engine's item joined to the brief
+ * campaign row it is about, with the one lever that resolves it already decided.
+ */
+export interface CampaignOptimizeFinding {
+  /** Unique within a read: a rule fires at most once per campaign. */
+  key: string;
+  item: BriefMetricsActionItem;
+  /** The row the item is about, or `null` when the campaign is not in the loaded list. */
+  row: CampaignRow | null;
+  /** The row's campaign name, or a neutral placeholder when the row is not in the list. */
+  campaignName: string;
+  /** The platform's display label, or the raw token when this UI does not know it. */
+  platformLabel: string;
+  /** `none` whenever the rule has no lever, the platform does not support it, or there is no row. */
+  lever: CampaignOptimizeLever;
+  /** Visible text of the lever's button, `''` when `lever` is `none`. */
+  leverLabel: string;
+  /** Accessible name of the lever's button: the visible text plus the campaign it acts on. */
+  leverAriaLabel: string;
+  /** Why the lever cannot be used right now (the row control's own reason), or `''`. */
+  leverBlockedReason: string;
 }
 
 /**

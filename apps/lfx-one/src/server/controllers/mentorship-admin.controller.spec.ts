@@ -149,6 +149,42 @@ describe('MentorshipAdminController', () => {
     });
   });
 
+  describe('getEnrollTemplate', () => {
+    const template = { name: 'private-program-name', prerequisites: [{ id: 'imported-0' }, { id: 'imported-1' }] } as never;
+
+    it('answers with the mapped template and logs only the id and the prerequisite count', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getEnrollTemplate').mockResolvedValue(template);
+
+      await controller.getEnrollTemplate(buildReq({}, { programId: ` ${PROGRAM_ID} ` }), res, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID);
+      expect(res.json).toHaveBeenCalledWith(template);
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'get_mentorship_admin_enroll_template', expect.anything(), {
+        programId: PROGRAM_ID,
+        count: 2,
+      });
+    });
+
+    it('rejects a program id that is not a UUID with a 400 and no upstream call', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getEnrollTemplate');
+
+      await controller.getEnrollTemplate(buildReq({}, { programId: 'program-one' }), res, next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it.each([403, 404])('passes an upstream %i to next', async (status) => {
+      const error = Object.assign(new Error('upstream'), { statusCode: status });
+      vi.spyOn(MentorshipAdminService.prototype, 'getEnrollTemplate').mockRejectedValue(error);
+
+      await controller.getEnrollTemplate(buildReq({}, { programId: PROGRAM_ID }), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.json).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getProgramMentees', () => {
     const emptyPage = { data: [], total: 0 };
 
@@ -491,6 +527,60 @@ describe('MentorshipAdminController', () => {
       });
     });
 
+    describe('updateTask', () => {
+      const TASK_ID = '8b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e';
+      const taskReq = (body: unknown, taskId: unknown = TASK_ID): Request => ({ ...buildReq({}, { taskId }), body }) as Request;
+      const updated = { id: TASK_ID, status: 'completed' } as never;
+
+      it('passes the validated body on and answers with the updated task', async () => {
+        const write = vi.spyOn(MentorshipAdminService.prototype, 'updateTask').mockResolvedValue(updated);
+        const out = writeRes();
+
+        await controller.updateTask(taskReq({ name: ' Read ', status: 'completed', extra: 1 }), out, next);
+
+        expect(write).toHaveBeenCalledWith(expect.anything(), TASK_ID, { name: 'Read', status: 'completed' });
+        expect(out.json).toHaveBeenCalledWith(updated);
+        expect(next).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['a task id that is not a UUID', { status: 'completed' }, '12'],
+        ['a task id that is repeated', { status: 'completed' }, [TASK_ID, TASK_ID]],
+        ['no body', undefined, TASK_ID],
+        ['an empty body', {}, TASK_ID],
+        ['a blank name', { name: ' ' }, TASK_ID],
+        ['a status upstream spells', { status: 'in_progress' }, TASK_ID],
+        ['a due date that is not a calendar date', { dueDate: '2030-02-31' }, TASK_ID],
+      ])('rejects %s with a 400 and no upstream call', async (_label, body, taskId) => {
+        const write = vi.spyOn(MentorshipAdminService.prototype, 'updateTask');
+
+        await controller.updateTask(taskReq(body, taskId), writeRes(), next);
+
+        expect(statusCodes()).toEqual([400]);
+        expect(write).not.toHaveBeenCalled();
+      });
+
+      it.each([400, 403, 404, 409])('passes an upstream %i on to next', async (statusCode) => {
+        vi.spyOn(MentorshipAdminService.prototype, 'updateTask').mockRejectedValue(Object.assign(new Error('upstream'), { statusCode }));
+
+        await controller.updateTask(taskReq({ status: 'completed' }), writeRes(), next);
+
+        expect(statusCodes()).toEqual([statusCode]);
+      });
+
+      it('logs the task id and the field names, never the task text', async () => {
+        vi.spyOn(MentorshipAdminService.prototype, 'updateTask').mockResolvedValue(updated);
+
+        await controller.updateTask(taskReq({ name: 'private-task-name', description: 'private-task-text', status: 'completed' }), writeRes(), next);
+
+        const logged = JSON.stringify([...vi.mocked(logger.startOperation).mock.calls, ...vi.mocked(logger.success).mock.calls].map((call) => call.slice(1)));
+        expect(logged).toContain(TASK_ID);
+        expect(logged).toContain('"fields":["name","description","status"]');
+        expect(logged).not.toContain('private-task-name');
+        expect(logged).not.toContain('private-task-text');
+      });
+    });
+
     it('withdrawApplication answers 204', async () => {
       const write = vi.spyOn(MentorshipAdminService.prototype, 'withdrawApplication').mockResolvedValue();
       const out = writeRes();
@@ -725,12 +815,14 @@ describe('MentorshipAdminController', () => {
   describe('with no signed-in user', () => {
     it.each([
       ['getProgram', 'getProgramPage', { programId: PROGRAM_ID }, {}],
+      ['getEnrollTemplate', 'getEnrollTemplate', { programId: PROGRAM_ID }, {}],
       ['getProgramMentees', 'getProgramMentees', { programId: PROGRAM_ID }, { type: 'current' }],
       ['getProgramMentors', 'getProgramMentors', { programId: PROGRAM_ID }, {}],
       ['getProgramTerms', 'getProgramTerms', { programId: PROGRAM_ID }, {}],
       ['getApplicationTasks', 'getApplicationTasks', { applicationId: PROGRAM_ID }, {}],
       ['updateApplicationNote', 'updateApplicationNote', { applicationId: PROGRAM_ID }, {}],
       ['createTasks', 'createTasks', {}, {}],
+      ['updateTask', 'updateTask', { taskId: PROGRAM_ID }, {}],
       ['updateProgramMentor', 'updateProgramMentor', { programId: PROGRAM_ID, memberId: PROGRAM_ID }, {}],
       ['createTerm', 'createTerm', { programId: PROGRAM_ID }, {}],
       ['updateTerm', 'updateTerm', { programId: PROGRAM_ID, termId: PROGRAM_ID }, {}],
@@ -745,6 +837,166 @@ describe('MentorshipAdminController', () => {
 
       expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
       expect(read).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('program create and logo upload', () => {
+    const writeRes = () => ({ json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() }) as unknown as Response;
+    const statusCodes = () => vi.mocked(next).mock.calls.map(([error]) => (error as { statusCode?: number }).statusCode);
+    const PROJECT = '5c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+    const createBody = {
+      projectId: PROJECT,
+      projectSlug: 'energy-project',
+      projectName: 'Energy Project',
+      name: 'private-program-name',
+      description: '<p>private-program-description</p>',
+      repositoryUrl: 'https://github.com/example/repo',
+      skills: ['Go'],
+      terms: [{ name: 'Fall 2026', startDate: '2026-09-01', endDate: '2026-12-31', applicationStartDate: '2026-07-01', applicationEndDate: '2026-08-15' }],
+      prerequisites: [],
+      termsAccepted: true,
+    };
+    const createReq = (body: unknown): Request => ({ ...buildReq(), body }) as Request;
+    const logoReq = (body: unknown, contentType = 'image/png', params: Record<string, unknown> = { programId: PROGRAM_ID }): Request =>
+      ({
+        ...buildReq({}, params),
+        body,
+        headers: contentType ? { 'content-type': contentType } : {},
+        path: `/programs/${PROGRAM_ID}/logo`,
+      }) as unknown as Request;
+
+    it('creates a program and answers 201 with its id, slug and status', async () => {
+      const ref = { id: PROGRAM_ID, slug: 'private-program-name', status: 'pending' };
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'createProgram').mockResolvedValue(ref);
+      const out = writeRes();
+
+      await controller.createProgram(createReq({ ...createBody, logo_url: 'https://x.example/a.png', status: 'published' }), out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), createBody);
+      expect(out.status).toHaveBeenCalledWith(201);
+      expect(out.json).toHaveBeenCalledWith(ref);
+      expect(vi.mocked(logger.success)).toHaveBeenCalledWith(expect.anything(), 'create_mentorship_admin_program', 0, {
+        programId: PROGRAM_ID,
+        status: 'pending',
+      });
+    });
+
+    it('never logs the program name or description', async () => {
+      vi.spyOn(MentorshipAdminService.prototype, 'createProgram').mockResolvedValue({ id: PROGRAM_ID, slug: PROGRAM_ID, status: 'pending' });
+
+      await controller.createProgram(createReq(createBody), writeRes(), next);
+
+      const logged = JSON.stringify([...vi.mocked(logger.startOperation).mock.calls, ...vi.mocked(logger.success).mock.calls].map((call) => call.slice(1)));
+      expect(logged).not.toContain('private-program-name');
+      expect(logged).not.toContain('private-program-description');
+    });
+
+    it.each([
+      ['no body', undefined],
+      ['a project id that is not a UUID', { ...createBody, projectId: 'proj-1' }],
+      ['no name', { ...createBody, name: '' }],
+      ['no skills', { ...createBody, skills: [] }],
+      ['five terms', { ...createBody, terms: Array.from({ length: 5 }, () => createBody.terms[0]) }],
+      ['terms that are not accepted', { ...createBody, termsAccepted: false }],
+    ])('rejects %s on create with a 400 and no upstream call', async (_label, body) => {
+      const create = vi.spyOn(MentorshipAdminService.prototype, 'createProgram');
+
+      await controller.createProgram(createReq(body), writeRes(), next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it('passes an upstream conflict on create to next', async () => {
+      const conflict = Object.assign(new Error('conflict'), { statusCode: 409 });
+      vi.spyOn(MentorshipAdminService.prototype, 'createProgram').mockRejectedValue(conflict);
+
+      await controller.createProgram(createReq(createBody), writeRes(), next);
+
+      expect(next).toHaveBeenCalledWith(conflict);
+    });
+
+    it('sends a PNG on with its content type and answers 201 with the logo URL', async () => {
+      const upload = vi.spyOn(MentorshipAdminService.prototype, 'uploadProgramLogo').mockResolvedValue({ logoUrl: 'https://cdn.example/logo.png' });
+      const bytes = Buffer.from([1, 2, 3]);
+      const out = writeRes();
+
+      await controller.uploadProgramLogo(logoReq(bytes), out, next);
+
+      expect(upload).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, bytes, 'image/png');
+      expect(out.status).toHaveBeenCalledWith(201);
+      expect(out.json).toHaveBeenCalledWith({ logoUrl: 'https://cdn.example/logo.png' });
+      expect(vi.mocked(logger.success)).toHaveBeenCalledWith(expect.anything(), 'upload_mentorship_program_logo', 0, {
+        programId: PROGRAM_ID,
+        sizeBytes: 3,
+        contentType: 'image/png',
+      });
+    });
+
+    it('reads the base content type, ignoring its case and parameters', async () => {
+      const upload = vi.spyOn(MentorshipAdminService.prototype, 'uploadProgramLogo').mockResolvedValue({ logoUrl: 'u' });
+
+      await controller.uploadProgramLogo(logoReq(Buffer.from([1]), 'Image/JPEG; charset=binary'), writeRes(), next);
+
+      expect(upload).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, expect.any(Buffer), 'image/jpeg');
+    });
+
+    it('rejects a program id that is not a UUID with a 400 and no upstream call', async () => {
+      const upload = vi.spyOn(MentorshipAdminService.prototype, 'uploadProgramLogo');
+
+      await controller.uploadProgramLogo(logoReq(Buffer.from([1]), 'image/png', { programId: '12' }), writeRes(), next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(upload).not.toHaveBeenCalled();
+    });
+
+    it.each(['text/plain', 'image/gif', 'image/svg+xml', 'application/json', ''])(
+      'rejects the content type %s with a 415 and no upstream call',
+      async (contentType) => {
+        const upload = vi.spyOn(MentorshipAdminService.prototype, 'uploadProgramLogo');
+
+        await controller.uploadProgramLogo(logoReq({}, contentType), writeRes(), next);
+
+        expect(statusCodes()).toEqual([415]);
+        expect(upload).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each([
+      ['an empty body', Buffer.alloc(0)],
+      ['a body that is not bytes', {}],
+      ['a string body', 'logo'],
+      ['an array body', ['logo']],
+    ])('rejects %s with a 400 and no upstream call', async (_label, body) => {
+      const upload = vi.spyOn(MentorshipAdminService.prototype, 'uploadProgramLogo');
+
+      await controller.uploadProgramLogo(logoReq(body), writeRes(), next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(upload).not.toHaveBeenCalled();
+    });
+
+    it('passes an upstream 503 on the logo upload to next', async () => {
+      const unavailable = Object.assign(new Error('no storage'), { statusCode: 503 });
+      vi.spyOn(MentorshipAdminService.prototype, 'uploadProgramLogo').mockRejectedValue(unavailable);
+
+      await controller.uploadProgramLogo(logoReq(Buffer.from([1])), writeRes(), next);
+
+      expect(next).toHaveBeenCalledWith(unavailable);
+    });
+
+    it.each([
+      ['createProgram', 'createProgram'],
+      ['uploadProgramLogo', 'uploadProgramLogo'],
+    ] as const)('%s passes an AuthenticationError to next without calling upstream', async (method, serviceMethod) => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const write = vi.spyOn(MentorshipAdminService.prototype, serviceMethod);
+      const req = method === 'createProgram' ? createReq(createBody) : logoReq(Buffer.from([1]));
+
+      await controller[method](req, writeRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+      expect(write).not.toHaveBeenCalled();
     });
   });
 });

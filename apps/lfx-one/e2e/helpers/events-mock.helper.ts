@@ -11,13 +11,11 @@ export const VISA_DEEP_LINK_PARAMS: Record<string, string | null> = {
   isPast: 'false',
   registeredOnly: 'true',
   isVisaRequestAccepted: 'true',
-  anyRegistrationStatus: null,
 };
+/** Travel funding lists every open event, so the lookup must not send registration filters. */
 export const TRAVEL_FUND_DEEP_LINK_PARAMS: Record<string, string | null> = {
-  isPast: 'false',
-  registeredOnly: 'true',
-  isTravelFundRequestAccepted: 'true',
-  anyRegistrationStatus: 'true',
+  registeredOnly: null,
+  isPast: null,
 };
 
 export interface MockEventRoutesOptions<T extends { id: string }> {

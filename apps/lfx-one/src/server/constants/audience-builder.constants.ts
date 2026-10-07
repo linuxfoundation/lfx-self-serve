@@ -30,3 +30,27 @@ export const AUDIENCE_CAPABILITIES_TIMEOUT_MS = 30_000;
  * nothing past the point where a real event page has been covered.
  */
 export const MAX_PAGE_LINKS = 5000;
+
+/**
+ * Elements whose content a browser never renders as live markup, and which htmlparser2's tokenizer
+ * does NOT put into raw-text mode itself -- so `scanDocument` tracks them. `noscript` is raw text
+ * in a scripting browser. Flags, not counts: raw text does not nest.
+ */
+export const RAW_TEXT_CONTAINERS: ReadonlySet<string> = new Set(['noscript', 'iframe', 'noembed', 'noframes']);
+
+/**
+ * Elements the tokenizer DOES put into raw-text mode -- until a self-closing slash knocks it out.
+ * `<textarea/>` still opens a textarea in a browser, so `scanDocument` counts these when self-closed.
+ */
+export const TOKENIZER_RAW_TEXT_ELEMENTS: ReadonlySet<string> = new Set(['script', 'style', 'title', 'textarea', 'xmp']);
+
+/**
+ * A tracked closer followed by `/` -- `</script/>`, `</iframe/>`, `</svg/>`. Derived from the sets
+ * above, so a tag added there is normalised here too.
+ *
+ * A browser ends raw text at the closer's name followed by whitespace, `/` or `>`; the tokenizer
+ * accepts only the first and last, so `</script/>` left the rest of the document as script text.
+ * Replaced with a space, which the spec treats identically there and which keeps every offset --
+ * the tokenizer callbacks slice the input by index.
+ */
+export const RAW_TEXT_CLOSER_SOLIDUS_RE = new RegExp(`<\\/(${[...TOKENIZER_RAW_TEXT_ELEMENTS, ...RAW_TEXT_CONTAINERS, 'template', 'svg'].join('|')})\\/`, 'gi');

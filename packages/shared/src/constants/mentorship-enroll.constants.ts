@@ -1,15 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type {
-  MentorshipEnrollForm,
-  MentorshipEnrollStep,
-  MentorshipLfProject,
-  MentorshipLfProjectsResponse,
-  MentorshipPrerequisite,
-  MentorshipProgramTerm,
-} from '../interfaces/mentorship.interface';
-import { mentorshipArtworkIconUrl } from './mentorship.constants';
+import type { MentorshipEnrollForm, MentorshipEnrollStep, MentorshipPrerequisite, MentorshipProgramTerm } from '../interfaces/mentorship.interface';
 import { toLocalDateOnlyString } from '../utils/date-time.utils';
 
 export const MENTORSHIP_ENROLL_STEPS_ORDER: MentorshipEnrollStep[] = ['details', 'setup', 'prerequisites'];
@@ -41,7 +33,19 @@ export const MENTORSHIP_MAX_OPEN_TERMS = 4;
 export const MENTORSHIP_CUSTOM_PREREQ_NAME_MAX = 20;
 export const MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX = 500;
 export const MENTORSHIP_CUSTOM_PREREQ_FILE_LABEL = 'Check if completion of this task requires that the mentee submits a file.';
-export const MENTORSHIP_LF_PROJECT_PAGE_SIZE = 10;
+export const MENTORSHIP_LF_PROJECT_PAGE_SIZE = 12;
+/**
+ * `filterBy` for the project picker: a field no option has. The query service already matched the projects (by name or alias, on
+ * name tokens), and PrimeNG filters the loaded options by label whenever the box holds text, even when `lazy` is on, which would
+ * hide an alias match. With `notEquals`, a missing field matches every option, so the list is the server's answer unfiltered.
+ */
+export const MENTORSHIP_LF_PROJECT_REMOTE_FILTER_FIELD = 'serverSearchOnly';
+/**
+ * How many more pages the enroll project picker reads on its own after a search's first page, while it still holds less than a
+ * page of projects. Each read can cost up to `MENTORSHIP_LF_PROJECT_MAX_READS` query-service reads, so this keeps a caller who
+ * can see only a few projects from walking the whole catalog when the picker opens; past it, typing a search narrows the list.
+ */
+export const MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS = 2;
 
 /** Year choices for the term dialog — last year through 10 years ahead. */
 export const MENTORSHIP_TERM_YEAR_OPTIONS: ReadonlyArray<{ label: string; value: string }> = Array.from({ length: 12 }, (_, index) => {
@@ -53,8 +57,13 @@ export const MENTORSHIP_ENROLL_LOGO_ACCEPT = '.jpg,.jpeg,.png,image/jpeg,image/p
 /** SVG excluded (XSS risk), matching `ALLOWED_AVATAR_MIME_TYPES`. */
 export const MENTORSHIP_ENROLL_LOGO_EXTENSIONS = ['jpg', 'jpeg', 'png'] as const;
 export const MENTORSHIP_ENROLL_LOGO_MAX_BYTES = 2 * 1024 * 1024;
+/** Content types the logo route accepts, the same pair upstream `logo-upload` takes. */
+export const MENTORSHIP_ENROLL_LOGO_MIME_TYPES = ['image/png', 'image/jpeg'] as const;
 export const MENTORSHIP_ENROLL_LOGO_HELPER = 'JPG, PNG · 420px × 420px · Max 2 MB';
 export const MENTORSHIP_ENROLL_LOGO_TYPE_ERROR = 'Program logo is not the right file type.';
+export const MENTORSHIP_ENROLL_LOGO_TOO_LARGE = 'Program logo must be 2 MB or smaller.';
+export const MENTORSHIP_ENROLL_LOGO_EMPTY = 'Program logo file is empty.';
+export const MENTORSHIP_ENROLL_PROJECT_REQUIRED = 'Select a Linux Foundation project.';
 
 export const MENTORSHIP_ENROLL_DETAILS_INTRO = 'Describe the program and the project it belongs to. This is what candidates read on your program page.';
 export const MENTORSHIP_ENROLL_SETUP_INTRO = 'Define the skills mentees need and the term schedule for this program.';
@@ -76,6 +85,31 @@ export const MENTORSHIP_ENROLL_COC_INTRO =
 export const MENTORSHIP_ENROLL_FORM_INCOMPLETE = 'Something on the form is not complete or invalid. Please correct the highlighted fields before continuing.';
 export const MENTORSHIP_ENROLL_CANCEL_CONFIRM = 'You will lose your changes—are you sure you wish to cancel?';
 export const MENTORSHIP_ENROLL_DELETE_TERM_CONFIRM = 'Are you sure you want to delete this term?';
+export const MENTORSHIP_ENROLL_LEAVE_LOGO_MISSING_CONFIRM =
+  'The program is saved, but its logo is missing. You can add it later from the program card. Leave anyway?';
+/** Seconds-scale back-off for a logo upload that meets a 403 while the creator's `writer` grant is still being written (R6). */
+export const MENTORSHIP_ENROLL_WRITE_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+export const MENTORSHIP_ENROLL_LOGO_AUTO_RETRY_DELAY_MS = 1000;
+/** Statuses that mean the file or the sign-in is at fault, so repeating the upload cannot help. */
+export const MENTORSHIP_ENROLL_LOGO_NO_RETRY_STATUSES = [400, 401, 413, 415] as const;
+export const MENTORSHIP_ENROLL_SUBMIT_SUCCESS = 'Program submitted for review.';
+export const MENTORSHIP_ENROLL_SUBMIT_FAILED = "We couldn't save the program. Your answers are kept, so you can try again.";
+export const MENTORSHIP_ENROLL_LOGO_NOT_UPLOADED = "Program saved and sent for review, but the logo didn't upload.";
+export const MENTORSHIP_ENROLL_UPLOADS_UNAVAILABLE = 'Uploads are unavailable right now. Try again later.';
+export const MENTORSHIP_ENROLL_RETRY_LABEL = 'Retry';
+/** The logo field's message for the status a failed upload ends with; any other status leaves the field alone and only the banner shows. */
+export const MENTORSHIP_ENROLL_LOGO_FAILURE_FIELD_ERRORS: Readonly<Record<number, string>> = {
+  400: MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
+  413: MENTORSHIP_ENROLL_LOGO_TOO_LARGE,
+  415: MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
+  503: MENTORSHIP_ENROLL_UPLOADS_UNAVAILABLE,
+};
+export const MENTORSHIP_PROGRAM_CARD_LOGO_MISSING = 'Logo missing';
+export const MENTORSHIP_PROGRAM_CARD_ADD_LOGO = 'Add logo';
+export const MENTORSHIP_PROGRAM_CARD_LOGO_ADDED = 'Logo added.';
+export const MENTORSHIP_PROGRAM_CARD_LOGO_FORBIDDEN = "You don't have permission to change this program's logo.";
+/** Raw upstream program statuses whose list row shows the "Logo missing" hint when the program has no logo. */
+export const MENTORSHIP_PROGRAM_LOGO_HINT_STATUSES = ['pending', 'published'] as const;
 export const MENTORSHIP_ENROLL_NAME_TAKEN = 'This program name is taken.';
 export const MENTORSHIP_ENROLL_NAME_CHECKING = 'Checking program name...';
 export const MENTORSHIP_ENROLL_NAME_UNAVAILABLE = 'Could not verify the program name. Please try again.';
@@ -118,30 +152,14 @@ export const MENTORSHIP_POLICY_LINKS: ReadonlyArray<{ label: string; href: strin
   { label: 'Privacy Policy', href: 'https://www.linuxfoundation.org/privacy' },
 ];
 
-export const MOCK_MENTORSHIP_LF_PROJECTS: readonly MentorshipLfProject[] = [
-  { id: 'proj-gridflow', name: 'GridFlow', logoUrl: mentorshipArtworkIconUrl('lf-energy', 'grid-exchange-fabric') },
-  { id: 'proj-apicurio', name: 'Apicurio Registry', logoUrl: mentorshipArtworkIconUrl('cncf', 'apicurio-registry') },
-  { id: 'proj-janusgraph', name: 'JanusGraph', logoUrl: mentorshipArtworkIconUrl('lfai', 'janusgraph') },
-  { id: 'proj-thanos', name: 'Thanos', logoUrl: mentorshipArtworkIconUrl('cncf', 'thanos') },
-  { id: 'proj-k8s', name: 'Kubernetes', logoUrl: mentorshipArtworkIconUrl('cncf', 'kubernetes') },
-  { id: 'proj-prometheus', name: 'Prometheus', logoUrl: mentorshipArtworkIconUrl('cncf', 'prometheus') },
-  { id: 'proj-envoy', name: 'Envoy', logoUrl: mentorshipArtworkIconUrl('cncf', 'envoy') },
-  { id: 'proj-istio', name: 'Istio', logoUrl: mentorshipArtworkIconUrl('cncf', 'istio') },
-  { id: 'proj-helm', name: 'Helm', logoUrl: mentorshipArtworkIconUrl('cncf', 'helm') },
-  { id: 'proj-containerd', name: 'containerd', logoUrl: mentorshipArtworkIconUrl('cncf', 'containerd') },
-  { id: 'proj-fluentd', name: 'Fluentd', logoUrl: mentorshipArtworkIconUrl('cncf', 'fluentd') },
-  { id: 'proj-linkerd', name: 'Linkerd', logoUrl: mentorshipArtworkIconUrl('cncf', 'linkerd') },
-  { id: 'proj-opa', name: 'Open Policy Agent', logoUrl: mentorshipArtworkIconUrl('cncf', 'open-policy-agent', 'opa') },
-  { id: 'proj-spiffe', name: 'SPIFFE', logoUrl: mentorshipArtworkIconUrl('cncf', 'spiffe') },
-  { id: 'proj-argo', name: 'Argo', logoUrl: mentorshipArtworkIconUrl('cncf', 'argo') },
-  { id: 'proj-coredns', name: 'CoreDNS', logoUrl: mentorshipArtworkIconUrl('cncf', 'coredns') },
-  { id: 'proj-etcd', name: 'etcd', logoUrl: mentorshipArtworkIconUrl('cncf', 'etcd') },
-  { id: 'proj-crio', name: 'CRI-O', logoUrl: mentorshipArtworkIconUrl('cncf', 'crio') },
-  { id: 'proj-tikv', name: 'TiKV', logoUrl: mentorshipArtworkIconUrl('cncf', 'tikv') },
-  { id: 'proj-rook', name: 'Rook', logoUrl: mentorshipArtworkIconUrl('cncf', 'rook') },
-];
+/** Shown in the project picker's list while a search waits on its answer, so a slow read never says there are no projects. */
+export const MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE = 'Searching projects…';
 
-export const EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE: MentorshipLfProjectsResponse = { data: [], total: 0 };
+/** Shown in the project picker's list once a read answers with no projects. */
+export const MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE = 'No results found';
+
+/** Shown under the project picker when a page of projects could not be read, beside a Try again button. */
+export const MENTORSHIP_ENROLL_PROJECTS_UNAVAILABLE = 'Could not load projects. Please try again.';
 
 /**
  * Canonical skill / technology catalog used by the enroll wizard.
@@ -426,97 +444,11 @@ export function createEmptyMentorshipEnrollForm(): MentorshipEnrollForm {
   };
 }
 
-// An imported template carries no logo bytes, so it must not carry a logo file name either —
-// the admin picks the logo, and `logoFileName` is what the details step validates against.
-type ImportedProgramSource = Omit<MentorshipEnrollForm, 'importProgramId' | 'termsAccepted' | 'logoFileName' | 'logoPreviewUrl' | 'terms'>;
+/** Shown under the import select when the template could not be loaded; the form is left as it was. */
+export const MENTORSHIP_ENROLL_IMPORT_FAILED = "Couldn't load that program. You can still enroll from scratch.";
 
-const MENTORSHIP_IMPORT_PROGRAM_DETAILS: Record<string, ImportedProgramSource> = {
-  mp_gridflow_fall26: {
-    name: 'GridFlow: Time-Series Ingestion Pipeline',
-    projectId: 'proj-gridflow',
-    technologies: ['GO', 'Kubernetes', 'GraphQL'],
-    description: '<p>Build a time-series ingestion pipeline for grid telemetry, including storage, alerting, and contributor onboarding.</p>',
-    repositoryUrl: 'https://github.com/lfenergy/gridflow',
-    websiteUrl: 'https://lfenergy.org',
-    ciiProjectId: '1842',
-    codeOfConductUrl: 'https://www.contributor-covenant.org/version/2/1/code_of_conduct/',
-    skills: ['GO', 'Kubernetes'],
-    prerequisites: clonePrerequisites().map((item, index) => ({ ...item, required: index === 0 })),
-  },
-  mp_apicurio_winter26: {
-    name: 'Apicurio Registry: Prompt Template Playground',
-    projectId: 'proj-apicurio',
-    technologies: ['GO', 'React', 'API'],
-    description: '<p>Improve the Apicurio Registry prompt-template playground for schema discovery, authoring, and contributor workflows.</p>',
-    repositoryUrl: 'https://github.com/Apicurio/apicurio-registry',
-    websiteUrl: 'https://www.apicur.io/',
-    ciiProjectId: '2104',
-    codeOfConductUrl: 'https://github.com/Apicurio/apicurio-registry/blob/main/CODE_OF_CONDUCT.md',
-    skills: ['GO', 'React', 'API'],
-    prerequisites: clonePrerequisites().map((item) => ({
-      ...item,
-      required: item.id === 'prereq-resume' || item.id === 'prereq-cover',
-    })),
-  },
-  mp_janusgraph_fall26: {
-    name: 'JanusGraph: Adjacency Cache Instrumentation',
-    projectId: 'proj-janusgraph',
-    technologies: ['Java', 'GraphQL', 'Database'],
-    description: '<p>Instrument JanusGraph adjacency-cache hits so contributors can profile traversal cost.</p>',
-    repositoryUrl: 'https://github.com/JanusGraph/janusgraph',
-    websiteUrl: 'https://janusgraph.org',
-    ciiProjectId: '',
-    codeOfConductUrl: '',
-    skills: ['Java', 'Database'],
-    prerequisites: clonePrerequisites(),
-  },
-  mp_thanos_summer26: {
-    name: 'Thanos: Fan-Out Query Observability',
-    projectId: 'proj-thanos',
-    technologies: ['GO', 'Kubernetes', 'Monitoring'],
-    description: '<p>Improve observability for Thanos fan-out queries across store gateways.</p>',
-    repositoryUrl: 'https://github.com/thanos-io/thanos',
-    websiteUrl: 'https://thanos.io',
-    ciiProjectId: '',
-    codeOfConductUrl: '',
-    skills: ['GO', 'Kubernetes'],
-    prerequisites: clonePrerequisites().map((item) => ({ ...item, required: item.id === 'prereq-resume' })),
-  },
-};
-
-/** True when the program has mock enrollment details that the import picker can copy. */
-export function isMentorshipProgramImportable(programId: string): boolean {
-  return Object.hasOwn(MENTORSHIP_IMPORT_PROGRAM_DETAILS, programId);
-}
-
-export function formFromImportedMentorshipProgram(importProgramId: string): MentorshipEnrollForm {
-  if (!importProgramId) {
-    return createEmptyMentorshipEnrollForm();
-  }
-
-  const source = MENTORSHIP_IMPORT_PROGRAM_DETAILS[importProgramId];
-  if (!source) {
-    return { ...createEmptyMentorshipEnrollForm(), importProgramId };
-  }
-
-  return {
-    importProgramId,
-    name: source.name,
-    projectId: source.projectId,
-    technologies: [...source.technologies],
-    description: source.description,
-    repositoryUrl: source.repositoryUrl,
-    websiteUrl: source.websiteUrl,
-    ciiProjectId: source.ciiProjectId,
-    codeOfConductUrl: source.codeOfConductUrl,
-    logoFileName: '',
-    logoPreviewUrl: '',
-    skills: [...source.skills],
-    terms: [createDefaultMentorshipTerm()],
-    prerequisites: clonePrerequisites(source.prerequisites),
-    termsAccepted: false,
-  };
-}
+/** Shown under the import select when the program list could not be loaded, so an empty select does not read as no programs. */
+export const MENTORSHIP_ENROLL_IMPORT_LIST_FAILED = "Couldn't load your programs to import from. You can still enroll from scratch.";
 
 export function mentorshipPolicyHref(label: string): string {
   return MENTORSHIP_POLICY_LINKS.find((link) => link.label === label)?.href ?? '#';

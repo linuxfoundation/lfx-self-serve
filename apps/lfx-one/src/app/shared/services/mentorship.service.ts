@@ -3,12 +3,7 @@
 
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import {
-  EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE,
-  EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE,
-  MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
-  MENTORSHIP_LF_PROJECT_PAGE_SIZE,
-} from '@lfx-one/shared/constants';
+import { EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE, MENTORSHIP_INVITABLE_USER_PAGE_SIZE, MENTORSHIP_LF_PROJECT_PAGE_SIZE } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiBadge,
   MentorshipInvitableUsersResponse,
@@ -21,11 +16,16 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, take, throwError } from 'rxjs';
 
+import { strictHttpParams } from '../utils/http-params.utils';
+
 /**
  * Talks to the LFX One BFF's `/api/mentorship/*` endpoints.
  *
- * Shape mirrors `CrowdfundingService` deliberately: lookups degrade to an empty
- * response on error so the enroll flow never blocks on upstream faults.
+ * Errors propagate to the caller, which owns the unavailable or retry state: the name check (the
+ * wizard holds Next while it cannot confirm the name), the project picker's pages (Retry rather than
+ * a failure shown as no projects, or a truncated list as complete), the CII badge (a 404 is `null`)
+ * and the review and profile calls.
+ * The invitable-user lookup is the exception: it degrades to an empty response, as in `CrowdfundingService`.
  * The admin pages' reads live in `MentorshipAdminService` and the mentor pages' in `MentorshipMentorService`.
  */
 @Injectable({ providedIn: 'root' })
@@ -33,18 +33,20 @@ export class MentorshipService {
   private readonly http = inject(HttpClient);
 
   public isProgramNameAvailable(name: string): Observable<MentorshipNameAvailability> {
-    return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params: new HttpParams().set('name', name) }).pipe(take(1));
+    return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params: strictHttpParams().set('name', name) }).pipe(take(1));
   }
 
-  public getLfProjects(params?: { search?: string; offset?: number; limit?: number }): Observable<MentorshipLfProjectsResponse> {
-    let httpParams = new HttpParams();
+  /** One lazy-load page of LF projects; pass the previous page's `page_token` as `pageToken` for the next one. Errors propagate. */
+  public getLfProjects(params?: { search?: string; pageToken?: string | null; limit?: number }): Observable<MentorshipLfProjectsResponse> {
+    // Strict codec: a `+` in a typed search (`C++`) or in the opaque cursor would otherwise reach Express as a space.
+    let httpParams = strictHttpParams();
     if (params?.search) httpParams = httpParams.set('search', params.search);
-    if (params?.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
-    httpParams = httpParams.set('limit', String(params?.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
+    if (params?.pageToken) httpParams = httpParams.set('page_token', params.pageToken);
+    httpParams = httpParams.set('page_size', String(params?.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
 
     return this.http
       .get<MentorshipLfProjectsResponse>('/api/mentorship/lf-projects', { params: httpParams })
-      .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE, 'getLfProjects')));
+      .pipe(take(1), catchError(this.rethrowError('getLfProjects')));
   }
 
   /** LFX users that can be invited as mentors. Not program-scoped. */

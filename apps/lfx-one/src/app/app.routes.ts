@@ -28,6 +28,7 @@ import { gatewazeEmbedEnabledGuard } from './shared/guards/gatewaze-embed-enable
 import { flatDocumentsRedirect } from './shared/guards/flat-documents-redirect.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
+import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
@@ -606,6 +607,7 @@ export const routes: Routes = [
       {
         path: 'meetups',
         title: 'My Meetups',
+        canActivate: [meetupsLensGuard],
         loadChildren: () => import('./modules/meetups/meetups.routes').then((m) => m.MEETUPS_ROUTES),
       },
       {
@@ -634,6 +636,15 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
       {
+        // Personal reader: route data restores Me on deep links from any lens.
+        path: 'newsletters/my',
+        pathMatch: 'full',
+        title: 'My Newsletters',
+        data: { lens: 'me', preload: false },
+        canActivate: [authGuard],
+        loadComponent: () => import('./modules/newsletters/my-newsletters/my-newsletters.component').then((m) => m.MyNewslettersComponent),
+      },
+      {
         // Canonical shareable newsletter permalink (GH-1550). Mounted ahead of
         // the lens-redirected `newsletters` mount below so the URL never
         // rewrites to /foundation/... or /project/..., whose mount-level
@@ -648,11 +659,8 @@ export const routes: Routes = [
       {
         path: 'newsletters',
         title: 'Newsletters',
-        // No newsletterAccessGuard at the mount: the Me-lens member feed
-        // (/newsletters/my) must be reachable by regular committee members.
-        // Every manager child route (list/create/edit/analytics) applies the
-        // guard itself in newsletters.routes.ts, and the /foundation and
-        // /project mounts above keep it — so manager surfaces stay gated.
+        // Publisher children apply newsletterAccessGuard in newsletters.routes.ts;
+        // the personal reader has its own Me-only route above.
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/newsletters/newsletters.routes').then((m) => m.NEWSLETTER_ROUTES),
       },

@@ -4,14 +4,19 @@
 import type {
   AudienceSignal,
   AudienceSpeakerScope,
+  BriefMetricsActionRule,
   CampaignBidType,
   CampaignBudgetType,
+  CampaignBudgetTypeOption,
   CampaignDeliveryTypeOption,
   CampaignEmailSegment,
   CampaignEmailTypeOption,
   CampaignGoalOption,
+  CampaignOptimizeControlLever,
+  CampaignOptimizeLever,
   CampaignKeyword,
   CampaignNegativeKeywordMatchType,
+  CampaignNegativeKeywordMatchTypeOption,
   CampaignNegativeKeywordOutcome,
   CampaignPlatform,
   CampaignPlatformOption,
@@ -20,11 +25,14 @@ import type {
   CampaignTabOption,
   CampaignToggleAction,
   CampaignToggleStatus,
+  KeywordActionOutcome,
   KeywordActionPlatform,
   LinkedInGeoTarget,
   MetaObjective,
   MetaObjectiveParams,
   MetaPlacement,
+  MicrosoftKeywordsWindow,
+  MicrosoftKeywordsWindowOption,
   ParsedCampaignName,
   RedditObjective,
   RedditObjectiveParams,
@@ -397,6 +405,17 @@ export const CAMPAIGN_TOGGLE_FAILURE_MESSAGES: Readonly<Record<Exclude<CampaignT
 };
 
 /**
+ * Why a toggle's outcome is UNKNOWN — worded per direction. Used when nothing the BFF wrote says the
+ * toggle was refused: no answer at all, a proxy's or gateway's own response, or campaign-service's
+ * "unconfirmed" wording. The change may have reached the ad platform, so this never says the
+ * campaign "is still" anything; the operator checks the platform before trying again.
+ */
+export const CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES: Readonly<Record<Exclude<CampaignToggleAction, 'unavailable'>, string>> = {
+  pause: 'The pause could not be confirmed. The campaign may already be paused — verify its status in the ad platform before trying again.',
+  resume: 'The resume could not be confirmed. The campaign may already be running and spending — verify its status in the ad platform before trying again.',
+};
+
+/**
  * The button's visible word per action. `unavailable` still names an action — the button is
  * disabled, not blank.
  *
@@ -409,6 +428,46 @@ export const CAMPAIGN_TOGGLE_LABELS: Readonly<Record<CampaignToggleAction, strin
   pause: 'Pause',
   resume: 'Resume',
   unavailable: 'Unavailable',
+};
+
+/**
+ * Why a `zero_delivery` finding offers no lever for a campaign that is already paused. The finding
+ * only ever offers Pause: resuming a campaign from a "not delivering" finding would restart spend.
+ */
+export const CAMPAIGN_FINDING_ALREADY_PAUSED_REASON = 'This campaign is already paused.';
+
+/**
+ * Shown beside a Microsoft keyword's actions when the previous one is UNCONFIRMED. The actions stay
+ * offered — pausing or removing a keyword only reduces spend — but the operator checks first.
+ */
+export const MICROSOFT_KEYWORD_PREVIOUS_UNCONFIRMED_NOTE = 'Previous attempt not confirmed — verify in Microsoft Advertising before retrying.';
+
+/**
+ * campaign-service's exact sentences (lower case) for a Microsoft keyword read that is unavailable
+ * rather than failed, by HTTP status. Compared whole, never by pattern; see `isNotConnectedError`
+ * in the Microsoft keyword table for where each comes from upstream.
+ */
+export const MICROSOFT_KEYWORDS_NOT_CONNECTED_MESSAGES: Readonly<Record<404 | 400, readonly string[]>> = {
+  404: ['no microsoft ads connection configured for this project'],
+  400: ['keyword and audience insights are not supported for this platform', 'keyword insights is not supported for this platform'],
+};
+
+/**
+ * Visible label of each keyword action outcome state, shared by the Google and Microsoft keyword
+ * tables. An UNCONFIRMED action may already have applied, and a retried REMOVE is irreversible, so
+ * it is never worded as a failure.
+ */
+export const KEYWORD_ACTION_OUTCOME_LABELS: Readonly<Record<KeywordActionOutcome['state'], string>> = {
+  done: 'Done',
+  unconfirmed: 'Unconfirmed',
+  failed: 'Failed',
+};
+
+/** Text colour of each keyword action outcome state, on the brand scales. */
+export const KEYWORD_ACTION_OUTCOME_CLASSES: Readonly<Record<KeywordActionOutcome['state'], string>> = {
+  done: 'text-emerald-600',
+  unconfirmed: 'text-amber-600',
+  failed: 'text-red-600',
 };
 
 /**
@@ -1096,6 +1155,204 @@ export const CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED =
  * (`microsoftKeywordsWindowEnum`, campaign-service `design/connection.go`).
  */
 export const MICROSOFT_KEYWORDS_WINDOWS = ['today', 'last_7_days', 'last_30_days', 'this_month', 'last_month'] as const;
+
+/**
+ * The platforms whose campaign budget campaign-service can change (`update-campaign-budget`).
+ *
+ * Hand-listed rather than derived from `CAMPAIGN_PLATFORMS`, because budget writing is wired per
+ * platform upstream and is a narrower capability than pause/resume: X has neither, and a platform
+ * can be toggleable long before its budget model is. Upstream refuses any other platform with 400,
+ * so the Optimize tab withholds the editor for them rather than offering a doomed form.
+ */
+export const BUDGET_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>([
+  'google-ads',
+  'linkedin-ads',
+  'meta-ads',
+  'microsoft-ads',
+  'reddit-ads',
+]);
+
+/** The pacing choices the budget editor offers, in display order. Mirrors `VALID_CAMPAIGN_BUDGET_TYPES`. */
+export const CAMPAIGN_BUDGET_TYPE_OPTIONS: readonly CampaignBudgetTypeOption[] = [
+  { value: 'daily', label: 'Daily' },
+  { value: 'lifetime', label: 'Lifetime' },
+] as const;
+
+/** Why the budget editor is disabled for a platform campaign-service cannot write budgets on. */
+export const CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON = 'Budget changes are not available for this platform in LFX One yet.';
+
+/**
+ * Why the budget editor is disabled for a campaign with no `platform_campaign_id`: it was never
+ * created on its ad platform, so there is no budget there to change. Upstream refuses it with 409.
+ */
+export const CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON = 'This campaign has not been created on its ad platform, so its budget cannot be changed.';
+
+/**
+ * What a budget change refused with 412 tells the operator: another write moved this campaign
+ * since the list was read, so the validator is dead and only a re-read can produce a live one.
+ * Nothing was changed. Retrying without a refresh earns the same 412.
+ */
+export const CAMPAIGN_BUDGET_CONFLICT_MESSAGE =
+  'Someone else changed this campaign while you were viewing it, so the budget was not changed. Refresh the campaign list, then make the change again.';
+
+/** Why the budget editor cannot submit while a 412 has proved the row's validator stale. */
+export const CAMPAIGN_BUDGET_BLOCKED_STALE_REASON = 'This campaign changed since the list was read. Refresh the campaign list before changing its budget.';
+
+/** Why the budget editor cannot submit while a pause or resume of the same row is in flight. */
+export const CAMPAIGN_BUDGET_BLOCKED_TOGGLE_REASON = 'A pause or resume of this campaign is still in progress. Change the budget once it finishes.';
+
+/** Why the budget editor cannot submit while a bid change of the same row is in flight (both need the row's validator). */
+export const CAMPAIGN_BUDGET_BLOCKED_BID_REASON = 'A bid change of this campaign is still in progress. Change the budget once it finishes.';
+
+/**
+ * HTTP statuses that, when the response carries no message, mean nobody answered for a budget
+ * write: the browser lost the connection (0), something timed out (408, 504), or a gateway in front
+ * of the BFF replied instead (502, 503). The request may already have reached the ad platform, so
+ * the Optimize tab reports these as unconfirmed rather than failed.
+ */
+export const CAMPAIGN_BUDGET_UNANSWERED_STATUSES: ReadonlySet<number> = new Set<number>([0, 408, 502, 503, 504]);
+
+/** Shown for a refusal whose response carried no readable message. */
+export const CAMPAIGN_BUDGET_FAILURE_FALLBACK = 'The budget could not be changed.';
+
+/**
+ * The Optimize-tab lever that resolves each monitor finding, keyed by the brief rule engine's
+ * stable `rule` token (`BriefMetricsActionItem.rule`).
+ *
+ * The ONE place this decision is made. A `Record` over `BriefMetricsActionRule`, so adding a rule
+ * to that union without deciding its lever is a compile error rather than a silent fall-through.
+ * An unknown token on the wire is not in this map and resolves to `none` (`campaignActionRuleLever`).
+ *
+ * - `zero_delivery` → pause/resume: an active campaign that is not delivering. No budget change
+ *   fixes it (the rule engine suppresses the pacing item for exactly that reason), so the lever is
+ *   the run state.
+ * - `underspending` / `budget_constrained` → budget: the pacing findings; the engine's own advice
+ *   for both is to raise or right-size the budget.
+ * - `low_ctr` / `no_conversions` → none: the remedy is creative, targeting, landing page or
+ *   tracking work in the ad platform, which LFX One has no control for. The engine emits these per
+ *   CAMPAIGN, not per keyword, so the keyword actions are not a resolution of them.
+ *
+ * Deliberately NOT mapped to the bid or negative-keyword levers. Neither is what the rule engine
+ * advises for any of these rules: a bid change does not fix a campaign that delivers nothing (that
+ * is the run state, or a bid strategy LFX One never changes), the pacing findings are resolved by
+ * the budget, and negatives for `low_ctr` / `no_conversions` would need search-term evidence the
+ * finding does not carry. Both levers stay reachable from the campaign row itself.
+ */
+export const CAMPAIGN_ACTION_RULE_LEVERS: Readonly<Record<BriefMetricsActionRule, CampaignOptimizeLever>> = {
+  zero_delivery: 'pause_resume',
+  underspending: 'budget',
+  budget_constrained: 'budget',
+  low_ctr: 'none',
+  no_conversions: 'none',
+};
+
+/**
+ * Platforms with per-keyword pause/remove in LFX One: Google Ads, and Microsoft Advertising through
+ * campaign-service's `apply-keyword-actions` (`KEYWORD_ACTION_PLATFORMS`). Kept as its own `string`
+ * set because the lever gate is asked about any row's platform, not only a keyword platform.
+ */
+export const KEYWORD_ACTION_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>([...KEYWORD_ACTION_PLATFORMS]);
+
+/**
+ * Which platforms each lever works on. The SAME sets the row controls are gated on, so a finding
+ * can never offer a lever whose control would refuse the platform: the budget editor's
+ * `BUDGET_WRITABLE_CAMPAIGN_PLATFORMS` (X has no budget write) and the toggle's
+ * `TOGGLEABLE_CAMPAIGN_PLATFORMS`.
+ */
+export const CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS: Readonly<Record<CampaignOptimizeControlLever, ReadonlySet<string>>> = {
+  budget: BUDGET_WRITABLE_CAMPAIGN_PLATFORMS,
+  pause_resume: TOGGLEABLE_CAMPAIGN_PLATFORMS,
+  keywords: KEYWORD_ACTION_CAMPAIGN_PLATFORMS,
+};
+
+/** Visible label of each lever's button on a finding. The toggle's is the row's own action word. */
+export const CAMPAIGN_OPTIMIZE_LEVER_LABELS: Readonly<Record<Exclude<CampaignOptimizeControlLever, 'pause_resume'>, string>> = {
+  budget: 'Change budget',
+  keywords: 'Review keywords',
+};
+
+/**
+ * The platforms whose manual max CPC bid campaign-service can change (`update-campaign-bid`):
+ * Microsoft Advertising, Reddit, Meta and X. Google Ads and LinkedIn are refused upstream with 400,
+ * so the Optimize tab withholds the bid editor for them rather than offering a doomed form.
+ *
+ * Hand-listed for the reason `BUDGET_WRITABLE_CAMPAIGN_PLATFORMS` is: bid writing is wired per
+ * platform upstream, and X has a bid write while it has no budget write or pause/resume here.
+ */
+export const BID_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['microsoft-ads', 'reddit-ads', 'meta-ads', 'twitter-ads']);
+
+/** Why the bid editor is disabled for a platform campaign-service cannot write bids on. */
+export const CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON = 'Bid changes are available for Microsoft Advertising, Reddit, Meta and X campaigns only.';
+
+/** Why the bid editor is disabled for a campaign never created on its ad platform (upstream 409). */
+export const CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON = 'This campaign has not been created on its ad platform, so its bid cannot be changed.';
+
+/**
+ * What the bid editor says about bidding strategies, always, before anything is sent. Upstream
+ * refuses an automated or non-per-click strategy with a neutral 409 rather than switching it.
+ */
+export const CAMPAIGN_BID_STRATEGY_NOTE =
+  'Applies only to campaigns on a manual per-click bid. Campaigns on automated bidding are refused, and LFX One never changes a bid strategy.';
+
+/** What a bid change refused with 412 tells the operator. Nothing was changed. */
+export const CAMPAIGN_BID_CONFLICT_MESSAGE =
+  'Someone else changed this campaign while you were viewing it, so the bid was not changed. Refresh the campaign list, then make the change again.';
+
+/** Why the bid editor cannot submit while a 412 has proved the row's validator stale. */
+export const CAMPAIGN_BID_BLOCKED_STALE_REASON = 'This campaign changed since the list was read. Refresh the campaign list before changing its bid.';
+
+/** Why the bid editor cannot submit while another change (pause/resume or budget) of the row is in flight. */
+export const CAMPAIGN_BID_BLOCKED_BUSY_REASON = 'Another change to this campaign is still in progress. Change the bid once it finishes.';
+
+/** Shown for a bid refusal whose response carried no readable message. */
+export const CAMPAIGN_BID_FAILURE_FALLBACK = 'The bid could not be changed.';
+
+/**
+ * campaign-service's wording for a DEFINITE 503 on a bid change ("... the campaign was not
+ * modified"). Every other 503 on the bid route is reported as unconfirmed, because a 503 is also
+ * how an unconfirmed outcome and an unanswered gateway arrive.
+ */
+export const CAMPAIGN_BID_DEFINITE_FAILURE_MARKER = 'was not modified';
+
+/** The platforms a campaign-level negative keyword can be added on (`add-negative-keywords`). */
+export const NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['microsoft-ads']);
+
+/** Why the negative-keyword editor is disabled for a campaign never created on its ad platform. */
+export const CAMPAIGN_NEGATIVE_KEYWORDS_UNAVAILABLE_UNPROVISIONED_REASON =
+  'This campaign has not been created on its ad platform, so negative keywords cannot be added to it.';
+
+/** The match types the negative-keyword editor offers, in display order. Mirrors `VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES`. */
+export const CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPE_OPTIONS: readonly CampaignNegativeKeywordMatchTypeOption[] = [
+  { value: 'Exact', label: 'Exact' },
+  { value: 'Phrase', label: 'Phrase' },
+] as const;
+
+/** Visible label of each per-keyword outcome. UNCONFIRMED is never worded as a failure. */
+export const CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS: Readonly<Record<CampaignNegativeKeywordOutcome, string>> = {
+  APPLIED: 'Added',
+  ALREADY_PRESENT: 'Already present',
+  FAILED: 'Not added',
+  UNCONFIRMED: 'Not confirmed',
+};
+
+/** What an UNCONFIRMED negative keyword tells the operator to do before trying it again. */
+export const CAMPAIGN_NEGATIVE_KEYWORD_UNCONFIRMED_ADVICE =
+  "This keyword may have been added. Check the campaign's negative keywords in Microsoft Advertising before retrying.";
+
+/** Shown for a negative-keywords refusal whose response carried no readable message. */
+export const CAMPAIGN_NEGATIVE_KEYWORDS_FAILURE_FALLBACK = 'The negative keywords could not be added.';
+
+/** The window selector of the Microsoft keyword table, in display order, over `MICROSOFT_KEYWORDS_WINDOWS`. */
+export const MICROSOFT_KEYWORDS_WINDOW_OPTIONS: readonly MicrosoftKeywordsWindowOption[] = [
+  { value: 'today', label: 'Today' },
+  { value: 'last_7_days', label: '7d' },
+  { value: 'last_30_days', label: '30d' },
+  { value: 'this_month', label: 'This month' },
+  { value: 'last_month', label: 'Last month' },
+] as const;
+
+/** The window the Microsoft keyword table opens on: upstream's own default. */
+export const DEFAULT_MICROSOFT_KEYWORDS_WINDOW: MicrosoftKeywordsWindow = 'last_30_days';
 
 // NOTE: LinkedIn ad accounts, default account/org IDs, employer exclusions, and
 // targeting profile URN lists are loaded at runtime from a mounted ConfigMap

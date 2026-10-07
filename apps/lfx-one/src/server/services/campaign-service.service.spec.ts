@@ -3280,12 +3280,12 @@ describe('CampaignServiceClient.updateCampaignBudget', () => {
 
   it('returns the row with the ETag header as its fresh validator', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(
-      apiResponse({ id: 'c-1', platform: 'google_ads', status: 'active', version: 4, etag: 'stale' }, { etag: '"4"' })
+      apiResponse({ id: 'c-1', platform: 'google-ads', status: 'active', version: 4, etag: 'stale' }, { etag: '"4"' })
     );
 
     const result = await new CampaignServiceClient().updateCampaignBudget(req, args);
 
-    expect(result).toEqual({ id: 'c-1', platform: 'google_ads', status: 'active', version: 4, etag: '"4"' });
+    expect(result).toEqual({ id: 'c-1', platform: 'google-ads', status: 'active', version: 4, etag: '"4"' });
   });
 
   it('passes a 400 through with the platform reason upstream gave', async () => {
@@ -4111,7 +4111,9 @@ describe('CampaignServiceClient.getBriefMetrics', () => {
     expect(declarations).toContain('conversions?: number;');
     // The fifth rule. campaign-service can return it, so an exhaustive consumer that has never
     // heard of it would drop or mishandle a real action item.
-    expect(declarations).toMatch(/rule: .*'no_conversions'/);
+    // Declared through the `BriefMetricsActionRule` union, which `BriefMetricsActionItem.rule` uses.
+    expect(declarations).toMatch(/type BriefMetricsActionRule = .*'no_conversions'/);
+    expect(declarations).toContain('rule: BriefMetricsActionRule;');
   });
 
   /**

@@ -7,7 +7,7 @@
  * Members see the sent newsletters whose recipient committees include a
  * committee they currently belong to. The BFF derives the feed from live
  * committee membership (leaving a group hides its newsletters; joining
- * reveals past ones), so the UI just renders the flat list: title, received
+ * reveals past ones), so the UI just renders the flat list: title, sent
  * date, project/foundation, client-side search + filters, and a reader
  * drawer that fetches the rendered body on demand.
  *
@@ -37,6 +37,8 @@ const MOCK_NEWSLETTERS: MyNewsletter[] = [
     project_slug: 'test-project',
     is_foundation: false,
     parent_project_uid: FOUNDATION_UID,
+    parent_project_name: 'Test Foundation',
+    parent_is_foundation: true,
   },
   {
     id: 'b0000000-0000-0000-0000-000000000002',
@@ -79,9 +81,11 @@ async function setPersonaCookie(page: Page, personas: string[]): Promise<void> {
 }
 
 async function stubMyNewslettersApi(page: Page, newsletters: MyNewsletter[]): Promise<void> {
-  await page.route('**/api/newsletters/my-newsletters', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(newsletters) })
-  );
+  await page.route(/\/api\/newsletters\/my-newsletters(?:\?.*)?$/, (route) => {
+    const includeStatus = new URL(route.request().url()).searchParams.get('include_status') === 'true';
+    const response = includeStatus ? { newsletters, complete: true } : newsletters;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
+  });
 }
 
 // The preview drawer fetches the full newsletter (incl. body_html) via the
@@ -138,13 +142,13 @@ test.describe('My Newsletters — Me-lens feed', () => {
     await stubNewsletterDetailApi(page);
   });
 
-  test('lists sent newsletters with title, received date, and project name', async ({ page }) => {
+  test('lists sent newsletters with title, sent date, and project name', async ({ page }) => {
     await gotoMyNewsletters(page);
 
-    // Reader-framed column headers (not the sender-side Subject / Sent).
+    // Reader-framed Title column and the issue's Sent date (sent_at).
     const table = page.getByTestId('my-newsletters-table');
     await expect(table.locator('th').nth(0)).toHaveText('Title');
-    await expect(table.locator('th').nth(1)).toHaveText('Received');
+    await expect(table.locator('th').nth(1)).toHaveText('Sent');
 
     const firstRow = page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`);
     await expect(firstRow).toBeVisible({ timeout: ELEMENT_TIMEOUT });
@@ -175,11 +179,11 @@ test.describe('My Newsletters — Me-lens feed', () => {
     await expect(drawer.locator('[data-e2e="newsletter-body-marker"]')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(drawer).toContainText('TAC July Update');
 
-    // Reader-framed drawer header: project + received date, no sender-side
+    // Reader-framed drawer header: project + sent date, no sender-side
     // "Preview / As your recipients will see it" text.
     const drawerHeader = page.getByTestId('newsletter-preview-drawer-header');
     await expect(drawerHeader).toContainText('Test Project');
-    await expect(drawerHeader).toContainText('Received Jul 15, 2026');
+    await expect(drawerHeader).toContainText('Sent Jul 15, 2026');
     await expect(drawerHeader).not.toContainText('Preview');
   });
 
@@ -275,7 +279,7 @@ test.describe('My Newsletters — Me-lens feed', () => {
 
   test('subject without a resolved project_slug degrades to a plain drawer opener', async ({ page }) => {
     // project_slug is an enrichment field that can fail to resolve upstream —
-    // the subject anchor should omit its href (no dead/misleading permalink)
+    // the subject button should omit its href (no dead/misleading permalink)
     // while the click-to-open-drawer behavior keeps working.
     const newsletterWithoutSlug: MyNewsletter = {
       id: 'c0000000-0000-0000-0000-000000000003',
@@ -285,6 +289,8 @@ test.describe('My Newsletters — Me-lens feed', () => {
       project_name: 'Test Project',
       is_foundation: false,
       parent_project_uid: FOUNDATION_UID,
+      parent_project_name: 'Test Foundation',
+      parent_is_foundation: true,
     };
     await stubMyNewslettersApi(page, [newsletterWithoutSlug]);
     await stubNewsletterDetailApi(page, [newsletterWithoutSlug]);

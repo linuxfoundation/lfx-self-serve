@@ -103,11 +103,11 @@ export class MeetupsService {
       if (scoped) {
         const communitySql = isPast
           ? `SELECT DISTINCT TRIM(COMMUNITY) AS COMMUNITY FROM ${this.table('OCG_PAST_MEETUPS')}
-             WHERE EMAIL = ? AND NULLIF(TRIM(COMMUNITY), '') IS NOT NULL
+             WHERE LOWER(EMAIL) = LOWER(?) AND NULLIF(TRIM(COMMUNITY), '') IS NOT NULL
              ORDER BY COMMUNITY`
           : `SELECT DISTINCT TRIM(m.COMMUNITY) AS COMMUNITY
              FROM ${this.table('OCG_UPCOMING_MEETUPS')} m
-             JOIN ${this.table('OCG_UPCOMING_MEETUPS_ROLES')} r ON r.EMAIL = ? AND r.EVENT_ID = m.EVENT_ID
+             JOIN ${this.table('OCG_UPCOMING_MEETUPS_ROLES')} r ON LOWER(r.EMAIL) = LOWER(?) AND r.EVENT_ID = m.EVENT_ID
              WHERE NULLIF(TRIM(m.COMMUNITY), '') IS NOT NULL
              ORDER BY COMMUNITY`;
         const [communityResult, roleResult] = await Promise.all([
@@ -175,7 +175,7 @@ export class MeetupsService {
           r.ROLES
         FROM ${this.table('OCG_UPCOMING_MEETUPS')} m
         LEFT JOIN ${this.table('OCG_UPCOMING_MEETUPS_ROLES')} r
-          ON r.EMAIL = ?
+          ON LOWER(r.EMAIL) = LOWER(?)
           AND r.EVENT_ID = m.EVENT_ID
       ),
       filtered AS (
@@ -204,6 +204,7 @@ export class MeetupsService {
         STARTS_AT,
         EVENT_NAME,
         COMMUNITY,
+        COMMUNITY_SLUG,
         DATE,
         LOCATION,
         ROLES,
@@ -244,13 +245,14 @@ export class MeetupsService {
           STARTS_AT,
           EVENT_NAME,
           COMMUNITY,
+          COMMUNITY_SLUG,
           DATE,
           LOCATION,
           ROLES,
           GROUP_SLUG,
           EVENT_SLUG
         FROM ${this.table('OCG_PAST_MEETUPS')}
-        WHERE EMAIL = ?
+        WHERE LOWER(EMAIL) = LOWER(?)
           ${searchQueryFilter}
           ${communityFilter}
           ${roleFilterResult.filter}
@@ -260,6 +262,7 @@ export class MeetupsService {
         STARTS_AT,
         EVENT_NAME,
         COMMUNITY,
+        COMMUNITY_SLUG,
         DATE,
         LOCATION,
         ROLES,
@@ -303,7 +306,7 @@ export class MeetupsService {
   }
 
   private mapRowToMeetup(row: MeetupRow): MyMeetup {
-    if (!row.EVENT_ID || !row.EVENT_NAME || !row.COMMUNITY || !row.STARTS_AT || !row.GROUP_SLUG || !row.EVENT_SLUG) {
+    if (!row.EVENT_ID || !row.EVENT_NAME || !row.COMMUNITY || !row.COMMUNITY_SLUG?.trim() || !row.STARTS_AT || !row.GROUP_SLUG || !row.EVENT_SLUG) {
       throw new Error('Meetup row is missing required fields');
     }
 
@@ -313,7 +316,7 @@ export class MeetupsService {
     }
 
     const role = row.ROLES ?? '';
-    const communityPath = encodeURIComponent(row.COMMUNITY.toLowerCase());
+    const communityPath = encodeURIComponent(row.COMMUNITY_SLUG);
     const groupSlug = encodeURIComponent(row.GROUP_SLUG);
     const eventSlug = encodeURIComponent(row.EVENT_SLUG);
 

@@ -6,19 +6,20 @@ import { Component, computed, DestroyRef, inject, model, PLATFORM_ID, signal, Si
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
-import { MyNewsletter, MyNewsletterRow } from '@lfx-one/shared/interfaces';
+import { MyNewsletter, MyNewsletterRow, MyNewslettersState } from '@lfx-one/shared/interfaces';
 import { newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, scan, startWith, switchMap } from 'rxjs';
 
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
 
@@ -33,6 +34,7 @@ import { NewsletterPreviewDrawerComponent } from '../components/newsletter-previ
 @Component({
   selector: 'lfx-my-newsletters',
   imports: [
+    ButtonComponent,
     CardComponent,
     DatePipe,
     EmptyStateComponent,
@@ -56,6 +58,7 @@ export class MyNewslettersComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly retry$ = new BehaviorSubject<void>(undefined);
 
   // === Forms ===
   public readonly searchForm = new FormGroup({
@@ -65,7 +68,6 @@ export class MyNewslettersComponent {
   });
 
   // === Writable Signals ===
-  protected readonly loading = signal<boolean>(true);
   protected readonly previewVisible = model<boolean>(false);
   /** Newsletter id whose body fetch is in flight — serializes drawer opens. */
   protected readonly openingId = signal<string | null>(null);
@@ -81,7 +83,12 @@ export class MyNewslettersComponent {
 
   // === Computed Signals ===
   protected readonly personaLoaded = this.personaService.personaLoaded;
-  protected readonly myNewsletters: Signal<MyNewsletter[]> = this.initMyNewsletters();
+  private readonly state: Signal<MyNewslettersState> = this.initMyNewslettersState();
+  public readonly loading = computed(() => this.state().loading);
+  public readonly error = computed(() => this.state().error);
+  public readonly myNewsletters = computed(() => this.state().newsletters);
+  public readonly complete = computed(() => this.state().complete);
+  public readonly completenessNotice = this.initCompletenessNotice();
   protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initFoundationOptions();
   protected readonly projectOptions: Signal<{ label: string; value: string | null }[]> = this.initProjectOptions();
   protected readonly filteredNewsletters: Signal<MyNewsletter[]> = this.initFilteredNewsletters();
@@ -96,10 +103,10 @@ export class MyNewslettersComponent {
   protected readonly showFoundationFilter: Signal<boolean> = computed(() => this.foundationOptions().length > 1);
   protected readonly showProjectFilter: Signal<boolean> = computed(() => this.projectOptions().length > 1);
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!(this.searchTerm().trim() || this.foundationFilter() || this.projectFilter()));
-  /** Reader-framed drawer subtitle, e.g. "Received Jul 29, 2026". */
+  /** Reader-framed drawer subtitle, e.g. "Sent Jul 29, 2026". */
   protected readonly drawerSubtitle: Signal<string> = computed(() => {
     const sentAt = this.selected()?.sent_at;
-    return sentAt ? `Received ${formatDate(sentAt, 'MMM d, y', 'en-US')}` : '';
+    return sentAt ? `Sent ${formatDate(sentAt, 'MMM d, y', 'en-US')}` : '';
   });
   /** Canonical permalink for the selected newsletter (SSR-safe absolute URL). */
   protected readonly selectedShareUrl: Signal<string | null> = computed(() => {
@@ -118,9 +125,9 @@ export class MyNewslettersComponent {
     // present (page load or forward navigation), close it when they clear
     // (browser back). Idempotent — an emission for an issue that is already
     // open or mid-fetch is a no-op, so the sync never re-triggers a fetch.
-    combineLatest([toObservable(this.queryIssueId), toObservable(this.queryProjectSlug), toObservable(this.myNewsletters), toObservable(this.loading)])
+    combineLatest([toObservable(this.queryIssueId), toObservable(this.queryProjectSlug), toObservable(this.state)])
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(([issueId, projectSlug, newsletters, loading]) => {
+      .subscribe(([issueId, projectSlug, { newsletters, loading, error, complete }]) => {
         if (!issueId || !projectSlug) {
           // Params cleared (drawer close or back navigation) — close the drawer.
           if (this.previewVisible()) {
@@ -129,19 +136,23 @@ export class MyNewslettersComponent {
           return;
         }
         // Wait for the feed before deciding; skip if this issue is already opening or open.
-        if (loading || this.openingId() || (this.previewVisible() && this.selected()?.id === issueId)) {
+        if (loading || error || this.openingId() || (this.previewVisible() && this.selected()?.id === issueId)) {
           return;
         }
         const newsletter = newsletters.find((n) => n.id === issueId && n.project_slug === projectSlug);
         if (newsletter) {
           // Newsletter is in the feed — open the drawer via the normal path
           this.onOpenNewsletter(newsletter);
-        } else {
+        } else if (complete === true) {
           // Newsletter not in the feed (e.g. non-member pasted a URL).
           // Redirect to the canonical permalink page, which handles access uniformly.
           this.router.navigate(['/newsletters', projectSlug, issueId]);
         }
       });
+  }
+
+  public onRetry(): void {
+    this.retry$.next(undefined);
   }
 
   // === Protected Methods ===
@@ -255,16 +266,48 @@ export class MyNewslettersComponent {
   }
 
   // === Private Initializers ===
-  private initMyNewsletters(): Signal<MyNewsletter[]> {
-    return toSignal(this.newsletterService.getMyNewsletters().pipe(finalize(() => this.loading.set(false))), { initialValue: [] });
+  private initCompletenessNotice(): Signal<string> {
+    return computed(() => {
+      if (this.loading() || this.error() || this.complete() === true) return '';
+      return this.complete() === false ? 'Some newsletters could not be loaded' : "We couldn't verify that this list is complete";
+    });
+  }
+
+  private initMyNewslettersState(): Signal<MyNewslettersState> {
+    const pending: MyNewslettersState = { loading: true, error: false, newsletters: [], complete: null };
+    return toSignal(
+      this.retry$.pipe(
+        switchMap(() =>
+          this.newsletterService.getMyNewsletters().pipe(
+            map(
+              (response): MyNewslettersState => ({
+                loading: false,
+                error: false,
+                newsletters: Array.isArray(response) ? response : response.newsletters,
+                complete: Array.isArray(response) ? null : response.complete,
+              })
+            ),
+            catchError((error: unknown) => {
+              console.error('[MyNewsletters] Failed to load newsletters', error);
+              return of<MyNewslettersState>({ loading: false, error: true, newsletters: [], complete: null });
+            }),
+            startWith(pending)
+          )
+        ),
+        scan((previous, next) => (next.loading ? { ...next, newsletters: previous.newsletters, complete: previous.complete } : next), pending)
+      ),
+      { initialValue: pending }
+    );
   }
 
   private initFoundationOptions(): Signal<{ label: string; value: string | null }[]> {
     return computed(() => {
       const seen = new Map<string, string>();
       for (const item of this.myNewsletters()) {
-        if (item.is_foundation && item.project_uid && !seen.has(item.project_uid)) {
-          seen.set(item.project_uid, item.project_name || item.project_uid);
+        if (item.is_foundation === true && item.project_name) {
+          seen.set(item.project_uid, item.project_name);
+        } else if (item.is_foundation === false && item.parent_is_foundation === true && item.parent_project_uid && item.parent_project_name) {
+          seen.set(item.parent_project_uid, item.parent_project_name);
         }
       }
       const options = [...seen.entries()].map(([uid, name]) => ({ label: name, value: uid })).sort((a, b) => a.label.localeCompare(b.label));
@@ -277,7 +320,7 @@ export class MyNewslettersComponent {
       const foundation = this.foundationFilter();
       const seen = new Map<string, string>();
       for (const item of this.myNewsletters()) {
-        if (!item.is_foundation && item.project_uid && !seen.has(item.project_uid)) {
+        if (item.is_foundation === false && item.project_uid && !seen.has(item.project_uid)) {
           if (foundation && item.parent_project_uid !== foundation) {
             continue;
           }
