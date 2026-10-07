@@ -621,10 +621,17 @@ describe('MentorshipAdminService.getMentorCandidates', () => {
     expect(await service.getMentorCandidates(buildReq(), PROGRAM_ID, 'ada')).toEqual({ data: [] });
   });
 
-  it('passes any other upstream error on', async () => {
-    stubProgramReads({ [CANDIDATES_PATH]: new MicroserviceError('Service Unavailable', 503, 'SERVICE_UNAVAILABLE') });
+  it('passes any other upstream error on with the search cut from its path', async () => {
+    stubProgramReads({
+      [CANDIDATES_PATH]: new MicroserviceError('Service Unavailable', 503, 'SERVICE_UNAVAILABLE', {
+        path: `https://api.example.org${CANDIDATES_PATH}?search=ada%40example.org`,
+      }),
+    });
 
-    await expect(service.getMentorCandidates(buildReq(), PROGRAM_ID, 'ada')).rejects.toMatchObject({ statusCode: 503 });
+    const error = await service.getMentorCandidates(buildReq(), PROGRAM_ID, 'ada@example.org').catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ statusCode: 503, path: `https://api.example.org${CANDIDATES_PATH}` });
+    expect(JSON.stringify(error)).not.toContain('example.org?');
   });
 });
 

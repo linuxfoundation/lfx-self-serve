@@ -24,6 +24,7 @@ import {
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE,
+  MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITED_MESSAGE,
   MENTORSHIP_ADMIN_MENTEES_SEARCH_DEBOUNCE_MS,
   MENTORSHIP_ADMIN_MENTOR_ACTION_APPEARANCE,
@@ -323,8 +324,9 @@ export class MentorsTabComponent {
   }
 
   /**
-   * A 409 means the person is already invited or a mentor, so the field clears and the page reloads to show them. A 422
-   * (no LF account), a 503 (account lookup down) and every other failure keep the pick so the admin can retry.
+   * A 409 means the person is already invited or a mentor, so the field clears and the page reloads to show them. A 400
+   * (an unpublished program), a 422 (no LF account), a 503 (account lookup down) and every other failure keep the pick
+   * so the admin can retry.
    */
   private onInviteError(err: unknown): void {
     const status = err instanceof HttpErrorResponse ? err.status : 0;
@@ -332,6 +334,10 @@ export class MentorsTabComponent {
       this.form.controls.invitee.reset(null);
       this.reloadPage();
       this.showToast('error', 'Error', MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE, 5000);
+      return;
+    }
+    if (status === 400) {
+      this.showToast('error', 'Error', MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE, 5000);
       return;
     }
     if (status === 422) {
@@ -397,12 +403,14 @@ export class MentorsTabComponent {
   }
 
   /**
-   * A 503 is the account lookup being down; any other failure is generic. With no failure, a search with a space is a
+   * A 400 is an unpublished program (the search is long enough by then), a 503 the account lookup being down; any
+   * other failure is generic. With no failure, a search with a space is a
    * name, which only finds people already in Mentorship; anything else could be an LF username or a full email.
    */
   private candidatesEmptyMessageFor(search: string, error: unknown): string {
     if (error) {
       const status = error instanceof HttpErrorResponse ? error.status : 0;
+      if (status === 400) return MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE;
       return status === 503 ? MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE : MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE;
     }
     return /\s/.test(search) ? MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE : MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE;

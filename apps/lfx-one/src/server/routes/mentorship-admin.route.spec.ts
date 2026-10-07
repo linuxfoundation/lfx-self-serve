@@ -28,6 +28,14 @@ const mentorHandler = vi.fn((_req: express.Request, res: express.Response) => {
   res.status(204).end();
 });
 
+const inviteHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.status(204).end();
+});
+
+const candidatesHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.json({ data: [] });
+});
+
 const tasksHandler = vi.fn((_req: express.Request, res: express.Response) => {
   res.json({ created: [], failed: [] });
 });
@@ -59,6 +67,8 @@ vi.mock('../controllers/mentorship-admin.controller', () => ({
     public createTasks = tasksHandler;
     public updateTask = taskUpdateHandler;
     public updateProgramMentor = mentorHandler;
+    public inviteProgramMentor = inviteHandler;
+    public getMentorCandidates = candidatesHandler;
   },
 }));
 let impersonatingStub = false;
@@ -201,6 +211,44 @@ describe('mentorship admin router — mentor status change impersonation gate', 
 
     expect(res.status).toBe(204);
     expect(mentorHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mentorship admin router — mentor invite impersonation gate', () => {
+  const postInvite = (): Promise<Response> =>
+    fetch(`${baseUrl}/api/mentorship/admin/programs/${PROGRAM_ID}/mentors`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lfid: 'ada' }),
+    });
+
+  it('refuses the invite with 403 while impersonating and never reaches the controller', async () => {
+    const res = await postInvite();
+
+    expect(res.status).toBe(403);
+    expect(inviteHandler).not.toHaveBeenCalled();
+  });
+
+  it('admits the invite when not impersonating', async () => {
+    impersonatingStub = false;
+
+    const res = await postInvite();
+
+    expect(res.status).toBe(204);
+    expect(inviteHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mentorship admin router — POST /programs/:programId/mentor-candidates', () => {
+  it('reaches the controller while impersonating, since it only reads', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/admin/programs/${PROGRAM_ID}/mentor-candidates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ search: 'ada' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(candidatesHandler).toHaveBeenCalledTimes(1);
   });
 });
 

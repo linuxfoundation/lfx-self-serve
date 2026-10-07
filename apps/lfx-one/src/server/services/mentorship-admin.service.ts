@@ -78,7 +78,7 @@ import {
   mapMentorshipAdminTermRow,
 } from '../helpers/mentorship-admin-program.helper';
 import { buildMentorshipUpstreamTaskUpdate } from '../helpers/mentorship-admin-task.helper';
-import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest, withoutQueryInErrorPath } from '../helpers/mentorship-api.helper';
 import { saveMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
 import {
   toMentorshipEnrollImport,
@@ -310,8 +310,10 @@ export class MentorshipAdminService {
   /**
    * The people matching `search` that an admin may invite as a mentor of the program: anyone in Mentorship by name, and
    * anyone with an LF account by exact LF username or full email. Upstream returns at most 10 and never an email; a
-   * missing name falls back to the LFID. The search is sent as typed (no LIKE escaping): upstream matches the username
-   * and email exactly. Upstream's 400, 403 and 503 pass through; a caller with no mentorship record finds no one.
+   * missing name falls back to the LFID. The search is sent as typed: upstream escapes it for its own name and LFID
+   * match and looks an email up exactly, so escaping it here would break both. Upstream's 400 (an unpublished program),
+   * 403 and 503 pass through with the query cut from the error's path, since the search can be an email; a caller with
+   * no mentorship record finds no one.
    */
   public async getMentorCandidates(req: Request, programId: string, search: string): Promise<MentorshipAdminMentorCandidatesResponse> {
     logger.debug(req, 'mentorship_admin_get_mentor_candidates', 'Searching mentor candidates', { programId });
@@ -330,7 +332,7 @@ export class MentorshipAdminService {
         logger.warning(req, 'mentorship_admin_get_mentor_candidates', 'Caller has no mentorship record; returning no candidates', { programId });
         return { data: [] };
       }
-      throw error;
+      throw withoutQueryInErrorPath(error);
     }
 
     const data = (upstream.data ?? [])

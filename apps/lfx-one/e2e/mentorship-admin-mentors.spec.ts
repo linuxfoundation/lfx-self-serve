@@ -164,3 +164,57 @@ test.describe('Admin Mentors tab — manage mentors', () => {
     await expect(rowAction(page, 'accept', MENTOR_REQUESTED_ID)).toBeVisible();
   });
 });
+
+const CANDIDATES_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}/mentor-candidates`;
+
+/** Stubs the invite search, recording each body the browser sent; the search travels in the body, never the URL. */
+async function stubCandidates(page: Page, status: number, body: unknown): Promise<{ searches: unknown[]; urls: string[] }> {
+  const searches: unknown[] = [];
+  const urls: string[] = [];
+  await page.route(CANDIDATES_ROUTE, (route) => {
+    searches.push(route.request().postDataJSON());
+    urls.push(route.request().url());
+    return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  });
+  return { searches, urls };
+}
+
+const inviteSearch = (page: Page) => page.locator('#mentorship-mentors-invitee-input');
+
+test.describe('Admin Mentors tab — invite search', () => {
+  test('lists each candidate by name and LFID, never an email, and sends the search in the body', async ({ page }) => {
+    const stub = await stubCandidates(page, 200, { data: [{ lfid: 'test-mentor-ada', name: 'Test Mentor Ada' }] });
+    await open(page, newMentorStubState());
+
+    await inviteSearch(page).fill('test-mentor-ada');
+
+    const option = page.getByTestId('mentorship-mentors-candidate-test-mentor-ada');
+    await expect(option).toContainText('Test Mentor Ada');
+    await expect(option).toContainText('test-mentor-ada');
+    await expect(option).not.toContainText('@');
+    expect(stub.searches).toEqual([{ search: 'test-mentor-ada' }]);
+    expect(stub.urls.every((url) => !url.includes('search='))).toBe(true);
+  });
+
+  for (const [label, status, body, message] of [
+    [
+      'an email with no LF account',
+      200,
+      { data: [] },
+      'No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username.',
+    ],
+    ['a name with no Mentorship user', 200, { data: [] }, 'No Mentorship user matches that name. Try their LF username or full email address.'],
+    ['an unavailable account lookup (503)', 503, { message: 'unavailable' }, "Couldn't look up accounts right now. Try again."],
+    ['an unpublished program (400)', 400, { message: 'not published' }, 'Mentors can only be invited to a published program.'],
+  ] as const) {
+    test(`shows the empty-state message for ${label}`, async ({ page }) => {
+      await stubCandidates(page, status, body);
+      await open(page, newMentorStubState());
+
+      await inviteSearch(page).fill(label.startsWith('a name') ? 'Nobody Known' : 'nobody@example.invalid');
+
+      await expect(page.getByTestId('mentorship-mentors-candidates-empty')).toHaveText(message);
+      await expect(page.getByTestId('mentorship-mentors-invite').locator('button')).toBeDisabled();
+    });
+  }
+});

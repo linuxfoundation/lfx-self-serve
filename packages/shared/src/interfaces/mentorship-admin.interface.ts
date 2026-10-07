@@ -270,7 +270,15 @@ export interface MentorshipAdminMentorsResponse {
   total: number;
 }
 
-/** One person the Mentors tab can invite, from `GET /api/mentorship/admin/programs/:programId/mentor-candidates`. Never carries an email. */
+/**
+ * Body of `POST /api/mentorship/admin/programs/:programId/mentor-candidates`. The search is in the body, not the query
+ * string, because it can be a full email address and the request URL is logged on every line.
+ */
+export interface MentorshipAdminMentorCandidatesRequest {
+  search: string;
+}
+
+/** One person the Mentors tab can invite, from `POST /api/mentorship/admin/programs/:programId/mentor-candidates`. Never carries an email. */
 export interface MentorshipAdminMentorCandidate {
   lfid: string;
   /** Upstream's name, or the LFID when upstream has none. */
@@ -278,7 +286,7 @@ export interface MentorshipAdminMentorCandidate {
   avatarUrl?: string;
 }
 
-/** At most 10 candidates matching the search, from `GET /api/mentorship/admin/programs/:programId/mentor-candidates`. */
+/** At most 10 candidates matching the search, from `POST /api/mentorship/admin/programs/:programId/mentor-candidates`. */
 export interface MentorshipAdminMentorCandidatesResponse {
   data: MentorshipAdminMentorCandidate[];
 }

@@ -281,8 +281,11 @@ export const MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipAdmi
 /** Statuses an admin may set through `PATCH …/mentors/:memberId`. Upstream allows no move out of `declined` or `withdrawn`. */
 export const MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES = ['active', 'declined', 'withdrawn'] as const;
 
-/** Shortest trimmed search `GET .../mentor-candidates` accepts; upstream answers 400 below it. */
+/** Shortest trimmed search `POST .../mentor-candidates` accepts; upstream answers 400 below it. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH = 2;
+
+/** Longest trimmed search `POST .../mentor-candidates` accepts: the longest valid email address. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH = 254;
 
 /** Helper text under the Mentors tab invite search. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_HELP_TEXT = 'Search by name, LF username, or full email address.';
@@ -299,6 +302,9 @@ export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE = 'No Mentorshi
 
 /** Shown when the candidate search hits a 503: the account lookup is down for now. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE = "Couldn't look up accounts right now. Try again.";
+
+/** Shown when the candidate search or an invite hits a 400: upstream adds mentors only to a published program. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE = 'Mentors can only be invited to a published program.';
 
 /** Shown when the candidate search fails for any other reason. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE = "Couldn't search for people. Try again.";

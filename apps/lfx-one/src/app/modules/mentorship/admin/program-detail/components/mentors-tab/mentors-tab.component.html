@@ -55,8 +55,8 @@
                 [styleClass]="option.avatarStyleClass"
                 [ariaLabel]="option.name" />
               <div class="flex min-w-0 flex-col gap-0.5">
-                <span class="truncate text-sm font-medium text-gray-900" [title]="option.name">{{ option.name }}</span>
-                <span class="truncate text-xs text-gray-500" [title]="option.lfid">{{ option.lfid }}</span>
+                <span class="whitespace-normal break-words text-sm font-medium text-gray-900">{{ option.name }}</span>
+                <span class="whitespace-normal break-all text-xs text-gray-500">{{ option.lfid }}</span>
               </div>
             </div>
           </ng-template>

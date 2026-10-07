@@ -5,6 +5,7 @@ import {
   MENTORSHIP_ADMIN_DECISION_STATUSES,
   MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
+  MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH,
   MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH,
   MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS,
@@ -201,7 +202,7 @@ export class MentorshipAdminController {
     }
   }
 
-  // GET /api/mentorship/admin/programs/:programId/mentor-candidates?search
+  // POST /api/mentorship/admin/programs/:programId/mentor-candidates — body { search } -> 200 { data }
   public async getMentorCandidates(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_mentorship_admin_mentor_candidates';
     const startTime = logger.startOperation(req, operation);
@@ -213,13 +214,7 @@ export class MentorshipAdminController {
 
       const programId = this.requireUuidParam(req, 'programId', operation);
 
-      // Upstream refuses a shorter search with a 400; refusing it here saves the round trip. The text stays out of every log line.
-      const search = parseTrimmedString(getStrictStringQueryParam(req, 'search', operation));
-      if (!search || search.length < MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH) {
-        throw ServiceValidationError.forField('search', `search must be at least ${MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH} characters.`, {
-          operation,
-        });
-      }
+      const search = this.parseMentorCandidatesSearch(req.body, operation);
 
       const candidates = await this.mentorshipAdminService.getMentorCandidates(req, programId, search);
 
@@ -620,6 +615,23 @@ export class MentorshipAdminController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * The search comes in the body so it never reaches the logged request URL, and never goes into a log line here.
+   * Upstream refuses a search under the minimum with a 400; refusing it here saves the round trip.
+   */
+  private parseMentorCandidatesSearch(body: unknown, operation: string): string {
+    const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+    const search = typeof raw['search'] === 'string' ? raw['search'].trim() : '';
+    if (search.length < MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH || search.length > MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH) {
+      throw ServiceValidationError.forField(
+        'search',
+        `search must be ${MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH} to ${MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH} characters.`,
+        { operation }
+      );
+    }
+    return search;
   }
 
   /** `lfid` must be a non-blank string; only the LFID is forwarded, never an email or a user id. */

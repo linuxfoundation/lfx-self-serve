@@ -183,13 +183,14 @@ describe('MentorshipAdminService', () => {
     expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-name');
   });
 
-  it('searches mentor candidates with the search kept literal, encoding the id', () => {
+  it('searches mentor candidates with the search in the POST body, never the URL, encoding the id', () => {
     let names: string[] = [];
     service.getMentorCandidates('grid flow', 'ada+lfx@example.org').subscribe((response) => (names = response.data.map((candidate) => candidate.name)));
 
     const req = http.expectOne((r) => r.url === '/api/mentorship/admin/programs/grid%20flow/mentor-candidates');
-    expect(req.request.params.get('search')).toBe('ada+lfx@example.org');
-    expect(req.request.urlWithParams).toContain('search=ada%2Blfx%40example.org');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ search: 'ada+lfx@example.org' });
+    expect(req.request.urlWithParams).not.toContain('example.org');
     req.flush({ data: [{ lfid: 'ada', name: 'Ada Mentor' }] } satisfies MentorshipAdminMentorCandidatesResponse);
     expect(names).toEqual(['Ada Mentor']);
   });

@@ -12,6 +12,7 @@ import {
 import {
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminDeclinePendingResponse,
+  MentorshipAdminMentorCandidatesRequest,
   MentorshipAdminMentorCandidatesResponse,
   MentorshipAdminMentorInviteRequest,
   MentorshipAdminMentorStatusUpdate,
@@ -94,17 +95,16 @@ export class MentorshipAdminService {
   }
 
   /**
-   * At most 10 people matching `search` who can be invited as a mentor of the program, with no email. The caller sends
-   * at least two trimmed characters; the BFF answers 400 below that. A 503 means the account lookup is down for now.
+   * At most 10 people matching `search` who can be invited as a mentor of the program, with no email. A POST so the
+   * search, which can be an email, travels in the body rather than a logged URL. The caller sends at least two trimmed
+   * characters; the BFF answers 400 below that, and upstream for an unpublished program. A 503 means the account lookup
+   * is down for now.
    */
   public getMentorCandidates(programId: string, search: string): Observable<MentorshipAdminMentorCandidatesResponse> {
-    const httpParams = strictHttpParams().set('search', search);
-
+    const body: MentorshipAdminMentorCandidatesRequest = { search };
     return this.http
-      .get<MentorshipAdminMentorCandidatesResponse>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/mentor-candidates`, {
-        params: httpParams,
-      })
-      .pipe(this.logFailure('getMentorCandidates'));
+      .post<MentorshipAdminMentorCandidatesResponse>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/mentor-candidates`, body)
+      .pipe(take(1), this.logFailure('getMentorCandidates'));
   }
 
   /** One page of a program's terms with their application counts. */

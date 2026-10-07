@@ -330,11 +330,14 @@ describe('MentorshipAdminController', () => {
   });
 
   describe('getMentorCandidates', () => {
-    it('answers with the candidates of the trimmed search', async () => {
+    const buildSearch = (body: unknown, params: Record<string, unknown> = { programId: PROGRAM_ID }): Request =>
+      ({ params, query: {}, body }) as unknown as Request;
+
+    it('answers with the candidates of the trimmed search from the body', async () => {
       const found = { data: [{ lfid: 'ada', name: 'Ada Mentor' }] };
       const read = vi.spyOn(MentorshipAdminService.prototype, 'getMentorCandidates').mockResolvedValue(found);
 
-      await controller.getMentorCandidates(buildReq({ search: '  ada ' }, { programId: PROGRAM_ID }), res, next);
+      await controller.getMentorCandidates(buildSearch({ search: '  ada ' }), res, next);
 
       expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, 'ada');
       expect(res.json).toHaveBeenCalledWith(found);
@@ -342,23 +345,25 @@ describe('MentorshipAdminController', () => {
     });
 
     it.each([
+      ['no body', undefined, { programId: PROGRAM_ID }],
       ['no search', {}, { programId: PROGRAM_ID }],
       ['a search under two characters once trimmed', { search: ' a ' }, { programId: PROGRAM_ID }],
-      ['a repeated search', { search: ['ada', 'bob'] }, { programId: PROGRAM_ID }],
+      ['a search over 254 characters', { search: `${'a'.repeat(250)}@x.io` }, { programId: PROGRAM_ID }],
+      ['a non-string search', { search: ['ada', 'bob'] }, { programId: PROGRAM_ID }],
       ['a programId that is not a UUID', { search: 'ada' }, { programId: 'not-a-uuid' }],
-    ])('rejects %s with a 400', async (_label, query, params) => {
+    ])('rejects %s with a 400', async (_label, body, params) => {
       const read = vi.spyOn(MentorshipAdminService.prototype, 'getMentorCandidates');
 
-      await controller.getMentorCandidates(buildReq(query, params), res, next);
+      await controller.getMentorCandidates(buildSearch(body, params), res, next);
 
       expect(statusCodes()).toEqual([400]);
       expect(read).not.toHaveBeenCalled();
     });
 
-    it('never logs the search text', async () => {
+    it('keeps the search out of its own log metadata (the body is never in the logged URL)', async () => {
       vi.spyOn(MentorshipAdminService.prototype, 'getMentorCandidates').mockResolvedValue({ data: [] });
 
-      await controller.getMentorCandidates(buildReq({ search: 'secret-name' }, { programId: PROGRAM_ID }), res, next);
+      await controller.getMentorCandidates(buildSearch({ search: 'secret-name@example.org' }), res, next);
 
       expect(JSON.stringify(vi.mocked(logger.success).mock.calls.map((call) => call[3]))).not.toContain('secret-name');
     });
@@ -367,7 +372,7 @@ describe('MentorshipAdminController', () => {
       const error = new Error('boom');
       vi.spyOn(MentorshipAdminService.prototype, 'getMentorCandidates').mockRejectedValue(error);
 
-      await controller.getMentorCandidates(buildReq({ search: 'ada' }, { programId: PROGRAM_ID }), res, next);
+      await controller.getMentorCandidates(buildSearch({ search: 'ada' }), res, next);
 
       expect(next).toHaveBeenCalledWith(error);
     });
@@ -929,7 +934,7 @@ describe('MentorshipAdminController', () => {
       ['getEnrollTemplate', 'getEnrollTemplate', { programId: PROGRAM_ID }, {}],
       ['getProgramMentees', 'getProgramMentees', { programId: PROGRAM_ID }, { type: 'current' }],
       ['getProgramMentors', 'getProgramMentors', { programId: PROGRAM_ID }, {}],
-      ['getMentorCandidates', 'getMentorCandidates', { programId: PROGRAM_ID }, { search: 'ada' }],
+      ['getMentorCandidates', 'getMentorCandidates', { programId: PROGRAM_ID }, {}],
       ['getProgramTerms', 'getProgramTerms', { programId: PROGRAM_ID }, {}],
       ['getApplicationTasks', 'getApplicationTasks', { applicationId: PROGRAM_ID }, {}],
       ['updateApplicationNote', 'updateApplicationNote', { applicationId: PROGRAM_ID }, {}],

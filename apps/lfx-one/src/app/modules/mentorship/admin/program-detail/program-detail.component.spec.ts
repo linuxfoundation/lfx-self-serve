@@ -5,10 +5,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
-import { EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE } from '@lfx-one/shared/constants';
 import { MentorshipAdminMenteesResponse, MentorshipAdminProgramPage, MentorshipProgramApplicant } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
-import { MentorshipService } from '@services/mentorship.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
@@ -77,11 +75,6 @@ describe('ProgramDetailComponent', () => {
             getProgramTerms: vi.fn().mockReturnValue(of({ data: [], total: 0 })),
             getApplicationTasks: vi.fn().mockReturnValue(of([])),
           },
-        },
-        {
-          provide: MentorshipService,
-          // The Mentors tab loads its invite picker on construction, and the counts refresh test renders that tab.
-          useValue: { getInvitableUsers: () => of(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE) },
         },
         { provide: ActivatedRoute, useValue: { paramMap: routeParams as never } },
       ],
