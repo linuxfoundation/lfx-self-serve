@@ -104,6 +104,12 @@ export const MENTORSHIP_ENROLL_LOGO_FAILURE_FIELD_ERRORS: Readonly<Record<number
   415: MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
   503: MENTORSHIP_ENROLL_UPLOADS_UNAVAILABLE,
 };
+export const MENTORSHIP_PROGRAM_CARD_LOGO_MISSING = 'Logo missing';
+export const MENTORSHIP_PROGRAM_CARD_ADD_LOGO = 'Add logo';
+export const MENTORSHIP_PROGRAM_CARD_LOGO_ADDED = 'Logo added.';
+export const MENTORSHIP_PROGRAM_CARD_LOGO_FORBIDDEN = "You don't have permission to change this program's logo.";
+/** Raw upstream program statuses whose list row shows the "Logo missing" hint when the program has no logo. */
+export const MENTORSHIP_PROGRAM_LOGO_HINT_STATUSES = ['pending', 'published'] as const;
 export const MENTORSHIP_ENROLL_NAME_TAKEN = 'This program name is taken.';
 export const MENTORSHIP_ENROLL_NAME_CHECKING = 'Checking program name...';
 export const MENTORSHIP_ENROLL_NAME_UNAVAILABLE = 'Could not verify the program name. Please try again.';

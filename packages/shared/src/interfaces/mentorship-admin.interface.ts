@@ -53,6 +53,8 @@ export interface MentorshipProgram {
   stats: MentorshipProgramStats;
   /** Optional program logo. When absent, the card renders an initials avatar. */
   logoUrl?: string;
+  /** True when upstream status is `pending` or `published` and the program has no logo (R12). List rows only. */
+  logoMissing?: boolean;
   createdOn: string;
   updatedOn: string;
 }
