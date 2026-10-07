@@ -5,11 +5,11 @@ import { computed, inject, Injectable, signal } from '@angular/core';
 import { buildHealthMetricsOverviewPeriods, IMPERSONATION_BANNER_HEIGHT_PX } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
 
-import type { HealthMetricsRange, HealthMetricsYearOption } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsProjectOption, HealthMetricsRange, HealthMetricsYearOption } from '@lfx-one/shared/interfaces';
 
 /**
- * Chrome state shared by every Health Metrics tab — the period selection and the measured height of
- * the sticky page header. Provided by HealthMetricsGateComponent (never `providedIn: 'root'`) so the
+ * Chrome state shared by every Health Metrics tab — the period and project selections and the
+ * measured height of the sticky page header. Provided by HealthMetricsGateComponent (never `providedIn: 'root'`) so the
  * selection survives tab switches under one gate instance but resets on leaving the page.
  */
 @Injectable()
@@ -20,6 +20,12 @@ export class HealthMetricsChromeService {
   // rollover in a long-running SSR process.
   public readonly periods: readonly HealthMetricsYearOption[] = buildHealthMetricsOverviewPeriods();
   public readonly selectedRange = signal<HealthMetricsRange>('YTD');
+
+  // The gate mirrors `?project=` into the slug; `null` reads all projects. `projects` is `null`
+  // until the foundation's project list has loaded.
+  public readonly selectedProjectSlug = signal<string | null>(null);
+  public readonly projects = signal<readonly HealthMetricsProjectOption[] | null>(null);
+  public readonly selectedProject = computed(() => this.projects()?.find((project) => project.slug === this.selectedProjectSlug()) ?? null);
 
   // Measured client-side from the sticky header by the gate; this fallback only shows pre-hydration
   // and approximates the header's real rendered height.

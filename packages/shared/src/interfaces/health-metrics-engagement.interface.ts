@@ -29,6 +29,8 @@ export interface HealthMetricsTab {
   label: string;
   /** Router path segment relative to `foundation/health-metrics`; `''` is the Overview. */
   route: string;
+  /** Whether the tab's sections follow the header's project selector. */
+  projectScoped: boolean;
 }
 
 /** Engagement's sub-nav badge, keyed to its own sections. */

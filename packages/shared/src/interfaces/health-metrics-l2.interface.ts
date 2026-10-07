@@ -43,3 +43,12 @@ export interface HealthMetricsL2SubNavItem {
   /** e.g. `3 dormant`; empty when nothing qualifies. */
   note: string;
 }
+
+/** One project in the Health Metrics header's project selector. */
+export interface HealthMetricsProjectOption {
+  slug: string;
+  name: string;
+  initials: string;
+  /** Avatar palette class hashed from the slug, so a project keeps its color. */
+  colorClass: string;
+}

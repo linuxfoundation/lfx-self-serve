@@ -23,18 +23,74 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
-          <!-- Visual only for now — mirrors the design's project drill-down pill (`.projsel`/`.pstrig`);
-               no per-project data exists yet to scope by (LFXV2-3364 stand-in fixture is foundation-wide).
+          <!-- Project drill-down pill (`.projsel`/`.pstrig`): live on tabs flagged `projectScoped`, inert
+               elsewhere since those tabs still read foundation-wide. Hidden once the list loads empty.
                Font sizes stay arbitrary: the design's 14/12px carry no line-height, `text-sm` does. -->
-          <button
-            type="button"
-            aria-disabled="true"
-            class="flex h-9 cursor-default items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-[14px] font-medium text-gray-900"
-            data-testid="health-metrics-overview-project-selector">
-            <i class="fa-light fa-diagram-project text-gray-500" aria-hidden="true"></i>
-            All projects
-            <i class="fa-light fa-chevron-down text-[12px] text-gray-500" aria-hidden="true"></i>
-          </button>
+          @if (projectSelectorVisible()) {
+            <button
+              type="button"
+              [attr.aria-disabled]="projectSelectorEnabled() ? null : 'true'"
+              [attr.aria-haspopup]="projectSelectorEnabled() ? 'listbox' : null"
+              [attr.aria-expanded]="projectSelectorEnabled() ? projectMenuOpen() : null"
+              class="flex h-9 items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-[14px] font-medium text-gray-900"
+              [ngClass]="projectSelectorEnabled() ? 'cursor-pointer hover:border-gray-300' : 'cursor-default'"
+              (click)="toggleProjectMenu($event, projectMenu)"
+              data-testid="health-metrics-overview-project-selector">
+              @if (projectSelectorEnabled() && chrome.selectedProject(); as project) {
+                <span
+                  class="flex h-5 w-5 items-center justify-center rounded text-[9px] font-semibold text-white"
+                  [ngClass]="project.colorClass"
+                  aria-hidden="true"
+                  >{{ project.initials }}</span
+                >
+              } @else {
+                <i class="fa-light fa-diagram-project text-gray-500" aria-hidden="true"></i>
+              }
+              <span class="max-w-56 truncate" data-testid="health-metrics-project-selector-label">{{ projectSelectorLabel() }}</span>
+              <i class="fa-light fa-chevron-down text-[12px] text-gray-500" aria-hidden="true"></i>
+            </button>
+          }
+          <p-popover #projectMenu (onShow)="projectMenuOpen.set(true)" (onHide)="projectMenuOpen.set(false)">
+            <ul role="listbox" aria-label="Project" class="flex max-h-80 w-72 flex-col overflow-y-auto py-1" data-testid="health-metrics-project-menu">
+              <li role="none">
+                <button
+                  type="button"
+                  role="option"
+                  [attr.aria-selected]="!chrome.selectedProject()"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-left text-[14px] text-gray-900 hover:bg-gray-50"
+                  (click)="selectProject(null); projectMenu.hide()"
+                  data-testid="health-metrics-project-option-all">
+                  <i class="fa-light fa-diagram-project w-5 text-center text-gray-500" aria-hidden="true"></i>
+                  <span class="flex-1 truncate font-medium">All projects</span>
+                  @if (!chrome.selectedProject()) {
+                    <i class="fa-light fa-check text-blue-600" aria-hidden="true"></i>
+                  }
+                </button>
+              </li>
+              @for (project of chrome.projects() ?? []; track project.slug) {
+                <li role="none">
+                  <button
+                    type="button"
+                    role="option"
+                    [attr.aria-selected]="project.slug === chrome.selectedProject()?.slug"
+                    class="flex w-full items-center gap-2 px-3 py-2 text-left text-[14px] text-gray-900 hover:bg-gray-50"
+                    (click)="selectProject(project); projectMenu.hide()"
+                    [attr.data-testid]="'health-metrics-project-option-' + project.slug">
+                    <span
+                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[9px] font-semibold text-white"
+                      [ngClass]="project.colorClass"
+                      aria-hidden="true"
+                      >{{ project.initials }}</span
+                    >
+                    <span class="flex-1 truncate">{{ project.name }}</span>
+                    @if (project.slug === chrome.selectedProject()?.slug) {
+                      <i class="fa-light fa-check text-blue-600" aria-hidden="true"></i>
+                    }
+                  </button>
+                </li>
+              }
+            </ul>
+          </p-popover>
           <div class="flex items-center gap-1 rounded-full bg-gray-100 p-1" data-testid="health-metrics-overview-period-selector">
             @for (period of chrome.periods; track period.range) {
               <button
