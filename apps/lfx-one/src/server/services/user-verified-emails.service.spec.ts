@@ -3,7 +3,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getUserEmails, getMeetingInviteEmail, getEffectiveEmail, getEffectiveSub, isImpersonating } = vi.hoisted(() => ({
+const { getUserEmails, getMeetingInviteEmail, getEffectiveEmail, getEffectiveSub, isImpersonating, loggerWarning } = vi.hoisted(() => ({
+  loggerWarning: vi.fn(),
   getUserEmails: vi.fn(),
   getMeetingInviteEmail: vi.fn(),
   getEffectiveEmail: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('./meeting-preference.service', () => ({
     return { getMeetingInviteEmail };
   }),
 }));
+vi.mock('./logger.service', () => ({ logger: { warning: loggerWarning } }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail, getEffectiveSub, isImpersonating }));
 
 import type { Request } from 'express';
@@ -136,6 +138,7 @@ describe('UserVerifiedEmailsService.getUserVerifiedEmails', () => {
     getUserEmails.mockResolvedValue(null);
 
     await expect(service.getUserVerifiedEmails(buildReq())).resolves.toEqual({ emails: [ALIAS], preferenceEmail: ALIAS, incomplete: true });
+    expect(loggerWarning).toHaveBeenCalledWith(expect.anything(), 'get_user_verified_emails', expect.any(String), { has_preference: true });
   });
 
   it('dedupes the preference against the auth-service emails', async () => {

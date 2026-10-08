@@ -6,6 +6,7 @@ import { Request } from 'express';
 
 import { getEffectiveEmail, getEffectiveSub, isImpersonating } from '../utils/auth-helper';
 import { EmailVerificationService } from './email-verification.service';
+import { logger } from './logger.service';
 import { MeetingPreferenceService } from './meeting-preference.service';
 
 /**
@@ -45,6 +46,12 @@ export class UserVerifiedEmailsService {
       this.emailVerificationService.getUserEmails(req, sub),
       v1Token ? this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token) : Promise.resolve(undefined),
     ]);
+
+    if (!emailData) {
+      logger.warning(req, 'get_user_verified_emails', 'Auth-service emails unavailable, verified-email lookup incomplete', {
+        has_preference: !!preference?.email,
+      });
+    }
 
     const authServiceEmails = emailData ? collectAuthServiceVerifiedEmails(emailData, !!getEffectiveEmail(req)) : [];
     const [preferenceEmail = null] = dedupeEmails([preference?.email]);
