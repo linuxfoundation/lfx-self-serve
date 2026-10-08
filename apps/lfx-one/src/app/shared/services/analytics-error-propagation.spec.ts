@@ -262,9 +262,9 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
 
     let emitted: unknown;
     service.loadFoundationProjectsDetailGrouped('aaif').subscribe((value) => (emitted = value));
-    http.expectOne('/api/analytics/foundation-projects-detail-grouped?foundationSlug=aaif').flush({ groups: [], totalCount: 0 });
+    http.expectOne('/api/analytics/foundation-projects-detail-grouped?foundationSlug=aaif').flush({ groups: [], totalCount: 0, complete: true });
 
-    expect(emitted).toEqual({ groups: [], totalCount: 0 });
+    expect(emitted).toEqual({ groups: [], totalCount: 0, complete: true });
   });
 
   // Angular's default codec leaves `+` bare, which Express's query parser reads as a space.

@@ -56,5 +56,7 @@ export interface HealthMetricsProjectOption {
 /** One step of the header's project-list load: `projects` is `null` while loading or after a failure. */
 export interface HealthMetricsProjectListState {
   projects: readonly HealthMetricsProjectOption[] | null;
+  /** False when the server dropped part of the hierarchy, so a missing slug may still be valid. */
+  complete: boolean;
   failed: boolean;
 }

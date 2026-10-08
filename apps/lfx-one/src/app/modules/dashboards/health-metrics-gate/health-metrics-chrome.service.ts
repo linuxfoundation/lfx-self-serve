@@ -22,9 +22,11 @@ export class HealthMetricsChromeService {
   public readonly selectedRange = signal<HealthMetricsRange>('YTD');
 
   // The gate mirrors `?projectScope=` into the slug; `null` reads all projects. `projects` is `null`
-  // until the foundation's project list has loaded, and `projectsFailed` marks a failed load.
+  // until the foundation's project list has loaded; `projectsComplete` is false for a partial list,
+  // and `projectsFailed` marks a failed load.
   public readonly selectedProjectSlug = signal<string | null>(null);
   public readonly projects = signal<readonly HealthMetricsProjectOption[] | null>(null);
+  public readonly projectsComplete = signal(false);
   public readonly projectsFailed = signal(false);
   public readonly selectedProject = computed(() => this.projects()?.find((project) => project.slug === this.selectedProjectSlug()) ?? null);
 

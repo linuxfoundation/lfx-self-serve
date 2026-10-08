@@ -38,6 +38,7 @@ function projectsResponse(...projects: [string, string][]): FoundationProjectsDe
       },
     ],
     totalCount: projects.length,
+    complete: true,
   };
 }
 
@@ -328,6 +329,17 @@ describe('HealthMetricsGateComponent', () => {
       await settle();
 
       expect(currentUrl()).toBe('/foundation/health-metrics/engagement');
+    });
+
+    it('keeps a slug a partial list does not carry', async () => {
+      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=nested-project', {
+        ...projectsResponse(['alpha', 'Alpha']),
+        complete: false,
+      });
+      await settle();
+
+      expect(currentUrl()).toBe('/foundation/health-metrics/engagement?projectScope=nested-project');
+      expect(query('health-metrics-project-selector-label')?.textContent?.trim()).toBe('nested-project');
     });
 
     it('hides the pill once the foundation turns out to have no projects', async () => {

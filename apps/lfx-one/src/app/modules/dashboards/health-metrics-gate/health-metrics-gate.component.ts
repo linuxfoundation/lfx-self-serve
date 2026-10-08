@@ -154,12 +154,13 @@ export class HealthMetricsGateComponent {
                 startWith(undefined),
                 switchMap(() => this.loadProjects(slug))
               )
-            : of<HealthMetricsProjectListState>({ projects: null, failed: false })
+            : of<HealthMetricsProjectListState>({ projects: null, complete: false, failed: false })
         ),
         takeUntilDestroyed()
       )
-      .subscribe(({ projects, failed }) => {
+      .subscribe(({ projects, complete, failed }) => {
         this.chrome.projects.set(projects);
+        this.chrome.projectsComplete.set(complete);
         this.chrome.projectsFailed.set(failed);
       });
 
@@ -172,10 +173,10 @@ export class HealthMetricsGateComponent {
       )
       .subscribe(() => this.writeProjectParam(null));
 
-    // Only a loaded list can rule a slug out; a failed one keeps it so the reads still scope.
-    combineLatest([toObservable(this.chrome.projects), toObservable(this.chrome.selectedProjectSlug)])
+    // Only a complete loaded list can rule a slug out; a failed or partial one keeps it so the reads still scope.
+    combineLatest([toObservable(this.chrome.projects), toObservable(this.chrome.projectsComplete), toObservable(this.chrome.selectedProjectSlug)])
       .pipe(
-        filter(([projects, slug]) => !!projects && !!slug && !projects.some((project) => project.slug === slug)),
+        filter(([projects, complete, slug]) => !!projects && complete && !!slug && !projects.some((project) => project.slug === slug)),
         takeUntilDestroyed()
       )
       .subscribe(() => this.writeProjectParam(null));
@@ -191,9 +192,9 @@ export class HealthMetricsGateComponent {
 
   private loadProjects(slug: string): Observable<HealthMetricsProjectListState> {
     return this.analyticsService.loadFoundationProjectsDetailGrouped(slug).pipe(
-      map((response) => ({ projects: buildHealthMetricsProjectOptions(response.groups), failed: false })),
-      startWith({ projects: null, failed: false }),
-      catchError(() => of({ projects: null, failed: true }))
+      map((response) => ({ projects: buildHealthMetricsProjectOptions(response.groups), complete: response.complete, failed: false })),
+      startWith({ projects: null, complete: false, failed: false }),
+      catchError(() => of({ projects: null, complete: false, failed: true }))
     );
   }
 
