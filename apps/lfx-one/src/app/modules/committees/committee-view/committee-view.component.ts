@@ -816,8 +816,7 @@ export class CommitteeViewComponent {
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Left', detail: `You have left "${committee.name}"` });
-          this.refreshCommittee();
-          this.membersRefresh.update((v) => v + 1);
+          this.refreshCommitteeAfterLeave();
         },
         error: (err: HttpErrorResponse) => {
           const detail = committeeLeaveErrorMessage(err, committee.name);
@@ -969,6 +968,49 @@ export class CommitteeViewComponent {
         },
         complete: () => {
           if (!pollSucceeded && !this.committee()?.my_role) {
+            this.refreshMembers();
+          }
+        },
+      });
+  }
+
+  /**
+   * Polls until the committee payload confirms the leave has propagated (my_role gone), then
+   * refreshes members and committee. Sets committeeRefreshing immediately so role-gated UI
+   * stays hidden for the whole polling window — mirrors refreshCommitteeAfterMembershipChange.
+   */
+  private refreshCommitteeAfterLeave(): void {
+    const committeeId = this.committee()?.uid ?? this.committeeId();
+
+    // Hide role-gated UI while we wait for the backend to confirm the leave.
+    this.committeeRefreshing.set(true);
+    this.membersRefresh.update((v) => v + 1);
+
+    if (!committeeId) {
+      this.committeeRefreshing.set(false);
+      return;
+    }
+
+    let pollSucceeded = false;
+
+    // skipCache: same reasoning as refreshCommitteeAfterMembershipChange — the 10s detail-cache
+    // TTL would replay stale my_role across all attempts otherwise.
+    timer(400, 400)
+      .pipe(
+        take(6),
+        exhaustMap(() => this.committeeService.getCommittee(committeeId, { skipCache: true, auditor: true }).pipe(catchError(() => of(null)))),
+        filter((committee) => committee !== null && !committee.my_role),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          pollSucceeded = true;
+          this.refreshMembers();
+        },
+        complete: () => {
+          if (!pollSucceeded) {
+            this.committeeRefreshing.set(false);
             this.refreshMembers();
           }
         },
