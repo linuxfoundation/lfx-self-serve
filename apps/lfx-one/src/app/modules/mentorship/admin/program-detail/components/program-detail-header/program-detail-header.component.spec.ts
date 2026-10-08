@@ -23,7 +23,6 @@ describe('ProgramDetailHeaderComponent — tabs', () => {
     slug: 'thanos-fan-out-query-observability',
     name: 'Thanos: Fan-Out Query Observability',
     projectName: 'CNCF',
-    term: 'Summer 2026',
     status,
     stats: { mentors: 2, mentees: 0, graduated: 3 },
     createdOn: '2026-03-01T00:00:00.000Z',
@@ -52,6 +51,12 @@ describe('ProgramDetailHeaderComponent — tabs', () => {
     ((fixture.nativeElement as HTMLElement).querySelector(`[data-testid="mentorship-program-detail-tab-${value}"]`)?.textContent ?? '')
       .replace(/\s+/g, ' ')
       .trim();
+
+  it('shows the project name alone as the season line', () => {
+    render('open');
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="mentorship-program-detail-season"]')?.textContent?.trim()).toBe('CNCF');
+  });
 
   it('renders the four tabs in order, each with its own count', () => {
     render('open');
@@ -116,7 +121,6 @@ describe('ProgramDetailHeaderComponent — actions', () => {
     slug: 'thanos-fan-out-query-observability',
     name: 'Thanos: Fan-Out Query Observability',
     projectName: 'CNCF',
-    term: 'Summer 2026',
     status,
     stats: { mentors: 2, mentees: 0, graduated: 3 },
     createdOn: '2026-03-01T00:00:00.000Z',

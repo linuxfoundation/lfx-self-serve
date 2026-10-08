@@ -3,17 +3,13 @@
 
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { AvatarComponent } from '@components/avatar/avatar.component';
-import {
-  MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES,
-  MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_LABELS,
-  MENTORSHIP_PROGRAM_AVATAR_PALETTE,
-} from '@lfx-one/shared/constants';
+import { MENTORSHIP_PROGRAM_AVATAR_PALETTE, MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES, MENTORSHIP_PROGRAM_STATUS_LABELS } from '@lfx-one/shared/constants';
 import { MentorshipMentorProgram } from '@lfx-one/shared/interfaces';
 import { stableKeyIndex } from '@lfx-one/shared/utils';
 
 /**
  * Compact card for the mentor My Programs list. Mirrors `ProgramCardComponent`
- * shape: avatar tile on the left, project-line + term badge + title in the
+ * shape: avatar tile on the left, project-line + status badge + title in the
  * middle, three-column metrics on the right, plus a chevron.
  */
 @Component({
@@ -26,14 +22,10 @@ export class MentorProgramCardComponent {
   public readonly program = input.required<MentorshipMentorProgram>();
   public readonly cardClick = output<string>();
 
-  /** Project and term, leaving out whichever the program has none of. */
-  protected readonly seasonLine = computed(() => {
-    const program = this.program();
-    return [program.projectName, program.term].filter((part) => part.trim().length > 0).join(' · ');
-  });
+  protected readonly seasonLine = computed(() => this.program().projectName);
 
-  protected readonly termStatusLabel = computed(() => MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_LABELS[this.program().termStatus]);
-  protected readonly termStatusBadgeClass = computed(() => MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES[this.program().termStatus]);
+  protected readonly statusLabel = computed(() => MENTORSHIP_PROGRAM_STATUS_LABELS[this.program().status]);
+  protected readonly statusBadgeClass = computed(() => MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES[this.program().status]);
 
   protected readonly avatarStyleClass = computed(
     () => MENTORSHIP_PROGRAM_AVATAR_PALETTE[stableKeyIndex(this.program().name, MENTORSHIP_PROGRAM_AVATAR_PALETTE.length)]

@@ -37,7 +37,6 @@ const upstreamProgram = (id: string, name: string, overrides: Record<string, unk
   status: 'published',
   admin_status: 'open',
   project_name: 'Energy Project',
-  term: { id: 't', name: 'Spring', status: 'open' },
   stats: { mentors: 1, mentees: 2, graduated: 0 },
   created_on: '2026-01-01',
   updated_on: '2026-01-02',
@@ -69,16 +68,16 @@ describe('MentorshipAdminService.getPrograms', () => {
 
   it('lists the programs upstream returns, mapped for the card, with upstream’s total', async () => {
     stubUpstream({
-      rows: [upstreamProgram('p-a', 'Alpha'), upstreamProgram('p-b', 'Beta', { admin_status: 'completed', term: undefined })],
+      rows: [upstreamProgram('p-a', 'Alpha'), upstreamProgram('p-b', 'Beta', { admin_status: 'completed' })],
       total: 30,
     });
 
     const result = await service.getPrograms(buildReq(), paging);
 
     expect(result.total).toBe(30);
-    expect(result.data.map((p) => [p.id, p.status, p.term])).toEqual([
-      ['p-a', 'open', 'Spring'],
-      ['p-b', 'completed', ''],
+    expect(result.data.map((p) => [p.id, p.status])).toEqual([
+      ['p-a', 'open'],
+      ['p-b', 'completed'],
     ]);
   });
 
@@ -203,7 +202,9 @@ describe('MentorshipAdminService.getProgramPage', () => {
 
     const page = await service.getProgramPage(buildReq(), PROGRAM_ID);
 
-    expect(page.program).toMatchObject({ id: PROGRAM_ID, name: 'Grid', term: 'Fall', status: 'open' });
+    expect(page.program).toMatchObject({ id: PROGRAM_ID, name: 'Grid', status: 'open' });
+    // The header no longer carries a term name.
+    expect(page.program).not.toHaveProperty('term');
     expect(page.tabCounts).toEqual({ currentMentees: 7, pastMentees: 4, mentors: 2, terms: 3 });
     expect(page.terms).toEqual([
       { id: 't1', name: 'Fall', status: 'open' },

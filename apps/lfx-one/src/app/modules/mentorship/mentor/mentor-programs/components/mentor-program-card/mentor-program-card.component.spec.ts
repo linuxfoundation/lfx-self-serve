@@ -3,6 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES, MENTORSHIP_PROGRAM_STATUS_LABELS } from '@lfx-one/shared/constants';
 import { MentorshipMentorProgram } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,8 +15,7 @@ describe('MentorProgramCardComponent', () => {
     slug: 'gridflow-time-series-ingestion-pipeline',
     name: 'GridFlow: Time-Series Ingestion Pipeline',
     projectName: 'LF Energy',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
+    status: 'open',
     stats: { mentees: 3, tasksToReview: 4, applicants: 5 },
   };
 
@@ -35,22 +35,23 @@ describe('MentorProgramCardComponent', () => {
     fixture.detectChanges();
   });
 
-  it('renders the season line, term badge, and title', () => {
-    expect(element().textContent).toContain('LF Energy · Fall 2026');
-    expect(element().textContent).toContain('Active term');
+  it('renders the project name alone as the season line, the status badge, and the title', () => {
+    const season = Array.from(element().querySelectorAll('span')).find((span) => span.textContent?.trim() === 'LF Energy');
+    expect(season).toBeDefined();
+    expect(element().textContent).not.toContain('·');
+    expect(element().textContent).toContain(MENTORSHIP_PROGRAM_STATUS_LABELS.open);
     expect(element().textContent).toContain('GridFlow: Time-Series Ingestion Pipeline');
   });
 
-  it('leaves the project or the term out of the season line when the program has none', () => {
-    fixture.componentRef.setInput('program', { ...mentorProgram, projectName: '' });
+  it('shows a Completed badge once every term of the program is closed', () => {
+    fixture.componentRef.setInput('program', { ...mentorProgram, status: 'completed' });
     fixture.detectChanges();
-    expect(element().textContent).toContain('Fall 2026');
-    expect(element().textContent).not.toContain('·');
 
-    fixture.componentRef.setInput('program', { ...mentorProgram, term: '' });
-    fixture.detectChanges();
-    expect(element().textContent).toContain('LF Energy');
-    expect(element().textContent).not.toContain('·');
+    const badge = Array.from(element().querySelectorAll('span')).find((span) => span.textContent?.trim() === MENTORSHIP_PROGRAM_STATUS_LABELS.completed);
+    expect(badge).toBeDefined();
+    for (const cls of MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES.completed.split(' ')) {
+      expect(badge?.classList.contains(cls)).toBe(true);
+    }
   });
 
   it('renders mentor metrics', () => {

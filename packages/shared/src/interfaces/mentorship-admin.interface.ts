@@ -61,7 +61,6 @@ export interface MentorshipProgram {
   name: string;
   /** Foundation / project sponsoring the program, e.g. "LF Energy". */
   projectName: string;
-  term: string;
   status: MentorshipProgramStatus;
   stats: MentorshipProgramStats;
   /** Optional program logo. When absent, the card renders an initials avatar. */
@@ -155,7 +154,7 @@ export interface MentorshipUpstreamTaskUpdate {
 }
 
 /**
- * One row of upstream `GET /mentorship/v1/me/programs`: a program the caller administers, with the term and counts its card shows.
+ * One row of upstream `GET /mentorship/v1/me/programs`: a program the caller administers, with the program-wide counts its card shows.
  * `admin_status` stays a plain string: the BFF maps it to `MentorshipProgramStatus` and logs a value it does not know.
  */
 export interface MentorshipUpstreamAdministeredProgram {
@@ -169,8 +168,6 @@ export interface MentorshipUpstreamAdministeredProgram {
   /** Name of the program's LF project; absent when the program has none. */
   project_name?: string;
   logo_url?: string;
-  /** The latest open term, else the latest closed one; absent when the program has no terms. */
-  term?: Pick<MentorshipUpstreamProgramTerm, 'id' | 'name' | 'status'>;
   stats: MentorshipProgramStats;
   created_on: string;
   updated_on: string;

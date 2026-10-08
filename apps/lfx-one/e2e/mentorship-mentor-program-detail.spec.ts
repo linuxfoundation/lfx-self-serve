@@ -5,8 +5,8 @@
  * Mentor program detail — header, tab counts, tab rows, empty, not-found and error states
  * (linuxfoundation/lfx-mentorship#212).
  *
- * The page reads `/api/mentorship/mentor/programs/:programId`, which the BFF builds from the chosen
- * term's applications and tasks. Each test stubs that read via `page.route` with a synthetic payload,
+ * The page reads `/api/mentorship/mentor/programs/:programId`, which the BFF builds from the applications
+ * and tasks of all the program's terms, each row carrying its own application's term. Each test stubs that read via `page.route` with a synthetic payload,
  * so the suite never depends on the signed-in user's real programs: one populated payload proves the
  * header, the tab counts and each tab's rows (including the linked other applications), an empty
  * one drives the tabs' empty messages, a 404 drives the not-found state and a 503 drives the error
@@ -21,7 +21,7 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
  */
 
-import { MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_LABELS } from '@lfx-one/shared/constants';
+import { MENTORSHIP_PROGRAM_STATUS_LABELS } from '@lfx-one/shared/constants';
 import { MentorshipMentorProgramDetail } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
@@ -49,8 +49,7 @@ const PROGRAM: MentorshipMentorProgramDetail['program'] = {
   slug: 'test-program-alpha',
   name: 'Test Program Alpha',
   projectName: 'Test Project',
-  term: 'Test Term Fall',
-  termStatus: 'active-term',
+  status: 'open',
   stats: { mentees: 2, tasksToReview: 1, applicants: 3 },
 };
 
@@ -107,7 +106,7 @@ const POPULATED: MentorshipMentorProgramDetail = {
       name: 'Test Applicant Three',
       email: 'test.applicant.three@example.com',
       status: 'pending',
-      termName: 'Test Term Fall',
+      termName: 'Test Term Winter',
       createdOn: '2026-08-03',
       updatedOn: '2026-08-17',
       otherApplications: [
@@ -143,8 +142,8 @@ test.describe('Mentor program detail — loaded', () => {
 
   test('shows the program header and each tab with its count', async ({ page }) => {
     await expect(page.getByTestId('mentorship-mentor-program-detail-title')).toHaveText('Test Program Alpha', { timeout: MENTOR_PAGE_LOAD_TIMEOUT });
-    await expect(page.getByTestId('mentorship-mentor-program-detail-season')).toHaveText('Test Project · Test Term Fall');
-    await expect(page.getByTestId('mentorship-mentor-program-detail-status')).toHaveText(MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_LABELS['active-term']);
+    await expect(page.getByTestId('mentorship-mentor-program-detail-season')).toHaveText('Test Project');
+    await expect(page.getByTestId('mentorship-mentor-program-detail-status')).toHaveText(MENTORSHIP_PROGRAM_STATUS_LABELS.open);
 
     await expect(page.getByTestId('mentorship-mentor-program-detail-tab-tasks')).toHaveText(/Tasks\s*1/);
     await expect(page.getByTestId('mentorship-mentor-program-detail-tab-mentees')).toHaveText(/Mentees\s*2/);
