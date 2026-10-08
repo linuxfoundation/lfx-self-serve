@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { MentorshipApplicantTask, MentorshipTaskCreateResponse } from '@lfx-one/shared/interfaces';
@@ -201,5 +201,48 @@ describe('MentorshipService — task writes', () => {
 
     expect(status).toBe(400);
     expect(logged).toHaveBeenCalledWith('[MentorshipService] updateTask failed', { status: 400, statusText: 'Bad Request' });
+  });
+});
+
+describe('MentorshipService — task file download', () => {
+  let service: MentorshipService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MentorshipService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(MentorshipService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+    vi.restoreAllMocks();
+  });
+
+  it('reads the file as a blob, with an encoded id, and keeps the response headers', () => {
+    const blob = new Blob(['data'], { type: 'application/pdf' });
+    let response: HttpResponse<Blob> | undefined;
+    service.downloadTaskFile('task 1').subscribe((res) => (response = res));
+
+    const req = http.expectOne('/api/mentorship/tasks/task%201/file');
+    expect(req.request.method).toBe('GET');
+    expect(req.request.responseType).toBe('blob');
+    req.flush(blob, { headers: { 'Content-Disposition': 'attachment; filename="report.pdf"' } });
+
+    expect(response?.body).toBe(blob);
+    expect(response?.headers.get('Content-Disposition')).toBe('attachment; filename="report.pdf"');
+  });
+
+  it('logs a failed download by status only and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.downloadTaskFile('task_1').subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/tasks/task_1/file').flush(new Blob(['{"error":"private-task-text"}']), { status: 403, statusText: 'Forbidden' });
+
+    expect(status).toBe(403);
+    expect(logged).toHaveBeenCalledWith('[MentorshipService] downloadTaskFile failed', { status: 403, statusText: 'Forbidden' });
   });
 });

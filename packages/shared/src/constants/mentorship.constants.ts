@@ -195,6 +195,20 @@ export const MENTORSHIP_TASK_UPDATE_ERROR_MESSAGES: Readonly<Record<number, stri
   404: 'This task no longer exists. Refresh the page and try again.',
 };
 
+/** Task file downloads, for the mentee and the task's reviewers (its mentors and program admins). */
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_SUMMARY = 'Could not download the file';
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_FALLBACK = 'We could not download this file right now. Please try again.';
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_TOAST_LIFE = 5000;
+/** Saved under this name when the response names no file; upstream always sends one. */
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_FALLBACK_NAME = 'submission';
+
+/** Download failures with their own copy, keyed by the BFF's status. A 503 means object storage is not configured upstream. */
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  403: 'You do not have access to this file.',
+  404: 'This file is no longer available. Refresh the page and try again.',
+  503: 'File downloads are unavailable right now. Please try again later.',
+};
+
 /**
  * Toast `summary` shown by every mentorship register form when submit is blocked by
  * client-side validation. Shared so a copy change lands on both mentor and mentee forms

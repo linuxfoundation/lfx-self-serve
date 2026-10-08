@@ -91,9 +91,12 @@ export class ApiClientService {
     url: string,
     bearerToken?: string,
     query?: Record<string, any>,
-    customHeaders?: Record<string, string>
+    customHeaders?: Record<string, string>,
+    /** Only `timeoutMs` is read. The abort covers reading the body too, so it bounds the whole transfer. */
+    options?: Pick<ApiRequestOptions, 'timeoutMs'>
   ): Promise<Response> {
     const fullUrl = this.getFullUrl(url, query);
+    const timeoutMs = options?.timeoutMs ?? this.config.timeout;
 
     const headers: Record<string, string> = {
       ['User-Agent']: 'LFX-PCC-Server/1.0',
@@ -112,14 +115,14 @@ export class ApiClientService {
       response = await fetch(fullUrl, {
         method: type,
         headers,
-        signal: AbortSignal.timeout(this.config.timeout),
+        signal: AbortSignal.timeout(timeoutMs),
         redirect: 'error',
       });
     } catch (error: unknown) {
       // Mirror executeRequest() transport-error classification for consistent MicroserviceError types.
       if (error instanceof Error) {
         if (error.name === 'AbortError' || error.name === 'TimeoutError') {
-          throw new MicroserviceError(`Request timeout after ${this.config.timeout}ms`, 408, 'TIMEOUT', {
+          throw new MicroserviceError(`Request timeout after ${timeoutMs}ms`, 408, 'TIMEOUT', {
             // transportFailure so the response carries `transport: true`: a timeout is
             // BFF-raised like any other transport failure, and a consumer must not have to
             // special-case 408. The marker comes from THIS flag, not from originalError --

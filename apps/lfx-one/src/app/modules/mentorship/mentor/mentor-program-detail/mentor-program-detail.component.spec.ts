@@ -23,6 +23,7 @@ import { MentorNoteSaveService } from '../../services/mentor-note-save.service';
 import { MentorTaskReviewService } from '../../services/mentor-task-review.service';
 import { MentorshipTaskCreateService } from '../../services/mentorship-task-create.service';
 import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
+import { MentorshipTaskFileService } from '../../services/mentorship-task-file.service';
 import { MentorProgramDetailComponent } from './mentor-program-detail.component';
 
 describe('MentorProgramDetailComponent', () => {
@@ -100,6 +101,7 @@ describe('MentorProgramDetailComponent', () => {
         { provide: MentorNoteSaveService, useValue: { save: saveNote } },
         { provide: MentorshipTaskCreateService, useValue: { create: createTasks } },
         { provide: MentorTaskReviewService, useValue: { review: reviewTask } },
+        { provide: MentorshipTaskFileService, useValue: { download: vi.fn() } },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],
     });

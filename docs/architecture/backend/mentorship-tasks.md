@@ -7,12 +7,13 @@ Admins and mentors manage a mentee's tasks the same way, so both program details
 
 ## Routes
 
-| Method | Path                            | Controller method | Page                                                                                         |
-| ------ | ------------------------------- | ----------------- | -------------------------------------------------------------------------------------------- |
-| POST   | `/api/mentorship/tasks`         | `createTasks`     | Create task on admin Current Mentees; Create and Create Group Task on the mentor Mentees tab |
-| PATCH  | `/api/mentorship/tasks/:taskId` | `updateTask`      | Edit and the status select on an expanded task row, on every page that shows the task panel  |
+| Method | Path                                 | Controller method  | Page                                                                                         |
+| ------ | ------------------------------------ | ------------------ | -------------------------------------------------------------------------------------------- |
+| POST   | `/api/mentorship/tasks`              | `createTasks`      | Create task on admin Current Mentees; Create and Create Group Task on the mentor Mentees tab |
+| PATCH  | `/api/mentorship/tasks/:taskId`      | `updateTask`       | Edit and the status select on an expanded task row, on every page that shows the task panel  |
+| GET    | `/api/mentorship/tasks/:taskId/file` | `downloadTaskFile` | Download on the mentee task row, the expanded task panel and the mentor Tasks tab            |
 
-Both are behind `blockDuringImpersonation` and use the caller's bearer token. `taskId` must be a UUID; anything else is a 400.
+The two writes are behind `blockDuringImpersonation`; the download is a read, so it stays open. All use the caller's bearer token. `taskId` must be a UUID; anything else is a 400. The mentee's own file upload and removal live on the mentee router (see [Submission files](#submission-files)).
 
 ## Flow
 
@@ -66,5 +67,30 @@ POST /tasks { applicationIds, name, description, dueDate?, requiresFileSubmissio
 - The answer is 200 with the task as the row reads it, so the page writes it into its row instead of reading the list again. The task panel hands it to its `taskSaved` callback, a callback rather than an output so a save that lands after its row collapsed still reaches the page.
 - `MentorshipTaskUpdateService` tracks the tasks being saved: a task with a change in flight takes no second change, and its select and Edit are disabled. The in-flight ids are a signal, so a panel rebuilt mid-save keeps both disabled and re-enables them when the save settles, whether it succeeded or failed.
 - Logs carry the task id and the names of the fields changed, never the task's text.
+
+## Submission files
+
+A task with `submit_file` set needs a file before it can be Submitted (linuxfoundation/lfx-mentorship#204). Upstream stores the file in a private bucket and only ever exposes it through its own routes, so every byte passes through the BFF with the caller's token; there are no presigned URLs.
+
+| Method | Path                                        | Who                                  | Upstream                                      |
+| ------ | ------------------------------------------- | ------------------------------------ | --------------------------------------------- |
+| POST   | `/api/mentorship/mentee/tasks/:taskId/file` | The assignee                         | `POST /mentorship/v1/tasks/{id}/file-upload`  |
+| DELETE | `/api/mentorship/mentee/tasks/:taskId/file` | The assignee                         | `DELETE /mentorship/v1/tasks/{id}/file`       |
+| GET    | `/api/mentorship/tasks/:taskId/file`        | The assignee, its mentors and admins | `GET /mentorship/v1/tasks/{id}/file-download` |
+
+```text
+POST /mentee/tasks/:taskId/file   raw bytes, Content-Type: application/octet-stream, X-File-Name: <URI-encoded name>
+  → blockDuringImpersonation · express.raw (MENTORSHIP_MENTEE_TASK_FILE_MAX_BYTES, 20 MiB; over it a 413)
+  → 415 for another content type or an extension outside MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS; 400 for an empty body or a missing name
+  → GET /mentorship/v1/tasks/{id}                   (past due → 400 TASK_PAST_DUE, as for a submit)
+  → POST /mentorship/v1/tasks/{id}/file-upload      multipart, part `file`, re-built with form-data; 120 s timeout
+  ← 201 { fileName, contentType, size }
+```
+
+- **Upload is buffered, not streamed.** The browser sends the raw bytes, with the file name URI-encoded in `X-File-Name` (`MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER`) rather than the URL, which the request logger writes on every line. The BFF replaces path separators, quotes and control characters in the name (`sanitizeMentorshipTaskFileName`) instead of refusing it, and re-sends the bytes as multipart through `proxyMentorshipRequest`, so the not-provisioned retry still applies. Upstream decides the type from the bytes (PDF, DOC, DOCX or UTF-8 text), cleans the name to `[A-Za-z0-9._-]`, and answers 409 for a completed task, 413 and 415 for a file it refuses and 503 while object storage is not configured; each passes through.
+- **Status rules are upstream's.** A file can be uploaded or replaced in any status but `complete`, and removed only while the task is not started or in progress; once submitted it can only be replaced. The BFF adds the past-due lock to upload and removal (`MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE`), since upstream enforces no deadline.
+- **Download is streamed.** `MentorshipTaskService.openTaskFile` opens upstream through `proxyStreamRequest` with the 120 s timeout, and the controller pipes the body through with upstream's status and `MENTORSHIP_TASK_FILE_DOWNLOAD_HEADERS`. A single byte `Range` (`MENTORSHIP_TASK_FILE_RANGE_PATTERN`) is forwarded, so a resumed download gets a 206; any other is dropped. The bytes are asked for uncompressed (`Accept-Encoding: identity`), and a compressed answer drops `Content-Length`, which `fetch` would leave at the compressed size. The response is always an attachment, whatever upstream sends, so there is no View, only Download.
+- **The browser never sees the upstream route.** Upstream's task `file` is its own download route; the mappers expose only whether a file is stored (`hasFile` for the mentee, `hasSubmission` for reviewers), and the app calls the BFF route by task id.
+- **App side.** `MentorshipTaskFileService` checks the extension and size before sending, toasts the outcome, re-reads the mentee's applications after a change or a stale failure, and saves a download under the name in `Content-Disposition`. Logs carry the task id and size only, never the file name or bytes.
 
 What each page does with a create or a saved task is described with the page: [admin Current Mentees](./mentorship-admin.md#task-writes) and [the mentor program detail](./mentorship-mentor.md#tasks).

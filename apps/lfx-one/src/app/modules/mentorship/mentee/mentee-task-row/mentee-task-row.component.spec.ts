@@ -8,7 +8,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { MentorshipMenteeTaskView } from '@lfx-one/shared/interfaces';
 import { buildMentorshipMenteeTaskView } from '@lfx-one/shared/utils';
 import { MenteeTaskStatusService } from '@modules/mentorship/services/mentee-task-status.service';
-import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
+import { MentorshipTaskFileService } from '@modules/mentorship/services/mentorship-task-file.service';
 import { Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -17,9 +17,12 @@ import { MenteeTaskRowComponent } from './mentee-task-row.component';
 describe('MenteeTaskRowComponent', () => {
   let fixture: ComponentFixture<MenteeTaskRowComponent>;
   let component: MenteeTaskRowComponent;
-  let notify: ReturnType<typeof vi.fn>;
   let changeStatus: ReturnType<typeof vi.fn>;
   let inFlight: Subject<boolean>;
+  let upload: ReturnType<typeof vi.fn>;
+  let remove: ReturnType<typeof vi.fn>;
+  let download: ReturnType<typeof vi.fn>;
+  let fileInFlight: Subject<boolean>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
@@ -28,7 +31,7 @@ describe('MenteeTaskRowComponent', () => {
     TestBed.configureTestingModule({
       imports: [MenteeTaskRowComponent],
       providers: [
-        { provide: MentorshipComingSoonService, useValue: { notify } },
+        { provide: MentorshipTaskFileService, useValue: { upload, remove, download } },
         { provide: MenteeTaskStatusService, useValue: { changeStatus } },
       ],
     });
@@ -56,20 +59,27 @@ describe('MenteeTaskRowComponent', () => {
         .map((option: { value: string; disabled: boolean }) => [option.value, option.disabled])
     );
 
-  const inProgressTask = (submitFile: string | null = null): MentorshipMenteeTaskView =>
-    buildMentorshipMenteeTaskView({ id: 'row_progress', title: 'Progress task', description: 'Under way', status: 'in_progress', submitFile });
+  const inProgressTask = (submitFile: 'required' | null = null, hasFile = false): MentorshipMenteeTaskView =>
+    buildMentorshipMenteeTaskView({ id: 'row_progress', title: 'Progress task', description: 'Under way', status: 'in_progress', submitFile, hasFile });
 
   const pendingTask = (): MentorshipMenteeTaskView =>
-    buildMentorshipMenteeTaskView({ id: 'row_pending', title: 'Pending task', description: 'Not started', status: 'pending', submitFile: null });
+    buildMentorshipMenteeTaskView({
+      id: 'row_pending',
+      title: 'Pending task',
+      description: 'Not started',
+      status: 'pending',
+      submitFile: null,
+      hasFile: false,
+    });
 
-  const uploadedTask = (): MentorshipMenteeTaskView =>
+  const uploadedTask = (status: 'submitted' | 'complete' = 'submitted'): MentorshipMenteeTaskView =>
     buildMentorshipMenteeTaskView({
       id: 'row_uploaded',
       title: 'Uploaded task',
       description: 'Already submitted',
-      status: 'submitted',
-      submitFile: 'https://files.example.com/a.pdf',
-      fileUrl: 'https://files.example.com/a.pdf',
+      status,
+      submitFile: 'required',
+      hasFile: true,
       submittedDate: '2026-09-12T00:00:00Z',
     });
 
@@ -86,17 +96,28 @@ describe('MenteeTaskRowComponent', () => {
         description: 'Needs a file',
         status: 'pending',
         submitFile: 'required',
+        hasFile: false,
         dueDate: '2026-09-30T00:00:00Z',
       },
       nowMs
     );
 
+  /** Picks a file in the row's hidden input, as the browser does after Upload or Replace opens it. */
+  const pickFile = (taskId: string, file: File): void => {
+    const input = byTestId(`mentee-tasks-file-input-${taskId}`) as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    input.dispatchEvent(new Event('change'));
+  };
+
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(beforeDue);
-    notify = vi.fn();
     inFlight = new Subject<boolean>();
     changeStatus = vi.fn().mockReturnValue(inFlight.asObservable());
+    fileInFlight = new Subject<boolean>();
+    upload = vi.fn().mockReturnValue(fileInFlight.asObservable());
+    remove = vi.fn().mockReturnValue(fileInFlight.asObservable());
+    download = vi.fn();
   });
 
   afterEach(() => {
@@ -116,7 +137,6 @@ describe('MenteeTaskRowComponent', () => {
       expect(byTestId('mentee-tasks-status-saving-row_pending')).toBeTruthy();
       expect(byTestId('mentee-tasks-status-cell-row_pending')?.getAttribute('aria-busy')).toBe('true');
       expect(select().readonly()).toBe(true);
-      expect(notify).not.toHaveBeenCalled();
     });
 
     it('keeps the new status and offers the next move once the save succeeds', async () => {
@@ -160,6 +180,7 @@ describe('MenteeTaskRowComponent', () => {
             description: 'Under way',
             status,
             submitFile: null,
+            hasFile: false,
             dueDate: '2026-09-30T00:00:00Z',
             submittedDate,
           },
@@ -378,29 +399,81 @@ describe('MenteeTaskRowComponent', () => {
     });
   });
 
-  it('fires the Coming Soon toast on upload', async () => {
-    await buildRow(uploadNeededTask());
-    const uploadBtn = element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-upload-row_upload"]');
-    expect(uploadBtn).toBeTruthy();
-    uploadBtn?.click();
-    expect(notify).toHaveBeenCalledWith('Upload submission for Upload task');
-  });
+  describe('file actions', () => {
+    const pdf = (): File => new File(['%PDF-1.7'], 'answer.pdf', { type: 'application/pdf' });
 
-  it('renders view/download buttons with aria-labels for an uploaded file', async () => {
-    await buildRow(uploadedTask());
-    const viewBtn = element().querySelector('[data-testid="mentee-tasks-view-file-row_uploaded"]');
-    const downloadBtn = element().querySelector('[data-testid="mentee-tasks-download-file-row_uploaded"]');
-    expect(viewBtn?.getAttribute('aria-label')).toBe('View submission for Uploaded task');
-    expect(downloadBtn?.getAttribute('aria-label')).toBe('Download submission for Uploaded task');
-  });
+    it('opens the picker from Upload and uploads the picked file, showing the spinner while in flight', async () => {
+      await buildRow(uploadNeededTask());
+      const input = byTestId('mentee-tasks-file-input-row_upload') as HTMLInputElement;
+      const click = vi.spyOn(input, 'click').mockImplementation(() => undefined);
 
-  it('fires the Coming Soon toast on view and download', async () => {
-    await buildRow(uploadedTask());
-    element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-view-file-row_uploaded"]')?.click();
-    element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-download-file-row_uploaded"]')?.click();
-    expect(notify).toHaveBeenCalledTimes(2);
-    expect(notify).toHaveBeenCalledWith('View submission for Uploaded task');
-    expect(notify).toHaveBeenCalledWith('Download submission for Uploaded task');
+      byTestId('mentee-tasks-upload-row_upload')?.click();
+      expect(click).toHaveBeenCalled();
+
+      const file = pdf();
+      pickFile('row_upload', file);
+      fixture.detectChanges();
+      expect(upload).toHaveBeenCalledWith('row_upload', file);
+      expect(byTestId('mentee-tasks-file-saving-row_upload')).toBeTruthy();
+      expect((byTestId('mentee-tasks-upload-row_upload') as HTMLButtonElement).disabled).toBe(true);
+
+      fileInFlight.next(true);
+      fileInFlight.complete();
+      fixture.detectChanges();
+      expect(byTestId('mentee-tasks-file-saving-row_upload')).toBeNull();
+    });
+
+    it('ignores a second pick while an upload is in flight', async () => {
+      await buildRow(uploadNeededTask());
+      pickFile('row_upload', pdf());
+      pickFile('row_upload', pdf());
+
+      expect(upload).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers Download, Replace and Remove for a stored file before the task is submitted', async () => {
+      await buildRow(inProgressTask('required', true));
+
+      expect(byTestId('mentee-tasks-download-file-row_progress')?.getAttribute('aria-label')).toBe('Download submission for Progress task');
+      expect(byTestId('mentee-tasks-replace-file-row_progress')).toBeTruthy();
+      expect(byTestId('mentee-tasks-remove-file-row_progress')).toBeTruthy();
+      expect(byTestId('mentee-tasks-upload-row_progress')).toBeNull();
+    });
+
+    it('offers Replace but not Remove once the task is submitted', async () => {
+      await buildRow(uploadedTask());
+
+      expect(byTestId('mentee-tasks-download-file-row_uploaded')).toBeTruthy();
+      expect(byTestId('mentee-tasks-replace-file-row_uploaded')).toBeTruthy();
+      expect(byTestId('mentee-tasks-remove-file-row_uploaded')).toBeNull();
+    });
+
+    it('offers only Download once the reviewer completes the task', async () => {
+      await buildRow(uploadedTask('complete'));
+
+      expect(byTestId('mentee-tasks-download-file-row_uploaded')).toBeTruthy();
+      expect(byTestId('mentee-tasks-replace-file-row_uploaded')).toBeNull();
+      expect(byTestId('mentee-tasks-remove-file-row_uploaded')).toBeNull();
+    });
+
+    it('downloads and removes through the file service', async () => {
+      await buildRow(inProgressTask('required', true));
+
+      byTestId('mentee-tasks-download-file-row_progress')?.click();
+      byTestId('mentee-tasks-remove-file-row_progress')?.click();
+
+      expect(download).toHaveBeenCalledWith('row_progress');
+      expect(remove).toHaveBeenCalledWith('row_progress');
+    });
+
+    it('does not cancel an upload when the row is destroyed mid-flight', async () => {
+      await buildRow(uploadNeededTask());
+      pickFile('row_upload', pdf());
+
+      fixture.destroy();
+
+      expect(fileInFlight.observed).toBe(true);
+    });
   });
 
   describe('past due', () => {
@@ -412,6 +485,7 @@ describe('MenteeTaskRowComponent', () => {
           description: 'Under way',
           status: 'in_progress',
           submitFile: null,
+          hasFile: false,
           dueDate: '2026-09-30T00:00:00Z',
         },
         nowMs
@@ -444,14 +518,20 @@ describe('MenteeTaskRowComponent', () => {
       expect(optionState()).toEqual({ pending: false, in_progress: false, submitted: true });
     });
 
-    it('disables Upload, describes it by the hint, and fires no toast', async () => {
+    it('disables Upload and describes it by the hint', async () => {
       await buildRow(uploadNeededTask(afterDue));
       const uploadBtn = element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-upload-row_upload"]');
 
       expect(uploadBtn?.disabled).toBe(true);
       expect(uploadBtn?.getAttribute('aria-describedby')).toBe('mentee-task-status-hint-row_upload');
-      uploadBtn?.click();
-      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('keeps Download but closes Replace and Remove on a stored file', async () => {
+      await buildRow({ ...inProgressTask('required', true), dueDate: '2026-09-30T00:00:00Z' });
+
+      expect(byTestId('mentee-tasks-download-file-row_progress')).toBeTruthy();
+      expect(byTestId('mentee-tasks-replace-file-row_progress')).toBeNull();
+      expect(byTestId('mentee-tasks-remove-file-row_progress')).toBeNull();
     });
 
     it('keeps Upload enabled before the due date has ended', async () => {
@@ -517,7 +597,7 @@ describe('MenteeTaskRowComponent', () => {
   it('renders the upload button when an upload is required', async () => {
     await buildRow(uploadNeededTask());
     expect(element().querySelector('[data-testid="mentee-tasks-upload-row_upload"]')).toBeTruthy();
-    expect(element().querySelector('[data-testid="mentee-tasks-view-file-row_upload"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentee-tasks-download-file-row_upload"]')).toBeNull();
   });
 
   it('pins submitted and due dates to UTC even under a non-UTC timezone', async () => {

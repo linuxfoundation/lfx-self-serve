@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { MENTORSHIP_LF_PROJECT_PAGE_SIZE } from '@lfx-one/shared/constants';
 import {
@@ -94,6 +94,16 @@ export class MentorshipService {
     return this.http
       .patch<MentorshipApplicantTask>(`/api/mentorship/tasks/${encodeURIComponent(taskId)}`, body)
       .pipe(take(1), catchError(this.logStatusOnly('updateTask')));
+  }
+
+  /**
+   * Reads a task's submission file, for its mentee and its reviewers alike, with the response headers so the caller can
+   * save it under the name upstream sends. A failure reaches the caller, whose error body is a Blob.
+   */
+  public downloadTaskFile(taskId: string): Observable<HttpResponse<Blob>> {
+    return this.http
+      .get(`/api/mentorship/tasks/${encodeURIComponent(taskId)}/file`, { responseType: 'blob', observe: 'response' })
+      .pipe(take(1), catchError(this.logStatusOnly('downloadTaskFile')));
   }
 
   public getCiiBadge(projectId: string): Observable<MentorshipCiiBadge | null> {
