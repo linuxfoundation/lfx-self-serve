@@ -3808,6 +3808,21 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(lockedHint(fixture)).toBe('Only CLA Managers can change this setting.');
   });
 
+  it('names the reason in the switch accessible name, so the sentence is not sighted-only', async () => {
+    checkPermission.mockReturnValue(of(false));
+
+    const fixture = await render();
+
+    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto ECLA — Only CLA Managers can change this setting.');
+  });
+
+  it('leaves the accessible name unqualified for a viewer who can move the switch', async () => {
+    const fixture = await render();
+
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(false);
+    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto ECLA');
+  });
+
   it.each([
     ['is not on the roster', false],
     ['has no roster answer', undefined],
