@@ -314,10 +314,10 @@ export class OrgEasyclaDetailComponent {
 
   /**
    * Whether ACS grants the current viewer the Auto ECLA write for this agreement's pair (#1988).
-   * `null` while the hop is in flight — the toggle is withheld during that window rather than
-   * shown enabled from an unchecked grant. `false` hides the toggle entirely, matching the
-   * design's choice to hide rather than disable a control the viewer cannot use, until the
-   * read-only banner (#1989) exists to explain a disabled state.
+   * `null` while the hop is in flight — the toggle stays disabled with no explanation during that
+   * window rather than enabled from an unchecked grant. `false` disables it and explains why
+   * (#3406); it never hides it, because the stored value is readable by anyone who can open the
+   * agreement.
    *
    * The running write and the value last asked for or confirmed live in
    * `OrgClaAutoEclaWritesService`, keyed on organization and signature, so both survive leaving
@@ -758,8 +758,9 @@ export class OrgEasyclaDetailComponent {
     // Auto ECLA ACS check (#1988). Keyed on (organization, project SFID) exactly like the peer
     // managers panel — the pair the grant is written on, not the signature id, because ACS scopes
     // the grant to `project|organization`. The project is the pinned pair project, else the first
-    // covered project, else the foundation. Withheld while the group is unsigned (nothing to toggle) or while the pair
-    // is unresolvable (a data problem upstream that the toggle would silently open a 403 into).
+    // covered project, else the foundation. Not asked while the group is unsigned (nothing to toggle). An unresolvable
+    // pair (a data problem upstream that a write would open a 403 into) answers `false` without asking, so the
+    // toggle is disabled and explained rather than left pending.
     // `null` resets the allowed signal so a stale answer cannot outlive the row it was fetched for.
     toObservable(this.autoEclaPermissionPair)
       .pipe(

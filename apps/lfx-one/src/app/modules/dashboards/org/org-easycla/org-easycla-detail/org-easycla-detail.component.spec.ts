@@ -3865,6 +3865,31 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(autoEclaSwitch(fixture)?.disabled).toBe(false);
   });
 
+  // The ACS answer is asked for one pair and reaches the page a round trip later, so the answer on
+  // hand while the next row loads belongs to the previous pair.
+  it.each([
+    ['explain a denial to a CLA manager', false],
+    ['enable the switch before ACS has cleared the viewer', true],
+  ])('does not let the previous agreement ACS answer %s on the next one', async (_case, previousAnswer) => {
+    const NEXT_PROJECT = 'a0941000002wBz9AAE';
+    const pending = new Subject<boolean>();
+    checkPermission.mockImplementation((_uid: string, _op: string, projectSfid: string) => (projectSfid === NEXT_PROJECT ? pending : of(previousAnswer)));
+    const previous = row();
+    const next = row({
+      id: 'signature-uuid-2',
+      projects: [{ projectName: 'Drift', projectSfid: NEXT_PROJECT }],
+      pairProjectSfid: NEXT_PROJECT,
+    });
+
+    const fixture = await render(previous, [previous, next]);
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-2' }));
+    fixture.detectChanges();
+
+    expect((fixture.componentInstance as unknown as { claGroup: () => OrgClaGroup | undefined }).claGroup()?.id).toBe('signature-uuid-2');
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla-locked-hint')).toBeNull();
+  });
+
   // The pair is what the ACS grant is written on. A row carrying neither a usable project SFID
   // nor a foundation id cannot be asked about, which is a denial rather than a pending answer.
   it('renders the toggle disabled and explained on a row whose ACS pair cannot be resolved', async () => {
