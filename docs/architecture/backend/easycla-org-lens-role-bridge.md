@@ -55,7 +55,7 @@ On a row with no CLA Manager list at all, the BFF cannot check the roster, so th
 
 Overview's **Download signed CCLA PDF** shows on every signed CCLA, and works when the viewer is on that CCLA's roster (`viewerIsClaManager`). EasyCLA authorizes the document on an ACS `project` or `project|organization` grant, and the company-level grant that let the viewer open the page is not one of them, so an organization admin off the roster could read the agreement and still be refused its PDF. The roster stands in for that grant rather than duplicating it, because holding the CLA manager role is what issues it.
 
-Off the roster the control renders **disabled**, with "Only a CLA Manager named on this CCLA can download the signed document" on hover and in its accessible name — the same treatment the Auto ECLA toggle takes, so a reader who cannot download still learns the document exists and who to ask. The download's own failure toast stays as the backstop for refusals the row cannot predict, including a rostered manager whose grant has not propagated yet.
+Off the roster the control renders **disabled**, with "Only a CLA Manager named on this CCLA can download the signed document" on hover and in its accessible name, so a reader who cannot download still learns the document exists and who to ask. A signed row carrying no CLA Manager list at all shows the same disabled control — the roster answer fails closed, but the document is still known to exist. This is today the only control on the surface that behaves this way; every other gated control disappears instead. [#3406](https://github.com/linuxfoundation/lfx-self-serve/issues/3406) will give the Auto ECLA toggle the same treatment. The download's own failure toast stays as the backstop for refusals the row cannot predict, including a rostered manager whose grant has not propagated yet.
 
 The restriction is deliberately on the control and not on the producer: widening EasyCLA's document ACL to organization admins would need a new endpoint and a gateway permission, and the decision was to match the Corporate Console's existing audience instead.
 
@@ -71,14 +71,14 @@ Writes stay blocked while impersonating. The permission check itself is a read, 
 
 The roster flag and the CLA Managers tab's own-row mark are computed for the impersonated user, not the support engineer, so impersonating shows whether that user is on the CLA Manager list.
 
-## What to tell a viewer who sees no approval-list or Invalidate controls, or a disabled Auto ECLA toggle or download
+## What to tell a viewer who sees no approval-list, Invalidate or Auto ECLA controls, or a disabled download
 
-The write controls are hidden; Auto ECLA and the download are shown disabled with their reason on hover. Either way, work out which of these applies:
+Those write controls disappear when the viewer cannot use them; the download instead stays on the page and greys out with its reason on hover. Either way, work out which of these applies:
 
 - **Not on the CLA Manager list.** An organization admin is routinely not on it, even when ACS grants them the write. Ask a CLA manager on the agreement to add them as a CLA manager.
 - **Added recently.** ACS can take about thirty minutes to reflect a new CLA manager, which holds back the write controls. The roster flag is resolved when the list loads, so if they added themselves the writes stay hidden and the download stays disabled until the page is reloaded. Wait, then reload.
-- **On the list under a different spelling.** The match is exact, including case. A list entry whose LF username differs from their login only in case does not count, so the controls stay withheld and the writes are refused for the same reason. Raise it with EasyCLA support so the entry can be corrected.
-- **The agreement has no CLA Manager list at all.** No one is offered these controls on that row. This is a data problem on the EasyCLA record, so raise it with EasyCLA support.
+- **On the list under a different spelling.** The match is exact, including case. A list entry whose LF username differs from their login only in case does not count, so the controls stay gated and the writes are refused for the same reason. Raise it with EasyCLA support so the entry can be corrected.
+- **The agreement has no CLA Manager list at all.** The write controls are hidden from everyone on that row, and the download is disabled for everyone. This is a data problem on the EasyCLA record, so raise it with EasyCLA support.
 - **No ACS grant** for that project and organization. Ask whether they hold the CLA manager role for it. A missing grant does not disable the download, which reads the roster — but it does make the download fail once pressed, so a rostered manager reporting a failed download rather than a disabled button is usually inside the propagation window above.
 
 ## What to tell a viewer who can see EasyCLA but cannot Review and Sign
