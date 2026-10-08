@@ -5,7 +5,18 @@ import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { META_OBJECTIVE_LABELS } from '@lfx-one/shared/constants';
+import {
+  GOOGLE_ADS_BIDDING_BOUNDS,
+  GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
+  GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
+  GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
+  GOOGLE_BIDDING_STRATEGY_LABELS,
+  GOOGLE_CREATIVE_FIELD_SPECS,
+  GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_CREATIVE_SECTION_TITLES,
+  META_OBJECTIVE_LABELS,
+} from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignBriefPersistenceState, CampaignImplementationDraft } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -1554,6 +1565,9 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
       endDate: '2026-09-30',
       includeSearch: true,
       includeDemandGen: false,
+      includePerformanceMax: false,
+      includeVideo: false,
+      includeDisplay: false,
       eventSlug: slug,
     };
 
@@ -2491,6 +2505,9 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       endDate: '2026-09-30',
       includeSearch: true,
       includeDemandGen: true,
+      includePerformanceMax: false,
+      includeVideo: false,
+      includeDisplay: false,
       linkedInAccountId: accountId,
       linkedInGeoTargets: [],
       linkedInTargetingProfile: 'cloud-native',
@@ -3244,6 +3261,9 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
       endDate: '2026-09-30',
       includeSearch: false,
       includeDemandGen: true,
+      includePerformanceMax: false,
+      includeVideo: false,
+      includeDisplay: false,
     });
     fixture.detectChanges();
 
@@ -3327,6 +3347,9 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
       registrationUrl: 'https://example.com',
       includeSearch: true,
       includeDemandGen: true,
+      includePerformanceMax: false,
+      includeVideo: false,
+      includeDisplay: false,
       budgetUsd: 500,
       startDate: '2026-09-01',
       endDate: '2026-09-30',
@@ -3446,6 +3469,383 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
 });
 
 /**
+ * The SAME gate, one capability over, for Performance Max / Video / Display.
+ *
+ * A separate describe rather than extra rows in the one above, because the two capabilities are
+ * independent and derived by OPPOSITE rules upstream: `demandGenEnabled` is TRUE while the create
+ * cutover is dark (the legacy creator serves Demand Gen), `googleChannelsEnabled` is FALSE there
+ * (the legacy creator does not know these three and would build a funded DEMAND GEN campaign for
+ * them and report success). Every assertion below is written so that collapsing the two inputs into one
+ * would break it.
+ */
+describe('ImplementationTabComponent google channels capability gate', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  function checkbox(control: string): HTMLInputElement | null {
+    return fixture.nativeElement.querySelector(`input[formControlName="${control}"]`);
+  }
+
+  function value(control: string): boolean {
+    return (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].controls[control].value;
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it.each([['includePerformanceMax'], ['includeVideo'], ['includeDisplay']])('shows %s only on an explicit true', (control) => {
+    expect(checkbox(control)).toBeNull();
+
+    fixture.componentRef.setInput('googleChannelsEnabled', null);
+    fixture.detectChanges();
+    expect(checkbox(control)).toBeNull();
+
+    fixture.componentRef.setInput('googleChannelsEnabled', false);
+    fixture.detectChanges();
+    expect(checkbox(control)).toBeNull();
+
+    fixture.componentRef.setInput('googleChannelsEnabled', true);
+    fixture.detectChanges();
+    expect(checkbox(control)).not.toBeNull();
+  });
+
+  /**
+   * The two capabilities must not stand in for one another. With `demandGenEnabled` on and the
+   * newer capability unanswered, Demand Gen renders and the three do not — which is exactly the
+   * production state during the staged rollout.
+   */
+  it('does not let the demand-gen capability unlock the three newer channels', () => {
+    fixture.componentRef.setInput('demandGenEnabled', true);
+    fixture.detectChanges();
+
+    expect(checkbox('includeDemandGen')).not.toBeNull();
+    expect(checkbox('includePerformanceMax')).toBeNull();
+    expect(checkbox('includeVideo')).toBeNull();
+    expect(checkbox('includeDisplay')).toBeNull();
+  });
+
+  /**
+   * `restoreDraft` sets the draft BEFORE the brief, for the reason spelled out on the demand-gen
+   * sibling: the seeding effect depends on `briefData` and reads `draft` inside `untracked()`, so
+   * the other order silently leaves the controls at their `[false]` default and makes the negative
+   * assertions pass without any guard existing.
+   */
+  function restoreDraft(enabled: boolean | null, selected: boolean): void {
+    fixture.componentRef.setInput('googleChannelsEnabled', enabled);
+    fixture.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://example.com',
+      includeSearch: false,
+      includeDemandGen: false,
+      includePerformanceMax: selected,
+      includeVideo: selected,
+      includeDisplay: selected,
+      headlines: ['Join us at KubeCon'],
+      descriptions: ['Register today for KubeCon EU 2026.'],
+    } as unknown as CampaignImplementationDraft);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+  }
+
+  it('clears a restored selection when the deployment has answered that it cannot create these channels', () => {
+    restoreDraft(false, true);
+    expect(value('includePerformanceMax')).toBe(false);
+    expect(value('includeVideo')).toBe(false);
+    expect(value('includeDisplay')).toBe(false);
+  });
+
+  /**
+   * The tri-state's whole reason for existing. `null` is "unanswered", not "no" — collapsing the
+   * two would have `applyDraft` rewrite a user's saved selection from a value that was never a
+   * server fact, which is a destructive edit to persisted state rather than a hidden checkbox.
+   */
+  it('preserves a restored selection while the capability is still unknown', () => {
+    restoreDraft(null, true);
+    expect(value('includePerformanceMax')).toBe(true);
+    expect(value('includeVideo')).toBe(true);
+    expect(value('includeDisplay')).toBe(true);
+  });
+
+  /**
+   * The paired positive case: without it the clear above could be an unconditional `false` and
+   * still pass, so this is what proves the restore reads the capability.
+   */
+  it('preserves a restored selection where the deployment supports it', () => {
+    restoreDraft(true, true);
+    expect(value('includePerformanceMax')).toBe(true);
+  });
+
+  /**
+   * Seeds a GENUINELY VALID Google form, then applies the channel selection under test.
+   *
+   * The draft route rather than a bare `patchValue`, because `canSubmit` also returns false on
+   * `campaignForm.invalid` — a form missing budget, headlines or descriptions makes every negative
+   * assertion below pass without the channel guard existing at all. `allows a flagged channel on
+   * its own` is the control that proves this seed really is submittable.
+   */
+  function seedGoogleForm(
+    patch: Record<string, unknown>,
+    caps: { demandGen?: boolean | null; googleChannels?: boolean | null; googleCreative?: boolean | null } = {}
+  ): Record<string, any> {
+    fixture.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://example.com',
+      includeSearch: false,
+      includeDemandGen: false,
+      includePerformanceMax: false,
+      includeVideo: false,
+      includeDisplay: false,
+      budgetUsd: 500,
+      startDate: '2026-09-01',
+      endDate: '2026-09-30',
+      headlines: ['Join us at KubeCon'],
+      descriptions: ['Register today for KubeCon EU 2026.'],
+    } as unknown as CampaignImplementationDraft);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    c['campaignForm'].patchValue({
+      includeSearch: false,
+      includeDemandGen: false,
+      includePerformanceMax: false,
+      includeVideo: false,
+      includeDisplay: false,
+      ...patch,
+    });
+    // The capability inputs are set LAST, after the form is in its final state.
+    //
+    // `canSubmit` is a `computed` that reads `campaignForm.controls.*.value` DIRECTLY — plain
+    // property reads, not signals. `campaignFormRevision` is what makes a `patchValue` invalidate
+    // the memo at all, and `canSubmit reacts to a channel ticked after it was last read` below is
+    // the test that holds that bridge in place. The ordering here is kept anyway: it is the state
+    // a real user reaches — a form filled in, then a capability resolving — and it means this seed
+    // does not depend on the bridge to be correct, so a regression there shows up as that one
+    // named failure rather than as every Google assertion in this file going red at once.
+    if ('demandGen' in caps) fixture.componentRef.setInput('demandGenEnabled', caps.demandGen);
+    if ('googleChannels' in caps) fixture.componentRef.setInput('googleChannelsEnabled', caps.googleChannels);
+    if ('googleCreative' in caps) fixture.componentRef.setInput('googleCreativeEnabled', caps.googleCreative);
+    fixture.detectChanges();
+    return c;
+  }
+
+  /**
+   * One config carries one channel, so a Performance Max / Video / Display selection paired with
+   * anything else would dispatch a single campaign and silently drop the rest — and their share of
+   * the budget. The server refuses the pair; refusing it here turns a terminal failure into a
+   * disabled button.
+   */
+  it('refuses a flagged channel combined with anything else', () => {
+    const c = seedGoogleForm({ includeSearch: true, includeDisplay: true }, { googleChannels: true });
+
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The narrowness of that refusal, which is the point of it. While the cutover is DARK, Search +
+   * Demand Gen is served by the LEGACY creator, so blocking it would break a working capability —
+   * the mistake the server guard's own comments record.
+   *
+   * `googleCreative: false` is what says "the cutover does not own this create"; it is the input
+   * the server derives from `cutoverOwnsCreate()`, and it is the only thing separating this case
+   * from the one below.
+   */
+  it('still allows search combined with demand gen while the cutover is dark', () => {
+    const c = seedGoogleForm({ includeSearch: true, includeDemandGen: true }, { demandGen: true, googleChannels: true, googleCreative: false });
+
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /**
+   * An unresolved capability is treated as dark, like every other capability read on this form. A
+   * client that refuses a create the server would have accepted is the costlier mistake, and the
+   * window before the capability call returns is exactly where that would happen.
+   */
+  it('still allows search combined with demand gen while the capability is unknown', () => {
+    const c = seedGoogleForm({ includeSearch: true, includeDemandGen: true }, { demandGen: true, googleChannels: true, googleCreative: null });
+
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /**
+   * The other side of that narrowness, and the gap this closes.
+   *
+   * Once the cutover owns the create, `createCampaigns` refuses EVERY Google pair — its guard is
+   * `selectedGoogleChannels.length > 1` with no flag test, so Search + Demand Gen is refused
+   * exactly like the flagged ones. The legacy exception no longer applies, because the legacy
+   * creator is no longer the one that runs. Submitting is then a certain terminal refusal.
+   */
+  it('refuses search combined with demand gen once the cutover owns the create', () => {
+    const c = seedGoogleForm({ includeSearch: true, includeDemandGen: true }, { demandGen: true, googleChannels: true, googleCreative: true });
+
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  it('allows a flagged channel on its own', () => {
+    const c = seedGoogleForm({ includeDisplay: true }, { googleChannels: true });
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /**
+   * The control for the two refusals above: one channel is submittable in the very state that
+   * refuses two. Without it, a `canSubmit` that returned false for an unrelated reason once the
+   * cutover is on — a bidding plan that only renders there, say — would make them pass vacuously.
+   */
+  it('allows a single channel once the cutover owns the create', () => {
+    const c = seedGoogleForm({ includeSearch: true }, { demandGen: true, googleChannels: true, googleCreative: true });
+
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /**
+   * The bridge that makes every assertion above mean anything on a live page.
+   *
+   * `canSubmit` reads the form directly — `campaignForm.invalid`, `form.eventName.value`, and
+   * `selectedGoogleChannels()`, which is `getRawValue()` underneath. None of those is a reactive
+   * dependency, so the memo only ever recomputed when one of the few SIGNALS it also reads moved.
+   * Ticking a Google channel moves none of them: the checkboxes are form controls and nothing
+   * else changes with them. The button therefore kept whatever state it had, and the mixed-channel
+   * rule directly above — whose only inputs ARE those checkboxes — never reached the screen.
+   *
+   * The sequencing is the whole test. `canSubmit()` is read FIRST, with no channel selected, so
+   * the memo is warm and holding `false`; the channel is then ticked with no `setInput` and no
+   * `detectChanges` to invalidate it by another route; and only then is it read again. Remove
+   * `campaignFormRevision` from `canSubmit` and the second read returns the cached `false`.
+   */
+  it('canSubmit reacts to a channel ticked after it was last read', () => {
+    const c = seedGoogleForm({}, { googleChannels: true });
+
+    // Warm the memo in the no-channel state. Not an incidental assertion — if this were already
+    // true, the flip below would prove nothing.
+    expect(c['canSubmit']()).toBe(false);
+
+    c['campaignForm'].controls.includeDisplay.setValue(true);
+
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /**
+   * And the same bridge in the other direction, through `statusChanges` rather than
+   * `valueChanges`: clearing a required field leaves the form INVALID without the Google
+   * checkboxes moving at all. `merge(valueChanges, statusChanges)` is what carries this one —
+   * `setValue('')` does emit both, but the assertion is about the state `canSubmit` reports, and
+   * it is the case a reviewer reaches for when asking why `statusChanges` is in that merge.
+   */
+  it('canSubmit reacts to a required field being emptied after it was last read', () => {
+    const c = seedGoogleForm({ includeDisplay: true }, { googleChannels: true });
+
+    expect(c['canSubmit']()).toBe(true);
+
+    c['campaignForm'].controls.budgetUsd.setValue(null);
+
+    expect(c['campaignForm'].invalid).toBe(true);
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * Video is the one flagged channel the capability CANNOT unlock, because the limit is Google's:
+   * the Ads API has no call that creates a Video campaign, so `CreateVideoCampaign` refuses in its
+   * first statement upstream. The box is disabled in the form, but `selectedGoogleChannels` reads
+   * `getRawValue()`, which reports disabled controls — so a draft that carries a `true` from
+   * before the box was disabled would still dispatch a create Google refuses outright.
+   *
+   * The capability is set TRUE here deliberately. With it false this would pass against no guard
+   * at all, since the whole block is gated on it — the assertion has to be made in the one state
+   * where every other flagged channel IS submittable. `allows a flagged channel on its own`
+   * directly above is that control: same seed, same capability, Display instead of Video.
+   */
+  it('refuses Video even with the capability on and the raw value set', () => {
+    const c = seedGoogleForm({}, { googleChannels: true });
+    c['campaignForm'].controls.includeVideo.setValue(true);
+
+    expect(c['campaignForm'].getRawValue().includeVideo).toBe(true);
+    expect(c['selectedGoogleChannels']()).not.toContain('video');
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * And it is disabled rather than hidden — the assertion that distinguishes this change from
+   * simply dropping the channel. A user who finds no Video box cannot tell a deliberate answer
+   * from a missing feature, so the box, its label and the reason all have to be on screen.
+   */
+  it('renders the Video box disabled, with the reason, once the capability is on', () => {
+    fixture.componentRef.setInput('googleChannelsEnabled', true);
+    fixture.detectChanges();
+
+    const box = checkbox('includeVideo');
+    expect(box).not.toBeNull();
+    expect(box?.disabled).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-include-video-reason"]')).not.toBeNull();
+  });
+
+  /**
+   * A hidden selection must not make the form submittable either. `applyDraft` can leave
+   * `includeDisplay: true` on a tab that mounted while the capability was `null`; the control then
+   * disappears when it resolves `false`, but the FORM value stays true and `submit` builds
+   * `campaignTypes` from the form.
+   *
+   * Display rather than Video, which this used to use: Video is now refused by its own guard
+   * regardless of the capability, so it would pass here against no capability gate at all.
+   */
+  it('does not treat a hidden flagged selection as a submittable Google campaign', () => {
+    const c = seedGoogleForm({ includeDisplay: true }, { googleChannels: false });
+
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The generated name goes into Google Ads and is what the marketing team filters reporting on,
+   * so it must describe the request that will actually be sent — not the raw checkbox state.
+   */
+  it.each([
+    ['includePerformanceMax', 'PMax'],
+    ['includeDisplay', 'Display'],
+  ])('previews the %s name token', (control, token) => {
+    const c = seedGoogleForm({ [control]: true }, { googleChannels: true });
+
+    expect(c['campaignName']()).toContain(`| ${token} |`);
+  });
+
+  /**
+   * `demand-gen` keeps rendering as `DG Display`, not as its product label. The token predates the
+   * nicer name, and renaming it would split a campaign's reporting history in two.
+   */
+  it('keeps the legacy DG Display token for demand gen', () => {
+    const c = seedGoogleForm({ includeDemandGen: true }, { demandGen: true });
+
+    expect(c['campaignName']()).toContain('| DG Display |');
+  });
+
+  it('previews a Search-only name when a hidden flagged selection accompanies Search', () => {
+    const c = seedGoogleForm({ includeSearch: true, includeDisplay: true }, { googleChannels: false });
+
+    expect(c['campaignName']()).toContain('| Search |');
+    expect(c['campaignName']()).not.toContain('| Multi |');
+  });
+});
+
+/**
  * The create handler's error arm, which is the last step of the named-refusal path.
  *
  * Every guard on the server writes a field and a stated remedy, and all of that is wasted if the
@@ -3537,5 +3937,942 @@ describe('ImplementationTabComponent create failure messaging', () => {
 
     expect(c['errors']()).toEqual([expect.stringContaining('Unable to reach the campaign service')]);
     expect(c['step']()).toBe('form');
+  });
+});
+
+/**
+ * The Google creative, geo and bidding sections, which are the three blocks this tab grew for the
+ * non-Search channels. One harness for all of them: every one is gated on a Google channel being
+ * selected, and a channel is only selectable once its capability has resolved true.
+ */
+function configureGoogleTab(): Promise<void> {
+  return TestBed.configureTestingModule({
+    imports: [ImplementationTabComponent],
+    providers: [
+      provideHttpClient(),
+      provideHttpClientTesting(),
+      provideRouter([]),
+      ProjectContextService,
+      { provide: MessageService, useValue: { add: vi.fn() } },
+    ],
+  })
+    .compileComponents()
+    .then(() => undefined);
+}
+
+/**
+ * A submittable Google form with ONE channel ticked.
+ *
+ * The draft route, not a bare `patchValue`: `canSubmit` also returns false on `campaignForm.invalid`,
+ * so a form missing budget, dates or copy would make every negative assertion below pass without
+ * the guard under test existing. The capability inputs go in LAST, matching the ordering the
+ * capability-gate block above explains.
+ */
+const GOOGLE_BASE_DRAFT: Record<string, unknown> = {
+  eventSlug: 'kubecon-eu-2026',
+  eventName: 'KubeCon EU 2026',
+  registrationUrl: 'https://example.com',
+  countryCode: 'US',
+  includeSearch: false,
+  includeDemandGen: false,
+  includePerformanceMax: false,
+  includeVideo: false,
+  includeDisplay: false,
+  budgetUsd: 500,
+  startDate: '2026-09-01',
+  endDate: '2026-09-30',
+  headlines: ['Join us at KubeCon'],
+  descriptions: ['Register today for KubeCon EU 2026.'],
+};
+
+function seedChannel(fixture: ComponentFixture<ImplementationTabComponent>, patch: Record<string, unknown>): Record<string, any> {
+  fixture.componentRef.setInput('draft', { ...GOOGLE_BASE_DRAFT } as unknown as CampaignImplementationDraft);
+  fixture.componentRef.setInput('briefData', {
+    eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+    selectedPlatforms: ['google-ads'],
+  } as unknown as CampaignBriefOutput);
+  fixture.detectChanges();
+
+  const c = fixture.componentInstance as unknown as Record<string, any>;
+  c['campaignForm'].patchValue({
+    includeSearch: false,
+    includeDemandGen: false,
+    includePerformanceMax: false,
+    includeVideo: false,
+    includeDisplay: false,
+    ...patch,
+  });
+  fixture.componentRef.setInput('demandGenEnabled', true);
+  fixture.componentRef.setInput('googleChannelsEnabled', true);
+  // Creative is withheld until the cutover owns the create — see `googleCreativeEnabled`. It is a
+  // capability of its own rather than a reading of `googleChannelsEnabled`, so it has to be set.
+  fixture.componentRef.setInput('googleCreativeEnabled', true);
+  fixture.detectChanges();
+  return c;
+}
+
+/**
+ * Replay a saved draft through the REAL restore path.
+ *
+ * `applyDraft` takes no argument — it reads the `draft` input — so a test that passes an object to
+ * it silently re-applies whatever is already mounted and proves nothing. The draft also has to
+ * carry `eventSlug`, because `applyDraft` returns early unless it matches the form's, and the
+ * copy arrays, because `replaceCopyArray` is called on both unconditionally.
+ */
+function restoreGoogleDraft(fixture: ComponentFixture<ImplementationTabComponent>, c: Record<string, any>, extra: Record<string, unknown>): void {
+  fixture.componentRef.setInput('draft', { ...GOOGLE_BASE_DRAFT, ...extra } as unknown as CampaignImplementationDraft);
+  c['applyDraft']();
+  fixture.detectChanges();
+}
+
+/**
+ * The Search-copy gate.
+ *
+ * Headlines and descriptions are required for the two channels whose ad IS that copy, and for no
+ * others — a Performance Max or Display campaign carries its copy in its own creative object, and
+ * an unconditional `Validators.required` here once made those campaigns unsubmittable.
+ *
+ * `demand-gen` is in the gate alongside `search` because the LEGACY in-process creator builds a
+ * DEMAND GEN campaign for an unknown type, so that pair reaches the same ad-copy requirement.
+ */
+describe('ImplementationTabComponent google search-copy gate', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it.each([['includeSearch'], ['includeDemandGen']])('asks for the ad copy on %s', (control) => {
+    const c = seedChannel(fixture, { [control]: true });
+
+    expect(c['searchCopyApplies']()).toBe(true);
+
+    c['campaignForm'].controls.headlines.at(0).setValue('');
+
+    expect(c['campaignForm'].controls.headlines.invalid).toBe(true);
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /**
+   * The other direction, which is the regression this gate exists for. The same empty copy must
+   * leave a Display campaign submittable — its ad lives in `displayCreative`.
+   */
+  it.each([['includePerformanceMax'], ['includeDisplay']])('does not ask for the ad copy on %s', (control) => {
+    const c = seedChannel(fixture, { [control]: true });
+    c['campaignForm'].controls.headlines.at(0).setValue('');
+    c['campaignForm'].controls.descriptions.at(0).setValue('');
+
+    expect(c['searchCopyApplies']()).toBe(false);
+    expect(c['campaignForm'].controls.headlines.valid).toBe(true);
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /**
+   * Nothing re-runs a validator when a SIBLING control changes, so the gate is inert without the
+   * constructor effect that revalidates both arrays when the gate's answer moves. Reading the
+   * arrays' validity BEFORE and AFTER the tick is what holds that effect in place.
+   *
+   * The `detectChanges` is load-bearing: an effect settles on the next flush, where the
+   * `valueChanges` subscription this replaced ran synchronously on the tick.
+   */
+  it('revalidates the copy arrays when the channel changes under them', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.headlines.at(0).setValue('');
+    expect(c['campaignForm'].controls.headlines.valid).toBe(true);
+
+    c['campaignForm'].controls.includeDisplay.setValue(false);
+    c['campaignForm'].controls.includeSearch.setValue(true);
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.headlines.invalid).toBe(true);
+  });
+
+  /**
+   * The checkboxes are not the only thing that moves the gate. `showGoogleSection()` reads
+   * `selectedPlatforms`, a signal input — dropping Google in the parent makes the copy stop being
+   * required without either checkbox emitting, which the `valueChanges` pair this replaced missed.
+   */
+  it('revalidates the copy arrays when google leaves the selected platforms', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.headlines.at(0).setValue('');
+    expect(c['campaignForm'].controls.headlines.invalid).toBe(true);
+
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['linkedin-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+
+    expect(c['searchCopyApplies']()).toBe(false);
+    expect(c['campaignForm'].controls.headlines.valid).toBe(true);
+  });
+});
+
+/**
+ * The per-channel creative sections.
+ *
+ * Everything here is driven off `GOOGLE_CREATIVE_FIELD_SPECS`, and the assertions name the
+ * catalogue rather than repeating its numbers — a bound that moves upstream should move these
+ * tests' expectations with it, not leave them green against a stale literal.
+ */
+describe('ImplementationTabComponent google creative sections', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it.each([
+    ['includeDemandGen', 'demand-gen'],
+    ['includePerformanceMax', 'performance-max'],
+    ['includeDisplay', 'display'],
+  ])('renders the %s section', (control, channel) => {
+    const c = seedChannel(fixture, { [control]: true });
+    const sections = c['googleCreativeSections']();
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0].channel).toBe(channel);
+    expect(sections[0].label).toBe(GOOGLE_CREATIVE_SECTION_TITLES[channel as keyof typeof GOOGLE_CREATIVE_SECTION_TITLES]);
+    expect(sections[0].groupName).toBe(GOOGLE_CREATIVE_REQUEST_KEYS[channel as keyof typeof GOOGLE_CREATIVE_REQUEST_KEYS]);
+  });
+
+  /** Search carries no creative object at all — its copy is the two shared arrays. */
+  it('renders no section for a search-only campaign', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleCreativeSections']()).toEqual([]);
+  });
+
+  it('renders no section when Google is not a selected platform', () => {
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+
+    expect(c['googleCreativeSections']()).toEqual([]);
+  });
+
+  /**
+   * The creative capability is withheld until the cutover owns the create, because the legacy
+   * in-process creator sends no creative object at all — rendering the fields there would collect
+   * copy the create then silently drops. `null` is the "not known yet" state and withholds too.
+   */
+  it.each([[null], [false]])('renders no section while googleCreativeEnabled is %s', (capability) => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', capability);
+    fixture.detectChanges();
+
+    expect(c['googleCreativeSections']()).toEqual([]);
+  });
+
+  /**
+   * Search and Demand Gen are one campaign on the wire: `buildGoogleAdsConfig`'s Search branch
+   * sends no `googleCreative` at all. Leaving the Demand Gen section up alongside Search would
+   * collect creative the request then drops, so Search takes the section down.
+   */
+  it('drops the demand gen section when search is ticked alongside it', () => {
+    const c = seedChannel(fixture, { includeSearch: true, includeDemandGen: true, includeDisplay: true });
+
+    expect(c['googleCreativeSections']().map((section: { channel: string }) => section.channel)).toEqual(['display']);
+  });
+
+  /**
+   * The hazard the section rules open, and the effect that closes it: a withheld section leaves a
+   * `FormGroup` nobody can reach, and an enabled invalid group holds `campaignForm.invalid` true
+   * with no control on screen to fix. Only the rendered groups stay enabled.
+   */
+  it('enables only the creative groups it renders', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+
+    expect(c['campaignForm'].controls.displayCreative.enabled).toBe(true);
+    expect(c['campaignForm'].controls.demandGenCreative.enabled).toBe(false);
+    expect(c['campaignForm'].controls.performanceMaxCreative.enabled).toBe(false);
+
+    c['campaignForm'].controls.includeDisplay.setValue(false);
+    c['campaignForm'].controls.includePerformanceMax.setValue(true);
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.displayCreative.enabled).toBe(false);
+    expect(c['campaignForm'].controls.performanceMaxCreative.enabled).toBe(true);
+  });
+
+  /**
+   * Disabling a group must not change what the payload, the snapshot or a restore can see.
+   * `getRawValue()` reports disabled controls, which is why none of those three needed a change.
+   */
+  it('still reads a disabled creative group through getRawValue', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.displayCreative.controls.longHeadline.setValue('Still here');
+
+    c['campaignForm'].controls.includeDisplay.setValue(false);
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.displayCreative.enabled).toBe(false);
+    expect(c['campaignForm'].getRawValue().displayCreative.longHeadline).toBe('Still here');
+  });
+
+  /**
+   * The line split that turns a textarea into the array the wire carries. Both newline
+   * conventions, trimmed, empties dropped — a trailing newline must not become an entry that
+   * counts against the cap or reaches Google as an empty image URL.
+   */
+  it('splits a list field on either newline convention, trimming and dropping empties', () => {
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+
+    expect(c['splitCreativeLines']('one\r\n  two  \n\n\nthree\n')).toEqual(['one', 'two', 'three']);
+    expect(c['splitCreativeLines']('')).toEqual([]);
+    expect(c['splitCreativeLines'](null)).toEqual([]);
+    expect(c['splitCreativeLines'](undefined)).toEqual([]);
+  });
+
+  /**
+   * The list bound is PER LINE, which `Validators.maxLength` cannot express: the control holds one
+   * multi-line string, so bounding its own length would refuse five short headlines for being long
+   * together. Both assertions are needed — the first alone passes against a `maxLength` on the raw
+   * control.
+   */
+  it('bounds a list field per entry, not on the whole control', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const headlines = c['campaignForm'].controls.displayCreative.controls.headlines;
+    const spec = GOOGLE_CREATIVE_FIELD_SPECS.display[0];
+
+    headlines.setValue(Array.from({ length: spec.max }, () => 'a'.repeat(spec.width)).join('\n'));
+    expect(headlines.valid).toBe(true);
+
+    headlines.setValue('a'.repeat(spec.width + 1));
+    expect(headlines.errors?.['creativeListWidth']).toEqual({ label: spec.label, width: spec.width });
+
+    headlines.setValue(Array.from({ length: spec.max + 1 }, () => 'ok').join('\n'));
+    expect(headlines.errors?.['creativeListMax']).toEqual({ label: spec.label, max: spec.max, actual: spec.max + 1 });
+  });
+
+  /**
+   * The scalar bound is measured on the TRIMMED value, matching both the list bound beside it
+   * (`splitCreativeLines` trims every entry) and the payload builder, which trims before it sends.
+   *
+   * `Validators.maxLength` measured the raw control, so a value at exactly the width plus a
+   * trailing space was refused here while the string that would actually have gone upstream was
+   * inside the bound — a client refusing a create campaign-service would have accepted, which is
+   * the one thing no guard on this road may do. The second assertion is what keeps this from
+   * being a bound that no longer bounds anything.
+   */
+  it('bounds a text field on its trimmed value, not the raw control', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const spec = GOOGLE_CREATIVE_FIELD_SPECS.display[1];
+    const longHeadline = c['campaignForm'].controls.displayCreative.controls.longHeadline;
+
+    longHeadline.setValue(`  ${'a'.repeat(spec.width)}  `);
+    expect(longHeadline.valid).toBe(true);
+    // The value the wire would have carried, which is what the bound was applied to.
+    expect((c['googleCreativePayload']()['displayCreative'] as Record<string, unknown>)['longHeadline']).toBe('a'.repeat(spec.width));
+
+    longHeadline.setValue(`  ${'a'.repeat(spec.width + 1)}  `);
+    expect(longHeadline.errors?.['maxlength']).toEqual({ requiredLength: spec.width, actualLength: spec.width + 1 });
+  });
+
+  /**
+   * `min` is deliberately NOT enforced. campaign-service accepts a channel with no creative at
+   * all, so a minimum here would refuse a create upstream would have made — an operator taking the
+   * campaign and budget now and the assets later is doing something the platform supports.
+   */
+  it('does not enforce a list field minimum', () => {
+    const c = seedChannel(fixture, { includePerformanceMax: true });
+    const headlines = c['campaignForm'].controls.performanceMaxCreative.controls.headlines;
+
+    headlines.setValue('just the one');
+
+    expect(GOOGLE_CREATIVE_FIELD_SPECS['performance-max'][0].min).toBeGreaterThan(1);
+    expect(headlines.valid).toBe(true);
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /** All four bound combinations a guidance sentence is assembled from, plus the catalogue's own note. */
+  it('states a field’s bounds in its guidance', () => {
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+
+    expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'list', min: 1, max: 5, width: 30 })).toBe(
+      '1–5 entries, one per line. Up to 30 characters each.'
+    );
+    expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'list', max: 5 })).toBe('Up to 5 entries, one per line.');
+    expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'list', min: 2 })).toBe('At least 2 entries, one per line.');
+    expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'list' })).toBe('One entry per line.');
+    expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'text', width: 25 })).toBe('Up to 25 characters.');
+    expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'text' })).toBe('');
+    expect(c['creativeFieldGuidance']({ control: 'a', label: 'A', kind: 'text', width: 25, hint: 'Required.' })).toBe('Up to 25 characters. Required.');
+  });
+
+  /**
+   * The template reads `field.guidance`, not a method — the sentence is assembled once when the
+   * section resolves instead of on every change-detection pass. This pins the two together.
+   */
+  it('carries each field’s guidance on the resolved section', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const section = c['googleCreativeSections']().find((entry: { groupName: string }) => entry.groupName === 'displayCreative');
+
+    expect(section.fields).toHaveLength(GOOGLE_CREATIVE_FIELD_SPECS.display.length);
+    section.fields.forEach((field: Record<string, any>, index: number) => {
+      expect(field['guidance']).toBe(c['creativeFieldGuidance'](GOOGLE_CREATIVE_FIELD_SPECS.display[index]));
+    });
+  });
+
+  /**
+   * The error line stays silent until the field is touched — every one of these controls starts
+   * empty and valid, and an untouched field has nothing to report.
+   */
+  it('reports a field error only once the field is touched', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const spec = GOOGLE_CREATIVE_FIELD_SPECS.display[0];
+    const headlines = c['campaignForm'].controls.displayCreative.controls.headlines;
+    headlines.setValue(Array.from({ length: spec.max + 1 }, () => 'ok').join('\n'));
+
+    expect(c['creativeFieldErrors']()[`displayCreative.${spec.control}`]).toBeUndefined();
+
+    // Blur emits on neither `valueChanges` nor `statusChanges`, so the touched state reaches the
+    // error map over its own `AbstractControl.events` stream. This is the assertion that pins it.
+    headlines.markAsTouched();
+
+    expect(c['creativeFieldErrors']()[`displayCreative.${spec.control}`]).toBe(`At most ${spec.max} entries — ${spec.max + 1} given.`);
+  });
+
+  it('reports the width and maxlength errors in the field’s own words', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const listSpec = GOOGLE_CREATIVE_FIELD_SPECS.display[0];
+    const textSpec = GOOGLE_CREATIVE_FIELD_SPECS.display[1];
+    const group = c['campaignForm'].controls.displayCreative.controls;
+
+    group.headlines.setValue('a'.repeat(listSpec.width + 1));
+    group.headlines.markAsTouched();
+    expect(c['creativeFieldErrors']()[`displayCreative.${listSpec.control}`]).toBe(`Each entry must be ${listSpec.width} characters or fewer.`);
+
+    group.longHeadline.setValue('a'.repeat(textSpec.width + 1));
+    group.longHeadline.markAsTouched();
+    expect(c['creativeFieldErrors']()[`displayCreative.${textSpec.control}`]).toBe(`Must be ${textSpec.width} characters or fewer.`);
+  });
+
+  /**
+   * Shape-never-content, matching the BFF normalizer this feeds: a field that trims to nothing is
+   * OMITTED rather than sent as `''` or `[]`, and a channel whose whole creative is empty emits no
+   * key at all — an empty array is a positive statement ("no images") where absence means "none
+   * asked for", and upstream treats the two differently on the reciprocal image fields.
+   */
+  it('omits empty creative fields and empty creatives entirely', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+
+    expect(c['googleCreativePayload']()).toEqual({});
+
+    c['campaignForm'].controls.displayCreative.patchValue({ headlines: '  \n \n', businessName: '   ' });
+    expect(c['googleCreativePayload']()).toEqual({});
+
+    c['campaignForm'].controls.displayCreative.patchValue({ headlines: 'One\nTwo\n', businessName: '  Acme  ' });
+    expect(c['googleCreativePayload']()).toEqual({ displayCreative: { headlines: ['One', 'Two'], businessName: 'Acme' } });
+  });
+
+  /**
+   * A creative is only sent for a channel whose section is actually rendered.
+   *
+   * The payload reads `googleCreativeSections()` — the same signal the template renders — rather
+   * than a second reading of the ticked channels, so the rule is proved by changing what is
+   * SELECTED, not by what the caller passes. A filled-in creative left behind by a since-unticked
+   * channel must not reach the wire.
+   */
+  it('sends no creative for an unselected channel', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.displayCreative.patchValue({ headlines: 'One' });
+    expect(c['googleCreativePayload']()).toEqual({ displayCreative: { headlines: ['One'] } });
+
+    c['campaignForm'].patchValue({ includeDisplay: false });
+    fixture.detectChanges();
+
+    expect(c['googleCreativePayload']()).toEqual({});
+  });
+
+  /**
+   * The draft round-trip, including a key the catalogue no longer has. The draft is persisted
+   * JSON, and Angular throws on a `patchValue` naming a control that is not there — so one stale
+   * key must not take the whole restore down with it.
+   */
+  it('round-trips the creative text through a draft, skipping a stale key', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.displayCreative.patchValue({ headlines: 'One\nTwo', businessName: 'Acme' });
+
+    const snapshot = c['googleCreativeSnapshot']();
+    expect(snapshot['displayCreative']).toMatchObject({ headlines: 'One\nTwo', businessName: 'Acme' });
+
+    c['campaignForm'].controls.displayCreative.patchValue({ headlines: '', businessName: '' });
+    c['restoreGoogleCreatives']({ ...snapshot, displayCreative: { ...snapshot['displayCreative'], retiredField: 'x' }, retiredGroup: { headlines: 'y' } });
+
+    expect(c['campaignForm'].controls.displayCreative.getRawValue()).toMatchObject({ headlines: 'One\nTwo', businessName: 'Acme' });
+  });
+
+  /** The snapshot is a copy, not a live view of a form this component is about to destroy. */
+  it('snapshots the creative groups by value', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.displayCreative.patchValue({ headlines: 'One' });
+
+    const snapshot = c['googleCreativeSnapshot']();
+    c['campaignForm'].controls.displayCreative.patchValue({ headlines: 'Changed' });
+
+    expect(snapshot['displayCreative'].headlines).toBe('One');
+  });
+});
+
+/**
+ * The Google geo chips.
+ *
+ * The control is a `<select>` over the supported map's own keys, so the only guards left are the
+ * ones a select cannot express — the cap, and not adding a code twice.
+ */
+describe('ImplementationTabComponent google geo targets', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('adds a code once and refuses a duplicate or a blank', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const code = c['googleGeoOptions'][0];
+
+    c['addGoogleGeoTarget'](code);
+    c['addGoogleGeoTarget'](code);
+    c['addGoogleGeoTarget']('');
+
+    expect(c['googleGeoTargets']()).toEqual([code]);
+  });
+
+  it('refuses an add at the cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const options = c['googleGeoOptions'].slice(0, GOOGLE_ADS_MAX_GEO_TARGETS);
+    expect(options).toHaveLength(GOOGLE_ADS_MAX_GEO_TARGETS);
+    for (const code of options) c['addGoogleGeoTarget'](code);
+
+    c['addGoogleGeoTarget'](c['googleGeoOptions'][GOOGLE_ADS_MAX_GEO_TARGETS]);
+
+    expect(c['googleGeoTargets']()).toHaveLength(GOOGLE_ADS_MAX_GEO_TARGETS);
+  });
+
+  it('removes a chip by index', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const [first, second] = c['googleGeoOptions'];
+    c['addGoogleGeoTarget'](first);
+    c['addGoogleGeoTarget'](second);
+
+    c['removeGoogleGeoTarget'](0);
+
+    expect(c['googleGeoTargets']()).toEqual([second]);
+  });
+
+  /**
+   * The fallback is `[countryCode]` UNFILTERED. Filtering it to the supported list here would look
+   * tidier and be worse: a country Google cannot target on this path would submit an EMPTY geo
+   * list, and an empty list is not a refusal — it is a campaign with no geographic restriction.
+   */
+  it('falls back to the event country, trimmed and upper-cased, until a chip exists', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.countryCode.setValue('  de  ');
+    fixture.detectChanges();
+
+    expect(c['googleGeoFallbackCode']()).toBe('DE');
+    expect(c['googleEffectiveGeoTargets']()).toEqual(['DE']);
+
+    const code = c['googleGeoOptions'][0];
+    c['addGoogleGeoTarget'](code);
+
+    expect(c['googleEffectiveGeoTargets']()).toEqual([code]);
+  });
+
+  /** An empty country stays a single empty entry, so the BFF's own guard names it in the error. */
+  it('does not turn an empty country into an empty geo list', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.countryCode.setValue('');
+    fixture.detectChanges();
+
+    expect(c['googleEffectiveGeoTargets']()).toEqual(['']);
+  });
+
+  it('round-trips the chips through a draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    const code = c['googleGeoOptions'][1];
+    c['addGoogleGeoTarget'](code);
+
+    // What a save would have persisted — asserted rather than assumed, so the restore below is
+    // replaying the real emitted shape and not a value this test invented.
+    expect(emitted?.googleGeoTargets).toEqual([code]);
+
+    c['googleGeoTargets'].set([]);
+    restoreGoogleDraft(fixture, c, { googleGeoTargets: [code] });
+
+    expect(c['googleGeoTargets']()).toEqual([code]);
+  });
+
+  /** The chips are COPIED out of the draft, so the parent's array cannot be mutated through them. */
+  it('does not share the restored array with the draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const saved = [c['googleGeoOptions'][1]];
+
+    restoreGoogleDraft(fixture, c, { googleGeoTargets: saved });
+    c['addGoogleGeoTarget'](c['googleGeoOptions'][2]);
+
+    expect(saved).toHaveLength(1);
+  });
+
+  /** A draft saved before this section shipped carries no key, and must not clear the chips. */
+  it('leaves the chips alone when the draft carries no geo key', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const code = c['googleGeoOptions'][1];
+    c['addGoogleGeoTarget'](code);
+
+    restoreGoogleDraft(fixture, c, {});
+
+    expect(c['googleGeoTargets']()).toEqual([code]);
+  });
+});
+
+/**
+ * The bidding plan.
+ *
+ * Every per-channel set, bound and default here is campaign-service's own, read off
+ * `internal/platform/googleads/bidding.go` and carried in the shared catalogue. The assertions
+ * name the catalogue, so a set that moves upstream moves these expectations with it.
+ */
+describe('ImplementationTabComponent google bidding', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('offers no bidding plan until a Google channel is selected', () => {
+    const c = seedChannel(fixture, {});
+
+    expect(c['googleBiddingChannel']()).toBeNull();
+    expect(c['googleBiddingOptions']()).toEqual([]);
+    expect(c['googleBiddingStrategy']()).toBeNull();
+    expect(c['googleBiddingDefaultLabel']()).toBe('');
+    expect(c['googleBiddingPayload']()).toEqual({});
+  });
+
+  it.each([
+    ['includeSearch', 'search'],
+    ['includeDemandGen', 'demand-gen'],
+    ['includePerformanceMax', 'performance-max'],
+    ['includeDisplay', 'display'],
+  ])('offers exactly the strategies %s accepts', (control, channel) => {
+    const c = seedChannel(fixture, { [control]: true });
+    const accepted = GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel as keyof typeof GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL];
+
+    expect(c['googleBiddingChannel']()).toBe(channel);
+    expect(c['googleBiddingOptions']().map((o: { value: string }) => o.value)).toEqual([...accepted]);
+    expect(c['googleBiddingOptions']()[0].label).toBe(GOOGLE_BIDDING_STRATEGY_LABELS[accepted[0]]);
+  });
+
+  /**
+   * Search wins the pair, mirroring `buildGoogleAdsConfig`, which emits `channel: 'search'` for
+   * Search + Demand Gen and funds Demand Gen out of the split. Offering Demand Gen's single-entry
+   * set here would hand the operator a plan the campaign they actually get cannot use.
+   */
+  it('writes the plan against search when search accompanies demand gen', () => {
+    const c = seedChannel(fixture, { includeSearch: true, includeDemandGen: true });
+
+    expect(c['googleBiddingChannel']()).toBe('search');
+    expect(c['googleBiddingOptions']()).toHaveLength(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL.search.length);
+  });
+
+  it.each([
+    ['includeSearch', 'search'],
+    ['includeDemandGen', 'demand-gen'],
+    ['includePerformanceMax', 'performance-max'],
+    ['includeDisplay', 'display'],
+  ])('resolves an unpicked strategy to the %s channel default', (control, channel) => {
+    const c = seedChannel(fixture, { [control]: true });
+    const fallback = GOOGLE_BIDDING_DEFAULT_BY_CHANNEL[channel as keyof typeof GOOGLE_BIDDING_DEFAULT_BY_CHANNEL];
+
+    expect(c['googleBiddingStrategy']()).toBe(fallback);
+    expect(c['googleBiddingDefaultLabel']()).toBe(GOOGLE_BIDDING_STRATEGY_LABELS[fallback]);
+    // Unpicked means ABSENT on the wire, which is how campaign-service's own default is reached.
+    expect(c['googleBiddingPayload']().biddingStrategy).toBeUndefined();
+  });
+
+  /**
+   * Reachable by ordinary use, not by tampering: pick Target ROAS on Display, switch the campaign
+   * to Demand Gen, and the control still holds a value Demand Gen refuses. Resolving it away is
+   * what keeps the dependent fields — and the payload — honest about what will be sent.
+   */
+  it('resolves an out-of-set pick to the default and withholds it from the payload', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('target-roas');
+    expect(c['googleBiddingStrategy']()).toBe('target-roas');
+
+    c['campaignForm'].controls.includeDisplay.setValue(false);
+    c['campaignForm'].controls.includeDemandGen.setValue(true);
+
+    expect(c['googleBiddingChannel']()).toBe('demand-gen');
+    expect(c['googleBiddingStrategy']()).toBe(GOOGLE_BIDDING_DEFAULT_BY_CHANNEL['demand-gen']);
+    expect(c['googleBiddingPayload']().biddingStrategy).toBeUndefined();
+  });
+
+  it('sends a picked strategy the channel accepts', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('target-cpa');
+    c['campaignForm'].controls.googleTargetCpa.setValue('25');
+
+    expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'target-cpa', targetCpa: 25 });
+  });
+
+  /**
+   * Which dependent fields are in play is a question about the EFFECTIVE strategy, and upstream
+   * REFUSES a target on a strategy that cannot carry it rather than dropping it.
+   */
+  it('shows the target CPA field only under a CPA strategy', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-clicks');
+    expect(c['googleTakesTargetCpa']()).toBe(false);
+
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('target-cpa');
+    expect(c['googleTakesTargetCpa']()).toBe(true);
+    expect(c['googleTakesTargetRoas']()).toBe(false);
+    expect(c['googleTakesCpcBid']()).toBe(false);
+  });
+
+  it('shows the target ROAS field only under a ROAS strategy', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-conversion-value');
+
+    expect(c['googleTakesTargetRoas']()).toBe(true);
+    expect(c['googleTakesTargetCpa']()).toBe(false);
+  });
+
+  /** The CPC bid is manual CPC's alone, and manual CPC is Search's alone. */
+  it('shows the CPC bid only under manual CPC', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleBiddingStrategy']()).toBe('manual-cpc');
+    expect(c['googleTakesCpcBid']()).toBe(true);
+
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-clicks');
+    expect(c['googleTakesCpcBid']()).toBe(false);
+  });
+
+  /**
+   * A CHANNEL question, not a strategy one: `campaign.selective_optimization` is defined for
+   * Search, Display and Video, so those accept the list under any strategy, and campaign-service
+   * REFUSES it on Demand Gen and Performance Max rather than dropping it.
+   */
+  it.each([
+    ['includeSearch', true],
+    ['includeDisplay', true],
+    ['includeDemandGen', false],
+    ['includePerformanceMax', false],
+  ])('gates the conversion-action list on the channel (%s)', (control, allowed) => {
+    const c = seedChannel(fixture, { [control]: true });
+
+    expect(c['googleTakesConversionActions']()).toBe(allowed);
+  });
+
+  it('withholds a conversion list typed on a channel that refuses it', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.googleConversionActions.setValue('12345');
+    expect(c['googleBiddingPayload']().conversionActions).toEqual(['12345']);
+
+    c['campaignForm'].controls.includeDisplay.setValue(false);
+    c['campaignForm'].controls.includePerformanceMax.setValue(true);
+
+    expect(c['googleBiddingPayload']().conversionActions).toBeUndefined();
+  });
+
+  it('accepts a bare id and a full resource name, deduplicating nothing client-side', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.googleConversionActions.setValue('12345\n  customers/8666746580/conversionActions/999  \n\n');
+
+    expect(c['googleBiddingError']()).toBeNull();
+    expect(c['googleBiddingPayload']().conversionActions).toEqual(['12345', 'customers/8666746580/conversionActions/999']);
+  });
+
+  it('names a malformed conversion action', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.googleConversionActions.setValue('12345\nnot-an-id');
+
+    expect(c['googleBiddingError']()).toBe('"not-an-id" is not a conversion action id or resource name.');
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  it('refuses more conversion actions than Google accepts', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.googleConversionActions.setValue(Array.from({ length: GOOGLE_ADS_MAX_CONVERSION_ACTIONS + 1 }, (_, i) => `${i + 1}`).join('\n'));
+
+    expect(c['googleBiddingError']()).toBe(`Google accepts at most ${GOOGLE_ADS_MAX_CONVERSION_ACTIONS} conversion actions.`);
+  });
+
+  it('accepts exactly the cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.googleConversionActions.setValue(Array.from({ length: GOOGLE_ADS_MAX_CONVERSION_ACTIONS }, (_, i) => `${i + 1}`).join('\n'));
+
+    expect(c['googleBiddingError']()).toBeNull();
+  });
+
+  it.each([
+    ['googleCpcBid', 'manual-cpc', 'Max CPC bid', GOOGLE_ADS_BIDDING_BOUNDS.cpcBid],
+    ['googleTargetCpa', 'target-cpa', 'Target CPA', GOOGLE_ADS_BIDDING_BOUNDS.targetCpa],
+    ['googleTargetRoas', 'target-roas', 'Target ROAS', GOOGLE_ADS_BIDDING_BOUNDS.targetRoas],
+  ])('bounds %s at campaign-service’s own limits', (control, strategy, label, bounds) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.googleBiddingStrategy.setValue(strategy);
+
+    c['campaignForm'].controls[control].setValue('abc');
+    expect(c['googleBiddingError']()).toBe(`${label} must be a number.`);
+
+    c['campaignForm'].controls[control].setValue(`${bounds.min / 2}`);
+    expect(c['googleBiddingError']()).toBe(`${label} must be between ${bounds.min} and ${bounds.max}.`);
+
+    c['campaignForm'].controls[control].setValue(`${bounds.max + 1}`);
+    expect(c['googleBiddingError']()).toBe(`${label} must be between ${bounds.min} and ${bounds.max}.`);
+
+    c['campaignForm'].controls[control].setValue(`${bounds.max}`);
+    expect(c['googleBiddingError']()).toBeNull();
+  });
+
+  /**
+   * Blank is the normal way to leave a bid unset, and the two strategies that genuinely REQUIRE
+   * their target say so themselves rather than through the bounds check. Both halves matter: the
+   * blank-is-fine case is what keeps the optional targets optional.
+   */
+  it('treats a blank bid as unset but requires the target the strategy is named for', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-conversions');
+    expect(c['googleBiddingError']()).toBeNull();
+    expect(c['googleBiddingPayload']().targetCpa).toBeUndefined();
+
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('target-cpa');
+    expect(c['googleBiddingError']()).toBe('Target CPA strategy needs a target CPA.');
+
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('target-roas');
+    expect(c['googleBiddingError']()).toBe('Target ROAS strategy needs a target ROAS.');
+
+    c['campaignForm'].controls.googleTargetRoas.setValue('4');
+    expect(c['googleBiddingError']()).toBeNull();
+  });
+
+  /**
+   * A value typed under one strategy and abandoned under another is WITHHELD, not forwarded into
+   * an upstream refusal — the same gate the template renders on.
+   */
+  it('withholds a target abandoned under another strategy', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('target-cpa');
+    c['campaignForm'].controls.googleTargetCpa.setValue('25');
+    expect(c['googleBiddingPayload']().targetCpa).toBe(25);
+
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-clicks');
+
+    expect(c['googleBiddingPayload']().targetCpa).toBeUndefined();
+    expect(c['googleBiddingError']()).toBeNull();
+  });
+
+  /** Zero is "absent", not a value — no bid Google accepts is zero, and the bounds start at 0.01. */
+  it('treats a zero or unparseable amount as absent in the payload', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.googleBiddingStrategy.setValue('manual-cpc');
+
+    c['campaignForm'].controls.googleCpcBid.setValue('0');
+    expect(c['googleBiddingPayload']().cpcBid).toBeUndefined();
+
+    c['campaignForm'].controls.googleCpcBid.setValue('   ');
+    expect(c['googleBiddingPayload']().cpcBid).toBeUndefined();
+  });
+
+  /**
+   * The error gates the Create button, and it is a `computed` reading `campaignFormRevision` rather
+   * than control validators — Angular never revalidates a SIBLING control, so a bounds validator
+   * sitting on a now-hidden control would silently make the whole form invalid for a campaign with
+   * nothing wrong with it. Warming the memo before the edit is what proves the bridge.
+   */
+  it('blocks and unblocks the create button as the plan is corrected', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    expect(c['canSubmit']()).toBe(true);
+
+    c['campaignForm'].controls.googleCpcBid.setValue('abc');
+    expect(c['canSubmit']()).toBe(false);
+
+    c['campaignForm'].controls.googleCpcBid.setValue('1.25');
+    expect(c['canSubmit']()).toBe(true);
+    expect(c['googleBiddingPayload']().cpcBid).toBe(1.25);
+  });
+
+  /**
+   * The plan is Google's alone — a LinkedIn-only campaign must not be gated by it.
+   *
+   * The same unusable `googleCpcBid` is left on the form across the platform switch deliberately:
+   * the controls stay on the form whatever the brief selects, so a gate keyed on the control
+   * rather than on `showGoogleSection` would block a campaign that sends no Google config at all.
+   */
+  it('does not gate a non-Google campaign', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].controls.googleCpcBid.setValue('abc');
+    expect(c['googleBiddingError']()).not.toBeNull();
+
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['linkedin-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+
+    expect(c['showGoogleSection']()).toBe(false);
+    expect(c['googleBiddingError']()).toBeNull();
+  });
+
+  /**
+   * The draft carries the plan as TYPED, not as resolved: only strings, only keys the draft has.
+   * A draft saved before this section shipped carries none of them and must leave the form alone,
+   * and a hand-edited non-string must not reach a non-nullable control every reader assumes is one.
+   */
+  it('round-trips the plan through a draft, skipping missing and non-string keys', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    c['campaignForm'].patchValue({ googleBiddingStrategy: 'target-cpa', googleTargetCpa: '25', googleConversionActions: '12345' });
+
+    // The plan reaches the parent's draft as TYPED — the resolution happens at payload time.
+    expect(emitted?.googleBiddingStrategy).toBe('target-cpa');
+    expect(emitted?.googleTargetCpa).toBe('25');
+    expect(emitted?.googleConversionActions).toBe('12345');
+
+    c['campaignForm'].patchValue({ googleBiddingStrategy: '', googleTargetCpa: '', googleConversionActions: '' });
+    c['restoreGoogleBidding']({
+      googleBiddingStrategy: 'target-cpa',
+      googleTargetCpa: 25 as unknown as string,
+      googleConversionActions: '12345',
+    } as CampaignImplementationDraft);
+
+    expect(c['campaignForm'].controls.googleBiddingStrategy.value).toBe('target-cpa');
+    expect(c['campaignForm'].controls.googleTargetCpa.value).toBe('');
+    expect(c['campaignForm'].controls.googleConversionActions.value).toBe('12345');
+
+    c['restoreGoogleBidding']({} as CampaignImplementationDraft);
+    expect(c['campaignForm'].controls.googleBiddingStrategy.value).toBe('target-cpa');
+  });
+
+  /**
+   * An unknown strategy name is restored AS TYPED rather than blanked — `googleBiddingStrategy`
+   * resolves it away, so the operator sees what they left instead of a silently emptied picker.
+   */
+  it('restores an unknown strategy as typed and resolves it away', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['restoreGoogleBidding']({ googleBiddingStrategy: 'retired-strategy' } as CampaignImplementationDraft);
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.googleBiddingStrategy.value).toBe('retired-strategy');
+    expect(c['googleBiddingStrategy']()).toBe(GOOGLE_BIDDING_DEFAULT_BY_CHANNEL.search);
+    expect(c['googleBiddingPayload']().biddingStrategy).toBeUndefined();
   });
 });

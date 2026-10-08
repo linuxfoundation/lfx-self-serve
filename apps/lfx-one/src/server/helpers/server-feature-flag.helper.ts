@@ -156,6 +156,38 @@ export enum ServerFeatureFlag {
   CampaignServiceDemandGen = 'LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN',
 
   /**
+   * Gates whether a Performance Max, Video or Display Google campaign may be OFFERED at all.
+   *
+   * Offering is not unlocking. On, this permits a Performance Max or Display create and lets the
+   * Video box render disabled-with-a-reason instead of vanishing; no value of it permits a Video
+   * CREATE, which `GOOGLE_VIDEO_CREATE_SUPPORTED` refuses unconditionally one layer up.
+   *
+   * The same question `CampaignServiceDemandGen` asks, about a later set of channels: does the
+   * DEPLOYED campaign-service understand `googleAdsConfig.channel` values beyond `search` and
+   * `demand-gen`? Those three ship with linuxfoundation/lfx-v2-campaign-service#272.
+   *
+   * The failure it prevents depends on HOW old that service is, and the two cases differ:
+   *
+   *   - Before LFXV2-3257 there is no `channel` field to decode. Go's JSON decoder drops the
+   *     unknown key, the dispatcher builds its default SEARCH campaign — real budget, no
+   *     keywords, and per its own `googleAdsConfig.Keywords` doc it "can never serve" — and the
+   *     job reports SUCCESS. The wrong campaign is found later in Google Ads, money spent. This
+   *     silent case is the one `CampaignServiceDemandGen` was written for.
+   *   - From LFXV2-3257 the field exists and an unrecognised value is REFUSED by name
+   *     (`unsupported channel "performance-max" (want "search" or "demand-gen")`) before Google
+   *     is contacted, so nothing is created and nothing is charged. Noisy, not silent.
+   *
+   * Default-deny covers both, because nothing on this side can tell the two apart: there is no
+   * version endpoint, and a successful create proves nothing about WHICH channel it created.
+   *
+   * SEPARATE from the Demand Gen flag rather than widened into it. A deployment running
+   * LFXV2-3257 has had Demand Gen for months and its flag is on; folding these three into that
+   * same flag would turn them on everywhere Demand Gen already is, which is precisely the
+   * guess this mechanism exists to avoid. OFF by default.
+   */
+  CampaignServiceGoogleChannels = 'LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS',
+
+  /**
    * Serve `PATCH /api/campaigns/:campaignId/status` from lfx-v2-campaign-service instead of the
    * per-platform SDK calls in `campaign-proxy.service.ts`. OFF keeps the current behaviour
    * byte-for-byte.

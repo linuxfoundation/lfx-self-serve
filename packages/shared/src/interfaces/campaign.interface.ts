@@ -6,6 +6,9 @@ import type {
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
+  GOOGLE_BIDDING_STRATEGIES,
+  GOOGLE_CAMPAIGN_CHANNELS,
+  GOOGLE_CHANNELS_WITH_CREATIVE,
   MICROSOFT_KEYWORDS_WINDOWS,
 } from '../constants/campaign.constants';
 
@@ -41,7 +44,29 @@ export interface LinkedInTargetingProfileConfig {
 
 export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';
 
-export type CampaignType = 'search' | 'demand-gen' | 'sponsored' | 'social';
+/**
+ * The campaign shapes a brief can ask for.
+ *
+ * The first five are GOOGLE ADS channels and map one-to-one onto `googleAdsConfig.channel`
+ * upstream (`internal/dispatch/googleads.go`); `sponsored` and `social` name the LinkedIn and
+ * Meta/Reddit shapes and never reach that field. `performance-max`, `video` and `display` are
+ * servable only through campaign-service — the legacy in-process create path branches on
+ * `search` alone (`executeGoogleCampaignCreation` in `campaign-proxy.service.ts`) and would
+ * build a DEMAND GEN campaign for any other value rather than rejecting it.
+ */
+export type CampaignType = 'search' | 'demand-gen' | 'performance-max' | 'video' | 'display' | 'sponsored' | 'social';
+
+export type GoogleCampaignChannel = (typeof GOOGLE_CAMPAIGN_CHANNELS)[number];
+
+/**
+ * How a Google campaign bids, named in the Google Ads UI's own vocabulary.
+ *
+ * Which of these a given channel will actually accept is not uniform — see
+ * `GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL`, which reproduces campaign-service's five per-channel
+ * sets. Being a member of this union says only that the name exists, not that it is valid
+ * anywhere it can be typed.
+ */
+export type GoogleBiddingStrategy = (typeof GOOGLE_BIDDING_STRATEGIES)[number];
 
 export type DateRangeOption = 7 | 14 | 30;
 
@@ -504,6 +529,17 @@ export interface CampaignImplementationDraft {
   includeSearch: boolean;
   includeDemandGen: boolean;
   /**
+   * The three channels gated behind `googleChannelsEnabled`.
+   *
+   * Persisted like `includeDemandGen` and restored by the same rule: cleared only when the
+   * deployment has explicitly answered that it cannot create them, never on an unanswered `null`.
+   * REQUIRED rather than optional so "not selected" and "not yet saved" stay distinguishable at
+   * the restore site, which is what `includeDemandGen` already relies on.
+   */
+  includePerformanceMax: boolean;
+  includeVideo: boolean;
+  includeDisplay: boolean;
+  /**
    * The three LinkedIn controls the user picks rather than types (LFXV2-3230): the ad account,
    * the geo target list, and the targeting profile.
    *
@@ -643,6 +679,44 @@ export interface CampaignImplementationDraft {
   microsoftKeywords?: MicrosoftKeyword[];
   /** Empty string records "unset", which is the serve-capable default — see `cpcBid`. */
   microsoftCpcBid?: string;
+  /**
+   * The per-channel Google creative sections, as RAW form text rather than the wire shape: keyed
+   * by the creative's request key, then by field, with list fields still one entry per line.
+   *
+   * Raw deliberately. A draft's job is to give the operator back exactly the form they left,
+   * including the blank line they were about to type into and the entry order they chose;
+   * round-tripping through the split-and-trim that `submit` applies would quietly rewrite their
+   * text every time they switched tabs.
+   *
+   * Optional and restored only when present, on the same rule as the Meta and Microsoft fields
+   * above: a draft saved before these sections shipped has none of them, and absence must leave
+   * the form alone rather than clear it.
+   */
+  googleCreatives?: Record<string, Record<string, string>>;
+  /**
+   * Google's own geo targets, separate from {@link countryCode} rather than a widening of it.
+   *
+   * Empty means "use the event country", which is what this path did before the list existed — so
+   * an absent field and an empty list agree, and neither is a silent change of target.
+   */
+  googleGeoTargets?: string[];
+  /**
+   * The Google bidding section, as RAW form text — the same choice `googleCreatives` and
+   * {@link microsoftCpcBid} make, and for the same reason: a draft hands the operator back the
+   * form they left, and an empty string is "they have not filled this in", which is a different
+   * state from a zero they typed.
+   *
+   * `googleBiddingStrategy` empty means "the channel default", exactly as it does in the form;
+   * `googleConversionActions` is the textarea verbatim, one action per line, unsplit and untrimmed.
+   *
+   * Optional and restored only when present: a draft saved before this section shipped carries
+   * none of these, and absence must leave the form alone rather than clear it.
+   */
+  googleBiddingStrategy?: string;
+  googleTargetCpa?: string;
+  googleTargetRoas?: string;
+  googleCpcBid?: string;
+  googleConversionActions?: string;
 }
 
 /**
@@ -1296,6 +1370,202 @@ export interface HubSpotCampaignCreateRequest {
   sponsors?: CampaignEventSponsor[];
 }
 
+/**
+ * One collectable field of one Google channel's creative.
+ *
+ * The three creative interfaces below say what MAY be sent; this says what a form should ask for,
+ * in what order, under what name, and inside what bounds — the same facts a server-side normalizer
+ * needs to decide which keys to copy off an unvalidated body and whether a value is a list or a
+ * scalar. Both sides read {@link GOOGLE_CREATIVE_FIELD_SPECS}, so a field added to a channel reaches
+ * the form and the wire together instead of being added to one and forgotten in the other.
+ *
+ * `control` is both the property name on the creative object and the form-control name under that
+ * channel's group; they are deliberately the same string so neither side needs a mapping table.
+ */
+export interface GoogleCreativeFieldSpec {
+  control: keyof GoogleDemandGenCreative | keyof GooglePerformanceMaxCreative | keyof GoogleDisplayCreative;
+  /** Field label as shown to an operator. */
+  label: string;
+  /**
+   * `list` is an array of strings on the wire and one entry per line in the form; `text` is a single
+   * string on both. The distinction is not cosmetic — `display.longHeadline` is a scalar while
+   * `performance-max.longHeadlines` is a list, and sending the wrong shape is refused upstream.
+   */
+  kind: 'list' | 'text';
+  /**
+   * Minimum non-empty entries upstream requires ONCE A CREATIVE IS SUPPLIED for this channel. A
+   * channel with no creative at all is accepted (see `GOOGLE_CREATIVE_REQUIRED_NOTICE` for what that
+   * costs), so this is a floor within a creative, never a reason to block a create outright.
+   */
+  min?: number;
+  /** Maximum entries upstream accepts. Omitted where upstream sets no bound. */
+  max?: number;
+  /**
+   * Per-entry character bound. Google states these as display WIDTH, which counts a double-width
+   * character twice; this application measures LENGTH, which is the permissive direction — a form
+   * that refused what Google accepts is the costlier error, and the upstream preflight still
+   * measures width before anything is created.
+   */
+  width?: number;
+  /** Anything true of this field that its bounds do not say, shown beneath the control. */
+  hint?: string;
+}
+
+/**
+ * The Google channels that carry a creative object — the three `GOOGLE_CHANNELS_WITH_CREATIVE` names.
+ *
+ * Derived from the constant rather than spelled out, so the three creative catalogues keyed by it
+ * and anything that indexes them stay provably the same set. Narrower than `GoogleCampaignChannel`
+ * on purpose: Search composes its ad from the top-level copy arrays and Video cannot be created at
+ * all, so neither has an entry in `GOOGLE_CREATIVE_FIELD_SPECS` to index.
+ */
+export type GoogleCreativeChannel = (typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number];
+
+/**
+ * One channel's creative section, resolved for rendering.
+ *
+ * Everything a template needs to draw the section and bind it to the right nested form group,
+ * assembled once in a computed rather than by indexing constants from the template — Angular
+ * templates may only read signals, computed values and pipes, and a template that indexed
+ * `GOOGLE_CREATIVE_REQUEST_KEYS` by channel would also be a second place the group-name mapping
+ * lives.
+ */
+export interface GoogleCreativeSection {
+  channel: GoogleCreativeChannel;
+  /** The channel's own display label, as the channel checkboxes name it. */
+  label: string;
+  /** The nested `campaignForm` group holding this channel's controls. */
+  groupName: string;
+  fields: readonly GoogleCreativeSectionField[];
+}
+
+/**
+ * One field of a resolved creative section: its catalogue entry plus the sentence shown under it.
+ *
+ * The guidance line is assembled when the section is resolved rather than read from a template
+ * method call, because a method on the render path is re-run on every change-detection pass to
+ * produce a string that cannot change — the bounds it states come from the static catalogue.
+ */
+export interface GoogleCreativeSectionField extends GoogleCreativeFieldSpec {
+  /**
+   * The bounds sentence, followed by anything the catalogue entry's own `hint` adds.
+   *
+   * Named apart from `hint` because it SUBSUMES it: `hint` is the catalogue's extra clause, this is
+   * the whole line an operator reads.
+   */
+  guidance: string;
+}
+
+/**
+ * One entry in the bidding-strategy picker, already narrowed to the selected channel.
+ *
+ * The picker is a closed list rather than a free field precisely because the valid set is
+ * per-channel — see `GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL`. The empty-value "channel default"
+ * entry is not one of these; the template renders it separately, because it names no strategy.
+ */
+export interface GoogleBiddingOption {
+  value: GoogleBiddingStrategy;
+  label: string;
+}
+
+/**
+ * The Demand Gen ad's creative, typed to `googleAdsConfig.demandGenCreative`
+ * (`internal/dispatch/googleads.go`'s `googleAdsDemandGenCreativeConfig`).
+ *
+ * Images are URLs the caller already hosts, matching Reddit's and Meta's `imageUrl`. Google is the
+ * one platform that will not fetch a URL itself, so campaign-service downloads each one and uploads
+ * the bytes — which is why a URL that 404s fails the create rather than producing an ad with a
+ * missing image.
+ *
+ * Counts and widths are Demand Gen's own and are NOT the Search ad's. See
+ * `GOOGLE_CREATIVE_FIELD_SPECS['demand-gen']`.
+ */
+export interface GoogleDemandGenCreative {
+  /**
+   * The four marketing-image shapes, each with its own aspect ratio and minimum size enforced by
+   * the upstream preflight. At least one of `marketingImages` or `squareMarketingImages` is
+   * required; the four share a COMBINED cap.
+   */
+  marketingImages?: string[];
+  squareMarketingImages?: string[];
+  portraitImages?: string[];
+  tallPortraitImages?: string[];
+  /** REQUIRED upstream: 1-5 square images. A Demand Gen ad with no logo is refused. */
+  logoImages?: string[];
+  headlines?: string[];
+  descriptions?: string[];
+  /** REQUIRED by Google when a creative is supplied. */
+  businessName?: string;
+  callToActionText?: string;
+}
+
+/**
+ * The Performance Max ASSET GROUP, typed to `googleAdsConfig.performanceMaxCreative`.
+ *
+ * A Performance Max campaign has no ad groups and no ads — its creative lives in a named asset
+ * group, and Google assembles ads from the parts. The counts here are emphatically not Demand Gen's
+ * beside them: three headlines against one, a separate long-headline FIELD TYPE rather than a
+ * headline that happens to be long, and a two-description minimum with a short-description rule.
+ *
+ * This is also the channel where omitting creative is not merely weak but terminal: campaign-service
+ * accepts the create, flags the empty asset group, and then REFUSES the activation
+ * (`internal/platform/googleads/pmax.go`), so the campaign can never serve.
+ */
+export interface GooglePerformanceMaxCreative {
+  /**
+   * `marketingImages` (1.91:1) and `squareMarketingImages` (1:1) are BOTH required here — unlike
+   * Demand Gen, where either satisfies the other. `portraitImages` (4:5) is optional, and the three
+   * share a combined cap.
+   */
+  marketingImages?: string[];
+  squareMarketingImages?: string[];
+  portraitImages?: string[];
+  /** `logoImages` (1:1) is REQUIRED, 1-5. `landscapeLogoImages` (4:1) is optional. */
+  logoImages?: string[];
+  landscapeLogoImages?: string[];
+  headlines?: string[];
+  /** A DISTINCT asset field type (`LONG_HEADLINE`), not a long `headlines` entry. 1-5 required. */
+  longHeadlines?: string[];
+  /** 2-5, and at least one must fit the short slot Google renders on constrained surfaces. */
+  descriptions?: string[];
+  businessName?: string;
+  /** BARE YouTube video ids, never watch URLs — upstream refuses a URL rather than parsing it. */
+  youtubeVideoIds?: string[];
+  /** Defaults upstream to the event name plus " - Asset Group" when blank. */
+  assetGroupName?: string;
+  /** Optional display-path segments rendered after the domain; `path2` renders only after `path1`. */
+  path1?: string;
+  path2?: string;
+}
+
+/**
+ * The responsive display ad, typed to `googleAdsConfig.displayCreative`.
+ *
+ * One shape here departs from both siblings and is the single most likely thing to get wrong:
+ * `longHeadline` is a SINGLE STRING, not a list. Performance Max and Video both take a list of long
+ * headlines; a responsive display ad carries exactly one, and the field is spelled as a scalar
+ * upstream so the envelope cannot carry a second that Google would reject after the ad group exists.
+ */
+export interface GoogleDisplayCreative {
+  /**
+   * The two marketing arrays are reciprocally required — Google requires each when the other is
+   * absent — and share a combined cap. Both logo arrays are optional and capped separately. Their
+   * ratios and minimums are this channel's own, not the same-named Demand Gen or Performance Max
+   * slots'.
+   */
+  marketingImages?: string[];
+  squareMarketingImages?: string[];
+  logoImages?: string[];
+  squareLogoImages?: string[];
+  headlines?: string[];
+  /** Scalar. See the interface docblock. */
+  longHeadline?: string;
+  descriptions?: string[];
+  /** REQUIRED by Google when a creative is supplied. */
+  businessName?: string;
+  callToActionText?: string;
+}
+
 export interface CampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -1310,11 +1580,45 @@ export interface CampaignCreateRequest {
   keywords: CampaignKeyword[];
   headlines: string[];
   descriptions: string[];
-  displayHeadlines?: string[];
-  displayDescriptions?: string[];
-  displayBusinessName?: string;
-  displayCallToAction?: string;
+  /**
+   * The selected Google channel's creative, one key per channel exactly as `googleAdsConfig` names
+   * them upstream. At most one is populated per create, because the BFF emits one config carrying
+   * one `channel` and campaign-service refuses a multi-channel Google create outright.
+   *
+   * `videoCreative` is deliberately absent: {@link GOOGLE_VIDEO_CREATE_SUPPORTED} is `false`, so no
+   * Video campaign is created here for a creative to attach to.
+   *
+   * These replace a `displayHeadlines`/`displayDescriptions`/`displayBusinessName`/
+   * `displayCallToAction` quartet that was declared on this request and read by nothing — no
+   * producer, no consumer, and a 40-character headline bound that does not match Google's 30 for a
+   * responsive display ad. A half-shaped field that no code honours is worse than an absent one:
+   * the next person to need display copy finds it, fills it in, and it goes nowhere.
+   */
+  demandGenCreative?: GoogleDemandGenCreative;
+  performanceMaxCreative?: GooglePerformanceMaxCreative;
+  displayCreative?: GoogleDisplayCreative;
   geoTargets: string[];
+  /**
+   * How the Google campaign bids, and the numbers that go with the strategy it names.
+   *
+   * All five are optional and all five are OMITTED when unset rather than sent as zero. Absent
+   * `biddingStrategy` means the channel's own default (`GOOGLE_BIDDING_DEFAULT_BY_CHANNEL`), and
+   * campaign-service — not this request — is what applies it. The three numbers and the
+   * conversion list are refused upstream when they do not belong to the named strategy or
+   * channel, so sending a zero to mean "none" would be sending a value, not omitting one.
+   *
+   * `targetRoas` is a RATIO, not a percentage: 4 is 400% return on ad spend. `cpcBid` and
+   * `targetCpa` are in whole units of the ad ACCOUNT's currency.
+   *
+   * `conversionActions` entries are either a bare numeric id or a full
+   * `customers/<id>/conversionActions/<id>` resource name — see
+   * {@link GOOGLE_ADS_CONVERSION_ACTION_PATTERN}.
+   */
+  biddingStrategy?: GoogleBiddingStrategy;
+  targetCpa?: number;
+  targetRoas?: number;
+  cpcBid?: number;
+  conversionActions?: string[];
   project?: string;
   driveFolderUrl?: string;
   /**
@@ -2610,6 +2914,35 @@ export interface CampaignListResult {
    * the capability is off.
    */
   demandGenEnabled: boolean;
+
+  /**
+   * Whether this deployment can create a Performance Max, Video or Display Google campaign.
+   *
+   * Read the same way as `demandGenEnabled` and modelled the same way on the client (`boolean |
+   * null`, `null` for unanswered), but derived by the opposite rule: these three channels exist
+   * only on the campaign-service create path, so this is `false` whenever the cutover is dark —
+   * where `demandGenEnabled` is `true`, because the legacy creator serves Demand Gen.
+   */
+  googleChannelsEnabled: boolean;
+
+  /**
+   * Whether a Google creative object supplied with the create will actually reach Google.
+   *
+   * The creative objects ride on `googleAdsConfig`, which only the campaign-service create path
+   * builds. The LEGACY creator composes a Demand Gen ad from `headlines`/`descriptions` alone and
+   * reads no creative key at all, so with the cutover dark everything an operator typed into the
+   * creative section — images, logos, business name, call to action — is discarded in silence and
+   * the create still reports success.
+   *
+   * This is therefore `cutoverOwnsCreate()` and nothing else. It is NOT a third way of saying
+   * `googleChannelsEnabled`: that one additionally requires the Google-channels flag, and the
+   * window where the cutover owns the create with that flag off is one where Demand Gen creative
+   * works perfectly well. Deriving this from that would withhold a working control.
+   *
+   * Read the same way as the two above and modelled the same way on the client (`boolean | null`,
+   * `null` for unanswered).
+   */
+  googleCreativeEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------
