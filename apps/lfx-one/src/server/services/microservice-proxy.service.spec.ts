@@ -6,11 +6,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Mirrors access-check.service.spec.ts / meeting.service.spec.ts: the `@lfx-one/shared/*` alias
 // isn't wired into this app's vitest config, so the real collaborator (ApiClientService) is
 // mocked to isolate the bearerToken-override precedence logic under test.
-const { request } = vi.hoisted(() => ({ request: vi.fn() }));
+const { request, streamRequest } = vi.hoisted(() => ({ request: vi.fn(), streamRequest: vi.fn() }));
 
 vi.mock('./api-client.service', () => ({
   ApiClientService: class {
     public request = request;
+    public streamRequest = streamRequest;
   },
 }));
 
@@ -56,5 +57,33 @@ describe('MicroserviceProxyService bearerToken override precedence', () => {
 
     const [, , bearerToken] = request.mock.calls[0];
     expect(bearerToken).toBe('req-token');
+  });
+});
+
+describe('MicroserviceProxyService.proxyStreamRequest options', () => {
+  let service: MicroserviceProxyService;
+
+  beforeEach(() => {
+    streamRequest.mockReset();
+    streamRequest.mockResolvedValue(new Response(''));
+    service = new MicroserviceProxyService();
+  });
+
+  it('passes the headers and the timeout option through to the stream request', async () => {
+    await service.proxyStreamRequest(req, 'LFX_V2_SERVICE', '/path', 'GET', undefined, { Range: 'bytes=0-9' }, { timeoutMs: 120_000 });
+
+    expect(streamRequest).toHaveBeenCalledTimes(1);
+    const [method, , bearerToken, , customHeaders, options] = streamRequest.mock.calls[0];
+    expect(method).toBe('GET');
+    expect(bearerToken).toBe('req-token');
+    expect(customHeaders).toEqual({ Range: 'bytes=0-9' });
+    expect(options).toEqual({ timeoutMs: 120_000 });
+  });
+
+  it('passes no options when none are given, so the client keeps its own timeout', async () => {
+    await service.proxyStreamRequest(req, 'LFX_V2_SERVICE', '/path');
+
+    const [, , , , , options] = streamRequest.mock.calls[0];
+    expect(options).toBeUndefined();
   });
 });

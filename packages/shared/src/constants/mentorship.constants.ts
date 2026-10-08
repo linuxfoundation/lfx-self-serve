@@ -150,34 +150,63 @@ export const MENTORSHIP_ADMIN_NOTE_SAVE_ERROR_MESSAGES: Readonly<Record<number, 
   404: 'This application no longer exists. Refresh the page and try again.',
 };
 
-/** Admin Create task toasts on Current Mentees: their copy and how long they stay up (ms). */
-export const MENTORSHIP_ADMIN_TASK_CREATE_SUCCESS_SUMMARY = 'Task created';
-export const MENTORSHIP_ADMIN_TASK_CREATE_ERROR_SUMMARY = 'Could not create the task';
-export const MENTORSHIP_ADMIN_TASK_CREATE_ERROR_FALLBACK = "The task may not have been created. Check the mentee's row before trying again.";
-export const MENTORSHIP_ADMIN_TASK_CREATE_TOAST_LIFE = 5000;
+/** Task create toasts on the admin and mentor program details: their copy and how long they stay up (ms). */
+export const MENTORSHIP_TASK_CREATE_SUCCESS_SUMMARY = 'Task created';
+export const MENTORSHIP_TASK_CREATE_PARTIAL_SUMMARY = 'Some tasks were not created';
+export const MENTORSHIP_TASK_CREATE_ERROR_SUMMARY = 'Could not create the task';
+export const MENTORSHIP_TASK_CREATE_TOAST_LIFE = 5000;
 
-/** Task create failures with their own copy, keyed by the BFF's status: a 400 is a mentee no longer accepted, a 403 a lost admin role, a 404 an application that is gone. */
-export const MENTORSHIP_ADMIN_TASK_CREATE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+/**
+ * Shown when the create failed without a status of its own, such as a timeout or a 5xx. The task may still have
+ * been created upstream, whose create is not idempotent, so the copy sends the caller to the row, not to a retry.
+ */
+export const MENTORSHIP_TASK_CREATE_ERROR_FALLBACK = "The task may not have been created. Check the mentee's row before trying again.";
+
+/**
+ * Most applications one task create request takes, so one request cannot fan out without bound. The app sends a
+ * larger group in batches of this size.
+ */
+export const MENTORSHIP_TASK_CREATE_MAX_APPLICATIONS = 100;
+
+/**
+ * Single-mentee task create failures with their own copy, keyed by the BFF's status: a 400 is a mentee no longer
+ * accepted, a 403 a caller who no longer mentors or administers the program, a 404 an application that is gone.
+ */
+export const MENTORSHIP_TASK_CREATE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
   400: 'This mentee can no longer be given tasks. Refresh the page and try again.',
   403: 'You can no longer create tasks on this program. Refresh the page and try again.',
   404: 'This application no longer exists. Refresh the page and try again.',
 };
 
-/** Admin task edit and status-change toasts on Current Mentees: their copy and how long they stay up (ms). */
-export const MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_SUMMARY = 'Could not update the task';
-export const MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_FALLBACK = 'Something went wrong. The task was not changed. Please try again.';
-export const MENTORSHIP_ADMIN_TASK_UPDATE_SUCCESS_SUMMARY = 'Task updated';
-export const MENTORSHIP_ADMIN_TASK_UPDATE_TOAST_LIFE = 5000;
+/** Task edit and status-change toasts on the admin and mentor program details: their copy and how long they stay up (ms). */
+export const MENTORSHIP_TASK_UPDATE_ERROR_SUMMARY = 'Could not update the task';
+export const MENTORSHIP_TASK_UPDATE_ERROR_FALLBACK = 'Something went wrong. The task was not changed. Please try again.';
+export const MENTORSHIP_TASK_UPDATE_SUCCESS_SUMMARY = 'Task updated';
+export const MENTORSHIP_TASK_UPDATE_TOAST_LIFE = 5000;
 
 /**
  * Task update failures with their own copy, keyed by the BFF's status: a 400 is a submitted task that requires a file with none uploaded
- * (upstream's guard; shown only for a change that can trip it), a 403 a lost reviewer role (or the task's own assignee), a 404 a task
- * that is gone.
+ * (upstream's guard; shown only for a change that can trip it), a 403 a caller who no longer mentors or administers the program (or the
+ * task's own assignee), a 404 a task that is gone.
  */
-export const MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+export const MENTORSHIP_TASK_UPDATE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
   400: 'A task that requires a file can only be submitted once a file has been uploaded for it.',
   403: 'You can no longer edit tasks on this program. Refresh the page and try again.',
   404: 'This task no longer exists. Refresh the page and try again.',
+};
+
+/** Task file downloads, for the mentee and the task's reviewers (its mentors and program admins). */
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_SUMMARY = 'Could not download the file';
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_FALLBACK = 'We could not download this file right now. Please try again.';
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_TOAST_LIFE = 5000;
+/** Saved under this name when the response names no file; upstream always sends one. */
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_FALLBACK_NAME = 'submission';
+
+/** Download failures with their own copy, keyed by the BFF's status. A 503 means object storage is not configured upstream. */
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  403: 'You do not have access to this file.',
+  404: 'This file is no longer available. Refresh the page and try again.',
+  503: 'File downloads are unavailable right now. Please try again later.',
 };
 
 /**

@@ -286,7 +286,7 @@ export interface MentorshipApplicantTask {
   updatedOn: string;
   /** ISO `YYYY-MM-DD` when set; omitted for prerequisite tasks with no fixed due date. */
   dueOn?: string;
-  /** Whether the mentee uploaded a file the admin can view or download. */
+  /** Whether the mentee uploaded a file, which the admin or mentor downloads through `GET /api/mentorship/tasks/:taskId/file`. */
   hasSubmission?: boolean;
   /**
    * Whether completing this task requires the mentee to upload a file. Set by the
@@ -296,6 +296,38 @@ export interface MentorshipApplicantTask {
   requiresFileSubmission?: boolean;
 }
 
+/**
+ * Body of `POST /api/mentorship/tasks`, from the admin and mentor program details: one task, created once for each accepted
+ * mentee's application. `dueDate` is a date-only `YYYY-MM-DD`. The assignee, term and owner come from upstream, never from the browser.
+ */
+export interface MentorshipTaskCreateRequest {
+  applicationIds: string[];
+  name: string;
+  description: string;
+  dueDate?: string;
+  requiresFileSubmission?: boolean;
+}
+
+/** Response of `POST /api/mentorship/tasks`: the application ids whose task was created, and those whose was not. */
+export interface MentorshipTaskCreateResponse {
+  created: string[];
+  failed: string[];
+}
+
+/**
+ * Body of `PATCH /api/mentorship/tasks/:taskId`, from the admin and mentor program details. Every field is optional and an absent one
+ * is left unchanged, but at least one is required: the status select sends `status` alone, the edit dialog sends whichever fields it
+ * changed. `dueDate` is a date-only `YYYY-MM-DD`, and an empty string clears it. `requiresFileSubmission` turns the mentee's file
+ * requirement on or off.
+ */
+export interface MentorshipTaskUpdate {
+  name?: string;
+  description?: string;
+  dueDate?: string;
+  requiresFileSubmission?: boolean;
+  status?: MentorshipApplicantTaskStatus;
+}
+
 /** Resolved display fields for one row in the applicant tasks sub-table. */
 export interface MentorshipApplicantTaskRow extends MentorshipApplicantTask {
   statusLabel: string;
@@ -303,7 +335,6 @@ export interface MentorshipApplicantTaskRow extends MentorshipApplicantTask {
   createdLabel: string;
   dueLabel: string;
   updatedLabel: string;
-  canView: boolean;
   canDownload: boolean;
 }
 

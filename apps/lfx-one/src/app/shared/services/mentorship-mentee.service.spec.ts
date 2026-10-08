@@ -4,11 +4,13 @@
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER, MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeApplicationsResponse,
   MentorshipMenteeProfileUpdateRequest,
   MentorshipMenteeProfileUpdateResponse,
   MentorshipMenteeRegisterRequest,
+  MentorshipMenteeTaskFileUploadResponse,
 } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -278,6 +280,117 @@ describe('MentorshipMenteeService — updateMenteeTaskStatus', () => {
     service.updateMenteeTaskStatus(TASK_ID, 'submitted').subscribe({ error: (err: { status: number }) => (status = err.status) });
 
     http.expectOne(TASK_URL).flush({ error: 'conflict' }, { status: 409, statusText: 'Conflict' });
+
+    expect(status).toBe(409);
+    expect(service.menteeApplicationsRevision()).toBe(before);
+  });
+});
+
+describe('MentorshipMenteeService — task files', () => {
+  let service: MentorshipMenteeService;
+  let http: HttpTestingController;
+
+  const TASK_ID = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
+  const FILE_URL = `/api/mentorship/mentee/tasks/${TASK_ID}/file`;
+  const UPLOADED: MentorshipMenteeTaskFileUploadResponse = { fileName: 'my report.pdf', contentType: 'application/pdf', size: 4 };
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MentorshipMenteeService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(MentorshipMenteeService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+  });
+
+  it('posts the raw file as an octet stream with its name in a header, never the URL, and refreshes the cached applications', () => {
+    const file = new File(['data'], 'my report.pdf', { type: 'application/pdf' });
+    const before = service.menteeApplicationsRevision();
+    let result: MentorshipMenteeTaskFileUploadResponse | undefined;
+    let done = false;
+    service.uploadMenteeTaskFile(TASK_ID, file).subscribe({ next: (response) => (result = response), complete: () => (done = true) });
+
+    const req = http.expectOne((request) => request.url === FILE_URL);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toBe(file);
+    expect(req.request.params.keys()).toEqual([]);
+    expect(req.request.urlWithParams).toBe(FILE_URL);
+    expect(req.request.headers.get(MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER)).toBe('my%20report.pdf');
+    expect(req.request.headers.get('Content-Type')).toBe(MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE);
+    req.flush(UPLOADED);
+
+    expect(result).toEqual(UPLOADED);
+    expect(done).toBe(true);
+    expect(service.menteeApplicationsRevision()).toBe(before + 1);
+  });
+
+  it.each(['résumé (final).pdf', '履歴書.docx', 'a/b "c".txt', '100%.pdf'])('URI-encodes the file name %j into the header', (name) => {
+    service.uploadMenteeTaskFile(TASK_ID, new File(['data'], name)).subscribe();
+
+    const req = http.expectOne((request) => request.url === FILE_URL);
+    const header = req.request.headers.get(MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER);
+    expect(header).toBe(encodeURIComponent(name));
+    expect(header).toMatch(/^[\x21-\x7e]+$/);
+    expect(decodeURIComponent(header ?? '')).toBe(name);
+    req.flush(UPLOADED);
+  });
+
+  it('encodes the task id in the upload path', () => {
+    service.uploadMenteeTaskFile('a/b?c', new File(['data'], 'notes.txt')).subscribe();
+
+    http.expectOne((request) => request.url === '/api/mentorship/mentee/tasks/a%2Fb%3Fc/file').flush(UPLOADED);
+  });
+
+  it('drops the cached applications after an upload so the next read fetches them again', () => {
+    service.getMenteeApplications().subscribe();
+    http.expectOne('/api/mentorship/mentee/applications?withTasks=true').flush({ data: [], total: 0 });
+
+    service.uploadMenteeTaskFile(TASK_ID, new File(['data'], 'notes.txt')).subscribe();
+    http.expectOne((request) => request.url === FILE_URL).flush(UPLOADED);
+    service.getMenteeApplications().subscribe();
+
+    http.expectOne('/api/mentorship/mentee/applications?withTasks=true').flush({ data: [], total: 0 });
+  });
+
+  it('leaves the cache alone and passes the failure on when the upload fails', () => {
+    const before = service.menteeApplicationsRevision();
+    let status = 0;
+    service.uploadMenteeTaskFile(TASK_ID, new File(['data'], 'notes.txt')).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne((request) => request.url === FILE_URL).flush({ error: 'too large' }, { status: 413, statusText: 'Payload Too Large' });
+
+    expect(status).toBe(413);
+    expect(service.menteeApplicationsRevision()).toBe(before);
+  });
+
+  it('deletes the file from the task route and refreshes the cached applications', () => {
+    const before = service.menteeApplicationsRevision();
+    let done = false;
+    service.deleteMenteeTaskFile(TASK_ID).subscribe({ complete: () => (done = true) });
+
+    const req = http.expectOne(FILE_URL);
+    expect(req.request.method).toBe('DELETE');
+    req.flush(null, { status: 204, statusText: 'No Content' });
+
+    expect(done).toBe(true);
+    expect(service.menteeApplicationsRevision()).toBe(before + 1);
+  });
+
+  it('encodes the task id in the delete path', () => {
+    service.deleteMenteeTaskFile('a/b?c').subscribe();
+
+    http.expectOne('/api/mentorship/mentee/tasks/a%2Fb%3Fc/file').flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('leaves the cache alone and passes the failure on when the delete fails', () => {
+    const before = service.menteeApplicationsRevision();
+    let status = 0;
+    service.deleteMenteeTaskFile(TASK_ID).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne(FILE_URL).flush({ error: 'conflict' }, { status: 409, statusText: 'Conflict' });
 
     expect(status).toBe(409);
     expect(service.menteeApplicationsRevision()).toBe(before);

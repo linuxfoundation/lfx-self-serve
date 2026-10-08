@@ -7,21 +7,20 @@ The mentor pages under `/mentorship/mentor/*` read their data from the LFX One B
 
 ## Routes
 
-| Method | Path                                                      | Controller method       | Page                                                                                     |
-| ------ | --------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------- |
-| GET    | `/api/mentorship/mentor/programs`                         | `getMentorPrograms`     | My Programs (`/mentorship/mentor/programs`)                                              |
-| GET    | `/api/mentorship/mentor/programs/:programId`              | `getMentorProgram`      | Program detail (`/mentorship/mentor/programs/:programId`)                                |
-| GET    | `/api/mentorship/mentor/profile`                          | `getMentorProfile`      | Profile and Mentoring History (`/mentorship/mentor/profile`)                             |
-| GET    | `/api/mentorship/mentor/has-profile`                      | `hasMentorProfile`      | `mentorRegisterGuard` on Become a Mentor (`/mentorship/mentor`)                          |
-| POST   | `/api/mentorship/mentor/profile`                          | `registerMentorProfile` | Become a Mentor (`/mentorship/mentor`)                                                   |
-| PATCH  | `/api/mentorship/mentor/profile`                          | `updateMentorProfile`   | Save in the profile edit drawer                                                          |
-| GET    | `/api/mentorship/mentor/open-programs`                    | `getOpenPrograms`       | Program picker on Become a Mentor and the profile edit drawer                            |
-| GET    | `/api/mentorship/mentor/requests`                         | `getMentorRequests`     | Request list in the profile edit drawer                                                  |
-| POST   | `/api/mentorship/mentor/requests`                         | `requestToMentor`       | Become a Mentor (after the save) and the profile edit drawer                             |
-| POST   | `/api/mentorship/mentor/requests/:requestId/withdraw`     | `withdrawMentorRequest` | Withdraw on a pending row in the profile edit drawer                                     |
-| PUT    | `/api/mentorship/mentor/applications/:applicationId/note` | `updateApplicationNote` | Save in the note dialog on the program detail's Mentees and Applicants tabs              |
-| POST   | `/api/mentorship/mentor/tasks`                            | `createMenteeTasks`     | Create in the task dialog on the program detail's Mentees tab, for one mentee or a group |
-| PATCH  | `/api/mentorship/mentor/tasks/:taskId/review`             | `reviewMenteeTask`      | Approve and Request Changes on the program detail's Tasks tab                            |
+| Method | Path                                                      | Controller method       | Page                                                                        |
+| ------ | --------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------- |
+| GET    | `/api/mentorship/mentor/programs`                         | `getMentorPrograms`     | My Programs (`/mentorship/mentor/programs`)                                 |
+| GET    | `/api/mentorship/mentor/programs/:programId`              | `getMentorProgram`      | Program detail (`/mentorship/mentor/programs/:programId`)                   |
+| GET    | `/api/mentorship/mentor/profile`                          | `getMentorProfile`      | Profile and Mentoring History (`/mentorship/mentor/profile`)                |
+| GET    | `/api/mentorship/mentor/has-profile`                      | `hasMentorProfile`      | `mentorRegisterGuard` on Become a Mentor (`/mentorship/mentor`)             |
+| POST   | `/api/mentorship/mentor/profile`                          | `registerMentorProfile` | Become a Mentor (`/mentorship/mentor`)                                      |
+| PATCH  | `/api/mentorship/mentor/profile`                          | `updateMentorProfile`   | Save in the profile edit drawer                                             |
+| GET    | `/api/mentorship/mentor/open-programs`                    | `getOpenPrograms`       | Program picker on Become a Mentor and the profile edit drawer               |
+| GET    | `/api/mentorship/mentor/requests`                         | `getMentorRequests`     | Request list in the profile edit drawer                                     |
+| POST   | `/api/mentorship/mentor/requests`                         | `requestToMentor`       | Become a Mentor (after the save) and the profile edit drawer                |
+| POST   | `/api/mentorship/mentor/requests/:requestId/withdraw`     | `withdrawMentorRequest` | Withdraw on a pending row in the profile edit drawer                        |
+| PUT    | `/api/mentorship/mentor/applications/:applicationId/note` | `updateApplicationNote` | Save in the note dialog on the program detail's Mentees and Applicants tabs |
+| PATCH  | `/api/mentorship/mentor/tasks/:taskId/review`             | `reviewMenteeTask`      | Approve and Request Changes on the program detail's Tasks tab               |
 
 ## Flow
 
@@ -141,26 +140,11 @@ PUT /applications/:applicationId/note { note } → isUuid(applicationId), else 4
 
 ## Tasks
 
-A mentor creates a task for one accepted mentee, or the same task for several, from the task dialog on the program detail's Mentees tab, through `POST /api/mentorship/mentor/tasks` (linuxfoundation/lfx-mentorship#214). Upstream has no batch create, so the BFF writes one task per application. The body check and the writes live in `mentorship-mentor-task.helper.ts` (`parseMentorshipMentorTaskCreateRequest`, `createMentorshipMenteeTasks`), which the admin create (`POST /api/mentorship/admin/tasks`) shares, each route logging under its own operation.
+The program detail creates tasks from the Mentees tab's task dialog, for one mentee or a group, and edits a task or sets its status from an expanded row on the Mentees and Applicants tabs. Both write through `POST /api/mentorship/tasks` and `PATCH /api/mentorship/tasks/:taskId`, which admin Current Mentees uses too (linuxfoundation/lfx-mentorship#214, #273). The contract, the toasts and the in-flight tracking are in [Mentorship Task Writes](./mentorship-tasks.md). What the mentor page adds:
 
-```text
-POST /tasks { applicationIds, name, description, dueDate?, requiresFileSubmission? }
-  → 1 to MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS application UUIDs (lowercased, a repeat dropped; refused at the first id past the cap), else 400
-  → name and description required after trimming, within MENTORSHIP_TASK_NAME_MAX / MENTORSHIP_TASK_DESCRIPTION_MAX, else 400
-  → dueDate a calendar YYYY-MM-DD when set, requiresFileSubmission a boolean when set, else 400
-  → GET /mentorship/v1/me                           (the caller's local user id, read once)
-  → per application, at most MENTORSHIP_MENTOR_TASK_CREATE_CONCURRENCY at once:
-      GET  /mentorship/v1/applications/{id}         (must be an accepted mentee's, else 400)
-      POST /mentorship/v1/applications/{id}/tasks   { assignee_id, program_term_id, owner_id, created_by, name, description,
-                                                      category: non_prerequisite, custom: true, due_date?, submit_file? }
-  ← 200 { created, failed }
-```
-
-- **What the browser sends.** Only the application ids and the task's text, due date and file flag. The assignee and term come from the application upstream returns, and the owner and author are the caller's local user id, so none of them is taken from the browser. A mentor's task is always a custom, non-prerequisite task; a required file is sent as `submit_file: 'required'`.
-- **Who can be given a task.** Upstream takes a task only on an accepted mentee's application, so the BFF refuses a graduated, withdrawn or mentor application (`isMentorshipTaskAssignableApplication`) before writing. The Mentees tab offers create only on accepted mentees, and Create Group Task preselects only them.
-- **Access.** Upstream decides who may write: an active mentor or program administrator of the application's program, else 403. Both upstream calls use the caller's token.
-- **One application or many.** With one application, a failure passes through with its status. With several, each runs on its own (`Promise.allSettled`), and the 200 lists the ids in `created` and `failed` in request order; each failure logs a warning with the application id, status and code, never the task text.
-- **App side.** `MentorProgramDetailComponent` takes the tab's `taskCreateRequested` and creates through `MentorTaskCreateService`, which owns the toasts: `MENTORSHIP_MENTOR_TASK_CREATE_SUCCESS_SUMMARY` (naming the count for a group), `MENTORSHIP_MENTOR_TASK_CREATE_PARTIAL_SUMMARY` as a warning when some failed (naming the missed mentees), an error when none was created, and for a failed request `MENTORSHIP_MENTOR_TASK_CREATE_ERROR_MESSAGES` for a 400, 403 or 404, the server's message for the impersonation 403, else the fallback. Upstream's create is not idempotent, and a failure without a status of its own (a timeout, a 5xx) may still have created the task, so every failure copy sends the mentor to the row rather than to a retry. A group past `MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS` (shared, also the BFF's cap) is sent in batches of that size, one after another, with a failed batch counting its mentees as failed. After every create attempt, whatever its outcome, the page re-reads the detail without its loading state, so the rows show what upstream holds on the Mentees and Tasks tabs; the re-read is dropped if the mentor has left or moved to another program or a later re-read has started, and a failed re-read keeps the rows on screen. The create is not tied to the page, so it and its toast finish if the mentor leaves first.
+- **Create.** The Mentees tab offers create only on accepted mentees, and Create Group Task preselects only them. `MentorProgramDetailComponent` takes the tab's `taskCreateRequested` and creates through `MentorshipTaskCreateService`, passing the mentees' names so a partial failure can name who was missed.
+- **Edit and status.** The page hands both tabs `patchSavedTask`, which they pass to their task panels. A saved task is written into the mentee and applicant lists at once, since an accepted or graduated mentee is listed on both tabs under one application id.
+- **Re-read.** After every create attempt, whatever its outcome, and after every saved edit or status change, the page re-reads the detail without its loading state, so the progress, the counts and the Tasks tab show what upstream holds. The re-read is dropped if the mentor has left or moved to another program or a later re-read has started, and a failed re-read keeps the rows on screen.
 
 ## Task reviews
 
@@ -177,7 +161,7 @@ PATCH /tasks/:taskId/review { status } → isUuid(taskId), else 400
 - **The decision.** Approve sends `complete`, and upstream marks the task complete. Request Changes sends `incomplete`, which returns the task to the mentee. No comment goes with it: upstream's review takes only the status (U7). Upstream answers 200 with the task; the BFF drops the body, since the page re-reads the detail.
 - **Only a submitted task.** Upstream refuses `complete` unless the task is `submitted`, but takes `incomplete` from any state, so a stale row could send an approved task back. The BFF reads the task first and refuses with 409 (`MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_ERROR_CODE`) unless it is `submitted`, for either decision. The read and the write are two calls, so a change in between is still possible; upstream's own 409 then passes through.
 - **Access.** Upstream decides who may review: the gateway lets a task's managers through, and the service then needs an active mentor or program administrator of its program, else 403. A task that no longer exists answers 404. Both pass through unchanged, from the read or the write, and both calls use the caller's token.
-- **App side.** The Tasks tab rows carry the upstream task id (`taskId`) next to the row key, and emit `reviewRequested { taskId, status }`. `MentorProgramDetailComponent` reviews through `MentorTaskReviewService`, which owns the toasts: `MENTORSHIP_MENTOR_TASK_REVIEW_SUCCESS_SUMMARIES` per decision, and on failure `MENTORSHIP_MENTOR_TASK_REVIEW_ERROR_MESSAGES` for a 403, 404 or 409, the server's message for the impersonation 403, else the fallback. After every review, whatever its outcome, the page re-reads the detail without its loading state, as after a task create, so the task leaves Awaiting Review and the tab count moves; on a 409 that re-read shows the task as it now is. The row's buttons stay disabled from the click until the latest re-read settles. A re-read that a newer one supersedes releases nothing, so a stale row is not sent twice. A failed re-read releases the buttons on the old rows, and the BFF's 409 then refuses a second review of the task. My Programs reads its counts on every visit, so its card is current when the mentor goes back. The review is not tied to the page, so it and its toast finish if the mentor leaves first. Open Submission stays coming soon until file upload lands (linuxfoundation/lfx-mentorship#204).
+- **App side.** The Tasks tab rows carry the upstream task id (`taskId`) next to the row key, and emit `reviewRequested { taskId, status }`. `MentorProgramDetailComponent` reviews through `MentorTaskReviewService`, which owns the toasts: `MENTORSHIP_MENTOR_TASK_REVIEW_SUCCESS_SUMMARIES` per decision, and on failure `MENTORSHIP_MENTOR_TASK_REVIEW_ERROR_MESSAGES` for a 403, 404 or 409, the server's message for the impersonation 403, else the fallback. After every review, whatever its outcome, the page re-reads the detail without its loading state, as after a task create, so the task leaves Awaiting Review and the tab count moves; on a 409 that re-read shows the task as it now is. The row's buttons stay disabled from the click until the latest re-read settles. A re-read that a newer one supersedes releases nothing, so a stale row is not sent twice. A failed re-read releases the buttons on the old rows, and the BFF's 409 then refuses a second review of the task. My Programs reads its counts on every visit, so its card is current when the mentor goes back. The review is not tied to the page, so it and its toast finish if the mentor leaves first. Download Submission (`MENTORSHIP_MENTOR_TASK_OPEN_SUBMISSION_LABEL`) shows on a task with a file and saves it through `MentorshipTaskFileService` (see [Submission files](./mentorship-tasks.md#submission-files)).
 
 ## Profile and Mentoring History
 

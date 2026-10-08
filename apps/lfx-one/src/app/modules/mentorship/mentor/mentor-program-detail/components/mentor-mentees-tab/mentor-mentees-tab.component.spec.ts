@@ -4,7 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
-  MentorshipMentorTaskCreateRequest,
+  MentorshipTaskCreateRequest,
   MentorshipNoteRequest,
   MentorshipProgramMentee,
   MentorshipTaskDialogAssignee,
@@ -14,8 +14,9 @@ import { MessageService } from 'primeng/api';
 import { Observable, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AdminTaskUpdateService } from '../../../../services/admin-task-update.service';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
+import { MentorshipTaskFileService } from '../../../../services/mentorship-task-file.service';
+import { MentorshipTaskUpdateService } from '../../../../services/mentorship-task-update.service';
 import { MentorMenteesTabComponent } from './mentor-mentees-tab.component';
 
 describe('MentorMenteesTabComponent', () => {
@@ -64,6 +65,8 @@ describe('MentorMenteesTabComponent', () => {
   let openCreate: ReturnType<typeof vi.fn>;
   let openCreateGroup: ReturnType<typeof vi.fn>;
   let openEdit: ReturnType<typeof vi.fn>;
+  let update: ReturnType<typeof vi.fn>;
+  let taskSaved: ReturnType<typeof vi.fn>;
 
   const setup = (
     mentees: MentorshipProgramMentee[] = [mentee(), mentee({ id: 'mnt_2', name: 'Priya Shah', status: 'graduated', tasks: [], tasksTotal: 0 })]
@@ -71,6 +74,8 @@ describe('MentorMenteesTabComponent', () => {
     openCreate = vi.fn().mockReturnValue(of(undefined) satisfies Observable<MentorshipTaskFormValue | undefined>);
     openCreateGroup = vi.fn().mockReturnValue(of(undefined) satisfies Observable<MentorshipTaskFormValue | undefined>);
     openEdit = vi.fn().mockReturnValue(of(undefined) satisfies Observable<MentorshipTaskFormValue | undefined>);
+    update = vi.fn().mockReturnValue(of(null));
+    taskSaved = vi.fn();
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -79,13 +84,14 @@ describe('MentorMenteesTabComponent', () => {
         provideNoopAnimations(),
         MessageService,
         { provide: MentorshipTaskDialogService, useValue: { openCreate, openCreateGroup, openEdit } },
-        // The panel also injects the admin task-update service; mentor rows are not editable, so it is never called.
-        { provide: AdminTaskUpdateService, useValue: { update: vi.fn(), isUpdating: () => false } },
+        { provide: MentorshipTaskUpdateService, useValue: { update, isUpdating: () => false } },
+        { provide: MentorshipTaskFileService, useValue: { download: vi.fn() } },
       ],
     });
 
     fixture = TestBed.createComponent(MentorMenteesTabComponent);
     fixture.componentRef.setInput('mentees', mentees);
+    fixture.componentRef.setInput('taskSaved', taskSaved);
     fixture.detectChanges();
   };
 
@@ -153,6 +159,21 @@ describe('MentorMenteesTabComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_3"]')).not.toBeNull();
   });
 
+  it('saves a task edited from an expanded row and hands it to the page', () => {
+    const saved = { ...mentee().tasks![1], name: 'Midterm Report (revised)' };
+    openEdit.mockReturnValue(
+      of({ taskId: 'tsk_2', name: saved.name, description: saved.description, requiresFileSubmission: false, assignedMenteeIds: [], status: 'completed' })
+    );
+    update.mockReturnValue(of(saved));
+    element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-mentee-view-tasks-mnt_1"]')?.querySelector<HTMLButtonElement>('button')?.click();
+    fixture.detectChanges();
+
+    element().querySelector<HTMLElement>('[data-testid="mentorship-applicant-task-edit-tsk_2"]')?.querySelector<HTMLButtonElement>('button')?.click();
+
+    expect(update).toHaveBeenCalledWith('tsk_2', { name: 'Midterm Report (revised)' }, true);
+    expect(taskSaved).toHaveBeenCalledWith('mnt_1', saved);
+  });
+
   it("opens the task-form dialog with just the row's mentee when the plus control is clicked", () => {
     element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-mentee-create-task-mnt_1"]')?.querySelector<HTMLButtonElement>('button')?.click();
 
@@ -192,7 +213,7 @@ describe('MentorMenteesTabComponent', () => {
         assignedMenteeIds: ['mnt_1', 'mnt_3'],
       } satisfies MentorshipTaskFormValue)
     );
-    const requests: MentorshipMentorTaskCreateRequest[] = [];
+    const requests: MentorshipTaskCreateRequest[] = [];
     fixture.componentInstance.taskCreateRequested.subscribe((request) => requests.push(request));
 
     fixture.componentInstance['onCreateGroupTask']();
@@ -209,7 +230,7 @@ describe('MentorMenteesTabComponent', () => {
   });
 
   it("asks the parent to create the row's task, and nothing when the dialog is cancelled", () => {
-    const requests: MentorshipMentorTaskCreateRequest[] = [];
+    const requests: MentorshipTaskCreateRequest[] = [];
     fixture.componentInstance.taskCreateRequested.subscribe((request) => requests.push(request));
 
     fixture.componentInstance['onCreateTask'](mentee());

@@ -51,8 +51,35 @@ export const MENTORSHIP_APPLICATIONS_PATH = '/mentorship/v1/applications';
 /** Upstream mentor invites; the invited mentor answers at `/{token}/accept` or `/{token}/decline`. */
 export const MENTORSHIP_MENTOR_INVITES_PATH = '/mentorship/v1/mentor-invites';
 
-/** Upstream tasks collection; a mentee changes a task's status at `/{id}/submission`, and a mentor reviews it at `/{id}/review`. */
+/**
+ * Upstream tasks collection; a mentee changes a task's status at `/{id}/submission`, and a mentor reviews it at `/{id}/review`.
+ * A task's submission file is uploaded at `/{id}/file-upload`, read at `/{id}/file-download` and removed at `/{id}/file`.
+ */
 export const MENTORSHIP_TASKS_PATH = '/mentorship/v1/tasks';
+
+/**
+ * Timeout (ms) for a task file upload or download, matching the upstream and gateway transfer timeout, since a 20 MB file
+ * can outlast the API client's 30 s default.
+ */
+export const MENTORSHIP_TASK_FILE_TRANSFER_TIMEOUT_MS = 120_000;
+
+/** Upstream download headers the BFF passes on to the browser. Range support keeps a resumed download working. */
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_HEADERS: readonly string[] = [
+  'content-type',
+  'content-length',
+  'content-disposition',
+  'cache-control',
+  'etag',
+  'last-modified',
+  'content-range',
+  'accept-ranges',
+];
+
+/** Of those, the ones that count encoded bytes, so they are dropped when upstream compresses the body that `fetch` decodes. */
+export const MENTORSHIP_TASK_FILE_ENCODED_BYTE_HEADERS: readonly string[] = ['content-length', 'content-range', 'accept-ranges'];
+
+/** The one `Range` shape passed upstream, a single byte range; any other is dropped and the whole file is sent. */
+export const MENTORSHIP_TASK_FILE_RANGE_PATTERN = /^bytes=(\d{1,15}-\d{0,15}|-\d{1,15})$/;
 
 /**
  * Upstream programs collection. A program's terms live at `/{id}/terms/{termId}` and a term takes
@@ -164,8 +191,8 @@ export const MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES: readonly MentorshipUpstr
 /** Most application task reads the mentee applications read, and the mentor program detail's fallback, run at once. */
 export const MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY = 5;
 
-/** Most applications a mentor's task create reads and writes at once; upstream has no batch create. */
-export const MENTORSHIP_MENTOR_TASK_CREATE_CONCURRENCY = 3;
+/** Most applications one task create reads and writes at once; upstream has no batch create. */
+export const MENTORSHIP_TASK_CREATE_CONCURRENCY = 3;
 
 /**
  * How an application's status reads on a mentor's program detail. `hold` is an administrator's hold on an
@@ -188,8 +215,8 @@ export const MENTORSHIP_MENTOR_PROGRAM_TASK_STATUS_MAP: Readonly<Record<Mentorsh
   complete: 'completed',
 };
 
-/** How a task status the admin picks is written upstream: the reverse of `MENTORSHIP_MENTOR_PROGRAM_TASK_STATUS_MAP`. */
-export const MENTORSHIP_ADMIN_TASK_STATUS_TO_UPSTREAM: Readonly<Record<MentorshipApplicantTaskStatus, MentorshipUpstreamTaskStatus>> = {
+/** How a task status an admin or mentor picks is written upstream: the reverse of `MENTORSHIP_MENTOR_PROGRAM_TASK_STATUS_MAP`. */
+export const MENTORSHIP_TASK_STATUS_TO_UPSTREAM: Readonly<Record<MentorshipApplicantTaskStatus, MentorshipUpstreamTaskStatus>> = {
   pending: 'incomplete',
   'in-progress': 'in_progress',
   submitted: 'submitted',

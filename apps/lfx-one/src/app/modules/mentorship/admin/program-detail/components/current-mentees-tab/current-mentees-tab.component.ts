@@ -53,7 +53,7 @@ import {
   MentorshipApplicantTask,
   MentorshipCurrentMenteeAction,
   MentorshipAttendanceType,
-  MentorshipMentorTaskCreateRequest,
+  MentorshipTaskCreateRequest,
   MentorshipProgramApplicant,
   MentorshipRowAction,
   MentorshipTaskFormValue,
@@ -80,8 +80,8 @@ import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, distinctUntilChanged, map, Observable, of, switchMap, take, tap } from 'rxjs';
 
 import { AdminNoteSaveService } from '../../../../services/admin-note-save.service';
-import { AdminTaskCreateService } from '../../../../services/admin-task-create.service';
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
+import { MentorshipTaskCreateService } from '../../../../services/mentorship-task-create.service';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 import { ApplicantTasksPanelComponent } from '../../../../components/applicant-tasks-panel/applicant-tasks-panel.component';
 import { MenteeNoteDialogComponent } from '../../../../components/mentee-note-dialog/mentee-note-dialog.component';
@@ -134,7 +134,7 @@ export class CurrentMenteesTabComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly noteSave = inject(AdminNoteSaveService);
-  private readonly taskCreate = inject(AdminTaskCreateService);
+  private readonly taskCreate = inject(MentorshipTaskCreateService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly programId = input.required<string>();
@@ -524,7 +524,7 @@ export class CurrentMenteesTabComponent {
       return;
     }
     this.decisionInFlight.set(true);
-    const request: MentorshipMentorTaskCreateRequest = {
+    const request: MentorshipTaskCreateRequest = {
       applicationIds: [mentee.id],
       name: value.name,
       description: value.description,

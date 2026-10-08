@@ -49,8 +49,8 @@ export async function resolveFormationFlag(featureFlagService: FeatureFlagServic
 /**
  * True when the project named by `slug` is in a stage that has a Formation checklist
  * (`isFormationStageGate`). `ProjectService.getProject` is `shareReplay`-cached per slug and maps
- * not-found and transient errors to `null`, so this never rejects and shares one HTTP request with
- * `projectQueryParamGuard` on the same navigation.
+ * not-found and transient errors to `null`, so this never rejects. This ordinary cache is separate
+ * from `projectQueryParamGuard`'s strict recovery lookup cache.
  */
 export async function isFormationChecklistProject(projectService: ProjectService, slug: string): Promise<boolean> {
   const project = await firstValueFrom(projectService.getProject(slug, false));

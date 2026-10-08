@@ -2,18 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { environment } from '@environments/environment';
 import { MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES } from '@lfx-one/shared/constants';
-import { MentorshipMentorProgramApplicant, MentorshipNoteRequest } from '@lfx-one/shared/interfaces';
+import { MentorshipApplicantTaskRow, MentorshipApplicantTaskStatus, MentorshipMentorProgramApplicant, MentorshipNoteRequest } from '@lfx-one/shared/interfaces';
 import { buildMentorshipProgramsUrl } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
-import { EMPTY } from 'rxjs';
+import { EMPTY, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AdminTaskUpdateService } from '../../../../services/admin-task-update.service';
+import { ApplicantTasksPanelComponent } from '../../../../components/applicant-tasks-panel/applicant-tasks-panel.component';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
+import { MentorshipTaskFileService } from '../../../../services/mentorship-task-file.service';
+import { MentorshipTaskUpdateService } from '../../../../services/mentorship-task-update.service';
 import { MentorApplicantsTabComponent } from './mentor-applicants-tab.component';
 
 describe('MentorApplicantsTabComponent', () => {
@@ -43,6 +46,8 @@ describe('MentorApplicantsTabComponent', () => {
   });
 
   let fixture: ComponentFixture<MentorApplicantsTabComponent>;
+  let update: ReturnType<typeof vi.fn>;
+  let taskSaved: ReturnType<typeof vi.fn>;
 
   /**
    * Standard set: two pending rows the user can search across (Ifeoma / Diego), one
@@ -58,6 +63,8 @@ describe('MentorApplicantsTabComponent', () => {
       applicant({ id: 'app_4', name: 'Bob Wilson', status: 'declined' }),
     ]
   ): void => {
+    update = vi.fn().mockReturnValue(of(null));
+    taskSaved = vi.fn();
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MentorApplicantsTabComponent],
@@ -71,13 +78,14 @@ describe('MentorApplicantsTabComponent', () => {
           provide: MentorshipTaskDialogService,
           useValue: { openCreate: vi.fn().mockReturnValue(EMPTY), openCreateGroup: vi.fn().mockReturnValue(EMPTY), openEdit: vi.fn().mockReturnValue(EMPTY) },
         },
-        // The panel also injects the admin task-update service; mentor rows are not editable, so it is never called.
-        { provide: AdminTaskUpdateService, useValue: { update: vi.fn(), isUpdating: () => false } },
+        { provide: MentorshipTaskUpdateService, useValue: { update, isUpdating: () => false } },
+        { provide: MentorshipTaskFileService, useValue: { download: vi.fn() } },
       ],
     });
 
     fixture = TestBed.createComponent(MentorApplicantsTabComponent);
     fixture.componentRef.setInput('applicants', applicants);
+    fixture.componentRef.setInput('taskSaved', taskSaved);
     fixture.detectChanges();
   };
 
@@ -177,6 +185,22 @@ describe('MentorApplicantsTabComponent', () => {
     element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-applicant-view-tasks-app_1"]')?.querySelector<HTMLButtonElement>('button')?.click();
     fixture.detectChanges();
     expect(element().querySelector('[data-testid="mentorship-mentor-applicant-tasks-expanded-app_1"]')).toBeNull();
+  });
+
+  it('saves a status set from an expanded row and hands the task to the page', () => {
+    const saved = { ...applicant().tasks![0], status: 'completed' as const };
+    update.mockReturnValue(of(saved));
+    element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-applicant-view-tasks-app_1"]')?.querySelector<HTMLButtonElement>('button')?.click();
+    fixture.detectChanges();
+    const panel = fixture.debugElement.query(By.directive(ApplicantTasksPanelComponent)).componentInstance as unknown as {
+      onStatusChange: (task: MentorshipApplicantTaskRow, event: { value: MentorshipApplicantTaskStatus }) => void;
+      visibleTaskRows: () => MentorshipApplicantTaskRow[];
+    };
+
+    panel.onStatusChange(panel.visibleTaskRows()[0], { value: 'completed' });
+
+    expect(update).toHaveBeenCalledWith('tsk_1', { status: 'completed' }, false);
+    expect(taskSaved).toHaveBeenCalledWith('app_1', saved);
   });
 
   it('does not render View Tasks when the applicant has no assigned tasks', () => {

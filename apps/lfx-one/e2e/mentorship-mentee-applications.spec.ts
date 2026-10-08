@@ -76,6 +76,7 @@ test.describe('Mentee applications — per-application empty states', () => {
           category: 'non_prerequisite',
           status: 'incomplete',
           submitFile: null,
+          hasFile: false,
           updatedOn: '2026-06-02T10:00:00Z',
         },
       ],

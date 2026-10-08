@@ -199,24 +199,6 @@ export interface MentorshipUpstreamApplicationNoteUpdate {
 }
 
 /**
- * Body of `POST /api/mentorship/mentor/tasks`: one task, created once for each accepted mentee's application.
- * `dueDate` is a date-only `YYYY-MM-DD`. The assignee, term and owner come from upstream, never from the browser.
- */
-export interface MentorshipMentorTaskCreateRequest {
-  applicationIds: string[];
-  name: string;
-  description: string;
-  dueDate?: string;
-  requiresFileSubmission?: boolean;
-}
-
-/** Response of `POST /api/mentorship/mentor/tasks`: the application ids whose task was created, and those whose was not. */
-export interface MentorshipMentorTaskCreateResponse {
-  created: string[];
-  failed: string[];
-}
-
-/**
  * Body of `POST /mentorship/v1/applications/{id}/tasks`. `assignee_id` must be the accepted mentee's user id, and
  * `program_term_id` is what lists the task under its term. Upstream sets `status` to `incomplete`.
  */

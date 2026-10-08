@@ -46,6 +46,12 @@
         <p class="text-sm text-gray-500">Use the project selector in the sidebar to choose a foundation</p>
       </div>
     </div>
+  } @else if (emptyState(); as state) {
+    <lfx-org-lens-empty-state
+      [state]="state"
+      testId="foundation-health-empty"
+      [values]="{ orgName: selectedFoundation()?.name }"
+      (retry)="retry()"></lfx-org-lens-empty-state>
   } @else {
     <!-- Carousel Container -->
     <div class="relative overflow-hidden">
