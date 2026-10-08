@@ -15,6 +15,7 @@ import { Observable, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
+import { MentorshipTaskFileService } from '../../../../services/mentorship-task-file.service';
 import { MentorshipTaskUpdateService } from '../../../../services/mentorship-task-update.service';
 import { MentorMenteesTabComponent } from './mentor-mentees-tab.component';
 
@@ -84,6 +85,7 @@ describe('MentorMenteesTabComponent', () => {
         MessageService,
         { provide: MentorshipTaskDialogService, useValue: { openCreate, openCreateGroup, openEdit } },
         { provide: MentorshipTaskUpdateService, useValue: { update, isUpdating: () => false } },
+        { provide: MentorshipTaskFileService, useValue: { download: vi.fn() } },
       ],
     });
 

@@ -286,7 +286,7 @@ export interface MentorshipApplicantTask {
   updatedOn: string;
   /** ISO `YYYY-MM-DD` when set; omitted for prerequisite tasks with no fixed due date. */
   dueOn?: string;
-  /** Whether the mentee uploaded a file the admin can view or download. */
+  /** Whether the mentee uploaded a file, which the admin or mentor downloads through `GET /api/mentorship/tasks/:taskId/file`. */
   hasSubmission?: boolean;
   /**
    * Whether completing this task requires the mentee to upload a file. Set by the
@@ -335,7 +335,6 @@ export interface MentorshipApplicantTaskRow extends MentorshipApplicantTask {
   createdLabel: string;
   dueLabel: string;
   updatedLabel: string;
-  canView: boolean;
   canDownload: boolean;
 }
 

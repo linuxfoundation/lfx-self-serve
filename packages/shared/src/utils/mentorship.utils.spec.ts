@@ -1347,7 +1347,6 @@ describe('program detail helpers', () => {
       createdLabel: 'May 14, 2026',
       dueLabel: '—',
       updatedLabel: 'Sep 1, 2026',
-      canView: true,
       canDownload: true,
     });
     expect(mentorshipApplicantTaskRows(tasks)[1]).toMatchObject({
@@ -1893,15 +1892,15 @@ describe('buildMentorshipMenteeTaskView', () => {
       title: 'Submit resume',
       description: 'Upload your resume',
       status: 'submitted',
-      submitFile: 'https://files.example.com/r.pdf',
-      fileUrl: 'https://files.example.com/r.pdf',
+      submitFile: 'required',
+      hasFile: true,
       submittedDate: '2026-09-12T00:00:00Z',
     });
     expect(view.submitted).toBe(true);
     expect(view.inProgress).toBe(false);
     expect(view.hasUploadedFile).toBe(true);
-    expect(view.needsUpload).toBe(false);
-    expect(view.fileUrl).toBe('https://files.example.com/r.pdf');
+    expect(view.requiresFile).toBe(false);
+    expect(view.fileLocked).toBe(false);
     expect(view.submittedDate).toBe('2026-09-12T00:00:00Z');
     expect(view.statusClass).not.toBe('');
   });
@@ -1914,6 +1913,7 @@ describe('buildMentorshipMenteeTaskView', () => {
         description: 'Complete the challenge',
         status: 'in_progress',
         submitFile: 'required',
+        hasFile: false,
         dueDate: '2026-09-30T00:00:00Z',
       },
       Date.parse('2026-09-30T23:59:59Z')
@@ -1922,35 +1922,36 @@ describe('buildMentorshipMenteeTaskView', () => {
     expect(view.inProgress).toBe(true);
     expect(view.submitted).toBe(false);
     expect(view.hasUploadedFile).toBe(false);
-    expect(view.needsUpload).toBe(true);
-    expect(view.fileUrl).toBeNull();
+    expect(view.requiresFile).toBe(true);
     expect(view.dueDate).toBe('2026-09-30T00:00:00Z');
     expect(view.submittedDate).toBeNull();
   });
 
-  it('treats a task with no submission requirement as neither uploaded nor pending upload', () => {
+  it('treats a task with no submission requirement as neither uploaded nor needing an upload', () => {
     const view = buildMentorshipMenteeTaskView({
       id: 't3',
       title: 'Read the guide',
       description: 'No file needed',
       status: 'pending',
       submitFile: null,
+      hasFile: false,
     });
     expect(view.hasUploadedFile).toBe(false);
-    expect(view.needsUpload).toBe(false);
+    expect(view.requiresFile).toBe(false);
   });
 
-  it('surfaces a submitFile URL as the file URL when fileUrl is absent', () => {
+  it('locks the file of a completed task, which reads as submitted', () => {
     const view = buildMentorshipMenteeTaskView({
       id: 't4',
-      title: 'Uploaded via submitFile',
-      description: 'The URL lives on submitFile only',
-      status: 'submitted',
-      submitFile: 'https://files.example.com/only-submitfile.pdf',
+      title: 'Reviewed task',
+      description: 'Approved by the mentor',
+      status: 'complete',
+      submitFile: 'required',
+      hasFile: true,
     });
+    expect(view.status).toBe('submitted');
+    expect(view.fileLocked).toBe(true);
     expect(view.hasUploadedFile).toBe(true);
-    expect(view.needsUpload).toBe(false);
-    expect(view.fileUrl).toBe('https://files.example.com/only-submitfile.pdf');
   });
 
   it('normalises an unrecognised status to a real, styled option', () => {
@@ -1960,6 +1961,7 @@ describe('buildMentorshipMenteeTaskView', () => {
       description: 'From an unrecognised backend value',
       status: 'mystery' as never,
       submitFile: null,
+      hasFile: false,
     });
     // Falls back to a selectable value so the dropdown, badge styling, and the
     // Pending filter all agree instead of leaving it blank/unstyled.
@@ -1970,7 +1972,7 @@ describe('buildMentorshipMenteeTaskView', () => {
   });
 
   it('marks a task past due once its due date has ended, and never one without a due date', () => {
-    const input = { id: 't6', title: 'Late task', description: 'Synthetic task', status: 'in_progress' as const, submitFile: null };
+    const input = { id: 't6', title: 'Late task', description: 'Synthetic task', status: 'in_progress' as const, submitFile: null, hasFile: false };
     const now = Date.parse('2026-10-01T00:00:00Z');
     expect(buildMentorshipMenteeTaskView({ ...input, dueDate: '2026-09-30T00:00:00Z' }, now).pastDue).toBe(true);
     expect(buildMentorshipMenteeTaskView({ ...input, dueDate: '2026-10-01T00:00:00Z' }, now).pastDue).toBe(false);
@@ -2021,21 +2023,15 @@ describe('mentorshipTaskDueCutoffMs', () => {
 });
 
 describe('buildMentorshipMenteeTaskView requiresFile', () => {
-  const build = (submitFile: string | null, fileUrl?: string): MentorshipMenteeTaskView =>
-    buildMentorshipMenteeTaskView({ id: 't1', title: 'Task', description: 'Synthetic task', status: 'in_progress', submitFile, fileUrl });
+  const build = (submitFile: 'required' | null, hasFile = false): MentorshipMenteeTaskView =>
+    buildMentorshipMenteeTaskView({ id: 't1', title: 'Task', description: 'Synthetic task', status: 'in_progress', submitFile, hasFile });
 
   it('is true for submit_file "required" with no stored file', () => {
     expect(build('required').requiresFile).toBe(true);
   });
 
-  it('is true for a URL submit_file with no stored file, even though View and Download show', () => {
-    const view = build('https://files.example.com/template.pdf');
-    expect(view.requiresFile).toBe(true);
-    expect(view.hasUploadedFile).toBe(true);
-  });
-
   it('is false when a file is stored', () => {
-    expect(build('required', 'https://files.example.com/upload.pdf').requiresFile).toBe(false);
+    expect(build('required', true).requiresFile).toBe(false);
   });
 
   it('is false when the task needs no file', () => {
@@ -2064,8 +2060,8 @@ describe('isMentorshipMentorTaskReviewDecision', () => {
 });
 
 describe('getMentorshipMenteeTaskStatusOptions', () => {
-  const taskView = (status: MentorshipMenteeTaskStatus, submitFile: string | null = null, fileUrl?: string): MentorshipMenteeTaskView =>
-    buildMentorshipMenteeTaskView({ id: 't1', title: 'Task', description: 'Synthetic task', status, submitFile, fileUrl });
+  const taskView = (status: MentorshipMenteeTaskStatus, submitFile: 'required' | null = null, hasFile = false): MentorshipMenteeTaskView =>
+    buildMentorshipMenteeTaskView({ id: 't1', title: 'Task', description: 'Synthetic task', status, submitFile, hasFile });
   const disabledByValue = (view: MentorshipMenteeTaskView): Record<string, boolean> =>
     Object.fromEntries(getMentorshipMenteeTaskStatusOptions(view).options.map((option) => [option.value, option.disabled]));
 
@@ -2094,7 +2090,7 @@ describe('getMentorshipMenteeTaskStatusOptions', () => {
   });
 
   it('keeps submitted enabled when the required file is already stored', () => {
-    const view = taskView('in_progress', 'required', 'https://files.example.com/upload.pdf');
+    const view = taskView('in_progress', 'required', true);
     expect(disabledByValue(view)).toEqual({ pending: true, in_progress: false, submitted: false });
     expect(getMentorshipMenteeTaskStatusOptions(view).hint).toBeNull();
   });
@@ -2151,6 +2147,7 @@ function menteeTask(overrides: Partial<MentorshipMenteeApplicationTask> = {}): M
     category: 'prerequisite',
     status: 'incomplete',
     submitFile: null,
+    hasFile: false,
     updatedOn: '2026-07-01T10:00:00Z',
     ...overrides,
   };

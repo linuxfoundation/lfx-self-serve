@@ -12,6 +12,7 @@ import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
+import { MentorshipTaskFileService } from '../../services/mentorship-task-file.service';
 import { MentorshipTaskUpdateService } from '../../services/mentorship-task-update.service';
 import { ApplicantTasksPanelComponent } from './applicant-tasks-panel.component';
 
@@ -49,8 +50,10 @@ describe('ApplicantTasksPanelComponent', () => {
   let taskSaved: ReturnType<typeof vi.fn>;
   /** The service's in-flight ids, as a signal like the real one, so a save from a collapsed panel can settle mid-test. */
   let updatingIds: WritableSignal<ReadonlySet<string>>;
+  let download: ReturnType<typeof vi.fn>;
 
   const build = (): void => {
+    download = vi.fn();
     openEdit = vi.fn().mockReturnValue(of(undefined));
     update = vi.fn(() => of(null));
     taskSaved = vi.fn();
@@ -64,6 +67,7 @@ describe('ApplicantTasksPanelComponent', () => {
         MessageService,
         { provide: MentorshipTaskDialogService, useValue: { openCreate: vi.fn(), openEdit } },
         { provide: MentorshipTaskUpdateService, useValue: { update, isUpdating: (taskId: string) => updatingIds().has(taskId) } },
+        { provide: MentorshipTaskFileService, useValue: { download } },
       ],
     });
 
@@ -86,6 +90,15 @@ describe('ApplicantTasksPanelComponent', () => {
   const clickEdit = (taskId: string): void => {
     element().querySelector<HTMLElement>(`[data-testid="mentorship-applicant-task-edit-${taskId}"]`)?.querySelector<HTMLButtonElement>('button')?.click();
   };
+
+  it('offers Download, and no View, only on a task with a submitted file, and downloads it by task id', () => {
+    expect(element().querySelector('[data-testid="mentorship-applicant-task-download-tsk_editable"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-applicant-task-view-tsk_prereq"]')).toBeNull();
+
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-applicant-task-download-tsk_prereq"]')?.click();
+
+    expect(download).toHaveBeenCalledWith('tsk_prereq');
+  });
 
   it('renders the Edit button only on non-prerequisite rows', () => {
     // The prerequisite row renders by default (hide-prerequisite is off), but emits no Edit button.
