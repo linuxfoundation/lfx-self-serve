@@ -11,7 +11,8 @@ import { logger } from '../services/logger.service';
 const ED: PersonaType = 'executive-director';
 
 // Dashboard access admits the same callers as the client-side dashboardAccessGuard: EDs and LF Staff,
-// via server-verified personas (never the spoofable cookie); ED scope is per-foundation, root writers bypass.
+// via server-verified personas (never the spoofable cookie); ED scope is per-foundation, and a root
+// writer passes it only when it also holds `writer_guard` on the named foundation.
 export async function requireDashboardAccess(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     const result = await personaDetectionService.getPersonas(req);
@@ -38,7 +39,7 @@ export async function requireDashboardAccess(req: Request, _res: Response, next:
 
     // No slug on the request means there is nothing to scope against — the handler is responsible
     // for rejecting a missing required parameter, and unscoped dashboard endpoints stay allowed.
-    if (!requestedSlug || result.isRootWriter || result.isLFStaff) {
+    if (!requestedSlug || result.isLFStaff) {
       next();
       return;
     }
@@ -46,6 +47,13 @@ export async function requireDashboardAccess(req: Request, _res: Response, next:
     // Upstream project slugs are verbatim — normalize case on both sides so mixed-case data can't 403 a scoped ED.
     const edSlugs = (result.personaProjects?.[ED] ?? []).map((project) => project.projectSlug.toLowerCase());
     if (edSlugs.includes(requestedSlug.toLowerCase())) {
+      next();
+      return;
+    }
+
+    // A root writer is trusted per foundation, not across the board: the ROOT check admits
+    // `global_writer`, which is withheld on some projects, so the named foundation must agree.
+    if (result.isRootWriter && (await personaDetectionService.checkProjectWriter(req, requestedSlug))) {
       next();
       return;
     }

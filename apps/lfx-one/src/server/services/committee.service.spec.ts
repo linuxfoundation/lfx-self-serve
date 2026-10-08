@@ -671,7 +671,7 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
         code: 'NOT_PROJECT_WRITER',
       });
 
-      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer' });
+      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer_guard' });
       expect(updateWithETag).not.toHaveBeenCalled();
     });
 
@@ -687,7 +687,7 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
         code: 'NOT_PROJECT_WRITER',
       });
 
-      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-b', access: 'writer' });
+      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-b', access: 'writer_guard' });
       expect(updateWithETag).not.toHaveBeenCalled();
     });
 
@@ -744,7 +744,7 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
         code: 'NOT_PROJECT_WRITER',
       });
 
-      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer' });
+      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer_guard' });
       expect(fetchWithETag).not.toHaveBeenCalled();
       expect(updateWithETag).not.toHaveBeenCalled();
     });
@@ -822,7 +822,7 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
         chat_channel: '#general',
       });
 
-      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer' });
+      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer_guard' });
       expect(updateWithETag).toHaveBeenNthCalledWith(
         1,
         req,

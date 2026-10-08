@@ -954,7 +954,8 @@ export class FormationService {
    * short {@link FormationSubStage} key, so that one field needs the `normalizeFormationSubStage`
    * mapping below (GH-2366) — everything else is ROOT collapse and the subStage/search filters.
    * `search` matches on `project_name`. Rows the caller can't read are simply absent from
-   * `/query/resources` (per-row `auditor` enforcement upstream), so no additional access filtering
+   * `/query/resources` (per-row enforcement upstream, on the relation each indexed formation document
+   * names), so no additional access filtering
    * is needed here.
    *
    * `foundationUid`, when present, is sent as `parent: project:<uid>` — the documented query-service

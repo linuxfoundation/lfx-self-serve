@@ -9,9 +9,13 @@ import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getPersonas = vi.fn();
+const checkProjectWriter = vi.fn();
 
 vi.mock('../utils/persona-helper', () => ({
-  personaDetectionService: { getPersonas: () => getPersonas() },
+  personaDetectionService: {
+    getPersonas: () => getPersonas(),
+    checkProjectWriter: (...args: unknown[]) => checkProjectWriter(...args),
+  },
 }));
 
 const { requireDashboardAccess } = await import('./require-dashboard-access.middleware');
@@ -48,6 +52,7 @@ function verdict(next: ReturnType<typeof vi.fn>): 'allow' | 'deny' {
 describe('requireDashboardAccess', () => {
   beforeEach(() => {
     getPersonas.mockReset();
+    checkProjectWriter.mockReset();
   });
 
   it('denies a caller without the ED persona or LF-staff membership', async () => {
@@ -125,13 +130,46 @@ describe('requireDashboardAccess', () => {
     expect(verdict(next)).toBe('allow');
   });
 
-  it('allows a root writer any foundation', async () => {
+  it('allows a root writer a foundation it also holds writer_guard on', async () => {
     getPersonas.mockResolvedValue(edFor(['tlf'], { isRootWriter: true }));
+    checkProjectWriter.mockResolvedValue(true);
     const next = vi.fn();
 
     await requireDashboardAccess(buildReq({ foundationSlug: 'cncf' }), {} as Response, next as unknown as NextFunction);
 
     expect(verdict(next)).toBe('allow');
+    expect(checkProjectWriter).toHaveBeenCalledWith(expect.anything(), 'cncf');
+  });
+
+  // The ROOT check admits `global_writer`, which is withheld on Draft/Confidential projects.
+  it('denies a root writer a foundation it does not hold writer_guard on', async () => {
+    getPersonas.mockResolvedValue(edFor(['tlf'], { isRootWriter: true }));
+    checkProjectWriter.mockResolvedValue(false);
+    const next = vi.fn();
+
+    await requireDashboardAccess(buildReq({ foundationSlug: 'cncf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('deny');
+  });
+
+  it('allows a root writer an unscoped request without a per-project check', async () => {
+    getPersonas.mockResolvedValue(edFor([], { isRootWriter: true }));
+    const next = vi.fn();
+
+    await requireDashboardAccess(buildReq(), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('allow');
+    expect(checkProjectWriter).not.toHaveBeenCalled();
+  });
+
+  it('allows a root writer its own ED foundation without a per-project check', async () => {
+    getPersonas.mockResolvedValue(edFor(['tlf'], { isRootWriter: true }));
+    const next = vi.fn();
+
+    await requireDashboardAccess(buildReq({ foundationSlug: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('allow');
+    expect(checkProjectWriter).not.toHaveBeenCalled();
   });
 
   // With no slug there is nothing to scope against; rejecting a missing required parameter is
