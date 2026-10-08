@@ -244,7 +244,7 @@
                     (onClick)="handleJoinRequest()"
                     data-testid="committee-view-contact-admin-btn" />
                 }
-              } @else if (isMemberOrAdmin() && !canEdit()) {
+              } @else if (myRole() !== null) {
                 <lfx-button
                   label="Leave Group"
                   icon="fa-light fa-arrow-right-from-bracket"
