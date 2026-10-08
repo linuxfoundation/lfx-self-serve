@@ -526,11 +526,7 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly coverageHint = computed(() => this.initCoverageHint());
 
-  // Read from `signed` rather than the status, because this component serves two sources and only
-  // the flag answers both: the preview builds an agreement nobody has signed, and `status` there
-  // is `not-started` while on a sanctioned list row it says nothing about whether a document
-  // exists. Offering the download on an agreement without one is a control that can only fail.
-  protected readonly canDownload = computed(() => this.claGroup()?.signed === true);
+  protected readonly canDownload = computed(() => this.initCanDownload());
 
   /**
    * Whether the Auto ECLA toggle is shown at all.
@@ -1442,6 +1438,26 @@ export class OrgEasyclaDetailComponent {
 
   private initTabs(): OrgClaDetailTabView[] {
     return ORG_CLA_DETAIL_TABS.map((tab) => ({ ...tab, badge: this.tabBadge(tab.id) }));
+  }
+
+  /**
+   * Two conjuncts, and each is a way the control could only fail.
+   *
+   * Read from `signed` rather than the status, because this component serves two sources and only
+   * the flag answers both: the preview builds an agreement nobody has signed, and `status` there
+   * is `not-started` while on a sanctioned list row it says nothing about whether a document
+   * exists.
+   *
+   * The roster conjunct is the authorization half. EasyCLA authorizes the signed document against
+   * the agreement's own CLA Manager list, not against the grant that let the viewer open this
+   * page, and an organization admin is routinely off that list. Restricting the control is the
+   * decided shape rather than widening the producer's ACL; `onDownload` keeps its fail-closed
+   * toast for the refusals this cannot predict. Unlike the Auto ECLA toggle there is no ACS
+   * conjunct, because no grant governs this read.
+   */
+  private initCanDownload(): boolean {
+    const group = this.claGroup();
+    return group?.signed === true && group.viewerIsClaManager === true;
   }
 
   /**

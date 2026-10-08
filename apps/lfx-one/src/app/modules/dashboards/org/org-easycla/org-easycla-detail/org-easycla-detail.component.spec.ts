@@ -1887,6 +1887,17 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-download')).toBeNull();
   });
 
+  it.each([
+    ['is not on the roster', false],
+    ['has no roster answer', undefined],
+  ])('withholds the download from a signed agreement when the viewer %s', async (_case, viewerIsClaManager) => {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ viewerIsClaManager })] }));
+
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-download')).toBeNull();
+  });
+
   it('opens Overview by default and fills the Managers tab, leaving the rest empty', async () => {
     const fixture = await render();
 
