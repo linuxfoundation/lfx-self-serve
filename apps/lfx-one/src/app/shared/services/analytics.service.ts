@@ -421,13 +421,22 @@ export class AnalyticsService {
    * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'lfeurope')
    */
   public getFoundationProjectsDetailGrouped(foundationSlug: string): Observable<FoundationProjectsDetailGroupedResponse> {
+    return this.loadFoundationProjectsDetailGrouped(foundationSlug).pipe(catchError(() => of(DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED)));
+  }
+
+  /**
+   * Same cached read as {@link getFoundationProjectsDetailGrouped}, but errors propagate so a caller
+   * can tell a failed load from a foundation with no projects. A failure drops the cache entry.
+   * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'lfeurope')
+   */
+  public loadFoundationProjectsDetailGrouped(foundationSlug: string): Observable<FoundationProjectsDetailGroupedResponse> {
     if (!this.foundationProjectsDetailGroupedCache.has(foundationSlug)) {
       const req$ = this.http
         .get<FoundationProjectsDetailGroupedResponse>('/api/analytics/foundation-projects-detail-grouped', { params: { foundationSlug } })
         .pipe(
-          catchError(() => {
+          catchError((error) => {
             this.foundationProjectsDetailGroupedCache.delete(foundationSlug);
-            return of(DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED);
+            return throwError(() => error);
           }),
           shareReplay(1)
         );

@@ -11,7 +11,7 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { PopoverModule } from 'primeng/popover';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { FoundationProjectsDetailGroupedResponse, ProjectContext, ProjectTableRow } from '@lfx-one/shared/interfaces';
@@ -45,14 +45,14 @@ describe('HealthMetricsGateComponent', () => {
   let fixture: ComponentFixture<HealthMetricsGateComponent>;
   const impersonating = signal(false);
   const selectedFoundation = signal<ProjectContext | null>({ slug: 'acme-foundation' } as ProjectContext);
-  let getFoundationProjectsDetailGrouped: ReturnType<typeof vi.fn>;
+  let loadFoundationProjectsDetailGrouped: ReturnType<typeof vi.fn>;
 
   async function render(
     overviewEnabled: WritableSignal<boolean>,
     url = '/',
     projects: FoundationProjectsDetailGroupedResponse = projectsResponse(['beta-mesh', 'Beta Mesh'], ['alpha', 'Alpha'])
   ): Promise<void> {
-    getFoundationProjectsDetailGrouped = vi.fn(() => of(projects));
+    loadFoundationProjectsDetailGrouped = vi.fn(() => of(projects));
     await TestBed.configureTestingModule({
       imports: [HealthMetricsGateComponent],
       providers: [
@@ -61,7 +61,7 @@ describe('HealthMetricsGateComponent', () => {
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => overviewEnabled } },
         { provide: UserService, useValue: { impersonating } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
-        { provide: AnalyticsService, useValue: { getFoundationProjectsDetailGrouped } },
+        { provide: AnalyticsService, useValue: { loadFoundationProjectsDetailGrouped } },
       ],
     })
       .overrideComponent(HealthMetricsGateComponent, {
@@ -205,11 +205,11 @@ describe('HealthMetricsGateComponent', () => {
     it('never fetches the project list while the flag is off', async () => {
       await render(signal(false), '/foundation/health-metrics/engagement');
 
-      expect(getFoundationProjectsDetailGrouped).not.toHaveBeenCalled();
+      expect(loadFoundationProjectsDetailGrouped).not.toHaveBeenCalled();
     });
 
     it('stays inert on a tab that does not follow it', async () => {
-      await render(signal(true), '/foundation/health-metrics?project=alpha');
+      await render(signal(true), '/foundation/health-metrics?projectScope=alpha');
 
       const trigger = query('health-metrics-overview-project-selector');
       expect(trigger?.getAttribute('aria-disabled')).toBe('true');
@@ -225,7 +225,7 @@ describe('HealthMetricsGateComponent', () => {
 
       const trigger = query('health-metrics-overview-project-selector');
       expect(trigger?.getAttribute('aria-disabled')).toBeNull();
-      expect(getFoundationProjectsDetailGrouped).toHaveBeenCalledWith('acme-foundation');
+      expect(loadFoundationProjectsDetailGrouped).toHaveBeenCalledWith('acme-foundation');
 
       trigger?.click();
       await settle();
@@ -235,13 +235,13 @@ describe('HealthMetricsGateComponent', () => {
       query('health-metrics-project-option-beta-mesh')?.click();
       await settle();
 
-      expect(currentUrl()).toBe('/foundation/health-metrics/engagement?project=beta-mesh#committees');
+      expect(currentUrl()).toBe('/foundation/health-metrics/engagement?projectScope=beta-mesh#committees');
       expect(fixture.debugElement.injector.get(HealthMetricsChromeService).selectedProjectSlug()).toBe('beta-mesh');
       expect(query('health-metrics-project-selector-label')?.textContent?.trim()).toBe('Beta Mesh');
     });
 
     it('reads the selection off the URL and clears it again on all projects', async () => {
-      await render(signal(true), '/foundation/health-metrics/engagement?project=alpha&groupPage=2');
+      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=alpha&groupPage=2');
       await settle();
 
       expect(query('health-metrics-project-selector-label')?.textContent?.trim()).toBe('Alpha');
@@ -256,28 +256,78 @@ describe('HealthMetricsGateComponent', () => {
     });
 
     it('drops a slug the foundation does not carry', async () => {
-      await render(signal(true), '/foundation/health-metrics/engagement?project=unknown-project');
+      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=unknown-project');
       await settle();
 
       expect(currentUrl()).toBe('/foundation/health-metrics/engagement');
     });
 
     it('ignores a malformed slug rather than reading with it', async () => {
-      await render(signal(true), '/foundation/health-metrics/engagement?project=Not%20A%20Slug');
+      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=Not%20A%20Slug');
 
       expect(fixture.debugElement.injector.get(HealthMetricsChromeService).selectedProjectSlug()).toBeNull();
     });
 
     it('resets to all projects when the foundation changes', async () => {
-      await render(signal(true), '/foundation/health-metrics/engagement?project=alpha');
+      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=alpha');
       await settle();
 
-      getFoundationProjectsDetailGrouped.mockReturnValue(of(projectsResponse(['alpha', 'Alpha'])));
+      loadFoundationProjectsDetailGrouped.mockReturnValue(of(projectsResponse(['alpha', 'Alpha'])));
       selectedFoundation.set({ slug: 'other-foundation' } as ProjectContext);
       await settle();
 
       expect(currentUrl()).toBe('/foundation/health-metrics/engagement');
-      expect(getFoundationProjectsDetailGrouped).toHaveBeenLastCalledWith('other-foundation');
+      expect(loadFoundationProjectsDetailGrouped).toHaveBeenLastCalledWith('other-foundation');
+    });
+
+    it('leaves the app-wide project context param alone', async () => {
+      await render(signal(true), '/foundation/health-metrics/engagement?project=acme-foundation');
+      await settle();
+
+      expect(fixture.debugElement.injector.get(HealthMetricsChromeService).selectedProjectSlug()).toBeNull();
+      expect(currentUrl()).toBe('/foundation/health-metrics/engagement?project=acme-foundation');
+    });
+
+    it('keeps the selection through a failed list load and retries on click', async () => {
+      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=alpha');
+      loadFoundationProjectsDetailGrouped.mockReturnValue(throwError(() => new Error('upstream failed')));
+      selectedFoundation.set({ slug: 'other-foundation' } as ProjectContext);
+      await settle();
+      await TestBed.inject(Router).navigateByUrl('/foundation/health-metrics/engagement?projectScope=alpha');
+      await settle();
+
+      const chrome = fixture.debugElement.injector.get(HealthMetricsChromeService);
+      expect(chrome.projectsFailed()).toBe(true);
+      expect(chrome.selectedProjectSlug()).toBe('alpha');
+      expect(currentUrl()).toBe('/foundation/health-metrics/engagement?projectScope=alpha');
+      expect(query('health-metrics-project-selector-label')?.textContent?.trim()).toBe('alpha');
+      expect(query('health-metrics-project-selector-retry')).not.toBeNull();
+
+      loadFoundationProjectsDetailGrouped.mockReturnValue(of(projectsResponse(['alpha', 'Alpha'])));
+      query('health-metrics-overview-project-selector')?.click();
+      await settle();
+
+      expect(loadFoundationProjectsDetailGrouped).toHaveBeenLastCalledWith('other-foundation');
+      expect(chrome.projectsFailed()).toBe(false);
+      expect(query('health-metrics-project-selector-label')?.textContent?.trim()).toBe('Alpha');
+      expect(query('health-metrics-project-menu')).toBeNull();
+    });
+
+    it('drops a kept slug only once a retried list loads without it', async () => {
+      selectedFoundation.set({ slug: 'other-foundation' } as ProjectContext);
+      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=alpha');
+      loadFoundationProjectsDetailGrouped.mockReturnValue(throwError(() => new Error('upstream failed')));
+      selectedFoundation.set({ slug: 'third-foundation' } as ProjectContext);
+      await settle();
+      await TestBed.inject(Router).navigateByUrl('/foundation/health-metrics/engagement?projectScope=alpha');
+      await settle();
+      expect(currentUrl()).toBe('/foundation/health-metrics/engagement?projectScope=alpha');
+
+      loadFoundationProjectsDetailGrouped.mockReturnValue(of(projectsResponse(['beta-mesh', 'Beta Mesh'])));
+      query('health-metrics-overview-project-selector')?.click();
+      await settle();
+
+      expect(currentUrl()).toBe('/foundation/health-metrics/engagement');
     });
 
     it('hides the pill once the foundation turns out to have no projects', async () => {

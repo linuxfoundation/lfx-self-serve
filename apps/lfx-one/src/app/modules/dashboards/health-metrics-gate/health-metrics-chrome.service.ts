@@ -21,10 +21,11 @@ export class HealthMetricsChromeService {
   public readonly periods: readonly HealthMetricsYearOption[] = buildHealthMetricsOverviewPeriods();
   public readonly selectedRange = signal<HealthMetricsRange>('YTD');
 
-  // The gate mirrors `?project=` into the slug; `null` reads all projects. `projects` is `null`
-  // until the foundation's project list has loaded.
+  // The gate mirrors `?projectScope=` into the slug; `null` reads all projects. `projects` is `null`
+  // until the foundation's project list has loaded, and `projectsFailed` marks a failed load.
   public readonly selectedProjectSlug = signal<string | null>(null);
   public readonly projects = signal<readonly HealthMetricsProjectOption[] | null>(null);
+  public readonly projectsFailed = signal(false);
   public readonly selectedProject = computed(() => this.projects()?.find((project) => project.slug === this.selectedProjectSlug()) ?? null);
 
   // Measured client-side from the sticky header by the gate; this fallback only shows pre-hydration

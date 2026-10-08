@@ -34,6 +34,7 @@ import {
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
+  HEALTH_METRICS_PROJECT_SLUG_PATTERN,
   HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
   HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
@@ -4394,7 +4395,8 @@ export class AnalyticsController {
   /** An optional, well-formed `projectSlug` query param; `null` is the all-projects scope. */
   private getOptionalProjectSlug(req: Request, operation: string): string | null {
     const projectSlug = getStringQueryParam(req, 'projectSlug');
-    if (projectSlug && !SLUG_PATTERN.test(projectSlug)) {
+    // Same shape the client accepts, so a slug the selector sends never 400s here.
+    if (projectSlug && !HEALTH_METRICS_PROJECT_SLUG_PATTERN.test(projectSlug)) {
       throw ServiceValidationError.forField('projectSlug', 'Invalid projectSlug format', { operation });
     }
 

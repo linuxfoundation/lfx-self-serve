@@ -228,6 +228,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a foundation with no courses.
       call: () => service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 }),
     },
+    {
+      name: 'loadFoundationProjectsDetailGrouped',
+      url: '/api/analytics/foundation-projects-detail-grouped',
+      // A swallowed failure would read as a foundation with no projects to select.
+      call: () => service.loadFoundationProjectsDetailGrouped('aaif'),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {
@@ -247,6 +253,19 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       expect(emitted).toBeUndefined();
     });
   }
+
+  it('loadFoundationProjectsDetailGrouped drops a failed read from the cache so the next call refetches', () => {
+    service.loadFoundationProjectsDetailGrouped('aaif').subscribe({ error: () => undefined });
+    http
+      .expectOne('/api/analytics/foundation-projects-detail-grouped?foundationSlug=aaif')
+      .flush('upstream failed', { status: 500, statusText: 'Server Error' });
+
+    let emitted: unknown;
+    service.loadFoundationProjectsDetailGrouped('aaif').subscribe((value) => (emitted = value));
+    http.expectOne('/api/analytics/foundation-projects-detail-grouped?foundationSlug=aaif').flush({ groups: [], totalCount: 0 });
+
+    expect(emitted).toEqual({ groups: [], totalCount: 0 });
+  });
 
   // Angular's default codec leaves `+` bare, which Express's query parser reads as a space.
   it('getEventsOrganizations sends a typed plus sign encoded, not as a space', () => {

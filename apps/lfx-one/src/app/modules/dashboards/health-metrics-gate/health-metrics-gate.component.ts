@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, PLATFORM_ID, signal, untracked, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import {
@@ -17,13 +17,13 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { Popover, PopoverModule } from 'primeng/popover';
-import { distinctUntilChanged, filter, map, of, pairwise, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, pairwise, startWith, Subject, switchMap } from 'rxjs';
 
 import { HealthMetricsComponent } from '../health-metrics/health-metrics.component';
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
 
 import type { IsActiveMatchOptions } from '@angular/router';
-import type { HealthMetricsProjectOption, HealthMetricsTab, HealthMetricsYearOption } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsProjectListState, HealthMetricsProjectOption, HealthMetricsTab, HealthMetricsYearOption } from '@lfx-one/shared/interfaces';
 
 /**
  * Route target for `foundation/health-metrics`. Renders the legacy page by default (server and
@@ -52,9 +52,9 @@ import type { HealthMetricsProjectOption, HealthMetricsTab, HealthMetricsYearOpt
  * here so it survives tab switches but resets on leaving the page. Nothing renders an outlet while
  * the flag is off, so a direct hit on `…/health-metrics/engagement` still serves the legacy page.
  *
- * The project selector is driven by `?project=`: the gate mirrors it into the chrome service, drops it
- * on a foundation switch or a slug the foundation doesn't carry, and only enables the pill on a tab
- * flagged `projectScoped` — the other tabs still read foundation-wide.
+ * The project selector is driven by `?projectScope=` (`?project=` is the app-wide context param): the
+ * gate mirrors it into the chrome service, drops it on a foundation switch or a slug a loaded list doesn't
+ * carry, and only enables the pill on a tab flagged `projectScoped` — the other tabs still read foundation-wide.
  */
 @Component({
   selector: 'lfx-health-metrics-gate',
@@ -101,12 +101,13 @@ export class HealthMetricsGateComponent {
   // Gated on the flag so SSR (where it always reads false) never fetches the project list.
   private readonly projectListFoundationSlug = computed(() => (this.overviewEnabled() ? (this.projectContextService.selectedFoundation()?.slug ?? '') : ''));
 
-  // Inert while the list loads, hidden once it loads empty.
+  private readonly projectListRetry = new Subject<void>();
+
+  // Inert while the list loads, hidden once it loads empty, a retry once it fails.
   protected readonly projectSelectorEnabled = computed(() => this.activeTab()?.projectScoped === true && (this.chrome.projects()?.length ?? 0) > 0);
+  protected readonly projectSelectorRetry = computed(() => this.activeTab()?.projectScoped === true && this.chrome.projectsFailed());
   protected readonly projectSelectorVisible = computed(() => this.chrome.projects()?.length !== 0);
-  protected readonly projectSelectorLabel = computed(() =>
-    this.projectSelectorEnabled() ? (this.chrome.selectedProject()?.name ?? 'All projects') : 'All projects'
-  );
+  protected readonly projectSelectorLabel = computed(() => this.initProjectSelectorLabel());
   protected readonly projectMenuOpen = signal(false);
 
   public constructor() {
@@ -124,7 +125,9 @@ export class HealthMetricsGateComponent {
   }
 
   protected toggleProjectMenu(event: Event, menu: Popover): void {
-    if (this.projectSelectorEnabled()) {
+    if (this.projectSelectorRetry()) {
+      this.projectListRetry.next();
+    } else if (this.projectSelectorEnabled()) {
       menu.toggle(event);
     }
   }
@@ -147,15 +150,18 @@ export class HealthMetricsGateComponent {
       .pipe(
         switchMap((slug) =>
           slug
-            ? this.analyticsService.getFoundationProjectsDetailGrouped(slug).pipe(
-                map((response) => buildHealthMetricsProjectOptions(response.groups)),
-                startWith(null)
+            ? this.projectListRetry.pipe(
+                startWith(undefined),
+                switchMap(() => this.loadProjects(slug))
               )
-            : of(null)
+            : of<HealthMetricsProjectListState>({ projects: null, failed: false })
         ),
         takeUntilDestroyed()
       )
-      .subscribe((projects) => this.chrome.projects.set(projects));
+      .subscribe(({ projects, failed }) => {
+        this.chrome.projects.set(projects);
+        this.chrome.projectsFailed.set(failed);
+      });
 
     // A project belongs to one foundation, so switching foundations drops it.
     foundationSlug$
@@ -166,13 +172,29 @@ export class HealthMetricsGateComponent {
       )
       .subscribe(() => this.writeProjectParam(null));
 
-    effect(() => {
-      const projects = this.chrome.projects();
-      const slug = this.chrome.selectedProjectSlug();
-      if (projects && slug && !projects.some((project) => project.slug === slug)) {
-        untracked(() => this.writeProjectParam(null));
-      }
-    });
+    // Only a loaded list can rule a slug out; a failed one keeps it so the reads still scope.
+    combineLatest([toObservable(this.chrome.projects), toObservable(this.chrome.selectedProjectSlug)])
+      .pipe(
+        filter(([projects, slug]) => !!projects && !!slug && !projects.some((project) => project.slug === slug)),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.writeProjectParam(null));
+  }
+
+  private initProjectSelectorLabel(): string {
+    if (this.activeTab()?.projectScoped !== true) {
+      return 'All projects';
+    }
+    // The slug stands in for the name until the list loads, or after it fails.
+    return this.chrome.selectedProject()?.name ?? this.chrome.selectedProjectSlug() ?? 'All projects';
+  }
+
+  private loadProjects(slug: string): Observable<HealthMetricsProjectListState> {
+    return this.analyticsService.loadFoundationProjectsDetailGrouped(slug).pipe(
+      map((response) => ({ projects: buildHealthMetricsProjectOptions(response.groups), failed: false })),
+      startWith({ projects: null, failed: false }),
+      catchError(() => of({ projects: null, failed: true }))
+    );
   }
 
   private writeProjectParam(slug: string | null): void {

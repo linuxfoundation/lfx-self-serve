@@ -24,16 +24,18 @@
 
         <div class="flex flex-wrap items-center gap-2">
           <!-- Project drill-down pill (`.projsel`/`.pstrig`): live on tabs flagged `projectScoped`, inert
-               elsewhere since those tabs still read foundation-wide. Hidden once the list loads empty.
+               elsewhere since those tabs still read foundation-wide. Hidden once the list loads empty;
+               after a failed load it keeps the selection and a click retries the list.
                Font sizes stay arbitrary: the design's 14/12px carry no line-height, `text-sm` does. -->
           @if (projectSelectorVisible()) {
             <button
               type="button"
-              [attr.aria-disabled]="projectSelectorEnabled() ? null : 'true'"
+              [attr.aria-disabled]="projectSelectorEnabled() || projectSelectorRetry() ? null : 'true'"
+              [attr.title]="projectSelectorRetry() ? 'Projects failed to load. Select to retry.' : null"
               [attr.aria-haspopup]="projectSelectorEnabled() ? 'listbox' : null"
               [attr.aria-expanded]="projectSelectorEnabled() ? projectMenuOpen() : null"
               class="flex h-9 items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-[14px] font-medium text-gray-900"
-              [ngClass]="projectSelectorEnabled() ? 'cursor-pointer hover:border-gray-300' : 'cursor-default'"
+              [ngClass]="projectSelectorEnabled() || projectSelectorRetry() ? 'cursor-pointer hover:border-gray-300' : 'cursor-default'"
               (click)="toggleProjectMenu($event, projectMenu)"
               data-testid="health-metrics-overview-project-selector">
               @if (projectSelectorEnabled() && chrome.selectedProject(); as project) {
@@ -43,6 +45,8 @@
                   aria-hidden="true"
                   >{{ project.initials }}</span
                 >
+              } @else if (projectSelectorRetry()) {
+                <i class="fa-light fa-rotate-right text-gray-500" aria-hidden="true" data-testid="health-metrics-project-selector-retry"></i>
               } @else {
                 <i class="fa-light fa-diagram-project text-gray-500" aria-hidden="true"></i>
               }

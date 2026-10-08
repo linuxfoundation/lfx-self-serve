@@ -119,6 +119,8 @@ describe('AnalyticsController.getEngagementGroupAttendance', () => {
   it.each([
     ['foundationSlug', { foundationSlug: 'Acme Corp' }],
     ['projectSlug', { foundationSlug: 'acme', projectSlug: "core' OR 1=1" }],
+    // Same shape the client selector accepts: no edge hyphen.
+    ['projectSlug', { foundationSlug: 'acme', projectSlug: '-acme-core' }],
   ])('rejects a %s that is not a slug', async (field, queryParams) => {
     const { next, promise } = call(queryParams);
     await promise;

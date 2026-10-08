@@ -3,8 +3,8 @@
 
 import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 
-/** Query param holding the header's project selection; absent means all projects. */
-export const HEALTH_METRICS_PROJECT_QUERY_PARAM = 'project';
+/** Query param holding the header's project selection; absent means all projects. Not `project`, the app-wide context param. */
+export const HEALTH_METRICS_PROJECT_QUERY_PARAM = 'projectScope';
 
 /** Shape a project slug must have before it reaches a read; anything else falls back to all projects. */
 export const HEALTH_METRICS_PROJECT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;

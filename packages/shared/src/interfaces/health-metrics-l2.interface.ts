@@ -52,3 +52,9 @@ export interface HealthMetricsProjectOption {
   /** Avatar palette class hashed from the slug, so a project keeps its color. */
   colorClass: string;
 }
+
+/** One step of the header's project-list load: `projects` is `null` while loading or after a failure. */
+export interface HealthMetricsProjectListState {
+  projects: readonly HealthMetricsProjectOption[] | null;
+  failed: boolean;
+}
