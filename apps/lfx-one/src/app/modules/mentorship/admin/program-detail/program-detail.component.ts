@@ -111,9 +111,9 @@ export class ProgramDetailComponent {
   }
 
   /**
-   * Hides or unhides the program, then reads the header again so the status badge follows. A 409 (active applications on a
-   * hide, an archived program on an unhide) shows why and reads the header again too; an impersonation 403 shows the server's
-   * text; anything else shows a generic failure.
+   * Hides or unhides the program, then reads the header again so the status badge follows. A 409 (a hide meeting active
+   * applications, or a status that no longer allows the change) shows why and reads the header again too; an impersonation
+   * 403 shows the server's text; anything else shows a generic failure.
    */
   protected onVisibilityChange(action: MentorshipProgramVisibilityAction): void {
     const programId = this.programId();

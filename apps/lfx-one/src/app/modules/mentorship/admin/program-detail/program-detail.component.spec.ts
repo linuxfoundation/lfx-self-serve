@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import {
+  MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_PROGRAM_HIDDEN_MESSAGE,
   MENTORSHIP_PROGRAM_HIDE_BLOCKED_MESSAGE,
   MENTORSHIP_PROGRAM_UNHIDE_BLOCKED_MESSAGE,
@@ -301,6 +302,24 @@ describe('ProgramDetailComponent', () => {
 
       expect(toasts()).toEqual([expect.objectContaining({ severity: 'error', detail: message })]);
       expect(getProgram).toHaveBeenCalledTimes(2);
+    });
+
+    it('shows the server text for the impersonation 403', () => {
+      buildAndSpy(
+        throwError(
+          () => new HttpErrorResponse({ status: 403, error: { code: MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE, message: 'Read-only while impersonating' } })
+        )
+      );
+      fixture.componentInstance['onVisibilityChange']('hide');
+
+      expect(toasts()).toEqual([expect.objectContaining({ severity: 'error', detail: 'Read-only while impersonating' })]);
+    });
+
+    it('shows a generic failure for a 403 that is not the impersonation one', () => {
+      buildAndSpy(throwError(() => new HttpErrorResponse({ status: 403, error: { message: 'Forbidden' } })));
+      fixture.componentInstance['onVisibilityChange']('hide');
+
+      expect(toasts()).toEqual([expect.objectContaining({ severity: 'error', detail: MENTORSHIP_PROGRAM_VISIBILITY_FAILED_MESSAGE })]);
     });
 
     it('shows a generic failure for any other error, without reading the header again', () => {

@@ -259,8 +259,10 @@ export const MENTORSHIP_PROGRAM_HIDE_CONFIRM =
 export const MENTORSHIP_PROGRAM_UNHIDE_CONFIRM = 'Are you sure you want to unhide this program? It will be publicly visible again.';
 export const MENTORSHIP_PROGRAM_HIDDEN_MESSAGE = 'Program hidden.';
 export const MENTORSHIP_PROGRAM_UNHIDDEN_MESSAGE = 'Program unhidden.';
-export const MENTORSHIP_PROGRAM_HIDE_BLOCKED_MESSAGE = "This program still has active applications, so it can't be hidden.";
-export const MENTORSHIP_PROGRAM_UNHIDE_BLOCKED_MESSAGE = "This program is archived, so it can't be made visible again.";
+/** Upstream answers a refused hide or unhide with one 409 for both causes, so each message names every cause it covers. */
+export const MENTORSHIP_PROGRAM_HIDE_BLOCKED_MESSAGE =
+  "This program can't be hidden: it has active applications, or its status has changed. The page has been refreshed.";
+export const MENTORSHIP_PROGRAM_UNHIDE_BLOCKED_MESSAGE = "This program can't be made visible: its status has changed. The page has been refreshed.";
 export const MENTORSHIP_PROGRAM_VISIBILITY_FAILED_MESSAGE = "The program's visibility couldn't be changed. Please try again.";
 
 /**
