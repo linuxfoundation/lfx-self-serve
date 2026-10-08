@@ -8,8 +8,8 @@ import { computeIsFoundation } from '@lfx-one/shared/utils';
 import { catchError, map, of } from 'rxjs';
 
 import { ProjectContextService } from '../services/project-context.service';
-import { ProjectService } from '../services/project.service';
-import { isTransientHttpError, retryTransientHttpError } from '../utils/http-error.utils';
+import { ProjectRecoveryService } from '../services/project-recovery.service';
+import { isTransientHttpError } from '../utils/http-error.utils';
 
 /**
  * Seeds the active project/foundation context from a `?project=<slug>` query param.
@@ -25,7 +25,7 @@ import { isTransientHttpError, retryTransientHttpError } from '../utils/http-err
  * Strict lookup preserves HTTP status so an outage is never classified as missing.
  */
 export const projectQueryParamGuard: CanActivateFn = (route, state) => {
-  const projectService = inject(ProjectService);
+  const projectRecoveryService = inject(ProjectRecoveryService);
   const projectContextService = inject(ProjectContextService);
   const router = inject(Router);
 
@@ -45,8 +45,7 @@ export const projectQueryParamGuard: CanActivateFn = (route, state) => {
   const slug = route.queryParamMap.get('project');
   if (!slug) return true;
 
-  return projectService.getProjectStrict(slug).pipe(
-    retryTransientHttpError(),
+  return projectRecoveryService.resolve(slug).pipe(
     map((project) => {
       const context: ProjectContext = {
         uid: project.uid,
@@ -75,8 +74,10 @@ export const projectQueryParamGuard: CanActivateFn = (route, state) => {
     }),
     catchError((error: unknown) => {
       if (isTransientHttpError(error)) {
-        return of(new RedirectCommand(router.parseUrl('/unavailable'), { skipLocationChange: true, state: { retryUrl: state.url } }));
+        return of(projectRecoveryService.unavailable(state.url));
       }
+      // Intentionally retain the existing in-place not-found policy for all non-transient
+      // failures, including 401/403; only temporary lookup failures change behavior (#3357).
       return of(new RedirectCommand(router.parseUrl('/not-found'), { skipLocationChange: true }));
     })
   );

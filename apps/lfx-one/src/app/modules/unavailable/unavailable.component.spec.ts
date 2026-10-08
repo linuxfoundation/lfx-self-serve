@@ -6,11 +6,16 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { provideLocationMocks } from '@angular/common/testing';
 import { PLATFORM_ID, REQUEST_CONTEXT } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { NavigationEnd, provideRouter, Router } from '@angular/router';
+import { NavigationEnd, NavigationSkipped, provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { ServerRequestContext } from '@lfx-one/shared/interfaces';
 import { projectQueryParamGuard } from '@shared/guards/project-query-param.guard';
+import { newsletterAccessGuard } from '@shared/guards/newsletter-access.guard';
+import { formationProjectEnabledGuard } from '@shared/guards/formation-project-enabled.guard';
+import { FeatureFlagService } from '@shared/services/feature-flag.service';
+import { PersonaService } from '@shared/services/persona.service';
 import { ProjectContextService } from '@shared/services/project-context.service';
+import { ProjectRecoveryService } from '@shared/services/project-recovery.service';
 import { ProjectService } from '@shared/services/project.service';
 import { defer, filter, firstValueFrom, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -22,7 +27,13 @@ describe('UnavailableComponent', () => {
   function create(platform: 'server' | 'browser', reqContext: ServerRequestContext | null) {
     TestBed.configureTestingModule({
       imports: [UnavailableComponent],
-      providers: [{ provide: PLATFORM_ID, useValue: platform }, { provide: REQUEST_CONTEXT, useValue: reqContext }, provideRouter([]), provideLocationMocks()],
+      providers: [
+        { provide: PLATFORM_ID, useValue: platform },
+        { provide: REQUEST_CONTEXT, useValue: reqContext },
+        { provide: ProjectService, useValue: {} },
+        provideRouter([]),
+        provideLocationMocks(),
+      ],
     });
     return TestBed.createComponent(UnavailableComponent);
   }
@@ -110,6 +121,69 @@ describe('UnavailableComponent', () => {
 
     expect(router.url).toBe(target);
     expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ uid: 'test-project-uid' }));
+  });
+
+  it.each(['groups', 'newsletters', 'formation'])('retries the latest destination after repeated failures through %s guards', async (page) => {
+    let unavailable = true;
+    const lookup = vi.fn(() =>
+      defer(() =>
+        unavailable
+          ? throwError(() => new HttpErrorResponse({ status: 503 }))
+          : of({ uid: 'test-project-uid', name: 'Test project', slug: 'test-project', writer: true, stage: 'Formation - Exploratory' })
+      )
+    );
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ProjectService, useValue: { getProjectStrict: lookup } },
+        { provide: ProjectContextService, useValue: { setRouteLensKind: vi.fn(), setProject: vi.fn(), setFoundation: vi.fn(), activeContext: () => null } },
+        { provide: PersonaService, useValue: { currentPersona: () => 'maintainer' } },
+        { provide: FeatureFlagService, useValue: { getFlagOverride: () => true } },
+        provideLocationMocks(),
+        provideRouter([
+          { path: '', component: NotFoundComponent },
+          {
+            path: 'project/groups',
+            data: { lens: 'project' },
+            component: NotFoundComponent,
+            canActivate: [projectQueryParamGuard],
+          },
+          {
+            path: 'project/newsletters',
+            data: { lens: 'project' },
+            component: NotFoundComponent,
+            canActivate: [newsletterAccessGuard, projectQueryParamGuard],
+          },
+          {
+            path: 'project/formation',
+            data: { lens: 'project' },
+            component: NotFoundComponent,
+            canMatch: [formationProjectEnabledGuard],
+            canActivate: [projectQueryParamGuard],
+          },
+          { path: 'unavailable', component: UnavailableComponent },
+        ]),
+      ],
+    });
+    const harness = await RouterTestingHarness.create('/');
+    const router = TestBed.inject(Router);
+    const first = `/project/${page}?project=first-project#first`;
+    const second = `/project/${page}?project=second-project#second`;
+    const component = await harness.navigateByUrl(first, UnavailableComponent);
+    const skipped = firstValueFrom(router.events.pipe(filter((event) => event instanceof NavigationSkipped)));
+
+    await router.navigateByUrl(second);
+    await skipped;
+    expect(harness.routeDebugElement!.componentInstance).toBe(component);
+    expect(router.url).toBe('/unavailable');
+    expect(TestBed.inject(ProjectRecoveryService).retryUrl).toBe(second);
+
+    unavailable = false;
+    const recovered = firstValueFrom(router.events.pipe(filter((event) => event instanceof NavigationEnd)));
+    harness.routeNativeElement!.querySelector<HTMLButtonElement>('[data-testid="unavailable-retry-button"] button')!.click();
+    await recovered;
+
+    expect(router.url).toBe(second);
+    expect(TestBed.inject(ProjectRecoveryService).retryUrl).toBeUndefined();
   });
 
   it.each(['', '/unavailable', '/unavailable?project=test-foundation'])('falls back to the dashboard for path %j', (path) => {

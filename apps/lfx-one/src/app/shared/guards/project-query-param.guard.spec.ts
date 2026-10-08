@@ -6,6 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, RedirectCommand, Router, UrlTree } from '@angular/router';
 import { TRANSIENT_RETRY_DELAY_MS } from '@lfx-one/shared/constants';
 import { ProjectContextService } from '@shared/services/project-context.service';
+import { ProjectRecoveryService } from '@shared/services/project-recovery.service';
 import { ProjectService } from '@shared/services/project.service';
 import { defer, firstValueFrom, isObservable, Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -196,7 +197,7 @@ describe('projectQueryParamGuard', () => {
     expect(cmd).toBeInstanceOf(RedirectCommand);
     expect(cmd.navigationBehaviorOptions?.skipLocationChange).toBe(true);
     expect(parseUrl).toHaveBeenCalledWith('/unavailable');
-    expect(cmd.navigationBehaviorOptions?.state).toEqual({ retryUrl: '/project/groups?project=my-project#section' });
+    expect(TestBed.inject(ProjectRecoveryService).retryUrl).toBe('/project/groups?project=my-project#section');
     expect(lookup).toHaveBeenCalledTimes(2);
     expect(setProject).not.toHaveBeenCalled();
     expect(setFoundation).not.toHaveBeenCalled();

@@ -135,10 +135,15 @@ The server implements **graceful degradation** for rendering errors:
 In-place not-found and unavailable views set `ServerRequestContext.notFound` or
 `ServerRequestContext.unavailable` during rendering. The SSR handler rewrites a
 200 response to 404 or 503 respectively, retaining the requested URL and rendered
-shell. The unavailable view's **Try again** action re-navigates to the failed
-destination captured in guard redirect navigation state, including query parameters
-and fragments. This is distinct from the previous address during in-app navigation.
-When navigation state is absent (SSR/hydration), it falls back to the current browser
+shell. `applySsrRenderStatus` preserves response headers and gives 404 precedence if
+both flags are set; existing non-200 responses remain unchanged.
+The unavailable view's **Try again** action reads the latest failed destination from
+`ProjectRecoveryService`, including query parameters and fragments. Guards update it
+before redirecting, so repeated failures refresh the target even when Angular skips
+the same-URL recovery redirect. Selected-project newsletter access and Formation
+CanMatch lookups share the strict lookup/retry policy without bypassing their access,
+stage or feature-flag checks. The target is distinct from the previous SPA address.
+When recovery state is absent (SSR/hydration), it falls back to the current browser
 path with its fragment, which retains the directly requested address.
 
 ## 🚀 Production Deployment Architecture

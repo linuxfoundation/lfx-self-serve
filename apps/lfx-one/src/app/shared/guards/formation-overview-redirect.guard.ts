@@ -19,8 +19,8 @@ import { isFormationChecklistProject, resolveFormationFlag } from '../utils/form
  *
  * Runs first in the route's `canActivate` array: Angular starts every guard concurrently but
  * honours the first `UrlTree` in array order, so this decides regardless of
- * `projectQueryParamGuard`'s timing. Both read the same `shareReplay`-cached `getProject`, so the
- * redirect costs no extra request.
+ * `projectQueryParamGuard`'s timing. Its ordinary `getProject` cache is separate from the query
+ * guard's strict lookup cache, so a cold navigation can require a second project request.
  *
  * The slug comes from the route snapshot (`?project=`), falling back to the selected project slot
  * for the in-app navigations that call `setProject()` then `navigate(['/project/overview'])`
