@@ -289,9 +289,11 @@ export class MeetingRegistrantsDisplayComponent {
     if (this.submitting()) return;
     if (this.addRegistrantForm.valid) {
       const formValue = this.addRegistrantForm.value;
+      // Read occurrence scope before resetting so a "this date only" selection is preserved.
+      const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
       this.addRegistrantForm.reset();
       this.inviteScopeForm.reset();
-      this.submitGuest(formValue);
+      this.submitGuest(formValue, occurrenceId);
     } else {
       markFormControlsAsTouched(this.addRegistrantForm);
     }
@@ -299,17 +301,21 @@ export class MeetingRegistrantsDisplayComponent {
 
   public onUserSelectedFromSearch(): void {
     if (this.addRegistrantForm.valid) {
+      // Capture the form value but do NOT reset inviteScopeForm — the scope selection must survive
+      // until the organizer clicks "Add Guest" on the staged card.
       this.stagedGuest.set(this.addRegistrantForm.value as Record<string, unknown>);
       this.addRegistrantForm.reset();
-      this.inviteScopeForm.reset();
     }
   }
 
   public onConfirmStagedGuest(): void {
     const guest = this.stagedGuest();
     if (!guest || this.submitting()) return;
+    // Read and reset the scope form here, once the organizer has confirmed their selection.
+    const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
+    this.inviteScopeForm.reset();
     this.stagedGuest.set(null);
-    this.submitGuest(guest);
+    this.submitGuest(guest, occurrenceId);
   }
 
   public onDismissStagedGuest(): void {
@@ -330,10 +336,9 @@ export class MeetingRegistrantsDisplayComponent {
     });
   }
 
-  private submitGuest(formValue: Record<string, unknown>): void {
+  private submitGuest(formValue: Record<string, unknown>, occurrenceId: string | null): void {
     if (this.submitting()) return;
     this.submitting.set(true);
-    const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
     const createData = {
       ...this.meetingService.stripMetadata(this.meeting().id, formValue as unknown as MeetingRegistrantWithState),
       ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
