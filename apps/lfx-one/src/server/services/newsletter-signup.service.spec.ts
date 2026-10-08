@@ -137,9 +137,9 @@ describe('NewsletterSignupService', () => {
       await expect(service.getSignupInfo(req, 'acme', GROUP_UID)).resolves.toMatchObject({ accepting_signups: false });
     });
 
-    it('assumes signups are open when the settings read fails', async () => {
-      mockUpstream(committee(), new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
-      await expect(service.getSignupInfo(req, 'acme', GROUP_UID)).resolves.toMatchObject({ accepting_signups: true });
+    it('fails closed when the settings read fails, instead of advertising signups', async () => {
+      mockUpstream(committee(), new MicroserviceError('Unavailable', 503, 'SERVICE_UNAVAILABLE'));
+      await expect(service.getSignupInfo(req, 'acme', GROUP_UID)).rejects.toMatchObject({ statusCode: 503 });
     });
 
     it('propagates a slug-lookup outage instead of reporting the link as not found', async () => {

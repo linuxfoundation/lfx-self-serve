@@ -163,16 +163,19 @@ export class NewsletterSignupService {
           }
           throw error;
         }),
-      // Best-effort: on failure, assume signups are open and let upstream validation decide.
-      this.microserviceProxy
-        .proxyRequest<CommitteeSettingsData>(req, 'LFX_V2_SERVICE', `/committees/${groupUid}/settings`, 'GET', undefined, undefined, undefined, requestOptions)
-        .catch((error: unknown): CommitteeSettingsData => {
-          logger.warning(req, 'resolve_newsletter_signup_target', 'Failed to read group settings, assuming signups are open', {
-            committee_uid: groupUid,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return {};
-        }),
+      // Fail closed: an unreadable setting must not advertise a form upstream would refuse (the
+      // page shows its retryable error state). Same permission tier as the member write, so this
+      // adds no failure mode the write itself doesn't already have.
+      this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${groupUid}/settings`,
+        'GET',
+        undefined,
+        undefined,
+        undefined,
+        requestOptions
+      ),
     ]);
 
     if (!project || !committee || committee.category !== NEWSLETTER_COMMITTEE_CATEGORY || committee.project_uid !== project.uid) {
