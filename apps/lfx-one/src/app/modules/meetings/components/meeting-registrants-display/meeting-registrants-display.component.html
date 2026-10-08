@@ -126,7 +126,7 @@
           </div>
 
           <!-- Name + Company + Voting Status -->
-          <div class="flex flex-col min-w-0">
+          <div class="flex flex-col min-w-0 flex-1">
             <div class="flex items-center gap-2">
               <h3>{{ registrant.first_name }} {{ registrant.last_name }}</h3>
               @if (registrant.host) {
@@ -170,6 +170,21 @@
             }
           </div>
         </div>
+
+        @if (!pastMeeting() && showAddRegistrant() && registrant.type !== 'committee') {
+          <div class="flex justify-end">
+            <button
+              type="button"
+              class="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md px-2 py-1 transition-colors"
+              [attr.aria-label]="'Remove ' + registrant.first_name + ' ' + registrant.last_name"
+              [attr.data-testid]="'registrant-display-remove-' + registrant.uid"
+              [disabled]="deleting()"
+              (click)="onRequestRemoveGuest(registrant)">
+              <i class="fa-light fa-xmark" aria-hidden="true"></i>
+              <span>Remove</span>
+            </button>
+          </div>
+        }
       </div>
     </ng-template>
 
@@ -216,18 +231,58 @@
               }
               <lfx-registrant-form [form]="addRegistrantForm" (onUserSelected)="onUserSelectedFromSearch()" data-testid="inline-registrant-form">
               </lfx-registrant-form>
-              <div class="flex items-center justify-end gap-2 pt-2 border-t border-blue-100">
-                <lfx-button
-                  label="Add Guest"
-                  size="small"
-                  icon="fa-light fa-user-plus"
-                  [loading]="submitting()"
-                  [disabled]="addRegistrantForm.invalid || submitting()"
-                  type="button"
-                  (onClick)="onAddRegistrant()"
-                  data-testid="inline-add-registrant-submit">
-                </lfx-button>
-              </div>
+
+              @if (stagedGuest()) {
+                <!-- Staged guest preview — requires an explicit Add click to commit. -->
+                <!-- aria-live="polite" announces the card to screen readers so they know a second step is required. -->
+                <div
+                  class="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3"
+                  aria-live="polite"
+                  data-testid="registrant-display-staged">
+                  <span
+                    class="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700"
+                    aria-hidden="true">
+                    {{ stagedGuestInitials() }}
+                  </span>
+                  <div class="flex min-w-0 flex-1 flex-col">
+                    <span class="min-w-0 truncate text-sm font-medium text-gray-900" data-testid="registrant-display-staged-name">{{
+                      stagedGuestDisplayName()
+                    }}</span>
+                    <span class="truncate text-xs text-gray-500" data-testid="registrant-display-staged-secondary">{{ stagedGuestSecondaryLine() }}</span>
+                  </div>
+                  <div class="flex flex-none items-center gap-2">
+                    <lfx-button
+                      label="Add Guest"
+                      size="small"
+                      icon="fa-light fa-user-plus"
+                      [loading]="submitting()"
+                      [disabled]="submitting()"
+                      data-testid="registrant-display-staged-confirm"
+                      (onClick)="onConfirmStagedGuest()" />
+                    <button
+                      type="button"
+                      class="rounded-md p-2 text-gray-400 hover:bg-blue-100 hover:text-gray-600"
+                      aria-label="Dismiss selection"
+                      (click)="onDismissStagedGuest()"
+                      data-testid="registrant-display-staged-dismiss">
+                      <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                </div>
+              } @else {
+                <div class="flex items-center justify-end gap-2 pt-2 border-t border-blue-100">
+                  <lfx-button
+                    label="Add Guest"
+                    size="small"
+                    icon="fa-light fa-user-plus"
+                    [loading]="submitting()"
+                    [disabled]="addRegistrantForm.invalid || submitting()"
+                    type="button"
+                    (onClick)="onAddRegistrant()"
+                    data-testid="inline-add-registrant-submit">
+                  </lfx-button>
+                </div>
+              }
             </div>
           }
         }
@@ -317,3 +372,5 @@
     }
   </div>
 }
+
+<p-confirmDialog></p-confirmDialog>
