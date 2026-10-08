@@ -24,8 +24,14 @@ import type { LDClient } from '@launchdarkly/node-server-sdk';
  * LFID username.
  *
  * Needs `LD_SDK_KEY`, the **server-side** SDK key. `LD_CLIENT_ID` is a client-side ID and cannot be
- * used here. Without the key, or while LaunchDarkly is unreachable, every evaluation returns the
+ * used here. Without the key, or until the SDK has connected once, every evaluation returns the
  * caller's default, so callers must pass the safe value (fail closed for access checks).
+ *
+ * Once connected, the SDK evaluates from its last known flag data, including during a later
+ * LaunchDarkly outage (standard server SDK behavior; `initialized()` is not a live connectivity
+ * check). A targeting change made during an outage therefore takes effect when the SDK reconnects.
+ * This is accepted: failing closed on every blip would lock out legitimate users, and removing a
+ * user from a flag never revokes credentials they already hold.
  *
  * Lazy singleton: the SDK connects on the first evaluation, so pods and tests that never evaluate
  * a flag never open a streaming connection.
