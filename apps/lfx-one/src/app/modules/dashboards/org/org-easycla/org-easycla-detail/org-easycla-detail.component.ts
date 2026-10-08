@@ -314,8 +314,10 @@ export class OrgEasyclaDetailComponent {
 
   /**
    * Whether ACS grants the current viewer the Auto ECLA write for this agreement's pair (#1988).
-   * `null` while the hop is in flight — the toggle stays disabled with no explanation during that
-   * window rather than enabled from an unchecked grant. `false` disables it (#3406); it never hides
+   * `null` while the hop is in flight — the toggle stays disabled during that window rather than
+   * enabled from an unchecked grant; enablement waits for this answer, while the explanation
+   * follows the roster on its own, so an off-roster viewer sees it even while this is `null`.
+   * `false` disables it (#3406); it never hides
    * it, because the stored value is readable by anyone who can open the agreement. Whether a
    * sentence explains the disabled switch follows the roster alone — see `initAutoEclaLocked`.
    *
