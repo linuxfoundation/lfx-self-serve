@@ -14,6 +14,7 @@ import {
   CCLA_SIGN_COPY,
   ORG_CLA_DESIGNEE_REFUSAL_COPY,
   ORG_CLA_DESIGNEE_START_COPY,
+  ORG_CLA_DOWNLOAD_COPY,
   ORG_CLA_IDENTIFY_MANAGER_COPY,
   ORG_CLA_LOCKED_TAB_COPY,
   ORG_CLA_MANAGERS_COPY,
@@ -1890,12 +1891,25 @@ describe('OrgEasyclaDetailComponent', () => {
   it.each([
     ['is not on the roster', false],
     ['has no roster answer', undefined],
-  ])('withholds the download from a signed agreement when the viewer %s', async (_case, viewerIsClaManager) => {
+  ])('offers the download disabled, carrying its reason, when the viewer %s', async (_case, viewerIsClaManager) => {
     getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ viewerIsClaManager })] }));
 
     const fixture = await render();
+    const control = byTestId(fixture, 'org-easycla-detail-download');
 
-    expect(byTestId(fixture, 'org-easycla-detail-download')).toBeNull();
+    // Disabled rather than absent, so a reader who cannot download still learns the document
+    // exists and who to ask. The reason is in the accessible name as well as the tooltip, because
+    // a disabled button is not focusable and so never receives the hover a sighted reader gets.
+    expect(control?.querySelector('button')?.disabled).toBe(true);
+    expect(control?.querySelector('[aria-label]')?.getAttribute('aria-label')).toContain(ORG_CLA_DOWNLOAD_COPY.offRosterTooltip);
+  });
+
+  it('offers the download enabled, with no reason attached, to a CLA manager on the roster', async () => {
+    const fixture = await render();
+    const control = byTestId(fixture, 'org-easycla-detail-download');
+
+    expect(control?.querySelector('button')?.disabled).toBe(false);
+    expect(control?.querySelector('[aria-label]')?.getAttribute('aria-label')).not.toContain(ORG_CLA_DOWNLOAD_COPY.offRosterTooltip);
   });
 
   it('refuses the download for an off-roster viewer reached another way', async () => {
