@@ -78,6 +78,7 @@ import akritesRouter from './routes/akrites.route';
 import mktgAgentsRouter from './routes/mktg-agents.route';
 import weeklyBriefRouter from './routes/weekly-brief.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
+import { LaunchDarklyServerService } from './services/launchdarkly-server.service';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
 import { sessionStoreService } from './services/session-store.service';
@@ -781,6 +782,8 @@ async function gracefulShutdown(signal: string): Promise<void> {
         }
       )
     ),
+    // Closes the LaunchDarkly streaming connection only if a flag was ever evaluated on this pod.
+    raceDrain('launchdarkly', LaunchDarklyServerService.shutdownIfInitialized()),
   ]);
 
   logger.success(undefined, 'graceful_shutdown', startTime, {});
