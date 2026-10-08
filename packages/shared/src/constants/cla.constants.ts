@@ -821,7 +821,8 @@ export const ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY = {
  * The signed-document download on a CLA Group's Overview.
  *
  * Shown disabled rather than hidden off the roster, so a reader who cannot download learns the
- * document exists and who to ask, which is the treatment the Auto ECLA toggle also takes.
+ * document exists and who to ask. It is the only control on this surface that behaves that way;
+ * the Auto ECLA toggle is still withheld, and #3406 is the ticket to bring it here.
  */
 export const ORG_CLA_DOWNLOAD_COPY = {
   offRosterTooltip: 'Only a CLA Manager named on this CCLA can download the signed document',
