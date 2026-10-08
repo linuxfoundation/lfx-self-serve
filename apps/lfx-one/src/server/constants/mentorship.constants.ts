@@ -75,6 +75,9 @@ export const MENTORSHIP_TASK_FILE_DOWNLOAD_HEADERS: readonly string[] = [
   'accept-ranges',
 ];
 
+/** Of those, the ones that count encoded bytes, so they are dropped when upstream compresses the body that `fetch` decodes. */
+export const MENTORSHIP_TASK_FILE_ENCODED_BYTE_HEADERS: readonly string[] = ['content-length', 'content-range', 'accept-ranges'];
+
 /** The one `Range` shape passed upstream, a single byte range; any other is dropped and the whole file is sent. */
 export const MENTORSHIP_TASK_FILE_RANGE_PATTERN = /^bytes=(\d{1,15}-\d{0,15}|-\d{1,15})$/;
 

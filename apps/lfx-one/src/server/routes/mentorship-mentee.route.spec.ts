@@ -5,7 +5,7 @@
 // @angular/common, which needs the JIT compiler under vitest.
 import '@angular/compiler';
 
-import { MENTORSHIP_MENTEE_TASK_FILE_MAX_BYTES } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTEE_TASK_FILE_MAX_BYTES, MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER } from '@lfx-one/shared/constants';
 import express from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -54,10 +54,10 @@ const TASK_ID = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
 let server: Server;
 let baseUrl: string;
 
-const fileUrl = (): string => `${baseUrl}/api/mentorship/mentee/tasks/${TASK_ID}/file?fileName=report.pdf`;
+const fileUrl = (): string => `${baseUrl}/api/mentorship/mentee/tasks/${TASK_ID}/file`;
 
 const postFile = (contentType: string, body: Buffer<ArrayBuffer>): Promise<Response> =>
-  fetch(fileUrl(), { method: 'POST', headers: { 'Content-Type': contentType }, body });
+  fetch(fileUrl(), { method: 'POST', headers: { 'Content-Type': contentType, [MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER]: 'report.pdf' }, body });
 
 const deleteFile = (): Promise<Response> => fetch(fileUrl(), { method: 'DELETE' });
 
@@ -90,6 +90,7 @@ describe('mentorship mentee router — POST /tasks/:taskId/file', () => {
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ isBuffer: true, length: 3 });
     expect(uploadHandler).toHaveBeenCalledTimes(1);
+    expect(uploadHandler.mock.calls[0][0].headers['x-file-name']).toBe('report.pdf');
   });
 
   it.each(['application/pdf', 'text/plain', 'application/json'])('leaves %s unparsed, so the controller can answer 415', async (contentType) => {

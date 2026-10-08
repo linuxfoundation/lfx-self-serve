@@ -231,16 +231,24 @@ describe('MentorshipTaskService.openTaskFile', () => {
     proxyStreamRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyStreamRequest');
   });
 
-  it('streams the file download with the transfer timeout and no range header when none is given', async () => {
+  it('streams the file download uncompressed, with the transfer timeout and no range header when none is given', async () => {
     const upstream = new Response('file-bytes', { status: 200 });
     proxyStreamRequest.mockResolvedValueOnce(upstream);
 
     await expect(new MentorshipTaskService().openTaskFile(buildReq(), TASK_ID)).resolves.toBe(upstream);
 
-    expect(proxyStreamRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', DOWNLOAD_PATH, 'GET', undefined, undefined, { timeoutMs: 120_000 });
+    expect(proxyStreamRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      DOWNLOAD_PATH,
+      'GET',
+      undefined,
+      { 'Accept-Encoding': 'identity' },
+      { timeoutMs: 120_000 }
+    );
   });
 
-  it('forwards a byte range as the Range header', async () => {
+  it('forwards a byte range as the Range header, still asking for the bytes uncompressed', async () => {
     proxyStreamRequest.mockResolvedValueOnce(new Response('le-by', { status: 206 }));
 
     await new MentorshipTaskService().openTaskFile(buildReq(), TASK_ID, 'bytes=2-6');
@@ -251,7 +259,7 @@ describe('MentorshipTaskService.openTaskFile', () => {
       DOWNLOAD_PATH,
       'GET',
       undefined,
-      { Range: 'bytes=2-6' },
+      { 'Accept-Encoding': 'identity', Range: 'bytes=2-6' },
       { timeoutMs: 120_000 }
     );
   });

@@ -71,8 +71,8 @@ function acceptedApplication(task: StubTask) {
 }
 
 interface FileStub {
-  /** URLs and content types of the uploads received, in order. */
-  uploads: { url: string; contentType: string | undefined }[];
+  /** URLs, content types and encoded file-name headers of the uploads received, in order. */
+  uploads: { url: string; contentType: string | undefined; fileName: string | undefined }[];
   removals: number;
 }
 
@@ -100,7 +100,7 @@ async function stubFileFlow(
     if (request.method() === 'DELETE') {
       stub.removals += 1;
     } else {
-      stub.uploads.push({ url: request.url(), contentType: request.headers()['content-type'] });
+      stub.uploads.push({ url: request.url(), contentType: request.headers()['content-type'], fileName: request.headers()['x-file-name'] });
     }
     if (writeStatus >= 400) {
       return route.fulfill({ status: writeStatus, contentType: 'application/json', body: JSON.stringify(errorBody) });
@@ -137,7 +137,9 @@ test.describe('Mentee My Tasks — submission file', () => {
 
     await expect(page.locator('p-toast .p-toast-message-success')).toContainText(MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_SUCCESS_SUMMARY);
     expect(stub.uploads).toHaveLength(1);
-    expect(new URL(stub.uploads[0].url).searchParams.get('fileName')).toBe('My Submission.pdf');
+    // The name rides in a header, never the URL the request logger writes.
+    expect(decodeURIComponent(stub.uploads[0].fileName ?? '')).toBe('My Submission.pdf');
+    expect(new URL(stub.uploads[0].url).search).toBe('');
     expect(stub.uploads[0].contentType).toBe('application/octet-stream');
 
     await expect(page.getByTestId(`mentee-tasks-download-file-${TASK_ID}`)).toBeVisible();

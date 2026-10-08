@@ -7,7 +7,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
-import { MENTORSHIP_TASK_FILE_DOWNLOAD_HEADERS, MENTORSHIP_TASK_FILE_RANGE_PATTERN } from '../constants';
+import { MENTORSHIP_TASK_FILE_DOWNLOAD_HEADERS, MENTORSHIP_TASK_FILE_ENCODED_BYTE_HEADERS, MENTORSHIP_TASK_FILE_RANGE_PATTERN } from '../constants';
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { parseMentorshipTaskCreateRequest, parseMentorshipTaskUpdate } from '../helpers/mentorship-task.helper';
@@ -96,12 +96,18 @@ export class MentorshipTaskController {
       const upstream = await this.taskService.openTaskFile(req, taskId, range);
 
       res.status(upstream.status);
+      // `fetch` decodes a compressed body but keeps the compressed length and ranges, and copying the length would make Node
+      // cut the file short (see gw-proxy.controller.ts). The service asks for identity, so these are only dropped if upstream
+      // compresses anyway.
+      const decodedBody = Boolean(upstream.headers.get('content-encoding'));
       for (const name of MENTORSHIP_TASK_FILE_DOWNLOAD_HEADERS) {
         const value = upstream.headers.get(name);
-        if (value) res.setHeader(name, value);
+        if (value && !(decodedBody && MENTORSHIP_TASK_FILE_ENCODED_BYTE_HEADERS.includes(name))) res.setHeader(name, value);
       }
-      // Upstream sends both; kept if it ever does not, so the file is never shown inline or cached.
-      if (!res.getHeader('content-disposition')) res.setHeader('Content-Disposition', contentDispositionAttachment('submission'));
+      // Always an attachment, so the file is never rendered on this origin; upstream's own value is kept only when it is one.
+      if (!/^attachment\b/i.test(String(res.getHeader('content-disposition') ?? ''))) {
+        res.setHeader('Content-Disposition', contentDispositionAttachment('submission'));
+      }
       if (!res.getHeader('cache-control')) res.setHeader('Cache-Control', 'private, no-store');
       res.setHeader('X-Content-Type-Options', 'nosniff');
 

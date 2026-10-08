@@ -277,6 +277,64 @@ describe('MentorshipTaskController', () => {
       expect(headers.get('x-content-type-options')).toBe('nosniff');
     });
 
+    it.each(['inline; filename="report.pdf"', 'inline', 'form-data; name="file"; filename="report.pdf"', 'attachmentish; filename="report.pdf"'])(
+      'replaces the upstream disposition %j with an attachment',
+      async (disposition) => {
+        vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+          new Response('x', { status: 200, headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': disposition } })
+        );
+        const { res, headers } = streamRes();
+
+        await controller.downloadTaskFile(fileReq(), res, next);
+
+        expect(headers.get('content-disposition')).toBe(`attachment; filename="submission"; filename*=UTF-8''submission`);
+        expect(next).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each(['ATTACHMENT; filename="report.pdf"', 'Attachment', 'attachment;filename="report.pdf"'])(
+      'keeps the upstream attachment disposition %j in any case',
+      async (disposition) => {
+        vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+          new Response('x', { status: 200, headers: { 'Content-Disposition': disposition } })
+        );
+        const { res, headers } = streamRes();
+
+        await controller.downloadTaskFile(fileReq(), res, next);
+
+        expect(headers.get('content-disposition')).toBe(disposition);
+      }
+    );
+
+    it('drops the upstream length and ranges, and keeps the other file headers, when upstream compresses the body', async () => {
+      vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+        new Response('file-bytes', {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Length': '4',
+            'Content-Range': 'bytes 0-3/4',
+            'Accept-Ranges': 'bytes',
+            'Content-Encoding': 'gzip',
+            'Content-Disposition': 'attachment; filename="report.pdf"',
+            ETag: '"abc"',
+          },
+        })
+      );
+      const { res, headers, body } = streamRes();
+
+      await controller.downloadTaskFile(fileReq(), res, next);
+
+      expect(headers.has('content-length')).toBe(false);
+      expect(headers.has('content-range')).toBe(false);
+      expect(headers.has('accept-ranges')).toBe(false);
+      expect(headers.has('content-encoding')).toBe(false);
+      expect(headers.get('content-type')).toBe('application/pdf');
+      expect(headers.get('content-disposition')).toBe('attachment; filename="report.pdf"');
+      expect(headers.get('etag')).toBe('"abc"');
+      expect(body()).toBe('file-bytes');
+    });
+
     it.each([
       ['a task id that is not a UUID', '12'],
       ['a task id that is repeated', [TASK_ID, TASK_ID]],

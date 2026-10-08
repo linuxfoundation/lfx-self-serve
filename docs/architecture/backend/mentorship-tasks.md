@@ -79,17 +79,17 @@ A task with `submit_file` set needs a file before it can be Submitted (linuxfoun
 | GET    | `/api/mentorship/tasks/:taskId/file`        | The assignee, its mentors and admins | `GET /mentorship/v1/tasks/{id}/file-download` |
 
 ```text
-POST /mentee/tasks/:taskId/file?fileName=<name>   raw bytes, Content-Type: application/octet-stream
+POST /mentee/tasks/:taskId/file   raw bytes, Content-Type: application/octet-stream, X-File-Name: <URI-encoded name>
   → blockDuringImpersonation · express.raw (MENTORSHIP_MENTEE_TASK_FILE_MAX_BYTES, 20 MiB; over it a 413)
-  → 415 for another content type or an extension outside MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS; 400 for an empty body or an unsafe name
+  → 415 for another content type or an extension outside MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS; 400 for an empty body or a missing name
   → GET /mentorship/v1/tasks/{id}                   (past due → 400 TASK_PAST_DUE, as for a submit)
   → POST /mentorship/v1/tasks/{id}/file-upload      multipart, part `file`, re-built with form-data; 120 s timeout
   ← 201 { fileName, contentType, size }
 ```
 
-- **Upload is buffered, not streamed.** The browser sends the raw bytes and the file name; the BFF re-sends them as multipart through `proxyMentorshipRequest`, so the not-provisioned retry still applies. Upstream decides the type from the bytes (PDF, DOC, DOCX or UTF-8 text), cleans the name to `[A-Za-z0-9._-]`, and answers 409 for a completed task, 413 and 415 for a file it refuses and 503 while object storage is not configured; each passes through.
+- **Upload is buffered, not streamed.** The browser sends the raw bytes, with the file name URI-encoded in `X-File-Name` (`MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER`) rather than the URL, which the request logger writes on every line. The BFF replaces path separators, quotes and control characters in the name (`sanitizeMentorshipTaskFileName`) instead of refusing it, and re-sends the bytes as multipart through `proxyMentorshipRequest`, so the not-provisioned retry still applies. Upstream decides the type from the bytes (PDF, DOC, DOCX or UTF-8 text), cleans the name to `[A-Za-z0-9._-]`, and answers 409 for a completed task, 413 and 415 for a file it refuses and 503 while object storage is not configured; each passes through.
 - **Status rules are upstream's.** A file can be uploaded or replaced in any status but `complete`, and removed only while the task is not started or in progress; once submitted it can only be replaced. The BFF adds the past-due lock to upload and removal (`MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE`), since upstream enforces no deadline.
-- **Download is streamed.** `MentorshipTaskService.openTaskFile` opens upstream through `proxyStreamRequest` with the 120 s timeout, and the controller pipes the body through with upstream's status and `MENTORSHIP_TASK_FILE_DOWNLOAD_HEADERS`. A single byte `Range` (`MENTORSHIP_TASK_FILE_RANGE_PATTERN`) is forwarded, so a resumed download gets a 206; any other is dropped. Upstream always sends the file as an attachment, so there is no View, only Download.
+- **Download is streamed.** `MentorshipTaskService.openTaskFile` opens upstream through `proxyStreamRequest` with the 120 s timeout, and the controller pipes the body through with upstream's status and `MENTORSHIP_TASK_FILE_DOWNLOAD_HEADERS`. A single byte `Range` (`MENTORSHIP_TASK_FILE_RANGE_PATTERN`) is forwarded, so a resumed download gets a 206; any other is dropped. The bytes are asked for uncompressed (`Accept-Encoding: identity`), and a compressed answer drops `Content-Length`, which `fetch` would leave at the compressed size. The response is always an attachment, whatever upstream sends, so there is no View, only Download.
 - **The browser never sees the upstream route.** Upstream's task `file` is its own download route; the mappers expose only whether a file is stored (`hasFile` for the mentee, `hasSubmission` for reviewers), and the app calls the BFF route by task id.
 - **App side.** `MentorshipTaskFileService` checks the extension and size before sending, toasts the outcome, re-reads the mentee's applications after a change or a stale failure, and saves a download under the name in `Content-Disposition`. Logs carry the task id and size only, never the file name or bytes.
 

@@ -441,6 +441,11 @@ export const MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS: readonly string[] = ['.pdf'
 export const MENTORSHIP_MENTEE_TASK_FILE_ACCEPT = MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS.join(',');
 /** The browser sends the raw bytes with this type, and the BFF's parser reads no other; upstream ignores the type it is sent. */
 export const MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE = 'application/octet-stream';
+/**
+ * Request header that carries the file's name, URI-encoded. A header rather than a query value, because the request
+ * logger writes the URL on every line and a mentee's file name often carries their own name.
+ */
+export const MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER = 'X-File-Name';
 export const MENTORSHIP_MENTEE_TASK_FILE_TOO_LARGE_MESSAGE = 'The file is larger than 20 MB.';
 export const MENTORSHIP_MENTEE_TASK_FILE_TYPE_MESSAGE = 'Upload a PDF, DOC, DOCX or plain-text file.';
 export const MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_SUCCESS_SUMMARY = 'File uploaded';

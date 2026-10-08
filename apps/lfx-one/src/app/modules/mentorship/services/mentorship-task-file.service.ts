@@ -9,7 +9,6 @@ import {
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_MENTEE_TASK_FILE_ERROR_FALLBACK,
   MENTORSHIP_MENTEE_TASK_FILE_ERROR_MESSAGES,
-  MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS,
   MENTORSHIP_MENTEE_TASK_FILE_MAX_BYTES,
   MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE,
   MENTORSHIP_MENTEE_TASK_FILE_REMOVE_ERROR_SUMMARY,
@@ -29,7 +28,7 @@ import {
   MENTORSHIP_TASK_FILE_DOWNLOAD_FALLBACK_NAME,
   MENTORSHIP_TASK_FILE_DOWNLOAD_TOAST_LIFE,
 } from '@lfx-one/shared/constants';
-import { downloadFromUrl, parseContentDispositionFilename } from '@lfx-one/shared/utils';
+import { downloadFromUrl, hasMentorshipTaskFileExtension, parseContentDispositionFilename } from '@lfx-one/shared/utils';
 import { MentorshipService } from '@services/mentorship.service';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { MessageService } from 'primeng/api';
@@ -110,9 +109,7 @@ export class MentorshipTaskFileService {
   }
 
   private validateFile(file: File): string | null {
-    const dot = file.name.lastIndexOf('.');
-    const extension = dot === -1 ? '' : file.name.slice(dot).toLowerCase();
-    if (!MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS.includes(extension)) return MENTORSHIP_MENTEE_TASK_FILE_TYPE_MESSAGE;
+    if (!hasMentorshipTaskFileExtension(file.name)) return MENTORSHIP_MENTEE_TASK_FILE_TYPE_MESSAGE;
     if (file.size > MENTORSHIP_MENTEE_TASK_FILE_MAX_BYTES) return MENTORSHIP_MENTEE_TASK_FILE_TOO_LARGE_MESSAGE;
     if (file.size === 0) return MENTORSHIP_MENTEE_TASK_FILE_ERROR_MESSAGES[400];
     return null;

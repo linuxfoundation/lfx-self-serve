@@ -301,12 +301,16 @@ describe('MentorshipMenteeController', () => {
     const fileName = 'private-report-name.pdf';
     const file = Buffer.from('%PDF-1.7 test');
     const uploaded = { fileName: 'private-report-name.pdf', contentType: 'application/pdf', size: file.byteLength };
+    // `fileNameHeader: undefined` leaves the header off; any other value is sent as is, so callers encode it themselves.
     const buildUploadReq = (
-      overrides: { params?: Record<string, unknown>; query?: Record<string, unknown>; contentType?: string; body?: unknown } = {}
+      overrides: { params?: Record<string, unknown>; query?: Record<string, unknown>; fileNameHeader?: unknown; contentType?: string; body?: unknown } = {}
     ): Request => {
-      const { params = { taskId }, query = { fileName }, contentType = 'application/octet-stream' } = overrides;
+      const { params = { taskId }, query = {}, contentType = 'application/octet-stream' } = overrides;
       const body = 'body' in overrides ? overrides.body : file;
-      return { params, query, body, path: `/tasks/${taskId}/file`, headers: { 'content-type': contentType } } as unknown as Request;
+      const fileNameHeader = 'fileNameHeader' in overrides ? overrides.fileNameHeader : encodeURIComponent(fileName);
+      const headers: Record<string, unknown> = { 'content-type': contentType };
+      if (fileNameHeader !== undefined) headers['x-file-name'] = fileNameHeader;
+      return { params, query, body, path: `/tasks/${taskId}/file`, headers } as unknown as Request;
     };
     const nextError = () => vi.mocked(next).mock.calls[0][0] as unknown as { statusCode?: number; code?: string };
 
@@ -318,7 +322,11 @@ describe('MentorshipMenteeController', () => {
     it('uploads the trimmed task id, file name and bytes and answers 201 with the stored file', async () => {
       const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile').mockResolvedValue(uploaded);
 
-      await controller.uploadMenteeTaskFile(buildUploadReq({ params: { taskId: ` ${taskId} ` }, query: { fileName: ` ${fileName} ` } }), res, next);
+      await controller.uploadMenteeTaskFile(
+        buildUploadReq({ params: { taskId: ` ${taskId} ` }, fileNameHeader: encodeURIComponent(` ${fileName} `) }),
+        res,
+        next
+      );
 
       expect(upload).toHaveBeenCalledWith(expect.anything(), taskId, fileName, file);
       expect(res.status).toHaveBeenCalledWith(201);
@@ -335,12 +343,30 @@ describe('MentorshipMenteeController', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
-    it.each(['report.PDF', 'notes.txt', 'essay.doc', 'essay.DocX'])('accepts the file name %s', async (name) => {
+    it.each(['report.PDF', 'notes.txt', 'essay.doc', 'essay.DocX', 'my résumé (final).pdf', '履歴書.docx'])('accepts the file name %s', async (name) => {
       const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile').mockResolvedValue(uploaded);
 
-      await controller.uploadMenteeTaskFile(buildUploadReq({ query: { fileName: name } }), res, next);
+      await controller.uploadMenteeTaskFile(buildUploadReq({ fileNameHeader: encodeURIComponent(name) }), res, next);
 
       expect(upload).toHaveBeenCalledWith(expect.anything(), taskId, name, file);
+    });
+
+    it.each([
+      ['a/b.pdf', 'a_b.pdf'],
+      ['../report.pdf', '._report.pdf'],
+      ['dir\\report.pdf', 'dir_report.pdf'],
+      ['say "hi".pdf', 'say _hi_.pdf'],
+      ['resume v2..final.pdf', 'resume v2.final.pdf'],
+      ['report\r\n.pdf', 'report__.pdf'],
+      ['tab\there.txt', 'tab_here.txt'],
+    ])('sanitises the file name %j to %j and forwards it', async (name, sanitised) => {
+      const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile').mockResolvedValue(uploaded);
+
+      await controller.uploadMenteeTaskFile(buildUploadReq({ fileNameHeader: encodeURIComponent(name) }), res, next);
+
+      expect(upload).toHaveBeenCalledWith(expect.anything(), taskId, sanitised, file);
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(next).not.toHaveBeenCalled();
     });
 
     it('logs the task id and the size, never the file name', async () => {
@@ -391,22 +417,28 @@ describe('MentorshipMenteeController', () => {
     });
 
     it.each([
-      {},
-      { fileName: '' },
-      { fileName: '   ' },
-      { fileName: ['a.pdf', 'b.pdf'] },
-      { fileName: '../report.pdf' },
-      { fileName: 'dir/report.pdf' },
-      { fileName: 'dir\\report.pdf' },
-      { fileName: 're"port.pdf' },
-      { fileName: 'report\r\n.pdf' },
-    ])('rejects the query %j on the fileName field before calling the service', async (query) => {
+      ['no header', undefined],
+      ['an empty header', ''],
+      ['a blank name', encodeURIComponent('   ')],
+      ['a repeated header', ['a.pdf', 'b.pdf']],
+      ['an undecodable header', '%E0%A4%A'],
+      ['a lone percent sign', 'report%.pdf'],
+    ])('rejects %s on the fileName field before calling the service', async (_label, fileNameHeader) => {
       const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile');
 
-      await controller.uploadMenteeTaskFile(buildUploadReq({ query }), res, next);
+      await controller.uploadMenteeTaskFile(buildUploadReq({ fileNameHeader }), res, next);
 
       expect(upload).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(nextError()).toMatchObject({ statusCode: 400, validationErrors: [{ field: 'fileName' }] });
+    });
+
+    it('never reads the file name from the query', async () => {
+      const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile');
+
+      await controller.uploadMenteeTaskFile(buildUploadReq({ query: { fileName }, fileNameHeader: undefined }), res, next);
+
+      expect(upload).not.toHaveBeenCalled();
       expect(nextError()).toMatchObject({ statusCode: 400, validationErrors: [{ field: 'fileName' }] });
     });
 
@@ -415,7 +447,7 @@ describe('MentorshipMenteeController', () => {
       async (name) => {
         const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile');
 
-        await controller.uploadMenteeTaskFile(buildUploadReq({ query: { fileName: name } }), res, next);
+        await controller.uploadMenteeTaskFile(buildUploadReq({ fileNameHeader: encodeURIComponent(name) }), res, next);
 
         expect(upload).not.toHaveBeenCalled();
         expect(next).toHaveBeenCalledWith(expect.any(MicroserviceError));

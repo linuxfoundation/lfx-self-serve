@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS, MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER, MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplyIds } from '@lfx-one/shared/interfaces';
-import { isMentorshipMenteeUpdatableTaskStatus, isSafeUploadFileName, isUuid } from '@lfx-one/shared/utils';
+import { hasMentorshipTaskFileExtension, isMentorshipMenteeUpdatableTaskStatus, isUuid, sanitizeMentorshipTaskFileName } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, MicroserviceError, ServiceValidationError } from '../errors';
@@ -141,10 +141,12 @@ export class MentorshipMenteeController {
     }
   }
 
-  // POST /api/mentorship/mentee/tasks/:taskId/file?fileName=<name>  raw file bytes (application/octet-stream) -> 201
+  // POST /api/mentorship/mentee/tasks/:taskId/file  raw file bytes (application/octet-stream) -> 201
   // Auth: logged-in user required (401 otherwise). The route's raw parser reads only `application/octet-stream`, so any
-  // other type is a 415, and over 20 MB is a 413 before this runs. The file name must be safe to put in a multipart header
-  // and end in .pdf, .doc, .docx or .txt (415 otherwise); upstream still decides the type from the bytes. A change after
+  // other type is a 415, and over 20 MB is a 413 before this runs. The file name comes URI-encoded in the `X-File-Name`
+  // header, never the URL, which the request logger writes on every line: a missing or undecodable one is a 400, and one
+  // not ending in .pdf, .doc, .docx or .txt a 415. Path separators, quotes and control characters are replaced rather
+  // than refused, since upstream cleans the name anyway; upstream also decides the type from the bytes. A change after
   // the due date is a 400 `TASK_PAST_DUE`. Only the task id and the size are logged, never the file name or the bytes.
   public async uploadMenteeTaskFile(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'upload_mentorship_mentee_task_file';
@@ -161,12 +163,8 @@ export class MentorshipMenteeController {
       if (contentType !== MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE) {
         throw this.unsupportedTaskFile(req, operation);
       }
-      const fileName = parseTrimmedString(req.query['fileName']);
-      if (!fileName || !isSafeUploadFileName(fileName)) {
-        throw ServiceValidationError.forField('fileName', 'fileName must be a file name without path separators or quotes', { operation });
-      }
-      const extension = fileName.lastIndexOf('.') === -1 ? '' : fileName.slice(fileName.lastIndexOf('.')).toLowerCase();
-      if (!MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS.includes(extension)) {
+      const fileName = this.readTaskFileName(req, operation);
+      if (!hasMentorshipTaskFileExtension(fileName)) {
         throw this.unsupportedTaskFile(req, operation);
       }
       const file: unknown = req.body;
@@ -306,6 +304,24 @@ export class MentorshipMenteeController {
       throw ServiceValidationError.forField('taskId', 'taskId must be a valid UUID', { operation });
     }
     return taskId;
+  }
+
+  /** The task file's name from its URI-encoded header, made safe for the multipart part header. Missing, undecodable or blank is a 400. */
+  private readTaskFileName(req: Request, operation: string): string {
+    const raw = req.headers[MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER.toLowerCase()];
+    let decoded = '';
+    try {
+      decoded = typeof raw === 'string' ? decodeURIComponent(raw) : '';
+    } catch {
+      decoded = '';
+    }
+    const fileName = sanitizeMentorshipTaskFileName(decoded);
+    if (!fileName) {
+      throw ServiceValidationError.forField('fileName', `The ${MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER} header must carry the URI-encoded file name`, {
+        operation,
+      });
+    }
+    return fileName;
   }
 
   /** A 415 for a task file the BFF already knows upstream would refuse, in upstream's own wording. */

@@ -4,7 +4,7 @@
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER, MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeApplicationsResponse,
   MentorshipMenteeProfileUpdateRequest,
@@ -306,7 +306,7 @@ describe('MentorshipMenteeService — task files', () => {
     http.verify();
   });
 
-  it('posts the raw file as an octet stream with its name as a query value and refreshes the cached applications', () => {
+  it('posts the raw file as an octet stream with its name in a header, never the URL, and refreshes the cached applications', () => {
     const file = new File(['data'], 'my report.pdf', { type: 'application/pdf' });
     const before = service.menteeApplicationsRevision();
     let result: MentorshipMenteeTaskFileUploadResponse | undefined;
@@ -316,13 +316,26 @@ describe('MentorshipMenteeService — task files', () => {
     const req = http.expectOne((request) => request.url === FILE_URL);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toBe(file);
-    expect(req.request.params.get('fileName')).toBe('my report.pdf');
+    expect(req.request.params.keys()).toEqual([]);
+    expect(req.request.urlWithParams).toBe(FILE_URL);
+    expect(req.request.headers.get(MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER)).toBe('my%20report.pdf');
     expect(req.request.headers.get('Content-Type')).toBe(MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE);
     req.flush(UPLOADED);
 
     expect(result).toEqual(UPLOADED);
     expect(done).toBe(true);
     expect(service.menteeApplicationsRevision()).toBe(before + 1);
+  });
+
+  it.each(['résumé (final).pdf', '履歴書.docx', 'a/b "c".txt', '100%.pdf'])('URI-encodes the file name %j into the header', (name) => {
+    service.uploadMenteeTaskFile(TASK_ID, new File(['data'], name)).subscribe();
+
+    const req = http.expectOne((request) => request.url === FILE_URL);
+    const header = req.request.headers.get(MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER);
+    expect(header).toBe(encodeURIComponent(name));
+    expect(header).toMatch(/^[\x21-\x7e]+$/);
+    expect(decodeURIComponent(header ?? '')).toBe(name);
+    req.flush(UPLOADED);
   });
 
   it('encodes the task id in the upload path', () => {

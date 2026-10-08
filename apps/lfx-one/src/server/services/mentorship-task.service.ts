@@ -57,6 +57,7 @@ export class MentorshipTaskService {
    * Upstream decides who may read it (403), and answers 404 when the task has no file and 503 when object storage is not
    * configured; each passes through. A single byte `range` is forwarded, so a resumed download gets a 206. There is no
    * provisioning retry: only a provisioned user can be a task's assignee or reviewer, and a stream cannot be re-sent.
+   * The bytes are asked for uncompressed, so upstream's length and byte ranges describe what reaches the browser.
    */
   public openTaskFile(req: Request, taskId: string, range?: string): Promise<globalThis.Response> {
     logger.debug(req, 'mentorship_open_task_file', 'Opening task file download', { taskId, ranged: !!range });
@@ -66,7 +67,7 @@ export class MentorshipTaskService {
       `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}/file-download`,
       'GET',
       undefined,
-      range ? { Range: range } : undefined,
+      range ? { 'Accept-Encoding': 'identity', Range: range } : { 'Accept-Encoding': 'identity' },
       { timeoutMs: MENTORSHIP_TASK_FILE_TRANSFER_TIMEOUT_MS }
     );
   }

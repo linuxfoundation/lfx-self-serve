@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
-import { MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER, MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeApplicationsResponse,
   MentorshipMenteeApplyIds,
@@ -110,14 +110,16 @@ export class MentorshipMenteeService {
 
   /**
    * Uploads, or replaces, the submission file of one of the signed-in mentee's tasks. The raw bytes go as the body, with
-   * the file name as a query value; the BFF re-sends them upstream as multipart. On success the cached applications are
+   * the file name URI-encoded in a header, kept out of the logged URL; the BFF re-sends them upstream as multipart. On success the cached applications are
    * dropped, so the task row re-reads whether a file is stored. A failure is left to the caller.
    */
   public uploadMenteeTaskFile(taskId: string, file: File): Observable<MentorshipMenteeTaskFileUploadResponse> {
     return this.http
       .post<MentorshipMenteeTaskFileUploadResponse>(`/api/mentorship/mentee/tasks/${encodeURIComponent(taskId)}/file`, file, {
-        params: new HttpParams().set('fileName', file.name),
-        headers: new HttpHeaders({ 'Content-Type': MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE }),
+        headers: new HttpHeaders({
+          'Content-Type': MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE,
+          [MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER]: encodeURIComponent(file.name),
+        }),
       })
       .pipe(
         take(1),

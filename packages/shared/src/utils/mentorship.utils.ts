@@ -47,6 +47,7 @@ import {
   MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
   MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS,
+  MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS,
   MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
   MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
   MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE,
@@ -1497,6 +1498,25 @@ export function buildMentorshipMenteeTaskView(
     pastDue: isMentorshipTaskPastDue(input.dueDate, nowMs),
     submittedDate: input.submittedDate ?? null,
   };
+}
+
+/** Whether a task file's name ends in an extension the picker offers and the BFF accepts, in any case. */
+export function hasMentorshipTaskFileExtension(fileName: string): boolean {
+  const dot = fileName.lastIndexOf('.');
+  return dot !== -1 && MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS.includes(fileName.slice(dot).toLowerCase());
+}
+
+/**
+ * A task file's name made safe to write into the multipart `Content-Disposition` the BFF sends upstream: path
+ * separators, quotes and control characters become `_`, and a run of dots becomes one, so the result passes
+ * `isSafeUploadFileName`. Upstream cleans the name further, to `[A-Za-z0-9._-]`, so nothing a mentee picked is refused here.
+ */
+export function sanitizeMentorshipTaskFileName(fileName: string): string {
+  // eslint-disable-next-line no-control-regex
+  return fileName
+    .replace(/[/\\"\x00-\x1f\x7f]/g, '_')
+    .replace(/\.{2,}/g, '.')
+    .trim();
 }
 
 /** Whether a value is a status a mentee may request (`in_progress` or `submitted`). Narrows for the controller and the row. */

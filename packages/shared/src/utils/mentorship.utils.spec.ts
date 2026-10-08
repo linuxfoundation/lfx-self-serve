@@ -68,8 +68,11 @@ import type {
 } from '../interfaces/mentorship.interface';
 import type { MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
 import type { MentorshipMentorRegisterForm } from '../interfaces/mentorship-mentor.interface';
+import { isSafeUploadFileName } from './file.utils';
 import {
   buildMentorshipMenteeApplicationView,
+  hasMentorshipTaskFileExtension,
+  sanitizeMentorshipTaskFileName,
   buildMentorshipMenteeDemographicsUpdate,
   buildMentorshipMenteeProfileUpdate,
   buildMentorshipMenteeOverview,
@@ -2036,6 +2039,37 @@ describe('buildMentorshipMenteeTaskView requiresFile', () => {
 
   it('is false when the task needs no file', () => {
     expect(build(null).requiresFile).toBe(false);
+  });
+});
+
+describe('hasMentorshipTaskFileExtension', () => {
+  it('accepts the allowed extensions in any case', () => {
+    for (const name of ['a.pdf', 'b.DOC', 'c.Docx', 'notes.v2.txt']) {
+      expect(hasMentorshipTaskFileExtension(name)).toBe(true);
+    }
+  });
+
+  it('refuses any other or no extension', () => {
+    for (const name of ['a.png', 'a.pdf.exe', 'a.pdfx', 'pdf', 'a.', '']) {
+      expect(hasMentorshipTaskFileExtension(name)).toBe(false);
+    }
+  });
+});
+
+describe('sanitizeMentorshipTaskFileName', () => {
+  it('replaces path separators, quotes and control characters, and collapses dot runs', () => {
+    expect(sanitizeMentorshipTaskFileName('a/b\\c.pdf')).toBe('a_b_c.pdf');
+    expect(sanitizeMentorshipTaskFileName('say "hi".pdf')).toBe('say _hi_.pdf');
+    expect(sanitizeMentorshipTaskFileName('line\r\nbreak.pdf')).toBe('line__break.pdf');
+    expect(sanitizeMentorshipTaskFileName('resume v2..final.pdf')).toBe('resume v2.final.pdf');
+  });
+
+  it('keeps an ordinary name, including spaces and non-ASCII letters, and trims it', () => {
+    expect(sanitizeMentorshipTaskFileName('  Résumé 2026.pdf ')).toBe('Résumé 2026.pdf');
+  });
+
+  it('leaves a result that isSafeUploadFileName accepts', () => {
+    expect(isSafeUploadFileName(sanitizeMentorshipTaskFileName('../../etc/"passwd".txt'))).toBe(true);
   });
 });
 
