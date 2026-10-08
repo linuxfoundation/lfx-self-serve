@@ -353,6 +353,24 @@ describe('AccessCheckService.addProjectWriterToResources / addProjectWriterToRes
     await expect(service.addProjectWriterToResource(req, { uid: 'a', slug: 'a' })).resolves.toEqual({ uid: 'a', slug: 'a', writer: true });
   });
 
+  it('keys a project that carries `id` instead of `uid`, as addAccessToResources does', async () => {
+    proxyRequest.mockResolvedValueOnce({ results: ['project:c#writer_guard@user:alice\ttrue'] });
+
+    const result = await service.addProjectWriterToResources(req, [{ id: 'c' }]);
+
+    expect(proxyRequest.mock.calls[0][5]).toEqual({ requests: ['project:c#writer_guard'] });
+    expect(result).toEqual([{ id: 'c', writer: true }]);
+  });
+
+  it('keys a single project that carries `id` instead of `uid`', async () => {
+    proxyRequest.mockResolvedValueOnce({ results: ['project:c#writer_guard@user:alice\ttrue'] });
+
+    const result = await service.addProjectWriterToResource(req, { id: 'c' });
+
+    expect(proxyRequest.mock.calls[0][5]).toEqual({ requests: ['project:c#writer_guard'] });
+    expect(result).toEqual({ id: 'c', writer: true });
+  });
+
   it('returns an empty list without an upstream call', async () => {
     await expect(service.addProjectWriterToResources(req, [])).resolves.toEqual([]);
     expect(proxyRequest).not.toHaveBeenCalled();
