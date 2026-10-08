@@ -291,7 +291,7 @@ export class MeetingRegistrantsDisplayComponent {
       const formValue = this.addRegistrantForm.value;
       // Read occurrence scope before resetting so a "this date only" selection is preserved.
       const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
-      this.addRegistrantForm.reset();
+      // Forms are reset on success so the organizer can retry with their input intact if the request fails.
       this.inviteScopeForm.reset();
       this.submitGuest(formValue, occurrenceId);
     } else {
@@ -311,10 +311,10 @@ export class MeetingRegistrantsDisplayComponent {
   public onConfirmStagedGuest(): void {
     const guest = this.stagedGuest();
     if (!guest || this.submitting()) return;
-    // Read and reset the scope form here, once the organizer has confirmed their selection.
+    // Read the scope before resetting so a "this date only" selection is preserved.
     const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
+    // Scope and staged guest are cleared on success so the organizer can retry if the request fails.
     this.inviteScopeForm.reset();
-    this.stagedGuest.set(null);
     this.submitGuest(guest, occurrenceId);
   }
 
@@ -352,10 +352,14 @@ export class MeetingRegistrantsDisplayComponent {
           this.submitting.set(false);
           if (response.summary.successful > 0) {
             this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Guest added successfully' });
+            this.addRegistrantForm.reset();
+            this.stagedGuest.set(null);
             if (this.externallyManaged()) {
               this.refreshRequested.emit(response.summary.successful);
             } else {
-              const optimistic: MeetingRegistrant = {
+              // Use the real UID from the API response so immediate removal calls the backend correctly.
+              // Fall back to a locally-constructed row if the response has no successes detail.
+              const optimistic: MeetingRegistrant = response.successes[0] ?? {
                 uid: `optimistic-${crypto.randomUUID()}`,
                 meeting_id: this.meeting().id,
                 email: (formValue['email'] as string) ?? '',
@@ -422,10 +426,13 @@ export class MeetingRegistrantsDisplayComponent {
               this.optimisticRegistrants.update((list) => list.filter((r) => r.uid !== uid));
               const meeting = this.meeting();
               const baseCount = resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length;
+              // Capture the current total before decrementing additionalRegistrantsCount so we subtract
+              // response.summary.successful exactly once from the emitted total, not twice.
+              const currentTotal = baseCount + this.additionalRegistrantsCount();
               const nextAdditionalCount = Math.max(0, this.additionalRegistrantsCount() - response.summary.successful);
               this.additionalRegistrantsCount.set(nextAdditionalCount);
               this.registrantsCountChange.emit(nextAdditionalCount);
-              this.totalCountChange.emit(Math.max(0, baseCount + nextAdditionalCount - response.summary.successful));
+              this.totalCountChange.emit(Math.max(0, currentTotal - response.summary.successful));
               this.refresh$.next(true);
             }
           } else {
