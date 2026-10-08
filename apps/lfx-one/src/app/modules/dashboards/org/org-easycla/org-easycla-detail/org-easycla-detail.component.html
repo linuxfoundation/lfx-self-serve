@@ -336,8 +336,8 @@
                 data-testid="org-easycla-detail-auto-ecla-toggle"
                 [checked]="autoEclaValue()"
                 (checkedChange)="onAutoEclaToggle($event)"
-                [disabled]="!autoEclaWritable() || autoEclaPending()"
-                [ariaLabel]="autoEclaLocked() ? 'Auto ECLA — ' + autoEclaLockedHint : 'Auto ECLA'"
+                [disabled]="autoEclaDisabled()"
+                [ariaLabel]="autoEclaAriaLabel()"
                 dataTest="org-easycla-detail-auto-ecla-toggle" />
               <div class="flex flex-col gap-1">
                 <label for="org-easycla-detail-auto-ecla-toggle" class="font-medium text-sm text-gray-900 cursor-pointer">Auto ECLA</label>

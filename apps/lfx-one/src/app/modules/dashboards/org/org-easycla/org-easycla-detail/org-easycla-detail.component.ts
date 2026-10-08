@@ -315,9 +315,9 @@ export class OrgEasyclaDetailComponent {
   /**
    * Whether ACS grants the current viewer the Auto ECLA write for this agreement's pair (#1988).
    * `null` while the hop is in flight — the toggle stays disabled with no explanation during that
-   * window rather than enabled from an unchecked grant. `false` disables it and explains why
-   * (#3406); it never hides it, because the stored value is readable by anyone who can open the
-   * agreement.
+   * window rather than enabled from an unchecked grant. `false` disables it (#3406); it never hides
+   * it, because the stored value is readable by anyone who can open the agreement. Whether a
+   * sentence explains the disabled switch follows the roster alone — see `initAutoEclaLocked`.
    *
    * The running write and the value last asked for or confirmed live in
    * `OrgClaAutoEclaWritesService`, keyed on organization and signature, so both survive leaving
@@ -546,6 +546,12 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly autoEclaLockedHint = ORG_CLA_AUTO_ECLA_LOCKED_HINT;
 
+  /** Disabled for a viewer who cannot write, and for the length of a running write. */
+  protected readonly autoEclaDisabled = computed(() => !this.autoEclaWritable() || this.autoEclaPending());
+
+  /** Carries the locked sentence whenever it shows, so the reason is not sighted-only. */
+  protected readonly autoEclaAriaLabel = computed(() => (this.autoEclaLocked() ? `Auto ECLA — ${this.autoEclaLockedHint}` : 'Auto ECLA'));
+
   /**
    * The current toggle value the template binds to.
    *
@@ -760,7 +766,7 @@ export class OrgEasyclaDetailComponent {
     // the grant to `project|organization`. The project is the pinned pair project, else the first
     // covered project, else the foundation. Not asked while the group is unsigned (nothing to toggle). An unresolvable
     // pair (a data problem upstream that a write would open a 403 into) answers `false` without asking, so the
-    // toggle is disabled and explained rather than left pending.
+    // toggle settles disabled rather than left pending.
     // `null` resets the allowed signal so a stale answer cannot outlive the row it was fetched for.
     toObservable(this.autoEclaPermissionPair)
       .pipe(
@@ -1493,18 +1499,16 @@ export class OrgEasyclaDetailComponent {
   }
 
   /**
-   * Whether to explain why the switch cannot be moved.
+   * Whether to explain why the switch cannot be moved: only when the roster is the reason.
    *
-   * Deliberately not `!autoEclaWritable()`. The ACS answer starts as `null` and resolves a round
-   * trip later, so a viewer who can use the control would otherwise be told for a moment that
-   * they cannot. Waiting for a resolved answer costs a disabled switch with no sentence under it
-   * for that moment, which says nothing false.
-   *
-   * An unresolvable pair resolves to denied rather than pending, so a row the ACS hop cannot be
-   * asked about still explains itself.
+   * Deliberately not `!autoEclaWritable()`. The sentence names CLA Manager as the role that can
+   * change the setting, which is false for a viewer on the roster. A roster CLA manager whose ACS
+   * answer is `false` (a missing grant, or a failed check, which `checkPermission` cannot tell
+   * apart) gets a disabled switch with no sentence rather than one that contradicts them. The
+   * ACS answer plays no part, so a viewer off the roster is told at once, not a round trip later.
    */
   private initAutoEclaLocked(): boolean {
-    return this.showAutoEclaToggle() && this.autoEclaAllowed() !== null && !this.autoEclaWritable();
+    return this.showAutoEclaToggle() && this.claGroup()?.viewerIsClaManager !== true;
   }
 
   private initAutoEclaValue(): boolean {

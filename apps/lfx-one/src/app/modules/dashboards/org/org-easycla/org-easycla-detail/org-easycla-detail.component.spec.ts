@@ -3798,20 +3798,30 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
   });
 
-  it('renders the toggle disabled and explained when ACS denies the write', async () => {
+  // `checkPermission` answers a failed check as `false` too, so this is also the ACS-outage case.
+  // Telling a CLA manager that only CLA managers can change it would contradict them.
+  it('disables the toggle without the CLA Manager sentence for a roster CLA manager whom ACS denies', async () => {
     checkPermission.mockReturnValue(of(false));
 
     const fixture = await render();
 
     expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).not.toBeNull();
     expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla-locked-hint')).toBeNull();
+    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto ECLA');
+  });
+
+  it('explains the disabled toggle to a viewer off the roster while the ACS answer is still pending', async () => {
+    checkPermission.mockReturnValue(new Subject<boolean>());
+
+    const fixture = await render(row({ viewerIsClaManager: false }));
+
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
     expect(lockedHint(fixture)).toBe('Only CLA Managers can change this setting.');
   });
 
   it('names the reason in the switch accessible name, so the sentence is not sighted-only', async () => {
-    checkPermission.mockReturnValue(of(false));
-
-    const fixture = await render();
+    const fixture = await render(row({ viewerIsClaManager: false }));
 
     expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto ECLA — Only CLA Managers can change this setting.');
   });
@@ -3867,13 +3877,10 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
 
   // The ACS answer is asked for one pair and reaches the page a round trip later, so the answer on
   // hand while the next row loads belongs to the previous pair.
-  it.each([
-    ['explain a denial to a CLA manager', false],
-    ['enable the switch before ACS has cleared the viewer', true],
-  ])('does not let the previous agreement ACS answer %s on the next one', async (_case, previousAnswer) => {
+  it('does not let the previous agreement ACS grant enable the switch on the next one', async () => {
     const NEXT_PROJECT = 'a0941000002wBz9AAE';
     const pending = new Subject<boolean>();
-    checkPermission.mockImplementation((_uid: string, _op: string, projectSfid: string) => (projectSfid === NEXT_PROJECT ? pending : of(previousAnswer)));
+    checkPermission.mockImplementation((_uid: string, _op: string, projectSfid: string) => (projectSfid === NEXT_PROJECT ? pending : of(true)));
     const previous = row();
     const next = row({
       id: 'signature-uuid-2',
@@ -3891,12 +3898,13 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
   });
 
   // The pair is what the ACS grant is written on. A row carrying neither a usable project SFID
-  // nor a foundation id cannot be asked about, which is a denial rather than a pending answer.
-  it('renders the toggle disabled and explained on a row whose ACS pair cannot be resolved', async () => {
+  // nor a foundation id cannot be asked about, which is a denial rather than a pending answer. The
+  // viewer here is on the roster, so no sentence claims otherwise.
+  it('renders the toggle disabled on a row whose ACS pair cannot be resolved', async () => {
     const fixture = await render(row({ projects: [{ projectName: 'Cascade' }], pairProjectSfid: undefined, foundationSfid: undefined }));
 
     expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
-    expect(lockedHint(fixture)).toBe('Only CLA Managers can change this setting.');
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla-locked-hint')).toBeNull();
     expect(checkPermission).not.toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'auto-ecla-update', expect.anything());
   });
 
