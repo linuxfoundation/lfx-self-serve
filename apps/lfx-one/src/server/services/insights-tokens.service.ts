@@ -66,7 +66,7 @@ export class InsightsTokensService {
     this.microserviceProxy = new MicroserviceProxyService();
   }
 
-  /** Caller's Insights tokens, newest first. Key Contacts only; the audience is always fixed server-side. */
+  /** Caller's Insights tokens, newest first. Key Contacts and flag-targeted users only; the audience is always fixed server-side. */
   public async listTokens(req: Request): Promise<InsightsToken[]> {
     await this.assertKeyContact(req, 'list_insights_tokens', '/tokens');
     const response = await this.microserviceProxy.proxyRequest<PatServiceListResponse>(req, 'LFX_V2_SERVICE', '/tokens', 'GET', {
@@ -78,7 +78,7 @@ export class InsightsTokensService {
     return tokens;
   }
 
-  /** Issues a token for a Key Contact. The plaintext secret is returned exactly once by the PAT service. */
+  /** Issues a token for a Key Contact or flag-targeted user. The plaintext secret is returned exactly once by the PAT service. */
   public async createToken(req: Request, name: string): Promise<CreateInsightsTokenResponse> {
     await this.assertKeyContact(req, 'create_insights_token', '/tokens');
 
@@ -100,7 +100,7 @@ export class InsightsTokensService {
     return { token: this.toInsightsToken(response.token), secret: response.secret };
   }
 
-  /** Revokes one of the caller's tokens, for Key Contacts only. The PAT service returns 404 for tokens the caller does not own. */
+  /** Revokes one of the caller's tokens, for Key Contacts and flag-targeted users only. The PAT service returns 404 for tokens the caller does not own. */
   public async revokeToken(req: Request, uid: string): Promise<void> {
     await this.assertKeyContact(req, 'revoke_insights_token', '/tokens/{uid}');
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/tokens/${encodeURIComponent(uid)}`, 'DELETE', { v: '1' });
@@ -186,8 +186,8 @@ export class InsightsTokensService {
   }
 
   /**
-   * Re-runs the Key Contact check (the UI gate is not trusted) before any token call, so list, create
-   * and revoke share one enforcement: 503 `eligibility_unavailable` when it could not be verified, 403
+   * Re-runs the eligibility check (the UI gate is not trusted) before any token call: a flag-targeted
+   * user passes, everyone else needs Key Contact status. List, create and revoke share one enforcement: 503 `eligibility_unavailable` when it could not be verified, 403
    * `not_key_contact` when the caller is not one. A user who loses Key Contact status loses access to
    * their existing tokens too (product decision, IN-1233).
    */

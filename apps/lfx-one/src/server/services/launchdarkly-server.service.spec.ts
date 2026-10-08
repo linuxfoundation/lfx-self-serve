@@ -3,11 +3,12 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { init, initialized, waitForInitialization, boolVariation, close, loggerWarning, getEffectiveUsername } = vi.hoisted(() => ({
+const { init, initialized, waitForInitialization, boolVariation, flush, close, loggerWarning, getEffectiveUsername } = vi.hoisted(() => ({
   init: vi.fn(),
   initialized: vi.fn(),
   waitForInitialization: vi.fn(),
   boolVariation: vi.fn(),
+  flush: vi.fn(),
   close: vi.fn(),
   loggerWarning: vi.fn(),
   getEffectiveUsername: vi.fn(),
@@ -33,13 +34,14 @@ describe('LaunchDarklyServerService', () => {
     process.env['LD_SDK_KEY'] = 'sdk-test-key';
     // Mirrors the SDK: `initialized()` turns true once the initial connection succeeds.
     let ready = false;
-    init.mockReset().mockReturnValue({ initialized, waitForInitialization, boolVariation, close });
+    init.mockReset().mockReturnValue({ initialized, waitForInitialization, boolVariation, flush, close });
     initialized.mockReset().mockImplementation(() => ready);
     waitForInitialization.mockReset().mockImplementation(() => {
       ready = true;
       return Promise.resolve();
     });
     boolVariation.mockReset().mockResolvedValue(true);
+    flush.mockReset().mockResolvedValue(undefined);
     close.mockReset();
     loggerWarning.mockReset();
     getEffectiveUsername.mockReset().mockReturnValue('jdoe');
@@ -143,9 +145,22 @@ describe('LaunchDarklyServerService', () => {
     expect(close).not.toHaveBeenCalled();
   });
 
-  it('closes the client on shutdown when one was created', async () => {
+  it('flushes pending events, then closes the client on shutdown', async () => {
     await service.isFlagEnabled(req, 'insights-public-api-token-access');
     await LaunchDarklyServerService.shutdownIfInitialized();
+
+    expect(flush).toHaveBeenCalledTimes(1);
     expect(close).toHaveBeenCalledTimes(1);
+    expect(flush.mock.invocationCallOrder[0]).toBeLessThan(close.mock.invocationCallOrder[0]);
+  });
+
+  it('still closes the client when the flush fails', async () => {
+    flush.mockRejectedValue(new Error('network'));
+    await service.isFlagEnabled(req, 'insights-public-api-token-access');
+
+    await LaunchDarklyServerService.shutdownIfInitialized();
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(loggerWarning).toHaveBeenCalled();
   });
 });

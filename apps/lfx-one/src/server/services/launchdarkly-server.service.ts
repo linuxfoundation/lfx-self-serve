@@ -124,11 +124,26 @@ export class LaunchDarklyServerService {
     }
   }
 
-  /** After shutdown no request may open a new connection; evaluations fail closed. */
-  private shutdown(): Promise<void> {
+  /**
+   * After shutdown no request may open a new connection; evaluations fail closed. Pending analytics
+   * events are flushed first, because `close()` is synchronous and discards them; a failed flush
+   * never blocks the close. The server bounds this call with its drain timeout.
+   */
+  private async shutdown(): Promise<void> {
     this.closed = true;
-    this.client?.close();
+    const client = this.client;
     this.client = null;
-    return Promise.resolve();
+    if (!client) {
+      return;
+    }
+
+    try {
+      await client.flush();
+    } catch (error) {
+      logger.warning(undefined, 'launchdarkly_shutdown', 'Failed to flush LaunchDarkly events before closing', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+    client.close();
   }
 }
