@@ -508,6 +508,13 @@ export const ACS_CLA_AUTO_ECLA_ACTION = 'update';
 export const ACS_CLA_PROJECT_ORG_OBJECT_TYPE = 'project|organization';
 
 /**
+ * Shown under the Auto ECLA toggle when the viewer may read the setting but not change it
+ * (#3406). Wording is a placeholder pending a product pass; it lives here so that pass is a
+ * one-line edit rather than a hunt through the template.
+ */
+export const ORG_CLA_AUTO_ECLA_LOCKED_HINT = 'Only CLA Managers can change this setting.';
+
+/**
  * Tab order of the Organization Lens CLA Group detail page. `OrgClaDetailTab` is derived from
  * this, so the set exists once: a tab added here is a compile error everywhere that switches on
  * the union until it is handled.

@@ -25,6 +25,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import {
   CCLA_SIGN_COPY,
+  ORG_CLA_AUTO_ECLA_LOCKED_HINT,
   ORG_CLA_DESIGNEE_REFUSAL_COPY,
   ORG_CLA_DESIGNEE_START_COPY,
   ORG_CLA_DETAIL_TABS,
@@ -537,6 +538,14 @@ export class OrgEasyclaDetailComponent {
    */
   protected readonly showAutoEclaToggle = computed(() => this.initShowAutoEclaToggle());
 
+  /** Whether this viewer may move the switch, as opposed to only read it (#3406). */
+  protected readonly autoEclaWritable = computed(() => this.initAutoEclaWritable());
+
+  /** Whether the switch carries the sentence naming who can change it (#3406). */
+  protected readonly autoEclaLocked = computed(() => this.initAutoEclaLocked());
+
+  protected readonly autoEclaLockedHint = ORG_CLA_AUTO_ECLA_LOCKED_HINT;
+
   /**
    * The current toggle value the template binds to.
    *
@@ -971,6 +980,12 @@ export class OrgEasyclaDetailComponent {
    */
   protected onAutoEclaToggle(next: boolean): void {
     if (this.autoEclaPending()) return;
+
+    // The switch is rendered for a viewer who cannot move it (#3406), so this path can now be
+    // reached by something other than a click on an enabled control. Refusing here keeps the
+    // optimistic value from being written for a viewer whose request the server will refuse; it
+    // is not what stops the write, which the application server and EasyCLA each do themselves.
+    if (!this.autoEclaWritable()) return;
 
     const group = this.claGroup();
     const orgUid = this.selectedOrgUid();
@@ -1445,16 +1460,50 @@ export class OrgEasyclaDetailComponent {
   }
 
   /**
-   * Four conjuncts: the row is signed (the producer stores the flag on the corporate signature,
-   * so an unsigned row has nothing to update); the viewer is on its CLA Manager list (EasyCLA
-   * refuses the write otherwise, whatever ACS says); ACS granted the write (hide-on-deny — the
-   * design withholds the control from a viewer who cannot use it, since the disabled-with-banner
-   * pattern needs #1989 to explain itself); and this page is not showing the pre-sign preview
-   * (the row it would flip does not exist yet).
+   * Two conjuncts, both about whether there is a value to read: the row is signed (the producer
+   * stores the flag on the corporate signature, so an unsigned row has nothing to show or
+   * update), and this page is not showing the pre-sign preview (the row it would flip does not
+   * exist yet).
+   *
+   * Neither authorization check is here (#3406). Whether Auto ECLA is on is a fact about the
+   * agreement, and a viewer who may read the agreement may read it — so the two write checks
+   * decide whether the switch can be moved, not whether it is rendered. That narrows the
+   * hide-on-deny rule to the controls whose state says nothing on its own (the approval-list
+   * mutations and Invalidate), which keep it.
    */
   private initShowAutoEclaToggle(): boolean {
     const group = this.claGroup();
-    return group?.signed === true && group.viewerIsClaManager === true && !this.showingPreview() && this.autoEclaAllowed() === true;
+    return group?.signed === true && !this.showingPreview();
+  }
+
+  /**
+   * Whether this viewer may move the switch.
+   *
+   * Both of the write path's own checks, and both must pass: the viewer is on the agreement's
+   * CLA Manager list (EasyCLA refuses the write otherwise, whatever ACS says) and ACS granted
+   * `ecla_auto_create:update` for the pair. Neither is a guard — the application server refuses
+   * the write independently, and EasyCLA refuses it again. This only decides what the control
+   * offers to do.
+   *
+   * Fails closed, including while the ACS answer is still `null`.
+   */
+  private initAutoEclaWritable(): boolean {
+    return this.claGroup()?.viewerIsClaManager === true && this.autoEclaAllowed() === true;
+  }
+
+  /**
+   * Whether to explain why the switch cannot be moved.
+   *
+   * Deliberately not `!autoEclaWritable()`. The ACS answer starts as `null` and resolves a round
+   * trip later, so a viewer who can use the control would otherwise be told for a moment that
+   * they cannot. Waiting for a resolved answer costs a disabled switch with no sentence under it
+   * for that moment, which says nothing false.
+   *
+   * An unresolvable pair resolves to denied rather than pending, so a row the ACS hop cannot be
+   * asked about still explains itself.
+   */
+  private initAutoEclaLocked(): boolean {
+    return this.showAutoEclaToggle() && this.autoEclaAllowed() !== null && !this.autoEclaWritable();
   }
 
   private initAutoEclaValue(): boolean {
