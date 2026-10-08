@@ -38,8 +38,7 @@ export class NewsletterSignupService {
    * Newsletter group that belongs to the project in the link.
    */
   public async getSignupInfo(req: Request, projectSlug: string, groupUid: string): Promise<PublicNewsletterSignupInfo> {
-    const requestOptions = await this.getRequestOptions(req);
-    const { project, committee, acceptingSignups } = await this.resolveSignupTarget(req, projectSlug, groupUid, requestOptions);
+    const { project, committee, acceptingSignups } = await this.resolveSignupTarget(req, projectSlug, groupUid);
 
     return {
       project: {
@@ -70,8 +69,7 @@ export class NewsletterSignupService {
       });
     }
 
-    const requestOptions = await this.getRequestOptions(req);
-    const { committee, acceptingSignups } = await this.resolveSignupTarget(req, projectSlug, groupUid, requestOptions);
+    const { committee, acceptingSignups, requestOptions } = await this.resolveSignupTarget(req, projectSlug, groupUid);
     if (!acceptingSignups) {
       // `field: 'group'` (not `email`) so the page shows a "not accepting signups" message rather
       // than blaming the visitor's address.
@@ -116,11 +114,13 @@ export class NewsletterSignupService {
    * Resolves the link's project slug and group uid, and rejects (as a generic 404) any group that
    * is not a Newsletter group of that project — a link cannot be repointed at another group.
    *
-   * `acceptingSignups` is false for a group upstream would refuse an email-only member for:
-   * voting-enabled groups and business-email-required groups both demand an organization (and the
-   * latter a corporate domain), which an anonymous visitor cannot supply.
+   * `acceptingSignups` requires the owner's opt-in — the group's join mode must be `open` (anyone
+   * may join), since this route writes with an app credential and is the only authorization point.
+   * It is also false for groups upstream would refuse an email-only member for: voting-enabled and
+   * business-email-required groups both demand an organization (the latter a corporate domain),
+   * which an anonymous visitor cannot supply.
    */
-  private async resolveSignupTarget(req: Request, projectSlug: string, groupUid: string, requestOptions: ApiRequestOptions): Promise<NewsletterSignupTarget> {
+  private async resolveSignupTarget(req: Request, projectSlug: string, groupUid: string): Promise<NewsletterSignupTarget> {
     const notFound = (): ResourceNotFoundError =>
       new ResourceNotFoundError('Newsletter signup', groupUid, {
         operation: 'resolve_newsletter_signup_target',
@@ -139,6 +139,10 @@ export class NewsletterSignupService {
     if (!slugLookup.exists || !slugLookup.uid) {
       throw notFound();
     }
+
+    // Only once the link has passed the cheap checks, so a malformed or unknown link never reaches
+    // the token endpoint (and a token outage can't mask a plain 404).
+    const requestOptions = await this.getRequestOptions(req);
 
     const [project, committee, settings] = await Promise.all([
       this.microserviceProxy.proxyRequest<Project>(
@@ -180,8 +184,8 @@ export class NewsletterSignupService {
       throw notFound();
     }
 
-    const acceptingSignups = !committee.enable_voting && !settings?.business_email_required;
+    const acceptingSignups = committee.join_mode === 'open' && !committee.enable_voting && !settings?.business_email_required;
 
-    return { project, committee, acceptingSignups };
+    return { project, committee, acceptingSignups, requestOptions };
   }
 }

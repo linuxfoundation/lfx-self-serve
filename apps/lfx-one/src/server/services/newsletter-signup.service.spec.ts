@@ -50,7 +50,7 @@ const req = { path: '/public/api/projects/acme/newsletter-signup' } as unknown a
 const project = { uid: PROJECT_UID, slug: 'acme', name: 'Acme Project', logo_url: 'https://cdn.example.org/acme.png' };
 
 function committee(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return { uid: GROUP_UID, name: 'acme-news', display_name: 'Acme News', category: 'Newsletter', project_uid: PROJECT_UID, ...overrides };
+  return { uid: GROUP_UID, name: 'acme-news', display_name: 'Acme News', category: 'Newsletter', project_uid: PROJECT_UID, join_mode: 'open', ...overrides };
 }
 
 function mockUpstream(group: Record<string, unknown>, settings: Record<string, unknown> | Error = {}): void {
@@ -104,11 +104,13 @@ describe('NewsletterSignupService', () => {
     it('rejects an unknown project slug', async () => {
       getProjectIdBySlug.mockResolvedValue({ exists: false });
       await expect(service.getSignupInfo(req, 'nope', GROUP_UID)).rejects.toBeInstanceOf(ResourceNotFoundError);
+      expect(generateM2MToken).not.toHaveBeenCalled();
     });
 
     it('rejects a non-UUID group id without calling upstream', async () => {
       await expect(service.getSignupInfo(req, 'acme', '../projects/x')).rejects.toBeInstanceOf(ResourceNotFoundError);
       expect(proxyRequest).not.toHaveBeenCalled();
+      expect(generateM2MToken).not.toHaveBeenCalled();
     });
 
     it('maps an upstream committee 404 to a not-found', async () => {
@@ -118,6 +120,11 @@ describe('NewsletterSignupService', () => {
           : Promise.reject(new MicroserviceError('Not found', 404, 'NOT_FOUND'))
       );
       await expect(service.getSignupInfo(req, 'acme', GROUP_UID)).rejects.toBeInstanceOf(ResourceNotFoundError);
+    });
+
+    it.each([['invite_only'], ['application'], ['closed'], [undefined]])('reports a group whose join mode is %s as not accepting signups', async (joinMode) => {
+      mockUpstream(committee({ join_mode: joinMode }));
+      await expect(service.getSignupInfo(req, 'acme', GROUP_UID)).resolves.toMatchObject({ accepting_signups: false });
     });
 
     it('reports a voting-enabled group as not accepting signups', async () => {

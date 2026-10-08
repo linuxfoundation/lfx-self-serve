@@ -44,7 +44,7 @@
 
           <div aria-live="polite">
             @if (!details.accepting_signups) {
-              <!-- Group exists but cannot take email-only members (voting enabled / business email required) -->
+              <!-- Group not opted in (join mode not open) or cannot take email-only members (voting / business email) -->
               <div class="mt-6 flex flex-col items-center gap-2 text-center" data-testid="newsletter-signup-unavailable">
                 <h1 class="text-xl font-semibold text-gray-900">{{ details.group.name }}</h1>
                 <p class="text-sm text-gray-600">This newsletter isn't accepting signups through this page right now.</p>

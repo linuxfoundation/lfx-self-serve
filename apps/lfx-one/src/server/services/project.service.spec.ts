@@ -3441,3 +3441,40 @@ describe('ProjectService — directory lookup failure classification', () => {
     });
   });
 });
+
+describe('ProjectService.getProjectIdBySlug — strict mode (GH-3421)', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    natsRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  it('resolves a found slug the same way in both modes', async () => {
+    natsRequest.mockResolvedValue({ data: ' project-uid ' });
+
+    await expect(service.getProjectIdBySlug(req, 'acme')).resolves.toEqual({ uid: 'project-uid', slug: 'acme', exists: true });
+    await expect(service.getProjectIdBySlug(req, 'acme', { strict: true })).resolves.toEqual({ uid: 'project-uid', slug: 'acme', exists: true });
+  });
+
+  it.each([['TIMEOUT: request timeout'], ['503 no responders available']])('reports "%s" as not found by default', async (message) => {
+    natsRequest.mockRejectedValue(new Error(message));
+
+    await expect(service.getProjectIdBySlug(req, 'acme')).resolves.toEqual({ uid: '', slug: 'acme', exists: false });
+  });
+
+  it.each([['TIMEOUT: request timeout'], ['503 no responders available']])('throws a 503 for "%s" in strict mode', async (message) => {
+    natsRequest.mockRejectedValue(new Error(message));
+
+    const error = await service.getProjectIdBySlug(req, 'acme', { strict: true }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error).toMatchObject({ statusCode: 503, code: 'SERVICE_UNAVAILABLE' });
+  });
+
+  it('rethrows other NATS errors in both modes', async () => {
+    natsRequest.mockRejectedValue(new Error('connection closed'));
+
+    await expect(service.getProjectIdBySlug(req, 'acme')).rejects.toThrow('connection closed');
+    await expect(service.getProjectIdBySlug(req, 'acme', { strict: true })).rejects.toThrow('connection closed');
+  });
+});

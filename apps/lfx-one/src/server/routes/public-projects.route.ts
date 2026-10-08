@@ -3,9 +3,9 @@
 
 import { Router } from 'express';
 
+import { ProjectController } from '../controllers/project.controller';
 import { PublicGroupsController } from '../controllers/public-groups.controller';
 import { PublicNewsletterSignupController } from '../controllers/public-newsletter-signup.controller';
-import { ProjectController } from '../controllers/project.controller';
 import { newsletterSignupRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();

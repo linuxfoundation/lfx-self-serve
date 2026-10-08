@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ApiRequestOptions } from './api.interface';
 import { Committee } from './committee.interface';
 import { Project } from './project.interface';
 
@@ -536,8 +537,9 @@ export interface PublicNewsletterSignupInfo {
     description?: string;
   };
   /**
-   * False when the group cannot take an email-only member (voting enabled, or a business email
-   * required) — the page shows a "not accepting signups" state instead of the form.
+   * True only when the group's join mode is `open` (the owner's opt-in) and it can take an
+   * email-only member (no voting, no business email required) — otherwise the page shows a
+   * "not accepting signups" state instead of the form.
    */
   accepting_signups: boolean;
 }
@@ -547,6 +549,8 @@ export interface NewsletterSignupTarget {
   project: Project;
   committee: Committee;
   acceptingSignups: boolean;
+  /** Scoped M2M credentials, acquired only once the link has passed validation; reused for the member write. */
+  requestOptions: ApiRequestOptions;
 }
 
 /** Body of the anonymous newsletter signup request — the visitor only supplies an email. */
@@ -579,6 +583,8 @@ export interface NewsletterSignupLink {
   groupUid: string;
   groupName: string;
   url: string;
-  /** False for groups the public page would refuse (voting enabled or business email required). */
+  /** False for groups the public page would refuse — join mode not `open`, or voting enabled. */
   acceptingSignups: boolean;
+  /** Creator-facing explanation of why signups are off; absent when `acceptingSignups` is true. */
+  unavailableReason?: string;
 }
