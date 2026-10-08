@@ -96,6 +96,9 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly internalLoading: WritableSignal<boolean> = signal(true);
   private readonly refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
   private readonly optimisticRegistrants: WritableSignal<MeetingRegistrant[]> = signal<MeetingRegistrant[]>([]);
+  // UIDs removed by the organizer — filtered immediately from the displayed list so the guest
+  // disappears without waiting for the async refetch to complete.
+  private readonly deletedRegistrantUids = signal<Set<string>>(new Set());
   private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
   public readonly pastMeetingParticipants: Signal<EnrichedPastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
@@ -254,6 +257,7 @@ export class MeetingRegistrantsDisplayComponent {
         this.inviteScopeForm.reset();
         this.stagedGuests.set([]);
         this.optimisticRegistrants.set([]);
+        this.deletedRegistrantUids.set(new Set());
       });
   }
 
@@ -437,10 +441,13 @@ export class MeetingRegistrantsDisplayComponent {
           this.deleting.set(false);
           if (response.summary.successful > 0) {
             this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Guest removed successfully' });
+            // Remove the guest from both signals immediately so the UI updates without
+            // waiting for the async refetch (works for both managed and self-managed modes).
+            this.deletedRegistrantUids.update((uids) => new Set([...uids, uid]));
+            this.optimisticRegistrants.update((list) => list.filter((r) => r.uid !== uid));
             if (this.externallyManaged()) {
               this.refreshRequested.emit(-response.summary.successful);
             } else {
-              this.optimisticRegistrants.update((list) => list.filter((r) => r.uid !== uid));
               const meeting = this.meeting();
               const baseCount = resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length;
               // Capture the current total before decrementing additionalRegistrantsCount so we subtract
@@ -494,6 +501,8 @@ export class MeetingRegistrantsDisplayComponent {
                 catchError(() => of([])),
                 map((registrants) => registrants.sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]),
                 tap((registrants) => {
+                  // The fetch returned a fresh list — any pending deletions are now reflected.
+                  this.deletedRegistrantUids.set(new Set());
                   const meeting = this.meeting();
                   const resolvedBaseCount = resolveMeetingBaseCount(meeting);
                   const hasBackendBaseCount = resolvedBaseCount !== undefined;
@@ -583,15 +592,26 @@ export class MeetingRegistrantsDisplayComponent {
 
   private initRegistrants(): Signal<MeetingRegistrant[]> {
     return computed(() => {
+      const deletedUids = this.deletedRegistrantUids();
       let list: MeetingRegistrant[];
       if (this.externallyManaged()) {
         const seed = this.initialRegistrants() ?? [];
-        list = [...seed].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[];
+        list = [...seed].filter((r) => !deletedUids.has(r.uid)).sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[];
       } else {
-        list = this.internalRegistrants();
+        list = this.internalRegistrants().filter((r) => !deletedUids.has(r.uid));
       }
-      const fetchedEmails = new Set(list.map((r) => r.email?.trim().toLowerCase()));
-      const pending = this.optimisticRegistrants().filter((r) => !fetchedEmails.has(r.email?.trim().toLowerCase()));
+      // Deduplicate optimistic rows against the fetched list. Use UID for real registrants (exact
+      // match regardless of email normalisation) and email as a fallback for optimistic-* rows
+      // where the API UID isn't known yet.
+      const fetchedUids = new Set<string>(list.map((r) => r.uid).filter((uid): uid is string => !!uid));
+      const fetchedEmails = new Set<string>(list.map((r) => r.email?.trim().toLowerCase()).filter((e): e is string => !!e));
+      const pending = this.optimisticRegistrants().filter((r) => {
+        if (r.uid && !r.uid.startsWith('optimistic-')) {
+          return !fetchedUids.has(r.uid);
+        }
+        const email = r.email?.trim().toLowerCase();
+        return !email || !fetchedEmails.has(email);
+      });
       return pending.length ? ([...pending, ...list].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]) : list;
     });
   }
