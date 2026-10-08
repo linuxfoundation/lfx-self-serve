@@ -263,18 +263,18 @@
       </div>
     </div>
 
-    <div class="flex items-center justify-end gap-2 mb-4" data-testid="meetings-view-actions">
-      <div role="group" aria-label="Meetings view" class="flex items-center gap-2" data-testid="meetings-view-toggle">
-        <lfx-button
-          label="List"
-          icon="fa-light fa-list-ul"
-          size="small"
-          [severity]="isListView() ? 'info' : 'secondary'"
-          [outlined]="!isListView()"
-          [ariaLabel]="'List view' + (isListView() ? ' (active)' : '')"
-          (onClick)="viewMode.set('list')"
-          data-testid="meetings-list-btn"></lfx-button>
-        @if (canShowCalendarView()) {
+    @if (canShowCalendarView()) {
+      <div class="flex items-center justify-end gap-2 mb-4" data-testid="meetings-view-actions">
+        <div role="group" aria-label="Meetings view" class="flex items-center gap-2" data-testid="meetings-view-toggle">
+          <lfx-button
+            label="List"
+            icon="fa-light fa-list-ul"
+            size="small"
+            [severity]="isListView() ? 'info' : 'secondary'"
+            [outlined]="!isListView()"
+            [ariaLabel]="'List view' + (isListView() ? ' (active)' : '')"
+            (onClick)="viewMode.set('list')"
+            data-testid="meetings-list-btn"></lfx-button>
           <lfx-button
             label="Calendar"
             icon="fa-light fa-calendar-days"
@@ -284,9 +284,7 @@
             [ariaLabel]="'Calendar view' + (isCalendarView() ? ' (active)' : '')"
             (onClick)="viewMode.set('calendar')"
             data-testid="meetings-calendar-btn"></lfx-button>
-        }
-      </div>
-      @if (canShowCalendarView()) {
+        </div>
         <lfx-button
           label="Subscribe"
           icon="fa-light fa-calendar-arrow-down"
@@ -296,8 +294,8 @@
           ariaLabel="Subscribe to calendar"
           (onClick)="onSubscribe()"
           data-testid="meetings-subscribe-btn"></lfx-button>
-      }
-    </div>
+      </div>
+    }
 
     <div class="min-h-[400px]">
       @if (isCalendarView()) {
