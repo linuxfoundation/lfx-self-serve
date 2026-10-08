@@ -584,120 +584,6 @@ describe('MentorshipAdminController', () => {
       });
     });
 
-    describe('createTasks', () => {
-      const taskReq = (body: unknown): Request => ({ ...buildReq({}, {}), body }) as Request;
-      const validBody = { applicationIds: [APPLICATION_ID], name: ' Read the guide ', description: 'private-task-text', dueDate: '2030-01-31' };
-
-      it('passes the validated request on and answers with the created and failed ids', async () => {
-        const write = vi.spyOn(MentorshipAdminService.prototype, 'createTasks').mockResolvedValue({ created: [APPLICATION_ID], failed: [] });
-        const out = writeRes();
-
-        await controller.createTasks(taskReq({ ...validBody, requiresFileSubmission: true }), out, next);
-
-        expect(write).toHaveBeenCalledWith(expect.anything(), {
-          applicationIds: [APPLICATION_ID],
-          name: 'Read the guide',
-          description: 'private-task-text',
-          dueDate: '2030-01-31',
-          requiresFileSubmission: true,
-        });
-        expect(out.json).toHaveBeenCalledWith({ created: [APPLICATION_ID], failed: [] });
-        expect(next).not.toHaveBeenCalled();
-      });
-
-      it.each([
-        ['no body', undefined],
-        ['no applications', { ...validBody, applicationIds: [] }],
-        ['an application id that is not a UUID', { ...validBody, applicationIds: ['12'] }],
-        ['a blank name', { ...validBody, name: '   ' }],
-        ['no description', { ...validBody, description: undefined }],
-        ['a due date that is not a calendar date', { ...validBody, dueDate: '2030-02-31' }],
-        ['a file requirement that is not a boolean', { ...validBody, requiresFileSubmission: 'yes' }],
-      ])('rejects %s with a 400 and no upstream call', async (_label, body) => {
-        const write = vi.spyOn(MentorshipAdminService.prototype, 'createTasks');
-
-        await controller.createTasks(taskReq(body), writeRes(), next);
-
-        expect(statusCodes()).toEqual([400]);
-        expect(write).not.toHaveBeenCalled();
-      });
-
-      it.each([403, 404, 409])('passes an upstream %i on to next', async (statusCode) => {
-        vi.spyOn(MentorshipAdminService.prototype, 'createTasks').mockRejectedValue(Object.assign(new Error('upstream'), { statusCode }));
-
-        await controller.createTasks(taskReq(validBody), writeRes(), next);
-
-        expect(statusCodes()).toEqual([statusCode]);
-      });
-
-      it('logs the application count and the outcome counts, never the task text', async () => {
-        vi.spyOn(MentorshipAdminService.prototype, 'createTasks').mockResolvedValue({ created: [APPLICATION_ID], failed: [] });
-
-        await controller.createTasks(taskReq(validBody), writeRes(), next);
-
-        const logged = JSON.stringify([...vi.mocked(logger.startOperation).mock.calls, ...vi.mocked(logger.success).mock.calls].map((call) => call.slice(1)));
-        expect(logged).toContain('"application_count":1');
-        expect(logged).toContain('"created_count":1');
-        expect(logged).toContain('"failed_count":0');
-        expect(logged).not.toContain('private-task-text');
-        expect(logged).not.toContain('Read the guide');
-      });
-    });
-
-    describe('updateTask', () => {
-      const TASK_ID = '8b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e';
-      const taskReq = (body: unknown, taskId: unknown = TASK_ID): Request => ({ ...buildReq({}, { taskId }), body }) as Request;
-      const updated = { id: TASK_ID, status: 'completed' } as never;
-
-      it('passes the validated body on and answers with the updated task', async () => {
-        const write = vi.spyOn(MentorshipAdminService.prototype, 'updateTask').mockResolvedValue(updated);
-        const out = writeRes();
-
-        await controller.updateTask(taskReq({ name: ' Read ', status: 'completed', extra: 1 }), out, next);
-
-        expect(write).toHaveBeenCalledWith(expect.anything(), TASK_ID, { name: 'Read', status: 'completed' });
-        expect(out.json).toHaveBeenCalledWith(updated);
-        expect(next).not.toHaveBeenCalled();
-      });
-
-      it.each([
-        ['a task id that is not a UUID', { status: 'completed' }, '12'],
-        ['a task id that is repeated', { status: 'completed' }, [TASK_ID, TASK_ID]],
-        ['no body', undefined, TASK_ID],
-        ['an empty body', {}, TASK_ID],
-        ['a blank name', { name: ' ' }, TASK_ID],
-        ['a status upstream spells', { status: 'in_progress' }, TASK_ID],
-        ['a due date that is not a calendar date', { dueDate: '2030-02-31' }, TASK_ID],
-      ])('rejects %s with a 400 and no upstream call', async (_label, body, taskId) => {
-        const write = vi.spyOn(MentorshipAdminService.prototype, 'updateTask');
-
-        await controller.updateTask(taskReq(body, taskId), writeRes(), next);
-
-        expect(statusCodes()).toEqual([400]);
-        expect(write).not.toHaveBeenCalled();
-      });
-
-      it.each([400, 403, 404, 409])('passes an upstream %i on to next', async (statusCode) => {
-        vi.spyOn(MentorshipAdminService.prototype, 'updateTask').mockRejectedValue(Object.assign(new Error('upstream'), { statusCode }));
-
-        await controller.updateTask(taskReq({ status: 'completed' }), writeRes(), next);
-
-        expect(statusCodes()).toEqual([statusCode]);
-      });
-
-      it('logs the task id and the field names, never the task text', async () => {
-        vi.spyOn(MentorshipAdminService.prototype, 'updateTask').mockResolvedValue(updated);
-
-        await controller.updateTask(taskReq({ name: 'private-task-name', description: 'private-task-text', status: 'completed' }), writeRes(), next);
-
-        const logged = JSON.stringify([...vi.mocked(logger.startOperation).mock.calls, ...vi.mocked(logger.success).mock.calls].map((call) => call.slice(1)));
-        expect(logged).toContain(TASK_ID);
-        expect(logged).toContain('"fields":["name","description","status"]');
-        expect(logged).not.toContain('private-task-name');
-        expect(logged).not.toContain('private-task-text');
-      });
-    });
-
     it('withdrawApplication answers 204', async () => {
       const write = vi.spyOn(MentorshipAdminService.prototype, 'withdrawApplication').mockResolvedValue();
       const out = writeRes();
@@ -939,8 +825,6 @@ describe('MentorshipAdminController', () => {
       ['getProgramTerms', 'getProgramTerms', { programId: PROGRAM_ID }, {}],
       ['getApplicationTasks', 'getApplicationTasks', { applicationId: PROGRAM_ID }, {}],
       ['updateApplicationNote', 'updateApplicationNote', { applicationId: PROGRAM_ID }, {}],
-      ['createTasks', 'createTasks', {}, {}],
-      ['updateTask', 'updateTask', { taskId: PROGRAM_ID }, {}],
       ['updateProgramMentor', 'updateProgramMentor', { programId: PROGRAM_ID, memberId: PROGRAM_ID }, {}],
       ['inviteProgramMentor', 'inviteProgramMentor', { programId: PROGRAM_ID }, {}],
       ['updateProgram', 'updateProgram', { programId: PROGRAM_ID }, {}],

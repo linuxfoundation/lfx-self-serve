@@ -311,29 +311,6 @@ describe('MentorshipMentorService — read error mapping', () => {
     });
   });
 
-  describe('createMenteeTasks', () => {
-    const request = { applicationIds: ['app-1', 'app-2'], name: 'Write a design doc', description: 'One page.', requiresFileSubmission: false };
-
-    it('POSTs the request and emits which applications got the task', () => {
-      let result: unknown;
-      service.createMenteeTasks(request).subscribe((response) => (result = response));
-
-      const req = http.expectOne('/api/mentorship/mentor/tasks');
-      expect(req.request.method).toBe('POST');
-      expect(req.request.body).toEqual(request);
-      req.flush({ created: ['app-1'], failed: ['app-2'] });
-      expect(result).toEqual({ created: ['app-1'], failed: ['app-2'] });
-    });
-
-    it('propagates a failed create as the raw HttpErrorResponse', () => {
-      let error: HttpErrorResponse | undefined;
-      service.createMenteeTasks(request).subscribe({ error: (err: HttpErrorResponse) => (error = err) });
-
-      http.expectOne('/api/mentorship/mentor/tasks').flush({ error: 'application not found' }, { status: 404, statusText: 'Not Found' });
-      expect(error?.status).toBe(404);
-    });
-  });
-
   describe('reviewMenteeTask', () => {
     it.each(['complete', 'incomplete'] as const)('PATCHes %s to the encoded task review path', (status) => {
       let completed = false;

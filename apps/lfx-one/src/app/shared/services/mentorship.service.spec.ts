@@ -4,7 +4,8 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { MentorshipApplicantTask, MentorshipTaskCreateResponse } from '@lfx-one/shared/interfaces';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MentorshipService } from './mentorship.service';
 
@@ -133,5 +134,72 @@ describe('MentorshipService — LFX profile sync', () => {
     req.flush({ error: 'forbidden' }, { status: 403, statusText: 'Forbidden' });
 
     expect(status).toBe(403);
+  });
+});
+
+describe('MentorshipService — task writes', () => {
+  let service: MentorshipService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MentorshipService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(MentorshipService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+    vi.restoreAllMocks();
+  });
+
+  it('posts a task create and returns the created and failed ids', () => {
+    const request = { applicationIds: ['app_1', 'app_2'], name: 'Read the guide', description: 'Start with chapter one', dueDate: '2030-01-31' };
+    let result: MentorshipTaskCreateResponse | undefined;
+    service.createTasks(request).subscribe((response) => (result = response));
+
+    const req = http.expectOne('/api/mentorship/tasks');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(request);
+    req.flush({ created: ['app_1'], failed: ['app_2'] } satisfies MentorshipTaskCreateResponse);
+    expect(result).toEqual({ created: ['app_1'], failed: ['app_2'] });
+  });
+
+  it('logs a failed task create by status only and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service
+      .createTasks({ applicationIds: ['app_1'], name: 'Read the guide', description: 'private-task-text' })
+      .subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/tasks').flush({ message: 'private-task-text' }, { status: 404, statusText: 'Not Found' });
+
+    expect(status).toBe(404);
+    expect(logged).toHaveBeenCalledWith('[MentorshipService] createTasks failed', { status: 404, statusText: 'Not Found' });
+  });
+
+  it('patches one task, with an encoded id, and returns the updated task', () => {
+    const body = { name: 'Read the guide', status: 'completed' } as const;
+    const updated = { id: 'task 1', name: 'Read the guide', status: 'completed' } as MentorshipApplicantTask;
+    let result: MentorshipApplicantTask | undefined;
+    service.updateTask('task 1', body).subscribe((response) => (result = response));
+
+    const req = http.expectOne('/api/mentorship/tasks/task%201');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual(body);
+    req.flush(updated);
+    expect(result).toEqual(updated);
+  });
+
+  it('logs a failed task edit by status only and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.updateTask('task_1', { status: 'submitted' }).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/tasks/task_1').flush({ message: 'private-task-text' }, { status: 400, statusText: 'Bad Request' });
+
+    expect(status).toBe(400);
+    expect(logged).toHaveBeenCalledWith('[MentorshipService] updateTask failed', { status: 400, statusText: 'Bad Request' });
   });
 });

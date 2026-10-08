@@ -16,7 +16,6 @@ import {
   MentorshipEnrollCreateRequest,
   MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
-  MentorshipMentorTaskCreateResponse,
   MentorshipProgramLogoUploadResult,
   MentorshipProgramsResponse,
 } from '@lfx-one/shared/interfaces';
@@ -277,42 +276,6 @@ describe('MentorshipAdminService', () => {
     ]);
     requests.forEach((req) => req.flush(null, { status: 204, statusText: 'No Content' }));
     expect(done).toBe(2);
-  });
-
-  it('posts a task create for one application and returns the created and failed ids', () => {
-    const request = { applicationIds: ['app_1'], name: 'Read the guide', description: 'Start with chapter one', dueDate: '2030-01-31' };
-    let result: MentorshipMentorTaskCreateResponse | undefined;
-    service.createTasks(request).subscribe((response) => (result = response));
-
-    const req = http.expectOne('/api/mentorship/admin/tasks');
-    expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual(request);
-    req.flush({ created: ['app_1'], failed: [] } satisfies MentorshipMentorTaskCreateResponse);
-    expect(result).toEqual({ created: ['app_1'], failed: [] });
-  });
-
-  it('patches one task and returns the updated task', () => {
-    const body = { name: 'Read the guide', status: 'completed' } as const;
-    const updated = { id: 'task_1', name: 'Read the guide', status: 'completed' } as MentorshipApplicantTask;
-    let result: MentorshipApplicantTask | undefined;
-    service.updateTask('task_1', body).subscribe((response) => (result = response));
-
-    const req = http.expectOne('/api/mentorship/admin/tasks/task_1');
-    expect(req.request.method).toBe('PATCH');
-    expect(req.request.body).toEqual(body);
-    req.flush(updated);
-    expect(result).toEqual(updated);
-  });
-
-  it('logs a failed task edit by status only and lets it reach the caller', () => {
-    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    let status: number | undefined;
-    service.updateTask('task_1', { status: 'submitted' }).subscribe({ error: (err: { status: number }) => (status = err.status) });
-
-    http.expectOne('/api/mentorship/admin/tasks/task_1').flush({ message: 'private-task-text' }, { status: 400, statusText: 'Bad Request' });
-
-    expect(status).toBe(400);
-    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] updateTask failed', { status: 400, statusText: 'Bad Request' });
   });
 
   it('declines the pending applications of a term and returns the count', () => {

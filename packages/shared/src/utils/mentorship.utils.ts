@@ -99,10 +99,10 @@ import type {
   MentorshipRegisterSubmitFailure,
   MentorshipRowAction,
   MentorshipTaskFormValue,
+  MentorshipTaskUpdate,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
 import type {
-  MentorshipAdminTaskUpdate,
   MentorshipProgramDetailTabDefinition,
   MentorshipProgramMentor,
   MentorshipProgramStatus,
@@ -1293,6 +1293,16 @@ export function mentorshipApplicantHasTasks(mentee: Pick<MentorshipProgramMentee
   return (mentee.tasksTotal ?? 0) > 0;
 }
 
+/**
+ * Created and Updated copy for one applicant task row, e.g. "Aug 1, 2026". Upstream sends these as full timestamps,
+ * which the BFF keeps for the Tasks tab's relative time, so only the leading `YYYY-MM-DD` is read here (as the UTC day,
+ * like the due date). Anything without one is shown as it came.
+ */
+export function formatMentorshipTaskDateLabel(value: string): string {
+  const day = /^\d{4}-\d{2}-\d{2}/.exec(value)?.[0];
+  return day ? formatIsoDateLabel(day) : value;
+}
+
 /** Due-date copy for one applicant task row. */
 export function formatMentorshipApplicantTaskDueLabel(task: Pick<MentorshipApplicantTask, 'prerequisite' | 'dueOn'>): string {
   if (task.dueOn) return formatIsoDateLabel(task.dueOn);
@@ -1312,9 +1322,9 @@ export function mentorshipApplicantTaskRows(tasks: ReadonlyArray<MentorshipAppli
     ...task,
     statusLabel: MENTORSHIP_APPLICANT_TASK_STATUS_LABELS[task.status],
     statusBadgeClass: MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES[task.status],
-    createdLabel: formatIsoDateLabel(task.createdOn),
+    createdLabel: formatMentorshipTaskDateLabel(task.createdOn),
     dueLabel: formatMentorshipApplicantTaskDueLabel(task),
-    updatedLabel: formatIsoDateLabel(task.updatedOn),
+    updatedLabel: formatMentorshipTaskDateLabel(task.updatedOn),
     canView: !!task.hasSubmission,
     canDownload: !!task.hasSubmission,
   }));
@@ -1326,12 +1336,12 @@ export function mentorshipTaskSubmittedCount(status: MentorshipApplicantTaskStat
 }
 
 /**
- * The fields the task-edit dialog changed on a task, as the admin task update body: a field that still reads as it did is
+ * The fields the task-edit dialog changed on a task, as the task update body: a field that still reads as it did is
  * left out, so saving one change never re-sends (and so never re-validates upstream) the rest. A cleared due date goes as
  * `''`, which upstream reads as clear it. Empty when nothing changed.
  */
-export function buildMentorshipAdminTaskUpdate(task: MentorshipApplicantTask, value: MentorshipTaskFormValue): MentorshipAdminTaskUpdate {
-  const update: MentorshipAdminTaskUpdate = {};
+export function buildMentorshipTaskUpdate(task: MentorshipApplicantTask, value: MentorshipTaskFormValue): MentorshipTaskUpdate {
+  const update: MentorshipTaskUpdate = {};
   if (value.name !== task.name) update.name = value.name;
   if (value.description !== task.description) update.description = value.description;
   if ((value.dueOn ?? '') !== (task.dueOn ?? '')) update.dueDate = value.dueOn ?? '';

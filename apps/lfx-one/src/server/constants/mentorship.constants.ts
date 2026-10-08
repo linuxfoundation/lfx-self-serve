@@ -164,8 +164,8 @@ export const MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES: readonly MentorshipUpstr
 /** Most application task reads the mentee applications read, and the mentor program detail's fallback, run at once. */
 export const MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY = 5;
 
-/** Most applications a mentor's task create reads and writes at once; upstream has no batch create. */
-export const MENTORSHIP_MENTOR_TASK_CREATE_CONCURRENCY = 3;
+/** Most applications one task create reads and writes at once; upstream has no batch create. */
+export const MENTORSHIP_TASK_CREATE_CONCURRENCY = 3;
 
 /**
  * How an application's status reads on a mentor's program detail. `hold` is an administrator's hold on an
@@ -188,8 +188,8 @@ export const MENTORSHIP_MENTOR_PROGRAM_TASK_STATUS_MAP: Readonly<Record<Mentorsh
   complete: 'completed',
 };
 
-/** How a task status the admin picks is written upstream: the reverse of `MENTORSHIP_MENTOR_PROGRAM_TASK_STATUS_MAP`. */
-export const MENTORSHIP_ADMIN_TASK_STATUS_TO_UPSTREAM: Readonly<Record<MentorshipApplicantTaskStatus, MentorshipUpstreamTaskStatus>> = {
+/** How a task status an admin or mentor picks is written upstream: the reverse of `MENTORSHIP_MENTOR_PROGRAM_TASK_STATUS_MAP`. */
+export const MENTORSHIP_TASK_STATUS_TO_UPSTREAM: Readonly<Record<MentorshipApplicantTaskStatus, MentorshipUpstreamTaskStatus>> = {
   pending: 'incomplete',
   'in-progress': 'in_progress',
   submitted: 'submitted',

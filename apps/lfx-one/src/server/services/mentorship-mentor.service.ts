@@ -24,8 +24,6 @@ import {
   MentorshipMentorProgramRequestsResponse,
   MentorshipMentorProgramsResponse,
   MentorshipMentorRegisterRequest,
-  MentorshipMentorTaskCreateRequest,
-  MentorshipMentorTaskCreateResponse,
   MentorshipMentorTaskReviewDecision,
   MentorshipUpstreamListResponse,
   MentorshipUpstreamMentorDetail,
@@ -76,7 +74,6 @@ import {
   mapMentorshipMentorProgramRequests,
 } from '../helpers/mentorship-mentor-request.helper';
 import { buildMentorshipUpstreamMentorProfile } from '../helpers/mentorship-mentor-register.helper';
-import { createMentorshipMenteeTasks } from '../helpers/mentorship-mentor-task.helper';
 
 import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
@@ -250,15 +247,6 @@ export class MentorshipMentorService {
   public async updateApplicationNote(req: Request, applicationId: string, request: MentorshipMentorApplicationNoteUpdate): Promise<void> {
     logger.debug(req, 'mentorship_update_application_note', 'Saving reviewer note', { applicationId, cleared: request.note === '' });
     await saveMentorshipApplicationNote(this.microserviceProxy, req, applicationId, request.note);
-  }
-
-  /**
-   * Creates the task on each application through the shared create, which the admin route uses too. With one
-   * application its failure propagates; with several, each failure is listed in `failed`. Upstream checks the
-   * caller mentors the program.
-   */
-  public async createMenteeTasks(req: Request, request: MentorshipMentorTaskCreateRequest): Promise<MentorshipMentorTaskCreateResponse> {
-    return createMentorshipMenteeTasks(this.microserviceProxy, req, request, 'create_mentorship_mentor_tasks');
   }
 
   /**

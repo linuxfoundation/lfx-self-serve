@@ -7,6 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { MentorshipAdminMenteesResponse, MentorshipAdminProgramPage, MentorshipProgramApplicant } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
+import { MentorshipService } from '@services/mentorship.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
@@ -76,6 +77,8 @@ describe('ProgramDetailComponent', () => {
             getApplicationTasks: vi.fn().mockReturnValue(of([])),
           },
         },
+        // The tab's task writes go through the shared mentorship service; no test here sends one.
+        { provide: MentorshipService, useValue: { createTasks: vi.fn(), updateTask: vi.fn() } },
         { provide: ActivatedRoute, useValue: { paramMap: routeParams as never } },
       ],
     });

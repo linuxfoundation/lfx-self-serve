@@ -97,12 +97,13 @@ import {
   toMentorshipEnrollTerm,
   toMentorshipEnrollUpdateRequest,
   formatMentorshipApplicantTaskDueLabel,
+  formatMentorshipTaskDateLabel,
   formatMentorshipReviewUpdatedLabel,
   mentorshipMenteeTaskCompletion,
   mentorshipMentorReviewTasks,
   mentorshipMentorSubmittedTaskCount,
   mentorshipApplicantHasTasks,
-  buildMentorshipAdminTaskUpdate,
+  buildMentorshipTaskUpdate,
   mentorshipTaskSubmittedCount,
   mentorshipApplicantTaskRows,
   getMentorshipEnrollLogoError,
@@ -1355,7 +1356,28 @@ describe('program detail helpers', () => {
     });
   });
 
-  describe('buildMentorshipAdminTaskUpdate', () => {
+  it('labels full upstream timestamps by their day, as the due date reads', () => {
+    const [row] = mentorshipApplicantTaskRows([
+      {
+        id: 'tsk_1',
+        name: 'Resume',
+        description: 'Upload your resume.',
+        status: 'pending',
+        prerequisite: false,
+        createdOn: '2026-08-01T10:32:00Z',
+        updatedOn: '2026-10-08T23:59:59.123456Z',
+        dueOn: '2026-10-15',
+      },
+    ]);
+
+    expect(row).toMatchObject({ createdLabel: 'Aug 1, 2026', updatedLabel: 'Oct 8, 2026', dueLabel: 'Oct 15, 2026' });
+  });
+
+  it('shows a task date without a leading YYYY-MM-DD as it came', () => {
+    expect(formatMentorshipTaskDateLabel('not-a-date')).toBe('not-a-date');
+  });
+
+  describe('buildMentorshipTaskUpdate', () => {
     const task = {
       id: 'tsk_1',
       name: 'Read the guide',
@@ -1382,25 +1404,25 @@ describe('program detail helpers', () => {
     });
 
     it('is empty when nothing changed', () => {
-      expect(buildMentorshipAdminTaskUpdate(task, unchanged)).toEqual({});
+      expect(buildMentorshipTaskUpdate(task, unchanged)).toEqual({});
     });
 
     it('carries only the fields that changed', () => {
-      expect(buildMentorshipAdminTaskUpdate(task, { ...unchanged, name: 'Read the new guide', status: 'completed' })).toEqual({
+      expect(buildMentorshipTaskUpdate(task, { ...unchanged, name: 'Read the new guide', status: 'completed' })).toEqual({
         name: 'Read the new guide',
         status: 'completed',
       });
     });
 
     it('sends an empty due date when it was cleared, and the flag when it was switched', () => {
-      expect(buildMentorshipAdminTaskUpdate(task, { ...unchanged, dueOn: undefined, requiresFileSubmission: true })).toEqual({
+      expect(buildMentorshipTaskUpdate(task, { ...unchanged, dueOn: undefined, requiresFileSubmission: true })).toEqual({
         dueDate: '',
         requiresFileSubmission: true,
       });
     });
 
     it('treats a task with no due date and a form with none as unchanged', () => {
-      expect(buildMentorshipAdminTaskUpdate({ ...task, dueOn: undefined }, { ...unchanged, dueOn: undefined })).toEqual({});
+      expect(buildMentorshipTaskUpdate({ ...task, dueOn: undefined }, { ...unchanged, dueOn: undefined })).toEqual({});
     });
   });
 

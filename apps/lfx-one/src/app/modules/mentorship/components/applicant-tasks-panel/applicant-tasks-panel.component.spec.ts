@@ -7,12 +7,12 @@ import { FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MentorshipApplicantTask, MentorshipApplicantTaskRow, MentorshipApplicantTaskStatus, MentorshipTaskFormValue } from '@lfx-one/shared/interfaces';
 import { mentorshipApplicantTaskRows } from '@lfx-one/shared/utils';
-import { MessageService, ToastMessageOptions } from 'primeng/api';
+import { MessageService } from 'primeng/api';
 import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AdminTaskUpdateService } from '../../services/admin-task-update.service';
 import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
+import { MentorshipTaskUpdateService } from '../../services/mentorship-task-update.service';
 import { ApplicantTasksPanelComponent } from './applicant-tasks-panel.component';
 
 describe('ApplicantTasksPanelComponent', () => {
@@ -50,7 +50,7 @@ describe('ApplicantTasksPanelComponent', () => {
   /** The service's in-flight ids, as a signal like the real one, so a save from a collapsed panel can settle mid-test. */
   let updatingIds: WritableSignal<ReadonlySet<string>>;
 
-  const build = (editable = false): void => {
+  const build = (): void => {
     openEdit = vi.fn().mockReturnValue(of(undefined));
     update = vi.fn(() => of(null));
     taskSaved = vi.fn();
@@ -63,7 +63,7 @@ describe('ApplicantTasksPanelComponent', () => {
         provideNoopAnimations(),
         MessageService,
         { provide: MentorshipTaskDialogService, useValue: { openCreate: vi.fn(), openEdit } },
-        { provide: AdminTaskUpdateService, useValue: { update, isUpdating: (taskId: string) => updatingIds().has(taskId) } },
+        { provide: MentorshipTaskUpdateService, useValue: { update, isUpdating: (taskId: string) => updatingIds().has(taskId) } },
       ],
     });
 
@@ -71,7 +71,6 @@ describe('ApplicantTasksPanelComponent', () => {
     fixture.componentRef.setInput('applicantId', 'app_1');
     fixture.componentRef.setInput('applicantName', 'Ifeoma Adeyemi');
     fixture.componentRef.setInput('tasks', tasks);
-    fixture.componentRef.setInput('editable', editable);
     fixture.componentRef.setInput('taskSaved', taskSaved);
     fixture.detectChanges();
 
@@ -110,26 +109,7 @@ describe('ApplicantTasksPanelComponent', () => {
     expect(addSpy).not.toHaveBeenCalled();
   });
 
-  it('routes an accepted edit to the coming-soon toast until the write endpoint lands', () => {
-    openEdit.mockReturnValue(
-      of({
-        taskId: 'tsk_editable',
-        name: 'Midterm Report (revised)',
-        description: 'Summarize progress',
-        requiresFileSubmission: true,
-        assignedMenteeIds: [],
-      } satisfies MentorshipTaskFormValue)
-    );
-
-    clickEdit('tsk_editable');
-
-    expect(addSpy).toHaveBeenCalledTimes(1);
-    // `MessageService.add` signature is `add(message: ToastMessageOptions): void` — narrow for `.summary`.
-    expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Update Midterm Report (revised) for Ifeoma Adeyemi');
-    expect(update).not.toHaveBeenCalled();
-  });
-
-  describe('when editable', () => {
+  describe('saving', () => {
     const savedTask: MentorshipApplicantTask = {
       id: 'tsk_editable',
       name: 'Midterm Report (revised)',
@@ -171,9 +151,7 @@ describe('ApplicantTasksPanelComponent', () => {
     const editButton = (): HTMLButtonElement =>
       element().querySelector('[data-testid="mentorship-applicant-task-edit-tsk_editable"] button') as HTMLButtonElement;
 
-    beforeEach(() => build(true));
-
-    it('saves only what the edit dialog changed, without the coming-soon toast, and hands the saved task back', () => {
+    it('saves only what the edit dialog changed and hands the saved task back', () => {
       openEdit.mockReturnValue(of(editValue({ name: 'Midterm Report (revised)' })));
       update.mockReturnValue(of(savedTask));
 

@@ -5,6 +5,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { MENTORSHIP_LF_PROJECT_PAGE_SIZE } from '@lfx-one/shared/constants';
 import {
+  MentorshipApplicantTask,
   MentorshipCiiBadge,
   MentorshipLfProjectsResponse,
   MentorshipLfxProfileFields,
@@ -12,6 +13,9 @@ import {
   MentorshipProgramDecisionRequest,
   MentorshipProgramReview,
   MentorshipProgramReviewDecision,
+  MentorshipTaskCreateRequest,
+  MentorshipTaskCreateResponse,
+  MentorshipTaskUpdate,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, take, throwError } from 'rxjs';
 
@@ -22,8 +26,8 @@ import { strictHttpParams } from '../utils/http-params.utils';
  *
  * Errors propagate to the caller, which owns the unavailable or retry state: the name check (the
  * wizard holds Next while it cannot confirm the name), the project picker's pages (Retry rather than
- * a failure shown as no projects, or a truncated list as complete), the CII badge (a 404 is `null`)
- * and the review and profile calls.
+ * a failure shown as no projects, or a truncated list as complete), the CII badge (a 404 is `null`),
+ * the review and profile calls, and the task create and edit the admin and mentor program details share.
  * The admin pages' reads live in `MentorshipAdminService` and the mentor pages' in `MentorshipMentorService`.
  */
 @Injectable({ providedIn: 'root' })
@@ -74,6 +78,24 @@ export class MentorshipService {
     return this.http.patch<void>('/api/mentorship/me/lfx-profile', fields).pipe(take(1));
   }
 
+  /**
+   * Gives accepted mentees a task, for the admin and mentor program details alike. With one application a failure arrives as the
+   * error; with several, the ones not created are in `failed`.
+   */
+  public createTasks(request: MentorshipTaskCreateRequest): Observable<MentorshipTaskCreateResponse> {
+    return this.http.post<MentorshipTaskCreateResponse>('/api/mentorship/tasks', request).pipe(take(1), catchError(this.logStatusOnly('createTasks')));
+  }
+
+  /**
+   * Edits one task, or sets just its status, and returns it as the row reads it, so the caller patches the row in place.
+   * Upstream's 400 (a submitted task that requires a file with none), 403 and 404 reach the caller as the error.
+   */
+  public updateTask(taskId: string, body: MentorshipTaskUpdate): Observable<MentorshipApplicantTask> {
+    return this.http
+      .patch<MentorshipApplicantTask>(`/api/mentorship/tasks/${encodeURIComponent(taskId)}`, body)
+      .pipe(take(1), catchError(this.logStatusOnly('updateTask')));
+  }
+
   public getCiiBadge(projectId: string): Observable<MentorshipCiiBadge | null> {
     return this.http.get<MentorshipCiiBadge>(`/api/mentorship/cii/${encodeURIComponent(projectId)}`).pipe(
       take(1),
@@ -90,6 +112,14 @@ export class MentorshipService {
       if (err.status !== 404) {
         console.error(`[MentorshipService] ${label} failed`, err);
       }
+      return throwError(() => err);
+    };
+  }
+
+  /** Logs the status only, since a task write's error can echo the task's text, then passes the error on. */
+  private logStatusOnly(label: string) {
+    return (err: HttpErrorResponse): Observable<never> => {
+      console.error(`[MentorshipService] ${label} failed`, { status: err.status, statusText: err.statusText });
       return throwError(() => err);
     };
   }
