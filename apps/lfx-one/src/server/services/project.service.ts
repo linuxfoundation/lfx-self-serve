@@ -4034,7 +4034,13 @@ export class ProjectService {
     }
   }
 
-  public async getProjectIdBySlug(req: Request, slug: string): Promise<ProjectSlugToIdResponse> {
+  /**
+   * Resolves a project slug to its uid over NATS.
+   * By default a NATS timeout / no-responder is reported as `exists: false`. Pass `{ strict: true }`
+   * where a transient outage must not read as "no such project" (e.g. a public page that would
+   * otherwise tell visitors their link is dead) — it then throws a 503 `MicroserviceError`.
+   */
+  public async getProjectIdBySlug(req: Request, slug: string, options: { strict?: boolean } = {}): Promise<ProjectSlugToIdResponse> {
     const codec = this.natsService.getCodec();
 
     try {
@@ -4065,6 +4071,14 @@ export class ProjectService {
 
       // If it's a timeout or no responder error, treat as not found
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
+        if (options.strict) {
+          throw new MicroserviceError('Project lookup is temporarily unavailable. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
+            operation: 'get_project_id_by_slug',
+            service: 'project_service',
+            path: '/nats/project-slug-to-uid',
+            originalError: error,
+          });
+        }
         return {
           uid: '',
           slug,

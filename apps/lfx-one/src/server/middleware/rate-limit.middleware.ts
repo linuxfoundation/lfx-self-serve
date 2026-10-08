@@ -69,8 +69,9 @@ export const aiRateLimiter = rateLimit({
  *
  * Stacks on top of `publicApiRateLimiter`. Every accepted request creates a committee member with
  * an app (M2M) credential, so the per-IP budget is kept far below the generic public limit to blunt
- * scripted mass-subscription. Answers in the app's `{ error, code }` envelope so the signup page can
- * show a "too many attempts" message rather than a generic failure. In-memory, so per pod.
+ * scripted mass-subscription. The signup page keys its "too many attempts" message on the 429
+ * status; the body uses the app's `{ error, code }` envelope for consistency with `apiRateLimiter`.
+ * In-memory, so per pod.
  */
 export const newsletterSignupRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute window

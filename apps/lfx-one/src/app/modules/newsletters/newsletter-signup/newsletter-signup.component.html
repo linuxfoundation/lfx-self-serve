@@ -22,16 +22,7 @@
             <h1 class="text-lg font-semibold text-gray-900">This signup link isn't valid</h1>
             <p class="text-sm text-gray-500">The newsletter may have moved or the link may be incomplete. Ask the project for an up-to-date signup link.</p>
           </div>
-        } @else if (loadError() || !info()) {
-          <div class="flex flex-col items-center gap-3 text-center" data-testid="newsletter-signup-load-error">
-            <div class="flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
-              <i class="fa-light fa-circle-exclamation text-xl text-red-600" aria-hidden="true"></i>
-            </div>
-            <h1 class="text-lg font-semibold text-gray-900">We couldn't load this page</h1>
-            <p class="text-sm text-gray-500">Something went wrong on our side. Please refresh the page to try again.</p>
-          </div>
-        } @else {
-          @let details = info()!;
+        } @else if (info(); as details) {
           <!-- Project identity -->
           <header class="flex flex-col items-center gap-3 text-center" data-testid="newsletter-signup-header">
             @if (details.project.logo_url) {
@@ -52,7 +43,14 @@
           </header>
 
           <div aria-live="polite">
-            @if (subscribedEmail(); as email) {
+            @if (!details.accepting_signups) {
+              <!-- Group exists but cannot take email-only members (voting enabled / business email required) -->
+              <div class="mt-6 flex flex-col items-center gap-2 text-center" data-testid="newsletter-signup-unavailable">
+                <h1 class="text-xl font-semibold text-gray-900">{{ details.group.name }}</h1>
+                <p class="text-sm text-gray-600">This newsletter isn't accepting signups through this page right now.</p>
+                <p class="text-sm text-gray-500">Please contact the project if you'd like to receive it.</p>
+              </div>
+            } @else if (subscribedEmail(); as email) {
               <!-- Success -->
               <div class="mt-6 flex flex-col items-center gap-4 text-center" data-testid="newsletter-signup-success">
                 <div class="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50">
@@ -148,6 +146,14 @@
                 </p>
               </form>
             }
+          </div>
+        } @else {
+          <div class="flex flex-col items-center gap-3 text-center" data-testid="newsletter-signup-load-error">
+            <div class="flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
+              <i class="fa-light fa-circle-exclamation text-xl text-red-600" aria-hidden="true"></i>
+            </div>
+            <h1 class="text-lg font-semibold text-gray-900">We couldn't load this page</h1>
+            <p class="text-sm text-gray-500">Something went wrong on our side. Please refresh the page to try again.</p>
           </div>
         }
       </section>

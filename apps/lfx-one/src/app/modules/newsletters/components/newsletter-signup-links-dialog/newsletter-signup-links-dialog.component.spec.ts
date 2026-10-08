@@ -11,8 +11,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { NewsletterSignupLinksDialogComponent } from './newsletter-signup-links-dialog.component';
 
-function committee(uid: string, name: string, category: string): Committee {
-  return { uid, name, category } as Committee;
+function committee(uid: string, name: string, category: string, over: Partial<Committee> = {}): Committee {
+  return { uid, name, category, ...over } as Committee;
 }
 
 describe('NewsletterSignupLinksDialogComponent', () => {
@@ -50,7 +50,7 @@ describe('NewsletterSignupLinksDialogComponent', () => {
     );
 
     expect(getCommitteesByProjectOrThrow).toHaveBeenCalledWith('p-uid');
-    const urls = all('newsletter-signup-link-url').map((input) => (input as HTMLInputElement).value);
+    const urls = all('newsletter-signup-link-url').map((span) => span.textContent?.trim());
     expect(urls).toEqual([`${window.location.origin}/projects/acme/newsletter-signup/g1`, `${window.location.origin}/projects/acme/newsletter-signup/g2`]);
   });
 
@@ -60,6 +60,21 @@ describe('NewsletterSignupLinksDialogComponent', () => {
     all('newsletter-signup-link-copy')[0].querySelector('button')?.click();
 
     expect(copyLink).toHaveBeenCalledWith(`${window.location.origin}/projects/acme/newsletter-signup/g1`, 'Signup link copied to clipboard.');
+  });
+
+  it('flags groups the public page would refuse (voting enabled or business email required)', async () => {
+    await render(
+      of([
+        committee('g1', 'Alpha News', 'Newsletter'),
+        committee('g2', 'Beta News', 'Newsletter', { enable_voting: true }),
+        committee('g3', 'Gamma News', 'Newsletter', { business_email_required: true }),
+      ])
+    );
+
+    const flagged = ['g1', 'g2', 'g3'].map(
+      (uid) => !!fixture.nativeElement.querySelector(`[data-testid="newsletter-signup-link-${uid}"] [data-testid="newsletter-signup-link-unavailable"]`)
+    );
+    expect(flagged).toEqual([false, true, true]);
   });
 
   it('shows the empty state when the project has no Newsletter groups', async () => {

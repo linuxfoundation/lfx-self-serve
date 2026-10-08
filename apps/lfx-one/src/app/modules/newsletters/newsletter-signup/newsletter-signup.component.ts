@@ -70,7 +70,6 @@ export class NewsletterSignupComponent {
   // === Computed Signals ===
   protected readonly loading = computed(() => this.state().loading);
   protected readonly notFound = computed(() => this.state().notFound);
-  protected readonly loadError = computed(() => this.state().error);
   protected readonly info = computed(() => this.state().info);
   protected readonly projectInitials: Signal<string> = this.initProjectInitials();
 
@@ -151,9 +150,13 @@ export class NewsletterSignupComponent {
         switchMap(({ projectSlug, groupUid }, index) =>
           this.newsletterService.getPublicSignupInfo(projectSlug, groupUid).pipe(
             map((info): PublicNewsletterSignupPageState => ({ loading: false, notFound: false, error: false, info })),
-            catchError((error: HttpErrorResponse) =>
-              of<PublicNewsletterSignupPageState>({ loading: false, notFound: error.status === 404, error: error.status !== 404, info: null })
-            ),
+            catchError((error: HttpErrorResponse) => {
+              // A 404 is an expected outcome (invalid or repointed link); anything else is a real failure.
+              if (error.status !== 404) {
+                console.error('Failed to load newsletter signup page', error);
+              }
+              return of<PublicNewsletterSignupPageState>({ loading: false, notFound: error.status === 404, error: error.status !== 404, info: null });
+            }),
             tap((state) => {
               if (isPlatformServer(this.platformId) && !state.loading) {
                 this.transferState.set(this.stateKey, state);
@@ -182,13 +185,21 @@ export class NewsletterSignupComponent {
   private handleSubmitError(error: HttpErrorResponse): void {
     if (error.status === 429) {
       this.submitError.set('Too many attempts. Please wait a minute and try again.');
-    } else if (error.status === 400) {
+    } else if (error.status === 400 && this.validationField(error) === 'email') {
       this.emailError.set('Enter a valid email address, like name@example.com.');
+    } else if (error.status === 400 && this.validationField(error) === 'group') {
+      this.submitError.set("This newsletter isn't accepting signups right now. Please contact the project.");
     } else if (error.status === 404) {
       this.submitError.set('This signup link is no longer valid. Please contact the project for an updated link.');
     } else {
       this.submitError.set('Something went wrong and you were not subscribed. Please try again.');
     }
+  }
+
+  /** Field named by the BFF's own `ServiceValidationError` body; any other 400 (e.g. upstream) has none. */
+  private validationField(error: HttpErrorResponse): string | undefined {
+    const errors: unknown = error.error?.errors;
+    return Array.isArray(errors) ? errors[0]?.field : undefined;
   }
 
   private focusEmailInput(): void {

@@ -10,7 +10,6 @@ import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from
 
 const proxyRequest = vi.fn();
 const getProjectIdBySlug = vi.fn();
-const getUserInfo = vi.fn();
 const createCommitteeMember = vi.fn();
 const generateM2MToken = vi.fn();
 
@@ -22,7 +21,6 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./project.service', () => ({
   ProjectService: class {
     public getProjectIdBySlug = (...args: unknown[]) => getProjectIdBySlug(...args);
-    public getUserInfo = (...args: unknown[]) => getUserInfo(...args);
   },
 }));
 vi.mock('./committee.service', () => ({
@@ -55,8 +53,16 @@ function committee(overrides: Record<string, unknown> = {}): Record<string, unkn
   return { uid: GROUP_UID, name: 'acme-news', display_name: 'Acme News', category: 'Newsletter', project_uid: PROJECT_UID, ...overrides };
 }
 
-function mockUpstream(group: Record<string, unknown>): void {
-  proxyRequest.mockImplementation((_req: Request, _svc: string, path: string) => Promise.resolve(path.startsWith('/projects/') ? project : group));
+function mockUpstream(group: Record<string, unknown>, settings: Record<string, unknown> | Error = {}): void {
+  proxyRequest.mockImplementation((_req: Request, _svc: string, path: string) => {
+    if (path.startsWith('/projects/')) {
+      return Promise.resolve(project);
+    }
+    if (path.endsWith('/settings')) {
+      return settings instanceof Error ? Promise.reject(settings) : Promise.resolve(settings);
+    }
+    return Promise.resolve(group);
+  });
 }
 
 describe('NewsletterSignupService', () => {
@@ -77,7 +83,9 @@ describe('NewsletterSignupService', () => {
       expect(info).toEqual({
         project: { name: 'Acme Project', slug: 'acme', logo_url: 'https://cdn.example.org/acme.png' },
         group: { uid: GROUP_UID, name: 'Acme News' },
+        accepting_signups: true,
       });
+      expect(getProjectIdBySlug).toHaveBeenCalledWith(req, 'acme', { strict: true });
       for (const call of proxyRequest.mock.calls) {
         expect(call[7]).toEqual({ bearerToken: 'm2m-token' });
       }
@@ -105,9 +113,31 @@ describe('NewsletterSignupService', () => {
 
     it('maps an upstream committee 404 to a not-found', async () => {
       proxyRequest.mockImplementation((_req: Request, _svc: string, path: string) =>
-        path.startsWith('/projects/') ? Promise.resolve(project) : Promise.reject(new MicroserviceError('Not found', 404, 'NOT_FOUND'))
+        path.startsWith('/projects/') || path.endsWith('/settings')
+          ? Promise.resolve(project)
+          : Promise.reject(new MicroserviceError('Not found', 404, 'NOT_FOUND'))
       );
       await expect(service.getSignupInfo(req, 'acme', GROUP_UID)).rejects.toBeInstanceOf(ResourceNotFoundError);
+    });
+
+    it('reports a voting-enabled group as not accepting signups', async () => {
+      mockUpstream(committee({ enable_voting: true }));
+      await expect(service.getSignupInfo(req, 'acme', GROUP_UID)).resolves.toMatchObject({ accepting_signups: false });
+    });
+
+    it('reports a business-email-required group as not accepting signups', async () => {
+      mockUpstream(committee(), { business_email_required: true });
+      await expect(service.getSignupInfo(req, 'acme', GROUP_UID)).resolves.toMatchObject({ accepting_signups: false });
+    });
+
+    it('assumes signups are open when the settings read fails', async () => {
+      mockUpstream(committee(), new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
+      await expect(service.getSignupInfo(req, 'acme', GROUP_UID)).resolves.toMatchObject({ accepting_signups: true });
+    });
+
+    it('propagates a slug-lookup outage instead of reporting the link as not found', async () => {
+      getProjectIdBySlug.mockRejectedValue(new MicroserviceError('unavailable', 503, 'SERVICE_UNAVAILABLE'));
+      await expect(service.getSignupInfo(req, 'acme', GROUP_UID)).rejects.toMatchObject({ statusCode: 503 });
     });
   });
 
@@ -117,49 +147,29 @@ describe('NewsletterSignupService', () => {
       expect(createCommitteeMember).not.toHaveBeenCalled();
     });
 
-    it('attaches the LF username and name when the email matches an account', async () => {
-      getUserInfo.mockResolvedValue({ username: 'jdoe', name: 'Jane Q Doe', email: 'jane@example.org' });
-
+    it('sends a normalized email-only payload with a scoped M2M token and notification suppressed', async () => {
       const result = await service.subscribe(req, 'acme', GROUP_UID, '  Jane@Example.org ');
 
       expect(result).toEqual({ status: 'subscribed' });
-      expect(createCommitteeMember).toHaveBeenCalledWith(
-        req,
-        GROUP_UID,
-        { email: 'jane@example.org', username: 'jdoe', first_name: 'Jane', last_name: 'Q Doe' },
-        true,
-        { bearerToken: 'm2m-token' }
-      );
-    });
-
-    it('does not store the username fallback as a first name', async () => {
-      getUserInfo.mockResolvedValue({ username: 'jdoe', name: 'jdoe', email: 'jane@example.org' });
-      await service.subscribe(req, 'acme', GROUP_UID, 'jane@example.org');
-      expect(createCommitteeMember.mock.calls[0][2]).toEqual({ email: 'jane@example.org', username: 'jdoe' });
-    });
-
-    it('subscribes by email only when no LF account matches', async () => {
-      getUserInfo.mockRejectedValue(new ResourceNotFoundError('User', 'x'));
-      await service.subscribe(req, 'acme', GROUP_UID, 'new@example.org');
-      expect(createCommitteeMember.mock.calls[0][2]).toEqual({ email: 'new@example.org' });
-    });
-
-    it('subscribes by email only when the directory lookup fails', async () => {
-      getUserInfo.mockRejectedValue(new MicroserviceError('timeout', 503, 'SERVICE_UNAVAILABLE'));
-      await service.subscribe(req, 'acme', GROUP_UID, 'new@example.org');
-      expect(createCommitteeMember.mock.calls[0][2]).toEqual({ email: 'new@example.org' });
+      expect(createCommitteeMember).toHaveBeenCalledWith(req, GROUP_UID, { email: 'jane@example.org' }, true, { bearerToken: 'm2m-token' });
     });
 
     it('treats an existing membership (409) as subscribed', async () => {
-      getUserInfo.mockRejectedValue(new ResourceNotFoundError('User', 'x'));
       createCommitteeMember.mockRejectedValue(new MicroserviceError('Conflict', 409, 'CONFLICT'));
       await expect(service.subscribe(req, 'acme', GROUP_UID, 'new@example.org')).resolves.toEqual({ status: 'subscribed' });
     });
 
     it('propagates other upstream failures', async () => {
-      getUserInfo.mockRejectedValue(new ResourceNotFoundError('User', 'x'));
       createCommitteeMember.mockRejectedValue(new MicroserviceError('Boom', 500, 'INTERNAL_ERROR'));
       await expect(service.subscribe(req, 'acme', GROUP_UID, 'new@example.org')).rejects.toBeInstanceOf(MicroserviceError);
+    });
+
+    it('refuses a group that is not accepting signups, naming the group field', async () => {
+      mockUpstream(committee({ enable_voting: true }));
+      const error = await service.subscribe(req, 'acme', GROUP_UID, 'new@example.org').catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect((error as ServiceValidationError).validationErrors[0].field).toBe('group');
+      expect(createCommitteeMember).not.toHaveBeenCalled();
     });
 
     it('does not subscribe to a group outside the project', async () => {

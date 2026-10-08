@@ -16,10 +16,11 @@ beforeAll(installMatchMediaShim);
 
 const GROUP_UID = '1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f';
 
-function info(over: Partial<PublicNewsletterSignupInfo['project']> = {}): PublicNewsletterSignupInfo {
+function info(over: Partial<PublicNewsletterSignupInfo['project']> = {}, acceptingSignups = true): PublicNewsletterSignupInfo {
   return {
     project: { name: 'Acme Project', slug: 'acme', logo_url: 'https://cdn.example.org/acme.png', ...over },
     group: { uid: GROUP_UID, name: 'Acme News', description: 'Monthly project updates.' },
+    accepting_signups: acceptingSignups,
   };
 }
 
@@ -127,6 +128,45 @@ describe('NewsletterSignupComponent', () => {
 
     expect(el('newsletter-signup-submit-error')?.textContent).toContain('Too many attempts');
     expect(el('newsletter-signup-form')).not.toBeNull();
+  });
+
+  it('shows a "not accepting signups" state instead of the form for groups that refuse email-only members', async () => {
+    await render(of(info({}, false)));
+
+    expect(el('newsletter-signup-unavailable')).not.toBeNull();
+    expect(el('newsletter-signup-form')).toBeNull();
+    expect(el('newsletter-signup-project-name')?.textContent?.trim()).toBe('Acme Project');
+  });
+
+  it('blames the email only for the BFF email validation error, not for other 400s', async () => {
+    await render(
+      of(info()),
+      throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR' } }))
+    );
+    await submit('jane@example.org');
+
+    expect(el('newsletter-signup-email-error')).toBeNull();
+    expect(el('newsletter-signup-submit-error')?.textContent).toContain('Please try again');
+  });
+
+  it('shows the email error for a BFF email validation 400', async () => {
+    await render(
+      of(info()),
+      throwError(() => new HttpErrorResponse({ status: 400, error: { errors: [{ field: 'email' }] } }))
+    );
+    await submit('jane@example.org');
+
+    expect(el('newsletter-signup-email-error')?.textContent).toContain('valid email');
+  });
+
+  it('explains a group that stopped accepting signups after the page loaded', async () => {
+    await render(
+      of(info()),
+      throwError(() => new HttpErrorResponse({ status: 400, error: { errors: [{ field: 'group' }] } }))
+    );
+    await submit('jane@example.org');
+
+    expect(el('newsletter-signup-submit-error')?.textContent).toContain('accepting signups');
   });
 
   it('shows a generic retry message on other submit failures', async () => {

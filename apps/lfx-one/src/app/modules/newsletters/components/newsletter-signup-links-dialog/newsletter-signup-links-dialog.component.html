@@ -50,16 +50,22 @@
       @for (link of result; track link.groupUid) {
         <li class="flex flex-col gap-2 rounded-lg border border-gray-200 p-3" [attr.data-testid]="'newsletter-signup-link-' + link.groupUid">
           <p class="text-sm font-medium text-gray-900">{{ link.groupName }}</p>
+          @if (!link.acceptingSignups) {
+            <p class="flex items-start gap-1.5 text-xs text-amber-700" data-testid="newsletter-signup-link-unavailable">
+              <i class="fa-light fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
+              <span
+                >Signups are off for this group because it has voting enabled or requires a business email. Visitors will see a "not accepting signups"
+                message.</span
+              >
+            </p>
+          }
           <div class="flex items-center gap-2">
-            <input
-              #urlInput
-              type="text"
-              readonly
-              [value]="link.url"
-              [attr.aria-label]="'Signup link for ' + link.groupName"
-              (focus)="urlInput.select()"
-              class="min-w-0 flex-1 truncate rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 font-mono text-xs text-gray-700"
-              data-testid="newsletter-signup-link-url" />
+            <span
+              class="min-w-0 flex-1 select-all truncate rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 font-mono text-xs text-gray-700"
+              [title]="link.url"
+              data-testid="newsletter-signup-link-url"
+              >{{ link.url }}</span
+            >
             <lfx-button icon="fa-light fa-copy" label="Copy" severity="info" size="small" (onClick)="copy(link)" data-testid="newsletter-signup-link-copy" />
             <lfx-button
               icon="fa-light fa-arrow-up-right-from-square"
@@ -69,7 +75,7 @@
               [ariaLabel]="'Preview signup page for ' + link.groupName"
               [href]="link.url"
               target="_blank"
-              rel="noopener"
+              rel="noopener noreferrer"
               data-testid="newsletter-signup-link-open" />
           </div>
         </li>

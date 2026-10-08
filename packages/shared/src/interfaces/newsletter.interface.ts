@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Committee } from './committee.interface';
 import { Project } from './project.interface';
 
 export type NewsletterStatusTabId = 'draft' | 'scheduled' | 'sent' | 'optout';
@@ -534,6 +535,18 @@ export interface PublicNewsletterSignupInfo {
     name: string;
     description?: string;
   };
+  /**
+   * False when the group cannot take an email-only member (voting enabled, or a business email
+   * required) — the page shows a "not accepting signups" state instead of the form.
+   */
+  accepting_signups: boolean;
+}
+
+/** Server-side result of resolving a signup link: the project, its Newsletter group, and whether it takes signups. */
+export interface NewsletterSignupTarget {
+  project: Project;
+  committee: Committee;
+  acceptingSignups: boolean;
 }
 
 /** Body of the anonymous newsletter signup request — the visitor only supplies an email. */
@@ -566,4 +579,6 @@ export interface NewsletterSignupLink {
   groupUid: string;
   groupName: string;
   url: string;
+  /** False for groups the public page would refuse (voting enabled or business email required). */
+  acceptingSignups: boolean;
 }

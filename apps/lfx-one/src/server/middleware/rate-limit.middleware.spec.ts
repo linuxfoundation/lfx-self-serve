@@ -204,8 +204,8 @@ describe('apiRateLimiter', () => {
 describe('newsletterSignupRateLimiter', () => {
   const SIGNUP_LIMIT = 5;
 
-  // The signup page reads the envelope's `RATE_LIMITED` code to show "too many attempts" instead of
-  // a generic failure, so the 429 has to carry it.
+  // The body carries the app's envelope (consistent with `apiRateLimiter`), so any client can tell a
+  // throttle apart from a proxy's plain-text 429.
   it("allows 5 signups per IP, then rejects with 429 in the app's JSON error envelope", async () => {
     const ip = `${testIpv6Prefix()}:0001::1`;
 

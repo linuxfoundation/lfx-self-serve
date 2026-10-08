@@ -64,11 +64,16 @@ export class NewsletterSignupLinksDialogComponent {
                 groupUid: committee.uid,
                 groupName: committee.display_name || committee.name,
                 url: toAbsoluteUrl(newsletterSignupPath(this.projectSlug, committee.uid), isBrowser),
+                // Mirrors the BFF's check — upstream refuses email-only members for these groups.
+                acceptingSignups: !committee.enable_voting && !committee.business_email_required,
               })
             )
             .sort((a, b) => a.groupName.localeCompare(b.groupName, 'en'))
         ),
-        catchError(() => of('error' as const))
+        catchError((error: unknown) => {
+          console.error('Failed to load Newsletter groups for signup links', error);
+          return of('error' as const);
+        })
       ),
       { initialValue: null }
     );

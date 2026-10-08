@@ -5,8 +5,10 @@ import { NEWSLETTER_COMMITTEE_CATEGORY, UUID_REGEX } from '@lfx-one/shared/const
 import {
   ApiRequestOptions,
   Committee,
+  CommitteeSettingsData,
   CreateCommitteeMemberRequest,
   NewsletterSignupResponse,
+  NewsletterSignupTarget,
   Project,
   PublicNewsletterSignupInfo,
 } from '@lfx-one/shared/interfaces';
@@ -21,11 +23,6 @@ import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
-
-interface NewsletterSignupTarget {
-  project: Project;
-  committee: Committee;
-}
 
 /**
  * Backs the anonymous, per-Newsletter-group signup page. There is no user session, so every
@@ -42,7 +39,7 @@ export class NewsletterSignupService {
    */
   public async getSignupInfo(req: Request, projectSlug: string, groupUid: string): Promise<PublicNewsletterSignupInfo> {
     const requestOptions = await this.getRequestOptions(req);
-    const { project, committee } = await this.resolveSignupTarget(req, projectSlug, groupUid, requestOptions);
+    const { project, committee, acceptingSignups } = await this.resolveSignupTarget(req, projectSlug, groupUid, requestOptions);
 
     return {
       project: {
@@ -55,13 +52,14 @@ export class NewsletterSignupService {
         name: committee.display_name || committee.name,
         ...(committee.description && { description: committee.description }),
       },
+      accepting_signups: acceptingSignups,
     };
   }
 
   /**
-   * Adds the email to the Newsletter group. When the email maps to an LF account its username and
-   * name ride along; otherwise the member is created by email alone. An existing membership (409)
-   * is a success, and the response never says which case applied.
+   * Adds the email to the Newsletter group. Upstream links the member to the matching LF account
+   * when there is one. An existing membership (409) is a success, and the response never says
+   * whether the email matched an account or was already subscribed.
    */
   public async subscribe(req: Request, projectSlug: string, groupUid: string, rawEmail: unknown): Promise<NewsletterSignupResponse> {
     const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
@@ -73,8 +71,19 @@ export class NewsletterSignupService {
     }
 
     const requestOptions = await this.getRequestOptions(req);
-    const { committee } = await this.resolveSignupTarget(req, projectSlug, groupUid, requestOptions);
-    const member = await this.buildMemberPayload(req, email);
+    const { committee, acceptingSignups } = await this.resolveSignupTarget(req, projectSlug, groupUid, requestOptions);
+    if (!acceptingSignups) {
+      // `field: 'group'` (not `email`) so the page shows a "not accepting signups" message rather
+      // than blaming the visitor's address.
+      throw ServiceValidationError.forField('group', 'This newsletter is not accepting signups right now', {
+        operation: 'subscribe_newsletter_signup',
+        service: 'newsletter_signup_service',
+      });
+    }
+    // Email only: committee-service resolves the LF account itself (email → username, plus
+    // first/last name from the directory's given/family name) and discards any caller-supplied
+    // username, so a BFF-side lookup would only duplicate NATS round-trips on an anonymous route.
+    const member: CreateCommitteeMemberRequest = { email };
 
     try {
       // Notification suppressed: the visitor asked to subscribe — a committee invite email would be noise.
@@ -82,7 +91,6 @@ export class NewsletterSignupService {
       logger.debug(req, 'subscribe_newsletter_signup', 'Added newsletter subscriber to group', {
         committee_uid: committee.uid,
         email: maskEmailForLogs(email),
-        matched_account: !!member.username,
       });
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 409) {
@@ -107,6 +115,10 @@ export class NewsletterSignupService {
   /**
    * Resolves the link's project slug and group uid, and rejects (as a generic 404) any group that
    * is not a Newsletter group of that project — a link cannot be repointed at another group.
+   *
+   * `acceptingSignups` is false for a group upstream would refuse an email-only member for:
+   * voting-enabled groups and business-email-required groups both demand an organization (and the
+   * latter a corporate domain), which an anonymous visitor cannot supply.
    */
   private async resolveSignupTarget(req: Request, projectSlug: string, groupUid: string, requestOptions: ApiRequestOptions): Promise<NewsletterSignupTarget> {
     const notFound = (): ResourceNotFoundError =>
@@ -122,12 +134,13 @@ export class NewsletterSignupService {
       throw notFound();
     }
 
-    const slugLookup = await this.projectService.getProjectIdBySlug(req, projectSlug);
+    // Strict: a NATS outage must surface as a retryable 503, not as "this link isn't valid".
+    const slugLookup = await this.projectService.getProjectIdBySlug(req, projectSlug, { strict: true });
     if (!slugLookup.exists || !slugLookup.uid) {
       throw notFound();
     }
 
-    const [project, committee] = await Promise.all([
+    const [project, committee, settings] = await Promise.all([
       this.microserviceProxy.proxyRequest<Project>(
         req,
         'LFX_V2_SERVICE',
@@ -146,6 +159,16 @@ export class NewsletterSignupService {
           }
           throw error;
         }),
+      // Best-effort: on failure, assume signups are open and let upstream validation decide.
+      this.microserviceProxy
+        .proxyRequest<CommitteeSettingsData>(req, 'LFX_V2_SERVICE', `/committees/${groupUid}/settings`, 'GET', undefined, undefined, undefined, requestOptions)
+        .catch((error: unknown): CommitteeSettingsData => {
+          logger.warning(req, 'resolve_newsletter_signup_target', 'Failed to read group settings, assuming signups are open', {
+            committee_uid: groupUid,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return {};
+        }),
     ]);
 
     if (!project || !committee || committee.category !== NEWSLETTER_COMMITTEE_CATEGORY || committee.project_uid !== project.uid) {
@@ -157,42 +180,8 @@ export class NewsletterSignupService {
       throw notFound();
     }
 
-    return { project, committee };
-  }
+    const acceptingSignups = !committee.enable_voting && !settings?.business_email_required;
 
-  /**
-   * Looks the email up in the LF user directory (email → username → metadata). A miss or a
-   * directory failure degrades to an email-only member rather than failing the signup.
-   */
-  private async buildMemberPayload(req: Request, email: string): Promise<CreateCommitteeMemberRequest> {
-    try {
-      const user = await this.projectService.getUserInfo(req, email);
-      const member: CreateCommitteeMemberRequest = { email, username: user.username };
-
-      // Only split a real "First Last" name — getUserInfo falls back to the username when the
-      // directory has no name, which must not be stored as a first name.
-      const name = user.name?.trim();
-      if (name && name !== user.username) {
-        const [firstName, ...rest] = name.split(/\s+/);
-        member.first_name = firstName;
-        if (rest.length > 0) {
-          member.last_name = rest.join(' ');
-        }
-      }
-
-      return member;
-    } catch (error) {
-      if (error instanceof ResourceNotFoundError) {
-        logger.debug(req, 'subscribe_newsletter_signup', 'No LF account for email, subscribing by email only', {
-          email: maskEmailForLogs(email),
-        });
-      } else {
-        logger.warning(req, 'subscribe_newsletter_signup', 'User lookup failed, subscribing by email only', {
-          email: maskEmailForLogs(email),
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-      return { email };
-    }
+    return { project, committee, acceptingSignups };
   }
 }
