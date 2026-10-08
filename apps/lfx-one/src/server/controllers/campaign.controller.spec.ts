@@ -3056,18 +3056,24 @@ describe('CampaignController.refineBrief email refusal', () => {
 /**
  * The body-shape guard the three AI handlers were missing.
  *
- * Express leaves `req.body` as `undefined` when no JSON body parsed, and hands through whatever
- * JSON actually arrived — an array, a bare string, `null`. Every sibling handler on this
+ * Express leaves `req.body` as `undefined` when no JSON body parsed. Every sibling handler on this
  * controller already opens with this check; these three destructured straight into the body.
  *
- * The four shapes do not all fail the same way, and the guard's value differs per row. `undefined`
- * and `null` threw a TypeError on the field read that reached the error middleware as a 500,
- * reporting a caller's malformed request as a server fault — those are the 500s the guard removes.
- * An array and a bare string never threw: `[].feedback` and `'nope'.feedback` are `undefined`, so
- * the handler's own field guard already answered 400, just naming a missing field instead of a
- * malformed body. For those two the guard buys legibility, not a status-code change. All four are
- * asserted here because all four must end at the SAME named 400 — which is the contract the guard
- * actually establishes.
+ * Two of the four shapes can arrive over HTTP and two cannot. `server.ts` mounts
+ * `express.json({ limit: '15mb' })` without disabling strict mode, and body-parser's `strict`
+ * defaults to true (`strict = opts.strict !== false`), so a payload that is not an object or array
+ * is refused by the PARSER — `null` and a bare string never reach a handler through the app. What
+ * does reach one is `undefined` (a request that was not `application/json`) and an array, which is
+ * an object to `typeof` and so needs `Array.isArray` as a separate clause.
+ *
+ * The other two rows are deliberate defence at the controller boundary, not a claim about the HTTP
+ * path. These handlers are plain functions: a unit caller, a future route mounted outside the
+ * parser, or a parser configured with `strict: false` all deliver them directly, and before the
+ * guard `null` threw a TypeError on the field read that the error middleware reported as a 500 —
+ * a caller's malformed request surfacing as a server fault.
+ *
+ * All four are asserted together because the contract the guard establishes is that every shape
+ * that reaches the handler ends at the SAME named 400, whichever door it came through.
  */
 describe('CampaignController AI handler body shape', () => {
   let controller: CampaignController;
@@ -3082,8 +3088,9 @@ describe('CampaignController AI handler body shape', () => {
   });
 
   const handlers = ['generateBrief', 'refineBrief', 'executeKeywordActions'] as const;
-  // `null` and a bare string both survive `express.json()`; an array is an object to `typeof`,
-  // which is why `Array.isArray` is a separate clause and gets its own case here.
+  // Only `undefined` and an array arrive through the app's own parser (see above); `null` and a
+  // bare string are controller-boundary defence. An array is an object to `typeof`, which is why
+  // `Array.isArray` is a separate clause in the guard and gets its own case here.
   const bodies: [string, unknown][] = [
     ['undefined', undefined],
     ['null', null],

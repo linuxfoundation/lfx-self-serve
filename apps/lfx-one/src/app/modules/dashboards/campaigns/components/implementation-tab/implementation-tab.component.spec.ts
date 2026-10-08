@@ -4321,6 +4321,33 @@ describe('ImplementationTabComponent google creative sections', () => {
   });
 
   /**
+   * `assetGroupName`'s width is the one bound this change ADDS to the catalogue, and nothing else
+   * in the suite touches it: the scalar boundary tests above both drive Display's `longHeadline`,
+   * so deleting `width: 256` from the catalogue entry left every test green. That is the exact
+   * shape of regression this feature exists to prevent — an unbounded field reaching
+   * campaign-service and coming back refused, one round trip later.
+   *
+   * Both halves are pinned because either alone can rot independently: the catalogue can lose the
+   * number while the validator wiring stands, and the wiring can stop reading `width` while the
+   * number sits there unused. 256 is `maxAssetGroupNameRunes` upstream, counted on the trimmed
+   * value, which is why the over-the-bound case uses a trailing space.
+   */
+  it('bounds the asset group name at the width the catalogue carries', () => {
+    const spec = GOOGLE_CREATIVE_FIELD_SPECS['performance-max'].find((field) => field.control === 'assetGroupName');
+    expect(spec?.width).toBe(256);
+
+    const width = spec?.width ?? 0;
+    const c = seedChannel(fixture, { includePerformanceMax: true });
+    const assetGroupName = c['campaignForm'].controls.performanceMaxCreative.controls.assetGroupName;
+
+    assetGroupName.setValue(`  ${'a'.repeat(width)}  `);
+    expect(assetGroupName.valid).toBe(true);
+
+    assetGroupName.setValue(`  ${'a'.repeat(width + 1)}  `);
+    expect(assetGroupName.errors?.['maxlength']).toEqual({ requiredLength: width, actualLength: width + 1 });
+  });
+
+  /**
    * No CONTROL VALIDATOR carries `min`, and that is not an oversight. A validator sees one control
    * and never the group, so it cannot tell a half-filled creative from an empty one — and a
    * channel with no creative at all is a create campaign-service makes. The floor is enforced at
@@ -4485,7 +4512,7 @@ const DISPLAY_COMPLETE = {
 };
 
 /**
- * The two creative messages at the submit button, and the line between them.
+ * The two creative messages beneath the creative sections, and the line between them.
  *
  * They split exactly where campaign-service splits. Each of the three creative validators opens
  * with an `empty()` gate that ACCEPTS the creative and only then enforces its minimums
