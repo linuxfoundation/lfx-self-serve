@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-# Organization Lens EasyCLA — role-bridge (who sees Sign, who can change the approval list, who can invalidate, who can change Auto ECLA)
+# Organization Lens EasyCLA — role-bridge (who sees Sign, who can change the approval list, who can invalidate, who can change Auto ECLA, who can download the signed CCLA)
 
 Internal support note. Not Help Center copy.
 
@@ -51,6 +51,12 @@ The Overview's Auto ECLA toggle shows on a signed CCLA when ACS grants `auto-ecl
 
 On a row with no CLA Manager list at all, the BFF cannot check the roster, so the Auto ECLA and approval-list writes are passed through to EasyCLA, which re-checks them. Invalidate is the exception and is refused, because EasyCLA does not check the roster on it.
 
+## Who can download the signed CCLA
+
+Overview's **Download signed CCLA PDF** shows on a signed CCLA when the viewer is on that CCLA's roster (`viewerIsClaManager`). It is the one roster-gated control with **no ACS half** — there is no grant to hold. EasyCLA authorizes the signed document on the agreement's own CLA Manager list, which is not the company-level grant that let the viewer open the page at all, so an organization admin off the roster could read the agreement and still be refused its PDF. The control is withheld rather than shown and refused; the download's own failure toast stays as the backstop for refusals the row cannot predict.
+
+The restriction is deliberately on the control and not on the producer: widening EasyCLA's document ACL to organization admins would need a new endpoint and a gateway permission, and the decision was to match the Corporate Console's existing audience instead.
+
 ## Grain
 
 CLA authority is per **project|organization pair**, not org-wide. A signatory for company A / project X cannot attestation-Continue for project Y.
@@ -63,7 +69,7 @@ Writes stay blocked while impersonating. The permission check itself is a read, 
 
 The roster flag and the CLA Managers tab's own-row mark are computed for the impersonated user, not the support engineer, so impersonating shows whether that user is on the CLA Manager list.
 
-## What to tell a viewer who sees no approval-list, Invalidate, or Auto ECLA controls
+## What to tell a viewer who sees no approval-list, Invalidate, Auto ECLA, or download controls
 
 Work out which of these applies:
 
@@ -71,7 +77,7 @@ Work out which of these applies:
 - **Added recently.** ACS can take about thirty minutes to reflect a new CLA manager. If they added themselves, the controls can also stay hidden until the page is reloaded. Wait, then reload.
 - **On the list under a different spelling.** The match is exact, including case. A list entry whose LF username differs from their login only in case does not count, and the write is refused for the same reason. Raise it with EasyCLA support so the entry can be corrected.
 - **The agreement has no CLA Manager list at all.** The controls are hidden from everyone on that row. This is a data problem on the EasyCLA record, so raise it with EasyCLA support.
-- **No ACS grant** for that project and organization. Ask whether they hold the CLA manager role for it.
+- **No ACS grant** for that project and organization. Ask whether they hold the CLA manager role for it. This one cannot explain a missing download — that control has no ACS half, so for it only the roster answers above apply.
 
 ## What to tell a viewer who can see EasyCLA but cannot Review and Sign
 
