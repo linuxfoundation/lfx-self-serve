@@ -118,8 +118,9 @@ export class DocumentsDashboardComponent {
   protected readonly project = this.projectContextService.activeContext;
   protected readonly activeLens = this.lensService.activeLens;
   protected readonly personaLoaded = this.personaService.personaLoaded;
-  // Toolbar gated only on project-scope so it can't render under the legacy aggregator (no-op clicks).
-  protected readonly canUpload = computed(() => this.useProjectSource());
+  // Toolbar gated on project-scope (so it can't render under the legacy aggregator, no-op clicks)
+  // and on write access — the upload/folder/link-create endpoints all require project.writer (GH-305).
+  protected readonly canUpload = computed(() => this.useProjectSource() && this.projectContextService.canWrite());
   /**
    * True when the dashboard is project-scoped (Project / Foundation lens with active context).
    *
