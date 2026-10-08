@@ -112,23 +112,9 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly submitting = signal(false);
   public readonly deleting = signal(false);
 
-  // Staged guest — holds a picked user until the organizer clicks "Add Guest" to commit.
-  protected readonly stagedGuest = signal<Record<string, unknown> | null>(null);
-  protected readonly stagedGuestDisplayName: Signal<string> = computed(() => {
-    const g = this.stagedGuest();
-    if (!g) return '';
-    return [g['first_name'], g['last_name']].filter(Boolean).join(' ') || String(g['email'] ?? '');
-  });
-  protected readonly stagedGuestInitials: Signal<string> = computed(() => {
-    const g = this.stagedGuest();
-    if (!g) return '';
-    return avatarInitials(g['first_name'] as string, g['last_name'] as string, g['email'] as string);
-  });
-  protected readonly stagedGuestSecondaryLine: Signal<string> = computed(() => {
-    const g = this.stagedGuest();
-    if (!g) return '';
-    return [g['email'], g['org_name']].filter(Boolean).join(' · ');
-  });
+  // Staged guests — accumulate picked users; each can be independently added without clearing others.
+  protected readonly stagedGuests = signal<{ id: string; data: Record<string, unknown> }[]>([]);
+  private readonly submittingGuestIds = signal<Set<string>>(new Set());
 
   // Add registrant form
   public addRegistrantForm: FormGroup;
@@ -266,7 +252,7 @@ export class MeetingRegistrantsDisplayComponent {
         this.showAddForm.set(false);
         this.addRegistrantForm.reset();
         this.inviteScopeForm.reset();
-        this.stagedGuest.set(null);
+        this.stagedGuests.set([]);
         this.optimisticRegistrants.set([]);
       });
   }
@@ -282,6 +268,7 @@ export class MeetingRegistrantsDisplayComponent {
     if (isShowing) {
       this.addRegistrantForm.reset();
       this.inviteScopeForm.reset();
+      this.stagedGuests.set([]);
     }
   }
 
@@ -289,10 +276,7 @@ export class MeetingRegistrantsDisplayComponent {
     if (this.submitting()) return;
     if (this.addRegistrantForm.valid) {
       const formValue = this.addRegistrantForm.value;
-      // Read occurrence scope before resetting so a "this date only" selection is preserved.
       const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
-      // Forms are reset on success so the organizer can retry with their input intact if the request fails.
-      this.inviteScopeForm.reset();
       this.submitGuest(formValue, occurrenceId);
     } else {
       markFormControlsAsTouched(this.addRegistrantForm);
@@ -301,25 +285,21 @@ export class MeetingRegistrantsDisplayComponent {
 
   public onUserSelectedFromSearch(): void {
     if (this.addRegistrantForm.valid) {
-      // Capture the form value but do NOT reset inviteScopeForm — the scope selection must survive
-      // until the organizer clicks "Add Guest" on the staged card.
-      this.stagedGuest.set(this.addRegistrantForm.value as Record<string, unknown>);
+      const id = crypto.randomUUID();
+      this.stagedGuests.update((list) => [...list, { id, data: this.addRegistrantForm.value as Record<string, unknown> }]);
       this.addRegistrantForm.reset();
     }
   }
 
-  public onConfirmStagedGuest(): void {
-    const guest = this.stagedGuest();
-    if (!guest || this.submitting()) return;
-    // Read the scope before resetting so a "this date only" selection is preserved.
+  public onConfirmStagedGuest(id: string): void {
+    const entry = this.stagedGuests().find((g) => g.id === id);
+    if (!entry || this.submittingGuestIds().has(id)) return;
     const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
-    // Scope and staged guest are cleared on success so the organizer can retry if the request fails.
-    this.inviteScopeForm.reset();
-    this.submitGuest(guest, occurrenceId);
+    this.submitGuest(entry.data, occurrenceId, id);
   }
 
-  public onDismissStagedGuest(): void {
-    this.stagedGuest.set(null);
+  public onDismissStagedGuest(id: string): void {
+    this.stagedGuests.update((list) => list.filter((g) => g.id !== id));
   }
 
   public onRequestRemoveGuest(registrant: MeetingRegistrant): void {
@@ -336,9 +316,27 @@ export class MeetingRegistrantsDisplayComponent {
     });
   }
 
-  private submitGuest(formValue: Record<string, unknown>, occurrenceId: string | null): void {
-    if (this.submitting()) return;
-    this.submitting.set(true);
+  // === Protected Methods (template helpers) ===
+  protected isGuestSubmitting(id: string): boolean {
+    return this.submittingGuestIds().has(id);
+  }
+  protected stagedGuestDisplayName(data: Record<string, unknown>): string {
+    return [data['first_name'], data['last_name']].filter(Boolean).join(' ') || String(data['email'] ?? '');
+  }
+  protected stagedGuestInitials(data: Record<string, unknown>): string {
+    return avatarInitials(data['first_name'] as string, data['last_name'] as string, data['email'] as string);
+  }
+  protected stagedGuestSecondaryLine(data: Record<string, unknown>): string {
+    return [data['email'], data['org_name']].filter(Boolean).join(' · ');
+  }
+
+  private submitGuest(formValue: Record<string, unknown>, occurrenceId: string | null, stagedGuestId?: string): void {
+    if (stagedGuestId) {
+      this.submittingGuestIds.update((ids) => new Set([...ids, stagedGuestId]));
+    } else {
+      if (this.submitting()) return;
+      this.submitting.set(true);
+    }
     const createData = {
       ...this.meetingService.stripMetadata(this.meeting().id, formValue as unknown as MeetingRegistrantWithState),
       ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
@@ -349,11 +347,22 @@ export class MeetingRegistrantsDisplayComponent {
       .pipe(take(1))
       .subscribe({
         next: (response) => {
-          this.submitting.set(false);
+          if (stagedGuestId) {
+            this.submittingGuestIds.update((ids) => {
+              const next = new Set(ids);
+              next.delete(stagedGuestId);
+              return next;
+            });
+          } else {
+            this.submitting.set(false);
+          }
           if (response.summary.successful > 0) {
             this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Guest added successfully' });
-            this.addRegistrantForm.reset();
-            this.stagedGuest.set(null);
+            if (stagedGuestId) {
+              this.stagedGuests.update((list) => list.filter((g) => g.id !== stagedGuestId));
+            } else {
+              this.addRegistrantForm.reset();
+            }
             if (this.externallyManaged()) {
               this.refreshRequested.emit(response.summary.successful);
             } else {
@@ -398,7 +407,15 @@ export class MeetingRegistrantsDisplayComponent {
           }
         },
         error: () => {
-          this.submitting.set(false);
+          if (stagedGuestId) {
+            this.submittingGuestIds.update((ids) => {
+              const next = new Set(ids);
+              next.delete(stagedGuestId);
+              return next;
+            });
+          } else {
+            this.submitting.set(false);
+          }
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to add guest. Please try again.' });
         },
       });
