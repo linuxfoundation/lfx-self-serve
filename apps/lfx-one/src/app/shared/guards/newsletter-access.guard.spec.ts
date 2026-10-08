@@ -90,6 +90,17 @@ describe('newsletterAccessGuard', () => {
 
   afterEach(() => vi.useRealTimers());
 
+  it.each([400, 401, 403, 404])('renders in-place not-found for a query-slug HTTP %s', async (status) => {
+    getProjectStrict.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+
+    const result = await runGuard(route({ query: { project: 'missing-project' } }));
+
+    expect(result).toBeInstanceOf(RedirectCommand);
+    expect(router.parseUrl).toHaveBeenCalledWith('/not-found');
+    expect((result as RedirectCommand).navigationBehaviorOptions).toEqual({ skipLocationChange: true });
+    expect(router.createUrlTree).not.toHaveBeenCalled();
+  });
+
   it('allows a query-slug writer when the shared transient retry succeeds', async () => {
     vi.useFakeTimers();
     const request = vi

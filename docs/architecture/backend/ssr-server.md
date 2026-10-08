@@ -142,7 +142,12 @@ The unavailable view's **Try again** action reads the latest failed destination 
 before redirecting, so repeated failures refresh the target even when Angular skips
 the same-URL recovery redirect. Selected-project newsletter access and Formation
 CanMatch lookups share the strict lookup/retry policy without bypassing their access,
-stage or feature-flag checks. The target is distinct from the previous SPA address.
+stage or feature-flag checks. Non-transient selected-project lookup failures show
+not-found in-place; successful permission or stage denials still redirect to overview.
+Query-selected Formation overview and checklist routes use the same strict cache to
+avoid conflicting stage redirects. A cancelled Formation navigation cannot overwrite
+a newer recovery target. The service owns destination writes and clearing, and the
+view clears it on destruction. The target is distinct from the previous SPA address.
 When recovery state is absent (SSR/hydration), it falls back to the current browser
 path with its fragment, which retains the directly requested address.
 

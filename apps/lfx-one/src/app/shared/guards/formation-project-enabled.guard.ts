@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
-import { CanMatchFn, Router, UrlTree } from '@angular/router';
+import { CanMatchFn, RedirectCommand, Router, UrlTree } from '@angular/router';
 import { isFormationStageGate } from '@lfx-one/shared/utils';
 import { firstValueFrom } from 'rxjs';
 
@@ -60,7 +60,8 @@ export const formationProjectEnabledGuard: CanMatchFn = async () => {
   const featureFlagService = inject(FeatureFlagService);
   const router = inject(Router);
   const projectRecoveryService = inject(ProjectRecoveryService);
-  const targetUrl = router.getCurrentNavigation()?.extractedUrl;
+  const navigation = router.getCurrentNavigation();
+  const targetUrl = navigation?.extractedUrl;
   const retryUrl = targetUrl ? router.serializeUrl(targetUrl) : router.url;
   const slug = resolveSlug(router);
 
@@ -76,6 +77,12 @@ export const formationProjectEnabledGuard: CanMatchFn = async () => {
     const project = await firstValueFrom(projectRecoveryService.resolve(slug));
     return isFormationStageGate(project.stage) ? true : deniedOverview(router, slug);
   } catch (error: unknown) {
-    return isTransientHttpError(error) ? projectRecoveryService.unavailable(retryUrl) : deniedOverview(router, slug);
+    // Promise-backed guards outlive cancelled navigations; only the active one may set recovery.
+    if (router.getCurrentNavigation() !== navigation) {
+      return false;
+    }
+    return isTransientHttpError(error)
+      ? projectRecoveryService.unavailable(retryUrl)
+      : new RedirectCommand(router.parseUrl('/not-found'), { skipLocationChange: true });
   }
 };

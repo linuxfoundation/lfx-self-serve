@@ -24,7 +24,7 @@ export class UnavailableComponent {
 
   public constructor() {
     this.destroyRef.onDestroy(() => {
-      this.projectRecoveryService.retryUrl = undefined;
+      this.projectRecoveryService.clearRetryUrl();
     });
     if (isPlatformServer(this.platformId) && this.reqContext) {
       this.reqContext.unavailable = true;

@@ -40,6 +40,8 @@ import { isTransientHttpError } from '../utils/http-error.utils';
  * the active project context without triggering a lens switch.
  * Query-slug lookups share the selected-project strict/retry policy: persistent
  * transient failures render the unavailable view instead of losing the requested page.
+ * Non-transient query-slug failures render not-found in-place; resolved writer denials
+ * still redirect to overview.
  *
  * SSR behaviour is split by mount (GH-3274). On the Gatewaze embed mounts
  * (`GW_EMBED_ROUTE_PREFIXES`) the server returns `true` and the gate runs
@@ -125,6 +127,9 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
       catchError((error: unknown) => {
         if (isTransientHttpError(error)) {
           return of(projectRecoveryService.unavailable(state.url));
+        }
+        if (querySlug === slug) {
+          return of(new RedirectCommand(router.parseUrl('/not-found'), { skipLocationChange: true }));
         }
         return of(router.createUrlTree([overviewPath], { queryParams: { project: slug } }));
       })

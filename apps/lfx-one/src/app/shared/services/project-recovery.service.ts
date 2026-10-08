@@ -15,7 +15,15 @@ export class ProjectRecoveryService {
   private readonly projectService = inject(ProjectService);
   private readonly router = inject(Router);
 
-  public retryUrl: string | undefined;
+  private retryDestination: string | undefined;
+
+  public get retryUrl(): string | undefined {
+    return this.retryDestination;
+  }
+
+  public clearRetryUrl(): void {
+    this.retryDestination = undefined;
+  }
 
   public resolve(slug: string): Observable<Project> {
     return this.projectService.getProjectStrict(slug).pipe(retryTransientHttpError());
@@ -23,7 +31,7 @@ export class ProjectRecoveryService {
 
   public unavailable(url: string): RedirectCommand {
     // Write before redirecting: same-URL redirects can be skipped without recreating the view.
-    this.retryUrl = url;
+    this.retryDestination = url;
     return new RedirectCommand(this.router.parseUrl('/unavailable'), { skipLocationChange: true });
   }
 }

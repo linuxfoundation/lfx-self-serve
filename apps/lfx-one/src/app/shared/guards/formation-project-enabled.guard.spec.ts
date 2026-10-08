@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Router, UrlTree } from '@angular/router';
+import { RedirectCommand, Router, UrlTree } from '@angular/router';
 import { FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { ProjectService } from '@shared/services/project.service';
@@ -146,11 +146,14 @@ describe('formationProjectEnabledGuard', () => {
     expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'my-project' } } });
   });
 
-  it.each([403, 404])('preserves the overview denial for a non-transient HTTP %s', async (status) => {
+  it.each([400, 401, 403, 404])('renders in-place not-found for a non-transient HTTP %s', async (status) => {
     getProject.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
     setNavigationProject('my-project');
 
-    expect(await runGuard()).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'my-project' } } });
+    const result = await runGuard();
+    expect(result).toBeInstanceOf(RedirectCommand);
+    expect(router.parseUrl).toHaveBeenCalledWith('/not-found');
+    expect((result as RedirectCommand).navigationBehaviorOptions).toEqual({ skipLocationChange: true });
   });
 
   it('falls back to router.url when no navigation is in flight', async () => {
