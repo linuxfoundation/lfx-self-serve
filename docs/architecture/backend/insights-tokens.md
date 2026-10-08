@@ -2,9 +2,9 @@
 
 ## Overview
 
-Key Contacts of a member organization create long-lived `lfi_…` tokens for the LFX Insights public API from **Profile → Settings → Developer Settings**. The BFF is a thin proxy over two upstream services and adds one server-side rule: only a Key Contact, or a user the `insights-public-api` flag targets (see [Flag bypass](#flag-bypass)), may list, create or revoke tokens.
+Key Contacts of a member organization create long-lived `lfi_…` tokens for the LFX Insights public API from **Profile → Settings → Developer Settings**. The BFF is a thin proxy over two upstream services and adds one server-side rule: only a Key Contact, or a user the `insights-public-api-token-access` flag targets (see [Flag bypass](#flag-bypass)), may list, create or revoke tokens.
 
-The UI group (`lfx-insights-tokens`) is gated by the `insights-public-api` LaunchDarkly flag (`INSIGHTS_PUBLIC_API_FLAG`). The flag defaults to `false`, so SSR renders nothing. `AccountSettingsComponent` also holds the flag at `false` until `afterNextRender`, so a non-production localStorage override cannot render the group on the first client pass and mismatch the SSR DOM.
+The UI group (`lfx-insights-tokens`) is gated by the `insights-public-api` LaunchDarkly flag (`INSIGHTS_PUBLIC_API_FLAG`). This flag controls visibility only and grants no access. The flag defaults to `false`, so SSR renders nothing. `AccountSettingsComponent` also holds the flag at `false` until `afterNextRender`, so a non-production localStorage override cannot render the group on the first client pass and mismatch the SSR DOM.
 
 ## Endpoints
 
@@ -48,17 +48,17 @@ List, create and revoke all run the same check, `InsightsTokensService.assertKey
 
 A user who loses Key Contact status therefore loses access to their existing tokens too: they can no longer list or revoke them. This is a product decision. The tokens stay valid at the PAT service until revoked some other way (the PAT service, or an admin), but they stop working against the Insights API. The Insights Worker re-checks org and tier on every exchange and fails closed with a `403` once its tier cache expires (about 10 minutes), per [Insights ADR-0010](https://github.com/linuxfoundation/insights/pull/1879). That ADR also expects Self-Serve to revoke a user's PATs when their membership lapses; nothing does that automatically yet.
 
-The `insights-public-api` LaunchDarkly flag is evaluated in the browser for visibility and on the server for access.
+Visibility and access use separate LaunchDarkly flags. `insights-public-api` is evaluated in the browser for visibility only. `insights-public-api-token-access` (`INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG`) is evaluated on the server for access. Widening the visibility flag to launch the group never widens who may use the token endpoints.
 
 ### Flag bypass
 
-Users the flag targets can do anything a Key Contact can in this group. `InsightsTokensService.getEligibility` first asks `LaunchDarklyServerService.isFlagEnabled` (`@launchdarkly/node-server-sdk`) whether the flag is on for the session user. If it is, it returns `INSIGHTS_TOKEN_FLAG_ELIGIBLE` (`canCreate: true`, no orgs) without calling member-service, so every `assertKeyContact` call passes.
+Users the `insights-public-api-token-access` flag targets can do anything a Key Contact can in this group. They also need `insights-public-api` to see the group. `InsightsTokensService.getEligibility` first asks `LaunchDarklyServerService.isFlagEnabled` (`@launchdarkly/node-server-sdk`) whether the access flag is on for the session user. If it is, it returns `INSIGHTS_TOKEN_FLAG_ELIGIBLE` (`canCreate: true`, no orgs) without calling member-service, so every `assertKeyContact` call passes.
 
-- The context is `{ kind: 'user', key: <session username> }`, the LFID username the browser also targets. Target the flag by username; the browser derives its key from `preferred_username`/`username` and the server from `getUsernameFromAuth`, which should agree. Nothing from the client is trusted; there is no request header.
-- It needs the **server-side** SDK key in `LD_SDK_KEY`. `LD_CLIENT_ID` is client-side only and cannot be used.
+- The context is `{ kind: 'user', key }`, where the server derives `key` exactly like the browser's `targetingKey`: `preferred_username`, then `username`, then the LF username claim, all read from the signed OIDC session. One username therefore targets a user on both flags. While impersonating, the target's stored username is used, so the impersonator's own targeting never shows in the target's read-only view. Nothing from the client is trusted; there is no request header.
+- It needs the **server-side** SDK key in `LD_SDK_KEY`. `LD_CLIENT_ID` is client-side only and cannot be used. A missing key is logged at warning level once per process, then at debug level.
 - It fails closed. With no `LD_SDK_KEY`, no username, LaunchDarkly not ready within `LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS`, or an evaluation error, the answer is `false` and the normal Key Contact check runs.
 - The SDK connects lazily on the first evaluation. Only that first evaluation waits for the connection; while LaunchDarkly stays unreachable later requests fail closed without waiting. It is closed on server shutdown and never reconnects afterwards.
-- **Target individual users only.** The same flag also gates visibility, so a fallthrough or percentage rollout would remove the Key Contact gate for every authenticated user. Do not roll it out to everyone without splitting the bypass into its own flag.
+- **Target individual users only.** A fallthrough or percentage rollout of the access flag would remove the Key Contact gate for everyone it reaches.
 
 The PAT service still scopes the token to the caller, and the Insights Worker re-checks org and tier on every exchange, so a token minted by a flagged user who is not a Key Contact of a member org does not work against the Insights API.
 
@@ -66,5 +66,5 @@ The PAT service still scopes the token to the caller, and the Insights Worker re
 
 - [Error Handling](./error-handling-architecture.md) — `MicroserviceError` and `upstreamCode`
 - [Impersonation](./impersonation.md) — `blockDuringImpersonation`
-- [Feature Flags](../frontend/feature-flags.md) — `getBooleanFlag` in the browser; the server evaluates this flag through `LaunchDarklyServerService`
+- [Feature Flags](../frontend/feature-flags.md) — `getBooleanFlag` in the browser for the visibility flag; the server evaluates the access flag through `LaunchDarklyServerService`
 - Upstream contracts: `linuxfoundation/lfx-v2-pat-service` (`docs/api.md`) and `linuxfoundation/lfx-v2-member-service` (`gen/http/openapi3.yaml`)

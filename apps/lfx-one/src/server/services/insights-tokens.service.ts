@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  INSIGHTS_PUBLIC_API_FLAG,
+  INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG,
   INSIGHTS_TOKEN_AUDIENCE,
   INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE,
   INSIGHTS_TOKEN_ERROR_CODES,
@@ -108,7 +108,7 @@ export class InsightsTokensService {
   }
 
   /**
-   * Whether the caller may create tokens. A user targeted by the `insights-public-api` flag is eligible
+   * Whether the caller may create tokens. A user targeted by the `insights-public-api-token-access` flag is eligible
    * straight away (`INSIGHTS_TOKEN_FLAG_ELIGIBLE`, no member-service call); everyone else must be a Key
    * Contact of at least one org, as follows. Any entry
    * with a non-empty `b2b_org_uid` is enough; `company_name` is optional upstream and the tier value
@@ -124,7 +124,7 @@ export class InsightsTokensService {
    */
   public async getEligibility(req: Request): Promise<InsightsTokenEligibility> {
     if (await this.hasFlagAccess(req)) {
-      logger.debug(req, 'get_insights_token_eligibility', 'User targeted by insights-public-api flag; skipping Key Contact check');
+      logger.debug(req, 'get_insights_token_eligibility', 'User targeted by insights-public-api-token-access flag; skipping Key Contact check');
       return INSIGHTS_TOKEN_FLAG_ELIGIBLE;
     }
 
@@ -212,14 +212,16 @@ export class InsightsTokensService {
   }
 
   /**
-   * Users targeted by the `insights-public-api` flag may do anything a Key Contact can. The server
+   * Users targeted by the `insights-public-api-token-access` flag may do anything a Key Contact can.
+   * It is separate from the `insights-public-api` visibility flag, so widening visibility never widens
+   * access. The server
    * evaluates the flag itself against the session's username, never from anything the client sends.
    * It fails closed: with no SDK key, or LaunchDarkly unreachable, the answer is `false` and the
    * normal Key Contact check runs. The PAT service still scopes every token to the caller's own
    * principal.
    */
   private hasFlagAccess(req: Request): Promise<boolean> {
-    return LaunchDarklyServerService.getInstance().isFlagEnabled(req, INSIGHTS_PUBLIC_API_FLAG, false);
+    return LaunchDarklyServerService.getInstance().isFlagEnabled(req, INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG, false);
   }
 
   private toInsightsToken(token: PatServiceToken): InsightsToken {

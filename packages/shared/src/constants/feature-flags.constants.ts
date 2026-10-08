@@ -213,11 +213,19 @@ export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
  * false: the group stays hidden until LaunchDarkly targeting turns it on, which also keeps it dark
  * while `lfx-v2-pat-service` and the member-service tier endpoint roll out.
  *
- * Evaluated in the browser (`FeatureFlagService.getBooleanFlag`) for visibility and again on the
- * server (`LaunchDarklyServerService`) for access: users the flag targets are treated as Key
- * Contacts by `/api/profile/insights-tokens`, so they can do everything a Key Contact can there.
+ * **Visibility only** — evaluated in the browser (`FeatureFlagService.getBooleanFlag`). It grants no
+ * access: widening its targeting to launch the group never widens who may use the token endpoints.
+ * Access for non-Key-Contacts is `INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG`.
  */
 export const INSIGHTS_PUBLIC_API_FLAG = 'insights-public-api';
+/**
+ * Access override for LFX Insights API tokens. Default false. Evaluated on the server only
+ * (`LaunchDarklyServerService`): users it targets are treated as Key Contacts by
+ * `/api/profile/insights-tokens`, so they can list, create and revoke tokens without being a Key
+ * Contact. Target individual users only; a fallthrough or percentage rollout removes the Key Contact
+ * gate for everyone it reaches. Users also need `INSIGHTS_PUBLIC_API_FLAG` to see the group.
+ */
+export const INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG = 'insights-public-api-token-access';
 
 /**
  * How long the server's LaunchDarkly SDK may take to connect on first use, in seconds. The request

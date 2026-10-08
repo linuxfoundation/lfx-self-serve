@@ -34,7 +34,7 @@ vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken }));
 // The `@lfx-one/shared/*` alias isn't wired into this app's vitest config.
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/insights-tokens.constants')),
-  INSIGHTS_PUBLIC_API_FLAG: 'insights-public-api',
+  INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG: 'insights-public-api-token-access',
 }));
 
 import type { Request } from 'express';
@@ -98,7 +98,7 @@ describe('InsightsTokensService', () => {
     });
   });
 
-  describe('insights-public-api flag', () => {
+  describe('insights-public-api-token-access flag', () => {
     beforeEach(() => {
       isFlagEnabled.mockResolvedValue(true);
     });
@@ -106,7 +106,7 @@ describe('InsightsTokensService', () => {
     it('evaluates the flag on the server for the request, defaulting to off', async () => {
       await service.getEligibility(req);
 
-      expect(isFlagEnabled).toHaveBeenCalledWith(req, 'insights-public-api', false);
+      expect(isFlagEnabled).toHaveBeenCalledWith(req, 'insights-public-api-token-access', false);
     });
 
     it('treats a flagged user as a Key Contact without calling the member-tier endpoint', async () => {

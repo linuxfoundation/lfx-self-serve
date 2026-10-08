@@ -30,7 +30,7 @@ export const INSIGHTS_TOKEN_NAME_CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 /** Fail-closed eligibility for a caller confirmed not to be a Key Contact. */
 export const INSIGHTS_TOKEN_INELIGIBLE: InsightsTokenEligibility = { canCreate: false, orgs: [], checkFailed: false };
 
-/** Eligibility for a user the `insights-public-api` flag targets: treated as a Key Contact without an org lookup. */
+/** Eligibility for a user the `insights-public-api-token-access` flag targets: treated as a Key Contact without an org lookup. */
 export const INSIGHTS_TOKEN_FLAG_ELIGIBLE: InsightsTokenEligibility = { canCreate: true, orgs: [], checkFailed: false };
 
 /** Fail-closed eligibility when the Key Contact check itself could not complete (upstream error). */
