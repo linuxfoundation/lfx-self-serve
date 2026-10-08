@@ -59,8 +59,6 @@ export class ProgramDetailHeaderComponent {
   /** Whether the `…` menu is open, for the trigger's `aria-expanded`. */
   protected readonly moreMenuOpen = signal(false);
 
-  protected readonly seasonLine = computed(() => this.program().projectName);
-
   protected readonly statusLabel = computed(() => MENTORSHIP_PROGRAM_STATUS_LABELS[this.program().status]);
   protected readonly statusBadgeClass = computed(() => MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES[this.program().status]);
   protected readonly publicPageUrl = computed(() => buildMentorshipProgramsUrl(environment.urls.mentorship, this.program().id));

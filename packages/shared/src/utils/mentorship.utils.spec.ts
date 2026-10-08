@@ -84,7 +84,6 @@ import {
   countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
   normalizeMentorshipMenteeTaskStatus,
-  formatMentorshipDateRange,
   formatMentorshipMonthYear,
   getMentorshipMenteeTaskStatusOptions,
   getMentorshipProgramDetailTabs,
@@ -1153,10 +1152,6 @@ describe('program detail helpers', () => {
     // helper only matches the two fields both person shapes always have.
     expect(matchesMentorshipPersonSearch(person, 'fall')).toBe(false);
     expect(matchesMentorshipPersonSearch(person, 'winter')).toBe(false);
-  });
-
-  it('formats an inclusive UTC date range', () => {
-    expect(formatMentorshipDateRange('2026-07-01', '2026-08-31')).toBe('Jul 1, 2026 – Aug 31, 2026');
   });
 
   it('offers Current Mentees row actions by status, and none once the application ends', () => {

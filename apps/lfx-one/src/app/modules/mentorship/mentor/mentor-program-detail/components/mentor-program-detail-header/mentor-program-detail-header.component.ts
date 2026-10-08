@@ -18,7 +18,6 @@ export class MentorProgramDetailHeaderComponent {
   public readonly activeTab = input.required<MentorshipMentorProgramDetailTab>();
   public readonly tabChange = output<MentorshipMentorProgramDetailTab>();
 
-  protected readonly seasonLine = computed(() => this.program().projectName);
   protected readonly statusLabel = computed(() => MENTORSHIP_PROGRAM_STATUS_LABELS[this.program().status]);
   protected readonly statusBadgeClass = computed(() => MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES[this.program().status]);
 

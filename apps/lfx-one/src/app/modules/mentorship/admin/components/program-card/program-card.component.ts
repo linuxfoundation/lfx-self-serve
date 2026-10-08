@@ -62,7 +62,6 @@ export class ProgramCardComponent {
   private destroyed = false;
 
   // ─── Computed ──────────────────────────────────────────────────────────────
-  protected readonly seasonLine = computed(() => this.program().projectName);
 
   protected readonly statusLabel = computed(() => MENTORSHIP_PROGRAM_STATUS_LABELS[this.program().status]);
   protected readonly statusBadgeClass = computed(() => MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES[this.program().status]);

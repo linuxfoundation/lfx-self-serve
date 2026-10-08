@@ -22,8 +22,6 @@ export class MentorProgramCardComponent {
   public readonly program = input.required<MentorshipMentorProgram>();
   public readonly cardClick = output<string>();
 
-  protected readonly seasonLine = computed(() => this.program().projectName);
-
   protected readonly statusLabel = computed(() => MENTORSHIP_PROGRAM_STATUS_LABELS[this.program().status]);
   protected readonly statusBadgeClass = computed(() => MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES[this.program().status]);
 
