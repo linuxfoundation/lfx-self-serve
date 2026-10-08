@@ -3703,7 +3703,7 @@ export class AnalyticsController {
     }
   }
 
-  /** `GET /api/analytics/events-revenue` — each period's revenue headline and every event in the four periods. */
+  /** `GET /api/analytics/events-revenue` — each period's revenue headline, past events in the four periods and upcoming events. */
   public async getEventsRevenue(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_events_revenue');
 

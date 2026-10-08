@@ -1191,7 +1191,7 @@ export class AnalyticsService {
     );
   }
 
-  /** Each period's revenue headline and every event in the four periods, for the Events tab's revenue section. */
+  /** Each period's revenue headline, past events in the four periods and upcoming events, for the Events tab's revenue section. */
   public getEventsRevenue(query: HealthMetricsEventsRevenueQuery): Observable<HealthMetricsEventsRevenue> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };
 

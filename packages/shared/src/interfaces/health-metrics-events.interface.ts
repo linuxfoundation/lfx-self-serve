@@ -363,10 +363,10 @@ export interface HealthMetricsEventsRevenueEvent {
   ranges: HealthMetricsL2Range[];
 }
 
-/** `GET /api/analytics/events-revenue` — each period's headline and every event in the four periods. */
+/** `GET /api/analytics/events-revenue` — each period's headline, every past event in the four periods and every upcoming event. */
 export interface HealthMetricsEventsRevenue {
   periods: HealthMetricsEventsRevenuePeriod[];
-  /** Past events in the four periods, then every upcoming event; most recent first. */
+  /** Upcoming events and past events in the four periods, latest start first. */
   events: HealthMetricsEventsRevenueEvent[];
   /** `false` when only the foundation totals were read, so there is no per-event list to show. */
   eventsMeasured: boolean;
