@@ -77,18 +77,19 @@ import { BrandKitService } from './brand-kit.service';
 const req = { path: '/api/mktg-agents/brand-kit/result' } as unknown as Request;
 
 const REQUIRED_HEADINGS = [
+  '## Review Sheet',
   '## How to Use This Document',
   '## 1. Project Definition',
   '## 2. Positioning',
-  '## 3. Brand Personality & Voice',
-  '## 4. Primary Audiences & Messaging',
+  '## 3. Voice & Language',
+  '## 4. Primary Audiences',
   '## 5. Key Brand Strengths',
   '## 6. Competitive Differentiation & Guardrails',
   '## 7. Visual Identity',
   '## 8. Tagline Options',
-  '## 9. Channel Quick Reference',
   '## Appendix A: Document Architecture',
   '## Appendix B: Source Intake',
+  '## Appendix C: LFX Project Record & Research Sweep',
 ];
 
 function buildDocument(): string {

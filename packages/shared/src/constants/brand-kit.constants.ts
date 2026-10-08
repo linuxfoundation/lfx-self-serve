@@ -43,24 +43,33 @@ export const BRAND_KIT_PROJECT_UID_REGEX = MKTG_ARTIFACT_PARTITION_REGEX;
 export const BRAND_KIT_SHA256_REGEX = MKTG_ARTIFACT_SHA256_REGEX;
 
 /**
- * The 12-heading structural presence gate (contract §1): document_markdown
+ * The 13-heading structural presence gate (contract §1): document_markdown
  * must contain each of these level-2 headings, in order. Matching is
  * "starts with" per heading line, so trailing qualifiers the template allows
  * do not fail the gate.
+ *
+ * Updated for Paul's 0.4.0 template (marketing-os-agents
+ * wi-re-pin-our-brand-kit-agent-to-paul-s-0-4): the document now opens with
+ * the Review Sheet, §3 is "Voice & Language" and §4 "Primary Audiences" (the
+ * per-audience messaging table moved to the ICP document), §9 Channel Quick
+ * Reference is retired, and Appendix C (LFX Project Record & Research Sweep)
+ * is added. Must stay in lockstep with the agent's own REQUIRED_HEADINGS and
+ * the contract §1 skeleton — the agent and this consumer deploy together.
  */
 export const BRAND_KIT_REQUIRED_HEADINGS = [
+  '## Review Sheet',
   '## How to Use This Document',
   '## 1. Project Definition',
   '## 2. Positioning',
-  '## 3. Brand Personality & Voice',
-  '## 4. Primary Audiences & Messaging',
+  '## 3. Voice & Language',
+  '## 4. Primary Audiences',
   '## 5. Key Brand Strengths',
   '## 6. Competitive Differentiation & Guardrails',
   '## 7. Visual Identity',
   '## 8. Tagline Options',
-  '## 9. Channel Quick Reference',
   '## Appendix A: Document Architecture',
   '## Appendix B: Source Intake',
+  '## Appendix C: LFX Project Record & Research Sweep',
 ] as const;
 
 /** Exact number of intake answers the contract requires. */
