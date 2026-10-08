@@ -214,11 +214,12 @@ export class InsightsTokensService {
   /**
    * Users targeted by the `insights-public-api-token-access` flag may do anything a Key Contact can.
    * It is separate from the `insights-public-api` visibility flag, so widening visibility never widens
-   * access. The server
-   * evaluates the flag itself against the session's username, never from anything the client sends.
-   * It fails closed: with no SDK key, or LaunchDarkly unreachable, the answer is `false` and the
-   * normal Key Contact check runs. The PAT service still scopes every token to the caller's own
-   * principal.
+   * access. The server evaluates the flag itself against the session's LFID username, never from
+   * anything the client sends. It fails closed until LaunchDarkly has been reached: with no SDK key,
+   * or no connection yet, the answer is `false` and the normal Key Contact check runs. Once connected,
+   * a later outage serves the last known flag value, so a targeting removal takes effect on reconnect
+   * (accepted; see `LaunchDarklyServerService`). The PAT service still scopes every token to the
+   * caller's own principal.
    */
   private hasFlagAccess(req: Request): Promise<boolean> {
     return LaunchDarklyServerService.getInstance().isFlagEnabled(req, INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG, false);
