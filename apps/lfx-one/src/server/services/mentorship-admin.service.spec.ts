@@ -760,6 +760,32 @@ describe('MentorshipAdminService.updateProgramMentor', () => {
   });
 });
 
+describe('MentorshipAdminService.setProgramVisibility', () => {
+  let service: InstanceType<typeof MentorshipAdminService>;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each(['hide', 'unhide'] as const)('posts %s to the program with no body', async (action) => {
+    const spy = stubProgramReads({ [`${PROGRAM_PATH}/${action}`]: {} });
+
+    await service.setProgramVisibility(buildReq(), PROGRAM_ID, action);
+
+    expect(spy.mock.calls.map((call) => [call[2], call[3], call[5]])).toEqual([[`${PROGRAM_PATH}/${action}`, 'POST', undefined]]);
+  });
+
+  it.each([403, 404, 409])('passes an upstream %s on', async (status) => {
+    stubProgramReads({ [`${PROGRAM_PATH}/hide`]: new MicroserviceError('upstream', status, 'UPSTREAM') });
+
+    await expect(service.setProgramVisibility(buildReq(), PROGRAM_ID, 'hide')).rejects.toMatchObject({ statusCode: status });
+  });
+});
+
 describe('MentorshipAdminService term writes', () => {
   const TERM_ID = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
   const TERMS_PATH = `${PROGRAM_PATH}/terms`;

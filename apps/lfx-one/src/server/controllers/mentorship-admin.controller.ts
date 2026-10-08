@@ -28,6 +28,7 @@ import {
   MentorshipAdminMentorStatus,
   MentorshipAdminMentorStatusUpdate,
   MentorshipAttendanceType,
+  MentorshipProgramVisibilityAction,
 } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -438,6 +439,16 @@ export class MentorshipAdminController {
     }
   }
 
+  // POST /api/mentorship/admin/programs/:programId/hide -> 204
+  public async hideProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.runProgramVisibilityAction(req, res, next, 'hide');
+  }
+
+  // POST /api/mentorship/admin/programs/:programId/unhide -> 204
+  public async unhideProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.runProgramVisibilityAction(req, res, next, 'unhide');
+  }
+
   // POST /api/mentorship/admin/programs/:programId/logo — raw PNG or JPEG bytes -> 201 + { logoUrl }
   public async uploadProgramLogo(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'upload_mentorship_program_logo';
@@ -557,6 +568,26 @@ export class MentorshipAdminController {
       await action(programId, termId);
 
       logger.success(req, operation, startTime, { programId, termId });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** The shared shape of hide and unhide: authenticate, check the program id, write, answer 204. */
+  private async runProgramVisibilityAction(req: Request, res: Response, next: NextFunction, action: MentorshipProgramVisibilityAction): Promise<void> {
+    const operation = `${action}_mentorship_admin_program`;
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      await this.mentorshipAdminService.setProgramVisibility(req, programId, action);
+
+      logger.success(req, operation, startTime, { programId });
       res.status(204).send();
     } catch (error) {
       next(error);
