@@ -40,6 +40,14 @@ const updateProgramHandler = vi.fn((_req: express.Request, res: express.Response
   res.json({ id: 'program' });
 });
 
+const hideProgramHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.status(204).end();
+});
+
+const unhideProgramHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.status(204).end();
+});
+
 const enrollTemplateHandler = vi.fn((_req: express.Request, res: express.Response) => {
   res.json({ name: 'Example Program' });
 });
@@ -53,6 +61,8 @@ vi.mock('../controllers/mentorship-admin.controller', () => ({
   MentorshipAdminController: class {
     public createProgram = createProgramHandler;
     public updateProgram = updateProgramHandler;
+    public hideProgram = hideProgramHandler;
+    public unhideProgram = unhideProgramHandler;
     public getEnrollTemplate = enrollTemplateHandler;
     public uploadProgramLogo = logoHandler;
     public updateApplicationNote = noteHandler;
@@ -151,6 +161,33 @@ describe('mentorship admin router — mentor status change impersonation gate', 
 
     expect(res.status).toBe(204);
     expect(mentorHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mentorship admin router — program hide and unhide impersonation gate', () => {
+  const postVisibility = (action: 'hide' | 'unhide'): Promise<Response> =>
+    fetch(`${baseUrl}/api/mentorship/admin/programs/${PROGRAM_ID}/${action}`, { method: 'POST' });
+
+  it.each([
+    ['hide', hideProgramHandler],
+    ['unhide', unhideProgramHandler],
+  ] as const)('refuses %s with 403 while impersonating and never reaches the controller', async (action, handler) => {
+    const res = await postVisibility(action);
+
+    expect(res.status).toBe(403);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['hide', hideProgramHandler],
+    ['unhide', unhideProgramHandler],
+  ] as const)('admits %s when not impersonating', async (action, handler) => {
+    impersonatingStub = false;
+
+    const res = await postVisibility(action);
+
+    expect(res.status).toBe(204);
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 });
 

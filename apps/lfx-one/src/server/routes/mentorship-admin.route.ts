@@ -49,6 +49,8 @@ router.post('/programs/:programId/terms/:termId/decline-pending', blockDuringImp
 );
 router.post('/programs', blockDuringImpersonation, (req, res, next) => adminController.createProgram(req, res, next));
 router.patch('/programs/:programId', blockDuringImpersonation, (req, res, next) => adminController.updateProgram(req, res, next));
+router.post('/programs/:programId/hide', blockDuringImpersonation, (req, res, next) => adminController.hideProgram(req, res, next));
+router.post('/programs/:programId/unhide', blockDuringImpersonation, (req, res, next) => adminController.unhideProgram(req, res, next));
 router.post(
   '/programs/:programId/logo',
   blockDuringImpersonation,

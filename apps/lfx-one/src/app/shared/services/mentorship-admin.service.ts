@@ -33,6 +33,7 @@ import {
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipProgramTermRow,
+  MentorshipProgramVisibilityAction,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, retry, take, throwError, timer } from 'rxjs';
 
@@ -193,6 +194,13 @@ export class MentorshipAdminService {
     return this.http
       .patch<MentorshipEnrollProgramRef>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}`, body)
       .pipe(take(1), this.logFailure('updateProgram'));
+  }
+
+  /** Hides a published program or unhides a hidden one. Resolves on 204. */
+  public setProgramVisibility(programId: string, action: MentorshipProgramVisibilityAction): Observable<void> {
+    return this.http
+      .post<void>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/${action}`, {})
+      .pipe(take(1), this.logFailure('setProgramVisibility'));
   }
 
   /**

@@ -804,6 +804,36 @@ describe('MentorshipAdminController', () => {
       expect(statusCodes()).toEqual([409]);
     });
 
+    it.each([
+      ['hideProgram', 'hide'],
+      ['unhideProgram', 'unhide'],
+    ] as const)('%s answers 204', async (method, action) => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'setProgramVisibility').mockResolvedValue();
+      const out = writeRes();
+
+      await controller[method](termReq(undefined, { programId: PROGRAM_ID }), out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, action);
+      expect(out.status).toHaveBeenCalledWith(204);
+    });
+
+    it('rejects a hide whose program id is not a UUID with a 400 and no upstream call', async () => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'setProgramVisibility');
+
+      await controller.hideProgram(termReq(undefined, { programId: '12' }), writeRes(), next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it('passes an upstream 409 on a hide', async () => {
+      vi.spyOn(MentorshipAdminService.prototype, 'setProgramVisibility').mockRejectedValue(Object.assign(new Error('active'), { statusCode: 409 }));
+
+      await controller.hideProgram(termReq(undefined, { programId: PROGRAM_ID }), writeRes(), next);
+
+      expect(statusCodes()).toEqual([409]);
+    });
+
     it('logs ids only, never the term name', async () => {
       vi.spyOn(MentorshipAdminService.prototype, 'createTerm').mockResolvedValue(row as never);
 
@@ -833,6 +863,8 @@ describe('MentorshipAdminController', () => {
       ['closeTerm', 'closeTerm', { programId: PROGRAM_ID, termId: PROGRAM_ID }, {}],
       ['reopenTerm', 'reopenTerm', { programId: PROGRAM_ID, termId: PROGRAM_ID }, {}],
       ['deleteTerm', 'deleteTerm', { programId: PROGRAM_ID, termId: PROGRAM_ID }, {}],
+      ['hideProgram', 'setProgramVisibility', { programId: PROGRAM_ID }, {}],
+      ['unhideProgram', 'setProgramVisibility', { programId: PROGRAM_ID }, {}],
     ] as const)('%s passes an AuthenticationError to next without reading upstream', async (method, serviceMethod, params, query) => {
       vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
       const read = vi.spyOn(MentorshipAdminService.prototype, serviceMethod);

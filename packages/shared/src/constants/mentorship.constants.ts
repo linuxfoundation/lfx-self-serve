@@ -250,6 +250,21 @@ export const MENTORSHIP_ADMIN_TERM_DELETED_MESSAGE = 'Term deleted.';
 export const MENTORSHIP_ADMIN_TERM_WRITE_FAILED_MESSAGE = "The term couldn't be saved. Please try again.";
 export const MENTORSHIP_ADMIN_TERM_WRITE_IN_FLIGHT_MESSAGE = 'Another term change is still being saved.';
 
+/** Statuses a program admin may hide: both are upstream `published`. A `hidden` program may be unhidden. */
+export const MENTORSHIP_PROGRAM_HIDEABLE_STATUSES: readonly MentorshipProgramStatus[] = ['open', 'completed'];
+export const MENTORSHIP_PROGRAM_HIDE_DESCRIPTION = 'Hide this program from public view. Mentees can no longer find it or apply.';
+export const MENTORSHIP_PROGRAM_UNHIDE_DESCRIPTION = 'Make this program publicly visible again so mentees can find it and apply.';
+export const MENTORSHIP_PROGRAM_HIDE_CONFIRM =
+  'Are you sure you want to hide this program? It will no longer be publicly visible, and mentees will not be able to find it or apply. A program with active applications cannot be hidden.';
+export const MENTORSHIP_PROGRAM_UNHIDE_CONFIRM = 'Are you sure you want to unhide this program? It will be publicly visible again.';
+export const MENTORSHIP_PROGRAM_HIDDEN_MESSAGE = 'Program hidden.';
+export const MENTORSHIP_PROGRAM_UNHIDDEN_MESSAGE = 'Program unhidden.';
+/** Upstream answers a refused hide or unhide with one 409 for both causes, so each message names every cause it covers. */
+export const MENTORSHIP_PROGRAM_HIDE_BLOCKED_MESSAGE =
+  "This program can't be hidden: it has active applications, or its status has changed. The page has been refreshed.";
+export const MENTORSHIP_PROGRAM_UNHIDE_BLOCKED_MESSAGE = "This program can't be made visible: its status has changed. The page has been refreshed.";
+export const MENTORSHIP_PROGRAM_VISIBILITY_FAILED_MESSAGE = "The program's visibility couldn't be changed. Please try again.";
+
 /**
  * Underline tabs on `/mentorship/admin/:programId`. Order matches the admin screenshot;
  * `countKey` names the `MentorshipAdminProgramTabCounts` field each tab's badge reads.

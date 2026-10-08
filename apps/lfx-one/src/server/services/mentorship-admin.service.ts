@@ -37,6 +37,7 @@ import {
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipProgramTermRow,
+  MentorshipProgramVisibilityAction,
   MentorshipTermRowStatus,
   MentorshipUpstreamAdministeredProgram,
   MentorshipUpstreamApplication,
@@ -527,6 +528,15 @@ export class MentorshipAdminService {
       toMentorshipUpstreamProgramUpdate(body)
     );
     return toMentorshipEnrollProgramRef(updated);
+  }
+
+  /**
+   * Hides a published program or unhides a hidden one with upstream's `POST .../hide` or `.../unhide`. Upstream refuses to hide a
+   * program that still has active applications, and to unhide an archived one; those refusals, and its 403 and 404, pass through.
+   */
+  public async setProgramVisibility(req: Request, programId: string, action: MentorshipProgramVisibilityAction): Promise<void> {
+    logger.debug(req, 'mentorship_admin_set_program_visibility', 'Changing program visibility', { programId, action });
+    await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/${action}`, 'POST');
   }
 
   /**
