@@ -7,8 +7,8 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import {
   MentorshipMentorProgramDetail,
-  MentorshipMentorTaskCreateRequest,
-  MentorshipMentorTaskCreateResponse,
+  MentorshipTaskCreateRequest,
+  MentorshipTaskCreateResponse,
   MentorshipMentorTaskReviewDecision,
 } from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
@@ -19,7 +19,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorNoteSaveService } from '../../services/mentor-note-save.service';
-import { MentorTaskCreateService } from '../../services/mentor-task-create.service';
+import { MentorshipTaskCreateService } from '../../services/mentorship-task-create.service';
 import { MentorTaskReviewService } from '../../services/mentor-task-review.service';
 import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
 import { MentorProgramDetailComponent } from './mentor-program-detail.component';
@@ -64,7 +64,7 @@ describe('MentorProgramDetailComponent', () => {
   let dialogOpen: ReturnType<typeof vi.fn>;
   let getMentorProgram: ReturnType<typeof vi.fn>;
   let saveNote: ReturnType<typeof vi.fn>;
-  let createTasks: ReturnType<typeof vi.fn<(request: MentorshipMentorTaskCreateRequest) => Observable<MentorshipMentorTaskCreateResponse | null>>>;
+  let createTasks: ReturnType<typeof vi.fn<(request: MentorshipTaskCreateRequest) => Observable<MentorshipTaskCreateResponse | null>>>;
   let reviewTask: ReturnType<typeof vi.fn<(taskId: string, status: MentorshipMentorTaskReviewDecision) => Observable<boolean>>>;
 
   /**
@@ -80,7 +80,7 @@ describe('MentorProgramDetailComponent', () => {
     dialogOpen = vi.fn(() => (onClose ? { onClose } : null));
     getMentorProgram = vi.fn(() => program$);
     saveNote = vi.fn(() => save$);
-    createTasks = vi.fn(() => of<MentorshipMentorTaskCreateResponse | null>({ created: ['mnt_1'], failed: [] }));
+    createTasks = vi.fn(() => of<MentorshipTaskCreateResponse | null>({ created: ['mnt_1'], failed: [] }));
     reviewTask = vi.fn(() => of(true));
 
     TestBed.resetTestingModule();
@@ -97,7 +97,7 @@ describe('MentorProgramDetailComponent', () => {
         },
         { provide: MentorshipMentorService, useValue: { getMentorProgram } },
         { provide: MentorNoteSaveService, useValue: { save: saveNote } },
-        { provide: MentorTaskCreateService, useValue: { create: createTasks } },
+        { provide: MentorshipTaskCreateService, useValue: { create: createTasks } },
         { provide: MentorTaskReviewService, useValue: { review: reviewTask } },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],
@@ -303,7 +303,7 @@ describe('MentorProgramDetailComponent', () => {
   });
 
   describe('task create', () => {
-    const request: MentorshipMentorTaskCreateRequest = { applicationIds: ['mnt_1'], name: 'Write a design doc', description: 'One page.' };
+    const request: MentorshipTaskCreateRequest = { applicationIds: ['mnt_1'], name: 'Write a design doc', description: 'One page.' };
     const withNewTask = (tasksTotal = 1): MentorshipMentorProgramDetail => {
       const value = detail();
       value.mentees = [{ ...value.mentees[0], tasksTotal }];

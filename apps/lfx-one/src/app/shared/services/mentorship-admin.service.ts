@@ -21,7 +21,6 @@ import {
   MentorshipAdminMentorsQuery,
   MentorshipAdminMentorsResponse,
   MentorshipAdminProgramPage,
-  MentorshipAdminTaskUpdate,
   MentorshipAdminTermInput,
   MentorshipAdminTermsQuery,
   MentorshipAdminTermsResponse,
@@ -30,8 +29,6 @@ import {
   MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
   MentorshipEnrollUpdateRequest,
-  MentorshipMentorTaskCreateRequest,
-  MentorshipMentorTaskCreateResponse,
   MentorshipProgramLogoUploadResult,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
@@ -144,21 +141,6 @@ export class MentorshipAdminService {
     return this.http
       .post<void>(`/api/mentorship/admin/applications/${encodeURIComponent(applicationId)}/withdraw`, {})
       .pipe(take(1), this.logFailure('withdrawApplication'));
-  }
-
-  /** Gives accepted mentees a task. With one application a failure arrives as the error; with several, the ones not created are in `failed`. */
-  public createTasks(request: MentorshipMentorTaskCreateRequest): Observable<MentorshipMentorTaskCreateResponse> {
-    return this.http.post<MentorshipMentorTaskCreateResponse>('/api/mentorship/admin/tasks', request).pipe(take(1), this.logFailure('createTasks'));
-  }
-
-  /**
-   * Edits one task, or sets just its status, and returns it as the row reads it, so the caller patches the row in place.
-   * Upstream's 400 (a submitted task that requires a file with none), 403 and 404 reach the caller as the error.
-   */
-  public updateTask(taskId: string, body: MentorshipAdminTaskUpdate): Observable<MentorshipApplicantTask> {
-    return this.http
-      .patch<MentorshipApplicantTask>(`/api/mentorship/admin/tasks/${encodeURIComponent(taskId)}`, body)
-      .pipe(take(1), this.logFailure('updateTask'));
   }
 
   /**

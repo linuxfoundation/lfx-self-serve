@@ -13,7 +13,7 @@ import { MENTORSHIP_NOTE_DIALOG_HEADER } from '@lfx-one/shared/constants';
 import {
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramDetailTab,
-  MentorshipMentorTaskCreateRequest,
+  MentorshipTaskCreateRequest,
   MentorshipMentorTaskReviewRequest,
   MentorshipNoteRequest,
 } from '@lfx-one/shared/interfaces';
@@ -23,7 +23,7 @@ import { catchError, combineLatest, distinctUntilChanged, EMPTY, filter, finaliz
 
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorNoteSaveService } from '../../services/mentor-note-save.service';
-import { MentorTaskCreateService } from '../../services/mentor-task-create.service';
+import { MentorshipTaskCreateService } from '../../services/mentorship-task-create.service';
 import { MentorTaskReviewService } from '../../services/mentor-task-review.service';
 import { MentorApplicantsTabComponent } from './components/mentor-applicants-tab/mentor-applicants-tab.component';
 import { MentorMenteesTabComponent } from './components/mentor-mentees-tab/mentor-mentees-tab.component';
@@ -57,7 +57,7 @@ export class MentorProgramDetailComponent {
   private readonly mentorService = inject(MentorshipMentorService);
   private readonly dialogService = inject(DialogService);
   private readonly noteSaveService = inject(MentorNoteSaveService);
-  private readonly taskCreateService = inject(MentorTaskCreateService);
+  private readonly taskCreateService = inject(MentorshipTaskCreateService);
   private readonly taskReviewService = inject(MentorTaskReviewService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -144,7 +144,7 @@ export class MentorProgramDetailComponent {
    * Not tied to the page: a create, and its toast, finish even if the mentor leaves first. The detail is re-read
    * whatever the outcome, since a failed create (a timeout, a 5xx) may still have made the task upstream.
    */
-  protected onTaskCreateRequested(request: MentorshipMentorTaskCreateRequest): void {
+  protected onTaskCreateRequested(request: MentorshipTaskCreateRequest): void {
     const programId = this.programId();
     const menteeNames = Object.fromEntries(this.mentees().map((mentee) => [mentee.id, mentee.name]));
     this.taskCreateService.create(request, menteeNames).subscribe(() => this.refreshDetail(programId));

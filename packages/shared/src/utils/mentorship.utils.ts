@@ -99,10 +99,10 @@ import type {
   MentorshipRegisterSubmitFailure,
   MentorshipRowAction,
   MentorshipTaskFormValue,
+  MentorshipTaskUpdate,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
 import type {
-  MentorshipAdminTaskUpdate,
   MentorshipProgramDetailTabDefinition,
   MentorshipProgramMentor,
   MentorshipProgramStatus,
@@ -1326,12 +1326,12 @@ export function mentorshipTaskSubmittedCount(status: MentorshipApplicantTaskStat
 }
 
 /**
- * The fields the task-edit dialog changed on a task, as the admin task update body: a field that still reads as it did is
+ * The fields the task-edit dialog changed on a task, as the task update body: a field that still reads as it did is
  * left out, so saving one change never re-sends (and so never re-validates upstream) the rest. A cleared due date goes as
  * `''`, which upstream reads as clear it. Empty when nothing changed.
  */
-export function buildMentorshipAdminTaskUpdate(task: MentorshipApplicantTask, value: MentorshipTaskFormValue): MentorshipAdminTaskUpdate {
-  const update: MentorshipAdminTaskUpdate = {};
+export function buildMentorshipTaskUpdate(task: MentorshipApplicantTask, value: MentorshipTaskFormValue): MentorshipTaskUpdate {
+  const update: MentorshipTaskUpdate = {};
   if (value.name !== task.name) update.name = value.name;
   if (value.description !== task.description) update.description = value.description;
   if ((value.dueOn ?? '') !== (task.dueOn ?? '')) update.dueDate = value.dueOn ?? '';

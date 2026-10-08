@@ -14,11 +14,11 @@ import {
   MENTORSHIP_TASK_EDIT_ACTION_ICON,
   MENTORSHIP_TASK_EDIT_ACTION_LABEL,
 } from '@lfx-one/shared/constants';
-import { MentorshipAdminTaskUpdate, MentorshipApplicantTask, MentorshipApplicantTaskRow, MentorshipApplicantTaskStatus } from '@lfx-one/shared/interfaces';
-import { buildMentorshipAdminTaskUpdate, filterMentorshipApplicantTasks } from '@lfx-one/shared/utils';
+import { MentorshipTaskUpdate, MentorshipApplicantTask, MentorshipApplicantTaskRow, MentorshipApplicantTaskStatus } from '@lfx-one/shared/interfaces';
+import { buildMentorshipTaskUpdate, filterMentorshipApplicantTasks } from '@lfx-one/shared/utils';
 import { startWith, take } from 'rxjs';
 
-import { AdminTaskUpdateService } from '../../services/admin-task-update.service';
+import { MentorshipTaskUpdateService } from '../../services/mentorship-task-update.service';
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
 
@@ -42,7 +42,7 @@ type TaskStatusForm = FormGroup<{ status: FormControl<MentorshipApplicantTaskSta
 export class ApplicantTasksPanelComponent {
   private readonly comingSoon = inject(MentorshipComingSoonService);
   private readonly taskDialog = inject(MentorshipTaskDialogService);
-  private readonly taskUpdate = inject(AdminTaskUpdateService);
+  private readonly taskUpdate = inject(MentorshipTaskUpdateService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly applicantId = input.required<string>();
@@ -106,7 +106,7 @@ export class ApplicantTasksPanelComponent {
           this.comingSoon.notify(`Update ${value.name} for ${this.applicantName()}`);
           return;
         }
-        const update = buildMentorshipAdminTaskUpdate(task, value);
+        const update = buildMentorshipTaskUpdate(task, value);
         if (Object.keys(update).length === 0) return;
         this.saveTask(task, update, true);
       });
@@ -131,7 +131,7 @@ export class ApplicantTasksPanelComponent {
    * mid-save still lands in the caller's list; only the select and the saving flag, which are local, are touched
    * meanwhile. A failure puts the select back on the task's status.
    */
-  private saveTask(task: MentorshipApplicantTaskRow, update: MentorshipAdminTaskUpdate, toastOnSuccess: boolean): void {
+  private saveTask(task: MentorshipApplicantTaskRow, update: MentorshipTaskUpdate, toastOnSuccess: boolean): void {
     if (this.isBusy(task.id)) {
       this.resetStatus(task);
       return;

@@ -14,7 +14,6 @@ import type {
 import type {
   MentorshipApplicantDisplayStatus,
   MentorshipApplicantTask,
-  MentorshipApplicantTaskStatus,
   MentorshipMenteeStatus,
   MentorshipProgramApplicant,
   MentorshipProgramPersonBase,
@@ -127,19 +126,6 @@ export interface MentorshipAdminTermInput {
   endDate: string;
   applicationStartDate: string;
   applicationEndDate: string;
-}
-
-/**
- * Body of `PATCH /api/mentorship/admin/tasks/:taskId`. Every field is optional and an absent one is left unchanged, but at least
- * one is required: the status select sends `status` alone, the edit dialog sends whichever fields it changed. `dueDate` is a date-only
- * `YYYY-MM-DD`, and an empty string clears it. `requiresFileSubmission` turns the mentee's file requirement on or off.
- */
-export interface MentorshipAdminTaskUpdate {
-  name?: string;
-  description?: string;
-  dueDate?: string;
-  requiresFileSubmission?: boolean;
-  status?: MentorshipApplicantTaskStatus;
 }
 
 /**

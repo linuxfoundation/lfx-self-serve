@@ -19,7 +19,7 @@ import {
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import {
-  MentorshipMentorTaskCreateRequest,
+  MentorshipTaskCreateRequest,
   MentorshipNoteRequest,
   MentorshipProgramMentee,
   MentorshipTaskDialogAssignee,
@@ -57,7 +57,7 @@ export class MentorMenteesTabComponent {
 
   public readonly mentees = input.required<MentorshipProgramMentee[]>();
   public readonly noteRequested = output<MentorshipNoteRequest>();
-  public readonly taskCreateRequested = output<MentorshipMentorTaskCreateRequest>();
+  public readonly taskCreateRequested = output<MentorshipTaskCreateRequest>();
 
   protected readonly pageSize = MENTORSHIP_PERSON_PAGE_SIZE;
   protected readonly rowsPerPageOptions = MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS;

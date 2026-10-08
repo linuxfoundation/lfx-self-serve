@@ -11,7 +11,7 @@ import { MessageService, ToastMessageOptions } from 'primeng/api';
 import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AdminTaskUpdateService } from '../../services/admin-task-update.service';
+import { MentorshipTaskUpdateService } from '../../services/mentorship-task-update.service';
 import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
 import { ApplicantTasksPanelComponent } from './applicant-tasks-panel.component';
 
@@ -63,7 +63,7 @@ describe('ApplicantTasksPanelComponent', () => {
         provideNoopAnimations(),
         MessageService,
         { provide: MentorshipTaskDialogService, useValue: { openCreate: vi.fn(), openEdit } },
-        { provide: AdminTaskUpdateService, useValue: { update, isUpdating: (taskId: string) => updatingIds().has(taskId) } },
+        { provide: MentorshipTaskUpdateService, useValue: { update, isUpdating: (taskId: string) => updatingIds().has(taskId) } },
       ],
     });
 

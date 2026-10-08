@@ -4,7 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
-  MentorshipMentorTaskCreateRequest,
+  MentorshipTaskCreateRequest,
   MentorshipNoteRequest,
   MentorshipProgramMentee,
   MentorshipTaskDialogAssignee,
@@ -14,7 +14,7 @@ import { MessageService } from 'primeng/api';
 import { Observable, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AdminTaskUpdateService } from '../../../../services/admin-task-update.service';
+import { MentorshipTaskUpdateService } from '../../../../services/mentorship-task-update.service';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 import { MentorMenteesTabComponent } from './mentor-mentees-tab.component';
 
@@ -79,8 +79,8 @@ describe('MentorMenteesTabComponent', () => {
         provideNoopAnimations(),
         MessageService,
         { provide: MentorshipTaskDialogService, useValue: { openCreate, openCreateGroup, openEdit } },
-        // The panel also injects the admin task-update service; mentor rows are not editable, so it is never called.
-        { provide: AdminTaskUpdateService, useValue: { update: vi.fn(), isUpdating: () => false } },
+        // The panel also injects the task-update service; mentor rows are not editable yet, so it is never called.
+        { provide: MentorshipTaskUpdateService, useValue: { update: vi.fn(), isUpdating: () => false } },
       ],
     });
 
@@ -192,7 +192,7 @@ describe('MentorMenteesTabComponent', () => {
         assignedMenteeIds: ['mnt_1', 'mnt_3'],
       } satisfies MentorshipTaskFormValue)
     );
-    const requests: MentorshipMentorTaskCreateRequest[] = [];
+    const requests: MentorshipTaskCreateRequest[] = [];
     fixture.componentInstance.taskCreateRequested.subscribe((request) => requests.push(request));
 
     fixture.componentInstance['onCreateGroupTask']();
@@ -209,7 +209,7 @@ describe('MentorMenteesTabComponent', () => {
   });
 
   it("asks the parent to create the row's task, and nothing when the dialog is cancelled", () => {
-    const requests: MentorshipMentorTaskCreateRequest[] = [];
+    const requests: MentorshipTaskCreateRequest[] = [];
     fixture.componentInstance.taskCreateRequested.subscribe((request) => requests.push(request));
 
     fixture.componentInstance['onCreateTask'](mentee());
