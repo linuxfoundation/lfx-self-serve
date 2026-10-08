@@ -5,7 +5,7 @@ import { init } from '@launchdarkly/node-server-sdk';
 import { LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
-import { getEffectiveUsername, isImpersonating } from '../utils/auth-helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 
 import type { LDClient } from '@launchdarkly/node-server-sdk';
@@ -15,9 +15,13 @@ import type { LDClient } from '@launchdarkly/node-server-sdk';
  *
  * The browser evaluates flags through the OpenFeature Web SDK, which cannot gate an Express
  * handler, and `server-feature-flag.helper.ts` only reads env vars, which cannot target
- * individual users. This service is the one place the server asks LaunchDarkly about a user, with
- * the same context shape and key the browser sends (`kind: 'user'`, see `resolveContextKey`), so a
- * flag targeted at named users gives the same answer on both sides.
+ * individual users. This service is the one place the server asks LaunchDarkly about a user.
+ *
+ * The context is `{ kind: 'user', key }`, keyed by `getEffectiveUsername(req)`: the IdP-asserted LF
+ * username claim (Authelia: `preferred_username`), or the impersonated user's username. It is
+ * deliberately not the browser's `targetingKey` order, which prefers display claims
+ * (`preferred_username`, `username`) that must not decide access. Target server-evaluated flags by
+ * LFID username.
  *
  * Needs `LD_SDK_KEY`, the **server-side** SDK key. `LD_CLIENT_ID` is a client-side ID and cannot be
  * used here. Without the key, or while LaunchDarkly is unreachable, every evaluation returns the
@@ -58,7 +62,7 @@ export class LaunchDarklyServerService {
    */
   public async isFlagEnabled(req: Request, flagKey: string, defaultValue = false): Promise<boolean> {
     try {
-      const contextKey = this.resolveContextKey(req);
+      const contextKey = getEffectiveUsername(req);
       if (!contextKey) {
         logger.warning(req, 'evaluate_server_flag', 'No username on session; using flag default', { flag: flagKey });
         return defaultValue;
@@ -77,23 +81,6 @@ export class LaunchDarklyServerService {
       });
       return defaultValue;
     }
-  }
-
-  /**
-   * The LaunchDarkly context key, derived the same way as the browser's `targetingKey`
-   * (`FeatureFlagService.initialize`: `preferred_username`, then `username`, then the LF username
-   * claim), so one username targets a user on both sides. Read from the signed OIDC session, never
-   * from client input. While impersonating, the target's stored username is used, so the
-   * impersonator's own targeting never leaks into the target's read-only view.
-   */
-  private resolveContextKey(req: Request): string | null {
-    if (isImpersonating(req)) {
-      return getEffectiveUsername(req);
-    }
-
-    const user = req.oidc?.user;
-    const key = user?.['preferred_username'] || user?.['username'] || user?.['https://sso.linuxfoundation.org/claims/username'];
-    return typeof key === 'string' && key ? key : null;
   }
 
   private async getReadyClient(req: Request): Promise<LDClient | null> {

@@ -3,20 +3,19 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { init, initialized, waitForInitialization, boolVariation, close, loggerWarning, isImpersonating, getEffectiveUsername } = vi.hoisted(() => ({
+const { init, initialized, waitForInitialization, boolVariation, close, loggerWarning, getEffectiveUsername } = vi.hoisted(() => ({
   init: vi.fn(),
   initialized: vi.fn(),
   waitForInitialization: vi.fn(),
   boolVariation: vi.fn(),
   close: vi.fn(),
   loggerWarning: vi.fn(),
-  isImpersonating: vi.fn(),
   getEffectiveUsername: vi.fn(),
 }));
 
 vi.mock('@launchdarkly/node-server-sdk', () => ({ init }));
 vi.mock('./logger.service', () => ({ logger: { warning: loggerWarning, debug: vi.fn(), info: vi.fn() } }));
-vi.mock('../utils/auth-helper', () => ({ isImpersonating, getEffectiveUsername }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
 // The `@lfx-one/shared/*` alias isn't wired into this app's vitest config.
 vi.mock('@lfx-one/shared/constants', () => ({ LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS: 3 }));
 
@@ -24,8 +23,8 @@ import type { Request } from 'express';
 
 import { LaunchDarklyServerService } from './launchdarkly-server.service';
 
-const req = { oidc: { user: { preferred_username: 'jdoe' } } } as unknown as Request;
-const LF_USERNAME_CLAIM = 'https://sso.linuxfoundation.org/claims/username';
+// Display claims differ from the LFID on purpose: only `getEffectiveUsername` may key the context.
+const req = { oidc: { user: { preferred_username: 'display-name', username: 'display-name' } } } as unknown as Request;
 
 describe('LaunchDarklyServerService', () => {
   let service: LaunchDarklyServerService;
@@ -43,8 +42,7 @@ describe('LaunchDarklyServerService', () => {
     boolVariation.mockReset().mockResolvedValue(true);
     close.mockReset();
     loggerWarning.mockReset();
-    isImpersonating.mockReset().mockReturnValue(false);
-    getEffectiveUsername.mockReset().mockReturnValue('target-user');
+    getEffectiveUsername.mockReset().mockReturnValue('jdoe');
     LaunchDarklyServerService.resetInstance();
     service = LaunchDarklyServerService.getInstance();
   });
@@ -86,30 +84,17 @@ describe('LaunchDarklyServerService', () => {
     expect(loggerWarning).toHaveBeenCalledTimes(1);
   });
 
-  it('derives the context key like the browser: preferred_username, then username, then the LF claim', async () => {
-    const withUsername = { oidc: { user: { username: 'u-name', [LF_USERNAME_CLAIM]: 'lf-name' } } } as unknown as Request;
-    const withClaimOnly = { oidc: { user: { [LF_USERNAME_CLAIM]: 'lf-name' } } } as unknown as Request;
-    const withAll = { oidc: { user: { preferred_username: 'pref', username: 'u-name', [LF_USERNAME_CLAIM]: 'lf-name' } } } as unknown as Request;
-
-    await service.isFlagEnabled(withAll, 'insights-public-api-token-access');
-    await service.isFlagEnabled(withUsername, 'insights-public-api-token-access');
-    await service.isFlagEnabled(withClaimOnly, 'insights-public-api-token-access');
-
-    expect(boolVariation.mock.calls.map((call) => call[1].key)).toEqual(['pref', 'u-name', 'lf-name']);
-  });
-
-  it("uses the impersonated user's username while impersonating, never the impersonator's", async () => {
-    isImpersonating.mockReturnValue(true);
-
+  it('keys the context by the trusted LF username, never by display claims', async () => {
     await service.isFlagEnabled(req, 'insights-public-api-token-access');
 
-    expect(boolVariation).toHaveBeenCalledWith('insights-public-api-token-access', { kind: 'user', key: 'target-user' }, false);
+    expect(getEffectiveUsername).toHaveBeenCalledWith(req);
+    expect(boolVariation.mock.calls[0][1]).toEqual({ kind: 'user', key: 'jdoe' });
   });
 
   it('returns the default when the session has no username', async () => {
-    const anonymous = { oidc: { user: {} } } as unknown as Request;
+    getEffectiveUsername.mockReturnValue(null);
 
-    expect(await service.isFlagEnabled(anonymous, 'insights-public-api-token-access')).toBe(false);
+    expect(await service.isFlagEnabled(req, 'insights-public-api-token-access')).toBe(false);
     expect(boolVariation).not.toHaveBeenCalled();
   });
 
