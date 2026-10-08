@@ -219,3 +219,74 @@ describe('MentorshipTaskService.updateTask', () => {
     expect(logged).not.toContain('private-task-text');
   });
 });
+
+describe('MentorshipTaskService.openTaskFile', () => {
+  const TASK_ID = '8b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e';
+  const DOWNLOAD_PATH = `/mentorship/v1/tasks/${TASK_ID}/file-download`;
+  let proxyStreamRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyStreamRequest']>;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(logger.debug).mockClear();
+    proxyStreamRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyStreamRequest');
+  });
+
+  it('streams the file download with the transfer timeout and no range header when none is given', async () => {
+    const upstream = new Response('file-bytes', { status: 200 });
+    proxyStreamRequest.mockResolvedValueOnce(upstream);
+
+    await expect(new MentorshipTaskService().openTaskFile(buildReq(), TASK_ID)).resolves.toBe(upstream);
+
+    expect(proxyStreamRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', DOWNLOAD_PATH, 'GET', undefined, undefined, { timeoutMs: 120_000 });
+  });
+
+  it('forwards a byte range as the Range header', async () => {
+    proxyStreamRequest.mockResolvedValueOnce(new Response('le-by', { status: 206 }));
+
+    await new MentorshipTaskService().openTaskFile(buildReq(), TASK_ID, 'bytes=2-6');
+
+    expect(proxyStreamRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      DOWNLOAD_PATH,
+      'GET',
+      undefined,
+      { Range: 'bytes=2-6' },
+      { timeoutMs: 120_000 }
+    );
+  });
+
+  it('URL-encodes the task id in the path', async () => {
+    proxyStreamRequest.mockResolvedValueOnce(new Response(''));
+
+    await new MentorshipTaskService().openTaskFile(buildReq(), 'a/b?c');
+
+    expect(proxyStreamRequest.mock.calls[0][2]).toBe('/mentorship/v1/tasks/a%2Fb%3Fc/file-download');
+  });
+
+  it('makes no other upstream call, so there is no provisioning retry', async () => {
+    const proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    proxyStreamRequest.mockResolvedValueOnce(new Response(''));
+
+    await new MentorshipTaskService().openTaskFile(buildReq(), TASK_ID);
+
+    expect(proxyStreamRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 403, 404, 416, 503])('passes an upstream %i on', async (status) => {
+    const error = new MicroserviceError('upstream', status, 'UPSTREAM');
+    proxyStreamRequest.mockRejectedValueOnce(error);
+
+    await expect(new MentorshipTaskService().openTaskFile(buildReq(), TASK_ID)).rejects.toBe(error);
+    expect(proxyStreamRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs the task id and whether a range was asked for, never the range itself', async () => {
+    proxyStreamRequest.mockResolvedValueOnce(new Response(''));
+
+    await new MentorshipTaskService().openTaskFile(buildReq(), TASK_ID, 'bytes=2-6');
+
+    expect(logger.debug).toHaveBeenCalledWith(expect.anything(), 'mentorship_open_task_file', expect.any(String), { taskId: TASK_ID, ranged: true });
+  });
+});

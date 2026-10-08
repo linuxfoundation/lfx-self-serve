@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS, MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplyIds } from '@lfx-one/shared/interfaces';
-import { isMentorshipMenteeUpdatableTaskStatus, isUuid } from '@lfx-one/shared/utils';
+import { isMentorshipMenteeUpdatableTaskStatus, isSafeUploadFileName, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError, ServiceValidationError } from '../errors';
+import { AuthenticationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { parseMentorshipMenteeRegisterRequest } from '../helpers/mentorship-mentee-register.helper';
 import { parseMentorshipMenteeProfileUpdate } from '../helpers/mentorship-mentee-profile-update.helper';
 import { parseTrimmedString } from '../helpers/mentorship-params.helper';
@@ -107,7 +108,7 @@ export class MentorshipMenteeController {
   // PATCH /api/mentorship/mentee/tasks/:taskId  { status: 'in_progress' | 'submitted' } -> 204
   // Auth: logged-in user required (401 otherwise). A mentee can only start a task or submit one; the
   // reviewer statuses are refused here. Any other body key, notably `file`, is ignored and never
-  // forwarded: upload is not wired, so upstream checks a required file against the one already stored.
+  // forwarded: the file goes through its own route, and upstream checks a required one against the one stored.
   // A submit after the task's due date (end of that UTC day) is refused with a 400 `TASK_PAST_DUE`.
   // Upstream's 400 (a required file is missing), 403 (not the assignee), 404 and 409 (not a legal
   // move from the task's status) pass through.
@@ -134,6 +135,68 @@ export class MentorshipMenteeController {
 
       await this.menteeService.updateMenteeTaskStatus(req, taskId, status);
       logger.success(req, 'update_mentorship_mentee_task_status', startTime, { taskId, status });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/mentee/tasks/:taskId/file?fileName=<name>  raw file bytes (application/octet-stream) -> 201
+  // Auth: logged-in user required (401 otherwise). The route's raw parser reads only `application/octet-stream`, so any
+  // other type is a 415, and over 20 MB is a 413 before this runs. The file name must be safe to put in a multipart header
+  // and end in .pdf, .doc, .docx or .txt (415 otherwise); upstream still decides the type from the bytes. A change after
+  // the due date is a 400 `TASK_PAST_DUE`. Only the task id and the size are logged, never the file name or the bytes.
+  public async uploadMenteeTaskFile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'upload_mentorship_mentee_task_file';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const taskId = this.requireTaskId(req, operation);
+      // `express.raw` skips a body whose type is not the one it reads, so a wrong type arrives here with no bytes.
+      const contentType = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+      if (contentType !== MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE) {
+        throw this.unsupportedTaskFile(req, operation);
+      }
+      const fileName = parseTrimmedString(req.query['fileName']);
+      if (!fileName || !isSafeUploadFileName(fileName)) {
+        throw ServiceValidationError.forField('fileName', 'fileName must be a file name without path separators or quotes', { operation });
+      }
+      const extension = fileName.lastIndexOf('.') === -1 ? '' : fileName.slice(fileName.lastIndexOf('.')).toLowerCase();
+      if (!MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS.includes(extension)) {
+        throw this.unsupportedTaskFile(req, operation);
+      }
+      const file: unknown = req.body;
+      if (!Buffer.isBuffer(file) || file.byteLength === 0) {
+        throw ServiceValidationError.forField('file', 'file must not be empty.', { operation });
+      }
+
+      const result = await this.menteeService.uploadMenteeTaskFile(req, taskId, fileName, file);
+      logger.success(req, operation, startTime, { taskId, sizeBytes: file.byteLength });
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // DELETE /api/mentorship/mentee/tasks/:taskId/file -> 204
+  // Auth: logged-in user required (401 otherwise). Upstream allows it only while the task is not started or in progress;
+  // its 403, 404 and 409 pass through. A change after the due date is a 400 `TASK_PAST_DUE`.
+  public async deleteMenteeTaskFile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'delete_mentorship_mentee_task_file';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const taskId = this.requireTaskId(req, operation);
+      await this.menteeService.deleteMenteeTaskFile(req, taskId);
+      logger.success(req, operation, startTime, { taskId });
       res.status(204).send();
     } catch (error) {
       next(error);
@@ -234,5 +297,23 @@ export class MentorshipMenteeController {
       throw ServiceValidationError.forField('programTermId', 'programTermId must be a program term UUID', { operation });
     }
     return { programId, programTermId };
+  }
+
+  /** The task id from the path. Upstream checks access on `mentorship_task:<id>`, so only a UUID can match. */
+  private requireTaskId(req: Request, operation: string): string {
+    const taskId = parseTrimmedString(req.params['taskId']);
+    if (!taskId || !isUuid(taskId)) {
+      throw ServiceValidationError.forField('taskId', 'taskId must be a valid UUID', { operation });
+    }
+    return taskId;
+  }
+
+  /** A 415 for a task file the BFF already knows upstream would refuse, in upstream's own wording. */
+  private unsupportedTaskFile(req: Request, operation: string): MicroserviceError {
+    return new MicroserviceError('File must be PDF, DOC, DOCX or plain text', 415, 'UNSUPPORTED_MEDIA_TYPE', {
+      operation,
+      service: 'mentorship_mentee_controller',
+      path: req.path,
+    });
   }
 }

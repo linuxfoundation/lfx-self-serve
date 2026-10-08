@@ -684,9 +684,25 @@ export interface MentorshipUpstreamMenteeProfileInput extends MentorshipUpstream
   demographics?: MentorshipUpstreamMenteeDemographicsInput;
   socioeconomics?: MentorshipUpstreamMenteeSocioeconomicsInput;
 }
-/** Body for `PATCH /mentorship/v1/tasks/{id}/submission`. `file` is intentionally omitted: upload is not in scope. */
+/** Body for `PATCH /mentorship/v1/tasks/{id}/submission`. Upstream refuses `file` here: it is written only through the file route. */
 export interface MentorshipUpstreamTaskSubmissionUpdate {
   status: MentorshipMenteeUpdatableTaskStatus;
+}
+
+/** Upstream `201` from `POST /mentorship/v1/tasks/{id}/file-upload`. */
+export interface MentorshipUpstreamTaskFileUpload {
+  /** The multipart file name cleaned to `[A-Za-z0-9._-]`, at most 100 characters; the download returns it. */
+  filename: string;
+  /** The type upstream detected from the bytes, not the one the browser sent. */
+  content_type: string;
+  size: number;
+}
+
+/** BFF `201` from `POST /api/mentorship/mentee/tasks/:taskId/file`. */
+export interface MentorshipMenteeTaskFileUploadResponse {
+  fileName: string;
+  contentType: string;
+  size: number;
 }
 
 /**

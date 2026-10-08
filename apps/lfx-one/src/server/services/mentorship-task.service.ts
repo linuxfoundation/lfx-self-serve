@@ -10,7 +10,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { MENTORSHIP_TASKS_PATH } from '../constants';
+import { MENTORSHIP_TASK_FILE_TRANSFER_TIMEOUT_MS, MENTORSHIP_TASKS_PATH } from '../constants';
 import { proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { mapMentorshipProgramTask } from '../helpers/mentorship-program-application.helper';
 import { buildMentorshipUpstreamTaskUpdate, createMentorshipMenteeTasks } from '../helpers/mentorship-task.helper';
@@ -50,5 +50,24 @@ export class MentorshipTaskService {
       buildMentorshipUpstreamTaskUpdate(update)
     );
     return mapMentorshipProgramTask(task);
+  }
+
+  /**
+   * Opens a task's submission file as a stream, for its assignee or a reviewer (a mentor or program admin of its program).
+   * Upstream decides who may read it (403), and answers 404 when the task has no file and 503 when object storage is not
+   * configured; each passes through. A single byte `range` is forwarded, so a resumed download gets a 206. There is no
+   * provisioning retry: only a provisioned user can be a task's assignee or reviewer, and a stream cannot be re-sent.
+   */
+  public openTaskFile(req: Request, taskId: string, range?: string): Promise<globalThis.Response> {
+    logger.debug(req, 'mentorship_open_task_file', 'Opening task file download', { taskId, ranged: !!range });
+    return this.microserviceProxy.proxyStreamRequest(
+      req,
+      'LFX_V2_SERVICE',
+      `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}/file-download`,
+      'GET',
+      undefined,
+      range ? { Range: range } : undefined,
+      { timeoutMs: MENTORSHIP_TASK_FILE_TRANSFER_TIMEOUT_MS }
+    );
   }
 }

@@ -3,8 +3,13 @@
 
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
+import { MENTORSHIP_TASK_FILE_DOWNLOAD_HEADERS, MENTORSHIP_TASK_FILE_RANGE_PATTERN } from '../constants';
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { parseMentorshipTaskCreateRequest, parseMentorshipTaskUpdate } from '../helpers/mentorship-task.helper';
 import { logger } from '../services/logger.service';
 import { MentorshipTaskService } from '../services/mentorship-task.service';
@@ -65,6 +70,53 @@ export class MentorshipTaskController {
       logger.success(req, operation, startTime, { taskId, fields: Object.keys(update) });
       res.json(task);
     } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/mentorship/tasks/:taskId/file -> the task's submission file, as an attachment (200, or 206 for a byte range)
+  // Auth: logged-in user required (401 otherwise). Open while impersonating, since it is a read. Upstream lets the task's
+  // assignee and its reviewers read it; its 403, 404, 416 and 503 pass through. The bytes are streamed, never buffered,
+  // with upstream's type, length, name, caching and range headers. Only the task id and the status are logged.
+  public async downloadTaskFile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'download_mentorship_task_file';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const taskId = typeof req.params['taskId'] === 'string' ? req.params['taskId'].trim() : '';
+      if (!isUuid(taskId)) {
+        throw ServiceValidationError.forField('taskId', 'taskId must be a UUID.', { operation });
+      }
+      const rangeHeader = req.headers.range;
+      const range = typeof rangeHeader === 'string' && MENTORSHIP_TASK_FILE_RANGE_PATTERN.test(rangeHeader) ? rangeHeader : undefined;
+      const upstream = await this.taskService.openTaskFile(req, taskId, range);
+
+      res.status(upstream.status);
+      for (const name of MENTORSHIP_TASK_FILE_DOWNLOAD_HEADERS) {
+        const value = upstream.headers.get(name);
+        if (value) res.setHeader(name, value);
+      }
+      // Upstream sends both; kept if it ever does not, so the file is never shown inline or cached.
+      if (!res.getHeader('content-disposition')) res.setHeader('Content-Disposition', contentDispositionAttachment('submission'));
+      if (!res.getHeader('cache-control')) res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      // pipeline() propagates stream errors to the catch block instead of hanging.
+      await pipeline(Readable.fromWeb(upstream.body as NodeReadableStream<Uint8Array>), res);
+      logger.success(req, operation, startTime, { taskId, status: upstream.status });
+    } catch (error) {
+      // Headers already committed, so the error handler cannot answer; the stream can only be ended.
+      if (res.headersSent) {
+        logger.error(req, operation, startTime, error, { stage: 'streaming' });
+        if (!res.writableEnded) res.end();
+        return;
+      }
+      // Nothing was sent yet, so drop the file's headers; the error handler's JSON must not arrive as the attachment.
+      for (const name of [...MENTORSHIP_TASK_FILE_DOWNLOAD_HEADERS, 'x-content-type-options']) res.removeHeader(name);
       next(error);
     }
   }

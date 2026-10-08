@@ -25,7 +25,7 @@ vi.mock('../utils/auth-helper', () => ({
 
 const { MentorshipMenteeController } = await import('./mentorship-mentee.controller');
 const { MentorshipMenteeService } = await import('../services/mentorship-mentee.service');
-const { AuthenticationError, ServiceValidationError } = await import('../errors');
+const { AuthenticationError, MicroserviceError, ServiceValidationError } = await import('../errors');
 const { getUsernameFromAuth } = await import('../utils/auth-helper');
 const { logger } = await import('../services/logger.service');
 
@@ -292,6 +292,225 @@ describe('MentorshipMenteeController', () => {
       await controller.updateMenteeTaskStatus(buildTaskReq({ taskId }, { status: 'in_progress' }), res, next);
 
       expect(update).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    });
+  });
+
+  describe('uploadMenteeTaskFile', () => {
+    const taskId = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
+    const fileName = 'private-report-name.pdf';
+    const file = Buffer.from('%PDF-1.7 test');
+    const uploaded = { fileName: 'private-report-name.pdf', contentType: 'application/pdf', size: file.byteLength };
+    const buildUploadReq = (
+      overrides: { params?: Record<string, unknown>; query?: Record<string, unknown>; contentType?: string; body?: unknown } = {}
+    ): Request => {
+      const { params = { taskId }, query = { fileName }, contentType = 'application/octet-stream' } = overrides;
+      const body = 'body' in overrides ? overrides.body : file;
+      return { params, query, body, path: `/tasks/${taskId}/file`, headers: { 'content-type': contentType } } as unknown as Request;
+    };
+    const nextError = () => vi.mocked(next).mock.calls[0][0] as unknown as { statusCode?: number; code?: string };
+
+    beforeEach(() => {
+      res = { json: vi.fn(), status: vi.fn(), send: vi.fn() } as unknown as Response;
+      vi.mocked(res.status).mockReturnValue(res);
+    });
+
+    it('uploads the trimmed task id, file name and bytes and answers 201 with the stored file', async () => {
+      const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile').mockResolvedValue(uploaded);
+
+      await controller.uploadMenteeTaskFile(buildUploadReq({ params: { taskId: ` ${taskId} ` }, query: { fileName: ` ${fileName} ` } }), res, next);
+
+      expect(upload).toHaveBeenCalledWith(expect.anything(), taskId, fileName, file);
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.json).toHaveBeenCalledWith(uploaded);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each(['application/octet-stream; charset=binary', 'Application/Octet-Stream'])('accepts the content type %s', async (contentType) => {
+      const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile').mockResolvedValue(uploaded);
+
+      await controller.uploadMenteeTaskFile(buildUploadReq({ contentType }), res, next);
+
+      expect(upload).toHaveBeenCalledTimes(1);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each(['report.PDF', 'notes.txt', 'essay.doc', 'essay.DocX'])('accepts the file name %s', async (name) => {
+      const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile').mockResolvedValue(uploaded);
+
+      await controller.uploadMenteeTaskFile(buildUploadReq({ query: { fileName: name } }), res, next);
+
+      expect(upload).toHaveBeenCalledWith(expect.anything(), taskId, name, file);
+    });
+
+    it('logs the task id and the size, never the file name', async () => {
+      vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile').mockResolvedValue(uploaded);
+
+      await controller.uploadMenteeTaskFile(buildUploadReq(), res, next);
+
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'upload_mentorship_mentee_task_file', 0, { taskId, sizeBytes: file.byteLength });
+      const logged = JSON.stringify([...vi.mocked(logger.startOperation).mock.calls, ...vi.mocked(logger.success).mock.calls].map((call) => call.slice(1)));
+      expect(logged).not.toContain('private-report-name');
+    });
+
+    it.each([{}, { taskId: '' }, { taskId: 'task-1' }, { taskId: [taskId] }])(
+      'rejects the params %j on the taskId field before calling the service',
+      async (params) => {
+        const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile');
+
+        await controller.uploadMenteeTaskFile(buildUploadReq({ params }), res, next);
+
+        expect(upload).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+        expect(nextError()).toMatchObject({ validationErrors: [{ field: 'taskId' }] });
+      }
+    );
+
+    it.each(['', 'application/pdf', 'multipart/form-data; boundary=x', 'text/plain'])(
+      'refuses the content type %j with a 415 before calling the service',
+      async (contentType) => {
+        const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile');
+
+        // The raw parser leaves any other type unparsed, so the controller sees no bytes.
+        await controller.uploadMenteeTaskFile(buildUploadReq({ contentType, body: {} }), res, next);
+
+        expect(upload).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(MicroserviceError));
+        expect(nextError()).toMatchObject({ statusCode: 415, code: 'UNSUPPORTED_MEDIA_TYPE' });
+      }
+    );
+
+    it('refuses a request with no content type with a 415', async () => {
+      const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile');
+      const req = { ...buildUploadReq(), headers: {} } as unknown as Request;
+
+      await controller.uploadMenteeTaskFile(req, res, next);
+
+      expect(upload).not.toHaveBeenCalled();
+      expect(nextError()).toMatchObject({ statusCode: 415 });
+    });
+
+    it.each([
+      {},
+      { fileName: '' },
+      { fileName: '   ' },
+      { fileName: ['a.pdf', 'b.pdf'] },
+      { fileName: '../report.pdf' },
+      { fileName: 'dir/report.pdf' },
+      { fileName: 'dir\\report.pdf' },
+      { fileName: 're"port.pdf' },
+      { fileName: 'report\r\n.pdf' },
+    ])('rejects the query %j on the fileName field before calling the service', async (query) => {
+      const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile');
+
+      await controller.uploadMenteeTaskFile(buildUploadReq({ query }), res, next);
+
+      expect(upload).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(nextError()).toMatchObject({ statusCode: 400, validationErrors: [{ field: 'fileName' }] });
+    });
+
+    it.each(['report', 'report.exe', 'report.pdf.exe', 'image.png', 'report.pdfx', 'report.'])(
+      'refuses the file name %s with a 415 before calling the service',
+      async (name) => {
+        const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile');
+
+        await controller.uploadMenteeTaskFile(buildUploadReq({ query: { fileName: name } }), res, next);
+
+        expect(upload).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(MicroserviceError));
+        expect(nextError()).toMatchObject({ statusCode: 415, code: 'UNSUPPORTED_MEDIA_TYPE' });
+      }
+    );
+
+    it.each([
+      ['an empty buffer', Buffer.alloc(0)],
+      ['no body', undefined],
+      ['an unparsed body', {}],
+      ['a string', 'bytes'],
+    ])('rejects %s on the file field before calling the service', async (_label, body) => {
+      const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile');
+
+      await controller.uploadMenteeTaskFile(buildUploadReq({ body }), res, next);
+
+      expect(upload).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(nextError()).toMatchObject({ statusCode: 400, validationErrors: [{ field: 'file' }] });
+    });
+
+    it.each([400, 403, 409, 413, 415, 503])('passes an upstream %i to the error handler', async (statusCode) => {
+      const error = new MicroserviceError('upstream', statusCode, 'UPSTREAM');
+      vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile').mockRejectedValue(error);
+
+      await controller.uploadMenteeTaskFile(buildUploadReq(), res, next);
+
+      expect(res.status).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(error);
+    });
+
+    it('requires an authenticated user', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const upload = vi.spyOn(MentorshipMenteeService.prototype, 'uploadMenteeTaskFile');
+
+      await controller.uploadMenteeTaskFile(buildUploadReq(), res, next);
+
+      expect(upload).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    });
+  });
+
+  describe('deleteMenteeTaskFile', () => {
+    const taskId = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
+    const buildDeleteReq = (params: Record<string, unknown>): Request => ({ params, query: {} }) as unknown as Request;
+
+    beforeEach(() => {
+      res = { json: vi.fn(), status: vi.fn(), send: vi.fn() } as unknown as Response;
+      vi.mocked(res.status).mockReturnValue(res);
+    });
+
+    it('removes the file of the trimmed task id and answers 204 with no body', async () => {
+      const remove = vi.spyOn(MentorshipMenteeService.prototype, 'deleteMenteeTaskFile').mockResolvedValue(undefined);
+
+      await controller.deleteMenteeTaskFile(buildDeleteReq({ taskId: ` ${taskId} ` }), res, next);
+
+      expect(remove).toHaveBeenCalledWith(expect.anything(), taskId);
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(res.send).toHaveBeenCalledWith();
+      expect(res.json).not.toHaveBeenCalled();
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'delete_mentorship_mentee_task_file', 0, { taskId });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([{}, { taskId: '' }, { taskId: 'task-1' }, { taskId: [taskId] }])(
+      'rejects the params %j on the taskId field before calling the service',
+      async (params) => {
+        const remove = vi.spyOn(MentorshipMenteeService.prototype, 'deleteMenteeTaskFile');
+
+        await controller.deleteMenteeTaskFile(buildDeleteReq(params), res, next);
+
+        expect(remove).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+        expect(vi.mocked(next).mock.calls[0][0]).toMatchObject({ validationErrors: [{ field: 'taskId' }] });
+      }
+    );
+
+    it('passes an upstream failure to the error handler', async () => {
+      const error = new MicroserviceError('conflict', 409, 'CONFLICT');
+      vi.spyOn(MentorshipMenteeService.prototype, 'deleteMenteeTaskFile').mockRejectedValue(error);
+
+      await controller.deleteMenteeTaskFile(buildDeleteReq({ taskId }), res, next);
+
+      expect(res.status).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(error);
+    });
+
+    it('requires an authenticated user', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const remove = vi.spyOn(MentorshipMenteeService.prototype, 'deleteMenteeTaskFile');
+
+      await controller.deleteMenteeTaskFile(buildDeleteReq({ taskId }), res, next);
+
+      expect(remove).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
     });
   });
