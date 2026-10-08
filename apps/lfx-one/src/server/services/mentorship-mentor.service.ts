@@ -334,10 +334,10 @@ export class MentorshipMentorService {
   }
 
   /**
-   * One of the caller's mentor programs, across all its terms. The program must be on the caller's
+   * One of the caller's mentor programs, across its open terms. The program must be on the caller's
    * `GET /me/mentor-programs`, so a mentor reads only their own programs; any other program is a 404. That row is
-   * the page header. Every mentee application on the program is read in full, then every task on each term those
-   * applications are on, and tasks on applications that are not listed are dropped (H3). The term task listing is
+   * the page header. Every mentee application on the program's open terms is read in full, then every task on each
+   * term those applications are on, and tasks on applications that are not listed are dropped (H3). The term task listing is
    * gated at the gateway; when it refuses the caller, each mentee's tasks are read from their application instead,
    * a few at a time, and the other applicants are shown without tasks (H8).
    */
@@ -431,13 +431,16 @@ export class MentorshipMentorService {
     return program;
   }
 
-  /** Every mentee application on a program, across all its terms, 50 a page since upstream caps the page there (H1). */
+  /**
+   * Every mentee application on a program's open terms (`type=current`), 50 a page since upstream caps the page there
+   * (H1). A program has at most four open terms, which keeps the read well inside the page cap.
+   */
   private listProgramApplications(req: Request, programPath: string): Promise<MentorshipUpstreamProgramApplicationRow[]> {
     return listAllMentorshipPages<MentorshipUpstreamProgramApplicationRow>(
       this.microserviceProxy,
       req,
       `${programPath}/applications`,
-      {},
+      { type: 'current' },
       MENTORSHIP_PROGRAM_APPLICATIONS_PAGE_SIZE
     );
   }

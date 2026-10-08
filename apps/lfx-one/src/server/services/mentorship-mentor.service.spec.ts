@@ -855,8 +855,15 @@ describe('MentorshipMentorService.getMentorProgram', () => {
     });
     expect(detail.applicants[2].tasks?.map((applicantTask) => applicantTask.status)).toEqual(['pending']);
     expect(JSON.stringify(detail)).not.toContain(MENTOR_ROLE_ID);
-    // Applications are read across every term, with no term filter, and each term's tasks once.
-    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `${PROGRAM_PATH}/applications`, 'GET', { limit: 50, offset: 0 }, undefined);
+    // Applications are read across the open terms, with no term filter, and each term's tasks once.
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      `${PROGRAM_PATH}/applications`,
+      'GET',
+      { type: 'current', limit: 50, offset: 0 },
+      undefined
+    );
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', TERM_TASKS_PATH, 'GET', { limit: 100, offset: 0 }, undefined);
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', SPRING_TERM_TASKS_PATH, 'GET', { limit: 100, offset: 0 }, undefined);
     expect(proxyRequest).toHaveBeenCalledTimes(4);
