@@ -39,6 +39,19 @@ export interface MentorshipProgramStats {
  */
 export type MentorshipProgramStatus = (typeof MENTORSHIP_PROGRAM_STATUSES)[number];
 
+/** A program admin's visibility change on the program-detail header: `hide` a published program, `unhide` a hidden one. */
+export type MentorshipProgramVisibilityAction = 'hide' | 'unhide';
+
+/** One row of the program-detail header's `…` menu, rendered with a description under the label. */
+export interface MentorshipProgramMenuItem {
+  action: MentorshipProgramVisibilityAction;
+  label: string;
+  icon: string;
+  description: string;
+  danger?: boolean;
+  command: () => void;
+}
+
 /** Core program fields as returned by the LFX One BFF for the mentorship admin list. */
 export interface MentorshipProgram {
   id: string;
