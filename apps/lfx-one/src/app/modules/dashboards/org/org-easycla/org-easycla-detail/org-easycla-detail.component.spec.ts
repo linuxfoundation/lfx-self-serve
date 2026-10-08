@@ -1902,7 +1902,7 @@ describe('OrgEasyclaDetailComponent', () => {
     getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ viewerIsClaManager: false })] }));
 
     const fixture = await render();
-    (fixture.componentInstance as unknown as { onDownload(): void }).onDownload();
+    fixture.componentInstance['onDownload']();
 
     expect(getPdfUrl).not.toHaveBeenCalled();
   });

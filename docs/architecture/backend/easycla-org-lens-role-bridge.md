@@ -74,8 +74,8 @@ The roster flag and the CLA Managers tab's own-row mark are computed for the imp
 Work out which of these applies:
 
 - **Not on the CLA Manager list.** An organization admin is routinely not on it, even when ACS grants them the write. Ask a CLA manager on the agreement to add them as a CLA manager.
-- **Added recently.** ACS can take about thirty minutes to reflect a new CLA manager. If they added themselves, the controls can also stay hidden until the page is reloaded. Wait, then reload.
-- **On the list under a different spelling.** The match is exact, including case. A list entry whose LF username differs from their login only in case does not count, and the write is refused for the same reason. Raise it with EasyCLA support so the entry can be corrected.
+- **Added recently.** ACS can take about thirty minutes to reflect a new CLA manager, which holds back the write controls. Every control here, download included, can also stay hidden until the page is reloaded if they added themselves, because the roster flag is resolved when the list loads. Wait, then reload.
+- **On the list under a different spelling.** The match is exact, including case. A list entry whose LF username differs from their login only in case does not count, so the controls stay hidden and the writes are refused for the same reason. Raise it with EasyCLA support so the entry can be corrected.
 - **The agreement has no CLA Manager list at all.** The controls are hidden from everyone on that row. This is a data problem on the EasyCLA record, so raise it with EasyCLA support.
 - **No ACS grant** for that project and organization. Ask whether they hold the CLA manager role for it. A missing grant does not hide the download, which reads the roster — but it does make the download fail once pressed, so a rostered manager reporting a failed download rather than a missing button is usually inside the propagation window above.
 
