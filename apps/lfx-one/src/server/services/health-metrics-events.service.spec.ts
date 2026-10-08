@@ -620,6 +620,9 @@ function revenueRow(overrides: Record<string, unknown> = {}) {
     SPONSORSHIP_REVENUE_GOAL: 0,
     HAS_UNCONVERTED_REGISTRATION_REVENUE: false,
     HAS_UNCONVERTED_REVENUE_GOAL: false,
+    COMBINED_REVENUE_GOAL: 200000,
+    IS_PAST_EVENT: true,
+    IS_REVENUE_GOAL_MET: false,
     FOUNDATION_TOTAL_REVENUE_USD_YTD: 258000,
     FOUNDATION_REGISTRATION_REVENUE_USD_YTD: 180000,
     FOUNDATION_SPONSORSHIP_REVENUE_USD_YTD: 78000,
@@ -652,7 +655,7 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     execute.mockResolvedValue({ rows: [revenueRow()] });
   });
 
-  it('binds only the foundation, sorts events outside every period last, and reads one past the cap', async () => {
+  it('binds only the foundation, sorts older events and those outside every period last, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
@@ -665,7 +668,10 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     );
     expect(sql).toContain('foundation_total_revenue_change_pct_prev_completed_year');
     expect(sql).not.toContain('change_pct_3rd_last_completed_year');
-    expect(sql).toContain('ORDER BY IFF(');
+    expect(sql).toContain('is_past_event,');
+    expect(sql).toContain('is_revenue_goal_met,');
+    expect(sql).toContain('combined_revenue_goal,');
+    expect(sql).toContain('ORDER BY IFF(is_past_event = FALSE OR (');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1}`);
   });
 
@@ -684,8 +690,30 @@ describe('HealthMetricsEventsService.getRevenue', () => {
         hasUnconverted: false,
         registrationGoalWithheld: false,
         sponsorshipGoalWithheld: false,
+        isPastEvent: true,
+        goalMet: false,
         ranges: ['YTD'],
       },
+    ]);
+  });
+
+  it('keeps an upcoming event outside every period, and reads attainment only for a past event with a goal in USD', async () => {
+    execute.mockResolvedValue({
+      rows: [
+        revenueRow({ IS_REVENUE_GOAL_MET: true }),
+        revenueRow({ EVENT_ID: 'no-goal', COMBINED_REVENUE_GOAL: 0, IS_REVENUE_GOAL_MET: null }),
+        revenueRow({ EVENT_ID: 'withheld', HAS_UNCONVERTED_REVENUE_GOAL: true, IS_REVENUE_GOAL_MET: true }),
+        revenueRow({ EVENT_ID: 'upcoming', IS_PAST_EVENT: false, IN_PERIOD_YTD: false, IS_REVENUE_GOAL_MET: true }),
+      ],
+    });
+
+    const { events } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    expect(events.map(({ eventId, isPastEvent, goalMet, ranges }) => ({ eventId, isPastEvent, goalMet, ranges }))).toEqual([
+      { eventId: 'rev-1', isPastEvent: true, goalMet: true, ranges: ['YTD'] },
+      { eventId: 'no-goal', isPastEvent: true, goalMet: null, ranges: ['YTD'] },
+      { eventId: 'withheld', isPastEvent: true, goalMet: null, ranges: ['YTD'] },
+      { eventId: 'upcoming', isPastEvent: false, goalMet: null, ranges: [] },
     ]);
   });
 
@@ -794,6 +822,17 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     expect(warning).toHaveBeenCalledWith(req, 'get_events_revenue', expect.any(String), expect.objectContaining({ foundation_slug: 'acme' }));
   });
 
+  it('warns when an upcoming event falls past the cap', async () => {
+    const rows = Array.from({ length: HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1 }, (_, i) =>
+      revenueRow({ EVENT_ID: `rev-${i}`, ...(i === HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP ? { IS_PAST_EVENT: false, IN_PERIOD_YTD: false } : {}) })
+    );
+    execute.mockResolvedValue({ rows });
+
+    await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    expect(warning).toHaveBeenCalledWith(req, 'get_events_revenue', expect.any(String), expect.objectContaining({ foundation_slug: 'acme' }));
+  });
+
   it('does not warn when only events outside every period fall past the cap', async () => {
     const rows = Array.from({ length: HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1 }, (_, i) =>
       revenueRow({ EVENT_ID: `rev-${i}`, IN_PERIOD_YTD: i < HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP })
@@ -871,6 +910,9 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     expect(drilldownSql).toContain('sort_rank_3rd_last_completed_year <= 5');
     expect(drilldownSql).toContain('speakers_count_change_pct_last_completed_year');
     expect(drilldownSql).not.toContain('change_pct_prev_completed_year');
+    expect(drilldownSql).toContain(
+      'ORDER BY is_all_organizations DESC, is_unaffiliated_organization DESC, account_name ASC NULLS LAST, account_id ASC NULLS LAST'
+    );
     expect(listSql).toContain("WHEN is_ytd THEN 'YTD'");
     expect(listSql).toContain("proposal_status_group IN ('Accepted', 'In review')");
     expect(listSql).toContain(`<= ${HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS}`);

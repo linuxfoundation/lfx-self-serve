@@ -4,6 +4,7 @@
 import type {
   HEALTH_METRICS_EVENTS_FORECAST_STATUSES,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
+  HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES,
   HEALTH_METRICS_EVENTS_SECTIONS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
 } from '../constants/health-metrics-events.constants';
@@ -307,6 +308,10 @@ export interface HealthMetricsEventsRegistrationsGrowthView {
   pandemicNote: string | null;
 }
 
+/** A past event's attainment against its combined revenue goal. */
+export type HealthMetricsEventsRevenueGoalStatus =
+  (typeof HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES)[keyof typeof HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES];
+
 /** Foundation scope for event revenue; every period ships in one read, so the range stays client-side. */
 export interface HealthMetricsEventsRevenueQuery {
   foundationSlug: string;
@@ -350,14 +355,18 @@ export interface HealthMetricsEventsRevenueEvent {
   /** A set goal in a currency with no USD rate, so it cannot sit against a USD figure. */
   registrationGoalWithheld: boolean;
   sponsorshipGoalWithheld: boolean;
-  /** The periods the event falls in. */
+  /** The model's flag; an upcoming event falls in no period, and the current-year table lists it apart. */
+  isPastEvent: boolean;
+  /** Whether a past event met its combined goal; `null` when upcoming, with no goal, or with the goal withheld. */
+  goalMet: boolean | null;
+  /** The periods a past event falls in; empty for an upcoming one. */
   ranges: HealthMetricsL2Range[];
 }
 
 /** `GET /api/analytics/events-revenue` — each period's headline and every event in the four periods. */
 export interface HealthMetricsEventsRevenue {
   periods: HealthMetricsEventsRevenuePeriod[];
-  /** Most recent first. */
+  /** Past events in the four periods, then every upcoming event; most recent first. */
   events: HealthMetricsEventsRevenueEvent[];
   /** `false` when only the foundation totals were read, so there is no per-event list to show. */
   eventsMeasured: boolean;
@@ -372,6 +381,8 @@ export interface HealthMetricsEventsRevenueRowView {
   registrationGoalLabel: string;
   sponsorshipLabel: string;
   sponsorshipGoalLabel: string;
+  /** Attainment chip for a past event with a goal; `null` otherwise, and always for an upcoming one. */
+  goalStatus: HealthMetricsEventsRevenueGoalStatus | null;
 }
 
 /** The section for one period, with every label ready to render. */
@@ -383,6 +394,8 @@ export interface HealthMetricsEventsRevenueView {
   headline: HealthMetricsEventsAtAGlanceStatView;
   side: HealthMetricsEventsAtAGlanceStatView[];
   rows: HealthMetricsEventsRevenueRowView[];
+  /** Events still to come, listed apart on the current-year view only, since they fall in no period yet. */
+  upcomingRows: HealthMetricsEventsRevenueRowView[];
   /** `false` when the foundation has totals but no per-event figures, so an empty list is not read as no events. */
   eventsMeasured: boolean;
   /** Whether the headline or any listed event is short for unconverted revenue, so the footer note shows. */

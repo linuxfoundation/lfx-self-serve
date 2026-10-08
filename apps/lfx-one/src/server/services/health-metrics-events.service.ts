@@ -182,6 +182,9 @@ interface RevenueRow {
   SPONSORSHIP_REVENUE_GOAL: number | null;
   HAS_UNCONVERTED_REGISTRATION_REVENUE: boolean | null;
   HAS_UNCONVERTED_REVENUE_GOAL: boolean | null;
+  COMBINED_REVENUE_GOAL: number | null;
+  IS_PAST_EVENT: boolean | null;
+  IS_REVENUE_GOAL_MET: boolean | null;
   [periodColumn: string]: unknown;
 }
 
@@ -446,8 +449,8 @@ export class HealthMetricsEventsService {
   }
 
   /**
-   * Each period's revenue headline and every event in the four periods. Events outside every period sort
-   * last so the headline still has a row to come off, and are dropped before the table sees them.
+   * Each period's revenue headline, every past event in the four periods and every upcoming event. Older
+   * events sort last so the headline still has a row to come off, and are dropped before the table sees them.
    */
   public async getRevenue(req: Request, query: HealthMetricsEventsRevenueQuery): Promise<HealthMetricsEventsRevenue> {
     // Metrics, suffixes and predicates come from constants, never from the request, so interpolating them is safe.
@@ -464,7 +467,7 @@ export class HealthMetricsEventsService {
 
       return [...columns, ...REVENUE_METRICS.map((metric) => `foundation_${metric}_revenue_change_pct_${suffix}`)];
     }).join(',\n        ');
-    const inAnyPeriod = HEALTH_METRICS_L2_RANGES.map((range) => `(${REVENUE_PERIOD_PREDICATES[range]})`).join(' OR ');
+    const listed = ['is_past_event = FALSE', ...HEALTH_METRICS_L2_RANGES.map((range) => `(${REVENUE_PERIOD_PREDICATES[range]})`)].join(' OR ');
 
     const sql = `
       SELECT
@@ -477,10 +480,13 @@ export class HealthMetricsEventsService {
         sponsorship_revenue_goal,
         has_unconverted_registration_revenue,
         has_unconverted_revenue_goal,
+        combined_revenue_goal,
+        is_past_event,
+        is_revenue_goal_met,
         ${periodColumns}
       FROM ${REVENUE_VIEW}
       WHERE foundation_slug = ?
-      ORDER BY IFF(${inAnyPeriod}, 0, 1), event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, event_id ASC
+      ORDER BY IFF(${listed}, 0, 1), event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, event_id ASC
       LIMIT ${HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1}
     `;
 
@@ -496,9 +502,9 @@ export class HealthMetricsEventsService {
       return { periods: await this.getOverviewRevenuePeriods(req, query), events: [], eventsMeasured: false };
     }
 
-    // In-period events sort first, so the list lost one only when the first row past the cap is in a period.
+    // Listed events sort first, so the list lost one only when the first row past the cap is listed.
     const dropped = result.rows[HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP];
-    if (dropped && HEALTH_METRICS_L2_RANGES.some((range) => dropped[periodColumn('IN_PERIOD', range)] === true)) {
+    if (dropped && (dropped.IS_PAST_EVENT === false || HEALTH_METRICS_L2_RANGES.some((range) => dropped[periodColumn('IN_PERIOD', range)] === true))) {
       logger.warning(req, 'get_events_revenue', 'Event revenue rows hit the read cap', {
         foundation_slug: query.foundationSlug,
         row_cap: HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
@@ -508,7 +514,7 @@ export class HealthMetricsEventsService {
     const events = result.rows
       .slice(0, HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP)
       .map(mapRevenueEvent)
-      .filter((event): event is HealthMetricsEventsRevenueEvent => event !== null && event.ranges.length > 0);
+      .filter((event): event is HealthMetricsEventsRevenueEvent => event !== null && (!event.isPastEvent || event.ranges.length > 0));
 
     return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapRevenuePeriod(row, range)), events, eventsMeasured: true };
   }
@@ -822,6 +828,8 @@ export class HealthMetricsEventsService {
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
         AND (is_all_organizations = TRUE OR is_unaffiliated_organization = TRUE OR ${ranked})
+      -- One read serves every period, so each orders by its own sort_rank, the model's submitted DESC, account_name order.
+      ORDER BY is_all_organizations DESC, is_unaffiliated_organization DESC, account_name ASC NULLS LAST, account_id ASC NULLS LAST
     `;
 
     const result = await executeSnowflakeViewRead<SpeakersDrilldownRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
@@ -1062,6 +1070,10 @@ function mapRevenueEvent(row: RevenueRow): HealthMetricsEventsRevenueEvent | nul
   const hasUnconvertedGoal = row.HAS_UNCONVERTED_REVENUE_GOAL === true;
   const registrationGoal = toRevenueGoal(row.REGISTRATION_REVENUE_GOAL);
   const sponsorshipGoal = toRevenueGoal(row.SPONSORSHIP_REVENUE_GOAL);
+  // The model leaves the flag unset for upcoming events and a zero goal; a withheld goal has no USD to meet.
+  const isPastEvent = row.IS_PAST_EVENT !== false;
+  const hasCombinedGoal = (toNullableNumber(row.COMBINED_REVENUE_GOAL) ?? 0) > 0;
+  const goalMet = isPastEvent && hasCombinedGoal && !hasUnconvertedGoal && typeof row.IS_REVENUE_GOAL_MET === 'boolean' ? row.IS_REVENUE_GOAL_MET : null;
 
   return {
     eventId: row.EVENT_ID,
@@ -1074,6 +1086,8 @@ function mapRevenueEvent(row: RevenueRow): HealthMetricsEventsRevenueEvent | nul
     hasUnconverted: row.HAS_UNCONVERTED_REGISTRATION_REVENUE === true,
     registrationGoalWithheld: hasUnconvertedGoal && registrationGoal !== null,
     sponsorshipGoalWithheld: hasUnconvertedGoal && sponsorshipGoal !== null,
+    isPastEvent,
+    goalMet,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[periodColumn('IN_PERIOD', range)] === true),
   };
 }

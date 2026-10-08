@@ -28,6 +28,8 @@ function revenueEvent(overrides: Partial<HealthMetricsEventsRevenueEvent> = {}):
     hasUnconverted: false,
     registrationGoalWithheld: false,
     sponsorshipGoalWithheld: false,
+    isPastEvent: true,
+    goalMet: null,
     ranges: ['YTD'],
     ...overrides,
   };
@@ -175,6 +177,22 @@ describe('EventsRevenueComponent', () => {
     expect(text('events-revenue-headline-unconverted')).toBe('*');
     expect(text('events-revenue-side-registration-unconverted')).toBe('*');
     expect(query('events-revenue-side-sponsorship-unconverted')).toBeNull();
+  });
+
+  it('chips a past event against its goal and lists upcoming events apart, unchipped, on the current-year view', async () => {
+    const upcoming = revenueEvent({ eventId: 'rev-3', eventName: 'Winter Summit', eventStartDate: '2026-12-01', isPastEvent: false, ranges: [] });
+    await render(revenue({ events: [revenueEvent({ goalMet: true }), upcoming] }));
+
+    expect(text('events-revenue-goal-status-rev-1')).toBe('Hit goal');
+    expect(query('events-revenue-past-heading')).not.toBeNull();
+    expect(query('events-revenue-upcoming-table')?.querySelector('[data-testid="events-revenue-row-rev-3"]')).not.toBeNull();
+    expect(query('events-revenue-table')?.querySelector('[data-testid="events-revenue-row-rev-3"]')).toBeNull();
+    expect(query('events-revenue-goal-status-rev-3')).toBeNull();
+
+    await pickRange('COMPLETED_YEAR');
+
+    expect(query('events-revenue-upcoming-table')).toBeNull();
+    expect(query('events-revenue-past-heading')).toBeNull();
   });
 
   it('says a goal is withheld for its currency without marking the revenue', async () => {
