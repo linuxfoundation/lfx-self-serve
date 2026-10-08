@@ -47,7 +47,11 @@ As with the approval list, the button needs both ACS `ecla_invalidate:update` an
 
 ## Who can change Auto ECLA
 
-The Overview's Auto ECLA toggle shows on a signed CCLA when ACS grants `auto-ecla-update` for the pair **and** the viewer is on that CCLA's roster (`viewerIsClaManager`). The BFF route refuses a caller off the roster with a 403 before calling EasyCLA (`Only a CLA manager named on this CLA can change its Auto ECLA setting`); EasyCLA itself refuses one too, and also 403s a sanctioned organization with its own sentence.
+The Overview's Auto ECLA toggle is the one control here that is **read-visible and write-gated**: it shows on any signed CCLA the viewer can open, reflecting the stored value, and the two write checks decide only whether the switch moves. Changing it needs ACS `auto-ecla-update` for the pair **and** the viewer on that CCLA's roster (`viewerIsClaManager`); a viewer failing either gets the switch disabled with a sentence naming CLA Manager as the role that can change it. Whether Auto ECLA is on is a fact about the agreement, so withholding it told an organization admin nothing they were not entitled to know. The approval-list mutations and Invalidate keep the hide-on-deny rule, because their presence says nothing about the agreement on its own.
+
+Enablement fails closed, including while the ACS answer is still in flight — but the explanation waits for a resolved answer, so a CLA manager is not briefly told they cannot change it. A row whose project|organization pair cannot be resolved is never asked about, which counts as denied rather than pending.
+
+The BFF route refuses a caller off the roster with a 403 before calling EasyCLA (`Only a CLA manager named on this CLA can change its Auto ECLA setting`); EasyCLA itself refuses one too, and also 403s a sanctioned organization with its own sentence. The disabled switch is not what stops the write — both refusals stand whatever the browser sends.
 
 On a row with no CLA Manager list at all, the BFF cannot check the roster, so the Auto ECLA and approval-list writes are passed through to EasyCLA, which re-checks them. Invalidate is the exception and is refused, because EasyCLA does not check the roster on it.
 
@@ -63,15 +67,15 @@ Writes stay blocked while impersonating. The permission check itself is a read, 
 
 The roster flag and the CLA Managers tab's own-row mark are computed for the impersonated user, not the support engineer, so impersonating shows whether that user is on the CLA Manager list.
 
-## What to tell a viewer who sees no approval-list, Invalidate, or Auto ECLA controls
+## What to tell a viewer who sees no approval-list or Invalidate controls, or an Auto ECLA toggle they cannot move
 
-Work out which of these applies:
+The same answers cover both shapes — those controls are absent, and the Auto ECLA switch is present but disabled. Work out which of these applies:
 
 - **Not on the CLA Manager list.** An organization admin is routinely not on it, even when ACS grants them the write. Ask a CLA manager on the agreement to add them as a CLA manager.
-- **Added recently.** ACS can take about thirty minutes to reflect a new CLA manager. If they added themselves, the controls can also stay hidden until the page is reloaded. Wait, then reload.
+- **Added recently.** ACS can take about thirty minutes to reflect a new CLA manager. If they added themselves, the controls can also stay withheld until the page is reloaded. Wait, then reload.
 - **On the list under a different spelling.** The match is exact, including case. A list entry whose LF username differs from their login only in case does not count, and the write is refused for the same reason. Raise it with EasyCLA support so the entry can be corrected.
-- **The agreement has no CLA Manager list at all.** The controls are hidden from everyone on that row. This is a data problem on the EasyCLA record, so raise it with EasyCLA support.
-- **No ACS grant** for that project and organization. Ask whether they hold the CLA manager role for it.
+- **The agreement has no CLA Manager list at all.** The controls are withheld from everyone on that row. This is a data problem on the EasyCLA record, so raise it with EasyCLA support.
+- **No ACS grant** for that project and organization. Ask whether they hold the CLA manager role for it. The Auto ECLA grant belongs to the CLA manager and CLA manager designee roles only, so an organization admin who is neither is denied on ACS as well as on the roster.
 
 ## What to tell a viewer who can see EasyCLA but cannot Review and Sign
 
