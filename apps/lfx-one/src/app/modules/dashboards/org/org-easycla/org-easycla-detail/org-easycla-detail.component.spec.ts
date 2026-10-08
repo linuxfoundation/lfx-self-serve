@@ -1898,6 +1898,15 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-download')).toBeNull();
   });
 
+  it('refuses the download for an off-roster viewer reached another way', async () => {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ viewerIsClaManager: false })] }));
+
+    const fixture = await render();
+    (fixture.componentInstance as unknown as { onDownload(): void }).onDownload();
+
+    expect(getPdfUrl).not.toHaveBeenCalled();
+  });
+
   it('opens Overview by default and fills the Managers tab, leaving the rest empty', async () => {
     const fixture = await render();
 

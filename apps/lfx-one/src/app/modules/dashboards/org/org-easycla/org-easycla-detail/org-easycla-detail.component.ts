@@ -877,7 +877,7 @@ export class OrgEasyclaDetailComponent {
   protected onDownload(): void {
     const group = this.claGroup();
     const orgUid = this.accountContext.selectedAccount()?.uid;
-    if (!group || !orgUid || this.downloading()) return;
+    if (!group || !orgUid || !this.canDownload() || this.downloading()) return;
 
     this.downloading.set(true);
     this.claService
