@@ -94,12 +94,17 @@ export class MentorshipTaskController {
       const rangeHeader = req.headers.range;
       const range = typeof rangeHeader === 'string' && MENTORSHIP_TASK_FILE_RANGE_PATTERN.test(rangeHeader) ? rangeHeader : undefined;
       const upstream = await this.taskService.openTaskFile(req, taskId, range);
+      // Read the first chunk before anything is set or piped: pipeline() destroys `res` when its source fails, so a body that
+      // fails before its first byte has to reach the error handler here, while the response is still whole.
+      const chunks = Readable.fromWeb(upstream.body as NodeReadableStream<Uint8Array>)[Symbol.asyncIterator]();
+      const first = await chunks.next();
 
       res.status(upstream.status);
       // `fetch` decodes a compressed body but keeps the compressed length and ranges, and copying the length would make Node
       // cut the file short (see gw-proxy.controller.ts). The service asks for identity, so these are only dropped if upstream
       // compresses anyway.
-      const decodedBody = Boolean(upstream.headers.get('content-encoding'));
+      const encoding = (upstream.headers.get('content-encoding') ?? '').trim().toLowerCase();
+      const decodedBody = encoding !== '' && encoding !== 'identity';
       for (const name of MENTORSHIP_TASK_FILE_DOWNLOAD_HEADERS) {
         const value = upstream.headers.get(name);
         if (value && !(decodedBody && MENTORSHIP_TASK_FILE_ENCODED_BYTE_HEADERS.includes(name))) res.setHeader(name, value);
@@ -112,7 +117,7 @@ export class MentorshipTaskController {
       res.setHeader('X-Content-Type-Options', 'nosniff');
 
       // pipeline() propagates stream errors to the catch block instead of hanging.
-      await pipeline(Readable.fromWeb(upstream.body as NodeReadableStream<Uint8Array>), res);
+      await pipeline(Readable.from(this.resumeChunks(first, chunks), { objectMode: false }), res);
       logger.success(req, operation, startTime, { taskId, status: upstream.status });
     } catch (error) {
       // Headers already committed, so the error handler cannot answer; the stream can only be ended.
@@ -121,9 +126,25 @@ export class MentorshipTaskController {
         if (!res.writableEnded) res.end();
         return;
       }
-      // Nothing was sent yet, so drop the file's headers; the error handler's JSON must not arrive as the attachment.
+      // Nothing was sent yet, so drop any file headers already set; the error handler's JSON must not arrive as the attachment.
       for (const name of [...MENTORSHIP_TASK_FILE_DOWNLOAD_HEADERS, 'x-content-type-options']) res.removeHeader(name);
       next(error);
+    }
+  }
+
+  /**
+   * The upstream body again from the start: the chunk already read, then the rest as it arrives. Returning the iterator on the
+   * way out destroys the upstream stream too, so a browser that disconnects mid-download does not leave it open.
+   */
+  private async *resumeChunks(first: IteratorResult<Uint8Array>, rest: AsyncIterator<Uint8Array>): AsyncGenerator<Uint8Array> {
+    try {
+      if (first.done) return;
+      yield first.value;
+      for (let next = await rest.next(); !next.done; next = await rest.next()) {
+        yield next.value;
+      }
+    } finally {
+      await rest.return?.();
     }
   }
 }

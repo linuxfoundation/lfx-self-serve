@@ -386,7 +386,7 @@ describe('MentorshipTaskController', () => {
       expect(logger.success).not.toHaveBeenCalled();
     });
 
-    it('drops the file headers before handing a failure to next when the stream fails before its first byte', async () => {
+    it('hands a failure before the first byte to next with the response still whole and no file headers set', async () => {
       const streamError = new Error('upstream connection reset');
       const failingBody = new ReadableStream<Uint8Array>({
         pull(controller) {
@@ -396,13 +396,45 @@ describe('MentorshipTaskController', () => {
       vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
         new Response(failingBody, { status: 200, headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="a.pdf"' } })
       );
-      const { res, headers } = streamRes();
+      const { out, res, headers } = streamRes();
 
       await controller.downloadTaskFile(fileReq(), res, next);
 
       expect(next).toHaveBeenCalledWith(streamError);
       expect(headers.size).toBe(0);
+      expect(out.status).not.toHaveBeenCalled();
+      // pipeline() would have destroyed the response, leaving the error handler nothing to answer on.
+      expect(out.destroyed).toBe(false);
       expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('keeps the length and ranges when upstream labels the body identity, which is not compressed', async () => {
+      vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+        new Response('file-bytes', {
+          status: 200,
+          headers: { 'Content-Type': 'application/pdf', 'Content-Length': '10', 'Accept-Ranges': 'bytes', 'Content-Encoding': 'Identity' },
+        })
+      );
+      const { res, headers } = streamRes();
+
+      await controller.downloadTaskFile(fileReq(), res, next);
+
+      expect(headers.get('content-length')).toBe('10');
+      expect(headers.get('accept-ranges')).toBe('bytes');
+    });
+
+    it('ends the response with the file headers for an empty body', async () => {
+      vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+        new Response('', { status: 200, headers: { 'Content-Type': 'text/plain', 'Content-Disposition': 'attachment; filename="empty.txt"' } })
+      );
+      const { out, res, headers, body } = streamRes();
+
+      await controller.downloadTaskFile(fileReq(), res, next);
+
+      expect(body()).toBe('');
+      expect(out.writableFinished).toBe(true);
+      expect(headers.get('content-disposition')).toBe('attachment; filename="empty.txt"');
+      expect(next).not.toHaveBeenCalled();
     });
 
     it('passes an AuthenticationError to next without opening the file when no user is signed in', async () => {
