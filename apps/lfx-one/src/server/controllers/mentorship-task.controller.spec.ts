@@ -5,7 +5,10 @@
 // which needs the JIT compiler under vitest.
 import '@angular/compiler';
 
-import type { NextFunction, Request, Response } from 'express';
+import compression from 'compression';
+import express, { type NextFunction, type Request, type RequestHandler, type Response } from 'express';
+import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { Writable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -218,7 +221,7 @@ describe('MentorshipTaskController', () => {
         'content-type': 'application/pdf',
         'content-length': '10',
         'content-disposition': 'attachment; filename="report.pdf"',
-        'cache-control': 'private, max-age=0',
+        'cache-control': 'private, max-age=0, no-transform',
         etag: '"abc"',
         'last-modified': 'Tue, 06 Oct 2026 10:00:00 GMT',
         'accept-ranges': 'bytes',
@@ -273,7 +276,7 @@ describe('MentorshipTaskController', () => {
       await controller.downloadTaskFile(fileReq(), res, next);
 
       expect(headers.get('content-disposition')).toBe(`attachment; filename="submission"; filename*=UTF-8''submission`);
-      expect(headers.get('cache-control')).toBe('private, no-store');
+      expect(headers.get('cache-control')).toBe('private, no-store, no-transform');
       expect(headers.get('x-content-type-options')).toBe('nosniff');
     });
 
@@ -406,6 +409,46 @@ describe('MentorshipTaskController', () => {
       // pipeline() would have destroyed the response, leaving the error handler nothing to answer on.
       expect(out.destroyed).toBe(false);
       expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('keeps an upstream no-transform once rather than adding a second', async () => {
+      vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+        new Response('x', { status: 200, headers: { 'Cache-Control': 'private, no-transform, no-store' } })
+      );
+      const { res, headers } = streamRes();
+
+      await controller.downloadTaskFile(fileReq(), res, next);
+
+      expect(headers.get('cache-control')).toBe('private, no-transform, no-store');
+    });
+
+    it('is not compressed by the app-wide compression middleware, so a ranged text download keeps its byte headers', async () => {
+      const text = 'submission text '.repeat(512);
+      vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+        new Response(text.slice(0, 4096), {
+          status: 206,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': '4096', 'Content-Range': `bytes 0-4095/${text.length}`, ETag: '"t1"' },
+        })
+      );
+      const app = express();
+      // @types/compression brings its own @types/express, so its handler type does not match this one (server.ts uses require() for the same reason).
+      app.use(compression({ threshold: 0 }) as unknown as RequestHandler);
+      app.get('/tasks/:taskId/file', (req, res, nextFn) => controller.downloadTaskFile(req, res, nextFn));
+      const server = await new Promise<Server>((resolve) => {
+        const listening = app.listen(0, '127.0.0.1', () => resolve(listening));
+      });
+      try {
+        const { port } = server.address() as AddressInfo;
+        const response = await fetch(`http://127.0.0.1:${port}/tasks/${TASK_ID}/file`, { headers: { 'Accept-Encoding': 'gzip', Range: 'bytes=0-4095' } });
+
+        expect(response.status).toBe(206);
+        expect(response.headers.get('content-encoding')).toBeNull();
+        expect(response.headers.get('content-length')).toBe('4096');
+        expect(response.headers.get('content-range')).toBe(`bytes 0-4095/${text.length}`);
+        expect(await response.text()).toBe(text.slice(0, 4096));
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
     });
 
     it('keeps the length and ranges when upstream labels the body identity, which is not compressed', async () => {

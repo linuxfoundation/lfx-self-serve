@@ -113,7 +113,10 @@ export class MentorshipTaskController {
       if (!/^attachment\b/i.test(String(res.getHeader('content-disposition') ?? ''))) {
         res.setHeader('Content-Disposition', contentDispositionAttachment('submission'));
       }
-      if (!res.getHeader('cache-control')) res.setHeader('Cache-Control', 'private, no-store');
+      // `no-transform` keeps the app-wide compression middleware off the file, so the length, range and ETag passed on above
+      // describe the bytes that are sent.
+      const cacheControl = String(res.getHeader('cache-control') ?? '') || 'private, no-store';
+      res.setHeader('Cache-Control', /(?:^|,)\s*no-transform\s*(?:,|$)/i.test(cacheControl) ? cacheControl : `${cacheControl}, no-transform`);
       res.setHeader('X-Content-Type-Options', 'nosniff');
 
       // pipeline() propagates stream errors to the catch block instead of hanging.
