@@ -1567,6 +1567,7 @@ describe('ProjectService — getFoundationProjectsDetailGrouped', () => {
       expect.objectContaining({ foundationSlug: 'neonephos', foundationName: 'NeoNephos', projects: [expect.objectContaining({ projectSlug: 'nephio' })] }),
     ]);
     expect(result.totalCount).toBe(2);
+    expect(result.complete).toBe(true);
   });
 
   it('omits a sub-foundation whose detail fetch fails instead of failing the whole request', async () => {
@@ -1581,6 +1582,8 @@ describe('ProjectService — getFoundationProjectsDetailGrouped', () => {
 
     expect(result.groups).toEqual([expect.objectContaining({ foundationSlug: 'lfeurope' })]);
     expect(result.totalCount).toBe(1);
+    // A dropped branch marks the list partial so callers don't treat a missing project as unknown.
+    expect(result.complete).toBe(false);
   });
 
   it('excludes a discovered sub-foundation from its parent group instead of double-rendering it as a leaf row', async () => {
@@ -1725,8 +1728,10 @@ describe('ProjectService — discoverSubFoundations', () => {
     const n2 = foundation('n2-uid', 'n2-slug', 'N2');
     mockChildrenByParent({ 'root-uid': [n1], 'n1-uid': [n2] });
 
-    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+    const budget = { remaining: 40, incomplete: false };
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root', 0, budget);
 
+    expect(budget.incomplete).toBe(false);
     expect(result).toEqual([
       { uid: 'n1-uid', slug: 'n1-slug', name: 'N1', visible: true, groupSlug: 'n1-slug', groupName: 'N1' },
       { uid: 'n2-uid', slug: 'n2-slug', name: 'N2', visible: true, groupSlug: 'n2-slug', groupName: 'N2' },
@@ -1740,8 +1745,10 @@ describe('ProjectService — discoverSubFoundations', () => {
     const n4 = foundation('n4-uid', 'n4-slug', 'N4');
     mockChildrenByParent({ 'root-uid': [n1], 'n1-uid': [n2], 'n2-uid': [n3], 'n3-uid': [n4] });
 
-    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+    const budget = { remaining: 40, incomplete: false };
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root', 0, budget);
 
+    expect(budget.incomplete).toBe(true);
     // n4 is never discovered: reaching it would require fetching n3's children at depth 3,
     // which FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH (3) blocks.
     expect(result.map((r: { slug: string }) => r.slug)).toEqual(['n1-slug', 'n2-slug', 'n3-slug']);
@@ -1752,8 +1759,10 @@ describe('ProjectService — discoverSubFoundations', () => {
     const children = Array.from({ length: 41 }, (_, i) => foundation(`c${i + 1}-uid`, `c${i + 1}-slug`, `C${i + 1}`));
     mockChildrenByParent({ 'root-uid': children });
 
-    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+    const budget = { remaining: 40, incomplete: false };
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root', 0, budget);
 
+    expect(budget.incomplete).toBe(true);
     // FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES (40) caps the total regardless of the 41st sibling existing.
     expect(result).toHaveLength(40);
     expect(result[39].slug).toBe('c40-slug');
@@ -1811,9 +1820,11 @@ describe('ProjectService — discoverSubFoundations', () => {
       return Promise.resolve(pageOf([]));
     });
 
-    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+    const budget = { remaining: 40, incomplete: false };
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root', 0, budget);
 
     expect(result.map((r: { slug: string }) => r.slug)).toEqual(['n1-slug', 'n2-slug']);
+    expect(budget.incomplete).toBe(true);
   });
 });
 

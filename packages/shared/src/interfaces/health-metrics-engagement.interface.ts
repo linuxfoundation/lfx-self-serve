@@ -29,6 +29,8 @@ export interface HealthMetricsTab {
   label: string;
   /** Router path segment relative to `foundation/health-metrics`; `''` is the Overview. */
   route: string;
+  /** Whether the tab's sections follow the header's project selector. */
+  projectScoped: boolean;
 }
 
 /** Engagement's sub-nav badge, keyed to its own sections. */
@@ -69,6 +71,7 @@ export interface HealthMetricsEngagementGroupPeriod {
 export interface HealthMetricsEngagementGroupRow {
   committeeId: string;
   committeeName: string;
+  projectId: string | null;
   projectSlug: string | null;
   projectName: string | null;
   groupTypeLabel: string | null;
@@ -86,18 +89,27 @@ export interface HealthMetricsEngagementGroupRowView {
   lastMetLabel: string;
 }
 
-/** Sub-nav badge inputs for `#committees`, aggregated over the whole filtered set, not the page. */
+/** Sub-nav badge inputs for `#committees`, aggregated over the whole project scope, not the page or
+ * the selected type chip. */
 export interface HealthMetricsEngagementGroupCounts {
   groups: number;
   dormantGroups: number;
 }
 
+/** One type chip's own counts, independent of whichever chip is selected. */
+export interface HealthMetricsEngagementGroupTypeCount extends HealthMetricsEngagementGroupCounts {
+  groupType: HealthMetricsEngagementGroupTypeFilter;
+}
+
 /** One page of Group attendance, already sorted dormant-first by the view's `SORT_RANK_<period>`. */
 export interface HealthMetricsEngagementGroupAttendance {
   rows: HealthMetricsEngagementGroupRow[];
+  /** Rows matching the selected type chip — the paginator's total. */
   totalRecords: number;
-  /** `null` when the unfiltered foundation scope has no rows at all — distinct from a real zero. */
+  /** `null` when the all-projects scope has no rows at all — distinct from a real zero. */
   counts: HealthMetricsEngagementGroupCounts | null;
+  /** One entry per type chip, `all` included; empty whenever `counts` is `null`. */
+  typeCounts: HealthMetricsEngagementGroupTypeCount[];
 }
 
 /** Wire query for `GET /api/analytics/engagement-group-attendance`. */
@@ -161,6 +173,8 @@ export interface HealthMetricsEngagementMeetingParticipation {
 /** Wire query for `GET /api/analytics/engagement-meeting-participation`. */
 export interface HealthMetricsEngagementParticipationQuery {
   foundationSlug: string;
+  /** `null` reads the view's all-projects roll-up rows. */
+  projectSlug: string | null;
   range: HealthMetricsRange;
 }
 
@@ -235,6 +249,8 @@ export interface HealthMetricsEngagementOrgParticipation {
  * period all resolve client-side, so none of them reaches the wire. */
 export interface HealthMetricsEngagementOrgQuery {
   foundationSlug: string;
+  /** `null` reads the view's all-projects roll-up rows. */
+  projectSlug: string | null;
 }
 
 /** One non-member organization's numbers for a single period. Every period ships on every row, so
@@ -256,6 +272,9 @@ export interface HealthMetricsEngagementNonMemberRow {
   accountName: string;
   /** The view's own `MEMBERSHIP_STATUS`, rendered as-is — it reads `Non-member` on real rows. */
   membershipStatus: string;
+  /** All-time ISO dates, not per period; `null` renders as an em dash. */
+  firstSeenDate: string | null;
+  lastAttendedDate: string | null;
   periods: HealthMetricsEngagementNonMemberPeriod[];
 }
 
@@ -263,6 +282,9 @@ export interface HealthMetricsEngagementNonMemberRow {
 export interface HealthMetricsEngagementNonMemberRowView {
   row: HealthMetricsEngagementNonMemberRow;
   period: HealthMetricsEngagementNonMemberPeriod | null;
+  /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
+  firstSeenLabel: string;
+  lastAttendedLabel: string;
 }
 
 /** Sub-nav badge input for `#nonmem`. Period-agnostic, denormalized onto every row. */
@@ -298,6 +320,8 @@ export interface HealthMetricsEngagementRepPeriod {
   neverAttended: boolean;
   /** The view's `IS_LAPSED_<period>`: invited in it, attended none of it, and last seen before it. */
   lapsed: boolean;
+  /** The view's `SORT_RANK_<period>`, best-first: never attended, then lapsed, then the rest. */
+  sortRank: number | null;
 }
 
 /**
@@ -309,11 +333,19 @@ export interface HealthMetricsEngagementRepRow {
   /** The view's `_KEY`: a surrogate over (foundation, project, person, group), so unique per row. */
   key: string;
   personName: string;
-  /** Sub-line under the name; the row's organization, not a second identity. */
+  /** True when the view could not resolve the person, so the name is not a trustworthy identity. */
+  identityUnresolved: boolean;
+  personRole: string | null;
+  jobTitle: string | null;
+  /** The row's organization, rendered in its own column; not a second identity. */
   accountName: string;
+  membershipTier: string | null;
   committeeName: string;
   /** All-time, not per period: ISO date this person last attended this group under this project. */
   lastAttendedDate: string | null;
+  daysSinceLastAttended: number | null;
+  /** The view's all-time `IS_LAPSED_180D`, distinct from the per-period `lapsed` flag. */
+  lapsed180d: boolean;
   periods: HealthMetricsEngagementRepPeriod[];
 }
 
@@ -325,7 +357,18 @@ export interface HealthMetricsEngagementRepRowView {
   attendedLabel: string;
   /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
   lastAttendedLabel: string;
+  /** `N days ago`, or `null` when the view has no day count. */
+  daysAgoLabel: string | null;
+  /** Name, or the unresolved-identity placeholder. */
+  displayName: string;
+  /** `role · title`, or `null` when neither is known. */
+  roleLabel: string | null;
+  /** `org · tier`, or just the org when the tier is unknown. */
+  orgLabel: string;
 }
+
+/** The all-time labels of a representatives row, built once per response rather than per period. */
+export type HealthMetricsEngagementRepRowLabels = Omit<HealthMetricsEngagementRepRowView, 'row' | 'period' | 'attendedLabel'>;
 
 /** Scope counts for one period. Unlike the org and non-member captions, this view's scope counts
  * are period-suffixed, so the caption and the sub-nav badge follow the pill. */
@@ -346,6 +389,8 @@ export interface HealthMetricsEngagementRepresentatives {
  * period all resolve client-side, so none of them reaches the wire. */
 export interface HealthMetricsEngagementRepQuery {
   foundationSlug: string;
+  /** `null` reads the view's all-projects rows, whose captions are the deduped all-projects counts. */
+  projectSlug: string | null;
 }
 
 /** Query params the Engagement sections read on arrival and write back; `null` clears one the URL carries. */

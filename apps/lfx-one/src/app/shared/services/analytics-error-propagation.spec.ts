@@ -51,7 +51,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getEngagementOrgParticipation',
       url: '/api/analytics/engagement-org-participation',
       // An empty table renders "no organizations", which would state a failed read as measured fact.
-      call: () => service.getEngagementOrgParticipation({ foundationSlug: 'aaif' }),
+      call: () => service.getEngagementOrgParticipation({ foundationSlug: 'aaif', projectSlug: null }),
     },
     {
       name: 'getEngagementNonMemberParticipation',
@@ -65,7 +65,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       url: '/api/analytics/engagement-representatives',
       // Its empty table renders "no representatives match this filter", so a swallowed failure would
       // read as a foundation where nobody is in that group.
-      call: () => service.getEngagementRepresentatives({ foundationSlug: 'aaif' }),
+      call: () => service.getEngagementRepresentatives({ foundationSlug: 'aaif', projectSlug: null }),
     },
     {
       name: 'getEventsRegistrationForecast',
@@ -228,6 +228,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a foundation with no courses.
       call: () => service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 }),
     },
+    {
+      name: 'loadFoundationProjectsDetailGrouped',
+      url: '/api/analytics/foundation-projects-detail-grouped',
+      // A swallowed failure would read as a foundation with no projects to select.
+      call: () => service.loadFoundationProjectsDetailGrouped('aaif'),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {
@@ -247,6 +253,19 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       expect(emitted).toBeUndefined();
     });
   }
+
+  it('loadFoundationProjectsDetailGrouped drops a failed read from the cache so the next call refetches', () => {
+    service.loadFoundationProjectsDetailGrouped('aaif').subscribe({ error: () => undefined });
+    http
+      .expectOne('/api/analytics/foundation-projects-detail-grouped?foundationSlug=aaif')
+      .flush('upstream failed', { status: 500, statusText: 'Server Error' });
+
+    let emitted: unknown;
+    service.loadFoundationProjectsDetailGrouped('aaif').subscribe((value) => (emitted = value));
+    http.expectOne('/api/analytics/foundation-projects-detail-grouped?foundationSlug=aaif').flush({ groups: [], totalCount: 0, complete: true });
+
+    expect(emitted).toEqual({ groups: [], totalCount: 0, complete: true });
+  });
 
   // Angular's default codec leaves `+` bare, which Express's query parser reads as a space.
   it('getEventsOrganizations sends a typed plus sign encoded, not as a space', () => {
