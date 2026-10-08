@@ -1,0 +1,158 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="min-h-screen bg-gray-50 flex flex-col">
+  <main class="flex flex-1 items-start justify-center px-4 py-10 sm:items-center sm:py-16" data-testid="newsletter-signup-page">
+    <div class="w-full max-w-md flex flex-col gap-4">
+      <section class="rounded-xl border border-gray-200 bg-white px-6 py-8 shadow-sm sm:px-8" data-testid="newsletter-signup-card">
+        @if (loading()) {
+          <div class="flex flex-col items-center gap-4" data-testid="newsletter-signup-skeleton" aria-busy="true" aria-label="Loading">
+            <p-skeleton width="4rem" height="4rem" borderRadius="0.75rem" />
+            <p-skeleton width="10rem" height="1rem" />
+            <p-skeleton width="16rem" height="1.75rem" />
+            <p-skeleton width="100%" height="1rem" />
+            <p-skeleton width="100%" height="2.5rem" class="mt-2" />
+            <p-skeleton width="100%" height="2.5rem" />
+          </div>
+        } @else if (notFound()) {
+          <div class="flex flex-col items-center gap-3 text-center" data-testid="newsletter-signup-not-found">
+            <div class="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
+              <i class="fa-light fa-link-slash text-xl text-gray-500" aria-hidden="true"></i>
+            </div>
+            <h1 class="text-lg font-semibold text-gray-900">This signup link isn't valid</h1>
+            <p class="text-sm text-gray-500">The newsletter may have moved or the link may be incomplete. Ask the project for an up-to-date signup link.</p>
+          </div>
+        } @else if (loadError() || !info()) {
+          <div class="flex flex-col items-center gap-3 text-center" data-testid="newsletter-signup-load-error">
+            <div class="flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
+              <i class="fa-light fa-circle-exclamation text-xl text-red-600" aria-hidden="true"></i>
+            </div>
+            <h1 class="text-lg font-semibold text-gray-900">We couldn't load this page</h1>
+            <p class="text-sm text-gray-500">Something went wrong on our side. Please refresh the page to try again.</p>
+          </div>
+        } @else {
+          @let details = info()!;
+          <!-- Project identity -->
+          <header class="flex flex-col items-center gap-3 text-center" data-testid="newsletter-signup-header">
+            @if (details.project.logo_url) {
+              <img
+                [src]="details.project.logo_url"
+                [alt]="details.project.name + ' logo'"
+                class="h-16 max-w-[12rem] object-contain"
+                data-testid="newsletter-signup-logo" />
+            } @else {
+              <div
+                class="flex h-16 w-16 items-center justify-center rounded-xl bg-blue-600 text-xl font-semibold text-white"
+                aria-hidden="true"
+                data-testid="newsletter-signup-initials">
+                {{ projectInitials() }}
+              </div>
+            }
+            <p class="text-sm font-medium text-gray-500" data-testid="newsletter-signup-project-name">{{ details.project.name }}</p>
+          </header>
+
+          <div aria-live="polite">
+            @if (subscribedEmail(); as email) {
+              <!-- Success -->
+              <div class="mt-6 flex flex-col items-center gap-4 text-center" data-testid="newsletter-signup-success">
+                <div class="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50">
+                  <i class="fa-solid fa-check text-xl text-emerald-600" aria-hidden="true"></i>
+                </div>
+                <h1 #successHeading tabindex="-1" class="text-xl font-semibold text-gray-900 outline-none" data-testid="newsletter-signup-success-title">
+                  You're subscribed!
+                </h1>
+                <p class="text-sm text-gray-600">
+                  Future issues of <span class="font-medium text-gray-900">{{ details.group.name }}</span> will be sent to
+                  <span class="font-medium text-gray-900 break-all" data-testid="newsletter-signup-success-email">{{ email }}</span
+                  >.
+                </p>
+                <div class="w-full rounded-lg bg-gray-50 px-4 py-3 text-left">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">What happens next</p>
+                  <ul class="mt-2 flex flex-col gap-2 text-sm text-gray-600" data-testid="newsletter-signup-next-steps">
+                    <li class="flex gap-2">
+                      <i class="fa-light fa-envelope-open-text mt-0.5 text-gray-400" aria-hidden="true"></i>
+                      <span>The next issue will arrive in your inbox when it's sent — there's nothing else you need to do.</span>
+                    </li>
+                    <li class="flex gap-2">
+                      <i class="fa-light fa-inbox mt-0.5 text-gray-400" aria-hidden="true"></i>
+                      <span>Don't see it? Check your spam or promotions folder and mark it as safe.</span>
+                    </li>
+                    <li class="flex gap-2">
+                      <i class="fa-light fa-arrow-right-from-bracket mt-0.5 text-gray-400" aria-hidden="true"></i>
+                      <span>You can unsubscribe anytime with the link at the bottom of every issue.</span>
+                    </li>
+                  </ul>
+                </div>
+                <lfx-button
+                  label="Subscribe another email"
+                  [text]="true"
+                  size="small"
+                  (onClick)="subscribeAnother()"
+                  data-testid="newsletter-signup-subscribe-another" />
+              </div>
+            } @else {
+              <!-- Signup form -->
+              <div class="mt-6 flex flex-col gap-2 text-center">
+                <h1 class="text-xl font-semibold text-gray-900" data-testid="newsletter-signup-title">Subscribe to {{ details.group.name }}</h1>
+                @if (details.group.description) {
+                  <p class="line-clamp-3 text-sm text-gray-600" data-testid="newsletter-signup-description">{{ details.group.description }}</p>
+                }
+                <p class="text-sm text-gray-500" data-testid="newsletter-signup-instructions">
+                  Enter your email address and we'll send each new issue straight to your inbox.
+                </p>
+              </div>
+
+              <form class="mt-6 flex flex-col gap-4" [formGroup]="form" (ngSubmit)="onSubmit()" novalidate data-testid="newsletter-signup-form">
+                <div class="flex flex-col gap-1.5">
+                  <label for="newsletter-signup-email" class="text-sm font-medium text-gray-700">Email address</label>
+                  <lfx-input-text
+                    [form]="form"
+                    control="email"
+                    type="email"
+                    inputId="newsletter-signup-email"
+                    autocomplete="email"
+                    placeholder="name@example.com"
+                    [required]="true"
+                    [invalid]="!!emailError()"
+                    [describedBy]="emailError() ? 'newsletter-signup-email-error' : null"
+                    (focusout)="onEmailBlur()"
+                    dataTest="newsletter-signup-email-input"
+                    data-testid="newsletter-signup-email" />
+                  @if (emailError()) {
+                    <p id="newsletter-signup-email-error" class="text-xs text-red-600" role="alert" data-testid="newsletter-signup-email-error">
+                      {{ emailError() }}
+                    </p>
+                  }
+                </div>
+
+                @if (submitError()) {
+                  <div
+                    class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+                    role="alert"
+                    data-testid="newsletter-signup-submit-error">
+                    <i class="fa-light fa-circle-exclamation mt-0.5" aria-hidden="true"></i>
+                    <span>{{ submitError() }}</span>
+                  </div>
+                }
+
+                <lfx-button
+                  type="submit"
+                  label="Subscribe"
+                  [fluid]="true"
+                  [loading]="submitting()"
+                  [disabled]="submitting()"
+                  data-testid="newsletter-signup-submit" />
+
+                <p class="text-center text-xs text-gray-500" data-testid="newsletter-signup-privacy">
+                  We'll only use your email to send this newsletter. Unsubscribe anytime from any issue.
+                </p>
+              </form>
+            }
+          </div>
+        }
+      </section>
+
+      <p class="text-center text-xs text-gray-400" data-testid="newsletter-signup-footer">Powered by LFX</p>
+    </div>
+  </main>
+</div>

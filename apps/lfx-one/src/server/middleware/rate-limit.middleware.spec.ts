@@ -4,7 +4,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 
-import { aiRateLimiter, apiRateLimiter } from './rate-limit.middleware';
+import { aiRateLimiter, apiRateLimiter, newsletterSignupRateLimiter } from './rate-limit.middleware';
 
 // `aiRateLimiter` counts in the default in-process MemoryStore, so the counter is shared across
 // every test in this file. express-rate-limit exposes no reset, so each test has to use its own key
@@ -198,5 +198,28 @@ describe('apiRateLimiter', () => {
     expect(rejected.allowed).toBe(false);
     expect(rejected.statusCode).toBe(429);
     expect(rejected.body).toEqual({ error: 'Too many requests, please try again later.', code: 'RATE_LIMITED' });
+  });
+});
+
+describe('newsletterSignupRateLimiter', () => {
+  const SIGNUP_LIMIT = 5;
+
+  // The signup page reads the envelope's `RATE_LIMITED` code to show "too many attempts" instead of
+  // a generic failure, so the 429 has to carry it.
+  it("allows 5 signups per IP, then rejects with 429 in the app's JSON error envelope", async () => {
+    const ip = `${testIpv6Prefix()}:0001::1`;
+
+    for (let attempt = 1; attempt <= SIGNUP_LIMIT; attempt++) {
+      const result = await request({ ip }, newsletterSignupRateLimiter);
+      if (!result.allowed) {
+        throw new Error(`request ${attempt} should be allowed`);
+      }
+    }
+
+    const rejected = await request({ ip }, newsletterSignupRateLimiter);
+
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect(rejected.body).toEqual({ error: 'Too many signup attempts. Please try again in a minute.', code: 'RATE_LIMITED' });
   });
 });

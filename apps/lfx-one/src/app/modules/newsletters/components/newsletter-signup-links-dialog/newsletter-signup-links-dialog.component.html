@@ -1,0 +1,79 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex min-w-0 flex-col gap-4 p-6" data-testid="newsletter-signup-links-dialog">
+  <div class="flex items-start justify-between gap-4">
+    <div class="flex flex-col gap-1">
+      <h2 [id]="headingId" class="text-lg font-semibold text-gray-900">Newsletter signup links</h2>
+      <p class="text-sm text-gray-500">
+        Share a link or add it to your website. Anyone who opens it can subscribe with just their email, and they're added to that Newsletter group.
+      </p>
+    </div>
+    <lfx-button
+      icon="fa-light fa-xmark"
+      [text]="true"
+      severity="secondary"
+      size="small"
+      ariaLabel="Close"
+      (onClick)="close()"
+      data-testid="newsletter-signup-links-close" />
+  </div>
+
+  @let result = links();
+  @if (result === null) {
+    <div class="flex flex-col gap-3" data-testid="newsletter-signup-links-skeleton">
+      @for (i of [1, 2]; track i) {
+        <div class="flex flex-col gap-2 rounded-lg border border-gray-200 p-3">
+          <p-skeleton width="40%" height="1rem" />
+          <p-skeleton width="100%" height="2rem" />
+        </div>
+      }
+    </div>
+  } @else if (result === 'error') {
+    <div
+      class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+      role="alert"
+      data-testid="newsletter-signup-links-error">
+      <i class="fa-light fa-circle-exclamation mt-0.5" aria-hidden="true"></i>
+      <span>We couldn't load this project's groups. Close this dialog and try again.</span>
+    </div>
+  } @else if (result.length === 0) {
+    <div
+      class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center"
+      data-testid="newsletter-signup-links-empty">
+      <i class="fa-light fa-users-rectangle text-2xl text-gray-400" aria-hidden="true"></i>
+      <p class="text-sm font-medium text-gray-900">No Newsletter groups yet</p>
+      <p class="text-sm text-gray-500">Create a group with the Newsletter category to get a signup link for it.</p>
+    </div>
+  } @else {
+    <ul class="flex flex-col gap-3" data-testid="newsletter-signup-links-list">
+      @for (link of result; track link.groupUid) {
+        <li class="flex flex-col gap-2 rounded-lg border border-gray-200 p-3" [attr.data-testid]="'newsletter-signup-link-' + link.groupUid">
+          <p class="text-sm font-medium text-gray-900">{{ link.groupName }}</p>
+          <div class="flex items-center gap-2">
+            <input
+              #urlInput
+              type="text"
+              readonly
+              [value]="link.url"
+              [attr.aria-label]="'Signup link for ' + link.groupName"
+              (focus)="urlInput.select()"
+              class="min-w-0 flex-1 truncate rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 font-mono text-xs text-gray-700"
+              data-testid="newsletter-signup-link-url" />
+            <lfx-button icon="fa-light fa-copy" label="Copy" severity="info" size="small" (onClick)="copy(link)" data-testid="newsletter-signup-link-copy" />
+            <lfx-button
+              icon="fa-light fa-arrow-up-right-from-square"
+              [text]="true"
+              severity="secondary"
+              size="small"
+              [ariaLabel]="'Preview signup page for ' + link.groupName"
+              [href]="link.url"
+              target="_blank"
+              rel="noopener"
+              data-testid="newsletter-signup-link-open" />
+          </div>
+        </li>
+      }
+    </ul>
+  }
+</div>

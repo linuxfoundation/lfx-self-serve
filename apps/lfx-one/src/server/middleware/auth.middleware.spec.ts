@@ -334,6 +334,28 @@ describe('authMiddleware route classification', () => {
     expect(res.oidc.login).toHaveBeenCalledTimes(1);
   });
 
+  it('allows an anonymous GET to the public newsletter signup page (/projects/:slug/newsletter-signup/:groupUid)', async () => {
+    const req = buildReq({ path: '/projects/acme/newsletter-signup/1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith();
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a nested /projects/:slug/newsletter-signup/:groupUid/<sub> path as public (anchored regex, no fail-open)', async () => {
+    const req = buildReq({ path: '/projects/acme/newsletter-signup/abc/extra' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
   it('allows an anonymous GET to the invite error page (/invite/error)', async () => {
     const req = buildReq({ path: '/invite/error' });
     const res = buildRes();

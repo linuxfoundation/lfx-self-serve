@@ -58,6 +58,12 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // above (no deeper route exists) so a nested path fails closed to `required`.
   { pattern: /^\/projects\/[^/]+\/calendar\/?$/, type: 'ssr', auth: 'optional' },
 
+  // Public newsletter signup page (GH-3421) — an email-only form shared by link or embedded on a
+  // project website. `public` (not `optional`): the page never reads the visitor's identity, so no
+  // bearer extraction or silent login. Anchored to exactly two trailing segments so a nested path
+  // fails closed to `required`.
+  { pattern: /^\/projects\/[^/]+\/newsletter-signup\/[^/]+\/?$/, type: 'ssr', auth: 'public' },
+
   // Flow C callback via /passwordless/callback — needs session auth but no bearer token
   { pattern: '/passwordless/callback', type: 'ssr', auth: 'required', tokenRequired: false },
 

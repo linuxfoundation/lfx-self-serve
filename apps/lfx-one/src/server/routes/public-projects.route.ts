@@ -4,11 +4,14 @@
 import { Router } from 'express';
 
 import { PublicGroupsController } from '../controllers/public-groups.controller';
+import { PublicNewsletterSignupController } from '../controllers/public-newsletter-signup.controller';
 import { ProjectController } from '../controllers/project.controller';
+import { newsletterSignupRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
 const projectController = new ProjectController();
 const publicGroupsController = new PublicGroupsController();
+const publicNewsletterSignupController = new PublicNewsletterSignupController();
 
 // GET /public/api/projects/:id/calendar.ics
 // Returns the iCalendar (.ics) feed for a project's (or foundation's) meetings.
@@ -34,5 +37,17 @@ router.get('/:slug/lens-redirect/:resource', (req, res, next) => projectControll
 // Returns public group summaries for a project (by UID or slug).
 // Public access — no authentication required; M2M token used for upstream calls.
 router.get('/:identifier/groups', (req, res, next) => publicGroupsController.getPublicGroupsByProject(req, res, next));
+
+// GET /public/api/projects/:projectSlug/newsletter-signup/:groupUid
+// Returns the project + Newsletter group details for the public signup page. 404s unless the group
+// is a Newsletter-category group of that project. Anonymous; M2M-authenticated upstream.
+router.get('/:projectSlug/newsletter-signup/:groupUid', (req, res, next) => publicNewsletterSignupController.getSignupInfo(req, res, next));
+
+// POST /public/api/projects/:projectSlug/newsletter-signup/:groupUid
+// Subscribes an email to the Newsletter group (adds it as a group member). Anonymous; strict
+// per-IP rate limit on top of the public limiter; M2M-authenticated upstream.
+router.post('/:projectSlug/newsletter-signup/:groupUid', newsletterSignupRateLimiter, (req, res, next) =>
+  publicNewsletterSignupController.subscribe(req, res, next)
+);
 
 export default router;

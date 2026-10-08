@@ -33,13 +33,16 @@ import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, forkJoin, from, map, mergeMap, of, switchMap, take } from 'rxjs';
 
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
+import { NewsletterSignupLinksDialogComponent } from '../components/newsletter-signup-links-dialog/newsletter-signup-links-dialog.component';
 
 @Component({
   selector: 'lfx-newsletter-list',
@@ -66,6 +69,7 @@ export class NewsletterListComponent {
   private readonly newsletterService = inject(NewsletterService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly dialogService = inject(DialogService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
@@ -122,6 +126,8 @@ export class NewsletterListComponent {
 
   // === Reactive context ===
   public readonly projectUid: Signal<string> = this.projectContextService.activeContextUid;
+  // Signup links are built from the active project's slug — hide the action until it's known.
+  protected readonly canShowSignupLinks: Signal<boolean> = computed(() => !!this.projectContextService.activeContext()?.slug);
   protected readonly canLoadMore: Signal<boolean> = computed(() => !!this.nextPageToken() && !this.loading() && !this.loadingMore() && !!this.projectUid());
   protected readonly hasNewsletters: Signal<boolean> = computed(() => this.newsletters().length > 0 || this.armingNewsletters().length > 0);
   protected readonly hasOptOuts: Signal<boolean> = computed(() => this.optOuts().length > 0);
@@ -154,6 +160,27 @@ export class NewsletterListComponent {
   protected onStatusTabChange(tab: string): void {
     if (tab === 'draft' || tab === 'sent' || tab === 'optout' || tab === 'scheduled') {
       this.statusTab.set(tab);
+    }
+  }
+
+  protected openSignupLinks(): void {
+    const context = this.projectContextService.activeContext();
+    if (!context?.slug) {
+      return;
+    }
+    const ref: DynamicDialogRef | null = this.dialogService.open(NewsletterSignupLinksDialogComponent, {
+      header: '',
+      width: '600px',
+      style: { maxWidth: '90vw' },
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      showHeader: false,
+      contentStyle: { padding: '0' },
+      data: { projectUid: context.uid, projectSlug: context.slug },
+    });
+    if (ref) {
+      nameDynamicDialog(this.dialogService, ref, NewsletterSignupLinksDialogComponent.headingId);
     }
   }
 

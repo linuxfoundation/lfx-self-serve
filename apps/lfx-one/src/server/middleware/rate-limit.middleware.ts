@@ -65,6 +65,23 @@ export const aiRateLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for the anonymous newsletter signup write (`POST /public/api/projects/:projectSlug/newsletter-signup/:groupUid`).
+ *
+ * Stacks on top of `publicApiRateLimiter`. Every accepted request creates a committee member with
+ * an app (M2M) credential, so the per-IP budget is kept far below the generic public limit to blunt
+ * scripted mass-subscription. Answers in the app's `{ error, code }` envelope so the signup page can
+ * show a "too many attempts" message rather than a generic failure. In-memory, so per pod.
+ */
+export const newsletterSignupRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute window
+  max: 5, // limit each IP to 5 signups per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: { error: 'Too many signup attempts. Please try again in a minute.', code: 'RATE_LIMITED' },
+});
+
+/**
  * Rate limiter for vote write endpoints (GH-2729 review m-10).
  *
  * Applied per-route to `POST /api/votes` (create) and `PUT /api/votes/:uid/enable`. A vote open

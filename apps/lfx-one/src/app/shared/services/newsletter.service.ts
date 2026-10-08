@@ -20,7 +20,9 @@ import {
   NewsletterRecipientsResponse,
   NewsletterScheduleResult,
   NewsletterSendResult,
+  NewsletterSignupResponse,
   NewsletterTestSendPayload,
+  PublicNewsletterSignupInfo,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
 import { Observable, take } from 'rxjs';
@@ -146,6 +148,18 @@ export class NewsletterService {
     const headers = new HttpHeaders({ 'If-Match': `"${version}"` });
     return this.http
       .post<NewsletterCancelScheduleResult>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/cancel-schedule`, {}, { headers })
+      .pipe(take(1));
+  }
+
+  /** Anonymous — project + Newsletter group details for the public signup page. */
+  public getPublicSignupInfo(projectSlug: string, groupUid: string): Observable<PublicNewsletterSignupInfo> {
+    return this.http.get<PublicNewsletterSignupInfo>(`/public/api/projects/${this.enc(projectSlug)}/newsletter-signup/${this.enc(groupUid)}`).pipe(take(1));
+  }
+
+  /** Anonymous — subscribes an email to a Newsletter group from the public signup page. */
+  public subscribeToNewsletter(projectSlug: string, groupUid: string, email: string): Observable<NewsletterSignupResponse> {
+    return this.http
+      .post<NewsletterSignupResponse>(`/public/api/projects/${this.enc(projectSlug)}/newsletter-signup/${this.enc(groupUid)}`, { email })
       .pipe(take(1));
   }
 

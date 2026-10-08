@@ -934,7 +934,8 @@ export class CommitteeService {
     req: Request,
     committeeId: string,
     data: CreateCommitteeMemberRequest,
-    skipNotification: boolean = false
+    skipNotification: boolean = false,
+    requestOptions?: ApiRequestOptions
   ): Promise<CommitteeMember> {
     // The upstream committee-service takes the suppression intent as the
     // X-Skip-Notification header (not a body attribute), defaulting to false.
@@ -946,7 +947,8 @@ export class CommitteeService {
       'POST',
       {},
       data,
-      customHeaders
+      customHeaders,
+      requestOptions
     );
 
     logger.debug(req, 'create_committee_member', 'Committee member created successfully', {

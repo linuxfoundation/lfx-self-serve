@@ -833,6 +833,13 @@ export const routes: Routes = [
     title: 'Calendar',
     loadComponent: () => import('./modules/meetings/public-project-calendar/public-project-calendar.component').then((m) => m.PublicProjectCalendarComponent),
   },
+  // Public newsletter signup — email-only subscribe form for one Newsletter group, shared by link or
+  // embedded on a project website (no auth required; see the matching row in auth.middleware.ts).
+  {
+    path: 'projects/:projectSlug/newsletter-signup/:groupUid',
+    title: 'Newsletter Signup',
+    loadComponent: () => import('./modules/newsletters/newsletter-signup/newsletter-signup.component').then((m) => m.NewsletterSignupComponent),
+  },
   // Invite acceptance — authGuard preserves ?token= through the Auth0 login redirect.
   {
     path: 'invite',

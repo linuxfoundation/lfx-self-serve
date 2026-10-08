@@ -6,14 +6,28 @@
     <div class="mb-6">
       <div class="flex justify-between items-center w-full gap-4">
         <h1 class="font-display font-light text-2xl">Newsletters</h1>
-        <lfx-button
-          icon="fa-light fa-paper-plane"
-          severity="info"
-          label="Create Newsletter"
-          size="small"
-          (onClick)="goToCreate()"
-          data-testid="newsletter-create-button">
-        </lfx-button>
+        <div class="flex items-center gap-2">
+          @if (canShowSignupLinks()) {
+            <lfx-button
+              icon="fa-light fa-link"
+              severity="secondary"
+              [outlined]="true"
+              label="Signup links"
+              size="small"
+              ariaHaspopup="dialog"
+              (onClick)="openSignupLinks()"
+              data-testid="newsletter-signup-links-button">
+            </lfx-button>
+          }
+          <lfx-button
+            icon="fa-light fa-paper-plane"
+            severity="info"
+            label="Create Newsletter"
+            size="small"
+            (onClick)="goToCreate()"
+            data-testid="newsletter-create-button">
+          </lfx-button>
+        </div>
       </div>
       <p class="mt-1 text-sm text-gray-500">Send important updates to your groups and see how past newsletters performed.</p>
     </div>

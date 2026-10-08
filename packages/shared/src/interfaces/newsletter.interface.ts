@@ -518,3 +518,52 @@ export type NewsletterListLoadResult =
       arming?: NewsletterListItem[];
     }
   | { kind: 'optout'; response: NewsletterOptOutListResponse };
+
+/**
+ * Public view of a Newsletter group's signup page (`/projects/:projectSlug/newsletter-signup/:groupUid`).
+ * A deliberately slim projection — the page is anonymous, so only what it renders is exposed.
+ */
+export interface PublicNewsletterSignupInfo {
+  project: {
+    name: string;
+    slug: string;
+    logo_url?: string;
+  };
+  group: {
+    uid: string;
+    name: string;
+    description?: string;
+  };
+}
+
+/** Body of the anonymous newsletter signup request — the visitor only supplies an email. */
+export interface NewsletterSignupRequest {
+  email: string;
+}
+
+/**
+ * Response to a newsletter signup. Always `subscribed` — whether the email matched an LF account
+ * or was already a member is never revealed, so the form cannot be used to probe either.
+ */
+export interface NewsletterSignupResponse {
+  status: 'subscribed';
+}
+
+/**
+ * Async load state of the public signup page, persisted through TransferState so the client's
+ * first paint matches the SSR DOM. `notFound` (an invalid or repointed link) is distinct from
+ * `error` (a transient failure the visitor can retry by reloading).
+ */
+export interface PublicNewsletterSignupPageState {
+  loading: boolean;
+  notFound: boolean;
+  error: boolean;
+  info: PublicNewsletterSignupInfo | null;
+}
+
+/** One row of the creator-facing "Signup links" dialog — a Newsletter group and its shareable URL. */
+export interface NewsletterSignupLink {
+  groupUid: string;
+  groupName: string;
+  url: string;
+}
