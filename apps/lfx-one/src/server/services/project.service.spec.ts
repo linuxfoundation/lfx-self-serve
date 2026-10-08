@@ -3463,6 +3463,19 @@ describe('ProjectService.getProjectIdBySlug — strict mode (GH-3421)', () => {
     await expect(service.getProjectIdBySlug(req, 'acme')).resolves.toEqual({ uid: '', slug: 'acme', exists: false });
   });
 
+  /** Same shape as the pinned client's `NatsError.errorForCode(code)`: message === code. */
+  function natsError(code: string): Error {
+    return Object.assign(new Error(code), { name: 'NatsError', code });
+  }
+
+  it.each([['TIMEOUT'], ['503']])('throws a 503 for a real NATS %s error in strict mode', async (code) => {
+    natsRequest.mockRejectedValue(natsError(code));
+
+    const error = await service.getProjectIdBySlug(req, 'acme', { strict: true }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error).toMatchObject({ statusCode: 503, code: 'SERVICE_UNAVAILABLE' });
+  });
+
   it.each([['TIMEOUT: request timeout'], ['503 no responders available']])('throws a 503 for "%s" in strict mode', async (message) => {
     natsRequest.mockRejectedValue(new Error(message));
 
