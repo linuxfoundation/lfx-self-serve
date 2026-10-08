@@ -1448,12 +1448,14 @@ export class OrgEasyclaDetailComponent {
    * is `not-started` while on a sanctioned list row it says nothing about whether a document
    * exists.
    *
-   * The roster conjunct is the authorization half. EasyCLA authorizes the signed document against
-   * the agreement's own CLA Manager list, not against the grant that let the viewer open this
-   * page, and an organization admin is routinely off that list. Restricting the control is the
-   * decided shape rather than widening the producer's ACL; `onDownload` keeps its fail-closed
-   * toast for the refusals this cannot predict. Unlike the Auto ECLA toggle there is no ACS
-   * conjunct, because no grant governs this read.
+   * The roster conjunct is the authorization half. EasyCLA authorizes the signed document on an
+   * ACS `project` or `project|organization` grant, and the organization-level grant that let the
+   * viewer open this page is not one of them, so an organization admin is routinely refused. The
+   * roster stands in for that grant rather than duplicating it, because holding the CLA manager
+   * role is what issues it, so there is no second ACS conjunct here as there is on the Auto ECLA
+   * toggle. The two disagree only while ACS propagates, which is what `onDownload`'s fail-closed
+   * toast covers. Restricting the control is the decided shape rather than widening the
+   * producer's ACL.
    */
   private initCanDownload(): boolean {
     const group = this.claGroup();

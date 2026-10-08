@@ -53,7 +53,7 @@ On a row with no CLA Manager list at all, the BFF cannot check the roster, so th
 
 ## Who can download the signed CCLA
 
-Overview's **Download signed CCLA PDF** shows on a signed CCLA when the viewer is on that CCLA's roster (`viewerIsClaManager`). It is the one roster-gated control with **no ACS half** — there is no grant to hold. EasyCLA authorizes the signed document on the agreement's own CLA Manager list, which is not the company-level grant that let the viewer open the page at all, so an organization admin off the roster could read the agreement and still be refused its PDF. The control is withheld rather than shown and refused; the download's own failure toast stays as the backstop for refusals the row cannot predict.
+Overview's **Download signed CCLA PDF** shows on a signed CCLA when the viewer is on that CCLA's roster (`viewerIsClaManager`). EasyCLA authorizes the document on an ACS `project` or `project|organization` grant, and the company-level grant that let the viewer open the page is not one of them, so an organization admin off the roster could read the agreement and still be refused its PDF. The roster stands in for that grant rather than duplicating it, because holding the CLA manager role is what issues it. The control is withheld rather than shown and refused; the download's own failure toast stays as the backstop for refusals the row cannot predict, including a rostered manager whose grant has not propagated yet.
 
 The restriction is deliberately on the control and not on the producer: widening EasyCLA's document ACL to organization admins would need a new endpoint and a gateway permission, and the decision was to match the Corporate Console's existing audience instead.
 
@@ -77,7 +77,7 @@ Work out which of these applies:
 - **Added recently.** ACS can take about thirty minutes to reflect a new CLA manager. If they added themselves, the controls can also stay hidden until the page is reloaded. Wait, then reload.
 - **On the list under a different spelling.** The match is exact, including case. A list entry whose LF username differs from their login only in case does not count, and the write is refused for the same reason. Raise it with EasyCLA support so the entry can be corrected.
 - **The agreement has no CLA Manager list at all.** The controls are hidden from everyone on that row. This is a data problem on the EasyCLA record, so raise it with EasyCLA support.
-- **No ACS grant** for that project and organization. Ask whether they hold the CLA manager role for it. This one cannot explain a missing download — that control has no ACS half, so for it only the roster answers above apply.
+- **No ACS grant** for that project and organization. Ask whether they hold the CLA manager role for it. A missing grant does not hide the download, which reads the roster — but it does make the download fail once pressed, so a rostered manager reporting a failed download rather than a missing button is usually inside the propagation window above.
 
 ## What to tell a viewer who can see EasyCLA but cannot Review and Sign
 
