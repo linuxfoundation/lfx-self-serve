@@ -4069,16 +4069,17 @@ export class ProjectService {
         slug,
       });
 
-      // Strict: classify by the NATS error code — the pinned client emits a request timeout as
-      // `code`/`message` 'TIMEOUT' (uppercase) and no-responders as '503' — so a real outage is a
-      // retryable 503, never an unwrapped 500 or a false "not found".
-      const natsCode = (error as { code?: unknown } | null)?.code;
-      if (options.strict && (natsCode === 'TIMEOUT' || natsCode === '503' || (error instanceof Error && /timeout|503/i.test(error.message)))) {
+      // Strict: the only fallible step above is the NATS request itself (the string codec's decode
+      // cannot throw), so any rejection here is a transport failure — timeout ('TIMEOUT'), no
+      // responders ('503'), connection refused/closed. Surface it as a retryable 503, never as an
+      // unwrapped 500 or a false "not found".
+      if (options.strict) {
         throw new MicroserviceError('Project lookup is temporarily unavailable. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
           operation: 'get_project_id_by_slug',
           service: 'project_service',
           path: '/nats/project-slug-to-uid',
           originalError: error instanceof Error ? error : undefined,
+          transportFailure: true,
         });
       }
 

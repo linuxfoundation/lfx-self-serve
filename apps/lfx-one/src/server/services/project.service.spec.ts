@@ -3484,10 +3484,17 @@ describe('ProjectService.getProjectIdBySlug — strict mode (GH-3421)', () => {
     expect(error).toMatchObject({ statusCode: 503, code: 'SERVICE_UNAVAILABLE' });
   });
 
-  it('rethrows other NATS errors in both modes', async () => {
-    natsRequest.mockRejectedValue(new Error('connection closed'));
+  it('rethrows other NATS errors in default mode', async () => {
+    natsRequest.mockRejectedValue(natsError('CONNECTION_CLOSED'));
 
-    await expect(service.getProjectIdBySlug(req, 'acme')).rejects.toThrow('connection closed');
-    await expect(service.getProjectIdBySlug(req, 'acme', { strict: true })).rejects.toThrow('connection closed');
+    await expect(service.getProjectIdBySlug(req, 'acme')).rejects.toThrow('CONNECTION_CLOSED');
+  });
+
+  it.each([['CONNECTION_CLOSED'], ['CONNECTION_REFUSED']])('maps a %s transport failure to a retryable 503 in strict mode', async (code) => {
+    natsRequest.mockRejectedValue(natsError(code));
+
+    const error = await service.getProjectIdBySlug(req, 'acme', { strict: true }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error).toMatchObject({ statusCode: 503, code: 'SERVICE_UNAVAILABLE', transportFailure: true });
   });
 });
