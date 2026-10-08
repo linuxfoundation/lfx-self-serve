@@ -26,6 +26,7 @@ import type {
   CampaignTabOption,
   CampaignToggleAction,
   CampaignToggleStatus,
+  GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
   KeywordActionOutcome,
   KeywordActionPlatform,
@@ -1931,8 +1932,9 @@ export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
  * Deliberately FAR above anything legitimate, because these are resource bounds and not content
  * rules — every width and count in `GOOGLE_CREATIVE_FIELD_SPECS` is the upstream client's preflight
  * to enforce, and this layer stays shape-only. The widest catalogue list holds 20 entries and the
- * widest text field 90 characters, so nothing a real operator can produce comes near either ceiling;
- * refusing here can therefore never refuse a create upstream would have accepted.
+ * widest text field 256 characters (`assetGroupName`), so nothing a real operator can produce comes
+ * near either ceiling; refusing here can therefore never refuse a create upstream would have
+ * accepted.
  */
 export const MAX_GOOGLE_CREATIVE_LIST_ENTRIES = 100;
 export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;
@@ -2103,7 +2105,7 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
   'demand-gen': [
     { control: 'headlines', label: 'Headlines', kind: 'list', min: 1, max: 5, width: 30 },
     { control: 'descriptions', label: 'Descriptions', kind: 'list', min: 1, max: 5, width: 90 },
-    { control: 'businessName', label: 'Business name', kind: 'text', width: 25, hint: 'Required by Google once a creative is supplied.' },
+    { control: 'businessName', label: 'Business name', kind: 'text', width: 25, requiredOnce: true, hint: 'Required by Google once a creative is supplied.' },
     { control: 'callToActionText', label: 'Call to action', kind: 'text', width: 30 },
     {
       control: 'marketingImages',
@@ -2137,8 +2139,25 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       width: 90,
       hint: 'At least one must be 60 characters or fewer — Google renders it in a short slot the other channels do not have.',
     },
-    { control: 'businessName', label: 'Business name', kind: 'text', width: 25 },
-    { control: 'assetGroupName', label: 'Asset group name', kind: 'text', hint: 'Defaults to the event name plus " - Asset Group" when blank.' },
+    {
+      control: 'businessName',
+      label: 'Business name',
+      kind: 'text',
+      width: 25,
+      requiredOnce: true,
+      hint: 'Required by Google once an asset group is supplied.',
+    },
+    {
+      control: 'assetGroupName',
+      label: 'Asset group name',
+      kind: 'text',
+      // 256 is campaign-service's `maxAssetGroupNameRunes`, which is `maxCampaignNameRunes`
+      // (`internal/platform/googleads/campaign.go`) — Google documents no separate asset-group
+      // limit. Counted in RUNES on the trimmed value there, which is why this entry could not be
+      // stated until the validators measured code points rather than UTF-16 units.
+      width: 256,
+      hint: 'Defaults to the event name plus " - Asset Group" when blank.',
+    },
     { control: 'path1', label: 'Display path 1', kind: 'text', width: 15 },
     { control: 'path2', label: 'Display path 2', kind: 'text', width: 15, hint: 'Renders only when display path 1 is also set.' },
     {
@@ -2163,9 +2182,16 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
   ],
   display: [
     { control: 'headlines', label: 'Headlines', kind: 'list', min: 1, max: 5, width: 30 },
-    { control: 'longHeadline', label: 'Long headline', kind: 'text', width: 90, hint: 'A responsive display ad carries exactly one.' },
+    {
+      control: 'longHeadline',
+      label: 'Long headline',
+      kind: 'text',
+      width: 90,
+      requiredOnce: true,
+      hint: 'Required. A responsive display ad carries exactly one.',
+    },
     { control: 'descriptions', label: 'Descriptions', kind: 'list', min: 1, max: 5, width: 90 },
-    { control: 'businessName', label: 'Business name', kind: 'text', width: 25, hint: 'Required by Google once a creative is supplied.' },
+    { control: 'businessName', label: 'Business name', kind: 'text', width: 25, requiredOnce: true, hint: 'Required by Google once a creative is supplied.' },
     { control: 'callToActionText', label: 'Call to action', kind: 'text', width: 30 },
     {
       control: 'marketingImages',
@@ -2179,6 +2205,37 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
     { control: 'squareLogoImages', label: 'Square logo images (1:1)', kind: 'list', max: 5 },
   ],
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeFieldSpec[]>;
+
+/**
+ * The "at least one of" rules a channel's creative carries, which no per-field bound can state.
+ *
+ * Demand Gen and Display each require a marketing image OR a square marketing image, refusing a
+ * creative that has neither and accepting one that has either (`demandgen_creative.go`,
+ * `display_creative.go`). Putting `min: 1` on both members would refuse the half upstream takes,
+ * and putting it on one would name the wrong field — so the rule lives here, over the pair.
+ *
+ * Performance Max is deliberately empty: it requires both marketing arrays SEPARATELY
+ * (`pmax_creative.go`), which its two `min: 1` catalogue entries already express. An empty list is
+ * the honest statement of that, and it keeps every creative-bearing channel indexable here.
+ *
+ * The messages are clauses, completed by the channel's section title at the point of use, so one
+ * sentence names both the channel and what it is missing.
+ */
+export const GOOGLE_CREATIVE_EITHER_OR_RULES = {
+  'demand-gen': [
+    {
+      controls: ['marketingImages', 'squareMarketingImages'],
+      message: 'needs at least one marketing image or one square marketing image.',
+    },
+  ],
+  'performance-max': [],
+  display: [
+    {
+      controls: ['marketingImages', 'squareMarketingImages'],
+      message: 'needs at least one marketing image or one square marketing image.',
+    },
+  ],
+} as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeEitherOrRule[]>;
 
 /**
  * The `CampaignCreateRequest` key each channel's creative is sent under.
@@ -2213,10 +2270,15 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
  * Why a Google channel's creative is worth filling in, stated per channel.
  *
  * Not decoration. campaign-service ACCEPTS a create with no creative on all three of these
- * channels — the campaign and its budget are made, and the call returns success — so nothing at
- * create time tells an operator that what they just made cannot serve. For Performance Max the
+ * channels — the campaign and its budget are made, and the call returns success — so nothing
+ * UPSTREAM tells an operator that what they just made cannot serve. For Performance Max the
  * refusal arrives later and elsewhere: the asset group is flagged and `ToggleStatus` REFUSES the
  * activation (`internal/platform/googleads/pmax.go`), which is discovered at launch.
+ *
+ * This is the standing line, shown on a section before anything is typed. The form also says it
+ * about the current state, naming the channels that are actually empty, in the Implementation
+ * tab's `googleCreativeEmptyWarning` — which is a warning and not a refusal, precisely because
+ * upstream accepts this shape.
  */
 export const GOOGLE_CREATIVE_REQUIRED_NOTICE =
   'Without creative this campaign is created as an empty shell: it has no ad, it cannot serve, and Performance Max will refuse to activate.';

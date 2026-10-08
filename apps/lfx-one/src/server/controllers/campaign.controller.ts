@@ -174,6 +174,21 @@ export class CampaignController {
       return;
     }
 
+    // Same reason as the create route's guard: a body that is absent or not an object makes the
+    // field read below throw a TypeError, turning a malformed request into a 500 where every
+    // sibling returns a named 400. Never over-refusal — a non-object body carries no `url`, so
+    // the field guard that follows would have refused it anyway, just less legibly.
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      _next(
+        ServiceValidationError.forField('body', 'request body must be a JSON object', {
+          operation: 'campaign_generate_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
     const body = req.body as CampaignBriefRequest;
 
     if (!body.url || typeof body.url !== 'string' || !body.url.trim()) {
@@ -246,6 +261,20 @@ export class CampaignController {
   public async refineBrief(req: Request, res: Response, _next: NextFunction): Promise<void> {
     if (isShuttingDown()) {
       res.status(503).json({ status: 'shutting_down' });
+      return;
+    }
+
+    // See the create route's guard: an absent or non-object body makes the field read below throw
+    // a TypeError and return a 500 instead of a named 400. Not over-refusal — such a body carries
+    // no `feedback` either way.
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      _next(
+        ServiceValidationError.forField('body', 'request body must be a JSON object', {
+          operation: 'campaign_refine_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
       return;
     }
 
@@ -1800,6 +1829,14 @@ export class CampaignController {
   }
 
   public async executeKeywordActions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // See the create route's guard: an absent or non-object body makes the field read below throw
+    // a TypeError and return a 500 instead of a named 400. Not over-refusal — such a body carries
+    // no `keywords` either way.
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      next(ServiceValidationError.forField('body', 'request body must be a JSON object', { operation: 'keyword_actions', service: 'campaign_controller' }));
+      return;
+    }
+
     const body = req.body as BulkKeywordActionRequest;
 
     if (!body.keywords || !Array.isArray(body.keywords) || body.keywords.length === 0) {

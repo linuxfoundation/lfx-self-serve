@@ -3054,6 +3054,59 @@ describe('CampaignController.refineBrief email refusal', () => {
 });
 
 /**
+ * The body-shape guard the three AI handlers were missing.
+ *
+ * Express leaves `req.body` as `undefined` when no JSON body parsed, and hands through whatever
+ * JSON actually arrived — an array, a bare string, `null`. Every sibling handler on this
+ * controller already opens with this check; these three destructured straight into the body and
+ * threw a TypeError that reached the error middleware as a 500, reporting a caller's malformed
+ * request as a server fault. The guard turns each into the 400 the sibling handlers give.
+ */
+describe('CampaignController AI handler body shape', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  const handlers = ['generateBrief', 'refineBrief', 'executeKeywordActions'] as const;
+  // `null` and a bare string both survive `express.json()`; an array is an object to `typeof`,
+  // which is why `Array.isArray` is a separate clause and gets its own case here.
+  const bodies: [string, unknown][] = [
+    ['undefined', undefined],
+    ['null', null],
+    ['an array', []],
+    ['a string', 'nope'],
+  ];
+
+  it.each(handlers.flatMap((handler) => bodies.map(([label, body]): [string, string, unknown] => [handler, label, body])))(
+    '%s refuses %s as a 400, not a 500',
+    async (handler, _label, body) => {
+      await (controller as unknown as Record<string, (req: Request, res: Response, next: NextFunction) => Promise<void>>)[handler](buildReq(body), res, next);
+
+      expect(res.json).not.toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.statusCode).toBe(400);
+      expect(error.toResponse()['errors']).toEqual([{ field: 'body', message: 'request body must be a JSON object', code: 'FIELD_VALIDATION_ERROR' }]);
+    }
+  );
+
+  /** The contrast: a real object still reaches the handler's own field checks, not this guard. */
+  it('lets a JSON object through to the field checks', async () => {
+    await controller.refineBrief(buildReq({ feedback: 'punchier', currentCopy: null, currentKeywords: [] }), res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).not.toEqual([{ field: 'body', message: 'request body must be a JSON object', code: 'FIELD_VALIDATION_ERROR' }]);
+  });
+});
+
+/**
  * Which backend serves a status toggle is decided by the campaign id's SHAPE, not by the flag
  * alone. That is the whole safety argument for flipping this flag during a rolling deploy: the
  * two id spaces are disjoint, so a request cannot be claimed by both paths and a mixed-flag

@@ -543,6 +543,23 @@
         </div>
       }
 
+      <!--
+        The two creative messages, one blocking and one not, placed after every section because
+        each speaks about the set of sections rather than about one of them.
+
+        The error is a refusal campaign-service would make anyway once a creative is non-empty, so
+        `canSubmit` reads it and the button goes dead. The warning is the opposite case: upstream
+        ACCEPTS a channel with no creative at all — refusing it here would block a create the
+        platform makes — but nothing else tells the operator the campaign they are about to make
+        cannot serve, so it is said here and submit stays enabled.
+      -->
+      @if (googleCreativeError()) {
+        <p role="alert" class="text-xs text-red-600" data-testid="implementation-google-creative-error">{{ googleCreativeError() }}</p>
+      }
+      @if (googleCreativeEmptyWarning()) {
+        <p class="text-xs text-amber-600" data-testid="implementation-google-creative-empty-warning">{{ googleCreativeEmptyWarning() }}</p>
+      }
+
       <!-- LinkedIn Ads Section -->
       @if (showLinkedInSection()) {
         <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="implementation-linkedin-section">

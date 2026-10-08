@@ -12,12 +12,19 @@ import {
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
+  GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_SECTION_TITLES,
   META_OBJECTIVE_LABELS,
 } from '@lfx-one/shared/constants';
-import type { CampaignBriefOutput, CampaignBriefPersistenceState, CampaignImplementationDraft } from '@lfx-one/shared/interfaces';
+import type {
+  CampaignBriefOutput,
+  CampaignBriefPersistenceState,
+  CampaignImplementationDraft,
+  GoogleCreativeChannel,
+  GoogleCreativeFieldSpec,
+} from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -4274,11 +4281,12 @@ describe('ImplementationTabComponent google creative sections', () => {
   });
 
   /**
-   * `min` is deliberately NOT enforced. campaign-service accepts a channel with no creative at
-   * all, so a minimum here would refuse a create upstream would have made — an operator taking the
-   * campaign and budget now and the assets later is doing something the platform supports.
+   * No CONTROL VALIDATOR carries `min`, and that is not an oversight. A validator sees one control
+   * and never the group, so it cannot tell a half-filled creative from an empty one — and a
+   * channel with no creative at all is a create campaign-service makes. The floor is enforced at
+   * submit instead, where the whole creative is in view; `googleCreativeError` below is that half.
    */
-  it('does not enforce a list field minimum', () => {
+  it('does not enforce a list field minimum on the control', () => {
     const c = seedChannel(fixture, { includePerformanceMax: true });
     const headlines = c['campaignForm'].controls.performanceMaxCreative.controls.headlines;
 
@@ -4286,7 +4294,7 @@ describe('ImplementationTabComponent google creative sections', () => {
 
     expect(GOOGLE_CREATIVE_FIELD_SPECS['performance-max'][0].min).toBeGreaterThan(1);
     expect(headlines.valid).toBe(true);
-    expect(c['canSubmit']()).toBe(true);
+    expect(c['campaignForm'].controls.performanceMaxCreative.valid).toBe(true);
   });
 
   /** All four bound combinations a guidance sentence is assembled from, plus the catalogue's own note. */
@@ -4416,6 +4424,215 @@ describe('ImplementationTabComponent google creative sections', () => {
     c['campaignForm'].controls.displayCreative.patchValue({ headlines: 'Changed' });
 
     expect(snapshot['displayCreative'].headlines).toBe('One');
+  });
+});
+
+/** One catalogue entry by name, widened off the `as const` literal so its bounds are readable. */
+function creativeSpec(channel: GoogleCreativeChannel, control: string): GoogleCreativeFieldSpec {
+  const specs: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+  const found = specs.find((field) => field.control === control);
+  if (!found) throw new Error(`no ${control} field catalogued for ${channel}`);
+  return found;
+}
+
+/** Everything Display needs to clear its minimums, so one field at a time is the variable. */
+const DISPLAY_COMPLETE = {
+  headlines: 'One headline',
+  longHeadline: 'A long headline',
+  descriptions: 'A description',
+  businessName: 'Acme',
+  marketingImages: 'https://example.com/a.png',
+};
+
+/**
+ * The two creative messages at the submit button, and the line between them.
+ *
+ * They split exactly where campaign-service splits. Each of the three creative validators opens
+ * with an `empty()` gate that ACCEPTS the creative and only then enforces its minimums
+ * (`demandgen_creative.go`, `pmax_creative.go`, `display_creative.go`) — so a wholly empty
+ * creative is a create upstream MAKES, and blocking it here would be the over-refusal this whole
+ * feature forbids; it gets a non-blocking warning. A started creative below a minimum is a create
+ * upstream REFUSES, and saying so before the round trip can never refuse more than upstream would.
+ */
+describe('ImplementationTabComponent google creative minimums', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /**
+   * The regression test this guard exists to not become. Every creative-bearing channel rendered
+   * and nothing typed into any of them is the adoption shape campaign-service accepts — a campaign
+   * an operator finishes in the Google Ads UI, and the only shape every Demand Gen campaign
+   * created before this feature existed had. Blocking it would refuse a create the platform makes.
+   */
+  it.each([['includeDemandGen'], ['includePerformanceMax'], ['includeDisplay']])('blocks nothing when the %s creative is wholly empty', (control) => {
+    const c = seedChannel(fixture, { [control]: true });
+
+    expect(c['googleCreativePayload']()).toEqual({});
+    expect(c['googleCreativeError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /** A list below its catalogued floor, named with the count the operator actually gave. */
+  it('names a list field short of its minimum', () => {
+    const c = seedChannel(fixture, { includePerformanceMax: true });
+    c['campaignForm'].controls.performanceMaxCreative.patchValue({ headlines: 'Just the one' });
+    const spec = creativeSpec('performance-max', 'headlines');
+
+    expect(c['googleCreativeError']()).toBe(
+      `${GOOGLE_CREATIVE_SECTION_TITLES['performance-max']} creative needs at least ${spec.min} entries in ${spec.label} — 1 given.`
+    );
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /** Singular where the floor is one — a message that says "1 entries" reads as a bug. */
+  it('says entry, not entries, for a floor of one', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.displayCreative.patchValue({ businessName: 'Acme' });
+    const spec = creativeSpec('display', 'headlines');
+
+    expect(spec.min).toBe(1);
+    expect(c['googleCreativeError']()).toBe(`${GOOGLE_CREATIVE_SECTION_TITLES.display} creative needs at least 1 entry in ${spec.label} — 0 given.`);
+  });
+
+  /**
+   * The scalar rule. `requiredOnce` is the catalogue's machine-readable record of a field Google
+   * marks required once a creative is supplied, and the only reason it is not a control validator
+   * is that a validator cannot see the empty-creative case it must let through.
+   */
+  it.each([
+    ['longHeadline', { headlines: 'One headline' }],
+    ['businessName', { headlines: 'One headline', longHeadline: 'A long headline', descriptions: 'A description' }],
+  ])('names the missing %s once a creative is started', (control, patch) => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.displayCreative.patchValue(patch);
+    const spec = creativeSpec('display', control);
+
+    expect(spec.requiredOnce).toBe(true);
+    expect(c['googleCreativeError']()).toBe(`${GOOGLE_CREATIVE_SECTION_TITLES.display} creative needs a ${spec.label.toLowerCase()}.`);
+  });
+
+  /**
+   * The either-or, which no per-field bound can state: `min: 1` on both members would refuse the
+   * half upstream takes, and on one member would name the wrong field. Both assertions matter —
+   * the first alone passes against a rule that fires even when a marketing image IS supplied.
+   */
+  it('requires one of the two marketing arrays, and accepts either', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const group = c['campaignForm'].controls.displayCreative;
+    group.patchValue({ ...DISPLAY_COMPLETE, marketingImages: '' });
+
+    expect(c['googleCreativeError']()).toBe(`${GOOGLE_CREATIVE_SECTION_TITLES.display} creative ${GOOGLE_CREATIVE_EITHER_OR_RULES.display[0].message}`);
+
+    group.patchValue({ squareMarketingImages: 'https://example.com/square.png' });
+    expect(c['googleCreativeError']()).toBeNull();
+
+    group.patchValue({ squareMarketingImages: '', marketingImages: 'https://example.com/a.png' });
+    expect(c['googleCreativeError']()).toBeNull();
+  });
+
+  /** Performance Max states its two marketing requirements separately, so it carries no rule. */
+  it('states no either-or for performance max', () => {
+    expect(GOOGLE_CREATIVE_EITHER_OR_RULES['performance-max']).toEqual([]);
+  });
+
+  /** A complete creative blocks nothing, which is what keeps the guard from blocking everything. */
+  it('clears once the creative meets every minimum', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.displayCreative.patchValue(DISPLAY_COMPLETE);
+
+    expect(c['googleCreativeError']()).toBeNull();
+    expect(c['googleCreativeEmptyWarning']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /**
+   * The computed walks only the sections currently rendered, for the reason the bidding guard
+   * records: a stale value left in a channel the operator since unticked must never block a create
+   * for a channel that is not being made.
+   */
+  it('ignores a short creative left behind by an unticked channel', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.displayCreative.patchValue({ businessName: 'Acme' });
+    expect(c['googleCreativeError']()).not.toBeNull();
+
+    c['campaignForm'].patchValue({ includeDisplay: false, includeSearch: true });
+    fixture.detectChanges();
+
+    expect(c['googleCreativeError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /** Nothing about this belongs to Google's half of the form when Google is not selected. */
+  it('does not gate a non-Google campaign', () => {
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+
+    expect(c['googleCreativeError']()).toBeNull();
+    expect(c['googleCreativeEmptyWarning']()).toBeNull();
+  });
+
+  /**
+   * The warning, and the fact that it is a warning. Upstream accepts this create, so the button
+   * must stay live — but the campaign and its budget are made and nothing else ever tells the
+   * operator that what they just made cannot serve.
+   */
+  it('warns about an empty channel without blocking the create', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+
+    expect(c['googleCreativeEmptyWarning']()).toBe(
+      `${GOOGLE_CREATIVE_SECTION_TITLES.display} has no creative. The campaign and its budget are still created, but it cannot serve until the assets are added in Google Ads.`
+    );
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /** Two empty channels are one sentence, with the verb agreeing with the list it follows. */
+  it('names every empty channel in one sentence', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true, includeDisplay: true });
+
+    expect(c['googleCreativeEmptyWarning']()).toBe(
+      `${GOOGLE_CREATIVE_SECTION_TITLES['demand-gen']} and ${GOOGLE_CREATIVE_SECTION_TITLES.display} have no creative. ` +
+        'The campaign and its budget are still created, but it cannot serve until the assets are added in Google Ads.'
+    );
+  });
+
+  /**
+   * The Performance Max clause is a claim about code that only Performance Max has: `ToggleStatus`
+   * refuses to activate an asset group that is not complete (`internal/platform/googleads/pmax.go`).
+   * Nothing refuses a Demand Gen or Display campaign with no creative — it simply never serves — so
+   * saying it about them would be a sentence no code behind it delivers.
+   */
+  it('claims the activation refusal only for performance max', () => {
+    const activation = 'Performance Max will also refuse to activate until its asset group is complete.';
+
+    const c = seedChannel(fixture, { includeDisplay: true });
+    expect(c['googleCreativeEmptyWarning']()).not.toContain(activation);
+
+    c['campaignForm'].patchValue({ includePerformanceMax: true });
+    fixture.detectChanges();
+    expect(c['googleCreativeEmptyWarning']()).toContain(activation);
+  });
+
+  /**
+   * The two messages are judged on the same payload, which is what makes them mutually exclusive
+   * per channel: a channel is either absent from it (empty, warned about) or present in it
+   * (started, and measured against the minimums). Both can speak at once about DIFFERENT channels.
+   *
+   * No `canSubmit` assertion here, deliberately: a two-channel Google selection is already refused
+   * outright once the cutover owns the create, so a false there would prove nothing about this.
+   */
+  it('splits two channels between the warning and the error', () => {
+    const c = seedChannel(fixture, { includePerformanceMax: true, includeDisplay: true });
+    c['campaignForm'].controls.displayCreative.patchValue({ businessName: 'Acme' });
+
+    expect(c['googleCreativeError']()).toContain(GOOGLE_CREATIVE_SECTION_TITLES.display);
+    expect(c['googleCreativeError']()).not.toContain(GOOGLE_CREATIVE_SECTION_TITLES['performance-max']);
+    expect(c['googleCreativeEmptyWarning']()).toContain(GOOGLE_CREATIVE_SECTION_TITLES['performance-max']);
+    expect(c['googleCreativeEmptyWarning']()).not.toContain(GOOGLE_CREATIVE_SECTION_TITLES.display);
   });
 });
 

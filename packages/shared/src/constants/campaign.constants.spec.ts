@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec } from '../interfaces/campaign.interface';
 import {
   isCanonicalGoogleAdsResourceId,
   CAMPAIGN_ALERT_THRESHOLDS,
@@ -21,6 +22,7 @@ import {
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
+  GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_SECTION_TITLES,
@@ -710,5 +712,63 @@ describe('Google channel enums and creative catalogue', () => {
     const display = GOOGLE_CREATIVE_FIELD_SPECS.display.find((f) => f.control === 'longHeadline');
     expect(pmax?.kind).toBe('list');
     expect(display?.kind).toBe('text');
+  });
+
+  /**
+   * The scalar counterpart of `min`, and the exact set campaign-service refuses a non-empty
+   * creative without: a business name on all three (`demandgen_creative.go`, `pmax_creative.go`,
+   * `display_creative.go`), plus the responsive display ad's single long headline. Marking one
+   * more than that set would refuse a creative Google takes.
+   */
+  it('marks exactly the fields upstream requires once a creative is started', () => {
+    const required = Object.fromEntries(
+      GOOGLE_CHANNELS_WITH_CREATIVE.map((channel) => [
+        channel,
+        (GOOGLE_CREATIVE_FIELD_SPECS[channel] as readonly GoogleCreativeFieldSpec[]).filter((f) => f.requiredOnce === true).map((f) => f.control),
+      ])
+    );
+    expect(required).toEqual({
+      'demand-gen': ['businessName'],
+      'performance-max': ['businessName'],
+      display: ['longHeadline', 'businessName'],
+    });
+  });
+
+  /** `requiredOnce` is the scalar rule; a list states its floor as `min`, which counts entries. */
+  it('never marks a list field required-once', () => {
+    for (const specs of Object.values(GOOGLE_CREATIVE_FIELD_SPECS)) {
+      for (const spec of specs as readonly GoogleCreativeFieldSpec[]) {
+        if (spec.requiredOnce === true) expect(spec.kind).toBe('text');
+      }
+    }
+  });
+
+  /**
+   * Demand Gen and Display require a marketing image OR a square one; Performance Max requires
+   * both separately and so carries no rule. An empty list for Performance Max is the point, not an
+   * omission — a rule there would duplicate the two `min: 1` entries and read as an either-or.
+   */
+  it('states the marketing-image either-or only where upstream states it', () => {
+    expect(GOOGLE_CREATIVE_EITHER_OR_RULES['demand-gen'].map((r) => r.controls)).toEqual([['marketingImages', 'squareMarketingImages']]);
+    expect(GOOGLE_CREATIVE_EITHER_OR_RULES.display.map((r) => r.controls)).toEqual([['marketingImages', 'squareMarketingImages']]);
+    expect(GOOGLE_CREATIVE_EITHER_OR_RULES['performance-max']).toEqual([]);
+  });
+
+  /** Performance Max's independent requirement, which is what makes its empty rule list correct. */
+  it('requires both Performance Max marketing arrays separately', () => {
+    const specs = GOOGLE_CREATIVE_FIELD_SPECS['performance-max'] as readonly GoogleCreativeFieldSpec[];
+    expect(specs.find((f) => f.control === 'marketingImages')?.min).toBe(1);
+    expect(specs.find((f) => f.control === 'squareMarketingImages')?.min).toBe(1);
+  });
+
+  /** Every rule names fields that exist on its own channel, and names at least two of them. */
+  it('points every either-or rule at real list fields of its channel', () => {
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      const lists = (GOOGLE_CREATIVE_FIELD_SPECS[channel] as readonly GoogleCreativeFieldSpec[]).filter((f) => f.kind === 'list').map((f) => f.control);
+      for (const rule of GOOGLE_CREATIVE_EITHER_OR_RULES[channel] as readonly GoogleCreativeEitherOrRule[]) {
+        expect(rule.controls.length).toBeGreaterThan(1);
+        for (const control of rule.controls) expect(lists).toContain(control);
+      }
+    }
   });
 });
