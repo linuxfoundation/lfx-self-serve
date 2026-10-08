@@ -97,6 +97,7 @@ import {
   toMentorshipEnrollTerm,
   toMentorshipEnrollUpdateRequest,
   formatMentorshipApplicantTaskDueLabel,
+  formatMentorshipTaskDateLabel,
   formatMentorshipReviewUpdatedLabel,
   mentorshipMenteeTaskCompletion,
   mentorshipMentorReviewTasks,
@@ -1353,6 +1354,27 @@ describe('program detail helpers', () => {
       statusLabel: 'Pending',
       statusBadgeClass: 'bg-gray-100 text-gray-600',
     });
+  });
+
+  it('labels full upstream timestamps by their day, as the due date reads', () => {
+    const [row] = mentorshipApplicantTaskRows([
+      {
+        id: 'tsk_1',
+        name: 'Resume',
+        description: 'Upload your resume.',
+        status: 'pending',
+        prerequisite: false,
+        createdOn: '2026-08-01T10:32:00Z',
+        updatedOn: '2026-10-08T23:59:59.123456Z',
+        dueOn: '2026-10-15',
+      },
+    ]);
+
+    expect(row).toMatchObject({ createdLabel: 'Aug 1, 2026', updatedLabel: 'Oct 8, 2026', dueLabel: 'Oct 15, 2026' });
+  });
+
+  it('shows a task date without a leading YYYY-MM-DD as it came', () => {
+    expect(formatMentorshipTaskDateLabel('not-a-date')).toBe('not-a-date');
   });
 
   describe('buildMentorshipTaskUpdate', () => {

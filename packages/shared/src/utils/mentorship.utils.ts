@@ -1293,6 +1293,16 @@ export function mentorshipApplicantHasTasks(mentee: Pick<MentorshipProgramMentee
   return (mentee.tasksTotal ?? 0) > 0;
 }
 
+/**
+ * Created and Updated copy for one applicant task row, e.g. "Aug 1, 2026". Upstream sends these as full timestamps,
+ * which the BFF keeps for the Tasks tab's relative time, so only the leading `YYYY-MM-DD` is read here (as the UTC day,
+ * like the due date). Anything without one is shown as it came.
+ */
+export function formatMentorshipTaskDateLabel(value: string): string {
+  const day = /^\d{4}-\d{2}-\d{2}/.exec(value)?.[0];
+  return day ? formatIsoDateLabel(day) : value;
+}
+
 /** Due-date copy for one applicant task row. */
 export function formatMentorshipApplicantTaskDueLabel(task: Pick<MentorshipApplicantTask, 'prerequisite' | 'dueOn'>): string {
   if (task.dueOn) return formatIsoDateLabel(task.dueOn);
@@ -1312,9 +1322,9 @@ export function mentorshipApplicantTaskRows(tasks: ReadonlyArray<MentorshipAppli
     ...task,
     statusLabel: MENTORSHIP_APPLICANT_TASK_STATUS_LABELS[task.status],
     statusBadgeClass: MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES[task.status],
-    createdLabel: formatIsoDateLabel(task.createdOn),
+    createdLabel: formatMentorshipTaskDateLabel(task.createdOn),
     dueLabel: formatMentorshipApplicantTaskDueLabel(task),
-    updatedLabel: formatIsoDateLabel(task.updatedOn),
+    updatedLabel: formatMentorshipTaskDateLabel(task.updatedOn),
     canView: !!task.hasSubmission,
     canDownload: !!task.hasSubmission,
   }));
