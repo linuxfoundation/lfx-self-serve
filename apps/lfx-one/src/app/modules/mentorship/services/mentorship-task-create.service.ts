@@ -29,8 +29,9 @@ import { catchError, concatMap, defer, finalize, from, Observable, of, reduce, t
  * `MENTORSHIP_TASK_CREATE_MAX_APPLICATIONS` is sent in batches of that size, one after another. A single-mentee
  * failure gets its status's copy; the impersonation guard's 403 shows the server's message.
  *
- * Which applications are getting a task lives here rather than in the page: switching tabs can destroy the tab that
- * started a create, and a rebuilt tab must not send the same task again meanwhile.
+ * Which applications are getting a task lives here rather than in the page, so a caller can check `isCreating` before
+ * it sends: admin Current Mentees does, since switching tabs destroys the tab that started a create and a rebuilt tab
+ * must not send the same task again meanwhile. The mentor program detail does not check it.
  */
 @Injectable({ providedIn: 'root' })
 export class MentorshipTaskCreateService {
@@ -39,7 +40,7 @@ export class MentorshipTaskCreateService {
 
   private readonly creatingIds = new Set<string>();
 
-  /** Whether a task is being created for the application; the page sends no other create for it meanwhile. */
+  /** Whether a task is being created for the application, for a caller that sends no other create for it meanwhile. */
   public isCreating(applicationId: string): boolean {
     return this.creatingIds.has(applicationId);
   }

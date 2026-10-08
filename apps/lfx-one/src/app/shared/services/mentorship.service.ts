@@ -26,7 +26,7 @@ import { strictHttpParams } from '../utils/http-params.utils';
  *
  * Errors propagate to the caller, which owns the unavailable or retry state: the name check (the
  * wizard holds Next while it cannot confirm the name), the project picker's pages (Retry rather than
- * a failure shown as no projects, or a truncated list as complete), the CII badge (a 404 is `null`)
+ * a failure shown as no projects, or a truncated list as complete), the CII badge (a 404 is `null`),
  * the review and profile calls, and the task create and edit the admin and mentor program details share.
  * The admin pages' reads live in `MentorshipAdminService` and the mentor pages' in `MentorshipMentorService`.
  */
