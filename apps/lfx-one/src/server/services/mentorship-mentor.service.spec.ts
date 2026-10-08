@@ -971,10 +971,13 @@ describe('MentorshipMentorService.getMentorProgram', () => {
     await expect(service.getMentorProgram(buildReq(), PROGRAM_ID)).rejects.toMatchObject({ statusCode: 502, code: 'MENTORSHIP_INVALID_APPLICATION' });
   });
 
-  it('refuses a term id from upstream that is not a UUID before building a path from it', async () => {
+  it.each([
+    ['a path', '../tasks'],
+    ['empty', ''],
+  ])('refuses a term id from upstream that is not a UUID (%s) before building a path from it', async (_kind, termId) => {
     answer({
       ...caller(),
-      [`${PROGRAM_PATH}/applications`]: () => listOf([row(ACCEPTED_ID, 'accepted'), row(PENDING_ID, 'pending', { term: { ...FALL, id: '../tasks' } })]),
+      [`${PROGRAM_PATH}/applications`]: () => listOf([row(ACCEPTED_ID, 'accepted'), row(PENDING_ID, 'pending', { term: { ...FALL, id: termId } })]),
     });
 
     await expect(service.getMentorProgram(buildReq(), PROGRAM_ID)).rejects.toMatchObject({

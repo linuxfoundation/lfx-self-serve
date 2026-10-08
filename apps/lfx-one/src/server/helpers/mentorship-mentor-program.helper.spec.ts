@@ -103,10 +103,14 @@ describe('mentorshipMentorProgramTermIds', () => {
   });
 
   it('lists each term an application is on once, in the order first seen, skipping applications with no term', () => {
-    expect(mentorshipMentorProgramTermIds([onTerm('a1', 'term-b'), onTerm('a2', 'term-a'), onTerm('a3'), onTerm('a4', 'term-b'), onTerm('a5', '')])).toEqual([
+    expect(mentorshipMentorProgramTermIds([onTerm('a1', 'term-b'), onTerm('a2', 'term-a'), onTerm('a3'), onTerm('a4', 'term-b')])).toEqual([
       'term-b',
       'term-a',
     ]);
+  });
+
+  it('keeps a term whose id is empty, so the UUID check refuses it', () => {
+    expect(mentorshipMentorProgramTermIds([onTerm('a1', 'term-a'), onTerm('a2', '')])).toEqual(['term-a', '']);
   });
 
   it('lists no terms for no applications', () => {

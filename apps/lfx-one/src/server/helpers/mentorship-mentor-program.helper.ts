@@ -37,9 +37,12 @@ export const mapMentorshipMentorProgram = (item: MentorshipUpstreamMentoredProgr
   return { program, unknownStatus: !known };
 };
 
-/** The ids of the terms a program's applications are on, each once, in the order first seen. */
+/**
+ * The ids of the terms a program's applications are on, each once, in the order first seen. A term upstream sent is
+ * kept even when its id is empty, so the caller's UUID check refuses it rather than drop that application's tasks.
+ */
 export const mentorshipMentorProgramTermIds = (applications: readonly MentorshipUpstreamProgramApplicationRow[]): string[] => [
-  ...new Set(applications.flatMap((application) => (application.term?.id ? [application.term.id] : []))),
+  ...new Set(applications.flatMap((application) => (application.term ? [application.term.id] : []))),
 ];
 
 /**
