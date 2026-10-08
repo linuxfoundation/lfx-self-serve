@@ -37,6 +37,7 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
 @Component({
   selector: 'lfx-composer-guests',
   imports: [ButtonComponent, ConfirmDialogModule, FeatureToggleComponent, UserSearchComponent, MeetingCommitteeManagerComponent, TooltipModule],
+  providers: [ConfirmationService],
   templateUrl: './composer-guests.component.html',
 })
 export class ComposerGuestsComponent {
