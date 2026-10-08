@@ -15,7 +15,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
-import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
+import { classifySectionError, sectionEmptyState, worstSectionOutcome } from '@shared/utils/org-lens-empty-state.utils';
 import { catchError, combineLatest, map, of, switchMap, tap } from 'rxjs';
 
 import { OrgActiveContributorsDrawerComponent } from '../org-active-contributors-drawer/org-active-contributors-drawer.component';
@@ -32,13 +32,10 @@ import type {
   OrganizationContributorsResponse,
   OrganizationEventAttendanceMonthlyResponse,
   OrganizationMaintainersResponse,
-  OrgLensSectionOutcome,
+  OrgLensSectionErrorOutcome,
   TrainingEnrollmentsResponse,
 } from '@lfx-one/shared/interfaces';
 import type { ChartOptions, ChartType } from 'chart.js';
-
-/** Ascending severity — the combined section outcome is the worst of the six independent reads. */
-const OUTCOME_SEVERITY: Record<Exclude<OrgLensSectionOutcome, 'empty'>, number> = { denied: 0, unverifiable: 1, failed: 2, records: 3 };
 
 @Component({
   selector: 'lfx-organization-involvement',
@@ -73,26 +70,26 @@ export class OrganizationInvolvementComponent {
   private readonly certifiedEmployeesLoading = signal(true);
   private readonly trainingEnrollmentsLoading = signal(true);
   private readonly eventsLoading = signal(true);
-  private readonly maintainersOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
-  private readonly contributorsOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
-  private readonly membershipTierOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
-  private readonly certifiedEmployeesOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
-  private readonly trainingEnrollmentsOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
-  private readonly eventsOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
+  private readonly maintainersOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly contributorsOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly membershipTierOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly certifiedEmployeesOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly trainingEnrollmentsOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly eventsOutcome = signal<OrgLensSectionErrorOutcome>('records');
   private readonly attempt = signal(0);
   private readonly attempt$ = toObservable(this.attempt);
   private readonly selectedAccountId$ = toObservable(this.accountContextService.selectedAccount).pipe(map((account) => account.accountId));
   private readonly selectedFoundationSlug$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((foundation) => foundation?.slug || ''));
   public readonly hasFoundationSelected = computed<boolean>(() => !!this.projectContextService.selectedFoundation());
-  public readonly sectionOutcome = computed<Exclude<OrgLensSectionOutcome, 'empty'>>(() =>
-    [
+  public readonly sectionOutcome = computed<OrgLensSectionErrorOutcome>(() =>
+    worstSectionOutcome([
       this.maintainersOutcome(),
       this.contributorsOutcome(),
       this.membershipTierOutcome(),
       this.certifiedEmployeesOutcome(),
       this.trainingEnrollmentsOutcome(),
       this.eventsOutcome(),
-    ].reduce((worst, outcome) => (OUTCOME_SEVERITY[outcome] < OUTCOME_SEVERITY[worst] ? outcome : worst), 'records' as Exclude<OrgLensSectionOutcome, 'empty'>)
+    ])
   );
   public readonly emptyState = computed(() => (this.isLoading() ? null : sectionEmptyState(this.sectionOutcome())));
   private readonly maintainersData = this.initializeMaintainersData();

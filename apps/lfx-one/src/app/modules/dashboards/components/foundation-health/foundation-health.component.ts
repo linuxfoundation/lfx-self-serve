@@ -23,7 +23,7 @@ import { hexToRgba, computePeriodChange, computeHealthyOrBetterPct, computeScore
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
-import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
+import { classifySectionError, sectionEmptyState, worstSectionOutcome } from '@shared/utils/org-lens-empty-state.utils';
 import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
 
 import { ActiveContributorsDrawerComponent } from '../active-contributors-drawer/active-contributors-drawer.component';
@@ -45,12 +45,9 @@ import type {
   FoundationMaintainersMonthlyResponse,
   FoundationMaintainersResponse,
   FoundationValueConcentrationResponse,
-  OrgLensSectionOutcome,
+  OrgLensSectionErrorOutcome,
   UniqueContributorsDailyResponse,
 } from '@lfx-one/shared/interfaces';
-
-/** Ascending severity — the combined section outcome is the worst of the ten independent reads. */
-const OUTCOME_SEVERITY: Record<Exclude<OrgLensSectionOutcome, 'empty'>, number> = { denied: 0, unverifiable: 1, failed: 2, records: 3 };
 
 @Component({
   selector: 'lfx-foundation-health',
@@ -93,16 +90,16 @@ export class FoundationHealthComponent {
   protected readonly eventsLoading = signal(true);
 
   // Outcome signals for each data source, tracked alongside loading for the combined empty state
-  private readonly totalProjectsOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
-  private readonly totalMembersOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
-  private readonly softwareValueOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
-  private readonly companyBusFactorOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
-  private readonly maintainersOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
-  private readonly maintainersMonthlyOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
-  private readonly healthScoresOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
-  private readonly activeContributorsOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
-  private readonly activeContributorsMonthlyDistinctOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
-  private readonly eventsOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
+  private readonly totalProjectsOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly totalMembersOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly softwareValueOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly companyBusFactorOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly maintainersOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly maintainersMonthlyOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly healthScoresOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly activeContributorsOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly activeContributorsMonthlyDistinctOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly eventsOutcome = signal<OrgLensSectionErrorOutcome>('records');
 
   private readonly attempt = signal(0);
   private readonly attempt$ = toObservable(this.attempt);
@@ -140,8 +137,8 @@ export class FoundationHealthComponent {
       this.activeContributorsMonthlyDistinctLoading() ||
       this.eventsLoading()
   );
-  public readonly sectionOutcome = computed<Exclude<OrgLensSectionOutcome, 'empty'>>(() =>
-    [
+  public readonly sectionOutcome = computed<OrgLensSectionErrorOutcome>(() =>
+    worstSectionOutcome([
       this.totalProjectsOutcome(),
       this.totalMembersOutcome(),
       this.softwareValueOutcome(),
@@ -152,7 +149,7 @@ export class FoundationHealthComponent {
       this.activeContributorsOutcome(),
       this.activeContributorsMonthlyDistinctOutcome(),
       this.eventsOutcome(),
-    ].reduce((worst, outcome) => (OUTCOME_SEVERITY[outcome] < OUTCOME_SEVERITY[worst] ? outcome : worst), 'records' as Exclude<OrgLensSectionOutcome, 'empty'>)
+    ])
   );
   public readonly emptyState = computed(() => (this.isLoading() ? null : sectionEmptyState(this.sectionOutcome())));
 
