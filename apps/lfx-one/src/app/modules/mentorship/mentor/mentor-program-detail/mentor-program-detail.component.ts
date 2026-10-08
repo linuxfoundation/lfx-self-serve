@@ -11,6 +11,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { MENTORSHIP_NOTE_DIALOG_HEADER } from '@lfx-one/shared/constants';
 import {
+  MentorshipApplicantTask,
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramDetailTab,
   MentorshipTaskCreateRequest,
@@ -23,8 +24,8 @@ import { catchError, combineLatest, distinctUntilChanged, EMPTY, filter, finaliz
 
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorNoteSaveService } from '../../services/mentor-note-save.service';
-import { MentorshipTaskCreateService } from '../../services/mentorship-task-create.service';
 import { MentorTaskReviewService } from '../../services/mentor-task-review.service';
+import { MentorshipTaskCreateService } from '../../services/mentorship-task-create.service';
 import { MentorApplicantsTabComponent } from './components/mentor-applicants-tab/mentor-applicants-tab.component';
 import { MentorMenteesTabComponent } from './components/mentor-mentees-tab/mentor-mentees-tab.component';
 import { MentorProgramDetailHeaderComponent } from './components/mentor-program-detail-header/mentor-program-detail-header.component';
@@ -36,7 +37,9 @@ import { MentorTasksTabComponent } from './components/mentor-tasks-tab/mentor-ta
  * program title/subtitle/tab-bar header shown in the design. Tasks, Mentees, and
  * Applicants are implemented. A reviewer note is saved when its dialog closes, and the row shows it once saved.
  * A task created from the Mentees tab re-reads the detail in the background, so both tabs list it. A task
- * approved or sent back from the Tasks tab re-reads it too, so the tab and its count show the new status.
+ * approved or sent back from the Tasks tab re-reads it too, so the tab and its count show the new status. A task
+ * edited, or given a status, from an Applicants or Mentees row is written into both lists at once and then re-read
+ * the same way, so the progress, the counts and the Tasks tab follow.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-program-detail',
@@ -110,6 +113,16 @@ export class MentorProgramDetailComponent {
   /** Callbacks waiting on the latest re-read, so a re-read that a newer one supersedes releases nothing. */
   private pendingSettles: (() => void)[] = [];
 
+  /**
+   * Writes a task saved from an expanded row into both lists, then re-reads the detail in the background so the
+   * progress, the counts and the Tasks tab follow. Passed to the tabs, and on to their task panels, as a callback
+   * rather than an output, so a save that lands after its row collapsed or its tab closed still reaches the page.
+   */
+  protected readonly patchSavedTask = (applicationId: string, task: MentorshipApplicantTask): void => {
+    this.detail.update((detail) => detail && this.withTask(detail, applicationId, task));
+    this.refreshDetail(this.programId());
+  };
+
   protected onTabChange(tab: MentorshipMentorProgramDetailTab): void {
     this.activeTab.set(tab);
   }
@@ -177,6 +190,13 @@ export class MentorProgramDetailComponent {
   /** A mentee is listed on both tabs under one application id, so both lists take the note. An empty note clears it. */
   private withNote(detail: MentorshipMentorProgramDetail, applicationId: string, note: string): MentorshipMentorProgramDetail {
     const apply = <T extends { id: string; note?: string }>(person: T): T => (person.id === applicationId ? { ...person, note: note || undefined } : person);
+    return { ...detail, mentees: detail.mentees.map(apply), applicants: detail.applicants.map(apply) };
+  }
+
+  /** A mentee is listed on both tabs under one application id, so both lists take the saved task. */
+  private withTask(detail: MentorshipMentorProgramDetail, applicationId: string, task: MentorshipApplicantTask): MentorshipMentorProgramDetail {
+    const apply = <T extends { id: string; tasks?: MentorshipApplicantTask[] }>(person: T): T =>
+      person.id === applicationId && person.tasks ? { ...person, tasks: person.tasks.map((current) => (current.id === task.id ? task : current)) } : person;
     return { ...detail, mentees: detail.mentees.map(apply), applicants: detail.applicants.map(apply) };
   }
 

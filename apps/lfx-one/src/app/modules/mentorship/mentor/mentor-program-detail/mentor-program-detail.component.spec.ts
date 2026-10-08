@@ -6,10 +6,11 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import {
+  MentorshipApplicantTask,
   MentorshipMentorProgramDetail,
+  MentorshipMentorTaskReviewDecision,
   MentorshipTaskCreateRequest,
   MentorshipTaskCreateResponse,
-  MentorshipMentorTaskReviewDecision,
 } from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { MessageService } from 'primeng/api';
@@ -19,8 +20,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorNoteSaveService } from '../../services/mentor-note-save.service';
-import { MentorshipTaskCreateService } from '../../services/mentorship-task-create.service';
 import { MentorTaskReviewService } from '../../services/mentor-task-review.service';
+import { MentorshipTaskCreateService } from '../../services/mentorship-task-create.service';
 import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
 import { MentorProgramDetailComponent } from './mentor-program-detail.component';
 
@@ -444,6 +445,53 @@ describe('MentorProgramDetailComponent', () => {
 
       expect(reviewing()).toEqual([]);
       expect(shownDetail()?.mentees[0].id).toBe('mnt_1');
+    });
+  });
+
+  describe('task saved from an expanded row', () => {
+    const task = (overrides: Partial<MentorshipApplicantTask> = {}): MentorshipApplicantTask => ({
+      id: 'tsk_1',
+      name: 'Resume',
+      description: 'Upload your resume.',
+      status: 'pending',
+      prerequisite: false,
+      createdOn: '2026-07-01',
+      updatedOn: '2026-08-15',
+      ...overrides,
+    });
+    const withTasks = (): MentorshipMentorProgramDetail => {
+      const value = detail();
+      value.mentees = [{ ...value.mentees[0], id: 'app_1', tasks: [task(), task({ id: 'tsk_2', name: 'Report' })] }];
+      value.applicants = [{ ...value.applicants[0], tasks: [task()] }];
+      return value;
+    };
+
+    it('writes the task into both lists at once, then re-reads the detail', () => {
+      const pending = new Subject<MentorshipMentorProgramDetail>();
+      buildWith(of('a saved note'), of(withTasks()));
+      getMentorProgram.mockReturnValueOnce(pending);
+      const saved = task({ status: 'completed', updatedOn: '2026-10-08' });
+
+      fixture.componentInstance['patchSavedTask']('app_1', saved);
+
+      expect(shownDetail()?.mentees[0].tasks).toEqual([saved, task({ id: 'tsk_2', name: 'Report' })]);
+      expect(shownDetail()?.applicants[0].tasks).toEqual([saved]);
+      expect(getMentorProgram).toHaveBeenCalledTimes(2);
+
+      const reread = withTasks();
+      reread.tabCounts = { tasks: 2, mentees: 1, applicants: 1 };
+      pending.next(reread);
+      pending.complete();
+      expect(shownDetail()?.tabCounts.tasks).toBe(2);
+    });
+
+    it("leaves another application's rows as they were", () => {
+      buildWith(of('a saved note'), of(withTasks()));
+
+      fixture.componentInstance['patchSavedTask']('app_other', task({ status: 'completed' }));
+
+      expect(shownDetail()?.mentees[0].tasks?.[0].status).toBe('pending');
+      expect(shownDetail()?.applicants[0].tasks?.[0].status).toBe('pending');
     });
   });
 });

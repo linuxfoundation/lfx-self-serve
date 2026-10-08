@@ -140,10 +140,11 @@ PUT /applications/:applicationId/note { note } → isUuid(applicationId), else 4
 
 ## Tasks
 
-The program detail creates tasks from the Mentees tab's task dialog, for one mentee or a group, through `POST /api/mentorship/tasks`, which admin Current Mentees uses too (linuxfoundation/lfx-mentorship#214). The contract, the toasts and the in-flight tracking are in [Mentorship Task Writes](./mentorship-tasks.md). What the mentor page adds:
+The program detail creates tasks from the Mentees tab's task dialog, for one mentee or a group, and edits a task or sets its status from an expanded row on the Mentees and Applicants tabs. Both write through `POST /api/mentorship/tasks` and `PATCH /api/mentorship/tasks/:taskId`, which admin Current Mentees uses too (linuxfoundation/lfx-mentorship#214, #273). The contract, the toasts and the in-flight tracking are in [Mentorship Task Writes](./mentorship-tasks.md). What the mentor page adds:
 
 - **Create.** The Mentees tab offers create only on accepted mentees, and Create Group Task preselects only them. `MentorProgramDetailComponent` takes the tab's `taskCreateRequested` and creates through `MentorshipTaskCreateService`, passing the mentees' names so a partial failure can name who was missed.
-- **Re-read.** After every create attempt, whatever its outcome, the page re-reads the detail without its loading state, so the rows show what upstream holds on the Mentees and Tasks tabs. The re-read is dropped if the mentor has left or moved to another program or a later re-read has started, and a failed re-read keeps the rows on screen.
+- **Edit and status.** The page hands both tabs `patchSavedTask`, which they pass to their task panels. A saved task is written into the mentee and applicant lists at once, since an accepted or graduated mentee is listed on both tabs under one application id.
+- **Re-read.** After every create attempt, whatever its outcome, and after every saved edit or status change, the page re-reads the detail without its loading state, so the progress, the counts and the Tasks tab show what upstream holds. The re-read is dropped if the mentor has left or moved to another program or a later re-read has started, and a failed re-read keeps the rows on screen.
 
 ## Task reviews
 

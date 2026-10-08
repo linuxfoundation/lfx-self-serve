@@ -19,9 +19,10 @@ import {
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import {
-  MentorshipTaskCreateRequest,
+  MentorshipApplicantTask,
   MentorshipNoteRequest,
   MentorshipProgramMentee,
+  MentorshipTaskCreateRequest,
   MentorshipTaskDialogAssignee,
   MentorshipTaskFormValue,
 } from '@lfx-one/shared/interfaces';
@@ -56,6 +57,8 @@ export class MentorMenteesTabComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly mentees = input.required<MentorshipProgramMentee[]>();
+  /** Called with the application id and the task as saved from an expanded row, so the page patches its lists. */
+  public readonly taskSaved = input.required<(applicationId: string, task: MentorshipApplicantTask) => void>();
   public readonly noteRequested = output<MentorshipNoteRequest>();
   public readonly taskCreateRequested = output<MentorshipTaskCreateRequest>();
 

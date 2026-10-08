@@ -10,7 +10,7 @@ Admins and mentors manage a mentee's tasks the same way, so both program details
 | Method | Path                            | Controller method | Page                                                                                         |
 | ------ | ------------------------------- | ----------------- | -------------------------------------------------------------------------------------------- |
 | POST   | `/api/mentorship/tasks`         | `createTasks`     | Create task on admin Current Mentees; Create and Create Group Task on the mentor Mentees tab |
-| PATCH  | `/api/mentorship/tasks/:taskId` | `updateTask`      | Edit and the status select on an expanded task row on admin Current Mentees                  |
+| PATCH  | `/api/mentorship/tasks/:taskId` | `updateTask`      | Edit and the status select on an expanded task row, on every page that shows the task panel  |
 
 Both are behind `blockDuringImpersonation` and use the caller's bearer token. `taskId` must be a UUID; anything else is a 400.
 
@@ -67,4 +67,4 @@ POST /tasks { applicationIds, name, description, dueDate?, requiresFileSubmissio
 - `MentorshipTaskUpdateService` tracks the tasks being saved: a task with a change in flight takes no second change, and its select and Edit are disabled. The in-flight ids are a signal, so a panel rebuilt mid-save keeps both disabled and re-enables them when the save settles, whether it succeeded or failed.
 - Logs carry the task id and the names of the fields changed, never the task's text.
 
-The mentor Applicants and Mentees tabs show the same task panel but do not save yet: their Edit and status select show the "coming soon" toast. What each page does with a create or a saved task is described with the page: [admin Current Mentees](./mentorship-admin.md#task-writes) and [the mentor program detail](./mentorship-mentor.md#tasks).
+What each page does with a create or a saved task is described with the page: [admin Current Mentees](./mentorship-admin.md#task-writes) and [the mentor program detail](./mentorship-mentor.md#tasks).

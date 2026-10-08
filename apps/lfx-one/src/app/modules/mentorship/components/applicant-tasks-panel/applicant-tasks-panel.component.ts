@@ -8,7 +8,6 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
-  MENTORSHIP_APPLICANT_TASK_STATUS_LABELS,
   MENTORSHIP_APPLICANT_TASK_STATUS_OPTIONS,
   MENTORSHIP_APPLICANT_TASKS_HIDE_PREREQUISITE_LABEL,
   MENTORSHIP_TASK_EDIT_ACTION_ICON,
@@ -18,20 +17,19 @@ import { MentorshipTaskUpdate, MentorshipApplicantTask, MentorshipApplicantTaskR
 import { buildMentorshipTaskUpdate, filterMentorshipApplicantTasks } from '@lfx-one/shared/utils';
 import { startWith, take } from 'rxjs';
 
-import { MentorshipTaskUpdateService } from '../../services/mentorship-task-update.service';
 import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
+import { MentorshipTaskUpdateService } from '../../services/mentorship-task-update.service';
 
 type TaskStatusForm = FormGroup<{ status: FormControl<MentorshipApplicantTaskStatus> }>;
 
 /**
  * Expanded tasks sub-table for admin Current Mentees and the mentor program-detail Applicants and Mentees rows.
- * With `editable` set (admin Current Mentees) the Edit dialog and the status select save through the BFF: the saved
- * task goes to `taskSaved`, which patches the caller's list, and a failed save puts the select back and toasts why.
- * The caller is a callback rather than an output because collapsing the row destroys this panel while a save is still
- * in flight, and Angular drops an output emitted after destroy. Without `editable` (the mentor tabs, which have no
- * write route yet) every write stubs to the coming-soon toast and the list is left as it was. View and download always
- * stub to the toast, as file transfer is not wired.
+ * The Edit dialog and the status select save through the BFF route both pages share: the saved task goes to
+ * `taskSaved`, which patches the caller's list, and a failed save puts the select back and toasts why. The caller is a
+ * callback rather than an output because collapsing the row destroys this panel while a save is still in flight, and
+ * Angular drops an output emitted after destroy. View and download stub to the coming-soon toast, as file transfer is
+ * not wired.
  */
 @Component({
   selector: 'lfx-mentorship-applicant-tasks-panel',
@@ -48,8 +46,6 @@ export class ApplicantTasksPanelComponent {
   public readonly applicantId = input.required<string>();
   public readonly applicantName = input.required<string>();
   public readonly tasks = input.required<MentorshipApplicantTaskRow[]>();
-  /** Saves edits and status changes through the BFF instead of the coming-soon toast. */
-  public readonly editable = input(false);
   /** Called with the applicant's id and the task as saved, so the owner of the list can patch it in place. */
   public readonly taskSaved = input<(applicantId: string, task: MentorshipApplicantTask) => void>(() => undefined);
 
@@ -96,16 +92,12 @@ export class ApplicantTasksPanelComponent {
 
   /** Opens the shared task-form dialog in edit mode and saves what it changed. */
   protected onEditTask(task: MentorshipApplicantTaskRow): void {
-    if (this.editable() && this.isBusy(task.id)) return;
+    if (this.isBusy(task.id)) return;
     this.taskDialog
       .openEdit(task)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((value) => {
         if (!value) return;
-        if (!this.editable()) {
-          this.comingSoon.notify(`Update ${value.name} for ${this.applicantName()}`);
-          return;
-        }
         const update = buildMentorshipTaskUpdate(task, value);
         if (Object.keys(update).length === 0) return;
         this.saveTask(task, update, true);
@@ -113,10 +105,6 @@ export class ApplicantTasksPanelComponent {
   }
 
   protected onStatusChange(task: MentorshipApplicantTaskRow, event: { value: MentorshipApplicantTaskStatus }): void {
-    if (!this.editable()) {
-      this.comingSoon.notify(`Status of ${task.name} for ${this.applicantName()} → ${MENTORSHIP_APPLICANT_TASK_STATUS_LABELS[event.value]}`);
-      return;
-    }
     if (event.value === task.status) return;
     this.saveTask(task, { status: event.value }, false);
   }
