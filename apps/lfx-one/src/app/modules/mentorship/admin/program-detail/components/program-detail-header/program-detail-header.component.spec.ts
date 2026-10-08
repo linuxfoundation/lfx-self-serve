@@ -194,6 +194,28 @@ describe('ProgramDetailHeaderComponent — actions', () => {
     expect(emitted).toEqual([action]);
   });
 
+  it('opens the confirm once when the menu activates a row the way its Enter key does', async () => {
+    render('open');
+    const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    const trigger = query('mentorship-program-detail-more')?.querySelector('button') as HTMLButtonElement;
+
+    trigger.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    // The menu reports `onShow` once its overlay has rendered, so read the trigger after one more pass.
+    fixture.detectChanges();
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+
+    // PrimeNG's Enter and Space click the focused row's `a` or `button`, falling back to the `li` itself.
+    const row = document.body.querySelector('li[data-pc-section="menuitem"]');
+    const target = row?.querySelector<HTMLElement>('a,button');
+    expect(target?.getAttribute('data-testid')).toBe('mentorship-program-detail-menu-hide');
+    target?.click();
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+  });
+
   it('disables the menu button while a visibility change is saving', () => {
     render('open');
     fixture.componentRef.setInput('visibilityBusy', true);

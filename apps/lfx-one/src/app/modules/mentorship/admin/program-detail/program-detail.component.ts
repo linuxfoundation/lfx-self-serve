@@ -113,26 +113,24 @@ export class ProgramDetailComponent {
   /**
    * Hides or unhides the program, then reads the header again so the status badge follows. A 409 (a hide meeting active
    * applications, or a status that no longer allows the change) shows why and reads the header again too; an impersonation
-   * 403 shows the server's text; anything else shows a generic failure.
+   * 403 shows the server's text; anything else shows a generic failure. The write is not tied to this page, so leaving it
+   * after the confirm still lands the change and its toast, as the tabs' writes do.
    */
   protected onVisibilityChange(action: MentorshipProgramVisibilityAction): void {
     const programId = this.programId();
     if (!programId || this.visibilityBusy()) return;
     this.visibilityBusy.set(true);
-    this.mentorshipAdminService
-      .setProgramVisibility(programId, action)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => {
-          this.visibilityBusy.set(false);
-          this.showToast('success', 'Success', action === 'hide' ? MENTORSHIP_PROGRAM_HIDDEN_MESSAGE : MENTORSHIP_PROGRAM_UNHIDDEN_MESSAGE);
-          this.refreshCounts();
-        },
-        error: (err: unknown) => {
-          this.visibilityBusy.set(false);
-          this.onVisibilityError(action, err);
-        },
-      });
+    this.mentorshipAdminService.setProgramVisibility(programId, action).subscribe({
+      next: () => {
+        this.visibilityBusy.set(false);
+        this.showToast('success', 'Success', action === 'hide' ? MENTORSHIP_PROGRAM_HIDDEN_MESSAGE : MENTORSHIP_PROGRAM_UNHIDDEN_MESSAGE);
+        this.refreshCounts();
+      },
+      error: (err: unknown) => {
+        this.visibilityBusy.set(false);
+        this.onVisibilityError(action, err);
+      },
+    });
   }
 
   /** Reads the page again, keeping the tab the admin is on. */

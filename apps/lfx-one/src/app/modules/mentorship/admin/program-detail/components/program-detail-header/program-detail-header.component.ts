@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, output, PLATFORM_ID, viewChild, viewChildren } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, output, PLATFORM_ID, signal, viewChild, viewChildren } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { environment } from '@environments/environment';
@@ -55,6 +55,9 @@ export class ProgramDetailHeaderComponent {
   public readonly editClick = output<void>();
   /** Emitted once the admin confirms Hide or Unhide; the page writes it. */
   public readonly visibilityChange = output<MentorshipProgramVisibilityAction>();
+
+  /** Whether the `…` menu is open, for the trigger's `aria-expanded`. */
+  protected readonly moreMenuOpen = signal(false);
 
   protected readonly seasonLine = computed(() => {
     const program = this.program();

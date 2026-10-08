@@ -283,6 +283,19 @@ describe('ProgramDetailComponent', () => {
       expect(fixture.componentInstance['visibilityBusy']()).toBe(false);
     });
 
+    it('lands the change and its toast even when the admin leaves the page first', () => {
+      const pending = new Subject<void>();
+      buildAndSpy(pending);
+      fixture.componentInstance['onVisibilityChange']('hide');
+      fixture.destroy();
+
+      expect(pending.observed).toBe(true);
+      pending.next();
+      pending.complete();
+
+      expect(toasts()).toEqual([expect.objectContaining({ severity: 'success', detail: MENTORSHIP_PROGRAM_HIDDEN_MESSAGE })]);
+    });
+
     it('ignores a second change while one is saving', () => {
       const pending = new Subject<void>();
       buildAndSpy(pending);
