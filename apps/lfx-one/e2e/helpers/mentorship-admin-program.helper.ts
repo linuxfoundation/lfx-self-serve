@@ -42,7 +42,6 @@ export const ADMIN_PROGRAM_PAGE: MentorshipAdminProgramPage = {
     slug: 'test-program-admin',
     name: 'Test Program Admin',
     projectName: 'Test Project',
-    term: ADMIN_OPEN_TERM_NAME,
     status: 'open',
     stats: { mentors: 0, mentees: 1, graduated: 1 },
     createdOn: '2026-06-01',

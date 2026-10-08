@@ -33,12 +33,10 @@ describe('MentorProgramDetailComponent', () => {
       slug: 'gridflow-time-series-ingestion-pipeline',
       name: 'GridFlow: Ingestion Pipeline',
       projectName: 'LF Energy',
-      term: 'Fall 2026',
-      termStatus: 'active-term',
+      status: 'open',
       stats: { mentees: 2, applicants: 1, tasksToReview: 3 },
-      termStartDate: '2026-09-01',
-      termEndDate: '2026-12-15',
     },
+    // The detail is program-wide: each row carries its own application's term.
     mentees: [
       {
         id: 'mnt_1',
@@ -54,7 +52,7 @@ describe('MentorProgramDetailComponent', () => {
         name: 'Ifeoma Adeyemi',
         email: 'ifeoma.adeyemi@example.com',
         status: 'pending',
-        termName: 'Fall 2026',
+        termName: 'Spring 2027',
         createdOn: '2026-06-28',
         updatedOn: '2026-07-02',
       },

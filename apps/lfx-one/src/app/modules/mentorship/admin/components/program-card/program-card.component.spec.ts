@@ -34,7 +34,6 @@ describe('ProgramCardComponent', () => {
     slug: 'acme-rocket-mentorship',
     name: 'Acme Rocket Mentorship',
     projectName: 'Acme Rocket',
-    term: 'Fall 2026',
     status: 'pending-review',
     stats: { mentors: 0, mentees: 0, graduated: 0 },
     logoMissing: true,

@@ -1350,11 +1350,6 @@ export function buildMentorshipTaskUpdate(task: MentorshipApplicantTask, value: 
   return update;
 }
 
-/** Inclusive UTC date range for term / invitation columns, e.g. `Jul 1, 2026 – Aug 31, 2026`. */
-export function formatMentorshipDateRange(start: string, end: string): string {
-  return `${formatIsoDateLabel(start)} – ${formatIsoDateLabel(end)}`;
-}
-
 /** Short month-year for the terms table, e.g. `Sep 2026`. */
 export function formatMentorshipShortMonthYear(value: string): string {
   const parsed = parseMentorshipDateOnly(value);

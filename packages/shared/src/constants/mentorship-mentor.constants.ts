@@ -8,7 +8,6 @@ import type {
   MentorshipMentoringHistoryStatus,
   MentorshipMentorProfileResponse,
   MentorshipMentorProgramsResponse,
-  MentorshipMentorProgramTermStatus,
   MentorshipMentorRegisterFieldErrors,
   MentorshipMentorRegisterForm,
 } from '../interfaces/mentorship-mentor.interface';
@@ -23,17 +22,11 @@ export const MENTORSHIP_MENTOR_PAGE_TABS = [
   { value: 'profile' as const, label: 'Mentor Profile' },
 ];
 
-export const MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_LABELS: Record<MentorshipMentorProgramTermStatus, string> = {
-  'active-term': 'Active term',
-  upcoming: 'Upcoming',
-  completed: 'Completed',
-};
-
-export const MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES: Record<MentorshipMentorProgramTermStatus, string> = {
-  'active-term': 'bg-blue-50 text-blue-700',
-  upcoming: 'bg-amber-50 text-amber-700',
-  completed: 'bg-gray-100 text-gray-600',
-};
+/**
+ * Statuses of a mentor's program on upstream `GET /me/mentor-programs`, which the card shows with the admin card's
+ * `MENTORSHIP_PROGRAM_STATUS_LABELS` and `MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES`.
+ */
+export const MENTORSHIP_MENTOR_PROGRAM_STATUSES = ['open', 'completed'] as const;
 
 export const EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE: MentorshipMentorProgramsResponse = {
   data: [],
