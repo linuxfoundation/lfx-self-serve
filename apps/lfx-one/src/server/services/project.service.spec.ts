@@ -5,6 +5,8 @@ import type { ProjectFunding } from '@lfx-one/shared/enums';
 import type { Project, QueryServiceResponse, ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MicroserviceError } from '../errors';
+
 // Mirrors meeting.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub. `ProjectService`'s
 // constructor also builds `NatsService`/`SnowflakeService`/`ETagService`; the Snowflake-backed
@@ -2070,11 +2072,52 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
 
   it('forwards includeAuditor from getProjectBySlug through to getProjectById', async () => {
     const spy = vi.spyOn(service, 'getProjectById').mockResolvedValueOnce({ uid: 'p1', slug: 'p1' } as Project);
-    vi.spyOn(service, 'getProjectIdBySlug').mockResolvedValueOnce({ exists: true, uid: 'p1', slug: 'p1' });
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1' });
 
     await service.getProjectBySlug(req, 'p1', false, true);
 
     expect(spy).toHaveBeenCalledWith(req, 'p1', true, false, true);
+  });
+
+  it('resolves the encoded slug via HTTP and retains the detail access and role checks', async () => {
+    const project = { uid: 'p1', slug: 'test-project' } as Project;
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1' });
+    const detail = vi.spyOn(service, 'getProjectById').mockResolvedValueOnce(project);
+    const legacyLookup = vi.spyOn(service, 'getProjectIdBySlug');
+
+    await expect(service.getProjectBySlug(req, 'test project', true, true)).resolves.toBe(project);
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/slug-to-uid/test%20project', 'GET');
+    expect(detail).toHaveBeenCalledWith(req, 'p1', true, true, true);
+    expect(legacyLookup).not.toHaveBeenCalled();
+  });
+
+  it.each([404, 403, 500, 503])('preserves a resolver HTTP %s without fetching project details', async (status) => {
+    const error = new MicroserviceError('lookup failed', status, 'LOOKUP_FAILED');
+    proxyRequest.mockRejectedValueOnce(error);
+    const detail = vi.spyOn(service, 'getProjectById');
+
+    await expect(service.getProjectBySlug(req, 'test-project')).rejects.toBe(error);
+
+    expect(detail).not.toHaveBeenCalled();
+  });
+
+  it('preserves resolver transport failures rather than reporting a missing project', async () => {
+    const error = new MicroserviceError('lookup unavailable', 503, 'SERVICE_UNAVAILABLE', { transportFailure: true });
+    proxyRequest.mockRejectedValueOnce(error);
+    const detail = vi.spyOn(service, 'getProjectById');
+
+    await expect(service.getProjectBySlug(req, 'test-project')).rejects.toBe(error);
+
+    expect(detail).not.toHaveBeenCalled();
+  });
+
+  it('preserves authorization failures from the resolved project detail lookup', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1' });
+    const error = new MicroserviceError('forbidden', 403, 'FORBIDDEN');
+    vi.spyOn(service, 'getProjectById').mockRejectedValueOnce(error);
+
+    await expect(service.getProjectBySlug(req, 'test-project')).rejects.toBe(error);
   });
 });
 

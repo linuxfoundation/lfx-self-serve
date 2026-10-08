@@ -661,8 +661,9 @@ export class ProjectService {
   }
 
   /**
-   * Fetches a single project by slug using NATS for slug resolution
-   * First resolves slug to ID via NATS, then fetches project data
+   * Resolves a slug via HTTP, preserving missing/denied versus transient failures,
+   * then fetches project data with the existing access and optional role checks.
+   * The NATS resolver returns the same empty reply for misses and internal failures.
    */
   public async getProjectBySlug(
     req: Request,
@@ -670,18 +671,15 @@ export class ProjectService {
     includeMeetingCoordinator: boolean = false,
     includeAuditor: boolean = false
   ): Promise<Project> {
-    const natsResult = await this.getProjectIdBySlug(req, projectSlug);
-
-    if (!natsResult.exists || !natsResult.uid) {
-      throw new ResourceNotFoundError('Project', projectSlug, {
-        operation: 'get_project_by_slug_via_nats',
-        service: 'project_service',
-        path: '/nats/project-slug-lookup',
-      });
-    }
+    const { uid } = await this.microserviceProxy.proxyRequest<{ uid: string }>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/slug-to-uid/${encodeURIComponent(projectSlug)}`,
+      'GET'
+    );
 
     // Now fetch the project using the resolved ID
-    return this.getProjectById(req, natsResult.uid, true, includeMeetingCoordinator, includeAuditor);
+    return this.getProjectById(req, uid, true, includeMeetingCoordinator, includeAuditor);
   }
 
   public async getProjectSettings(req: Request, uid: string): Promise<ProjectSettings> {

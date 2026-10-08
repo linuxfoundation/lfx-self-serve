@@ -19,6 +19,7 @@ import { ProfileController } from './controllers/profile.controller';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
+import { applySsrRenderStatus } from './helpers/ssr-render-status.helper';
 import { resolvePublishableGwSupabaseKey } from './helpers/supabase-key.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
@@ -583,6 +584,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     auth,
     runtimeConfig,
     notFound: false,
+    unavailable: false,
     providers: [
       { provide: APP_BASE_HREF, useValue: process.env['PCC_BASE_URL'] },
       { provide: REQUEST, useValue: req },
@@ -598,15 +600,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
 
       applySsrCacheHeaders(response);
 
-      // Web `Response.status` is read-only, so rebuild with 404 when the render flagged not-found.
-      // Buffer the body first (404 pages are small) so we never hand a consumed stream to the new Response.
-      if (renderContext.notFound && response.status === 200) {
-        const body = await response.text();
-        const finalResponse = new globalThis.Response(body, { status: 404, statusText: 'Not Found', headers: response.headers });
-        return writeResponseToNodeResponse(finalResponse, res);
-      }
-
-      return writeResponseToNodeResponse(response, res);
+      return writeResponseToNodeResponse(await applySsrRenderStatus(response, renderContext), res);
     })
     .catch((error) => {
       logger.error(req, 'ssr_render', ssrStartTime, error, {

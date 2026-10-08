@@ -156,7 +156,7 @@ export class ProjectContextService {
    * itself never carries `stage` — `projectQueryParamGuard` builds it from a `Project` response but
    * drops that field — so this reads it via a separate `ProjectService.getProject` call keyed off
    * `activeContext`, not a derivation of it. That call is cached per slug for the service's
-   * lifetime (shared with `projectQueryParamGuard`'s own read), so the value reflects the project's
+   * lifetime, separately from `projectQueryParamGuard`'s strict lookup cache, so the value reflects the project's
    * stage as of its first fetch this session, not a live re-check on every context change. `null`
    * while resolving, absent, or unauthenticated — `activeProjectStageResolved` tells those apart.
    */
@@ -542,11 +542,9 @@ export class ProjectContextService {
           if (!ctx?.slug || !authenticated) {
             return of({ contextUid, canWrite: false });
           }
-          // Two requests rather than one `?meeting_coordinator=true` fetch, and cheaper than it
-          // looks: the plain `getProject(slug, false)` response is already in ProjectService's
-          // cache on every navigation — `projectQueryParamGuard` fetches that exact key — while
-          // `:mc` is a separate cache entry and so a genuine extra round trip on the SSR critical
-          // path of every page.
+          // The plain `getProject(slug, false)` lookup can share context enrichment's ordinary
+          // cache, but not projectQueryParamGuard's separate strict cache. On a cold context,
+          // both the plain lookup and the separate `:mc` role check can require a request.
           return this.meetingWriteAccessFor(ctx.slug).pipe(map((canWrite) => ({ contextUid, canWrite })));
         })
       ),
