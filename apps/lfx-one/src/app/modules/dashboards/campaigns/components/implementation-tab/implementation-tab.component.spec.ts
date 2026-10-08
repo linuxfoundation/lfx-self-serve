@@ -4281,6 +4281,46 @@ describe('ImplementationTabComponent google creative sections', () => {
   });
 
   /**
+   * The rune-counting fix, pinned at the boundary on BOTH call sites — `creativeTextBounds` and
+   * `creativeListBounds` each count with {@link codePointLength}, and each would silently regress
+   * to the old over-refusal if someone swapped in `String.length`.
+   *
+   * ASCII cannot catch that: `'a'.repeat(n)` is `n` units and `n` runes, so the test above stays
+   * green under either implementation. A non-BMP character is where the two measures diverge — an
+   * emoji is 2 UTF-16 units and 1 rune — so a value at exactly the width is 2× the width in units
+   * and MUST still be accepted. That is the whole point: campaign-service counts these as runes
+   * and accepts them, and a client that refused them would be refusing a create upstream makes.
+   * The Microsoft keyword box pins the same hazard the same way.
+   *
+   * The over-the-bound half keeps this from being a test that no longer tests anything, and
+   * `actualLength` proves the error reports runes too, not units.
+   */
+  it('bounds text and list fields in code points, not UTF-16 units', () => {
+    const emoji = '\u{1F600}';
+    const c = seedChannel(fixture, { includeDemandGen: true, includeDisplay: true });
+
+    const scalar = GOOGLE_CREATIVE_FIELD_SPECS.display[1];
+    const longHeadline = c['campaignForm'].controls.displayCreative.controls.longHeadline;
+
+    longHeadline.setValue(emoji.repeat(scalar.width));
+    // Twice the bound in UTF-16 units — what `String.length` would have refused on.
+    expect(longHeadline.value.length).toBe(scalar.width * 2);
+    expect(longHeadline.valid).toBe(true);
+
+    longHeadline.setValue(emoji.repeat(scalar.width + 1));
+    expect(longHeadline.errors?.['maxlength']).toEqual({ requiredLength: scalar.width, actualLength: scalar.width + 1 });
+
+    const list = GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'][0];
+    const headlines = c['campaignForm'].controls.demandGenCreative.controls.headlines;
+
+    headlines.setValue(emoji.repeat(list.width));
+    expect(headlines.valid).toBe(true);
+
+    headlines.setValue(emoji.repeat(list.width + 1));
+    expect(headlines.errors?.['creativeListWidth']).toEqual({ label: list.label, width: list.width });
+  });
+
+  /**
    * No CONTROL VALIDATOR carries `min`, and that is not an oversight. A validator sees one control
    * and never the group, so it cannot tell a half-filled creative from an empty one — and a
    * channel with no creative at all is a create campaign-service makes. The floor is enforced at

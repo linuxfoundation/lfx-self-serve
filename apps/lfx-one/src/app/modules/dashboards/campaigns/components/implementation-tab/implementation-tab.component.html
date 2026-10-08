@@ -557,7 +557,12 @@
         <p role="alert" class="text-xs text-red-600" data-testid="implementation-google-creative-error">{{ googleCreativeError() }}</p>
       }
       @if (googleCreativeEmptyWarning()) {
-        <p class="text-xs text-amber-600" data-testid="implementation-google-creative-empty-warning">{{ googleCreativeEmptyWarning() }}</p>
+        <!--
+          amber-700, not the amber-600 that reads as the obvious warning colour: at #E17100 that
+          scale step is 3.2:1 on white, under the 4.5:1 WCAG AA floor this 12px text has to clear.
+          amber-700 (#BB4D00) is 5.0:1. The red-600 error above already clears it at 4.8:1.
+        -->
+        <p class="text-xs text-amber-700" data-testid="implementation-google-creative-empty-warning">{{ googleCreativeEmptyWarning() }}</p>
       }
 
       <!-- LinkedIn Ads Section -->

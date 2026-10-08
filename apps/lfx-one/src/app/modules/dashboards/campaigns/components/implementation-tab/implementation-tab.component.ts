@@ -3215,9 +3215,11 @@ export class ImplementationTabComponent implements OnInit {
    * least 1, so the code-point count is a LOWER BOUND on the display weight and never exceeds the
    * rune count, which puts this bound on the permissive side of both — it can fail to catch a
    * refusal upstream will make, which costs a round trip, but it can never refuse a create upstream
-   * would have accepted. `String.length` has no such guarantee: a 15-emoji headline is 30 UTF-16
-   * units and 15 runes, and measuring it the JS way refuses at a width of 30 a value upstream
-   * counts as 15. Same over-refusal the trimming above exists to avoid, one layer down.
+   * would have accepted. `String.length` has no such guarantee: at a width of 30, a 16-emoji
+   * headline is 32 UTF-16 units and 16 runes, so measuring it the JS way refuses a value upstream
+   * counts as 16 and accepts. (15 emoji is exactly 30 units and squeaks through the old check —
+   * the over-refusal starts at the first emoji past half the width.) Same over-refusal the
+   * trimming above exists to avoid, one layer down.
    * {@link codePointLength} is the shared helper for this and is documented as `len([]rune(s))`;
    * the Microsoft keyword box documents the same hazard.
    *
