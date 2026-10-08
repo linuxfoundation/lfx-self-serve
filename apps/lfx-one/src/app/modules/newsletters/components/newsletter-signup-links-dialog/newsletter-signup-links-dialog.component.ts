@@ -99,7 +99,8 @@ export class NewsletterSignupLinksDialogComponent {
   /**
    * `serverAccepting` is the signup endpoint's verdict (`null` when it couldn't be read). The list
    * response explains the join-mode and voting cases; a refusal it can't explain is the
-   * business-email setting, which only the settings sub-resource carries.
+   * business-email setting, which only the settings sub-resource carries. An unknown verdict is
+   * never shown as accepting.
    */
   private signupAvailability(committee: Committee, serverAccepting: boolean | null): Pick<NewsletterSignupLink, 'acceptingSignups' | 'unavailableReason'> {
     let localReason: string | undefined;
@@ -115,6 +116,11 @@ export class NewsletterSignupLinksDialogComponent {
     if (serverAccepting === false) {
       return { acceptingSignups: false, unavailableReason: localReason ?? 'Signups are off because this group requires a business email.' };
     }
-    return localReason ? { acceptingSignups: false, unavailableReason: localReason } : { acceptingSignups: true };
+    // Verdict unknown (the check failed — e.g. a deleted group or a settings outage): keep the
+    // deterministic local refusal, otherwise never present an unverified link as working.
+    return {
+      acceptingSignups: false,
+      unavailableReason: localReason ?? "Couldn't confirm this group accepts signups. Open the link to check before sharing it.",
+    };
   }
 }

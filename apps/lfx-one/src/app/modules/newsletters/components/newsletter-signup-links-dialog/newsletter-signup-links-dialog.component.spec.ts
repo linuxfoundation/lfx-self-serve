@@ -99,7 +99,7 @@ describe('NewsletterSignupLinksDialogComponent', () => {
     expect(reason?.textContent).toContain('business email');
   });
 
-  it('falls back to the list fields when the signup endpoint cannot be read', async () => {
+  it('keeps the list-field refusal but never shows an unverified link as accepting when the signup endpoint cannot be read', async () => {
     await render(of([committee('g1', 'Alpha News', 'Newsletter'), committee('g2', 'Beta News', 'Newsletter', { join_mode: 'closed' })]), {
       g1: new Error('boom'),
       g2: new Error('boom'),
@@ -108,7 +108,11 @@ describe('NewsletterSignupLinksDialogComponent', () => {
     const flagged = ['g1', 'g2'].map(
       (uid) => !!fixture.nativeElement.querySelector(`[data-testid="newsletter-signup-link-${uid}"] [data-testid="newsletter-signup-link-unavailable"]`)
     );
-    expect(flagged).toEqual([false, true]);
+    expect(flagged).toEqual([true, true]);
+    const g1 = fixture.nativeElement.querySelector('[data-testid="newsletter-signup-link-g1"] [data-testid="newsletter-signup-link-unavailable"]');
+    const g2 = fixture.nativeElement.querySelector('[data-testid="newsletter-signup-link-g2"] [data-testid="newsletter-signup-link-unavailable"]');
+    expect(g1?.textContent).toContain("Couldn't confirm");
+    expect(g2?.textContent).toContain('join mode to Open');
   });
 
   it('shows the empty state when the project has no Newsletter groups', async () => {
