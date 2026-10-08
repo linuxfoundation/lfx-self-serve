@@ -672,6 +672,12 @@ export class AnalyticsController {
 6. **Query Optimization**: Use specific column selection, appropriate WHERE clauses, and leverage Snowflake features
 7. **Logic Ownership**: Define metrics and reusable transformations in [`lf-dbt`](https://github.com/linuxfoundation/lf-dbt); application queries retrieve the modeled columns
 
+### OCG Meetup Display and Routing Identity
+
+`MeetupsService` consumes `COMMUNITY` for display and Community filters, and `COMMUNITY_SLUG` for the community URL segment in both Upcoming and Past queries. Despite its column name, `COMMUNITY_SLUG` is the raw OCG source `community.name`, not a normalized display label: the [pinned OCG event handler](https://github.com/cncf/open-community-groups/blob/e12e92a5b0b84be824449f7cef2a5b7490e70f73/ocg-server/src/handlers/event.rs#L63-L77) resolves it through an [exact source-name lookup](https://github.com/cncf/open-community-groups/blob/e12e92a5b0b84be824449f7cef2a5b7490e70f73/database/migrations/functions/community/get_community_id_by_name.sql#L4-L7). The mapper preserves canonical case and encodes each community, group and event segment once, returning the existing `MyMeetup.url` contract.
+
+The warehouse contract is supplied by [dbt prerequisite #3330](https://github.com/linuxfoundation/lfx-self-serve/issues/3330), implemented in `lf-dbt`. Deploy and refresh it before deploying the consumer: both `OCG_UPCOMING_MEETUPS` and `OCG_PAST_MEETUPS` in the configured `MEETUPS_SNOWFLAKE_SCHEMA` (default `ANALYTICS.PLATINUM_LFX_ONE`) must expose populated `COMMUNITY_SLUG` values matching canonical source names. Verify column metadata, canonical completeness and non-personal source-address comparisons before rollout. Missing, null or whitespace-only canonical values use the existing malformed-row behavior: warn and drop the row without a display-name fallback, while retaining the warehouse total count. Upstream completeness checks are required to keep this an exceptional data-quality path.
+
 ### Example with Dynamic Retrieval Filters
 
 Application services own retrieval concerns, not metric definitions. Columns such as `event_count` and `total_value` must already be defined and tested in an `lf-dbt` model. Embedded SQL may add parameterized filters, sorting, and pagination without recalculating those values. See the canonical [Snowflake SQL review rule](../../reviews/shared-and-sql-checklist.md#10-no-business-logic-in-embedded-snowflake-sql-should-fix) for the narrow display-scope roll-up exception.

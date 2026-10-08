@@ -20,6 +20,7 @@ const VALID_BODY = {
   skillsHave: ['Java'],
   skillsWant: ['Python'],
   additionalNotes: 'Test notes',
+  country: 'KE',
   ageEligible: true,
   workAuthorized: true,
   noDuplicateProfile: true,
@@ -93,6 +94,7 @@ describe('parseMentorshipMenteeRegisterRequest', () => {
         skillsHave: 'Java',
         skillsWant: [1],
         additionalNotes: null,
+        country: 254,
         ageEligible: 'yes',
         workAuthorized: 1,
         noDuplicateProfile: undefined,
@@ -104,12 +106,22 @@ describe('parseMentorshipMenteeRegisterRequest', () => {
       'skillsHave',
       'skillsWant',
       'additionalNotes',
+      'country',
       'ageEligible',
       'workAuthorized',
       'noDuplicateProfile',
       'complianceAccepted',
       'termsAccepted',
     ]);
+  });
+
+  it.each([
+    ['missing', ''],
+    ['a country name', 'Kenya'],
+    ['a lowercase code', 'ke'],
+    ['an unassigned code', 'ZZ'],
+  ])('rejects a country that is %s', (_label, country) => {
+    expect(rejectedFields({ ...VALID_BODY, country })).toEqual(['country']);
   });
 
   it('rejects additional notes over the cap', () => {
@@ -134,9 +146,10 @@ describe('parseMentorshipMenteeRegisterRequest', () => {
         introduction: '',
         skillsHave: ['Not A Skill'],
         skillsWant: [],
+        country: '',
         termsAccepted: false,
       })
-    ).toEqual(['introduction', 'skillsHave', 'skillsWant', 'termsAccepted']);
+    ).toEqual(['introduction', 'skillsHave', 'skillsWant', 'country', 'termsAccepted']);
   });
 
   it('rejects an introduction over the cap', () => {
@@ -174,6 +187,7 @@ describe('buildMentorshipUpstreamMenteeProfile', () => {
       age_eligible: true,
       work_eligible: true,
       skill_set: { skills: ['Java'], improvementSkills: ['Python'], comments: 'Test notes' },
+      address: { country: 'KE' },
     });
   });
 
@@ -198,7 +212,7 @@ describe('buildMentorshipUpstreamMenteeProfile', () => {
     const body = buildMentorshipUpstreamMenteeProfile({ ...request, ageEligible: false, workAuthorized: false });
 
     expect(body).toMatchObject({ age_eligible: false, work_eligible: false });
-    expect(Object.keys(body).sort()).toEqual(['age_eligible', 'introduction', 'skill_set', 'terms_and_conditions', 'work_eligible']);
+    expect(Object.keys(body).sort()).toEqual(['address', 'age_eligible', 'introduction', 'skill_set', 'terms_and_conditions', 'work_eligible']);
   });
 
   it('sends the LFX profile fields and the resolved email in the upstream column names', () => {

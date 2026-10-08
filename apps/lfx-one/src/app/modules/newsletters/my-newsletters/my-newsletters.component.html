@@ -18,8 +18,26 @@
       </div>
     </div>
 
-    <!-- Dashboard-level empty state: only when there are genuinely no newsletters (no active filter). -->
-    @if (!loading() && myNewsletters().length === 0 && !hasActiveFilters()) {
+    @if (loading() && myNewsletters().length > 0) {
+      <p class="mb-4 text-sm text-gray-500" role="status" data-testid="my-newsletters-refresh-status">Refreshing newsletters…</p>
+    }
+    @if (completenessNotice(); as notice) {
+      <div
+        class="flex items-center justify-between gap-3 mb-4 p-4 rounded-lg bg-amber-50 text-sm text-gray-700"
+        role="status"
+        data-testid="my-newsletters-completeness-notice">
+        <span>{{ notice }}</span>
+        <lfx-button label="Retry" size="small" [outlined]="true" (onClick)="onRetry()" data-testid="my-newsletters-retry" />
+      </div>
+    }
+    @if (error()) {
+      <lfx-empty-state
+        icon="fa-light fa-triangle-exclamation"
+        title="Could not load newsletters"
+        ctaLabel="Retry"
+        (ctaClick)="onRetry()"
+        data-testid="my-newsletters-error" />
+    } @else if (!loading() && complete() === true && myNewsletters().length === 0 && !hasActiveFilters()) {
       <lfx-empty-state
         icon="fa-light fa-paper-plane"
         title="No newsletters yet"
@@ -75,7 +93,7 @@
         </div>
 
         <div class="px-5 pb-5">
-          @if (!loading() && filteredNewsletters().length === 0) {
+          @if (!loading() && filteredNewsletters().length === 0 && (myNewsletters().length > 0 || (complete() === true && hasActiveFilters()))) {
             <lfx-empty-state
               [withCard]="false"
               icon="fa-light fa-eyes"
@@ -86,10 +104,10 @@
               (ctaClick)="resetFilters()"
               data-testid="my-newsletters-no-results">
             </lfx-empty-state>
-          } @else {
+          } @else if (loading() || filteredNewsletters().length > 0) {
             <lfx-table
               [value]="filteredNewsletterRows()"
-              [loading]="loading()"
+              [loading]="loading() && myNewsletters().length === 0"
               [paginator]="filteredNewsletters().length > 10"
               [rows]="10"
               [rowsPerPageOptions]="[10, 25, 50]"
@@ -99,7 +117,7 @@
               <ng-template #header>
                 <tr>
                   <th class="w-[50%]">Title</th>
-                  <th class="w-[20%]">Received</th>
+                  <th class="w-[20%]">Sent</th>
                   <th class="w-[30%]">Project / Foundation</th>
                 </tr>
               </ng-template>
@@ -162,7 +180,7 @@
 
 <!-- Reader drawer: renders the newsletter as recipients saw it. Opened once
      the body fetch resolves in onOpenNewsletter. Header is reader-framed
-     (project + received date) rather than the sender-side "Preview" default.
+     (project + sent date) rather than the sender-side "Preview" default.
      Share button shows the absolute permalink URL. -->
 <lfx-newsletter-preview-drawer
   [(visible)]="previewVisible"

@@ -19,7 +19,7 @@ import {
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
 // Deep imports, not the `@lfx-one/shared/utils` barrel: the barrel transitively pulls in Angular, which does not load in plain Node.
-import { getMentorshipMenteeIntroductionError } from '@lfx-one/shared/utils/mentorship.utils';
+import { getMentorshipMenteeCountryError, getMentorshipMenteeIntroductionError } from '@lfx-one/shared/utils/mentorship.utils';
 
 import { ServiceValidationError } from '../errors';
 
@@ -49,6 +49,14 @@ const parseIntroduction = (value: unknown, operation: string): string => {
   if (typeof value !== 'string') return fail('introduction', 'introduction must be a string', operation);
   const error = getMentorshipMenteeIntroductionError(value);
   if (error) return fail('introduction', error, operation);
+  return value;
+};
+
+/** The country code, held to the register rule (`getMentorshipMenteeCountryError`): an assigned ISO 3166-1 alpha-2 code. */
+const parseCountry = (value: unknown, operation: string): string => {
+  if (typeof value !== 'string') return fail('country', 'country must be a string', operation);
+  const error = getMentorshipMenteeCountryError(value);
+  if (error) return fail('country', error, operation);
   return value;
 };
 
@@ -134,6 +142,7 @@ export const parseMentorshipMenteeProfileUpdate = (body: unknown, operation: str
   if ('skillSet' in source) request.skillSet = parseSkillSet(source['skillSet'], operation);
   if ('demographics' in source) request.demographics = parseAnswerGroup(source['demographics'], 'demographics', operation);
   if ('socioeconomics' in source) request.socioeconomics = parseAnswerGroup(source['socioeconomics'], 'socioeconomics', operation);
+  if ('country' in source) request.country = parseCountry(source['country'], operation);
   return request;
 };
 
@@ -146,7 +155,7 @@ export const parseMentorshipMenteeProfileUpdate = (body: unknown, operation: str
  * was read before the save: keys the BFF does not model (and values it cannot map, such as a numeric `age`)
  * survive the edit. In `demographics` and `socioeconomics` a key the update leaves out means "unchanged", so the
  * whole stored column is kept underneath; in `skill_set` a left-out `comments` means "cleared", so only its
- * unmodelled keys are.
+ * unmodelled keys are. `country` is written into `address` over its stored legacy keys (`city`, `address1`, `zipCode`).
  */
 export const buildMentorshipUpstreamMenteeProfileUpdate = (
   request: MentorshipMenteeProfileUpdateRequest,
@@ -185,6 +194,10 @@ export const buildMentorshipUpstreamMenteeProfileUpdate = (
       ...(income !== undefined ? { income } : {}),
       ...(education !== undefined ? { educationLevel: education } : {}),
     };
+  }
+
+  if (request.country !== undefined) {
+    upstream.address = { ...storedColumn(stored?.address), country: request.country };
   }
 
   return upstream;

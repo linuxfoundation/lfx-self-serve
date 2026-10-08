@@ -5,8 +5,11 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output, Se
 import { DomSanitizer } from '@angular/platform-browser';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  getCountryByCode,
+  MENTORSHIP_MENTEE_COUNTRY_LABEL,
   MENTORSHIP_MENTEE_PROFILE_ABOUT_EMPTY,
   MENTORSHIP_MENTEE_PROFILE_ABOUT_LABEL,
+  MENTORSHIP_MENTEE_PROFILE_COUNTRY_EMPTY,
   MENTORSHIP_MENTEE_PROFILE_DETAILS_TITLE,
   MENTORSHIP_MENTEE_PROFILE_EDIT_LABEL,
   MENTORSHIP_MENTEE_PROFILE_NOTES_EMPTY,
@@ -21,7 +24,7 @@ import { mentorshipDescriptionLength } from '@lfx-one/shared/utils';
 
 /**
  * Read-only display of the mentee's own profile fields — About Me, Skills, Areas
- * to Improve, Additional Notes (`skill_set.comments`) — as they appear on
+ * to Improve, Additional Notes (`skill_set.comments`), Country (`address.country`) — as they appear on
  * `/mentorship/mentee/profile`. The parent owns load / error state and passes a
  * resolved `profile` in; this card just renders it. `editClick` is emitted rather
  * than routed so the parent decides whether Edit opens a drawer or fires the
@@ -51,6 +54,8 @@ export class MenteeProfileDetailsComponent {
   protected readonly skillsEmpty = MENTORSHIP_MENTEE_PROFILE_SKILLS_EMPTY;
   protected readonly skillsWantEmpty = MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EMPTY;
   protected readonly notesEmpty = MENTORSHIP_MENTEE_PROFILE_NOTES_EMPTY;
+  protected readonly countryLabel = MENTORSHIP_MENTEE_COUNTRY_LABEL;
+  protected readonly countryEmpty = MENTORSHIP_MENTEE_PROFILE_COUNTRY_EMPTY;
 
   /**
    * `aboutMe` is authored in the register form via `lfx-rich-editor` (Quill under the
@@ -68,6 +73,11 @@ export class MenteeProfileDetailsComponent {
   protected readonly skillsHave = computed(() => this.profile().skillsHave);
   protected readonly skillsWant = computed(() => this.profile().skillsWant);
   protected readonly additionalNotes = computed(() => this.profile().additionalNotes?.trim() ?? '');
+  /** The country name for the stored ISO code; a code outside `COUNTRIES` shows as stored. */
+  protected readonly country = computed(() => {
+    const code = this.profile().country?.trim() ?? '';
+    return code ? getCountryByCode(code) : '';
+  });
 
   protected onEdit(): void {
     this.editClick.emit();

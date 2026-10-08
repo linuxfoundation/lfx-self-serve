@@ -10,6 +10,7 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ToastModule } from 'primeng/toast';
+import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -23,6 +24,7 @@ import {
   CommitteeTab,
   CommitteeUser,
   getCommitteeCategorySeverity,
+  MembershipTagDisplay,
   TagSeverity,
 } from '@lfx-one/shared';
 import {
@@ -36,7 +38,9 @@ import {
   Meeting,
   PendingInvitation,
   ProjectContext,
+  Survey,
   TabConfigEntry,
+  Vote,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
 import {
@@ -45,6 +49,7 @@ import {
   committeeRequiresOrganization,
   committeeRouteIdMatches,
   findPendingInvitationForCommittee,
+  hasMeetingEnded,
   invitationRequiresOrganization,
 } from '@lfx-one/shared/utils';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
@@ -57,7 +62,9 @@ import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SurveyService } from '@services/survey.service';
 import { UserService } from '@services/user.service';
+import { VoteService } from '@services/vote.service';
 import { CategoryAvatarColorPipe } from '@pipes/category-avatar-color.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
 import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
@@ -116,6 +123,27 @@ const INVITE_TOAST_KEY = 'committee-view-invite';
 const ACCESS_RETRY_ATTEMPTS = 3;
 const ACCESS_RETRY_INTERVAL_MS = 400;
 
+const ROLE_DESCRIPTIONS: Record<string, string> = {
+  Chair: 'Leads the group and facilitates decisions',
+  'Vice Chair': 'Supports the Chair; acts in their absence',
+  Lead: 'Leads the technical direction of the group',
+  Secretary: 'Manages group records and communications',
+  Treasurer: 'Oversees group finances and reporting',
+  Director: 'Serves on the governing board',
+  'TAC/TOC Representative': 'Represents the group on the advisory council',
+  'Developer Seat': 'Represents the developer community in governance',
+  'LF Staff': 'Linux Foundation staff supporting the group',
+};
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function buildTooltipHtml(title: string, bullets: string[]): string {
+  const items = bullets.map((b) => `<div class="flex gap-1"><span>•</span><span>${b}</span></div>`).join('');
+  return `<div><strong>${escapeHtml(title)}</strong><div class="flex flex-col gap-0.5 pl-2 mt-1">${items}</div></div>`;
+}
+
 @Component({
   selector: 'lfx-committee-view',
   imports: [
@@ -129,6 +157,7 @@ const ACCESS_RETRY_INTERVAL_MS = 400;
     PopoverModule,
     SkeletonModule,
     ToastModule,
+    TooltipModule,
     CategoryAvatarColorPipe,
     InitialsPipe,
     InvitationSubtextPipe,
@@ -160,6 +189,8 @@ export class CommitteeViewComponent {
   private readonly userService = inject(UserService);
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly surveyService = inject(SurveyService);
+  private readonly voteService = inject(VoteService);
   private readonly invitationService = inject(InvitationService);
   private readonly joinApplicationSession = inject(CommitteeJoinApplicationSessionService);
   private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
@@ -209,6 +240,13 @@ export class CommitteeViewComponent {
   public membersLoading = signal<boolean>(true);
   public invitesLoading = signal<boolean>(true);
   public applicationsLoading = signal<boolean>(true);
+  // Votes and surveys are pre-fetched here so the tab badge counts are available before the user
+  // first opens those tabs. votesRefresh/surveysRefresh increment to trigger a re-fetch (e.g.
+  // after a delete from the child component).
+  public votesLoading = signal<boolean>(true);
+  public surveysLoading = signal<boolean>(true);
+  private readonly votesRefresh = signal(0);
+  private readonly surveysRefresh = signal(0);
   public joiningOrLeaving = signal(false);
   // Blocks the join/apply CTA while the org-prefetch is running and while the dialog
   // is open (signal stays true until .finally() resolves when the dialog closes) so a
@@ -243,6 +281,10 @@ export class CommitteeViewComponent {
   // Pending invites share the members refresh trigger so adding/revoking refreshes both.
   public invites: Signal<CommitteeInvite[]> = this.initializeInvites();
   public applications: Signal<CommitteeJoinApplication[]> = this.initializeApplications();
+  // Pre-fetched so tab badge counts are available before the user visits each tab. The child
+  // components receive these as inputs and emit refresh outputs to trigger re-fetches here.
+  public votes: Signal<Vote[]> = this.initVotes();
+  public surveys: Signal<Survey[]> = this.initSurveys();
   // Feature flag: engagement metrics UI (LFXV2-1705). Defaults false, so SSR and an unreachable
   // LaunchDarkly both fail closed — flag off means zero engagement UI and zero engagement fetches.
   public readonly engagementMetricsEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_ENGAGEMENT_METRICS_FLAG, false);
@@ -326,6 +368,55 @@ export class CommitteeViewComponent {
     return 'member';
   });
 
+  /** Resolved membership status label, severity, and icon for display in the group header. Null while loading. */
+  public membershipStatus: Signal<MembershipTagDisplay | null> = computed(() => {
+    if (this.myRoleLoading()) return null;
+    if (this.canEdit()) return { label: 'Manager', severity: 'info', icon: 'fa-light fa-user-gear' };
+    if (this.canReview()) return { label: 'Auditor', severity: 'secondary', icon: 'fa-light fa-user-magnifying-glass' };
+    const role = this.myRole();
+    if (role !== null) {
+      return { label: role === 'None' ? 'Member' : role, severity: 'success', icon: 'fa-light fa-user-check' };
+    }
+    if (this.hasPendingApplication()) return { label: 'Application Pending', severity: 'warn', icon: 'fa-light fa-user-clock' };
+    return { label: 'Not a Member', severity: 'secondary', icon: 'fa-light fa-user' };
+  });
+
+  /** HTML tooltip content explaining what the current membership role allows. */
+  public membershipTooltipHtml: Signal<string> = computed(() => {
+    const status = this.membershipStatus();
+    if (!status) return '';
+    const { label } = status;
+    switch (label) {
+      case 'Manager':
+        return buildTooltipHtml('Manager', [
+          'Manage group members and their roles',
+          'Edit group settings and information',
+          'Create and manage meetings',
+          'Full access to all group content',
+        ]);
+      case 'Auditor':
+        return buildTooltipHtml('Auditor', [
+          'View all group content and discussions',
+          'Access the full member roster',
+          'Cannot modify settings or manage members',
+        ]);
+      case 'Application Pending':
+        return buildTooltipHtml('Application Pending', ['Your request to join is under review', 'You will be notified when approved or declined']);
+      case 'Not a Member':
+        return buildTooltipHtml('Not a Member', ['Join this group to access member-only content', 'Participate in meetings, votes, and discussions']);
+      default: {
+        const roleDesc = ROLE_DESCRIPTIONS[label];
+        const bullets = [
+          ...(roleDesc ? [roleDesc] : []),
+          'Attend meetings and view discussions',
+          'Participate in votes and surveys',
+          'Access member-only content',
+        ];
+        return buildTooltipHtml(label, bullets);
+      }
+    }
+  });
+
   public hasChannels: Signal<boolean> = computed(() => {
     const c = this.committee();
     // Visitors only see public mailing lists — don't show the card wrapper when a visitor
@@ -350,6 +441,18 @@ export class CommitteeViewComponent {
   // consume this; fetched once here and passed down to both to avoid a duplicate round-trip). --
   public meetingsLoading = signal(true);
   public upcomingMeetings: Signal<Meeting[]> = this.initUpcomingMeetings();
+  // Client-side filter matching the predicate committee-meetings uses: only meetings where at least
+  // one occurrence is non-cancelled and non-ended (for recurring), or the meeting itself hasn't
+  // ended (for one-time). This is what the Meetings tab's "Upcoming" view actually shows, so the
+  // badge count is guaranteed to match the tab list.
+  public upcomingMeetingsFiltered: Signal<Meeting[]> = computed(() =>
+    this.upcomingMeetings().filter((m) => {
+      if (m.occurrences?.length) {
+        return m.occurrences.some((o) => o.status !== 'cancel' && !hasMeetingEnded(m, o));
+      }
+      return !hasMeetingEnded(m);
+    })
+  );
 
   // -- Tab visibility signals --
   // Same rule the BFF roster endpoint enforces (basic_profile, writer or auditor), plus the
@@ -365,21 +468,49 @@ export class CommitteeViewComponent {
     { key: 'about', label: 'About', icon: 'fa-circle-info', visible: () => true },
     {
       key: 'members',
-      label: () => {
-        const count = this.committee()?.total_members;
-        return count != null ? `Members (${count})` : 'Members';
-      },
+      label: 'Members',
       icon: 'fa-users',
       // isMembersTabVisible() already encodes the full access rule (canViewCommitteeRoster
       // covers BASIC_PROFILE + writer + auditor; canEdit and canSendMemberInvites add invite_only
       // and admin scenarios). Using it directly here ensures BASIC_PROFILE visitors see the tab
       // even though isMemberOrAdmin() is false for them (GH-2988).
       visible: () => this.isMembersTabVisible(),
+      // Use the actual roster length for callers who have roster access (including admin/writers):
+      // total_members may under-count when the current user is an admin who isn't also a regular
+      // member — the backend counts roster members but may not include all manager entries.
+      // Show null while loading so the badge only appears once the count is known.
+      badge: () => {
+        if (this.membersLoading()) return null;
+        if (canViewCommitteeRoster(this.committee())) return this.members().length;
+        // Invite-only members who can send invites but whose roster is hidden fall back to
+        // the server-computed total (the roster wasn't fetched, so members() is always []).
+        return this.committee()?.total_members ?? null;
+      },
     },
-    { key: 'votes', label: 'Votes', icon: 'fa-check-to-slot', visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible() },
-    // Visitors see the Meetings tab when the group's calendar is marked public.
-    { key: 'meetings', label: 'Meetings', icon: 'fa-calendar', visible: () => this.isMemberOrAdmin() || !!this.committee()?.calendar?.public },
-    { key: 'surveys', label: 'Surveys', icon: 'fa-chart-simple', visible: () => this.isMemberOrAdmin() },
+    {
+      key: 'votes',
+      label: 'Votes',
+      icon: 'fa-check-to-slot',
+      visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible(),
+      badge: () => (this.votesLoading() ? null : this.votes().length),
+    },
+    {
+      // Visitors see the Meetings tab when the group's calendar is marked public.
+      key: 'meetings',
+      label: 'Meetings',
+      icon: 'fa-calendar',
+      visible: () => this.isMemberOrAdmin() || !!this.committee()?.calendar?.public,
+      // Derived from upcomingMeetingsFiltered (a proper computed() signal) so the badge count
+      // always equals the length of the list passed to the Meetings tab.
+      badge: () => (this.meetingsLoading() ? null : this.upcomingMeetingsFiltered().length),
+    },
+    {
+      key: 'surveys',
+      label: 'Surveys',
+      icon: 'fa-chart-simple',
+      visible: () => this.isMemberOrAdmin(),
+      badge: () => (this.surveysLoading() ? null : this.surveys().length),
+    },
     // Visitors can see the Documents tab — committee#viewer FGA (the same check that gates the
     // group page itself) also governs /committees/:id/folders, /links, and committee_document
     // query-service resources, so a viewer of a public committee already has read access to all
@@ -519,6 +650,14 @@ export class CommitteeViewComponent {
 
   public onMembersRefreshed(): void {
     this.refreshMembers();
+  }
+
+  public onVotesRefreshed(): void {
+    this.votesRefresh.update((v) => v + 1);
+  }
+
+  public onSurveysRefreshed(): void {
+    this.surveysRefresh.update((v) => v + 1);
   }
 
   public onEngagementWindowChange(window: CommitteeEngagementWindow): void {
@@ -1473,6 +1612,65 @@ export class CommitteeViewComponent {
               return of([]);
             }),
             finalize(() => this.meetingsLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] }
+    );
+  }
+
+  /**
+   * Pre-fetches votes for this committee so the Votes tab badge count is available before the
+   * user first opens the tab. Only fetches when the committee has voting enabled and the current
+   * user has some form of access (member role or writer). Mirrors initializeMembers' pattern of
+   * reading access state from the committee object to avoid signal timing issues.
+   */
+  private initVotes(): Signal<Vote[]> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.votesRefresh)]).pipe(
+        switchMap(([committee]) => {
+          // Only fetch if voting is enabled and the user has access (member or admin, not visitor).
+          if (!committee?.uid || !committee.enable_voting || (!committee.my_role && !committee.writer)) {
+            this.votesLoading.set(false);
+            return of([]);
+          }
+          this.votesLoading.set(true);
+          return this.voteService.getVotesByCommittee(committee.uid).pipe(
+            // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over
+            // stale index rows — same transformation the child component previously applied.
+            map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
+            catchError(() => {
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load votes. Please try again.' });
+              return of([]);
+            }),
+            finalize(() => this.votesLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] }
+    );
+  }
+
+  /**
+   * Pre-fetches surveys for this committee so the Surveys tab badge count is available before the
+   * user first opens the tab. Only fetches when the user has member or admin access.
+   */
+  private initSurveys(): Signal<Survey[]> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.surveysRefresh)]).pipe(
+        switchMap(([committee]) => {
+          // Only fetch when the user has access (member or admin, not a visitor).
+          if (!committee?.uid || (!committee.my_role && !committee.writer)) {
+            this.surveysLoading.set(false);
+            return of([]);
+          }
+          this.surveysLoading.set(true);
+          return this.surveyService.getSurveysByCommittee(committee.uid, 'last_modified_at.desc').pipe(
+            catchError(() => {
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load surveys. Please try again.' });
+              return of([]);
+            }),
+            finalize(() => this.surveysLoading.set(false))
           );
         })
       ),

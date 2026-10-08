@@ -12,11 +12,20 @@
       [form]="descriptionForm"
       control="description"
       [rows]="8"
-      [maxlength]="2000"
+      [maxlength]="MAX_DESCRIPTION_LENGTH"
       placeholder="Enter a description for this group..."
       [autoResize]="true"
       styleClass="!min-h-[160px] !w-full"
       dataTest="committee-view-description-textarea"></lfx-textarea>
+    <div class="flex justify-end mt-1">
+      <span
+        class="text-xs"
+        [class.text-gray-400]="charCount() < MAX_DESCRIPTION_LENGTH"
+        [class.text-red-600]="charCount() >= MAX_DESCRIPTION_LENGTH"
+        data-testid="committee-description-char-counter">
+        {{ charCount() }} / {{ MAX_DESCRIPTION_LENGTH }}
+      </span>
+    </div>
     <div class="flex justify-end gap-2 mt-4">
       <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancel()"></lfx-button>
       <lfx-button label="Save" severity="info" size="small" (onClick)="save()" [disabled]="!descriptionForm.dirty"></lfx-button>

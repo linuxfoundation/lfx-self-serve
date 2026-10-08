@@ -59,6 +59,7 @@ describe('MentorshipMenteeService — error mapping', () => {
       skillsHave: ['Java'],
       skillsWant: ['Python'],
       additionalNotes: '',
+      country: 'KE',
       ageEligible: true,
       workAuthorized: true,
       noDuplicateProfile: true,

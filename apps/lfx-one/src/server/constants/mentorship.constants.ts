@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  MentorshipAdminMenteeStatusFilter,
   MentorshipAdminMentorStatus,
   MentorshipApplicantTaskStatus,
   MentorshipMenteeStatus,
@@ -103,20 +104,32 @@ export const MENTORSHIP_ADMIN_APPLICATION_STATUS_MAP: Readonly<Record<Mentorship
   graduated: 'graduated',
 };
 
+/**
+ * The upstream `status` of each admin mentee status filter. Upstream splits `pending` on the prerequisite tasks:
+ * `applied` while one is outstanding, `tasks_submitted` once every one is submitted or complete (or there are none).
+ */
+export const MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_TO_UPSTREAM: Readonly<Record<MentorshipAdminMenteeStatusFilter, string>> = {
+  pending: 'pending',
+  applied: 'applied',
+  'tasks-completed': 'tasks_submitted',
+  accepted: 'accepted',
+  declined: 'declined',
+  withdrawn: 'withdrawn',
+  graduated: 'graduated',
+};
+
 /** Upstream application statuses an admin may withdraw on the mentee's behalf; upstream's withdraw-for-mentee checks none. */
 export const MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES: readonly MentorshipUpstreamApplicationStatus[] = ['pending', 'hold', 'accepted'];
 
 /**
  * How a program's own status reads on its page when the program is not published. A published program reads
- * `open` or `completed` from its terms. The header route has no `admin_status`, so this mirrors upstream's grouping.
+ * `open` or `completed` from its terms. The header route has no `admin_status`, so the BFF maps the status itself;
+ * any other value reads as pending review and is flagged as unknown.
  */
 export const MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS: Readonly<Record<string, MentorshipProgramStatus>> = {
-  draft: 'pending-review',
-  submitted: 'pending-review',
   pending: 'pending-review',
   rejected: 'rejected',
   hidden: 'hidden',
-  archived: 'hidden',
 };
 
 /** Upstream `admin_status` of an administered program, as the BFF shows it. Upstream groups the program status with its terms. */

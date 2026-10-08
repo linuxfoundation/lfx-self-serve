@@ -55,9 +55,23 @@ describe('mapMentorshipAdminProgram', () => {
       status: 'open',
       stats: { mentors: 2, mentees: 3, graduated: 1 },
       logoUrl: 'https://logo.example/p.png',
+      logoMissing: false,
       createdOn: '2026-01-01T00:00:00Z',
       updatedOn: '2026-01-02T00:00:00Z',
     });
+  });
+
+  it.each([
+    ['pending', undefined, true],
+    ['published', undefined, true],
+    ['published', '', true],
+    ['pending', 'https://logo.example/p.png', false],
+    ['published', 'https://logo.example/p.png', false],
+    ['rejected', undefined, false],
+    ['submitted', undefined, false],
+    ['hidden', undefined, false],
+  ])('reads status %s with logo %s as logoMissing %s', (status, logoUrl, expected) => {
+    expect(mapMentorshipAdminProgram(upstream({ status, logo_url: logoUrl })).program.logoMissing).toBe(expected);
   });
 
   it('falls back to empty text for a missing project and term, and to the id for a missing slug', () => {
@@ -97,12 +111,9 @@ describe('mapMentorshipAdminHeaderProgram', () => {
   });
 
   it.each([
-    ['draft', 'pending-review'],
-    ['submitted', 'pending-review'],
     ['pending', 'pending-review'],
     ['rejected', 'rejected'],
     ['hidden', 'hidden'],
-    ['archived', 'hidden'],
   ])('reads the unpublished status %s as %s', (status, expected) => {
     expect(mapMentorshipAdminHeaderProgram(header(status), { has_open_term: true, has_closed_term: false })).toMatchObject({
       program: { status: expected },
@@ -110,7 +121,7 @@ describe('mapMentorshipAdminHeaderProgram', () => {
     });
   });
 
-  it.each(['mystery', 'constructor'])('reads the unknown status "%s" as pending-review and flags it', (status) => {
+  it.each(['mystery', 'constructor', 'submitted', 'archived'])('reads the unknown status "%s" as pending-review and flags it', (status) => {
     expect(mapMentorshipAdminHeaderProgram(header(status))).toMatchObject({ program: { status: 'pending-review' }, unknownStatus: true });
   });
 
@@ -126,6 +137,10 @@ describe('mapMentorshipAdminHeaderProgram', () => {
       createdOn: '2026-01-01T00:00:00Z',
       updatedOn: '2026-01-02T00:00:00Z',
     });
+  });
+
+  it('leaves logoMissing to the list row, even for a pending program without a logo', () => {
+    expect(mapMentorshipAdminHeaderProgram(header('pending')).program).not.toHaveProperty('logoMissing');
   });
 });
 

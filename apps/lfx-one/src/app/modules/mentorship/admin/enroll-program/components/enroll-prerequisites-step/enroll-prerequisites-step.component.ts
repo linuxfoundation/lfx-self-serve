@@ -27,6 +27,10 @@ import { EnrollCustomPrerequisiteComponent } from '../enroll-custom-prerequisite
 export class EnrollPrerequisitesStepComponent {
   public readonly form = input.required<FormGroup>();
   public readonly errors = input<MentorshipEnrollFieldErrors>({});
+  /** Set once the program is saved, so the answers can no longer change. */
+  public readonly locked = input(false);
+  /** The edit wizard leaves this out: the terms were accepted when the program was enrolled. */
+  public readonly showTermsAcknowledgement = input(true);
 
   protected readonly prereqIntro = MENTORSHIP_ENROLL_PREREQ_INTRO;
   protected readonly termsIntro = MENTORSHIP_ENROLL_TERMS_INTRO;
@@ -66,6 +70,16 @@ export class EnrollPrerequisitesStepComponent {
       const item = this.challengePrerequisite();
       if (item) this.updateChallengeUrl(item.id, challengeUrl);
     });
+
+    toObservable(this.locked)
+      .pipe(takeUntilDestroyed())
+      .subscribe((locked) => {
+        if (locked) {
+          this.challengeForm.disable({ emitEvent: false });
+        } else {
+          this.challengeForm.enable({ emitEvent: false });
+        }
+      });
   }
 
   protected toggleRequired(id: string): void {

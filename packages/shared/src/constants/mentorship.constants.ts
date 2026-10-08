@@ -12,6 +12,8 @@ import type {
   MentorshipUpstreamProgramStatus,
 } from '../interfaces/mentorship.interface';
 import type {
+  MentorshipAdminMenteeStatusFilter,
+  MentorshipAdminMenteeTab,
   MentorshipAdminMentorAction,
   MentorshipAdminMentorStatus,
   MentorshipAdminProgramTabCounts,
@@ -238,9 +240,10 @@ export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
 export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn'] as const;
 
 /**
- * Mentee lifecycle statuses on the admin Current Mentees / Past Mentees tabs.
+ * Mentee lifecycle statuses an application holds on the wire.
  * Superset of mentor statuses; mentees additionally reach `graduated`.
- * Declaration order is the status filter's option order.
+ * Declaration order is the Past Mentees status filter's option order; Current Mentees
+ * filters on `MENTORSHIP_APPLICANT_DISPLAY_STATUSES` instead.
  */
 export const MENTORSHIP_MENTEE_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn', 'graduated'] as const;
 
@@ -277,6 +280,50 @@ export const MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipAdmi
 
 /** Statuses an admin may set through `PATCH …/mentors/:memberId`. Upstream allows no move out of `declined` or `withdrawn`. */
 export const MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES = ['active', 'declined', 'withdrawn'] as const;
+
+/** Shortest trimmed search `POST .../mentor-candidates` accepts; upstream answers 400 below it. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH = 2;
+
+/** Longest trimmed search `POST .../mentor-candidates` accepts: the longest valid email address. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH = 254;
+
+/** Helper text under the Mentors tab invite search. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_HELP_TEXT = 'Search by name, LF username, or full email address.';
+
+/** Shown when a full-email search finds no one: that address has no LF account. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE =
+  'No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username.';
+
+/**
+ * Shown when any other search finds no one. It can be a name or an LF username, so it does not say the account is
+ * missing: name search only finds people already in Mentorship, and anyone else only by exact LF username or full email.
+ */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE =
+  'No one matches that search. Name search only finds people already in Mentorship; try their exact LF username or full email address.';
+
+/** Shown, without a request, when a pasted search is longer than `MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH`. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE = 'That search is too long. Use at most 254 characters.';
+
+/** Shown when the candidate search hits a 503: the account lookup is down for now. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE = "Couldn't look up accounts right now. Try again.";
+
+/** Shown when the candidate search or an invite hits a 400: upstream adds mentors only to a published program. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE = 'Mentors can only be invited to a published program.';
+
+/** Shown when the candidate search fails for any other reason. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE = "Couldn't search for people. Try again.";
+
+/** Shown once a mentor invite is sent; upstream emails it to the account's primary email. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITED_MESSAGE = 'Invitation sent.';
+
+/** Shown when an invite hits a 409: the person is already invited to, or a mentor of, the program. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE = 'This person is already on the program.';
+
+/** Shown when an invite fails for any reason without its own message. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE = "The invitation couldn't be sent. Please try again.";
+
+/** Longest LFID the BFF forwards on an invite; LF usernames are far shorter. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH = 100;
 
 /** Shown when a mentor change hits a 409: the mentor's status moved on, so the list reloads. */
 export const MENTORSHIP_ADMIN_MENTOR_CHANGED_MESSAGE = 'This mentor changed. The list has been refreshed.';
@@ -407,6 +454,15 @@ export const MENTORSHIP_APPLICANT_STATUS_LABELS: Record<MentorshipApplicantDispl
   declined: 'Declined',
   withdrawn: 'Withdrawn',
   graduated: 'Graduated',
+};
+
+/**
+ * The status filter values each admin mentee tab offers and the BFF accepts, in option order. Current Mentees
+ * filters on the statuses its table shows; Past Mentees on the wire status, as its table shows it.
+ */
+export const MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS: Record<MentorshipAdminMenteeTab, readonly MentorshipAdminMenteeStatusFilter[]> = {
+  current: MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
+  past: MENTORSHIP_MENTEE_STATUSES,
 };
 
 /** The shared statuses reuse the mentee classes so the two palettes can't drift apart. */

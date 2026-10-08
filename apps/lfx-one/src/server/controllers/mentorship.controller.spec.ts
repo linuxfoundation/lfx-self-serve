@@ -135,7 +135,7 @@ describe('MentorshipController enroll lookups', () => {
 
     await controller.isProgramNameAvailable(buildReq({ name: '  Secret Program Name ' }), res, next);
 
-    expect(isAvailable).toHaveBeenCalledWith(expect.anything(), 'Secret Program Name');
+    expect(isAvailable).toHaveBeenCalledWith(expect.anything(), 'Secret Program Name', undefined);
     expect(res.json).toHaveBeenCalledWith({ available: false });
     expect(
       vi
@@ -143,6 +143,24 @@ describe('MentorshipController enroll lookups', () => {
         .mock.calls.map(([, , , metadata]) => JSON.stringify(metadata))
         .join()
     ).not.toContain('Secret Program Name');
+  });
+
+  it('passes a program to leave out of the check', async () => {
+    const isAvailable = vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable').mockResolvedValue({ available: true });
+    const programId = '3f2c1a9e-7b4d-4c1e-9a55-0d6e8f1a2b3c';
+
+    await controller.isProgramNameAvailable(buildReq({ name: 'Program', excludeProgramId: programId }), res, next);
+
+    expect(isAvailable).toHaveBeenCalledWith(expect.anything(), 'Program', programId);
+  });
+
+  it('rejects a program to leave out that is not a UUID before calling upstream', async () => {
+    const isAvailable = vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable');
+
+    await controller.isProgramNameAvailable(buildReq({ name: 'Program', excludeProgramId: 'program-1' }), res, next);
+
+    expect(isAvailable).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
   });
 
   it('rejects a blank name before calling upstream', async () => {

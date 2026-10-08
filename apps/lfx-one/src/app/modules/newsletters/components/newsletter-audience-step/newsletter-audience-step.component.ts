@@ -8,8 +8,9 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { NEWSLETTER_COMMITTEE_CATEGORY } from '@lfx-one/shared/constants';
-import { Committee, NewsletterAudienceEmailAdd, NewsletterCommitteeOption, NewsletterRecipient } from '@lfx-one/shared/interfaces';
+import { Committee, NewsletterAudienceEmailAdd, NewsletterCommitteeOption, NewsletterRecipient, ProjectContext } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { finalize, take } from 'rxjs';
@@ -22,6 +23,7 @@ import { finalize, take } from 'rxjs';
 export class NewsletterAudienceStepComponent {
   // === Services ===
   private readonly newsletterService = inject(NewsletterService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly destroyRef = inject(DestroyRef);
 
   // === Inputs ===
@@ -84,6 +86,23 @@ export class NewsletterAudienceStepComponent {
   );
   protected readonly selectedCount: Signal<number> = computed(() => this.committeeUidsValue().length);
   protected readonly hasCommittees = computed(() => this.committeeOptions().length > 0);
+  // Groups exist but none are in the Newsletter category — changes the setup guidance copy.
+  protected readonly hasIneligibleCommittees = computed(() => this.committees().length > 0);
+  protected readonly showGroupSetup = computed(() => !this.committeesLoading() && !this.committeesError() && !this.hasCommittees() && !!this.projectUid());
+  // Setup links target the active context, so they're withheld when it isn't the newsletter's owner.
+  protected readonly setupContext: Signal<ProjectContext | null> = this.initSetupContext();
+  protected readonly setupContextName = computed(() => this.setupContext()?.name || 'this project');
+  // activeProject retains the previous project while context details load; never reuse its permission for a new owner.
+  protected readonly canCreateGroup = computed(
+    () => !!this.setupContext() && this.projectContextService.activeProject()?.uid === this.projectUid() && this.projectContextService.canWrite()
+  );
+  protected readonly groupsRoute: Signal<string[]> = this.initGroupsRoute();
+  protected readonly createGroupRoute: Signal<string[]> = computed(() => [...this.groupsRoute(), 'create']);
+  protected readonly groupsQueryParams: Signal<Record<string, string>> = computed(() => ({ project: this.setupContext()?.slug ?? '' }));
+  protected readonly createGroupQueryParams: Signal<Record<string, string>> = computed(() => ({
+    ...this.groupsQueryParams(),
+    category: NEWSLETTER_COMMITTEE_CATEGORY,
+  }));
   protected readonly selectedCommitteeUid = computed<string | null>(() => this.committeeUidsValue()[0] ?? null);
   // Fallback reads as "the selected group" in the banner sentence.
   protected readonly selectedCommitteeName = computed<string>(() => {
@@ -140,6 +159,21 @@ export class NewsletterAudienceStepComponent {
           this.recipientsError.set('Could not load recipients. Please try again.');
         },
       });
+  }
+
+  private initSetupContext(): Signal<ProjectContext | null> {
+    return computed(() => {
+      const context = this.projectContextService.activeContext();
+      return context?.uid === this.projectUid() ? context : null;
+    });
+  }
+
+  // Tier-prefixed rather than flat /groups: a fresh new tab can't rely on lensRedirectGuard's lens.
+  private initGroupsRoute(): Signal<string[]> {
+    return computed(() => {
+      const tier = this.projectContextService.isFoundationContext() ? 'foundation' : 'project';
+      return ['/', tier, 'groups'];
+    });
   }
 
   // Bridges the local single-value `audienceForm` control to the shared array

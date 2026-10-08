@@ -7,10 +7,19 @@ import {
   MENTORSHIP_CHALLENGE_URL_REQUIRED,
   MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX,
   MENTORSHIP_CUSTOM_PREREQ_NAME_MAX,
+  createDefaultMentorshipTerm,
+  createEmptyMentorshipEnrollForm,
+  MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_ENROLL_LOGO_EMPTY,
   MENTORSHIP_ENROLL_LOGO_EXTENSIONS,
+  MENTORSHIP_ENROLL_LOGO_MAX_BYTES,
+  MENTORSHIP_ENROLL_LOGO_MIME_TYPES,
+  MENTORSHIP_ENROLL_LOGO_TOO_LARGE,
+  MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
   MENTORSHIP_ENROLL_NAME_MAX,
   MENTORSHIP_ENROLL_NAME_MIN,
+  MENTORSHIP_ENROLL_PROJECT_REQUIRED,
   MENTORSHIP_INVALID_URL,
   MENTORSHIP_MAX_OPEN_TERMS,
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
@@ -25,6 +34,9 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
+  MENTORSHIP_MENTEE_COUNTRY_CODES,
+  MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE,
+  MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_PREFER_NOT_TO_SAY,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS,
@@ -56,6 +68,7 @@ import {
   MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_TASK_STATUS_LABELS,
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
+  MENTORSHIP_PROGRAM_DETAIL_TABS,
   MENTORSHIP_REGISTER_ERROR_CONFLICT,
   MENTORSHIP_REGISTER_ERROR_FALLBACK,
   MENTORSHIP_REGISTER_ERROR_READ_ONLY,
@@ -67,10 +80,19 @@ import type {
   MentorshipApplicantTaskRow,
   MentorshipApplicantTaskStatus,
   MentorshipApplicationProgress,
+  MentorshipEnrollCreateRequest,
+  MentorshipEnrollCreateTerm,
+  MentorshipEnrollEditBaseline,
   MentorshipEnrollFieldErrors,
+  MentorshipEnrollForm,
+  MentorshipEnrollImport,
+  MentorshipEnrollSavedTerm,
   MentorshipEnrollStep,
+  MentorshipEnrollUpdateRequest,
   MentorshipEnrollValidationInput,
+  MentorshipLfProject,
   MentorshipNoteDisplay,
+  MentorshipPrerequisite,
   MentorshipProgramMentee,
   MentorshipProgramTerm,
   MentorshipRegisterFailureOptions,
@@ -79,7 +101,13 @@ import type {
   MentorshipTaskFormValue,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
-import type { MentorshipAdminTaskUpdate, MentorshipProgramMentor, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
+import type {
+  MentorshipAdminTaskUpdate,
+  MentorshipProgramDetailTabDefinition,
+  MentorshipProgramMentor,
+  MentorshipProgramStatus,
+  MentorshipProgramTermRow,
+} from '../interfaces/mentorship-admin.interface';
 import type {
   MentorshipMentorProfileDetails,
   MentorshipMentorProfileFieldErrors,
@@ -197,9 +225,34 @@ export function buildMentorshipProgramsUrl(base: string, programId?: string): st
   return programId ? `${programs}/${encodeURIComponent(programId)}` : programs;
 }
 
+/** The admin program-detail tabs a program shows: a pending program has no mentees or mentors yet, so only Terms. */
+export function getMentorshipProgramDetailTabs(status: MentorshipProgramStatus): readonly MentorshipProgramDetailTabDefinition[] {
+  return status === 'pending-review' ? MENTORSHIP_PROGRAM_DETAIL_TABS.filter((tab) => tab.value === 'terms') : MENTORSHIP_PROGRAM_DETAIL_TABS;
+}
+
 export function isMentorshipLogoFileName(fileName: string): boolean {
   const ext = fileName.trim().split('.').pop()?.toLowerCase() ?? '';
   return (MENTORSHIP_ENROLL_LOGO_EXTENSIONS as readonly string[]).includes(ext);
+}
+
+/**
+ * The message for a logo the wizard, the partial-save banner or the program card refuses to send, or `''` when the file is fine.
+ * The upload sends `type` as its Content-Type, so a file whose type is empty or not on the route's list is refused here too.
+ */
+export function getMentorshipEnrollLogoError(file: { name: string; size: number; type: string }): string {
+  if (!isMentorshipLogoFileName(file.name) || !(MENTORSHIP_ENROLL_LOGO_MIME_TYPES as readonly string[]).includes(file.type)) {
+    return MENTORSHIP_ENROLL_LOGO_TYPE_ERROR;
+  }
+  if (file.size === 0) return MENTORSHIP_ENROLL_LOGO_EMPTY;
+  if (file.size > MENTORSHIP_ENROLL_LOGO_MAX_BYTES) return MENTORSHIP_ENROLL_LOGO_TOO_LARGE;
+  return '';
+}
+
+/** Upstream create refuses a single-day application window and one that does not end before the term starts. */
+function getMentorshipEnrollTermWindowError(term: Pick<MentorshipProgramTerm, 'startDate' | 'applicationStartDate' | 'applicationEndDate'>): string {
+  if (term.applicationEndDate <= term.applicationStartDate) return 'Application end date must be after the application start date.';
+  if (term.applicationEndDate >= term.startDate) return 'Application end date must be before the term start month.';
+  return '';
 }
 
 export function lastDayOfMentorshipMonth(isoMonthStart: string): string {
@@ -207,6 +260,209 @@ export function lastDayOfMentorshipMonth(isoMonthStart: string): string {
   if (!parsed) return isoMonthStart;
   const last = new Date(Number(parsed.year), Number(parsed.month), 0);
   return toMentorshipDateOnly(last);
+}
+
+/**
+ * The wizard form as the upstream create body. Technologies go to `industry` as one `', '`-joined string and never
+ * into `skills`; terms and prerequisites carry no id (upstream generates its own). The caller sends this only once the
+ * form says the terms are accepted, so `termsAccepted` is always `true`.
+ */
+export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidationInput, project: MentorshipLfProject): MentorshipEnrollCreateRequest {
+  return {
+    ...toMentorshipEnrollProgramFields(form, project),
+    terms: form.terms.map((term) => toMentorshipEnrollRequestTerm(term)),
+    termsAccepted: true,
+  };
+}
+
+/**
+ * The wizard form as the edit wizard's update body: the program fields as create sends them, and the open terms as the program's
+ * full set. A term in `saved` keeps its id, so upstream changes that term; while its dates are as loaded it sends the stored dates,
+ * not the month-start ones the wizard shows, so editing anything else never moves them. A term the admin added goes without an id
+ * and is created, and a saved term left out is deleted. With no open terms, `terms` is left out and upstream keeps them as they are.
+ */
+export function toMentorshipEnrollUpdateRequest(
+  form: MentorshipEnrollValidationInput,
+  project: MentorshipLfProject,
+  saved: ReadonlyMap<string, MentorshipEnrollSavedTerm>
+): MentorshipEnrollUpdateRequest {
+  const request: MentorshipEnrollUpdateRequest = toMentorshipEnrollProgramFields(form, project);
+  if (form.terms.length) {
+    request.terms = form.terms.map((term) => {
+      const savedTerm = saved.get(term.id);
+      if (!savedTerm) return toMentorshipEnrollRequestTerm(term);
+      const datesUnchanged =
+        savedTerm.term.startDate === term.startDate &&
+        savedTerm.term.endDate === term.endDate &&
+        savedTerm.term.applicationStartDate === term.applicationStartDate &&
+        savedTerm.term.applicationEndDate === term.applicationEndDate;
+      return { id: term.id, ...(datesUnchanged ? { name: term.name.trim(), ...savedTerm.stored } : toMentorshipEnrollRequestTerm(term)) };
+    });
+  }
+  return request;
+}
+
+/** A saved open term as the edit wizard keeps it: the term as the form shows it, and the dates upstream holds. */
+export function toMentorshipEnrollSavedTerm(
+  row: Pick<MentorshipProgramTermRow, 'id' | 'name' | 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
+): MentorshipEnrollSavedTerm {
+  return {
+    term: toMentorshipEnrollTerm(row),
+    stored: { startDate: row.startDate, endDate: row.endDate, applicationStartDate: row.applicationStartDate, applicationEndDate: row.applicationEndDate },
+  };
+}
+
+/** A wizard term as create and update send it: the name trimmed and the end month as its last day. */
+function toMentorshipEnrollRequestTerm(term: MentorshipProgramTerm): MentorshipEnrollCreateTerm {
+  return {
+    name: term.name.trim(),
+    startDate: term.startDate,
+    endDate: lastDayOfMentorshipMonth(term.endDate),
+    applicationStartDate: term.applicationStartDate,
+    applicationEndDate: term.applicationEndDate,
+  };
+}
+
+/** The program fields create and update share. A blank optional field is left out; the BFF sends an update's as `''`, which clears it. */
+function toMentorshipEnrollProgramFields(
+  form: MentorshipEnrollValidationInput,
+  project: MentorshipLfProject
+): Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'> {
+  const request: Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'> = {
+    projectId: project.id,
+    projectSlug: project.slug,
+    projectName: project.name,
+    name: form.name.trim(),
+    description: form.description,
+    repositoryUrl: form.repositoryUrl.trim(),
+    skills: uniqueMentorshipList(form.skills),
+    prerequisites: form.prerequisites.map((item) => {
+      const description = item.description.trim();
+      const challengeUrl = item.challengeUrl?.trim();
+      return {
+        name: item.name.trim(),
+        description: challengeUrl ? `${description}\n\nChallenge: ${challengeUrl}` : description,
+        required: item.required,
+        requireFile: item.requireFile === true,
+        dueDate: item.dueDate || null,
+      };
+    }),
+  };
+
+  if (project.logoUrl) request.projectLogoUrl = project.logoUrl;
+  const websiteUrl = form.websiteUrl.trim();
+  if (websiteUrl) request.websiteUrl = websiteUrl;
+  const codeOfConductUrl = form.codeOfConductUrl.trim();
+  if (codeOfConductUrl) request.codeOfConductUrl = codeOfConductUrl;
+  const ciiProjectId = form.ciiProjectId.trim();
+  if (ciiProjectId) request.ciiProjectId = ciiProjectId;
+  const industry = uniqueMentorshipList(form.technologies).join(', ');
+  if (industry) request.industry = industry;
+  return request;
+}
+
+/** A saved term as the wizard holds it. The term dialog picks months, so both term dates become the first of their month. */
+export function toMentorshipEnrollTerm(
+  row: Pick<MentorshipProgramTermRow, 'id' | 'name' | 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
+): MentorshipProgramTerm {
+  const toMonthStart = (date: string): string => {
+    const parsed = parseMentorshipMonthYear(date);
+    return parsed ? mentorshipMonthYearToStartDate(parsed.month, parsed.year) : date;
+  };
+  return {
+    id: row.id,
+    name: row.name,
+    startDate: toMonthStart(row.startDate),
+    endDate: toMonthStart(row.endDate),
+    applicationStartDate: row.applicationStartDate,
+    applicationEndDate: row.applicationEndDate,
+  };
+}
+
+/** Whether `after` is the saved term `before` unchanged: the same name (trimmed) and dates. `false` when there is no saved term. */
+export function isSameMentorshipTerm(before: MentorshipProgramTerm | undefined, after: MentorshipProgramTerm): boolean {
+  return (
+    before !== undefined &&
+    before.name.trim() === after.name.trim() &&
+    before.startDate === after.startDate &&
+    before.endDate === after.endDate &&
+    before.applicationStartDate === after.applicationStartDate &&
+    before.applicationEndDate === after.applicationEndDate
+  );
+}
+
+/**
+ * The wizard form for an imported program. The template's details and prerequisites are copied; the terms are not, so the
+ * form gets one default term, and the logo is not, so the admin picks one. `termsAccepted` starts over as `false`.
+ */
+export function formFromMentorshipEnrollImport(importProgramId: string, data: MentorshipEnrollImport): MentorshipEnrollForm {
+  return {
+    ...createEmptyMentorshipEnrollForm(),
+    importProgramId,
+    name: data.name,
+    projectId: data.project?.id ?? '',
+    technologies: [...data.technologies],
+    description: data.description,
+    repositoryUrl: data.repositoryUrl,
+    websiteUrl: data.websiteUrl,
+    ciiProjectId: data.ciiProjectId,
+    codeOfConductUrl: data.codeOfConductUrl,
+    skills: [...data.skills],
+    terms: [createDefaultMentorshipTerm()],
+    prerequisites: mergeImportedMentorshipPrerequisites(data.prerequisites),
+  };
+}
+
+/**
+ * The wizard form for editing a program: its details and prerequisites as import copies them, its open terms, and its current
+ * logo as the preview. The terms were accepted when the program was created, so `termsAccepted` is `true`.
+ */
+export function formFromMentorshipEnrollEdit(data: MentorshipEnrollImport, terms: MentorshipProgramTerm[]): MentorshipEnrollForm {
+  return {
+    ...formFromMentorshipEnrollImport('', data),
+    terms: terms.map((term) => ({ ...term })),
+    logoFileName: data.logoUrl ? MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL : '',
+    logoPreviewUrl: data.logoUrl,
+    termsAccepted: true,
+  };
+}
+
+/**
+ * Lays the imported prerequisites over the standard list. An imported item selects a standard row only when it is that row
+ * as create sends it: the same name (ignoring case), description and file requirement, and no due date. The Coding
+ * Challenge is compared without the `Challenge:` line create appends to its description, and gets that URL back. A
+ * standard row's text, file requirement and due date cannot be edited, so any other imported item, a changed standard one
+ * included, becomes a custom prerequisite that keeps its stored values. The standard rows the program did not use stay in
+ * the list unselected.
+ */
+function mergeImportedMentorshipPrerequisites(imported: MentorshipPrerequisite[]): MentorshipPrerequisite[] {
+  const standard = createEmptyMentorshipEnrollForm().prerequisites;
+  const custom: MentorshipPrerequisite[] = [];
+  for (const item of imported) {
+    const name = item.name.trim().toLowerCase();
+    const index = standard.findIndex((entry) => !entry.required && entry.name.toLowerCase() === name);
+    const entry = index === -1 ? undefined : standard[index];
+    const challenge = entry?.challengeUrl !== undefined ? splitImportedChallenge(item.description) : { text: item.description.trim(), url: '' };
+    const isStandard = entry !== undefined && challenge.text === entry.description && Boolean(item.requireFile) === Boolean(entry.requireFile) && !item.dueDate;
+    if (!isStandard) {
+      custom.push({ ...item });
+      continue;
+    }
+    standard[index] = { ...entry, required: true, ...(entry.challengeUrl !== undefined ? { challengeUrl: challenge.url } : {}) };
+  }
+  return [...standard, ...custom];
+}
+
+/**
+ * Splits a Coding Challenge description into its text and the URL on its last line when that line is `Challenge: <url>`.
+ * Without such a line the URL is `''` and the text is the whole description. Only the last line is matched, so a long
+ * stored description never makes the pattern backtrack.
+ */
+function splitImportedChallenge(description: string): { text: string; url: string } {
+  const text = description.trim();
+  const newline = text.lastIndexOf('\n');
+  const url = newline === -1 ? '' : (/^[ \t]*Challenge:[ \t]*(\S+)$/.exec(text.slice(newline + 1))?.[1] ?? '');
+  return url ? { text: text.slice(0, newline).trimEnd(), url } : { text, url: '' };
 }
 
 /**
@@ -228,6 +484,17 @@ function cleanMentorshipSkillList(skills: readonly string[] | null | undefined):
   return (skills ?? []).map((skill) => skill.trim()).filter((skill) => skill !== '');
 }
 
+/** Trims each item and drops blanks and case-insensitive repeats, keeping the first spelling and the order. */
+function uniqueMentorshipList(items: readonly string[] | null | undefined): string[] {
+  const seen = new Set<string>();
+  return cleanMentorshipSkillList(items).filter((item) => {
+    const key = item.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function isSameMentorshipList(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((item, index) => item === b[index]);
 }
@@ -237,8 +504,8 @@ function isSameMentorshipList(a: readonly string[], b: readonly string[]): boole
  * editor's HTML and is sent when it differs from the stored `seed.aboutMe`: the editor writes to the
  * form only when the mentee types, so an untouched introduction is never sent. `skillSet` is present
  * when the skills (trimmed, blanks dropped, order-sensitive) or the trimmed notes differ from `seed`,
- * and then always carries all three fields, since upstream replaces the whole column. Never emits
- * demographics or socioeconomics.
+ * and then always carries all three fields, since upstream replaces the whole column. `country` is sent
+ * when the picked code differs from `seed.country`. Never emits demographics or socioeconomics.
  */
 export function buildMentorshipMenteeProfileUpdate(
   seed: MentorshipMenteeProfileDetails,
@@ -259,6 +526,10 @@ export function buildMentorshipMenteeProfileUpdate(
     additionalNotes !== (seed.additionalNotes ?? '').trim();
   if (skillsChanged) {
     request.skillSet = { skillsHave, skillsWant, ...(additionalNotes ? { additionalNotes } : {}) };
+  }
+
+  if (value.country !== (seed.country ?? '')) {
+    request.country = value.country;
   }
 
   return request;
@@ -380,12 +651,40 @@ export function getMentorshipTermDateErrors(
 }
 
 /**
+ * Term date errors for the enroll wizard: the shared term rules, then the application windows upstream create refuses,
+ * reported on `applicationEndDate`. The term dialog and the setup step both use it, so a term the dialog saves passes Next.
+ * A saved term (`original`) whose dates are all unchanged has nothing to check, so renaming it never trips a rule its dates
+ * were saved under, such as the one-day application window the Terms tab allows.
+ */
+export function getMentorshipEnrollTermDateErrors(
+  term: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>,
+  today = new Date(),
+  original?: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
+): MentorshipTermDateErrors {
+  const datesUnchanged =
+    original !== undefined &&
+    term.startDate === original.startDate &&
+    term.endDate === original.endDate &&
+    term.applicationStartDate === original.applicationStartDate &&
+    term.applicationEndDate === original.applicationEndDate;
+  if (datesUnchanged) return {};
+  const errors = getMentorshipTermDateErrors(term, today, original);
+  if (Object.keys(errors).length) return errors;
+  const windowError = getMentorshipEnrollTermWindowError(term);
+  return windowError ? { applicationEndDate: windowError } : errors;
+}
+
+/**
  * Field-keyed validation errors for a single enroll wizard step.
  *
  * The `details` step only requires a selected project; the picker offers live query-service
  * projects, so there is no client-side allowlist to check the id against.
  */
-export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollValidationInput): MentorshipEnrollFieldErrors {
+export function getMentorshipEnrollStepErrors(
+  step: MentorshipEnrollStep,
+  form: MentorshipEnrollValidationInput,
+  edit?: MentorshipEnrollEditBaseline
+): MentorshipEnrollFieldErrors {
   if (step === 'details') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (isBlank(form.name)) {
@@ -395,7 +694,7 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     }
     const projectId = form.projectId.trim();
     if (!projectId) {
-      errors.projectId = 'Select a Linux Foundation project.';
+      errors.projectId = MENTORSHIP_ENROLL_PROJECT_REQUIRED;
     }
     if (!form.technologies.length) errors.technologies = 'Add at least one technology.';
     const descriptionError = mentorshipRichTextError(
@@ -416,9 +715,10 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     if (form.codeOfConductUrl.trim() && !isMentorshipHttpUrl(form.codeOfConductUrl)) {
       errors.codeOfConductUrl = MENTORSHIP_INVALID_URL;
     }
-    if (isBlank(form.logoFileName)) {
+    // An edit keeps the program's logo unless a new file is picked, and a picked file is checked as it is picked.
+    if (!edit && isBlank(form.logoFileName)) {
       errors.logoFileName = 'Logo is required.';
-    } else if (!isMentorshipLogoFileName(form.logoFileName)) {
+    } else if (!edit && !isMentorshipLogoFileName(form.logoFileName)) {
       errors.logoFileName = 'Program logo is not the right file type.';
     }
     if (form.ciiProjectId.trim() && !isMentorshipCiiProjectId(form.ciiProjectId)) {
@@ -430,7 +730,8 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
   if (step === 'setup') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (!form.skills.length) errors.skills = 'Add at least one skill.';
-    if (!form.terms.length) {
+    // A program being edited that had only closed terms may stay that way; upstream keeps a program's last open term otherwise.
+    if (!form.terms.length && (!edit || edit.terms.length > 0)) {
       errors.terms = 'Add at least one program term.';
     } else if (form.terms.length > MENTORSHIP_MAX_OPEN_TERMS) {
       errors.terms = MENTORSHIP_MAX_OPEN_TERMS_MESSAGE;
@@ -442,7 +743,12 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
             ? `Term name must be ${MENTORSHIP_TERM_NAME_MAX} characters or fewer.`
             : MENTORSHIP_TERM_FIELDS_ERROR;
       } else {
-        const firstTermError = form.terms.map((term) => Object.values(getMentorshipTermDateErrors(term))[0]).find(Boolean);
+        // An edit sends nothing for a saved term the admin left as it was, so only new and changed terms are checked.
+        const savedTerms = new Map((edit?.terms ?? []).map((term) => [term.id, term]));
+        const firstTermError = form.terms
+          .filter((term) => !isSameMentorshipTerm(savedTerms.get(term.id), term))
+          .map((term) => Object.values(getMentorshipEnrollTermDateErrors(term, new Date(), savedTerms.get(term.id)))[0])
+          .find(Boolean);
         if (firstTermError) errors.terms = firstTermError;
       }
     }
@@ -451,11 +757,14 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
 
   const errors: MentorshipEnrollFieldErrors = {};
   const todayFloor = mentorshipDateOnlyFloor();
+  const savedPrerequisites = new Map((edit?.prerequisites ?? []).map((item) => [item.id, item]));
   const incompleteCustom = form.prerequisites.some((item) => {
     if (!item.custom) return false;
     if (isBlank(item.name) || item.name.trim().length > MENTORSHIP_CUSTOM_PREREQ_NAME_MAX) return true;
-    if (isBlank(item.dueDate ?? '') || !isMentorshipIsoDate(item.dueDate ?? '')) return true;
-    if ((item.dueDate ?? '') < todayFloor) return true;
+    // A due date the program already had, even none or a past one, stays valid while it is left unchanged.
+    const keepsSavedDueDate = savedPrerequisites.has(item.id) && (savedPrerequisites.get(item.id)?.dueDate ?? '') === (item.dueDate ?? '');
+    if (!keepsSavedDueDate && (isBlank(item.dueDate ?? '') || !isMentorshipIsoDate(item.dueDate ?? ''))) return true;
+    if (!keepsSavedDueDate && (item.dueDate ?? '') < todayFloor) return true;
     return isBlank(item.description) || item.description.trim().length > MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX;
   });
   const coding = form.prerequisites.find((item) => item.id === 'prereq-coding');
@@ -616,6 +925,7 @@ export function createEmptyMentorshipMenteeForm(): MentorshipMenteeRegisterForm 
     skillsHave: [],
     skillsWant: [],
     additionalNotes: '',
+    country: '',
     ageConsent: false,
     age: '',
     raceEthnicityConsent: false,
@@ -662,6 +972,16 @@ export function getMentorshipMenteeIntroductionError(html: string): string | und
 }
 
 /**
+ * The rule a mentee country is held to, on register and in the profile edit drawer, in the browser and in
+ * the BFF: required, and one of the assigned ISO 3166-1 alpha-2 codes the dropdown offers. Returns the
+ * message, or `undefined` when valid.
+ */
+export function getMentorshipMenteeCountryError(country: string): string | undefined {
+  if (isBlank(country)) return MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE;
+  return MENTORSHIP_MENTEE_COUNTRY_CODES.has(country) ? undefined : MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE;
+}
+
+/**
  * The register rules, expressed over the wire request so the browser and the BFF share them. Keys are
  * assigned in form order because the submit toast shows `Object.values(errors)[0]`. A skill outside
  * `MENTORSHIP_SKILL_OPTIONS` can only come from a tampered request (the picker offers nothing else),
@@ -672,7 +992,7 @@ export function getMentorshipMenteeIntroductionError(html: string): string | und
 export function getMentorshipMenteeRegisterRequestErrors(
   input: Pick<
     MentorshipMenteeRegisterRequest,
-    'introduction' | 'skillsHave' | 'skillsWant' | 'ageEligible' | 'workAuthorized' | 'noDuplicateProfile' | 'complianceAccepted' | 'termsAccepted'
+    'introduction' | 'skillsHave' | 'skillsWant' | 'country' | 'ageEligible' | 'workAuthorized' | 'noDuplicateProfile' | 'complianceAccepted' | 'termsAccepted'
   >
 ): MentorshipMenteeRegisterFieldErrors {
   const errors: MentorshipMenteeRegisterFieldErrors = {};
@@ -685,6 +1005,8 @@ export function getMentorshipMenteeRegisterRequestErrors(
   if (!input.skillsWant.length) errors.skillsWant = 'Add at least one skill you would like to improve.';
   else if (input.skillsWant.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsWant = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
   else if (hasUnknownMentorshipSkill(input.skillsWant)) errors.skillsWant = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
+  const countryError = getMentorshipMenteeCountryError(input.country);
+  if (countryError) errors.country = countryError;
   if (!isMentorshipTermsAccepted(input.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';
   if (!isMentorshipTermsAccepted(input.workAuthorized)) errors.workAuthorized = 'Please confirm you are authorized to work in your country of residence.';
   if (!isMentorshipTermsAccepted(input.noDuplicateProfile)) errors.noDuplicateProfile = 'Please confirm you do not already have a mentee profile.';
@@ -721,6 +1043,7 @@ export function buildMentorshipMenteeRegisterRequest(
     skillsHave: [...form.skillsHave],
     skillsWant: [...form.skillsWant],
     additionalNotes: form.additionalNotes.trim(),
+    country: form.country,
     ...(Object.keys(demographics).length ? { demographics } : {}),
     ageEligible: isMentorshipTermsAccepted(form.ageEligible),
     workAuthorized: isMentorshipTermsAccepted(form.workAuthorized),
@@ -922,12 +1245,13 @@ export function matchesMentorshipPersonSearch(person: MentorshipProgramMentee | 
 }
 
 /**
- * Whether every prerequisite task has been submitted. A person with no tasks assigned
- * has not completed anything, so an empty assignment is never "complete".
+ * Whether every prerequisite task has been submitted, judged as upstream's `tasks_submitted` status filter
+ * judges it: an application with no tasks has none outstanding, so it counts as complete. Without counts (a
+ * cross-program application carries none) nothing is known to be submitted.
  */
 function mentorshipPrerequisitesComplete(person: MentorshipApplicationProgress): boolean {
-  const total = person.tasksTotal ?? 0;
-  return total > 0 && (person.tasksSubmitted ?? 0) >= total;
+  if (person.tasksTotal === undefined) return false;
+  return (person.tasksSubmitted ?? 0) >= person.tasksTotal;
 }
 
 /**

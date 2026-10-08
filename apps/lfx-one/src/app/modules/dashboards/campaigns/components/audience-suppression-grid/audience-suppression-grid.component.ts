@@ -8,9 +8,10 @@ import type { AudienceSuppressionCategory, AudienceSuppressionList } from '@lfx-
 /**
  * The exclusion picker: event-specific, brand, then portfolio-wide hygiene lists.
  *
- * Nothing is pre-ticked. An auto-applied exclusion silently shrinks a send, and the operator is
- * the only party who knows whether this audience is one the exclusion was written for — so the
- * ordering below is a recommendation and the ticks are theirs.
+ * Every resolved row arrives pre-ticked (the container seeds them once per load), and at least one
+ * must stay ticked before anything can be composed or attached: sending with no suppression at all
+ * is the compliance failure this step exists to prevent. The operator can still untick a list the
+ * audience was not written for -- the ticks remain theirs, only the default changed.
  */
 @Component({
   selector: 'lfx-audience-suppression-grid',

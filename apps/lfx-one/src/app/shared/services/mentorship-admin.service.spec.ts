@@ -4,14 +4,20 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE } from '@lfx-one/shared/constants';
 import {
   MentorshipAdminDeclinePendingResponse,
   MentorshipAdminMenteesResponse,
+  MentorshipAdminMentorCandidatesResponse,
   MentorshipAdminMentorsResponse,
   MentorshipAdminProgramPage,
   MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
+  MentorshipEnrollCreateRequest,
+  MentorshipEnrollImport,
+  MentorshipEnrollProgramRef,
   MentorshipMentorTaskCreateResponse,
+  MentorshipProgramLogoUploadResult,
   MentorshipProgramsResponse,
 } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -75,6 +81,26 @@ describe('MentorshipAdminService', () => {
     http.expectOne('/api/mentorship/admin/programs/nope').flush('missing', { status: 404, statusText: 'Not Found' });
     expect(status).toBe(404);
     expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] getProgram failed', { status: 404, statusText: 'Not Found' });
+  });
+
+  it('reads the enroll template from the admin endpoint, encoding the id', () => {
+    let name: string | undefined;
+    service.getEnrollTemplate('grid flow').subscribe((value) => (name = value.name));
+
+    const req = http.expectOne('/api/mentorship/admin/programs/grid%20flow/enroll-template');
+    expect(req.request.method).toBe('GET');
+    req.flush({ name: 'Example Program', project: null, technologies: [], skills: [], prerequisites: [] } satisfies Partial<MentorshipEnrollImport>);
+    expect(name).toBe('Example Program');
+  });
+
+  it('logs an enroll template failure by status and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.getEnrollTemplate('nope').subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/admin/programs/nope/enroll-template').flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(status).toBe(503);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] getEnrollTemplate failed', { status: 503, statusText: 'Service Unavailable' });
   });
 
   it('reads one page of mentees with the set filters as query params', () => {
@@ -155,6 +181,49 @@ describe('MentorshipAdminService', () => {
     expect(status).toBe(503);
     expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] getProgramMentors failed', { status: 503, statusText: 'Service Unavailable' });
     expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-name');
+  });
+
+  it('searches mentor candidates with the search in the POST body, never the URL, encoding the id', () => {
+    let names: string[] = [];
+    service.getMentorCandidates('grid flow', 'ada+lfx@example.org').subscribe((response) => (names = response.data.map((candidate) => candidate.name)));
+
+    const req = http.expectOne((r) => r.url === '/api/mentorship/admin/programs/grid%20flow/mentor-candidates');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ search: 'ada+lfx@example.org' });
+    expect(req.request.urlWithParams).not.toContain('example.org');
+    req.flush({ data: [{ lfid: 'ada', name: 'Ada Mentor' }] } satisfies MentorshipAdminMentorCandidatesResponse);
+    expect(names).toEqual(['Ada Mentor']);
+  });
+
+  it('logs a mentor-candidates failure by status only, never the search', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.getMentorCandidates('p1', 'secret-name').subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne((r) => r.url === '/api/mentorship/admin/programs/p1/mentor-candidates').flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(status).toBe(503);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] getMentorCandidates failed', { status: 503, statusText: 'Service Unavailable' });
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-name');
+  });
+
+  it('invites a mentor by LFID, encoding the id, and resolves on 204', () => {
+    let done = 0;
+    service.inviteProgramMentor('prog 1', { lfid: 'ada' }).subscribe(() => done++);
+
+    const req = http.expectOne('/api/mentorship/admin/programs/prog%201/mentors');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ lfid: 'ada' });
+    req.flush(null, { status: 204, statusText: 'No Content' });
+    expect(done).toBe(1);
+  });
+
+  it('passes an invite failure on with its status', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.inviteProgramMentor('p1', { lfid: 'ada' }).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/admin/programs/p1/mentors').flush({ error: 'exists' }, { status: 409, statusText: 'Conflict' });
+    expect(status).toBe(409);
   });
 
   it("reads one page of a program's terms with the paging as query params", () => {
@@ -276,6 +345,151 @@ describe('MentorshipAdminService', () => {
     expect(req.request.body).toEqual({ status: 'withdrawn' });
     req.flush(null, { status: 204, statusText: 'No Content' });
     expect(done).toBe(1);
+  });
+
+  it('posts the program create body and resolves with the program ref', () => {
+    const body: MentorshipEnrollCreateRequest = {
+      projectId: '3f2c1a9e-7b4d-4c1e-9a55-0d6e8f1a2b3c',
+      projectSlug: 'example-project',
+      projectName: 'Example Project',
+      name: 'Example Program',
+      description: '<p>Build things.</p>',
+      repositoryUrl: 'https://github.com/example/repo',
+      skills: ['Go'],
+      terms: [{ name: 'Term 1', startDate: '2030-03-01', endDate: '2030-05-31', applicationStartDate: '2030-01-01', applicationEndDate: '2030-02-28' }],
+      prerequisites: [],
+      termsAccepted: true,
+    };
+    let ref: MentorshipEnrollProgramRef | undefined;
+    service.createProgram(body).subscribe((value) => (ref = value));
+
+    const req = http.expectOne('/api/mentorship/admin/programs');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(body);
+    req.flush({ id: 'prog_1', slug: 'example-program', status: 'pending' } satisfies MentorshipEnrollProgramRef);
+    expect(ref).toEqual({ id: 'prog_1', slug: 'example-program', status: 'pending' });
+  });
+
+  it('logs a failed program create by status only and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.createProgram({ name: 'secret-program' } as MentorshipEnrollCreateRequest).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/admin/programs').flush({ message: 'bad' }, { status: 400, statusText: 'Bad Request' });
+
+    expect(status).toBe(400);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] createProgram failed', { status: 400, statusText: 'Bad Request' });
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-program');
+  });
+
+  it('uploads the logo file as the raw body with its own content type, encoding the program id', () => {
+    const file = new File([new Uint8Array([1, 2, 3])], 'secret-logo.png', { type: 'image/png' });
+    let logoUrl: string | undefined;
+    service.uploadProgramLogo('prog 1', file).subscribe((value) => (logoUrl = value.logoUrl));
+
+    const req = http.expectOne('/api/mentorship/admin/programs/prog%201/logo');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toBe(file);
+    expect(req.request.headers.get('Content-Type')).toBe('image/png');
+    req.flush({ logoUrl: 'https://cdn.example/logo.png' } satisfies MentorshipProgramLogoUploadResult);
+    expect(logoUrl).toBe('https://cdn.example/logo.png');
+  });
+
+  it('logs a failed logo upload by status only and lets a 413 reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const file = new File([new Uint8Array([1])], 'secret-logo.png', { type: 'image/png' });
+    let status: number | undefined;
+    service.uploadProgramLogo('prog_1', file).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/admin/programs/prog_1/logo').flush({ message: 'big' }, { status: 413, statusText: 'Payload Too Large' });
+
+    expect(status).toBe(413);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] uploadProgramLogo failed', { status: 413, statusText: 'Payload Too Large' });
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-logo');
+  });
+
+  describe('uploadProgramLogo retries', () => {
+    const logoUrl = '/api/mentorship/admin/programs/prog_1/logo';
+    const file = new File([new Uint8Array([1])], 'logo.png', { type: 'image/png' });
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('backs a 403 off by 1 s, 2 s and 4 s, then gives up with the 403', () => {
+      let status: number | undefined;
+      service.uploadProgramLogo('prog_1', file).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+      for (const delay of [0, 1000, 2000, 4000]) {
+        vi.advanceTimersByTime(delay);
+        http.expectOne(logoUrl).flush({}, { status: 403, statusText: 'Forbidden' });
+      }
+
+      expect(status).toBe(403);
+    });
+
+    it('succeeds when a 403 clears on a later attempt', () => {
+      let result: string | undefined;
+      service.uploadProgramLogo('prog_1', file).subscribe((value) => (result = value.logoUrl));
+
+      http.expectOne(logoUrl).flush({}, { status: 403, statusText: 'Forbidden' });
+      vi.advanceTimersByTime(1000);
+      http.expectOne(logoUrl).flush({ logoUrl: 'https://cdn.example/logo.png' });
+
+      expect(result).toBe('https://cdn.example/logo.png');
+    });
+
+    it('does not back off the impersonation read-only 403', () => {
+      let status: number | undefined;
+      service.uploadProgramLogo('prog_1', file).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+      http.expectOne(logoUrl).flush({ code: MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE }, { status: 403, statusText: 'Forbidden' });
+      vi.advanceTimersByTime(10000);
+
+      http.expectNone(logoUrl);
+      expect(status).toBe(403);
+    });
+
+    it('does not back a 403 off when retryForbidden is false', () => {
+      let status: number | undefined;
+      service.uploadProgramLogo('prog_1', file, false).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+      http.expectOne(logoUrl).flush({}, { status: 403, statusText: 'Forbidden' });
+      vi.advanceTimersByTime(10000);
+
+      http.expectNone(logoUrl);
+      expect(status).toBe(403);
+    });
+
+    it('retries another failure once after a short delay', () => {
+      let status: number | undefined;
+      service.uploadProgramLogo('prog_1', file).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+      http.expectOne(logoUrl).flush({}, { status: 502, statusText: 'Bad Gateway' });
+      expect(status).toBeUndefined();
+      vi.advanceTimersByTime(1000);
+      http.expectOne(logoUrl).flush({}, { status: 502, statusText: 'Bad Gateway' });
+      vi.advanceTimersByTime(10000);
+
+      http.expectNone(logoUrl);
+      expect(status).toBe(502);
+    });
+
+    it.each([400, 401, 413, 415])('does not retry a %i', (code) => {
+      let status: number | undefined;
+      service.uploadProgramLogo('prog_1', file).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+      http.expectOne(logoUrl).flush({}, { status: code, statusText: 'Refused' });
+      vi.advanceTimersByTime(10000);
+
+      http.expectNone(logoUrl);
+      expect(status).toBe(code);
+    });
   });
 
   it('logs a failed mentor change by status only and lets it reach the caller', () => {

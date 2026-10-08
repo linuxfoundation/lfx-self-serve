@@ -115,4 +115,26 @@ describe('AudienceMissingSignalsComponent', () => {
       'a disabled Add still emitted'
     ).toEqual(['501']);
   });
+
+  it('emits Exclude as a list ref, reads as on once excluded, and stays silent when disabled', () => {
+    const excluded: string[] = [];
+    render({ searchResults: [result()] });
+    fixture.componentInstance.excludeList.subscribe((list) => excluded.push(`${list.listId}:${list.name}`));
+
+    const exclude = (): HTMLElement | null => host().querySelector<HTMLElement>('[data-testid="audience-missing-signals-exclude-501"]');
+    expect(exclude()?.getAttribute('aria-pressed')).toBe('false');
+    exclude()?.click();
+    expect(excluded).toEqual(['501:Synthetic Summit - Speakers']);
+
+    // The container owns the excluded set; once it feeds the id back, the button must read as on.
+    fixture.componentRef.setInput('excludedIds', new Set<string>(['501']));
+    fixture.detectChanges();
+    expect(exclude()?.getAttribute('aria-pressed')).toBe('true');
+    expect(exclude()?.textContent?.trim()).toBe('Excluded');
+
+    fixture.componentRef.setInput('disabled', true);
+    fixture.detectChanges();
+    exclude()?.click();
+    expect(excluded, 'a disabled Exclude still emitted').toEqual(['501:Synthetic Summit - Speakers']);
+  });
 });

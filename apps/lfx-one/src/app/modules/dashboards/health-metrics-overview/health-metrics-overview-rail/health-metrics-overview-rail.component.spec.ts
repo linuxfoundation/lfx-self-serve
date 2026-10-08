@@ -15,14 +15,15 @@ describe('HealthMetricsOverviewRailComponent', () => {
     dataAvailable: true,
     total: 1_000_000,
     streams: [
-      { key: 'memberships', value: 600_000 },
-      { key: 'events', value: 300_000 },
-      { key: 'training', value: 100_000 },
+      { key: 'memberships', value: 600_000, share: 60 },
+      { key: 'events', value: 300_000, share: 30 },
+      { key: 'training', value: 100_000, share: 10 },
     ],
   };
 
   const foundationSummary: HealthMetricsOverviewFoundationSummary = {
     dataAvailable: true,
+    size: '1,725 members',
     projects: '14',
     tiers: '4 tiers',
     board: '12 seats',
@@ -59,6 +60,11 @@ describe('HealthMetricsOverviewRailComponent', () => {
   it('renders the foundation summary fields and the fixed data-sources tag list', async () => {
     await render();
 
+    const sizeRow: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-size"]');
+    expect(Array.from<Element>(sizeRow.querySelectorAll('span')).map((el) => el.textContent?.trim())).toEqual(['Size', '1,725 members']);
+    // Size leads the Foundation block, per the design.
+    expect(sizeRow.parentElement?.firstElementChild).toBe(sizeRow);
+
     const text = fixture.nativeElement.textContent;
     expect(text).toContain('14');
     expect(text).toContain('4 tiers');
@@ -72,7 +78,7 @@ describe('HealthMetricsOverviewRailComponent', () => {
   });
 
   it('shows a not-available message instead of placeholder values when the foundation summary is unavailable', async () => {
-    await render({ dataAvailable: false, projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
+    await render({ dataAvailable: false, size: '—', projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
 
     const rootEl: HTMLElement = fixture.nativeElement;
     expect(rootEl.querySelector('[data-testid="health-metrics-overview-foundation-summary-unavailable"]')?.textContent).toContain('not available yet');
@@ -84,8 +90,8 @@ describe('HealthMetricsOverviewRailComponent', () => {
       dataAvailable: true,
       total: 600_000,
       streams: [
-        { key: 'memberships', value: 600_000 },
-        { key: 'events', value: null },
+        { key: 'memberships', value: 600_000, share: 100 },
+        { key: 'events', value: null, share: null },
       ],
     });
 
@@ -94,6 +100,17 @@ describe('HealthMetricsOverviewRailComponent', () => {
     )?.parentElement;
     const cells = Array.from<HTMLElement>(eventsRow?.querySelectorAll('span') ?? []).map((el) => el.textContent?.trim());
     expect(cells).toEqual(['', 'Events', '—', '—']);
+  });
+
+  it('labels each stream with the model share, not a share recomputed from the streams', async () => {
+    await render(foundationSummary, {
+      dataAvailable: true,
+      total: 1_000_000,
+      streams: [{ key: 'memberships', value: 250_000, share: 31.6 }],
+    });
+
+    expect(fixture.nativeElement.textContent).toContain('32%');
+    expect(fixture.nativeElement.textContent).not.toContain('25%');
   });
 
   it('applies the topPx input as the sticky offset', async () => {

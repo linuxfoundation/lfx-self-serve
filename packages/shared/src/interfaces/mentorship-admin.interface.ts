@@ -12,6 +12,7 @@ import type {
   MENTORSHIP_TERM_ROW_STATUSES,
 } from '../constants/mentorship.constants';
 import type {
+  MentorshipApplicantDisplayStatus,
   MentorshipApplicantTask,
   MentorshipApplicantTaskStatus,
   MentorshipMenteeStatus,
@@ -32,10 +33,10 @@ export interface MentorshipProgramStats {
 /**
  * Program status as the admin list shows it (upstream `admin_status`, `_` written as `-`):
  * - `open` — published, with an open term or no terms yet
- * - `pending-review` — draft or submitted, awaiting approval
+ * - `pending-review` — pending, awaiting review
  * - `completed` — published, with only closed terms
  * - `rejected` — rejected
- * - `hidden` — archived or hidden
+ * - `hidden` — hidden
  */
 export type MentorshipProgramStatus = (typeof MENTORSHIP_PROGRAM_STATUSES)[number];
 
@@ -53,6 +54,8 @@ export interface MentorshipProgram {
   stats: MentorshipProgramStats;
   /** Optional program logo. When absent, the card renders an initials avatar. */
   logoUrl?: string;
+  /** True when upstream status is `pending` or `published` and the program has no logo (R12). List rows only. */
+  logoMissing?: boolean;
   createdOn: string;
   updatedOn: string;
 }
@@ -65,6 +68,9 @@ export type MentorshipProgramsResponse = {
 /** Admin program-detail underline tabs. */
 export type MentorshipProgramDetailTab = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)[number]['value'];
 
+/** One admin program-detail tab: its value, label and the count its badge reads. */
+export type MentorshipProgramDetailTabDefinition = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)[number];
+
 /** Mentor lifecycle on the admin Mentors tab; upstream's `active` mentor shows as Accepted. */
 export type MentorshipAdminMentorStatus = (typeof MENTORSHIP_ADMIN_MENTOR_STATUSES)[number];
 
@@ -74,6 +80,11 @@ export type MentorshipAdminMentorUpdateStatus = (typeof MENTORSHIP_ADMIN_MENTOR_
 /** Body of `PATCH /api/mentorship/admin/programs/:programId/mentors/:memberId`. */
 export interface MentorshipAdminMentorStatusUpdate {
   status: MentorshipAdminMentorUpdateStatus;
+}
+
+/** Body of `POST /api/mentorship/admin/programs/:programId/mentors`: the LFID of the picked candidate, invited as a mentor. */
+export interface MentorshipAdminMentorInviteRequest {
+  lfid: string;
 }
 
 /** One action on a Mentors tab row: `key` names its copy, `status` is what it sets. */
@@ -208,6 +219,12 @@ export interface MentorshipDeclineByTermDialogData {
 /** One of the two mentee tabs of an admin program page. */
 export type MentorshipAdminMenteeTab = (typeof MENTORSHIP_ADMIN_MENTEE_TABS)[number];
 
+/**
+ * The status filter of a mentee tab. Current Mentees filters on the statuses its table shows, so `pending` splits
+ * into `applied` and `tasks-completed`; Past Mentees filters on the wire status.
+ */
+export type MentorshipAdminMenteeStatusFilter = MentorshipMenteeStatus | MentorshipApplicantDisplayStatus;
+
 /** Count badges on the live admin program page. A count is `null` when its upstream read failed; the tab shows a dash. */
 export interface MentorshipAdminProgramTabCounts {
   currentMentees: number | null;
@@ -253,6 +270,27 @@ export interface MentorshipAdminMentorsResponse {
   total: number;
 }
 
+/**
+ * Body of `POST /api/mentorship/admin/programs/:programId/mentor-candidates`. The search is in the body, not the query
+ * string, because it can be a full email address and the request URL is logged on every line.
+ */
+export interface MentorshipAdminMentorCandidatesRequest {
+  search: string;
+}
+
+/** One person the Mentors tab can invite, from `POST /api/mentorship/admin/programs/:programId/mentor-candidates`. Never carries an email. */
+export interface MentorshipAdminMentorCandidate {
+  lfid: string;
+  /** Upstream's name, or the LFID when upstream has none. */
+  name: string;
+  avatarUrl?: string;
+}
+
+/** At most 10 candidates matching the search, from `POST /api/mentorship/admin/programs/:programId/mentor-candidates`. */
+export interface MentorshipAdminMentorCandidatesResponse {
+  data: MentorshipAdminMentorCandidate[];
+}
+
 /** One page of a program's terms, from `GET /api/mentorship/admin/programs/:programId/terms`. */
 export interface MentorshipAdminTermsResponse {
   data: MentorshipProgramTermRow[];
@@ -284,6 +322,13 @@ export interface MentorshipUpstreamMemberManagementRow {
   profile_created: boolean;
 }
 
+/** One row of upstream `GET /mentorship/v1/programs/{id}/mentor-candidates`. `name` and `avatar_url` may be missing. */
+export interface MentorshipUpstreamMentorCandidate {
+  lfid: string;
+  name?: string;
+  avatar_url?: string;
+}
+
 /** One row of upstream `GET /mentorship/v1/programs/{id}/term-management`: a term with its mentee application counts. */
 export interface MentorshipUpstreamTermManagementRow extends MentorshipUpstreamProgramTerm {
   pending: number;
@@ -301,8 +346,8 @@ export interface MentorshipAdminTasksState {
 /** Query of `GET /api/mentorship/admin/programs/:programId/mentees`. */
 export interface MentorshipAdminMenteesQuery {
   type: MentorshipAdminMenteeTab;
-  /** One wire status. */
-  status?: MentorshipMenteeStatus;
+  /** One display status on `current`, one wire status on `past`. */
+  status?: MentorshipAdminMenteeStatusFilter;
   /** UUID of one term. */
   termId?: string;
   search?: string;

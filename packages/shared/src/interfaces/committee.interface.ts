@@ -1183,8 +1183,13 @@ export interface IcalSubscribeDialogData {
 
 export interface EditChairsDialogData {
   members: { label: string; value: string }[];
-  currentChairUid: string | null;
-  currentViceChairUid: string | null;
+  currentChairUids: string[];
+  currentViceChairUids: string[];
+}
+
+export interface EditChairsDialogResult {
+  chairUids: string[];
+  viceChairUids: string[];
 }
 
 export type CommitteeTab = 'overview' | 'about' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents' | 'settings';

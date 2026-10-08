@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -1963,6 +1963,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     onGenerateEmailCopy(): Promise<void>;
     emailStaging: WritableSignal<'idle' | 'staging' | 'done' | 'error'>;
     emailStagingMessage: WritableSignal<string>;
+    emailStagingDraftUrl: Signal<string>;
     canStageEmail: Signal<boolean>;
     onStageEmailSend(): Promise<void>;
     // Read-only now: the form is the source of truth and these derive from it, so a test
@@ -1993,6 +1994,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailCtaIsStageable: Signal<boolean>;
     emailCtaLabel: Signal<string>;
     emailHeroImageUrl: Signal<string>;
+    emailHeroPreviewUrl: Signal<string>;
     emailRegistrationUrl: Signal<string>;
     emailSponsors: Signal<CampaignEventSponsor[]>;
     emailBodyIsStageable: Signal<boolean>;
@@ -2002,8 +2004,13 @@ describe('CampaignsComponent — email delivery channel', () => {
       controls: {
         deliveryType: { setValue(v: CampaignDeliveryType): void };
         programType: { setValue(v: CampaignProgramType): void };
+        emailType: { disabled: boolean };
+        emailSegment: { disabled: boolean };
       };
     };
+    emailAudienceWriteInFlight: WritableSignal<boolean>;
+    emailStagingUnresolved: Signal<boolean>;
+    emailStagingHeld: Signal<boolean>;
   }
 
   const internals = (): Internals => fixture.componentInstance as unknown as Internals;
@@ -2553,6 +2560,24 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       const bOut = internals().abTestBodyHtmlBForSend();
       expect(bOut.split('Register Now').length - 1).toBe(1);
+    });
+
+    it('does not fold the refused CTA twice after the rich editor rewrites the folded label as a paragraph', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>A body</p>',
+        cta: 'Register Now',
+        ctaUrl: 'https://evil.example/phish',
+      } as unknown as EmailBriefCopy);
+      // What the editor writes back once the operator types: `<div>` becomes `<p>`.
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p><p><strong>Register Now</strong></p>');
+      fixture.detectChanges();
+
+      expect(internals().emailCtaUnlinkedLabel()).toBe('Register Now');
+      expect(internals().abTestBodyHtmlBForSend().split('Register Now').length - 1).toBe(1);
     });
 
     it.each([
@@ -3123,6 +3148,40 @@ describe('CampaignsComponent — email delivery channel', () => {
     // persist is still current by its own generation while its caller has already returned early
     // and rendered NO banner. Promoting there would hand out overwrite permission for a refusal
     // the operator was never shown.
+    it('shows a warm-up conflict on the Audience tab and grants its overwrite only on Retry', async () => {
+      // A conflict carrying an id used to read as "unapproved": no Retry, and the conflict message
+      // whose render grants the overwrite never appeared, so proceeding repeated the conflict.
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+      persist.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: '"1"', approved: true }));
+      vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
+      await internals().onGenerateEmailCopy();
+
+      persist.mockReturnValue(of({ status: 'saved', briefId: 'brief-77', etag: null, approved: false, conflict: 'stale-brief' }));
+      internals().emailBriefId.set('');
+      const warm = internals() as unknown as { warmEmailBriefId(): void; emailBriefSaveMessage: () => string; onRetryEmailBrief(): void };
+      warm.warmEmailBriefId();
+      await fixture.whenStable();
+
+      expect((internals() as unknown as { emailBriefState: () => string }).emailBriefState()).toBe('failed');
+      expect(warm.emailBriefSaveMessage(), 'the conflict recovery never reached the Audience tab').not.toBe('');
+
+      // Not granted by the warm-up alone: the next save still addresses the row with its validator.
+      persist.mockClear();
+      persist.mockReturnValue(NEVER);
+      warm.onRetryEmailBrief();
+      await fixture.whenStable();
+
+      expect(persist, 'Retry after the shown conflict did not carry the overwrite').toHaveBeenLastCalledWith(
+        emailBrief,
+        expect.anything(),
+        'brief-77',
+        null,
+        true
+      );
+    });
+
     it('withholds the overwrite until the conflict warning is actually rendered', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
@@ -3330,6 +3389,42 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingMessage()).toContain('could not be cloned');
     });
 
+    it.each([
+      ['an https HubSpot link', 'https://app.hubspot.com/email/123/edit/c1/settings', 'https://app.hubspot.com/email/123/edit/c1/settings'],
+      ['a non-http(s) link', 'javascript:alert(1)', ''],
+      ['no link', undefined, ''],
+      ['a regional HubSpot app host', 'https://app-eu1.hubspot.com/email/123/edit/c1/settings', 'https://app-eu1.hubspot.com/email/123/edit/c1/settings'],
+      ['an https link off HubSpot', 'https://evil.example/email/123', ''],
+      ['a look-alike HubSpot host', 'https://app.hubspot.com.evil.example/email/123', ''],
+      ['plain http to HubSpot', 'http://app.hubspot.com/email/123', ''],
+    ])('links the staged draft only for a safe URL: %s', async (_label, hubspotUrl, expected) => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      // The link renders on the Implement tab; without it the anchor assertion read an absent element.
+      internals().selectedEmailTab.set('implementation');
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      internals().emailBriefId.set(audience.briefId);
+      internals().onAudienceComposed(audience);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({
+          campaigns: [],
+          errors: [],
+          platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'c1', hubspotUrl }],
+        } as unknown as CampaignJobOutcome)
+      );
+
+      await internals().onStageEmailSend();
+      fixture.detectChanges();
+
+      expect(internals().emailStaging()).toBe('done');
+      expect(internals().emailStagingDraftUrl()).toBe(expected);
+      const anchor = fixture.nativeElement.querySelector('[data-testid="campaigns-email-stage-draft-link"]') as HTMLAnchorElement | null;
+      expect(anchor?.getAttribute('href') ?? '').toBe(expected);
+    });
+
     /** An ABSENT platformResults must still succeed — it is optional on the contract. */
     it('still reports success when the service omits platformResults', async () => {
       selectEmail();
@@ -3510,6 +3605,402 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().selectedEmailTemplateId.set('hs-1');
       fixture.detectChanges();
     }
+
+    it('holds Stage while the Audience tab is replacing the recorded audience', () => {
+      // A re-attach or a replacement compose leaves the old row `built` until its reply lands, so
+      // Stage stayed enabled and cloned a draft against the list being replaced.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      expect(internals().canStageEmail(), 'fixture precondition: stageable on a built audience').toBe(true);
+
+      internals().emailAudienceWriteInFlight.set(true);
+      expect(internals().canStageEmail(), 'Stage stayed open during an audience write').toBe(false);
+      fixture.detectChanges();
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent,
+        'Stage was disabled with no reason given'
+      ).toContain('audience write is still running');
+
+      internals().emailAudienceWriteInFlight.set(false);
+      expect(internals().canStageEmail()).toBe(true);
+    });
+
+    it.each([
+      ['the poll lost track of the job', () => throwError(() => new Error('network'))],
+      ['the poll timed out with no answer', () => of(null)],
+    ])('holds every stage lock when %s, until the operator confirms', (_label, poll) => {
+      // A draft may still be created, so releasing on `'error'` let a replacement write race it and
+      // a retry duplicate it.
+      onImplementTab();
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(poll() as never);
+      internals().emailStaging.set('staging');
+      (internals() as unknown as { pollStagingJob(job: string, slug: string, brief: string): void }).pollStagingJob(
+        'job-1',
+        internals().activeFoundationSlug(),
+        internals().emailBriefId()
+      );
+      fixture.detectChanges();
+
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingHeld(), 'the locks were released on an unresolved stage').toBe(true);
+      expect(internals().selectorForm.controls.emailSegment.disabled).toBe(true);
+
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="campaigns-email-stage-unresolved-ack"] button')?.click();
+      fixture.detectChanges();
+      expect(internals().emailStagingHeld(), 'confirming did not release the locks').toBe(false);
+      expect(internals().selectorForm.controls.emailSegment.disabled).toBe(false);
+    });
+
+    it('explains a Stage held by an unresolved stage even after the poll is cancelled', () => {
+      // `cancelStagingPoll` resets the state to idle and clears the message while the hold stays,
+      // so a hint keyed on the message left a disabled Stage with no reason.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      (internals() as unknown as { markStageUnresolved(p: string, b: string): void }).markStageUnresolved(
+        internals().activeFoundationSlug(),
+        internals().emailBriefId()
+      );
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      fixture.detectChanges();
+
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent ?? '';
+      expect(internals().canStageEmail()).toBe(false);
+      expect(hint, 'Stage was held with no reason given').toContain('ended without an answer');
+    });
+
+    it('scopes an unresolved stage to its brief: another brief is not locked, and the hold returns with it', () => {
+      // A single global flag locked brief B on A's stage, and B's acknowledgement cleared A's.
+      onImplementTab();
+      internals().emailBriefId.set('brief-a');
+      (internals() as unknown as { markStageUnresolved(p: string, b: string): void }).markStageUnresolved(internals().activeFoundationSlug(), 'brief-a');
+      expect(internals().emailStagingHeld(), 'fixture precondition: A is held').toBe(true);
+
+      internals().emailBriefId.set('brief-b');
+      expect(internals().emailStagingHeld(), "brief B was locked by brief A's stage").toBe(false);
+
+      internals().emailBriefId.set('brief-a');
+      expect(internals().emailStagingHeld(), "A's hold was lost on the round trip").toBe(true);
+    });
+
+    it('tells the operator to check HubSpot when the RESOLVED brief has an unresolved stage', async () => {
+      // The on-screen key can differ from the brief the persist resolves; the recovery is the HubSpot
+      // check, not "stage again".
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(internals() as unknown as { ensureEmailBriefId(): Promise<string> }, 'ensureEmailBriefId').mockResolvedValue('brief-held');
+      (internals() as unknown as { markStageUnresolved(p: string, b: string): void }).markStageUnresolved(internals().activeFoundationSlug(), 'brief-held');
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(create).not.toHaveBeenCalled();
+      expect(internals().emailStagingMessage()).toContain('Check HubSpot');
+    });
+
+    it('does not advise a retry when the create failed after it was dispatched', async () => {
+      // The stage is held as unresolved because the create may already be running; "try again"
+      // contradicted that hold and invited a duplicate draft.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 504 })) as never);
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(internals().emailStagingHeld(), 'fixture precondition: the dispatched stage is held').toBe(true);
+      expect(internals().emailStagingMessage()).toContain('Check HubSpot before staging again');
+      expect(internals().emailStagingMessage()).not.toContain('try again');
+    });
+
+    it('keeps the retry advice for a failure before anything was dispatched', async () => {
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(internals() as unknown as { ensureEmailBriefId(): Promise<string> }, 'ensureEmailBriefId').mockRejectedValue(new Error('persist failed'));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(create).not.toHaveBeenCalled();
+      expect(internals().emailStagingMessage()).toContain('try again');
+    });
+
+    it('releases the hold when a create cancelled mid-flight comes back as a definite refusal', async () => {
+      // The cancel held the dispatch because the create MIGHT have started; a definite refusal says
+      // it did not, but the stale-context return skipped it and kept everything locked.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const create = new Subject<{ jobId: string; error?: string; enabled: boolean }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(create as never);
+      const staging = (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      await fixture.whenStable();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      expect(internals().emailStagingHeld(), 'fixture precondition: the cancel held the dispatch').toBe(true);
+
+      create.next({ enabled: true, jobId: '', error: 'The campaign service refused this request.' });
+      create.complete();
+      await staging;
+
+      expect(internals().emailStagingHeld(), 'a refused create kept the stage held').toBe(false);
+    });
+
+    it('keeps the hold when a create cancelled mid-flight comes back as indeterminate', async () => {
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const create = new Subject<{ jobId: string; error?: string; enabled: boolean; indeterminate?: boolean }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(create as never);
+      const staging = (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      await fixture.whenStable();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+
+      create.next({ enabled: true, jobId: '', error: 'Unconfirmed.', indeterminate: true });
+      create.complete();
+      await staging;
+
+      expect(internals().emailStagingHeld(), 'an indeterminate create was released').toBe(true);
+    });
+
+    it('holds a DISPATCHED stage when a brief reset cancels its poll', async () => {
+      // The reset idles the display state, but the create cannot be recalled and its job may still
+      // resolve the brief's audience -- releasing let A -> B -> A replace it underneath the job.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ enabled: true, jobId: 'job-1', error: null }) as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(NEVER as never);
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      expect(internals().emailStaging(), 'fixture precondition: polling').toBe('staging');
+
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      expect(internals().emailStaging()).toBe('idle');
+      expect(internals().emailStagingHeld(), 'a dispatched stage was released by a UI reset').toBe(true);
+    });
+
+    it('releases nothing extra once the job reached a terminal answer', async () => {
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ enabled: true, jobId: 'job-1', error: null }) as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({ errors: [], platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'd-1' }] }) as never
+      );
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      expect(internals().emailStaging()).toBe('done');
+
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      expect(internals().emailStagingHeld(), 'a finished stage was held as unresolved').toBe(false);
+    });
+
+    it.each([
+      ['an indeterminate create (it may have started)', { jobId: '', error: 'Campaign creation could not be confirmed.', indeterminate: true }, true],
+      ['a definite refusal (nothing was created)', { jobId: '', error: 'Campaign creation was rejected and nothing was created.' }, false],
+    ])('on %s, holds the stage only if a draft may exist', async (_label, response, held) => {
+      // A refusal left `dispatchedStage` set, so a later segment change or reset turned a draft that
+      // cannot exist into an unresolved hold -- and an indeterminate error read as a refusal.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of(response) as never);
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+
+      expect(internals().emailStagingHeld()).toBe(held);
+    });
+
+    it('refuses the unresolved acknowledgement while the abandoned create is still on the wire', async () => {
+      // A reset records the stage as unresolved but cannot cancel the create; checking HubSpot before
+      // the draft can appear, then staging again, is how a duplicate is made.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const create = new Subject<{ jobId: string }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(create as never);
+      const staging = (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      await fixture.whenStable();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      expect(internals().emailStagingHeld(), 'fixture precondition: held').toBe(true);
+
+      // The RENDERED guard, not only the handler's: the waiting copy shows and the ack button is
+      // disabled while the create is on the wire. Dropping either template guard while the handler
+      // guard stays would still let an operator click through before the draft can appear.
+      const el = fixture.nativeElement as HTMLElement;
+      const ackButton = (): HTMLButtonElement | null => el.querySelector('[data-testid="campaigns-email-stage-unresolved-ack"] button');
+      fixture.detectChanges();
+      expect(el.querySelector('[data-testid="campaigns-email-stage-unresolved-waiting"]'), 'no waiting copy while the create is on the wire').not.toBeNull();
+      expect(ackButton(), 'fixture precondition: ack button rendered').not.toBeNull();
+      expect(ackButton()!.disabled, 'ack button enabled while the create is on the wire').toBe(true);
+
+      (internals() as unknown as { onAcknowledgeStagingUnresolved(): void }).onAcknowledgeStagingUnresolved();
+      expect(internals().emailStagingHeld(), 'acknowledged while the create was still on the wire').toBe(true);
+
+      create.error(new HttpErrorResponse({ status: 504 }));
+      await staging;
+      fixture.detectChanges();
+      expect(el.querySelector('[data-testid="campaigns-email-stage-unresolved-waiting"]'), 'waiting copy outlived the create').toBeNull();
+      expect(ackButton()!.disabled, 'ack button still disabled after the create settled').toBe(false);
+
+      (internals() as unknown as { onAcknowledgeStagingUnresolved(): void }).onAcknowledgeStagingUnresolved();
+      expect(internals().emailStagingHeld(), 'the acknowledgement never became available').toBe(false);
+    });
+
+    it("lets a stale create's rejection settle only its own dispatch, not the newer stage's", async () => {
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const first = new Subject<{ jobId: string }>();
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValueOnce(first as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(NEVER as never);
+      const stageA = (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      await fixture.whenStable();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+      (internals() as unknown as { onAcknowledgeStagingUnresolved(): void }).onAcknowledgeStagingUnresolved();
+
+      // Stage B starts on a different brief while A's request is still pending.
+      internals().emailBriefId.set('brief-other');
+      internals().onAudienceComposed({ ...composed, briefId: 'brief-other' });
+      create.mockReturnValueOnce(of({ jobId: 'job-b' }) as never);
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      first.error(new HttpErrorResponse({ status: 504 }));
+      await stageA;
+
+      expect(internals().emailStagingUnresolved(), "A's stale rejection marked brief B unresolved").toBe(false);
+      expect(
+        (internals() as unknown as { dispatchedStage: { briefId: string } | null }).dispatchedStage?.briefId,
+        "A's stale rejection cleared B's dispatch marker"
+      ).toBe('brief-other');
+    });
+
+    it('does not re-lock a brief on a reset after its lost job was acknowledged', async () => {
+      // The poll's error path recorded the stage as unresolved but left the dispatch marker set,
+      // so a later reset treated it as a newly abandoned create and locked the brief again.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(throwError(() => new Error('network')) as never);
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      expect(internals().emailStagingHeld(), 'fixture precondition: held after the lost job').toBe(true);
+
+      (internals() as unknown as { onAcknowledgeStagingUnresolved(): void }).onAcknowledgeStagingUnresolved();
+      (internals() as unknown as { cancelStagingPoll(): void }).cancelStagingPoll();
+
+      expect(internals().emailStagingHeld(), 'an acknowledged stage was re-locked by a reset').toBe(false);
+    });
+
+    it('holds the stage when the create request fails after it was sent', async () => {
+      // The request may have reached the BFF and started; failing closed beats a duplicate draft.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })) as never);
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingHeld(), 'a create that may have started was released').toBe(true);
+    });
+
+    it('holds the locks when staging is accepted but returns no job to follow', async () => {
+      // The request WAS accepted, so a draft may still be created; releasing let a retry duplicate it.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ enabled: true, jobId: null, error: null }) as never);
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(internals().emailStaging()).toBe('error');
+      expect(internals().emailStagingHeld(), 'an accepted stage with nothing to track released the locks').toBe(true);
+    });
+
+    it('locks the type and segment pickers while a stage is in flight', () => {
+      // `onStageEmailSend` snapshots the copy before its awaits, so switching mid-stage cloned a
+      // HubSpot draft with the PREVIOUS selection's copy -- a create on the wire cannot be recalled.
+      selectEmail();
+      internals().emailStaging.set('staging');
+      fixture.detectChanges();
+      expect(internals().selectorForm.controls.emailSegment.disabled, 'segment could change mid-stage').toBe(true);
+      expect(internals().selectorForm.controls.emailType.disabled, 'type could change mid-stage').toBe(true);
+
+      internals().emailStaging.set('done');
+      fixture.detectChanges();
+      expect(internals().selectorForm.controls.emailSegment.disabled).toBe(false);
+      expect(internals().selectorForm.controls.emailType.disabled).toBe(false);
+    });
+
+    it('abandons an in-flight stage when the segment changes, as a type change does', () => {
+      // Left running, the poll went on to report "Draft created" for copy the new segment no longer
+      // shows. Invalidated and cleaned up together, like `onSelectEmailType`.
+      selectEmail();
+      internals().emailStaging.set('staging');
+      const priv = internals() as unknown as { emailStagingGeneration: number; onSelectEmailSegment(id: string): void };
+      const before = priv.emailStagingGeneration;
+
+      priv.onSelectEmailSegment('alumni');
+
+      expect(priv.emailStagingGeneration, 'the in-flight stage was not invalidated').toBe(before + 1);
+      expect(internals().emailStaging(), 'the abandoned stage kept spinning').toBe('idle');
+    });
+
+    it("keeps a finished stage's confirmation across a segment change", () => {
+      selectEmail();
+      internals().emailStaging.set('done');
+
+      (internals() as unknown as { onSelectEmailSegment(id: string): void }).onSelectEmailSegment('alumni');
+
+      expect(internals().emailStaging(), 'a finished stage\'s "Draft created" was erased').toBe('done');
+    });
+
+    it('refuses to create when an audience write started during the brief-id await', async () => {
+      // The Audience tab stays mounted, so a replacement write could start while staging resolved
+      // its brief id; the create would then clone a draft against the list being replaced.
+      onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
+      internals().onAudienceComposed(composed);
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+      const persist = vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(() => {
+        internals().emailAudienceWriteInFlight.set(true);
+        return of({ status: 'saved', approved: true, briefId: composed.briefId, etag: null }) as never;
+      });
+      internals().emailBriefId.set('');
+
+      await (internals() as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+
+      expect(persist).toHaveBeenCalled();
+      expect(create, 'a draft was cloned against an audience being replaced').not.toHaveBeenCalled();
+      expect(internals().emailStaging()).toBe('error');
+    });
+
+    it('explains a Stage blocked by a FIRST compose, not "compose it first"', () => {
+      // The audience is still null while the first compose runs, so a hint keyed on the audience
+      // told the operator to do exactly what was already in progress.
+      onImplementTab();
+      internals().emailAudienceWriteInFlight.set(true);
+      fixture.detectChanges();
+
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent ?? '';
+      expect(hint).toContain('audience write is still running');
+      expect(hint, 'the hint asked for the compose that was running').not.toContain('Compose the send audience');
+    });
+
+    it('says a restored audience is attached instead of asking for one', () => {
+      // Only `composed` was special-cased, so a restored, attached audience still read "Needed
+      // before the draft can be staged" directly above the card announcing it attached.
+      onImplementTab();
+      internals().emailAudience.set({ ...composed, status: 'built' });
+      internals().emailAudienceOrigin.set('restored');
+      fixture.detectChanges();
+
+      const block = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-send-audience"]');
+      expect(block?.querySelector('[data-testid="campaigns-email-audience-restored-note"]')).not.toBeNull();
+      expect(block?.textContent, 'a restored audience was described as still needed').not.toContain('Needed before the draft can be staged');
+    });
 
     it('unblocks staging on a composed audience', () => {
       onImplementTab();
@@ -4198,7 +4689,52 @@ describe('CampaignsComponent — email delivery channel', () => {
       // Upstream declares ArrayOf(String). If it ever arrived JSON-encoded, `.length` would read
       // the STRING length and report "9 suppression list(s)" for a single list -- a
       // compliance-facing number on a send list, wrong by a factor of nine.
-      expect(panel?.textContent).toContain('1 suppression list(s) applied');
+      expect(panel?.textContent).toContain('1 exclusion list(s) applied');
+    });
+
+    it("tells the Audience tab why there is no brief id, rather than 'save the plan first'", () => {
+      const state = internals() as unknown as {
+        emailBriefState: () => string;
+        emailBriefSaveOutcome: { set: (v: string) => void };
+      };
+      internals().emailBriefId.set('');
+      state.emailBriefSaveOutcome.set('failed');
+      expect(state.emailBriefState()).toBe('failed');
+
+      state.emailBriefSaveOutcome.set('unapproved');
+      expect(state.emailBriefState()).toBe('unapproved');
+
+      // An earlier session's brief for this send is a refusal Retry cannot clear, so it is not 'failed'.
+      const outcome = (internals() as unknown as { emailBriefOutcome: (id: string, c?: string) => string }).emailBriefOutcome.bind(internals());
+      expect(outcome('', 'unowned-brief-exists')).toBe('unopened');
+      expect(outcome('', undefined)).toBe('failed');
+      expect(outcome('brief-9', undefined)).toBe('unapproved');
+      // A conflict carrying an id is still a failed save with its own recovery, not "unapproved".
+      for (const conflict of ['stale-brief', 'unverified-validator', 'superseded-after-write']) {
+        expect(outcome('brief-9', conflict), `${conflict} with an id read as unapproved`).toBe('failed');
+      }
+
+      // A brief id wins over any recorded outcome: the plan is saved and approved.
+      internals().emailBriefId.set('brief-77');
+      expect(state.emailBriefState()).toBe('ready');
+    });
+
+    it('names every include list when lists were attached directly with no master', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailAudience.set({
+        id: 'aud-1',
+        status: 'built',
+        platformMasterListId: '101',
+        includeListIds: ['101', '102'],
+        suppressionListIds: ['201'],
+      } as never);
+      fixture.detectChanges();
+
+      const includes = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-include-lists"]');
+      expect(includes?.textContent).toContain('101');
+      expect(includes?.textContent).toContain('102');
     });
 
     it('refuses to stage if the audience stops being built before the await', async () => {
@@ -5737,6 +6273,44 @@ describe('CampaignsComponent — email delivery channel', () => {
       // canonicalHttpUrl, so the two cannot restate the rule differently.
       expect(internals().emailHeroImageUrl()).toBe('https://cdn.example.com/hero.png');
       expect(internals().emailSponsors()).toEqual([{ name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' }]);
+    });
+
+    it('loads the preview hero only for https linuxfoundation.org hosts', () => {
+      selectEmail();
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
+      const previewFor = (heroImageUrl: string): string => {
+        internals().emailBriefOutput.set({
+          eventDetails: {
+            name: 'KubeCon EU 2026',
+            slug: 'kubecon-eu-2026',
+            countryCode: 'NL',
+            registrationUrl: 'https://events.example/register',
+            heroImageUrl,
+          },
+        } as unknown as CampaignBriefOutput);
+        fixture.detectChanges();
+        return internals().emailHeroPreviewUrl();
+      };
+
+      expect(previewFor('https://events.linuxfoundation.org/hero.png')).toBe('https://events.linuxfoundation.org/hero.png');
+      expect(previewFor('https://linuxfoundation.org/hero.png')).toBe('https://linuxfoundation.org/hero.png');
+      // Parsed-hostname match, not a string suffix: the first three below look like the trusted
+      // name but are not it; then a non-https scheme, and an unrelated host as the control.
+      expect(previewFor('https://evil.com/?.linuxfoundation.org')).toBe('');
+      expect(previewFor('https://notlinuxfoundation.org/hero.png')).toBe('');
+      expect(previewFor('https://linuxfoundation.org.evil.com/hero.png')).toBe('');
+      expect(previewFor('http://events.linuxfoundation.org/hero.png')).toBe('');
+      expect(previewFor('https://cdn.example.com/hero.png')).toBe('');
+      // Exact hosts and an image path: LFX One and SSO live in the linuxfoundation.org zone, and the
+      // image request carries same-site cookies, so a scraped og:image of the app's own /logout
+      // signed the operator out as the preview rendered.
+      expect(previewFor('https://app.lfx.linuxfoundation.org/logout'), 'the app host is in the zone, not on the list').toBe('');
+      expect(previewFor('https://sso.linuxfoundation.org/hero.png'), 'a zone subdomain off the list').toBe('');
+      expect(previewFor('https://events.linuxfoundation.org/logout'), 'an allowed host with a non-image path').toBe('');
+      expect(previewFor('https://events.linuxfoundation.org/hero.png?next=/logout'), 'a query string').toBe('');
+      expect(previewFor('https://events.linuxfoundation.org/uploads/HERO.JPG')).toBe('https://events.linuxfoundation.org/uploads/HERO.JPG');
     });
 
     it('stages the call to action whose destination was refused, as text', async () => {

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ORG_CLA_REVIEW_COPY_FILENAME } from '../constants/cla.constants';
 import type { OrgClaCoverageChip, OrgClaGroup, OrgClaSendByEmailChoice, OrgClaSignSelection } from '../interfaces/cla.interface';
 import { isSameClaGroup } from './cla-identifier.utils';
 
@@ -115,6 +116,11 @@ function orgClaSignedAtMs(group: OrgClaGroup): number {
   if (!group.signedOn) return Number.NEGATIVE_INFINITY;
   const parsed = Date.parse(group.signedOn);
   return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+}
+
+export function orgClaReviewCopyFilename(claGroupName?: string): string {
+  const name = claGroupName?.trim();
+  return name ? `${name}-ccla-review.pdf` : ORG_CLA_REVIEW_COPY_FILENAME;
 }
 
 /**

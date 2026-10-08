@@ -3,8 +3,10 @@
 
 import {
   CommitteeNewsletter,
+  CommitteeNewsletterFeedResult,
   CreateNewsletterRequest,
   MyNewsletter,
+  MyNewslettersResponse,
   Newsletter,
   NewsletterAnalytics,
   NewsletterCancelScheduleResult,
@@ -20,8 +22,10 @@ import {
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
+import { computeIsFoundation } from '@lfx-one/shared/utils/project.utils';
 import { Request } from 'express';
 
+import { isBaseApiError } from '../errors';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { NewsletterServiceClient } from './newsletter-service.client';
@@ -70,14 +74,14 @@ export class NewsletterService {
    * simply return empty. There is deliberately no "did I receive it" record:
    * leaving a group hides its newsletters, joining reveals past ones.
    */
-  public async getMyNewsletters(req: Request): Promise<MyNewsletter[]> {
+  public async getMyNewsletters(req: Request): Promise<MyNewslettersResponse> {
     // getMyCommitteeUids, not getMyCommittees: this feed only needs membership
     // UIDs, and the lightweight variant skips the committee/mailing-list/project
     // enrichment fan-out AND never drops a membership whose committee resource
     // is missing from the index (getMyCommittees does).
-    const committeeUids = [...(await this.committeeService.getMyCommitteeUids(req))];
+    const committeeUids = [...(await this.committeeService.getMyCommitteeUids(req, undefined, { failOnPartial: true }))];
     if (committeeUids.length === 0) {
-      return [];
+      return { newsletters: [], complete: true };
     }
 
     logger.debug(req, 'get_my_newsletters', 'Fetching newsletters for user committees', {
@@ -87,11 +91,13 @@ export class NewsletterService {
     // Bounded fan-out: a newsletter sent to several of the user's committees
     // comes back once per committee, so dedupe by id.
     const byId = new Map<string, CommitteeNewsletter>();
+    let complete = true;
     for (let i = 0; i < committeeUids.length; i += MY_NEWSLETTERS_CONCURRENCY) {
       const chunk = committeeUids.slice(i, i + MY_NEWSLETTERS_CONCURRENCY);
       const pages = await Promise.all(chunk.map((uid) => this.listAllCommitteeNewsletters(req, uid)));
-      for (const newsletters of pages) {
-        for (const newsletter of newsletters) {
+      for (const result of pages) {
+        complete = complete && result.complete;
+        for (const newsletter of result.newsletters) {
           if (!byId.has(newsletter.id)) {
             byId.set(newsletter.id, newsletter);
           }
@@ -104,9 +110,10 @@ export class NewsletterService {
     logger.debug(req, 'get_my_newsletters', 'Completed my-newsletters fan-out', {
       committee_count: committeeUids.length,
       newsletter_count: sorted.length,
+      complete,
     });
 
-    return this.projectService.enrichWithProjectData(req, sorted);
+    return { newsletters: await this.enrichMyNewsletters(req, sorted), complete };
   }
 
   public createNewsletter(req: Request, projectUid: string, payload: CreateNewsletterRequest): Promise<Newsletter> {
@@ -184,12 +191,10 @@ export class NewsletterService {
   /**
    * All pages of the committee-scoped upstream list for one committee.
    * All-or-nothing per committee: a failure on ANY page degrades the whole
-   * committee to an empty list (warning-logged) instead of failing the feed —
-   * returning the pages accumulated before the failure would silently present
-   * an incomplete result as complete. Membership can change mid-flight, in
-   * which case the gateway starts returning 403 for that committee.
+   * committee to an empty contribution. Refused/deleted committees are omitted;
+   * auth expiry fails the request; other failures mark enumeration incomplete.
    */
-  private async listAllCommitteeNewsletters(req: Request, committeeUid: string): Promise<CommitteeNewsletter[]> {
+  private async listAllCommitteeNewsletters(req: Request, committeeUid: string): Promise<CommitteeNewsletterFeedResult> {
     const all: CommitteeNewsletter[] = [];
     try {
       let pageToken: string | undefined;
@@ -207,13 +212,41 @@ export class NewsletterService {
           page_cap: MAX_COMMITTEE_NEWSLETTER_PAGES,
         });
       }
+      return { newsletters: all, complete: !pageToken };
     } catch (error) {
+      const statusCode = isBaseApiError(error) ? error.statusCode : undefined;
+      if (statusCode === 401) throw error;
+      if (statusCode === 403 || statusCode === 404) return { newsletters: [], complete: true };
       logger.warning(req, 'get_my_newsletters', 'Failed to list newsletters for committee, skipping', {
         committee_uid: committeeUid,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        status_code: statusCode,
       });
-      return [];
+      return { newsletters: [], complete: false };
     }
-    return all;
+  }
+
+  /** Two batch stages only; metadata failures never remove authorized issues. */
+  private async enrichMyNewsletters(req: Request, newsletters: CommitteeNewsletter[]): Promise<MyNewsletter[]> {
+    if (newsletters.length === 0) return [];
+    const owners = await this.projectService.getProjectsByIds(req, [...new Set(newsletters.map((row) => row.project_uid))]);
+    const parentUids = new Set<string>();
+    for (const owner of owners.values()) {
+      if (!computeIsFoundation(owner) && owner.parent_uid && !owners.has(owner.parent_uid)) parentUids.add(owner.parent_uid);
+    }
+    const parents = parentUids.size > 0 ? await this.projectService.getProjectsByIds(req, parentUids) : new Map();
+    return newsletters.map((row) => {
+      const owner = owners.get(row.project_uid);
+      if (!owner) return row;
+      const isFoundation = computeIsFoundation(owner);
+      const parent = !isFoundation && owner.parent_uid ? (owners.get(owner.parent_uid) ?? parents.get(owner.parent_uid)) : undefined;
+      return {
+        ...row,
+        project_name: owner.name,
+        project_slug: owner.slug,
+        is_foundation: isFoundation,
+        parent_project_uid: owner.parent_uid,
+        ...(parent && { parent_project_name: parent.name, parent_is_foundation: computeIsFoundation(parent) }),
+      };
+    });
   }
 }

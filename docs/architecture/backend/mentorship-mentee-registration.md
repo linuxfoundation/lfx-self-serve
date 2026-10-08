@@ -36,8 +36,11 @@ The check-then-write pair is not atomic. Two concurrent submits from the same us
 | `ageEligible`                                   | `age_eligible`                                                                      |
 | `workAuthorized`                                | `work_eligible`                                                                     |
 | `skillsHave` · `skillsWant` · `additionalNotes` | `skill_set.skills` · `skill_set.improvementSkills` · `skill_set.comments`           |
+| `country`                                       | `address.country` (required ISO 3166-1 alpha-2 code from `COUNTRIES`)               |
 | `demographics.age` · `gender` · `raceEthnicity` | `demographics.age` · `gender` · `race` (only answers the mentee consented to share) |
 | `demographics.income` · `education`             | `socioeconomics.income` · `educationLevel`                                          |
+
+`country` is held to `getMentorshipMenteeCountryError` (required, and one of the assigned codes the dropdown offers) on register, in the profile edit drawer, and in the BFF. The upstream HR "mentee accepted" notice reads `address.country` for stipend verification. The profile edit (`PATCH /api/mentorship/mentee/profile`) sends `country` only when it changed, and the BFF writes it into `address` over the stored row's other keys (legacy `city`, `address1`, `zipCode`), since upstream replaces the column whole.
 
 `noDuplicateProfile` and `complianceAccepted` are validated but have no upstream column. The name and picture go in the optional `lfxProfile`, and the BFF adds the verified primary email (see [LFX profile fields](#lfx-profile-fields)). No phone or slug is sent. The upstream derives the owner from the bearer token and the mentorship user row, and no slug is sent, so this endpoint has no slug to conflict on. The pre-check above is what surfaces "you already registered".
 

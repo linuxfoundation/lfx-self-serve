@@ -8,23 +8,28 @@
       <p class="text-sm text-gray-600">{{ intro }}</p>
     </div>
 
-    <div class="flex flex-col gap-1">
-      <label class="text-sm font-medium text-gray-700" for="importProgramId">Import from existing program</label>
-      <lfx-select
-        [form]="form()"
-        control="importProgramId"
-        inputId="importProgramId"
-        [options]="importOptions()"
-        optionLabel="label"
-        optionValue="value"
-        [placeholder]="importLoading() ? 'Loading...' : 'Select Program...'"
-        [filter]="true"
-        [loading]="importLoading()"
-        styleClass="w-full"
-        (onChange)="onImportProgram()"
-        dataTest="mentorship-enroll-import" />
-      <p class="text-xs text-gray-500">Copies details, skills and prerequisites from a program you have run before.</p>
-    </div>
+    @if (!editing()) {
+      <div class="flex flex-col gap-1">
+        <label class="text-sm font-medium text-gray-700" for="importProgramId">Import from existing program</label>
+        <lfx-select
+          [form]="form()"
+          control="importProgramId"
+          inputId="importProgramId"
+          [options]="importOptions()"
+          optionLabel="label"
+          optionValue="value"
+          [placeholder]="importLoading() ? 'Loading...' : 'Select Program...'"
+          [filter]="true"
+          [loading]="importLoading()"
+          styleClass="w-full"
+          (onChange)="onImportProgram()"
+          dataTest="mentorship-enroll-import" />
+        <p class="text-xs text-gray-500">Copies details, skills and prerequisites from a program you have run before.</p>
+        @if (importError()) {
+          <p class="text-xs text-red-600" role="alert" data-testid="mentorship-enroll-import-error">{{ importError() }}</p>
+        }
+      </div>
+    }
 
     <div class="flex flex-col gap-1">
       <div class="flex items-center justify-between">
@@ -292,7 +297,12 @@
     </div>
     <div class="flex flex-col gap-4 md:flex-row md:items-start">
       <div class="flex flex-col gap-1 flex-1">
-        <label class="text-sm font-medium text-gray-700">Program Logo <span class="text-red-500">*</span></label>
+        <label class="text-sm font-medium text-gray-700">
+          Program Logo
+          @if (!editing()) {
+            <span class="text-red-500">*</span>
+          }
+        </label>
         <div class="flex items-stretch overflow-hidden rounded-lg border border-gray-200 bg-white">
           <div class="flex flex-1 items-center px-3 text-sm text-gray-500 truncate min-w-0">{{ logoFileName() || 'Choose file' }}</div>
           <lfx-button label="Browse" severity="primary" size="small" styleClass="!rounded-none shrink-0" (onClick)="onBrowseLogo()" />

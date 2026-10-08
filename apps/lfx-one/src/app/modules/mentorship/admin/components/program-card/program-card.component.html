@@ -1,62 +1,95 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div
-  class="flex flex-col gap-4 p-5 cursor-pointer hover:bg-gray-50 transition-colors sm:flex-row sm:items-center"
-  role="button"
-  tabindex="0"
-  [attr.aria-label]="program().name"
-  [attr.data-testid]="'mentorship-program-card-' + program().id"
-  (click)="onCardClick()"
-  (keydown.enter)="onCardClick()"
-  (keydown.space)="onCardClick(); $event.preventDefault()">
-  <div class="flex items-center gap-4 min-w-0 flex-1">
-    <!-- Avatar / Initials -->
-    <lfx-avatar
-      [image]="program().logoUrl"
-      [label]="initials()"
-      shape="square"
-      size="large"
-      [styleClass]="avatarStyleClass()"
-      [ariaLabel]="program().name + ' avatar'" />
+<div class="flex flex-col" [attr.data-testid]="'mentorship-program-card-' + program().id">
+  <div
+    class="flex flex-col gap-4 p-5 cursor-pointer hover:bg-gray-50 transition-colors sm:flex-row sm:items-center"
+    role="button"
+    tabindex="0"
+    [attr.aria-label]="program().name"
+    (click)="onCardClick()"
+    (keydown.enter)="onCardClick()"
+    (keydown.space)="onCardClick(); $event.preventDefault()">
+    <div class="flex items-center gap-4 min-w-0 flex-1">
+      <!-- Avatar / Initials -->
+      <lfx-avatar
+        [image]="program().logoUrl"
+        [label]="initials()"
+        shape="square"
+        size="large"
+        [styleClass]="avatarStyleClass()"
+        [ariaLabel]="program().name + ' avatar'" />
 
-    <!-- Content -->
-    <div class="flex flex-col gap-1 min-w-0 flex-1">
-      <div class="flex items-center gap-2 flex-wrap">
-        <span class="text-xs font-medium text-gray-500">{{ seasonLine() }}</span>
-        <span
-          class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full"
-          [class]="statusBadgeClass()"
-          data-testid="mentorship-program-card-status">
-          {{ statusLabel() }}
-        </span>
+      <!-- Content -->
+      <div class="flex flex-col gap-1 min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-xs font-medium text-gray-500">{{ seasonLine() }}</span>
+          <span
+            class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full"
+            [class]="statusBadgeClass()"
+            data-testid="mentorship-program-card-status">
+            {{ statusLabel() }}
+          </span>
+        </div>
+        <span class="text-base font-bold text-gray-900 truncate">{{ program().name }}</span>
       </div>
-      <span class="text-base font-bold text-gray-900 truncate">{{ program().name }}</span>
+
+      <div class="flex-shrink-0 text-gray-300 sm:hidden" aria-hidden="true">
+        <i class="fa-light fa-chevron-right text-sm"></i>
+      </div>
     </div>
 
-    <div class="flex-shrink-0 text-gray-300 sm:hidden" aria-hidden="true">
+    <!-- Metrics -->
+    <div class="flex items-center justify-between sm:justify-end sm:gap-8 sm:flex-shrink-0" data-testid="mentorship-program-card-metrics">
+      <div class="flex flex-col items-start sm:items-end">
+        <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">Mentors</span>
+        <span class="text-lg font-bold text-gray-900">{{ program().stats.mentors }}</span>
+      </div>
+      <div class="flex flex-col items-start sm:items-end">
+        <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">Mentees</span>
+        <span class="text-lg font-bold text-gray-900">{{ program().stats.mentees }}</span>
+      </div>
+      <div class="flex flex-col items-start sm:items-end">
+        <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">Graduated</span>
+        <span class="text-lg font-bold text-gray-900">{{ program().stats.graduated }}</span>
+      </div>
+    </div>
+
+    <!-- Chevron -->
+    <div class="hidden flex-shrink-0 text-gray-300 sm:block" aria-hidden="true">
       <i class="fa-light fa-chevron-right text-sm"></i>
     </div>
   </div>
 
-  <!-- Metrics -->
-  <div class="flex items-center justify-between sm:justify-end sm:gap-8 sm:flex-shrink-0" data-testid="mentorship-program-card-metrics">
-    <div class="flex flex-col items-start sm:items-end">
-      <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">Mentors</span>
-      <span class="text-lg font-bold text-gray-900">{{ program().stats.mentors }}</span>
+  <!-- Logo missing: a sibling of the clickable row, so its button is never nested inside the card's own button -->
+  @if (program().logoMissing) {
+    <div class="flex items-center gap-2 flex-wrap px-5 pb-4">
+      <span
+        class="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700"
+        data-testid="mentorship-program-card-hint">
+        <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i>
+        {{ logoMissingLabel }}
+      </span>
+      <lfx-button
+        [label]="addLogoLabel"
+        icon="fa-light fa-upload"
+        severity="secondary"
+        size="small"
+        [outlined]="true"
+        [loading]="busy()"
+        [disabled]="busy()"
+        [ariaLabel]="addLogoLabel + ' for ' + program().name"
+        (onClick)="onAddLogo(logoInput)"
+        data-testid="mentorship-program-card-add-logo" />
+      <input
+        #logoInput
+        type="file"
+        class="hidden"
+        tabindex="-1"
+        aria-hidden="true"
+        [accept]="logoAccept"
+        (change)="onLogoPicked($event)"
+        data-testid="mentorship-program-card-logo-input" />
     </div>
-    <div class="flex flex-col items-start sm:items-end">
-      <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">Mentees</span>
-      <span class="text-lg font-bold text-gray-900">{{ program().stats.mentees }}</span>
-    </div>
-    <div class="flex flex-col items-start sm:items-end">
-      <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">Graduated</span>
-      <span class="text-lg font-bold text-gray-900">{{ program().stats.graduated }}</span>
-    </div>
-  </div>
-
-  <!-- Chevron -->
-  <div class="hidden flex-shrink-0 text-gray-300 sm:block" aria-hidden="true">
-    <i class="fa-light fa-chevron-right text-sm"></i>
-  </div>
+  }
 </div>
