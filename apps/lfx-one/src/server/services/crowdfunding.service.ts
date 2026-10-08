@@ -203,8 +203,9 @@ export class CrowdfundingService {
   public async getInitiativeBySlug(req: Request, slug: string): Promise<InitiativeDetail | null> {
     const startTime = logger.startOperation(req, 'cf_get_initiative_by_slug', { slug });
 
-    // ?view=manage returns the full payload in any status to the creator or a writer on the attributed entity (404 otherwise); requires the user's bearer token
-    const raw = await cfFetchNullable<BackendInitiative>(req, 'getInitiativeBySlug', `/crowdfunding/initiatives/${encodeURIComponent(slug)}?view=manage`);
+    // /manage returns the full payload in any status to the creator or a writer on the attributed entity; requires the user's bearer token.
+    // Non-writers are denied at the gateway with 403 (rethrown); 404 only if the gateway is bypassed
+    const raw = await cfFetchNullable<BackendInitiative>(req, 'getInitiativeBySlug', `/crowdfunding/initiatives/${encodeURIComponent(slug)}/manage`);
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_by_slug', 'Initiative not found', { slug });
       return null;
@@ -423,11 +424,11 @@ export class CrowdfundingService {
     if (kind) params.set('kind', kind);
     const qs = params.toString();
 
-    // /crowdfunding/me/initiatives — owner-scoped endpoint; requires the user's bearer token; owner-scoped via Crowdfunding's FGA check (initiative owners only, not public access)
+    // /manage/transactions — creator or a writer on the attributed entity, any status; requires the user's bearer token
     const raw = await cfFetchNullable<BackendTransactionList>(
       req,
       'getInitiativeTransactions',
-      `/crowdfunding/me/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`
+      `/crowdfunding/initiatives/${encodeURIComponent(slug)}/manage/transactions${qs ? `?${qs}` : ''}`
     );
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_transactions', 'Initiative not found', { slug });
