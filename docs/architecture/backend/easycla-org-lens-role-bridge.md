@@ -72,9 +72,9 @@ The roster flag and the CLA Managers tab's own-row mark are computed for the imp
 The same answers cover both shapes — those controls are absent, and the Auto ECLA switch is present but disabled. Work out which of these applies:
 
 - **Not on the CLA Manager list.** An organization admin is routinely not on it, even when ACS grants them the write. Ask a CLA manager on the agreement to add them as a CLA manager.
-- **Added recently.** ACS can take about thirty minutes to reflect a new CLA manager. If they added themselves, the controls can also stay withheld until the page is reloaded. Wait, then reload.
+- **Added recently.** ACS can take about thirty minutes to reflect a new CLA manager. If they added themselves, the controls can also stay withheld, and the Auto ECLA switch disabled, until the page is reloaded. Wait, then reload.
 - **On the list under a different spelling.** The match is exact, including case. A list entry whose LF username differs from their login only in case does not count, and the write is refused for the same reason. Raise it with EasyCLA support so the entry can be corrected.
-- **The agreement has no CLA Manager list at all.** The controls are withheld from everyone on that row. This is a data problem on the EasyCLA record, so raise it with EasyCLA support.
+- **The agreement has no CLA Manager list at all.** The approval-list and Invalidate controls are withheld from everyone on that row. The Auto ECLA switch still shows, disabled for everyone, with the sentence naming CLA Manager as the role that can change it. This is a data problem on the EasyCLA record, so raise it with EasyCLA support.
 - **No ACS grant** for that project and organization. Ask whether they hold the CLA manager role for it. The Auto ECLA grant belongs to the CLA manager and CLA manager designee roles only, so an organization admin who is neither is denied on ACS as well as on the roster.
 
 ## What to tell a viewer who can see EasyCLA but cannot Review and Sign

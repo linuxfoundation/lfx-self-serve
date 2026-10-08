@@ -3477,7 +3477,9 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
  * an unsigned or preview row has nothing to show or update. Every viewer who can read a signed
  * agreement sees it, because the setting is a fact about the agreement. The two write checks —
  * the CCLA roster and the ACS grant — decide whether the switch moves, not whether it renders; a
- * viewer who fails either gets it disabled with a sentence naming the role that can change it.
+ * viewer who fails either gets it disabled. Only a viewer off the roster also gets the sentence
+ * naming the role that can change it; a roster CLA manager whom ACS denies, or whose ACS answer is
+ * still pending, sees the disabled switch alone.
  * The write is optimistic: the toggle answers the click first and rolls back on a refusal, using
  * the producer's own sentence on the toast.
  */
@@ -3854,9 +3856,9 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
   });
 
-  // The ACS answer arrives a round trip after the row does. Explaining a denial that has not been
-  // decided yet would tell a CLA manager, for that moment, something untrue.
-  it('disables the toggle without explaining it while the ACS answer is still pending', async () => {
+  // The ACS answer arrives a round trip after the row does. The viewer here is on the roster, so the
+  // sentence never shows for them: the switch waits disabled with nothing under it, then the grant enables it.
+  it('disables the toggle without the sentence for a roster CLA manager while the ACS answer is still pending', async () => {
     const pending = new Subject<boolean>();
     checkPermission.mockReturnValue(pending);
 

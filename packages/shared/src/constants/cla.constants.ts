@@ -508,8 +508,9 @@ export const ACS_CLA_AUTO_ECLA_ACTION = 'update';
 export const ACS_CLA_PROJECT_ORG_OBJECT_TYPE = 'project|organization';
 
 /**
- * Shown under the Auto ECLA toggle when the viewer may read the setting but not change it
- * (#3406). Wording is a placeholder pending a product pass; it lives here so that pass is a
+ * Shown under the Auto ECLA toggle to a viewer off the agreement's CLA manager roster, who may
+ * read the setting but not change it (#3406). A roster CLA manager whom ACS denies gets the
+ * disabled switch without it, since it would contradict them. Wording is a placeholder pending a product pass; it lives here so that pass is a
  * one-line edit rather than a hunt through the template.
  */
 export const ORG_CLA_AUTO_ECLA_LOCKED_HINT = 'Only CLA Managers can change this setting.';
