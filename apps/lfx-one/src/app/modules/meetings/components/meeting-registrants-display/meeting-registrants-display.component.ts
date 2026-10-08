@@ -18,6 +18,7 @@ import {
   MeetingHostCandidate,
   MeetingOccurrence,
   MeetingRegistrant,
+  MeetingRegistrantWithState,
   PastMeeting,
   PastMeetingParticipant,
   PastParticipantAttendanceFilter,
@@ -334,7 +335,7 @@ export class MeetingRegistrantsDisplayComponent {
     this.submitting.set(true);
     const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
     const createData = {
-      ...this.meetingService.stripMetadata(this.meeting().id, formValue),
+      ...this.meetingService.stripMetadata(this.meeting().id, formValue as unknown as MeetingRegistrantWithState),
       ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
     };
 
