@@ -3025,11 +3025,15 @@ export class ImplementationTabComponent implements OnInit {
    * its assets built by hand. Demand Gen adds that every campaign created before the feature
    * existed was that shape. So a guard that blocked here would refuse creates upstream makes.
    *
-   * But nothing else ever tells the operator. The campaign and its budget are created and the call
-   * returns success; for Performance Max the refusal arrives later and elsewhere, when
-   * `ToggleStatus` refuses the activation (`internal/platform/googleads/pmax.go`), and for Demand
-   * Gen and Display nothing refuses at all — the campaign simply never serves. A warning beside
-   * the button is the only place that fact fits.
+   * But nothing else ever tells the operator at create time, and the create is not the end of it:
+   * on EVERY one of the three channels the refusal simply arrives later, at activation. An empty
+   * creative leaves `AdID` blank (`demandgen.go:326`, `display.go:298`), `googleAdsToggleTargets`
+   * then yields no targets for a campaign with no ad group list, and the activation gate refuses
+   * with `ErrCampaignNotProvisioned` (`internal/dispatch/googleads.go:2561`, `:2687`). Performance
+   * Max reaches the same refusal by its own route, through the asset-group check in `ToggleStatus`
+   * (`internal/platform/googleads/pmax.go`). So the campaign and its budget are created, the call
+   * returns success, and the status toggle will later reject it — a warning beneath the creative
+   * sections is the only place that fact fits.
    *
    * Reads the same {@link googleCreativePayload} the blocking check does, so the two agree on what
    * empty means and no channel can be both empty and short of a minimum.
@@ -3043,11 +3047,11 @@ export class ImplementationTabComponent implements OnInit {
       const names = empty.map((section) => section.label).join(' and ');
       const verb = empty.length === 1 ? 'has' : 'have';
       const sentence = `${names} ${verb} no creative. The campaign and its budget are still created, but it cannot serve until the assets are added in Google Ads.`;
-      // Only claimed when Performance Max is actually one of them: it is the one channel whose
-      // refusal arrives later, at activation, and saying so about Demand Gen or Display would be
-      // a sentence the code behind it does not deliver.
-      if (!empty.some((section) => section.channel === 'performance-max')) return sentence;
-      return `${sentence} Performance Max will also refuse to activate until its asset group is complete.`;
+      // Claimed unconditionally because it is true of every empty channel, not just Performance
+      // Max: the activation gate refuses a campaign whose ad never got created just as it refuses
+      // one whose asset group never did. Naming both objects keeps the sentence accurate on all
+      // three without splitting it per channel.
+      return `${sentence} Activation is refused until the ad (or, on Performance Max, the asset group) exists.`;
     });
   }
 
@@ -3152,8 +3156,8 @@ export class ImplementationTabComponent implements OnInit {
    * `min` is stated here as guidance, and enforced elsewhere: no control validator carries it
    * ({@link creativeFieldValidators} explains why), but {@link googleCreativeError} refuses a
    * half-filled creative at submit. This line is what tells the operator the floor exists BEFORE
-   * they run into it — the message at the button names one field at a time, and only after the
-   * creative has been started.
+   * they run into it — the message beneath the creative sections names one field at a time, and
+   * only after the creative has been started.
    */
   private creativeFieldGuidance(field: GoogleCreativeFieldSpec): string {
     const parts: string[] = [];
@@ -3202,16 +3206,27 @@ export class ImplementationTabComponent implements OnInit {
    * trimmed entries ({@link splitCreativeLines} trims each line); this makes the scalar fields
    * agree with it and with the wire.
    *
-   * Measured in CODE POINTS, not UTF-16 units. campaign-service counts these widths with
-   * `utf8.RuneCountInString`, so `String.length` disagrees with it on every non-BMP character: a
-   * 15-emoji headline is 30 UTF-16 units and 15 runes, and measuring it the JS way refuses at a
-   * width of 30 a value upstream counts as 15 and accepts. Same over-refusal the trimming above
-   * exists to avoid, one layer down. {@link codePointLength} is the shared helper for this and is
-   * documented as `len([]rune(s))`; the Microsoft keyword box documents the same hazard.
+   * Measured in CODE POINTS, not UTF-16 units, because `String.length` disagrees with BOTH of the
+   * regimes campaign-service measures these widths in on every non-BMP character. Upstream counts
+   * `assetGroupName` and `callToActionText` with `utf8.RuneCountInString` — a straight rune count —
+   * and every other scalar with `textWeight` (`demandgen_creative.go:406`), which sums
+   * `googleAdsCharWeight` per rune and so charges a wide character 2. The two are not the same
+   * number, and this validator matches neither exactly; it does not have to. Every rune weighs at
+   * least 1, so the code-point count is a LOWER BOUND on the display weight and never exceeds the
+   * rune count, which puts this bound on the permissive side of both — it can fail to catch a
+   * refusal upstream will make, which costs a round trip, but it can never refuse a create upstream
+   * would have accepted. `String.length` has no such guarantee: a 15-emoji headline is 30 UTF-16
+   * units and 15 runes, and measuring it the JS way refuses at a width of 30 a value upstream
+   * counts as 15. Same over-refusal the trimming above exists to avoid, one layer down.
+   * {@link codePointLength} is the shared helper for this and is documented as `len([]rune(s))`;
+   * the Microsoft keyword box documents the same hazard.
    *
-   * Keeps Angular's own `maxlength` error shape — `{ requiredLength, actualLength }` — so the
-   * message in {@link creativeFieldError} reads the same key it always did. `actualLength` reports
-   * the trimmed code-point count, which is the number the bound was actually applied to.
+   * Local rather than the shared `maxCodePointsValidator`, which trims and counts code points
+   * identically, for one reason: that validator reports its own `maxCodePoints` error key, and
+   * every message in {@link creativeFieldError} reads Angular's `maxlength` shape. Keeping
+   * `{ requiredLength, actualLength }` is what lets the width change without touching the error
+   * rendering at all. `actualLength` reports the trimmed code-point count, which is the number the
+   * bound was actually applied to.
    */
   private creativeTextBounds(width: number): ValidatorFn {
     return (control: AbstractControl): ValidationErrors | null => {

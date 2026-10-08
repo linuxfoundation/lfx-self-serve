@@ -174,10 +174,12 @@ export class CampaignController {
       return;
     }
 
-    // Same reason as the create route's guard: a body that is absent or not an object makes the
-    // field read below throw a TypeError, turning a malformed request into a 500 where every
-    // sibling returns a named 400. Never over-refusal — a non-object body carries no `url`, so
-    // the field guard that follows would have refused it anyway, just less legibly.
+    // Same reason as the create route's guard, and the shapes divide in two. An absent or null
+    // body makes the field read below throw a TypeError, turning a malformed request into a 500
+    // where every sibling returns a named 400. An array or a string does NOT throw — `[].url` and
+    // `'x'.url` are both `undefined` — so it already reached the `url` guard and was refused, just
+    // with a message about a missing field rather than a malformed body. Never over-refusal either
+    // way: neither shape can carry a `url`.
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
       _next(
         ServiceValidationError.forField('body', 'request body must be a JSON object', {
@@ -264,9 +266,10 @@ export class CampaignController {
       return;
     }
 
-    // See the create route's guard: an absent or non-object body makes the field read below throw
-    // a TypeError and return a 500 instead of a named 400. Not over-refusal — such a body carries
-    // no `feedback` either way.
+    // See the create route's guard. An absent or null body makes the field read below throw a
+    // TypeError and return a 500 instead of a named 400; an array or a string does not throw and
+    // was already refused by the `feedback` guard, only less legibly. Not over-refusal — neither
+    // shape carries a `feedback`.
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
       _next(
         ServiceValidationError.forField('body', 'request body must be a JSON object', {
@@ -1829,9 +1832,10 @@ export class CampaignController {
   }
 
   public async executeKeywordActions(req: Request, res: Response, next: NextFunction): Promise<void> {
-    // See the create route's guard: an absent or non-object body makes the field read below throw
-    // a TypeError and return a 500 instead of a named 400. Not over-refusal — such a body carries
-    // no `keywords` either way.
+    // See the create route's guard. An absent or null body makes the field read below throw a
+    // TypeError and return a 500 instead of a named 400; an array or a string does not throw and
+    // was already refused by the `keywords` guard, only less legibly. Not over-refusal — neither
+    // shape carries a `keywords`.
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
       next(ServiceValidationError.forField('body', 'request body must be a JSON object', { operation: 'keyword_actions', service: 'campaign_controller' }));
       return;

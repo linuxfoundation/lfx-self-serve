@@ -2271,9 +2271,12 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
  *
  * Not decoration. campaign-service ACCEPTS a create with no creative on all three of these
  * channels — the campaign and its budget are made, and the call returns success — so nothing
- * UPSTREAM tells an operator that what they just made cannot serve. For Performance Max the
- * refusal arrives later and elsewhere: the asset group is flagged and `ToggleStatus` REFUSES the
- * activation (`internal/platform/googleads/pmax.go`), which is discovered at launch.
+ * UPSTREAM tells an operator at create time that what they just made cannot serve. On all three
+ * the refusal arrives later and elsewhere, at activation: an empty creative leaves `AdID` blank
+ * (`demandgen.go:326`, `display.go:298`), the toggle finds no targets, and the activation gate
+ * returns `ErrCampaignNotProvisioned` (`internal/dispatch/googleads.go:2561`, `:2687`). Performance
+ * Max gets there by its own route, the asset-group check in `ToggleStatus`
+ * (`internal/platform/googleads/pmax.go`). Either way it is discovered at launch.
  *
  * This is the standing line, shown on a section before anything is typed. The form also says it
  * about the current state, naming the channels that are actually empty, in the Implementation
@@ -2281,7 +2284,7 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
  * upstream accepts this shape.
  */
 export const GOOGLE_CREATIVE_REQUIRED_NOTICE =
-  'Without creative this campaign is created as an empty shell: it has no ad, it cannot serve, and Performance Max will refuse to activate.';
+  'Without creative this campaign is created as an empty shell: it has no ad, it cannot serve, and activation is refused until the ad (or, on Performance Max, the asset group) exists.';
 
 /**
  * The bidding strategies campaign-service accepts, in the caller vocabulary it accepts them in.

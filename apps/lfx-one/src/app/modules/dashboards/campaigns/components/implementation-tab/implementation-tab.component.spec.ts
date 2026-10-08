@@ -4585,7 +4585,8 @@ describe('ImplementationTabComponent google creative minimums', () => {
     const c = seedChannel(fixture, { includeDisplay: true });
 
     expect(c['googleCreativeEmptyWarning']()).toBe(
-      `${GOOGLE_CREATIVE_SECTION_TITLES.display} has no creative. The campaign and its budget are still created, but it cannot serve until the assets are added in Google Ads.`
+      `${GOOGLE_CREATIVE_SECTION_TITLES.display} has no creative. The campaign and its budget are still created, but it cannot serve until the assets are added in Google Ads. ` +
+        'Activation is refused until the ad (or, on Performance Max, the asset group) exists.'
     );
     expect(c['canSubmit']()).toBe(true);
   });
@@ -4596,21 +4597,29 @@ describe('ImplementationTabComponent google creative minimums', () => {
 
     expect(c['googleCreativeEmptyWarning']()).toBe(
       `${GOOGLE_CREATIVE_SECTION_TITLES['demand-gen']} and ${GOOGLE_CREATIVE_SECTION_TITLES.display} have no creative. ` +
-        'The campaign and its budget are still created, but it cannot serve until the assets are added in Google Ads.'
+        'The campaign and its budget are still created, but it cannot serve until the assets are added in Google Ads. ' +
+        'Activation is refused until the ad (or, on Performance Max, the asset group) exists.'
     );
   });
 
   /**
-   * The Performance Max clause is a claim about code that only Performance Max has: `ToggleStatus`
-   * refuses to activate an asset group that is not complete (`internal/platform/googleads/pmax.go`).
-   * Nothing refuses a Demand Gen or Display campaign with no creative — it simply never serves — so
-   * saying it about them would be a sentence no code behind it delivers.
+   * The activation clause is a claim about code EVERY one of the three channels has, which is why
+   * it is unconditional. An empty creative leaves `AdID` blank (`demandgen.go:326`,
+   * `display.go:298`), `googleAdsToggleTargets` then yields no targets, and the activation gate
+   * returns `ErrCampaignNotProvisioned` (`internal/dispatch/googleads.go:2561`, `:2687`).
+   * Performance Max arrives at the same refusal through `ToggleStatus`'s own asset-group check
+   * (`internal/platform/googleads/pmax.go`). Claiming it for Performance Max alone — as this
+   * sentence once did — understated what happens to the other two.
    */
-  it('claims the activation refusal only for performance max', () => {
-    const activation = 'Performance Max will also refuse to activate until its asset group is complete.';
+  it('claims the activation refusal for every empty channel', () => {
+    const activation = 'Activation is refused until the ad (or, on Performance Max, the asset group) exists.';
 
     const c = seedChannel(fixture, { includeDisplay: true });
-    expect(c['googleCreativeEmptyWarning']()).not.toContain(activation);
+    expect(c['googleCreativeEmptyWarning']()).toContain(activation);
+
+    c['campaignForm'].patchValue({ includeDemandGen: true });
+    fixture.detectChanges();
+    expect(c['googleCreativeEmptyWarning']()).toContain(activation);
 
     c['campaignForm'].patchValue({ includePerformanceMax: true });
     fixture.detectChanges();

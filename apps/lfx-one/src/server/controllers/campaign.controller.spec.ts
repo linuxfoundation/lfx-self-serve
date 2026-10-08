@@ -3058,9 +3058,16 @@ describe('CampaignController.refineBrief email refusal', () => {
  *
  * Express leaves `req.body` as `undefined` when no JSON body parsed, and hands through whatever
  * JSON actually arrived — an array, a bare string, `null`. Every sibling handler on this
- * controller already opens with this check; these three destructured straight into the body and
- * threw a TypeError that reached the error middleware as a 500, reporting a caller's malformed
- * request as a server fault. The guard turns each into the 400 the sibling handlers give.
+ * controller already opens with this check; these three destructured straight into the body.
+ *
+ * The four shapes do not all fail the same way, and the guard's value differs per row. `undefined`
+ * and `null` threw a TypeError on the field read that reached the error middleware as a 500,
+ * reporting a caller's malformed request as a server fault — those are the 500s the guard removes.
+ * An array and a bare string never threw: `[].feedback` and `'nope'.feedback` are `undefined`, so
+ * the handler's own field guard already answered 400, just naming a missing field instead of a
+ * malformed body. For those two the guard buys legibility, not a status-code change. All four are
+ * asserted here because all four must end at the SAME named 400 — which is the contract the guard
+ * actually establishes.
  */
 describe('CampaignController AI handler body shape', () => {
   let controller: CampaignController;
@@ -3085,7 +3092,7 @@ describe('CampaignController AI handler body shape', () => {
   ];
 
   it.each(handlers.flatMap((handler) => bodies.map(([label, body]): [string, string, unknown] => [handler, label, body])))(
-    '%s refuses %s as a 400, not a 500',
+    '%s refuses %s with the named body-shape 400',
     async (handler, _label, body) => {
       await (controller as unknown as Record<string, (req: Request, res: Response, next: NextFunction) => Promise<void>>)[handler](buildReq(body), res, next);
 
