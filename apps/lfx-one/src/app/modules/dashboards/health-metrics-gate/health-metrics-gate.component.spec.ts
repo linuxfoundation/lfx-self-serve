@@ -340,6 +340,29 @@ describe('HealthMetricsGateComponent', () => {
 
       expect(currentUrl()).toBe('/foundation/health-metrics/engagement?projectScope=nested-project');
       expect(query('health-metrics-project-selector-label')?.textContent?.trim()).toBe('nested-project');
+
+      query('health-metrics-overview-project-selector')?.click();
+      await settle();
+      const all = query('health-metrics-project-option-all');
+      expect(all?.getAttribute('aria-selected')).toBe('false');
+      expect(all?.querySelector('.fa-check')).toBeNull();
+      expect(query('health-metrics-project-option-alpha')?.getAttribute('aria-selected')).toBe('false');
+    });
+
+    it('keeps the pill live on an empty partial list so a kept slug can be cleared', async () => {
+      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=nested-project', { ...projectsResponse(), complete: false });
+      await settle();
+
+      const trigger = query('health-metrics-overview-project-selector');
+      expect(trigger?.getAttribute('aria-disabled')).toBeNull();
+      expect(query('health-metrics-project-selector-label')?.textContent?.trim()).toBe('nested-project');
+
+      trigger?.click();
+      await settle();
+      query('health-metrics-project-option-all')?.click();
+      await settle();
+
+      expect(currentUrl()).toBe('/foundation/health-metrics/engagement');
     });
 
     it('hides the pill once the foundation turns out to have no projects', async () => {

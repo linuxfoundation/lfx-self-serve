@@ -102,11 +102,15 @@ export class HealthMetricsGateComponent {
   private readonly projectListFoundationSlug = computed(() => (this.overviewEnabled() ? (this.projectContextService.selectedFoundation()?.slug ?? '') : ''));
 
   private readonly projectListRetry = new Subject<void>();
+  private readonly hasKeptSelection = computed(() => this.chrome.projects() !== null && !!this.chrome.selectedProjectSlug());
 
-  // Inert while the list loads, hidden once it loads empty, a retry once it fails.
-  protected readonly projectSelectorEnabled = computed(() => this.activeTab()?.projectScoped === true && (this.chrome.projects()?.length ?? 0) > 0);
+  // Inert while the list loads, hidden once it loads empty, a retry once it fails. A kept selection
+  // keeps it live even on an empty partial list, so "All projects" can still clear the scope.
+  protected readonly projectSelectorEnabled = computed(
+    () => this.activeTab()?.projectScoped === true && ((this.chrome.projects()?.length ?? 0) > 0 || this.hasKeptSelection())
+  );
   protected readonly projectSelectorRetry = computed(() => this.activeTab()?.projectScoped === true && this.chrome.projectsFailed());
-  protected readonly projectSelectorVisible = computed(() => this.chrome.projects()?.length !== 0);
+  protected readonly projectSelectorVisible = computed(() => this.chrome.projects()?.length !== 0 || !!this.chrome.selectedProjectSlug());
   protected readonly projectSelectorLabel = computed(() => this.initProjectSelectorLabel());
   protected readonly projectMenuOpen = signal(false);
 
