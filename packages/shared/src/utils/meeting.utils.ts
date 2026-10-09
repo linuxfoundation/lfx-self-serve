@@ -22,6 +22,7 @@ import {
 import { lfxColors } from '../constants/colors.constants';
 import { CommitteeMemberVotingStatus, MeetingType, RecurrenceType } from '../enums';
 import { PollStatus } from '../enums/poll.enum';
+import { getEntityCommands } from './entity-route.utils';
 import { isSameOccurrenceId } from './rsvp-calculator.util';
 import type {
   BuildMeetingOccurrenceRouteOptions,
@@ -1398,6 +1399,34 @@ export function formatMeetingMailtoDate(iso: string | null | undefined, timeZone
   } catch {
     return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
   }
+}
+
+/**
+ * The route to a meeting's edit page: under its project's tier (`/foundation` or `/project`, from the
+ * meeting's `is_foundation`, not the viewer's lens), else the flat `/meetings/:id/edit` that
+ * `lensRedirectGuard` resolves when the tier is not enriched. Shared by the meeting cards and the V2
+ * page's Edit agenda, so the two always open the same editor.
+ */
+export function buildMeetingEditCommands(meeting: Pick<Meeting, 'id' | 'is_foundation'>): string[] {
+  return getEntityCommands('meetings', meeting.id, meeting.is_foundation, 'edit') ?? ['/meetings', meeting.id, 'edit'];
+}
+
+/**
+ * The query params a meeting's edit page needs: `?project=` (which `writerGuard` resolves write
+ * access from) and, for a committee meeting, `?committee_uid=` (which the editor reads for the
+ * committee scope). `fallbackProjectSlug` is for a payload that carries its project elsewhere, as the
+ * public detail payload's `project.slug` does.
+ */
+export function buildMeetingEditQueryParams(
+  meeting: Pick<Meeting, 'project_slug' | 'committees'>,
+  fallbackProjectSlug?: string | null
+): Record<string, string> {
+  const params: Record<string, string> = {};
+  const projectSlug = meeting.project_slug || fallbackProjectSlug;
+  if (projectSlug) params['project'] = projectSlug;
+  const committeeUid = meeting.committees?.[0]?.uid;
+  if (committeeUid) params['committee_uid'] = committeeUid;
+  return params;
 }
 
 /**

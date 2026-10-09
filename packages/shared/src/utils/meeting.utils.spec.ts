@@ -34,6 +34,8 @@ import type {
   Vote,
 } from '../interfaces';
 import {
+  buildMeetingEditCommands,
+  buildMeetingEditQueryParams,
   buildCommitteeCadenceSummary,
   buildMeetingOccurrenceOptions,
   buildMeetingOccurrenceRoute,
@@ -154,6 +156,28 @@ function occurrence(overrides: Partial<MeetingOccurrence> = {}): MeetingOccurren
 }
 
 const ids = (meetings: PastMeeting[]): string[] => meetings.map((m) => m.id);
+
+describe('buildMeetingEditCommands', () => {
+  it.each([
+    [true, ['/', 'foundation', 'meetings', 'm1', 'edit']],
+    [false, ['/', 'project', 'meetings', 'm1', 'edit']],
+    [undefined, ['/meetings', 'm1', 'edit']],
+  ] as [boolean | undefined, string[]][])('routes the edit page by is_foundation %s', (isFoundation, commands) => {
+    expect(buildMeetingEditCommands({ id: 'm1', is_foundation: isFoundation } as Meeting)).toEqual(commands);
+  });
+});
+
+describe('buildMeetingEditQueryParams', () => {
+  it("passes the meeting's own project slug and first committee", () => {
+    const meeting = { project_slug: 'own', committees: [{ uid: 'c1' }, { uid: 'c2' }] } as Meeting;
+    expect(buildMeetingEditQueryParams(meeting, 'fallback')).toEqual({ project: 'own', committee_uid: 'c1' });
+  });
+
+  it('falls back to the given project slug, and omits what is unknown', () => {
+    expect(buildMeetingEditQueryParams({} as Meeting, 'fallback')).toEqual({ project: 'fallback' });
+    expect(buildMeetingEditQueryParams({} as Meeting)).toEqual({});
+  });
+});
 
 describe('sortPastMeetingsDescending', () => {
   it('orders past meetings most-recent-first by scheduled_start_time', () => {

@@ -4,7 +4,7 @@
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { Meeting, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingOccurrence, MeetingTimeState, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
@@ -15,6 +15,8 @@ type LoadedMeeting = Meeting & { project: PublicMeetingProject };
 describe('MeetingAgendaComponent', () => {
   let fixture: ComponentFixture<MeetingAgendaComponent>;
   let meeting: WritableSignal<LoadedMeeting | undefined>;
+  let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
+  let timeState: WritableSignal<MeetingTimeState>;
 
   const build = (overrides: Partial<Meeting> = {}): LoadedMeeting =>
     ({
@@ -27,10 +29,12 @@ describe('MeetingAgendaComponent', () => {
 
   beforeEach(async () => {
     meeting = signal<LoadedMeeting | undefined>(build());
+    selectedOccurrence = signal<MeetingOccurrence | null>(null);
+    timeState = signal<MeetingTimeState>('before');
 
     await TestBed.configureTestingModule({
       imports: [MeetingAgendaComponent],
-      providers: [provideRouter([]), { provide: MeetingDetailsStateService, useValue: { meeting } }],
+      providers: [provideRouter([]), { provide: MeetingDetailsStateService, useValue: { meeting, selectedOccurrence, timeState } }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(MeetingAgendaComponent);
@@ -55,6 +59,14 @@ describe('MeetingAgendaComponent', () => {
     expect(query('agenda-section-description')?.textContent).toContain('<img');
   });
 
+  it("prefers the selected occurrence's own description over the series'", () => {
+    selectedOccurrence.set({ occurrence_id: 'occ-1', description: 'Occurrence-only agenda' } as MeetingOccurrence);
+    fixture.detectChanges();
+
+    expect(query('agenda-section-description')?.textContent).toContain('Occurrence-only agenda');
+    expect(query('agenda-section-description')?.textContent).not.toContain('Review the roadmap.');
+  });
+
   it('says so when there is no description', () => {
     meeting.set(build({ description: '   ' }));
     fixture.detectChanges();
@@ -70,6 +82,21 @@ describe('MeetingAgendaComponent', () => {
     fixture.detectChanges();
 
     expect(query('agenda-section-edit')?.textContent?.trim()).toBe('Edit agenda');
+  });
+
+  it('hides Edit agenda once the meeting has ended', () => {
+    meeting.set(build({ organizer: true }));
+    timeState.set('ended');
+    fixture.detectChanges();
+
+    expect(query('agenda-section-edit')).toBeNull();
+  });
+
+  it("passes the meeting's committee to the edit page, as the meeting cards do", () => {
+    meeting.set(build({ organizer: true, project_slug: 'own-slug', committees: [{ uid: 'c1' }] } as Partial<Meeting>));
+    fixture.detectChanges();
+
+    expect(query('agenda-section-edit')?.getAttribute('href')).toBe('/meetings/meeting-1/edit?project=own-slug&committee_uid=c1');
   });
 
   // Built as the meeting cards build it: under the foundation or project when known, with the project.

@@ -9,7 +9,7 @@
       <i class="fa-light fa-list-check text-[var(--md-text-muted)]" aria-hidden="true"></i>
       <h2 id="meeting-agenda-heading" class="m-0 text-[16px] font-bold text-[var(--md-text-heading)]">Agenda</h2>
     </div>
-    @if (organizer()) {
+    @if (canEdit()) {
       <a
         class="inline-flex h-[30px] flex-none items-center gap-[6px] rounded-full border border-[var(--md-border-strong)] bg-[var(--md-surface-card)] px-[12px] text-[12.5px] font-semibold text-[var(--md-text-heading)] no-underline hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
         [routerLink]="editCommands()"

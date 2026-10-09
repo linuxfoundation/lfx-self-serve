@@ -39,6 +39,8 @@ import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
 import {
   buildJoinUrlWithParams,
+  buildMeetingEditCommands,
+  buildMeetingEditQueryParams,
   canJoinMeeting,
   COMMITTEE_LABEL,
   resolveMeetingBaseCount,
@@ -265,19 +267,10 @@ export class MeetingCardComponent implements OnInit {
   // them after the permission probe resolves, instead of the template binding them as a
   // `routerLink`. Query params matter: `writerGuard` resolves write access from `?project=`, and
   // the pre-v2 editor reads `?committee_uid=` for committee-scoped meetings.
-  public readonly editQueryParams: Signal<Record<string, string>> = computed(() => {
-    const meeting = this.meeting();
-    const params: Record<string, string> = {};
-    if (meeting.project_slug) params['project'] = meeting.project_slug;
-    const committeeUid = meeting.committees?.[0]?.uid;
-    if (committeeUid) params['committee_uid'] = committeeUid;
-    return params;
-  });
+  public readonly editQueryParams: Signal<Record<string, string>> = computed(() => buildMeetingEditQueryParams(this.meeting()));
   // Canonical edit URL derives from the MEETING's project tier (is_foundation), not the viewer's
   // active lens; falls back to the flat path (lensRedirectGuard) when the tier is unenriched.
-  public readonly editCommands: Signal<string[]> = computed(
-    () => getEntityCommands('meetings', this.meeting().id, this.meeting().is_foundation, 'edit') ?? ['/meetings', this.meeting().id, 'edit']
-  );
+  public readonly editCommands: Signal<string[]> = computed(() => buildMeetingEditCommands(this.meeting()));
 
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
