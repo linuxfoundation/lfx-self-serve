@@ -1,22 +1,25 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LowerCasePipe } from '@angular/common';
-import { Component, computed, inject, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { isPlatformBrowser, LowerCasePipe } from '@angular/common';
+import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
+import { MY_VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
 import { PollStatus, VOTE_LABEL, VOTES_PAGE_WALK_LIMIT, VoteResponseStatus } from '@lfx-one/shared';
-import { Committee, Lens, PaginatedResponse, ProjectContext, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
+import { Committee, Lens, MyVotesQuickFilter, PaginatedResponse, ProjectContext, StatCardItem, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
-import { findCursorWalkStartIndex, recordPageToken, resolveCursorWalkOutcome } from '@lfx-one/shared/utils';
+import { findCursorWalkStartIndex, getUserTimezone, matchesMyVotesQuickFilter, recordPageToken, resolveCursorWalkOutcome } from '@lfx-one/shared/utils';
+import { formatInTimeZone } from 'date-fns-tz';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, EMPTY, expand, finalize, last, map, Observable, of, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, EMPTY, expand, filter, finalize, last, map, Observable, of, switchMap, take, tap } from 'rxjs';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteResultsDrawerComponent } from '../components/vote-results-drawer/vote-results-drawer.component';
@@ -33,6 +36,7 @@ import { VotesTableComponent } from '../components/votes-table/votes-table.compo
     RouterLink,
     EmptyStateComponent,
     SkeletonModule,
+    StatCardGridComponent,
   ],
   templateUrl: './votes-dashboard.component.html',
   styleUrl: './votes-dashboard.component.scss',
@@ -44,10 +48,12 @@ export class VotesDashboardComponent {
   private readonly lensService = inject(LensService);
   private readonly personaService = inject(PersonaService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL.singular;
   protected readonly voteLabelPlural = VOTE_LABEL.plural;
+  private readonly viewerTimezone = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
 
   // === Subjects ===
   // refresh$ triggers count re-fetch (manual refresh, project change)
@@ -67,6 +73,10 @@ export class VotesDashboardComponent {
   protected readonly myVotesLoading = signal<boolean>(true);
   protected readonly foundationFilter = signal<string | null>(null);
   protected readonly projectFilter = signal<string | null>(null);
+  protected readonly myVotesQuickFilter = signal<MyVotesQuickFilter | null>(null);
+  protected readonly myVotesStatusTab = signal<string>('all');
+  protected readonly myVotesNowMs = signal(Date.now());
+  protected readonly myVotesError = signal(false);
 
   // === Lens ===
   protected readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
@@ -92,12 +102,45 @@ export class VotesDashboardComponent {
   protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initializeFoundationOptions();
   protected readonly projectOptions: Signal<{ label: string; value: string | null }[]> = this.initializeProjectOptions();
   protected readonly filteredMyVotes: Signal<Vote[]> = this.initFilteredMyVotes();
+  protected readonly myVotesSummaryScope: Signal<Vote[]> = this.initMyVotesSummaryScope();
+  protected readonly myVoteStatCards: Signal<StatCardItem[]> = this.initMyVoteStatCards();
   // True when any server-side filter is active; drives dashboard empty-state vs. table empty-state routing.
   // Trims `search` so whitespace-only input doesn't count as an active filter.
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => {
     const f = this.filters();
     return !!(f.search?.trim() || f.status || f.group);
   });
+
+  public constructor() {
+    toObservable(this.isMeLens)
+      .pipe(
+        filter((isMe) => !isMe),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => {
+        this.myVotesQuickFilter.set(null);
+        this.myVotesStatusTab.set('all');
+      });
+  }
+
+  protected onMyVoteStatClick(action: string): void {
+    if (!this.isMeLens() || this.myVotesLoading() || this.myVotesError()) return;
+    if (action !== 'closing-soon' && action !== 'needs-vote') return;
+    this.myVotesNowMs.set(Date.now());
+    this.myVotesQuickFilter.update((selected) => (selected === action ? null : action));
+    this.myVotesStatusTab.set(PollStatus.ACTIVE);
+    this.currentFirst.set(0);
+  }
+
+  protected onStatusTabSelected(): void {
+    this.myVotesQuickFilter.set(null);
+    this.currentFirst.set(0);
+  }
+
+  protected onFiltersReset(): void {
+    this.myVotesQuickFilter.set(null);
+    this.currentFirst.set(0);
+  }
 
   protected onViewVote(voteId: string): void {
     this.selectedVoteId.set(voteId);
@@ -197,7 +240,7 @@ export class VotesDashboardComponent {
     const project$ = toObservable(this.project);
     const lens$ = toObservable(this.lensService.activeLens);
 
-    return toSignal(
+    const managementOptions = toSignal(
       combineLatest([project$, lens$]).pipe(
         switchMap(([project, lens]) => {
           if (lens === 'me' || !project?.uid) {
@@ -216,6 +259,14 @@ export class VotesDashboardComponent {
       ),
       { initialValue: [{ label: 'All Groups', value: null }] }
     );
+    return computed(() => {
+      if (!this.isMeLens()) return managementOptions();
+      const names = new Set<string>();
+      for (const vote of this.filteredMyVotes()) {
+        if (vote.committee_name?.trim()) names.add(vote.committee_name);
+      }
+      return [{ label: 'All Groups', value: null }, ...[...names].sort((a, b) => a.localeCompare(b)).map((name) => ({ label: name, value: name }))];
+    });
   }
 
   private initTotalCount(): Signal<number> {
@@ -367,13 +418,15 @@ export class VotesDashboardComponent {
             return of([] as Vote[]);
           }
           this.myVotesLoading.set(true);
+          this.myVotesError.set(false);
           return this.voteService.getMyVotes().pipe(
             // Optimistic merge (GH-2730), same overlay as the project lens: just-opened votes'
             // known-active status over stale index rows. Unconditional here — the Me lens has no
             // server-side status filter (its filtering is client-side over these rows).
             map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
+            tap(() => this.myVotesNowMs.set(Date.now())),
             catchError(() => {
-              this.myVotesLoading.set(false);
+              this.myVotesError.set(true);
               return of([] as Vote[]);
             }),
             finalize(() => this.myVotesLoading.set(false))
@@ -411,6 +464,63 @@ export class VotesDashboardComponent {
       }
       const options = [...seen.entries()].map(([uid, name]) => ({ label: name, value: uid })).sort((a, b) => a.label.localeCompare(b.label));
       return [{ label: 'All Projects', value: null }, ...options];
+    });
+  }
+
+  private initMyVotesSummaryScope(): Signal<Vote[]> {
+    return computed(() => {
+      const group = this.filters().group;
+      const votes = this.filteredMyVotes();
+      return group ? votes.filter((vote) => vote.committee_name === group) : votes;
+    });
+  }
+
+  private initMyVoteStatCards(): Signal<StatCardItem[]> {
+    return computed(() => {
+      let closingSoon = 0;
+      let needsVote = 0;
+      let nextDeadline = Infinity;
+      let earliestDeadline = Infinity;
+      const nowMs = this.myVotesNowMs();
+      for (const vote of this.myVotesSummaryScope()) {
+        const endMs = Date.parse(vote.end_time);
+        if (matchesMyVotesQuickFilter(vote, 'closing-soon', nowMs)) {
+          closingSoon++;
+          nextDeadline = Math.min(nextDeadline, endMs);
+        }
+        if (matchesMyVotesQuickFilter(vote, 'needs-vote', nowMs)) {
+          needsVote++;
+          if (Number.isFinite(endMs)) earliestDeadline = Math.min(earliestDeadline, endMs);
+        }
+      }
+      const unavailable = this.myVotesError();
+      const disabled = this.myVotesLoading() || unavailable;
+      const selected = this.myVotesQuickFilter();
+      return [
+        {
+          value: unavailable ? '—' : closingSoon,
+          label: `Votes Closing in the Next ${MY_VOTES_STATS_WINDOW_DAYS} Days`,
+          icon: 'fa-light fa-calendar-clock',
+          iconContainerClass: 'bg-blue-100 text-blue-600',
+          action: 'closing-soon',
+          selected: selected === 'closing-soon',
+          disabled,
+          subLine: !disabled && Number.isFinite(nextDeadline) ? `Next: ${formatInTimeZone(nextDeadline, this.viewerTimezone, 'MMM d, yyyy')}` : undefined,
+        },
+        {
+          value: unavailable ? '—' : needsVote,
+          label: 'Need Your Vote',
+          icon: 'fa-light fa-check-to-slot',
+          iconContainerClass: 'bg-amber-100 text-amber-600',
+          action: 'needs-vote',
+          selected: selected === 'needs-vote',
+          disabled,
+          subLine:
+            !disabled && Number.isFinite(earliestDeadline)
+              ? `Earliest deadline: ${formatInTimeZone(earliestDeadline, this.viewerTimezone, 'MMM d, yyyy')}`
+              : undefined,
+        },
+      ];
     });
   }
 

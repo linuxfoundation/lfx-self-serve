@@ -11,7 +11,7 @@ import '@angular/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
-import { PollStatus } from '../enums';
+import { PollStatus, VoteResponseStatus } from '../enums';
 import type { Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
 import {
   buildCreateVoteRequest,
@@ -21,6 +21,7 @@ import {
   compareVotesByRecency,
   computeVoteParticipationStats,
   mapVoteToFormValue,
+  matchesMyVotesQuickFilter,
 } from './vote.utils';
 
 /** Minimal VoteFormValue fixture — the request builders only read the fields set here. */
@@ -39,6 +40,57 @@ function formValue(overrides: Partial<VoteFormValue> = {}): VoteFormValue {
     ...overrides,
   };
 }
+
+describe('matchesMyVotesQuickFilter', () => {
+  const nowMs = Date.parse('2026-10-09T12:00:00Z');
+  const vote = (overrides: Partial<Vote> = {}): Vote => ({
+    uid: 'synthetic-vote',
+    name: 'Synthetic election',
+    project_uid: 'synthetic-project',
+    status: PollStatus.ACTIVE,
+    end_time: '2026-10-10T12:00:00Z',
+    response_status: VoteResponseStatus.AWAITING_RESPONSE,
+    ...overrides,
+  });
+
+  it.each([
+    ['2026-10-09T11:59:59.999Z', false],
+    ['2026-10-09T12:00:00Z', false],
+    ['2026-10-09T12:00:00.001Z', true],
+    ['2026-10-16T12:00:00Z', true],
+    ['2026-10-16T08:00:00-04:00', true],
+    ['2026-10-16T12:00:00.001Z', false],
+    ['', false],
+    ['invalid', false],
+  ])('matches deadline %s: %s', (end_time, expected) => {
+    expect(matchesMyVotesQuickFilter(vote({ end_time }), 'closing-soon', nowMs)).toBe(expected);
+  });
+
+  it('includes responded votes only in the deadline summary', () => {
+    const responded = vote({ response_status: VoteResponseStatus.RESPONDED });
+    expect(matchesMyVotesQuickFilter(responded, 'closing-soon', nowMs)).toBe(true);
+    expect(matchesMyVotesQuickFilter(responded, 'needs-vote', nowMs)).toBe(false);
+  });
+
+  it.each(['2026-11-01T12:00:00Z', '2026-10-01T12:00:00Z', '', 'invalid'])('keeps awaiting-response semantics independent of deadline %s', (end_time) => {
+    expect(matchesMyVotesQuickFilter(vote({ end_time }), 'needs-vote', nowMs)).toBe(true);
+  });
+
+  it('does not infer an invitation from an absent response status', () => {
+    expect(matchesMyVotesQuickFilter(vote({ response_status: undefined }), 'needs-vote', nowMs)).toBe(false);
+  });
+
+  it.each([PollStatus.DISABLED, PollStatus.ENDED, 'unknown'])('excludes inactive status %s from both summaries', (status) => {
+    expect(matchesMyVotesQuickFilter(vote({ status: status as PollStatus }), 'closing-soon', nowMs)).toBe(false);
+    expect(matchesMyVotesQuickFilter(vote({ status: status as PollStatus }), 'needs-vote', nowMs)).toBe(false);
+  });
+
+  it('normalizes mixed-case ACTIVE status', () => {
+    const active = vote({ status: 'AcTiVe' as PollStatus });
+    expect(matchesMyVotesQuickFilter(active, 'closing-soon', nowMs)).toBe(true);
+    expect(matchesMyVotesQuickFilter(active, 'needs-vote', nowMs)).toBe(true);
+  });
+});
 
 // All four builders must always emit allow_abstain explicitly: ITX updatePoll rebuilds the
 // DynamoDB item via PutItem full-replace, so omitting the field would silently reset an

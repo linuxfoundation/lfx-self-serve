@@ -50,6 +50,16 @@ describe('VoteService', () => {
     service = TestBed.inject(VoteService);
   });
 
+  it('propagates personal-feed HTTP failures instead of reporting confirmed empty success', () => {
+    const failure = new Error('Personal feed unavailable');
+    http.get.mockReturnValue(throwError(() => failure));
+    const next = vi.fn();
+    const error = vi.fn();
+    service.getMyVotes().subscribe({ next, error });
+    expect(next).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(failure);
+  });
+
   // GH-2730: the carrier overlays a just-opened vote's known-active status over stale index rows
   // while the search index catches up. It must self-heal — evict on convergence, prune at the
   // TTL — or it would pin a stale 'active' over the fetched server value indefinitely.

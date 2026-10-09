@@ -4,7 +4,7 @@ description: Create polls, cast votes, and view results for project governance d
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, polls, governance, decisions, elections]
-last_updated: 2026-08-19
+last_updated: 2026-10-09
 intercom_collection: Votes
 ---
 
@@ -25,6 +25,21 @@ The Votes section lets you create and manage polls for formal project governance
 To view and cast votes, select **My Votes** from the left navigation sidebar in the **Me** lens (route: `/votes`) — this lists the polls you're eligible for across your projects and foundations.
 
 To manage polls for a specific context, switch to your **Project** or **Foundation** lens using the lens switcher, then select **Votes** from the left navigation sidebar. The votes dashboard (route: `/project/votes` or `/foundation/votes`) lists all polls for your active project or foundation context. Use the tabs to filter: **All**, **Active**, **Draft**, **Ended**.
+
+### My Votes summary
+
+Two summary cells above the table help you find approaching deadlines and outstanding responses:
+
+- **Votes Closing in the Next 7 Days** counts active votes with a deadline after the current time and within seven days, including votes you have already responded to. **Next** shows the nearest matching deadline.
+- **Need Your Vote** counts active votes explicitly awaiting your response, regardless of their deadline. **Earliest deadline** shows the earliest valid deadline among those votes. An overdue vote still marked active can appear here.
+
+Counts describe the returned personal feed within your selected foundation, project, and group, not just the visible page. Search, status tabs, and summary selection do not change these totals. Dates use your local timezone; the time snapshot refreshes when votes load successfully or you select a summary cell, not continuously while the page is idle.
+
+Select a cell to filter the table and switch to **Active**. Select the same cell again to clear only the summary filter, leaving **Active** selected; select the other cell to switch filters. Search, group, foundation, project, and rows per page are preserved, and the table returns to its first page. Selecting any status tab, including **Active** again, clears the summary filter.
+
+If your filters have no matches, **No results found** keeps the controls available. **Reset filters** clears the summary and table filters. If a scope change removes the selected group, only that group selection is cleared.
+
+While loading, the cells show dashes and cannot be selected. A successfully loaded empty feed shows zero. If loading fails, counts are unavailable and **Unable to load your votes** appears instead of the no-invitations message. Select **Retry** to reload without losing your search and group controls.
 
 ## Key concepts
 

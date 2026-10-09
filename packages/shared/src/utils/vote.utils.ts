@@ -5,8 +5,9 @@ import { addDays } from 'date-fns';
 import { FormControl, type FormGroup } from '@angular/forms';
 import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '../constants/poll.constants';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
+import { MY_VOTES_STATS_WINDOW_DAYS } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { PollStatus } from '../enums/poll.enum';
+import { PollStatus, VoteResponseStatus } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
 import { combineDateTime, formatTo12HourInTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import { normalizePollStatus } from './poll.utils';
@@ -20,6 +21,7 @@ import type {
   CreatePollQuestion,
   CreateVoteRequest,
   CursorWalkOutcome,
+  MyVotesQuickFilter,
   PollCommentPrompt,
   PollQuestion,
   QuestionFormValue,
@@ -29,6 +31,15 @@ import type {
   VoteParticipationStats,
   VoteResultsResponse,
 } from '../interfaces/poll.interface';
+
+/** Matches the personal summary's status/response semantics at a shared time snapshot. */
+export function matchesMyVotesQuickFilter(vote: Vote, filter: MyVotesQuickFilter, nowMs: number): boolean {
+  if (normalizePollStatus(vote.status) !== PollStatus.ACTIVE) return false;
+  if (filter === 'needs-vote') return vote.response_status === VoteResponseStatus.AWAITING_RESPONSE;
+
+  const endMs = Date.parse(vote.end_time);
+  return Number.isFinite(endMs) && nowMs < endMs && endMs <= nowMs + MY_VOTES_STATS_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+}
 
 /**
  * Maps UI eligibility value to API committee_filters
