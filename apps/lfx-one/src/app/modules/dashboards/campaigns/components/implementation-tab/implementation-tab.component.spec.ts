@@ -3448,6 +3448,27 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   });
 
   /**
+   * The HINT has to be withheld with the controls it describes. Its second sentence offers a route
+   * — leave the post URL blank and a post is composed from the image below — that exists only
+   * while the capability is granted. Left unconditional it tells an operator with the cutover dark
+   * to do the one thing that produces a campaign with no ad, and points at a field that is not on
+   * the page. The test asserts both halves so neither the sentence nor its `@if` can be dropped
+   * without a failure.
+   */
+  it.each([
+    [true, true],
+    [false, false],
+  ])('offers the composed-post route in the hint only while the capability is %s', async (capability, offered) => {
+    const f = (await mount(null, capability)).fixture;
+    const input = f.nativeElement.querySelector('[data-testid="implementation-reddit-post-url"]') as HTMLInputElement;
+    const hint = input.parentElement?.querySelector('p')?.textContent ?? '';
+
+    // The first sentence describes the field itself and is never withheld.
+    expect(hint).toContain('the post id on its own');
+    expect(hint.includes('Leave it blank')).toBe(offered);
+  });
+
+  /**
    * A withheld capability must not reach the REQUEST either, even when a draft written while it
    * was granted still carries the values. The draft deliberately keeps them — destroying an
    * operator's text on a capability answer they never saw would be worse — so the request is the

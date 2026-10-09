@@ -1247,20 +1247,24 @@
                  creators read this field and build the ad from it. Deliberately not validated
                  here: both parse the link themselves and reject a bad one before anything is
                  created, and they accept slightly different shapes, so a check on this side could
-                 only refuse a link that would have worked. -->
+                 only refuse a link that would have worked. That includes the browser's own check:
+                 the field is type="text", not type="url", because a bare post id is a valid entry
+                 here and type="url" would reject it. -->
             <div class="flex flex-col gap-1">
               <label class="text-xs font-medium text-gray-700" for="reddit-post-url">Post URL</label>
               <input
                 id="reddit-post-url"
-                type="url"
+                type="text"
                 [value]="redditPostUrl()"
                 (input)="onRedditPostUrlInput($event)"
                 placeholder="https://www.reddit.com/r/kubernetes/comments/abc123/..."
                 class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 data-testid="implementation-reddit-post-url" />
               <p class="text-xs text-gray-500">
-                An existing Reddit post to promote — a reddit.com post link, a redd.it link, or the post id on its own. Leave it blank to have one composed from
-                the image below instead.
+                An existing Reddit post to promote — a reddit.com post link, a redd.it link, or the post id on its own.
+                @if (redditCreativeAvailable()) {
+                  Leave it blank to have one composed from the image below instead.
+                }
               </p>
             </div>
 

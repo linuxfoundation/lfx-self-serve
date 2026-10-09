@@ -1093,8 +1093,8 @@ export interface RedditCampaignCreateRequest {
   /**
    * Overrides the ad account's own conversion pixel for this campaign.
    *
-   * Upstream resolves the pixel from the connection first and refuses the create when neither the
-   * connection nor the campaign supplies one — for EVERY objective, not just conversions. Its own
+   * Upstream prefers this campaign-level value and falls back to the connection's pixel, refusing
+   * the create when neither supplies one — for EVERY objective, not just conversions. Its own
    * comment argues the connection is the right source, since the pixel identifies the advertiser
    * and is one per ad account, so per-campaign entry turns an account-level constant into
    * something an operator can get wrong once per campaign.
