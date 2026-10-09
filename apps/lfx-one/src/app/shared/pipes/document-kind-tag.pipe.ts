@@ -3,16 +3,25 @@
 
 import { Pipe, PipeTransform } from '@angular/core';
 import { DOCUMENT_KIND_BY_SOURCE, DOCUMENT_KIND_TAGS } from '@lfx-one/shared/constants';
-import { MyDocumentItem, TagSeverity } from '@lfx-one/shared/interfaces';
+import { DocumentKindTag, MyDocumentItem } from '@lfx-one/shared/interfaces';
 
-/** Resolves the label bubble shown next to a document's name. Returns null for folders and unclassifiable rows. */
+import { FileTypeIconPipe } from './file-type-icon.pipe';
+
+/**
+ * Resolves the label bubble and name-column icon for a document. Returns null for folders (they keep
+ * their own folder icon) and for rows nothing identifies. Files get a MIME-specific icon when known.
+ */
 @Pipe({
   name: 'documentKindTag',
 })
 export class DocumentKindTagPipe implements PipeTransform {
-  public transform(doc: MyDocumentItem): { value: string; severity: TagSeverity } | null {
+  private readonly fileTypeIcon = new FileTypeIconPipe();
+
+  public transform(doc: MyDocumentItem): DocumentKindTag | null {
     if (doc.isFolder) return null;
     const kind = doc.documentKind ?? DOCUMENT_KIND_BY_SOURCE[doc.source];
-    return kind ? DOCUMENT_KIND_TAGS[kind] : null;
+    if (!kind) return null;
+    const tag = DOCUMENT_KIND_TAGS[kind];
+    return kind === 'file' ? { ...tag, icon: this.fileTypeIcon.transform(doc.fileType ?? '') } : tag;
   }
 }

@@ -35,8 +35,11 @@
           @if (doc.isChild) {
             <i class="fa-light fa-arrow-turn-down-right text-gray-300 text-xs shrink-0" aria-hidden="true"></i>
           }
+          @let kindTag = doc | documentKindTag;
           @if (doc.isFolder) {
             <i class="fa-light fa-folder text-amber-500 text-base shrink-0" aria-hidden="true"></i>
+          } @else if (kindTag) {
+            <i [class]="kindTag.icon + ' text-gray-400'" class="text-base shrink-0" aria-hidden="true"></i>
           } @else {
             <i
               [class]="(doc.source | myDocumentSourceTag: 'icon') + ' ' + (doc.source | myDocumentSourceTag: 'iconClass')"
@@ -113,7 +116,6 @@
               >{{ doc.name }}</span
             >
           }
-          @let kindTag = doc | documentKindTag;
           @if (kindTag) {
             <lfx-tag
               [value]="kindTag.value"

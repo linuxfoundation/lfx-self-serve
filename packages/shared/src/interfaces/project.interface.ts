@@ -3,6 +3,7 @@
 
 import type { ProjectFunding } from '../enums/project-funding.enum';
 import type { ProjectStage } from '../enums/project-stage.enum';
+import type { TagSeverity } from './components.interface';
 
 export interface Project {
   uid: string;
@@ -160,6 +161,14 @@ export type ProjectDocumentType = 'file' | 'link' | 'folder';
 
 /** What a non-folder document is, as shown in the label bubble next to its name. */
 export type DocumentKind = 'file' | 'link' | 'recording' | 'transcript' | 'summary';
+
+/** Label bubble and name-column icon for a {@link DocumentKind}. */
+export interface DocumentKindTag {
+  value: string;
+  severity: TagSeverity;
+  /** Font Awesome classes for the icon shown before the document name. */
+  icon: string;
+}
 
 /**
  * Subsystem a project-lens document was sourced from.
