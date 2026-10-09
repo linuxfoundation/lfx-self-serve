@@ -10,6 +10,7 @@ import {
   ApiGatewayUserProfile,
   Meeting,
   MeetingRegistrant,
+  MeetingRsvp,
   ProfileVisibilitySections,
   ProfileVisibilityUpdateRequest,
   QueryServiceResponse,
@@ -573,6 +574,96 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
     expect(actions.some((action) => action.type === 'Agenda')).toBe(false);
     expect(queriedTypes()).not.toContain('v1_meeting_registrant');
     expect(queriedTypes()).not.toContain('v1_meeting_rsvp');
+  });
+
+  it('finds an RSVP the email/username lookup misses by its registrant_id, so no Set RSVP nag', async () => {
+    // RSVP rows can carry a different email than the auth email and often a null username, so the
+    // identity query returns nothing for them; the registrant_id is the reliable link.
+    const trackedMeeting: Partial<Meeting> = {
+      id: 'tracked-meeting',
+      title: 'Tracked Board',
+      start_time: tomorrow,
+      duration: 60,
+      use_new_invite_email_address: true,
+    };
+    const rsvp: Partial<MeetingRsvp> = {
+      id: 'rsvp-1',
+      meeting_id: 'tracked-meeting',
+      registrant_id: 'reg-tracked',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-01-01T00:00:00Z',
+    };
+
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string; filters_or?: string[] }) => {
+      switch (params?.type) {
+        case 'v1_meeting':
+          return queryPage([trackedMeeting]);
+        case 'v1_meeting_registrant':
+          return queryPage([{ uid: 'reg-tracked', meeting_id: 'tracked-meeting' }]);
+        case 'v1_meeting_rsvp':
+          return queryPage(params.filters_or?.includes('registrant_id:reg-tracked') ? [rsvp] : []);
+        default:
+          return queryPage([]);
+      }
+    });
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.filter((action) => action.type === 'RSVP')).toHaveLength(0);
+  });
+});
+
+describe('UserService.getUserMeetings my_rsvp enrichment', () => {
+  const req = {} as unknown as Request;
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getUsernameFromAuth.mockReset();
+    getEffectiveEmail.mockReset();
+    getUsernameFromAuth.mockResolvedValue('testuser');
+    getEffectiveEmail.mockReturnValue('auth-address@example.com');
+  });
+
+  it('sets my_rsvp from an RSVP that only the registrant_id lookup can reach', async () => {
+    // The RSVP row carries another email and no username, so the identity query finds nothing; the
+    // meeting card still shows it because it resolves through the registrant.
+    const meeting: Partial<Meeting> = { id: 'meeting-1', title: 'Sync', start_time: tomorrow, duration: 60, use_new_invite_email_address: true };
+    const rsvp: Partial<MeetingRsvp> = {
+      id: 'rsvp-1',
+      meeting_id: 'meeting-1',
+      registrant_id: 'reg-1',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-01-01T00:00:00Z',
+    };
+
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string; filters_or?: string[] }) => {
+      switch (params?.type) {
+        case 'v1_meeting':
+          return queryPage([meeting]);
+        case 'v1_meeting_registrant':
+          return queryPage([{ uid: 'reg-1', meeting_id: 'meeting-1' }]);
+        case 'v1_meeting_rsvp':
+          return queryPage(params.filters_or?.includes('registrant_id:reg-1') ? [rsvp] : []);
+        default:
+          return queryPage([]);
+      }
+    });
+
+    const service = new UserService();
+    // The project-name and access-check steps run after the RSVP enrichment under test; both
+    // services are module-mocked, so pass the meetings straight through.
+    Object.assign(service, {
+      meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items },
+      accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
+    });
+
+    const meetings = await service.getUserMeetings(req);
+
+    expect(meetings).toHaveLength(1);
+    expect(meetings[0].my_rsvp?.response_type).toBe('accepted');
   });
 });
 

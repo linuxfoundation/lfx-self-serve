@@ -22,7 +22,7 @@ import {
 import { lfxColors } from '../constants/colors.constants';
 import { CommitteeMemberVotingStatus, MeetingType, RecurrenceType } from '../enums';
 import { PollStatus } from '../enums/poll.enum';
-import { isSameOccurrenceId } from './rsvp-calculator.util';
+import { isSameOccurrenceId, selectApplicableRsvp } from './rsvp-calculator.util';
 import type {
   BuildMeetingOccurrenceRouteOptions,
   CalendarColor,
@@ -1156,6 +1156,20 @@ export function isMeetingInviteResponsesEnabled(meeting: Pick<Meeting, 'is_invit
 export function isMeetingDeclinedForAllOccurrences(meeting: Pick<Meeting, 'my_rsvp'> | null | undefined): boolean {
   const rsvp = meeting?.my_rsvp;
   return rsvp?.response_type === 'declined' && rsvp.scope === 'all';
+}
+
+/**
+ * True when the viewer's RSVP for the current/next occurrence is an acceptance.
+ * @description `my_rsvp` is not enough on its own: the BFF falls back to the newest series RSVP when
+ * none applies to the current/next date (so Pending RSVP can tell "never answered" apart), which
+ * means a series accepted only for a past date still carries `accepted` on an unanswered next date.
+ * Re-resolving `my_rsvp` against that occurrence with {@link selectApplicableRsvp} drops the
+ * fallback. "Maybe" and "declined" do not count. Backs the "Accepted" filter chip on My Meetings.
+ */
+export function isMeetingAccepted(meeting: Meeting | null | undefined): boolean {
+  if (!meeting?.my_rsvp) return false;
+  const applicable = selectApplicableRsvp(resolveRsvpOccurrenceId(meeting), [meeting.my_rsvp]);
+  return applicable?.response_type === 'accepted';
 }
 
 /**

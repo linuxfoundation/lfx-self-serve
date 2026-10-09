@@ -244,6 +244,9 @@
             [pendingRsvpOnly]="pendingRsvpOnly()"
             [showPendingRsvpFilter]="activeLens() === 'me' && timeFilter() === 'upcoming'"
             [pendingRsvpCount]="pendingRsvpCount()"
+            [acceptedOnly]="acceptedOnly()"
+            [showAcceptedFilter]="activeLens() === 'me' && timeFilter() === 'upcoming'"
+            [acceptedCount]="acceptedCount()"
             [organizerOnly]="organizerOnly()"
             [showOrganizerFilter]="activeLens() === 'me'"
             [organizerCount]="organizerCount()"
@@ -258,6 +261,7 @@
             (searchQueryChange)="searchQuery.set($event)"
             (timeFilterChange)="onTimeFilterChange($event)"
             (pendingRsvpOnlyChange)="pendingRsvpOnly.set($event)"
+            (acceptedOnlyChange)="acceptedOnly.set($event)"
             (organizerOnlyChange)="organizerOnly.set($event)" />
         }
       </div>

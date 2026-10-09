@@ -4,7 +4,7 @@ description: Schedule, manage, and join project meetings with calendar integrati
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, calendar, join, zoom, virtual]
-last_updated: 2026-10-07
+last_updated: 2026-10-09
 intercom_collection: Meetings
 ---
 
@@ -43,6 +43,7 @@ The left navigation label for this section depends on which lens you're in:
 Me, Foundation, and Project lenses share the same dashboard, just scoped differently. Choose **Upcoming** or **Past** with the time control at the left of the filter bar. In the Me lens, these on/off filters sit beside it, each showing how many meetings it matches:
 
 - **Pending RSVP** (Upcoming only) — meetings that collect RSVPs and that you haven't answered yet.
+- **Accepted** (Upcoming only) — meetings you said yes to (for a series, your response for the next date). Meetings you answered "Maybe" or declined, and ones you haven't answered, are left out, so you get a clean view of what you plan to attend.
 - **Organized by me** (Upcoming and Past) — meetings you created.
 - **Show declined** (Upcoming only) — My Meetings hides a meeting you declined for every date, because declining doesn't remove you from the guest list and only an organizer can do that. Turn this on to see those meetings again. Declining a single date keeps the meeting in your list, and a meeting you organized always stays in your list even if you declined every date. The filter appears only when you have declined meetings.
 

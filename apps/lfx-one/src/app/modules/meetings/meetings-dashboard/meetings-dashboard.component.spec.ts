@@ -209,6 +209,34 @@ describe('MeetingsDashboardComponent', () => {
       expect(component['nextMeetingLabel']()).toContain('Skipping one date');
     });
 
+    it('shows only accepted meetings when the Accepted filter is on, and clears it on reset', () => {
+      const component = createComponent();
+      flush();
+
+      component.acceptedOnly.set(true);
+      flush();
+      expect(ids(component)).toEqual(['later']);
+      expect(component['acceptedCount']()).toBe(1);
+
+      component.resetFilters();
+      flush();
+      expect(component.acceptedOnly()).toBe(false);
+      expect(ids(component)).toEqual(['declined-one', 'pending', 'later']);
+    });
+
+    it('clears the Accepted filter when switching time tabs', () => {
+      const component = createComponent();
+      flush();
+
+      component.acceptedOnly.set(true);
+      flush();
+      expect(ids(component)).toEqual(['later']);
+
+      component.onTimeFilterChange('past');
+      flush();
+      expect(component.acceptedOnly()).toBe(false);
+    });
+
     it('toggles the pending-RSVP filter from the stat', () => {
       const component = createComponent();
       flush();
