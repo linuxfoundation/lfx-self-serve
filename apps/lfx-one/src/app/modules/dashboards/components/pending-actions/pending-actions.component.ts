@@ -107,7 +107,11 @@ export class PendingActionsComponent {
   private readonly voteCache = signal<Record<string, Vote>>({});
   private readonly loadingMeetingUids = signal<ReadonlySet<string>>(new Set());
   private readonly loadingVoteUids = signal<ReadonlySet<string>>(new Set());
-  private readonly failedMeetingUids = signal<ReadonlySet<string>>(new Set());
+  // A replacement feed permits one new attempt; cache/loading updates must not create a retry loop.
+  private readonly failedMeetingUids = linkedSignal<ReadonlySet<string>>(() => {
+    this.pendingActions();
+    return new Set<string>();
+  });
   protected readonly processingApplicationKey = signal<string | null>(null);
   protected readonly applicationConfirmKey = 'pending-actions-application-review';
   // Suppress saved addresses only until a replacement authoritative feed arrives (same-UID reinstatement).
@@ -708,6 +712,7 @@ export class PendingActionsComponent {
       });
     });
   }
+
   private canReviewApplication(item: PendingActionItem): boolean {
     const key = this.getRowKey(item);
     return (
@@ -729,8 +734,11 @@ export class PendingActionsComponent {
     const review: Observable<unknown> = approve
       ? this.committeeService.approveApplication(item.committeeUid!, item.applicationUid!)
       : this.committeeService.rejectApplication(item.committeeUid!, item.applicationUid!, notes);
-    review.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    // The review clients complete after one response. A confirmed write outlives navigation,
+    // but its completion must not update an unmounted widget or emit through a destroyed output.
+    review.subscribe({
       next: () => {
+        if (this.destroyRef.destroyed) return;
         this.resolvedApplicationKeys.update((keys) => new Set(keys).add(key));
         this.processingApplicationKey.set(null);
         this.messageService.add({
@@ -745,6 +753,7 @@ export class PendingActionsComponent {
         this.actionClick.emit(item);
       },
       error: (error: HttpErrorResponse) => {
+        if (this.destroyRef.destroyed) return;
         this.processingApplicationKey.set(null);
         this.messageService.add({
           key: 'pending-actions-toast',

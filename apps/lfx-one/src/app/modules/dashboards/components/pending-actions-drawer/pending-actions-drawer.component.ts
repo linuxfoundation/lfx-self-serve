@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, model, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, linkedSignal, model, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router, UrlTree } from '@angular/router';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
@@ -72,7 +72,11 @@ export class PendingActionsDrawerComponent {
   protected readonly completingRowKeys = signal<ReadonlySet<string>>(new Set());
   private readonly meetingCache = signal<Record<string, Meeting>>({});
   private readonly loadingMeetingUids = signal<ReadonlySet<string>>(new Set());
-  private readonly failedMeetingUids = signal<ReadonlySet<string>>(new Set());
+  // A replacement feed permits one new attempt; cache/loading updates must not create a retry loop.
+  private readonly failedMeetingUids = linkedSignal<ReadonlySet<string>>(() => {
+    this.pendingActions();
+    return new Set<string>();
+  });
 
   protected readonly visibleRows: Signal<DrawerActionRow[]> = this.initVisibleRows();
   protected readonly uncompletedCount: Signal<number> = computed(() => this.visibleRows().length);
@@ -207,7 +211,7 @@ export class PendingActionsDrawerComponent {
 
   // Mirror HiddenActionsService.getActionIdentifier so the row key, hidden-cookie identifier, and `@for` track key all stay in sync.
   private getRowKey(item: PendingActionItem): string {
-    if (item.type === 'JoinApplication') {
+    if (item.type === 'JoinApplication' && item.committeeUid && item.applicationUid) {
       return `JoinApplication-${item.committeeUid}-${item.applicationUid}`;
     }
     if (item.meetingUid) {

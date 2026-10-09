@@ -2,9 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
-import type { Committee, CommitteeInvite, CommitteeJoinApplication, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import type {
+  AccessCheckRequest,
+  ApiRequestOptions,
+  Committee,
+  CommitteeInvite,
+  CommitteeJoinApplication,
+  QueryServiceResponse,
+} from '@lfx-one/shared/interfaces';
 import type { MockInstance } from 'vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS } from '../../../../../packages/shared/src/constants/pending-action.constants';
 
 // Mirrors project.service.spec.ts / meeting.service.spec.ts: the `@lfx-one/shared/*` alias isn't
 // wired into this app's vitest config, so runtime (non-type-only) imports need stubs.
@@ -29,7 +37,9 @@ const {
   // Defaults true — most updateCommittee tests aren't exercising the project-writer gate on
   // chat_webhook_url (LFXV2-3080) and shouldn't need to know it exists to pass.
   checkSingleAccessStrict: vi.fn(() => Promise.resolve(true)),
-  checkAccessStrict: vi.fn(() => Promise.resolve(new Map<string, boolean>())),
+  checkAccessStrict: vi.fn<(req: Request, resources: AccessCheckRequest[], options?: ApiRequestOptions) => Promise<Map<string, boolean>>>(() =>
+    Promise.resolve(new Map<string, boolean>())
+  ),
   fetchWithETag: vi.fn(),
   updateWithETag: vi.fn(),
   resolveAuditUserDisplayName: vi.fn(),
@@ -48,9 +58,14 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const regex = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
     '../../../../../packages/shared/src/constants/regex.constants'
   );
+  const pending = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/pending-action.constants')>(
+    '../../../../../packages/shared/src/constants/pending-action.constants'
+  );
   return {
     SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
     CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
+    ACCESS_CHECK_BATCH_SIZE: 100,
+    PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS: pending.PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
     UUID_REGEX: regex.UUID_REGEX,
   };
 });
@@ -1363,10 +1378,6 @@ describe('CommitteeService.getManagedPendingApplications', () => {
       { ...sibling, committee_name: 'Group direct' },
       { ...inherited, committee_name: 'Group inherited' },
     ]);
-    expect(checkAccessStrict).toHaveBeenCalledExactlyOnceWith(
-      req,
-      ['direct', 'inherited', 'applicant', 'auditor'].map((id) => ({ resource: 'committee', id, access: 'writer' }))
-    );
     const liveCalls = proxyRequest.mock.calls.filter((call) => call[2] !== '/query/resources');
     expect(liveCalls.map((call) => call.slice(0, 4))).toEqual([
       [req, 'LFX_V2_SERVICE', '/committees/direct/applications/request', 'GET'],
@@ -1483,7 +1494,7 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     await expect(service.getManagedPendingApplications(req)).rejects.toBe(error);
   });
 
-  it('bounds deferred live reads to ten and returns every row beyond a hundred without a deadline', async () => {
+  it('bounds deferred live reads to ten and returns every row beyond a hundred within the shared budget', async () => {
     const apps = Array.from({ length: 125 }, (_, i) => application('manager', `request-${i}`));
     prime(apps);
     const resolvers: (() => void)[] = [];
@@ -1520,5 +1531,45 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     expect((await result).map((app) => app.uid)).toEqual(apps.map((app) => app.uid));
     expect(maximumActive).toBe(10);
     expect(active).toBe(0);
+  });
+
+  it('checks writer access in sequential batches of at most a hundred while retaining inherited managers', async () => {
+    const apps = Array.from({ length: 205 }, (_, i) => application(`group-${i}`));
+    prime(apps);
+    const batches: { ids: string[]; resolve: () => void }[] = [];
+    checkAccessStrict.mockImplementation(
+      (_req: Request, resources: AccessCheckRequest[]) =>
+        new Promise<Map<string, boolean>>((resolve) => {
+          batches.push({ ids: resources.map(({ id }) => id), resolve: () => resolve(new Map(resources.map(({ id }) => [`${id}#writer`, true]))) });
+        })
+    );
+
+    const result = service.getManagedPendingApplications(req);
+    for (let index = 0; index < 3; index++) {
+      await vi.waitFor(() => expect(batches).toHaveLength(index + 1));
+      expect(batches[index].ids).toEqual(apps.slice(index * 100, (index + 1) * 100).map((app) => app.committee_uid));
+      expect(proxyRequest.mock.calls.filter((call) => call[2] !== '/query/resources')).toEqual([]);
+      batches[index].resolve();
+    }
+    expect((await result).map((app) => app.committee_uid)).toEqual(apps.map((app) => app.committee_uid));
+  });
+
+  it('fails the whole source without starting another live-read wave after its deadline', async () => {
+    const apps = Array.from({ length: 11 }, (_, i) => application('manager', `request-${i}`));
+    prime(apps);
+    let now = 1000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    proxyRequest.mockImplementation((_req: Request, _service: string, path: string, _method: string, params?: Record<string, unknown>) => {
+      if (params?.['type'] === 'committee_application') return Promise.resolve(applicationPage(apps));
+      now = 1000 + PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS + 1;
+      return Promise.resolve(apps.find((app) => path.endsWith(`/applications/${app.uid}`)));
+    });
+    try {
+      await expect(service.getManagedPendingApplications(req)).rejects.toThrow('Batch deadline exceeded');
+      expect(proxyRequest.mock.calls.filter((call) => call[2] !== '/query/resources')).toHaveLength(10);
+      expect(proxyRequest.mock.calls.some((call) => call[4]?.['type'] === 'committee')).toBe(false);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });

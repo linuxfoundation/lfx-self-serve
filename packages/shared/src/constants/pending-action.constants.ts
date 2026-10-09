@@ -15,7 +15,7 @@ export const PENDING_ACTION_SEVERITY: Record<PendingActionType, TagSeverity> = {
   Agenda: 'secondary', // gray — informational read-before-meeting cue
   Submitted: 'success', // green — completed survey/feedback acknowledgement, distinguishes from pending Survey
   Invitation: 'success', // green — matches the design's green invite pill
-  JoinApplication: 'warn',
+  JoinApplication: 'warn', // amber — awaiting a manager decision
   BriefAction: 'secondary', // gray — AI-suggested follow-up, not a deadline-bound obligation
   FormationItem: 'accent', // violet — the Me-lens design's "Formation item" badge, distinct from the amber action-needed rows (#2732)
 };
@@ -114,3 +114,6 @@ export const PENDING_ACTION_SKELETON_HOLD_MS = 500;
  * so it still collapses — just ~this many ms later.
  */
 export const PENDING_ACTION_EMPTY_GRACE_MS = 250;
+
+/** Total upstream budget for Me-dashboard join-request discovery, including paging, authorization, and enrichment. */
+export const PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS = 5000;

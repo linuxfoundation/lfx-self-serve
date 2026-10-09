@@ -14,7 +14,7 @@ import { UserService } from '@services/user.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationService } from '@shared/services/invitation.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { PendingActionsDrawerComponent } from './pending-actions-drawer.component';
@@ -423,6 +423,40 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     }
   );
 
+  it('preserves distinct incomplete request views when the feed reorders and replaces rows', async () => {
+    const first = applicationRow({ applicationUid: undefined, text: 'first@example.com', applicationApplicantEmail: 'first@example.com' });
+    const second = applicationRow({ applicationUid: undefined, text: 'second@example.com', applicationApplicantEmail: 'second@example.com' });
+    await render([first, second]);
+    const getRows = () => Array.from(document.body.querySelectorAll<HTMLElement>('[data-testid="pending-actions-drawer-item-JoinApplication"]'));
+    const initial = getRows();
+    fixture.componentRef.setInput('pendingActions', [{ ...second }, { ...first }]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const reordered = getRows();
+    expect(reordered[0]).toBe(initial[1]);
+    expect(reordered[1]).toBe(initial[0]);
+    expect(reordered.map((row) => row.querySelector('[data-testid="pending-actions-drawer-application-email"]')?.textContent?.trim())).toEqual([
+      'second@example.com',
+      'first@example.com',
+    ]);
+
+    const third = applicationRow({ applicationUid: undefined, text: 'third@example.com', applicationApplicantEmail: 'third@example.com' });
+    fixture.componentRef.setInput('pendingActions', [{ ...second }, third]);
+    fixture.detectChanges();
+    expect(getRows()[0]).toBe(initial[1]);
+    expect(initial[0].isConnected).toBe(false);
+    expect(getRows().map((row) => row.querySelector('[data-testid="pending-actions-drawer-application-email"]')?.textContent?.trim())).toEqual([
+      'second@example.com',
+      'third@example.com',
+    ]);
+    expect(
+      getRows()
+        .flatMap((row) => Array.from(row.querySelectorAll<HTMLButtonElement>('button')))
+        .every((button) => button.disabled)
+    ).toBe(true);
+  });
+
   it('cannot cookie-complete or dismiss an application through generic row handlers', async () => {
     await render([applicationRow()]);
     const component = fixture.componentInstance;
@@ -542,5 +576,24 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     expect(fixture.componentInstance.visible()).toBe(true);
     expect(byTestId('pending-actions-drawer-rsvp-loading')).toBeNull();
     expect(byTestId('meeting-rsvp-button-yes')).not.toBeNull();
+  });
+
+  it('recovers a failed RSVP load on replacement feeds while the same drawer remains open', async () => {
+    const action = row('RSVP', 'Synthetic meeting', { meetingUid: 'meeting-1', buttonLink: '/meetings/meeting-1' });
+    meetingService.getMeeting.mockReturnValueOnce(throwError(() => new Error('Transient outage')));
+    await render([action]);
+    expect(byTestId('meeting-rsvp-button-yes')).toBeNull();
+    expect(byTestId('pending-actions-drawer-item-RSVP')?.querySelector('a')?.getAttribute('href')).toBe('/meetings/meeting-1');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(meetingService.getMeeting).toHaveBeenCalledOnce();
+
+    fixture.componentRef.setInput('pendingActions', [{ ...action }]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.visible()).toBe(true);
+    expect(byTestId('meeting-rsvp-button-yes')).not.toBeNull();
+    expect(meetingService.getMeeting).toHaveBeenCalledTimes(2);
   });
 });

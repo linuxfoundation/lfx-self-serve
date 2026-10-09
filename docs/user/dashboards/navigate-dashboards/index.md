@@ -4,7 +4,7 @@ description: How to switch lenses and use the LFX Self Serve dashboard effective
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, lens, navigation, persona]
-last_updated: 2026-10-08
+last_updated: 2026-10-09
 intercom_collection: Dashboards
 ---
 
@@ -25,7 +25,9 @@ The **Me** lens (the default view at `/`) shows your personal activity across al
 
 If you manage groups, **My Pending Actions** also shows **Join request** rows across all the groups you can manage, with the applicant's email, optional name, and group. Select **View all** to review requests in the Pending Actions drawer. **Approve** asks you to confirm the applicant and group; **Reject** lets you add optional notes. A request disappears only after your decision is saved, and the drawer stays open while the list refreshes. After the final action is resolved, the drawer shows **All caught up!** and stays open until you close it. Users without managed groups or pending requests see no join-request rows.
 
-The drawer updates as the list refreshes, including loading RSVP controls for new meeting actions. Once the list is empty, the **My Pending Actions** section fades away after you close the drawer.
+Navigating to another page does not cancel a confirmed approval or rejection that is already being saved. If join-request discovery is too slow or unavailable, those rows are omitted for that refresh while the other pending-action sources remain available; a later refresh can load them again.
+
+The drawer updates as the list refreshes, including loading RSVP controls for new meeting actions. If RSVP options fail to load, you can still open the meeting page; the card and drawer try loading those options again when a replacement feed arrives. Once the list is empty, the **My Pending Actions** section fades away after you close the drawer.
 
 ## Foundation lens
 

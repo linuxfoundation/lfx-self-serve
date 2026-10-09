@@ -6,16 +6,17 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import type { PendingActionItem } from '@lfx-one/shared/interfaces';
+import type { Meeting, PendingActionItem } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
+import { UserService } from '@services/user.service';
 import { VoteService } from '@services/vote.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationAcceptFlowService } from '@shared/services/invitation-accept-flow.service';
 import { InvitationService } from '@shared/services/invitation.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PendingActionsComponent } from './pending-actions.component';
@@ -44,6 +45,7 @@ const formationRow = (overrides: Partial<PendingActionItem> = {}): PendingAction
 // Spyable hide/dismiss mock: the Survey click contract (GH-2987) asserts no hide cookie is written.
 const hiddenActions = { isActionHidden: () => false, hideAction: vi.fn(), dismissAction: vi.fn() };
 const reviewClient = { approveApplication: vi.fn(), rejectApplication: vi.fn() };
+const meetingClient = { getMeeting: vi.fn(), getMeetingRsvpForCurrentUser: vi.fn(() => of(null)) };
 
 async function render(actions: PendingActionItem[], flagEnabled = true): Promise<ComponentFixture<PendingActionsComponent>> {
   await TestBed.configureTestingModule({
@@ -55,7 +57,8 @@ async function render(actions: PendingActionItem[], flagEnabled = true): Promise
       { provide: HiddenActionsService, useValue: hiddenActions },
       { provide: InvitationService, useValue: { resolvedInviteUids: signal(new Set<string>()) } },
       { provide: InvitationAcceptFlowService, useValue: {} },
-      { provide: MeetingService, useValue: {} },
+      { provide: MeetingService, useValue: meetingClient },
+      { provide: UserService, useValue: { user: signal(null), authenticated: signal(false) } },
       { provide: VoteService, useValue: {} },
       { provide: CommitteeService, useValue: reviewClient },
       // The real service: the template's `p-toast` subscribes to its message/clear observables.
@@ -358,6 +361,29 @@ describe('PendingActionsComponent — saved-only application review', () => {
     expect(byTestId(fixture, 'dashboard-pending-actions-application-group')?.textContent).toBe('Group B');
   });
 
+  it.each(decisions.flatMap((decision) => [true, false].map((success) => ({ decision, success }))))(
+    'lets a confirmed $decision finish after navigation without late widget feedback (success=$success)',
+    async ({ decision, success }) => {
+      fixture = await render(applications());
+      await begin('dashboard', decision);
+      await finishOverlay(decision);
+      const messages = vi.spyOn(TestBed.inject(MessageService), 'add');
+      const refresh = vi.spyOn(fixture.componentInstance.actionClick, 'emit');
+      fixture.destroy();
+
+      expect(save.observed).toBe(true);
+      if (success) {
+        save.next({});
+        save.complete();
+      } else {
+        save.error(new HttpErrorResponse({ status: 503 }));
+      }
+      expect(messages).not.toHaveBeenCalled();
+      expect(refresh).not.toHaveBeenCalled();
+      expect(save.observed).toBe(false);
+    }
+  );
+
   it('renders untrusted applicant/group confirmation text inertly and refuses duplicate/stale approval callbacks', async () => {
     const markup = '<img src="https://host.example/p.gif"><a href="https://host.example">name</a>';
     const row = application(markup, { applicationApplicantName: markup });
@@ -400,5 +426,42 @@ describe('PendingActionsComponent — saved-only application review', () => {
     save.complete();
     await stabilize();
     expect(byTestId(fixture, 'dashboard-pending-actions-application-group')?.textContent).toBe('Group C');
+  });
+});
+
+describe('PendingActionsComponent — RSVP refresh recovery', () => {
+  let fixture: ComponentFixture<PendingActionsComponent>;
+  afterEach(() => {
+    fixture?.destroy();
+    meetingClient.getMeeting.mockReset();
+    document.body.innerHTML = '';
+  });
+
+  it('recovers a failed meeting on feed replacement without retrying on ordinary rerenders', async () => {
+    const action: PendingActionItem = {
+      type: 'RSVP',
+      badge: 'Synthetic group',
+      text: 'Synthetic meeting',
+      icon: 'fa-light fa-calendar',
+      severity: 'warn',
+      buttonText: 'Set RSVP',
+      meetingUid: 'meeting-1',
+      buttonLink: '/meetings/meeting-1',
+    };
+    const meeting = { id: 'meeting-1', topic: 'Synthetic meeting', is_invite_responses_enabled: true } as unknown as Meeting;
+    meetingClient.getMeeting.mockReturnValueOnce(throwError(() => new Error('Transient outage'))).mockReturnValue(of(meeting));
+    fixture = await render([action]);
+    expect(byTestId(fixture, 'meeting-rsvp-button-yes')).toBeNull();
+    expect(byTestId(fixture, 'dashboard-pending-actions-item-RSVP')?.querySelector('a')?.getAttribute('href')).toBe('/meetings/meeting-1');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(meetingClient.getMeeting).toHaveBeenCalledOnce();
+
+    fixture.componentRef.setInput('pendingActions', [{ ...action }]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(byTestId(fixture, 'meeting-rsvp-button-yes')).not.toBeNull();
+    expect(meetingClient.getMeeting).toHaveBeenCalledTimes(2);
   });
 });

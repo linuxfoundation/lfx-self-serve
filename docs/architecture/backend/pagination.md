@@ -112,6 +112,14 @@ The helper:
 
 See [Server Helpers](./server-helpers.md) for more details on the helper implementation.
 
+### Bound multi-request dashboard sources
+
+For a paginated source that also performs authorization and enrichment, a timeout per HTTP request is not a timeout for the entire source. Pass the same `ApiRequestOptions.deadlineAt` (absolute epoch milliseconds) to every standard JSON proxy request and strict access check. `ApiClientService` uses the smaller of the per-request timeout and the remaining deadline, aborts an in-flight transfer when that budget expires, and rejects before dispatch when no budget remains. Pagination retry delays can briefly extend source completion beyond the transport deadline, but cannot dispatch another expired request.
+
+`CommitteeService.getManagedPendingApplications` shares a five-second deadline across discovery pages, writer checks, live reads, and committee-name enrichment. Writer checks run sequentially in batches of at most 100; live reads run ten at a time and do not start another wave after the deadline. Metadata reads are likewise limited to one 100-UID batch at a time and pass the same deadline through `getCommitteesByIds`. Timeout or other strict failures reject the entire application source; the Me pending-actions aggregator isolates that failure from its other sources rather than returning an incomplete application list.
+
+This is containment, not writer-scoped discovery. The query service filters returned applications by viewer access, but its status-only candidate search can still walk unrelated pending records upstream. Its direct-grant filter and access-check's `/my-grants` do not enumerate effective inherited writers, so using them as a no-manager short-circuit would exclude legitimate managers. Fully scoped discovery requires an upstream contract that preserves effective writer access.
+
 ## Frontend: Service Layer
 
 Frontend services pass pagination parameters through to the backend:
