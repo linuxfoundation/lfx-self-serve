@@ -25,6 +25,7 @@ import {
   RejectCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   GroupsIOMailingList,
+  ManagedPendingApplication,
   MyCommittee,
   MyPendingApplication,
   PendingCommitteeInviteForOrg,
@@ -43,6 +44,7 @@ import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundE
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources, FetchAllQueryResourcesOptions } from '../helpers/query-service.helper';
+import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { logger } from '../services/logger.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating, getEffectiveEmail } from '../utils/auth-helper';
@@ -1635,6 +1637,62 @@ export class CommitteeService {
       committee_name: committeeMap.get(app.committee_uid)?.name ?? app.committee_uid,
       is_foundation: committeeMap.get(app.committee_uid)?.is_foundation,
       project_slug: committeeMap.get(app.committee_uid)?.project_slug,
+    }));
+  }
+
+  /** Returns pending applications the caller can review, reconciling index lag with live status. */
+  public async getManagedPendingApplications(req: Request): Promise<ManagedPendingApplication[]> {
+    const indexed = await fetchAllQueryResources<CommitteeJoinApplication>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee_application',
+          tags_all: ['status:pending'],
+          page_size: 100,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+    const candidates = [...new Map(indexed.map((application) => [`${application.committee_uid}/${application.uid}`, application])).values()];
+    if (candidates.length === 0) return [];
+
+    // Effective writer checks include inherited grants, unlike direct-grant or membership filters.
+    const committeeUids = [...new Set(candidates.map((application) => application.committee_uid))];
+    const access = await this.accessCheckService.checkAccessStrict(
+      req,
+      committeeUids.map((id) => ({ resource: 'committee', id, access: 'writer' }))
+    );
+    const authorized = candidates.filter((application) => access.get(`${application.committee_uid}#writer`) === true);
+    if (authorized.length === 0) return [];
+
+    const liveResults = await settleInBatches(authorized, 10, (application) =>
+      this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${application.committee_uid}/applications/${application.uid}`,
+        'GET'
+      )
+    );
+    const pending: CommitteeJoinApplication[] = [];
+    for (const [index, result] of liveResults.entries()) {
+      if (result.status === 'rejected') {
+        // Revoked access or removed applications are no longer actionable; other outages fail the source.
+        const error = result.reason;
+        if (error?.statusCode === 403 || error?.status === 403 || error?.statusCode === 404 || error?.status === 404) continue;
+        throw error;
+      }
+      const candidate = authorized[index];
+      const live = result.value;
+      if (live?.uid === candidate.uid && live.committee_uid === candidate.committee_uid && live.status === 'pending') {
+        pending.push(live);
+      }
+    }
+    if (pending.length === 0) return [];
+
+    const committees = await this.getCommitteesByIds(req, [...new Set(pending.map((application) => application.committee_uid))]);
+    return pending.map((application) => ({
+      ...application,
+      committee_name: committees.get(application.committee_uid)?.name ?? application.committee_uid,
     }));
   }
 

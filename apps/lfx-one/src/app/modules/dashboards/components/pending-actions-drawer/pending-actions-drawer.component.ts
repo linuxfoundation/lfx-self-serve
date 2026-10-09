@@ -55,6 +55,7 @@ export class PendingActionsDrawerComponent {
 
   public readonly pendingActions = input.required<PendingActionItem[]>();
   public readonly visible = model<boolean>(false);
+  public readonly processingApplicationKey = input<string | null>(null);
 
   public readonly actionCompleted = output<PendingActionItem>();
   // Emits voteUid when a Vote row's CTA is clicked so the parent dashboard can open the cast drawer inline.
@@ -63,6 +64,8 @@ export class PendingActionsDrawerComponent {
   // deferred-undo decline (whose Undo affordance lives in the parent's shared p-toast) are all owned in one place.
   public readonly acceptInvitationRequested = output<PendingActionItem>();
   public readonly declineInvitationRequested = output<PendingActionItem>();
+  public readonly approveApplicationRequested = output<PendingActionItem>();
+  public readonly rejectApplicationRequested = output<PendingActionItem>();
 
   private readonly hiddenActionsVersion = signal(0);
   // Rows currently in the fade-out + collapse transition; keeps them rendered through the animation.
@@ -99,6 +102,7 @@ export class PendingActionsDrawerComponent {
   }
 
   protected handleAgendaOrOtherClick(item: DrawerActionRow): void {
+    if (item.type === 'JoinApplication') return;
     if (item.isVoteInline && item.voteUid) {
       this.visible.set(false);
       this.castVoteRequested.emit(item.voteUid);
@@ -112,6 +116,7 @@ export class PendingActionsDrawerComponent {
   }
 
   protected handleDismiss(item: DrawerActionRow): void {
+    if (item.type === 'JoinApplication') return;
     this.hiddenActionsService.dismissAction(item);
     // skipHide: the permanent dismiss cookie already hides the row; a 24h hideAction cookie would be redundant.
     this.startCompletion(item, true);
@@ -179,6 +184,7 @@ export class PendingActionsDrawerComponent {
 
   // Persist the hide synchronously unless `skipHide` is set (Dismiss already wrote a permanent cookie), then drive the fade animation through a single timer.
   private startCompletion(item: PendingActionItem, skipHide = false): void {
+    if (item.type === 'JoinApplication') return;
     const rowKey = this.getRowKey(item);
     if (!skipHide) {
       this.hiddenActionsService.hideAction(item);
@@ -203,6 +209,9 @@ export class PendingActionsDrawerComponent {
 
   // Mirror HiddenActionsService.getActionIdentifier so the row key, hidden-cookie identifier, and `@for` track key all stay in sync.
   private getRowKey(item: PendingActionItem): string {
+    if (item.type === 'JoinApplication') {
+      return `JoinApplication-${item.committeeUid}-${item.applicationUid}`;
+    }
     if (item.meetingUid) {
       return `${item.type}-${item.meetingUid}-${item.occurrenceId ?? ''}`;
     }

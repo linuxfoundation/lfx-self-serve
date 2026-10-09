@@ -27,6 +27,11 @@ export interface CommitteeJoinApplication {
   updated_at?: string;
 }
 
+/** A pending application the caller can review, enriched with its group display name. */
+export interface ManagedPendingApplication extends CommitteeJoinApplication {
+  committee_name: string;
+}
+
 /** Request payload to approve a committee join application */
 export interface ApproveCommitteeJoinApplicationRequest {
   reviewer_notes?: string;

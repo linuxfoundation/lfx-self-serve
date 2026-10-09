@@ -39,6 +39,13 @@
   </ng-template>
 </p-toast>
 
+<!-- Applicant and group text is untrusted; never use the default HTML-rendered confirmation message. -->
+<p-confirmdialog [key]="applicationConfirmKey" data-testid="dashboard-pending-actions-application-confirm">
+  <ng-template #message let-confirmation>
+    <span class="p-confirmdialog-message" data-testid="dashboard-pending-actions-application-confirm-message">{{ confirmation.message }}</span>
+  </ng-template>
+</p-confirmdialog>
+
 @if (!isSectionHidden() && (totalVisible() > 0 || isSectionGracePending() || isSectionFading())) {
   <section class="pending-actions-section" [class.is-fading]="isSectionFading()" data-testid="dashboard-pending-actions-section">
     <!-- Section header with inline divider -->
@@ -73,6 +80,7 @@
             <div
               class="pending-action-row"
               [class.is-completing]="completingRowKeys().has(item.rowKey)"
+              [class.is-application]="item.type === 'JoinApplication'"
               [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
               @if (swappingRowKeys().has(item.rowKey)) {
                 <!-- Skeleton placeholder occupying the row slot while the next action takes over -->
@@ -107,6 +115,16 @@
                         <span class="sm:truncate group-hover:underline">{{ item.text }}</span>
                         <i class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 shrink-0 no-underline" aria-hidden="true"></i>
                       </a>
+                    } @else if (item.type === 'JoinApplication') {
+                      <div class="flex flex-col gap-0.5 sm:flex-1 sm:min-w-0 sm:px-4">
+                        @if (item.applicationApplicantName) {
+                          <span class="text-sm font-medium text-gray-900 break-words">{{ item.applicationApplicantName }}</span>
+                        }
+                        <span class="text-sm text-gray-900 break-all" data-testid="dashboard-pending-actions-application-email">{{
+                          item.applicationApplicantEmail
+                        }}</span>
+                        <span class="text-xs text-gray-500 break-words" data-testid="dashboard-pending-actions-application-group">{{ item.badge }}</span>
+                      </div>
                     } @else if (item.isInvitation) {
                       <div class="flex flex-col gap-0.5 sm:flex-1 sm:min-w-0 sm:px-4">
                         <!-- Title comes from the backend-built item.text (same copy as the drawer); the
@@ -204,6 +222,27 @@
                           }
                           <!-- else: inline ballot is rendering below (action column intentionally empty); drawer-bound votes collapse expandedVoteKey synchronously in dispatchLoadedVote so no branch is needed here -->
                         </div>
+                      } @else if (item.type === 'JoinApplication') {
+                        <div class="flex items-center gap-2">
+                          <lfx-button
+                            size="small"
+                            severity="primary"
+                            [label]="processingApplicationKey() === item.rowKey ? 'Saving' : 'Approve'"
+                            [loading]="processingApplicationKey() === item.rowKey"
+                            [disabled]="processingApplicationKey() !== null || !item.committeeUid || !item.applicationUid || !item.applicationApplicantEmail"
+                            [ariaLabel]="'Approve request from ' + item.applicationApplicantEmail + ' to join ' + item.badge"
+                            (onClick)="onApproveApplication(item)"
+                            data-testid="dashboard-pending-actions-application-approve" />
+                          <lfx-button
+                            size="small"
+                            severity="secondary"
+                            [text]="true"
+                            label="Reject"
+                            [disabled]="processingApplicationKey() !== null || !item.committeeUid || !item.applicationUid || !item.applicationApplicantEmail"
+                            [ariaLabel]="'Reject request from ' + item.applicationApplicantEmail + ' to join ' + item.badge"
+                            (onClick)="onRejectApplication(item)"
+                            data-testid="dashboard-pending-actions-application-reject" />
+                        </div>
                       } @else if (item.isInvitation) {
                         <div class="flex items-center gap-2">
                           <lfx-button
@@ -269,7 +308,7 @@
                     <!-- Dismiss — skeleton while RSVP meeting data is loading, real button once ready. Invitations are resolved
                        server-side (Accept/Decline), never cookie-dismissed, so they render no Dismiss control. Formation items
                        are resolved on the checklist and stay until done or skipped (#1956, #2732), so they render none either. -->
-                    @if (!item.isInvitation && !item.isFormationItem) {
+                    @if (!item.isInvitation && !item.isFormationItem && item.type !== 'JoinApplication') {
                       @if (item.isRsvpInline && (!item.meeting || item.isLoading)) {
                         <p-skeleton width="4.5rem" height="1.25rem" styleClass="shrink-0 self-start sm:self-auto sm:ml-4" />
                       } @else {
@@ -297,10 +336,13 @@
       <lfx-pending-actions-drawer
         [pendingActions]="visibleActionsUnlimited()"
         [(visible)]="drawerVisible"
+        [processingApplicationKey]="processingApplicationKey()"
         (actionCompleted)="onDrawerActionCompleted()"
         (castVoteRequested)="castVoteRequested.emit($event)"
         (acceptInvitationRequested)="onAcceptInvitation($event)"
-        (declineInvitationRequested)="onDeclineInvitation($event)" />
+        (declineInvitationRequested)="onDeclineInvitation($event)"
+        (approveApplicationRequested)="onApproveApplication($event)"
+        (rejectApplicationRequested)="onRejectApplication($event)" />
     }
   </section>
 }

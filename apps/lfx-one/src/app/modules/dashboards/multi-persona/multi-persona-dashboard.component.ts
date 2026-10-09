@@ -292,12 +292,10 @@ export class MultiPersonaDashboardComponent {
     return toSignal(
       this.refresh$.pipe(
         switchMap(() => {
-          this.pendingActionsLoading.set(true);
           // Single unscoped request — the backend aggregates across all of the user's FGA grants.
           return this.projectService.getPendingActions().pipe(catchError(() => of([] as PendingActionItem[])));
         }),
         // Windowing (dismiss filtering + display cap) is owned by PendingActionsComponent.
-        // Pass the raw aggregated list and let the child render the top 5 unhidden items.
         tap(() => this.pendingActionsLoading.set(false))
       ),
       { initialValue: [] }

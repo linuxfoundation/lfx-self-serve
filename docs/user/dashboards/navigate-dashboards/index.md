@@ -4,7 +4,7 @@ description: How to switch lenses and use the LFX Self Serve dashboard effective
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, lens, navigation, persona]
-last_updated: 2026-09-25
+last_updated: 2026-10-08
 intercom_collection: Dashboards
 ---
 
@@ -22,6 +22,8 @@ Your lens selection is saved for 30 days. The next time you sign in, the app res
 ## Me lens
 
 The **Me** lens (the default view at `/`) shows your personal activity across all your projects. You see your recent contributions, upcoming meetings, earned badges, and training enrollments.
+
+If you manage groups, **My Pending Actions** also shows **Join request** rows across all the groups you can manage, with the applicant's email, optional name, and group. Select **View all** to review requests in the Pending Actions drawer. **Approve** asks you to confirm the applicant and group; **Reject** lets you add optional notes. A request disappears only after your decision is saved, and the drawer stays open while the list refreshes. Users without managed groups or pending requests see no join-request rows.
 
 ## Foundation lens
 

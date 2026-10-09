@@ -68,12 +68,14 @@ export class HiddenActionsService {
    * item its assignee still owns, forever. Keyed on `type` rather than the decorated view's
    * `isFormationItem`: this runs on the wire row before decoration, and that flag also encodes
    * linkability (slug + key present), which is the wrong criterion for a cookie exemption.
+   * Join applications likewise remain visible until an authoritative review succeeds, including
+   * incomplete wire rows; stale cookies must never suppress a request awaiting a decision.
    *
    * @param item The pending action item to check
    * @returns true if the action is hidden, false otherwise
    */
   public isActionHidden(item: PendingActionItem): boolean {
-    if (item.type === 'FormationItem') return false;
+    if (item.type === 'FormationItem' || item.type === 'JoinApplication') return false;
     const identifier = this.getActionIdentifier(item);
     const hash = this.hashString(identifier);
     return this.cookieService.check(`${this.cookiePrefix}${hash}`) || this.cookieService.check(`${this.dismissCookiePrefix}${hash}`);
@@ -81,6 +83,9 @@ export class HiddenActionsService {
 
   // Prefer intrinsic IDs (meetingUid, voteUid, briefActionUid, formationItemUid) so same-text siblings never collide; fall back to type+badge+text+buttonLink for legacy action shapes without one.
   private getActionIdentifier(item: PendingActionItem): string {
+    if (item.type === 'JoinApplication') {
+      return `JoinApplication-${item.committeeUid}-${item.applicationUid}`;
+    }
     if (item.meetingUid) {
       return `${item.type}-${item.meetingUid}-${item.occurrenceId ?? ''}`;
     }
