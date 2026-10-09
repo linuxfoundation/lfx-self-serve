@@ -512,6 +512,7 @@ export class CampaignServiceClient {
         demandGenEnabled: canCreateDemandGen(),
         googleChannelsEnabled: canCreateGoogleChannels(),
         googleCreativeEnabled: cutoverOwnsCreate(),
+        redditCreativeEnabled: cutoverOwnsCreate(),
       };
     }
 
@@ -564,6 +565,7 @@ export class CampaignServiceClient {
       demandGenEnabled: canCreateDemandGen(),
       googleChannelsEnabled: canCreateGoogleChannels(),
       googleCreativeEnabled: cutoverOwnsCreate(),
+      redditCreativeEnabled: cutoverOwnsCreate(),
     };
   }
 

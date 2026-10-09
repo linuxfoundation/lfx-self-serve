@@ -763,6 +763,7 @@ export class CampaignsComponent {
    * create with that flag off is one where Demand Gen creative works.
    */
   protected readonly briefCampaignsGoogleCreativeEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsRedditCreativeEnabled = signal<boolean | null>(null);
 
   /**
    * Generation counter for the campaign-list read — the same mechanism as `emailSearchGeneration`,
@@ -2303,6 +2304,7 @@ export class CampaignsComponent {
         this.briefCampaignsDemandGenEnabled.set(null);
         this.briefCampaignsGoogleChannelsEnabled.set(null);
         this.briefCampaignsGoogleCreativeEnabled.set(null);
+        this.briefCampaignsRedditCreativeEnabled.set(null);
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
         // set would report the previous foundation's outage against a foundation never queried.
         this.briefCampaignsUnavailable.set(false);
@@ -4169,6 +4171,7 @@ export class CampaignsComponent {
           this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
           this.briefCampaignsGoogleChannelsEnabled.set(result.googleChannelsEnabled);
           this.briefCampaignsGoogleCreativeEnabled.set(result.googleCreativeEnabled);
+          this.briefCampaignsRedditCreativeEnabled.set(result.redditCreativeEnabled);
         },
         // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
         // draft's selection on evidence a failed read does not have; leaving the previous value
@@ -4181,6 +4184,7 @@ export class CampaignsComponent {
           this.briefCampaignsDemandGenEnabled.set(null);
           this.briefCampaignsGoogleChannelsEnabled.set(null);
           this.briefCampaignsGoogleCreativeEnabled.set(null);
+          this.briefCampaignsRedditCreativeEnabled.set(null);
         },
       });
   }
@@ -4239,6 +4243,7 @@ export class CampaignsComponent {
     this.briefCampaignsDemandGenEnabled.set(null);
     this.briefCampaignsGoogleChannelsEnabled.set(null);
     this.briefCampaignsGoogleCreativeEnabled.set(null);
+    this.briefCampaignsRedditCreativeEnabled.set(null);
 
     if (projectSlug === '' || briefId === null || briefId === '') {
       // No brief id means nothing was persisted this session and no restore supplied one, so
@@ -4265,6 +4270,7 @@ export class CampaignsComponent {
             this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
             this.briefCampaignsGoogleChannelsEnabled.set(result.googleChannelsEnabled);
             this.briefCampaignsGoogleCreativeEnabled.set(result.googleCreativeEnabled);
+            this.briefCampaignsRedditCreativeEnabled.set(result.redditCreativeEnabled);
           }
         },
         error: () => {
@@ -4283,6 +4289,7 @@ export class CampaignsComponent {
             this.briefCampaignsDemandGenEnabled.set(null);
             this.briefCampaignsGoogleChannelsEnabled.set(null);
             this.briefCampaignsGoogleCreativeEnabled.set(null);
+            this.briefCampaignsRedditCreativeEnabled.set(null);
           }
         },
       });

@@ -67,7 +67,9 @@ import {
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
+  DEFAULT_REDDIT_CALL_TO_ACTION,
   DEFAULT_REDDIT_OBJECTIVE,
+  REDDIT_CALL_TO_ACTIONS,
   REDDIT_MAX_BUDGET_USD,
   REDDIT_OBJECTIVE_LABELS,
   REDDIT_SELECTABLE_OBJECTIVES,
@@ -105,6 +107,7 @@ import type {
   MetaPlacement,
   MicrosoftKeyword,
   RedditAdVariant,
+  RedditCallToAction,
   RedditObjective,
 } from '@lfx-one/shared/interfaces';
 import { codePointLength } from '@lfx-one/shared/utils';
@@ -260,6 +263,21 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleCreativeAvailable = computed<boolean>(() => this.googleCreativeEnabled() === true);
 
   /**
+   * Whether a Reddit post AUTHORED here will actually be created. `null` (unknown) withholds the
+   * controls that depend on it; nothing typed is ever cleared.
+   *
+   * Narrower than its Google sibling by one field, and the difference is the whole point. Post URL
+   * — promote an EXISTING post — is read by both creators, so it stays offered whatever this
+   * answers; gating it would withhold a control that works today. Image URL and Call to Action
+   * compose a NEW post, which only campaign-service does, so with the cutover dark they would be
+   * typed, accepted, and discarded into a campaign with no ad.
+   */
+  public readonly redditCreativeEnabled = input<boolean | null>(null);
+
+  /** @see redditCreativeEnabled — an explicit yes, never a `null`. */
+  protected readonly redditCreativeAvailable = computed<boolean>(() => this.redditCreativeEnabled() === true);
+
+  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *
@@ -345,6 +363,15 @@ export class ImplementationTabComponent implements OnInit {
    * objective still renders a name, and `video_views` is hidden from the picker only.
    */
   protected readonly redditObjectiveOptions = REDDIT_SELECTABLE_OBJECTIVES;
+  /**
+   * The full CTA list, with no selectable/withheld split: upstream accepts every one of these,
+   * resolving the value case-insensitively and rejecting anything outside the set. The empty
+   * choice the template adds is not a member — it means "send nothing", which upstream answers
+   * with `DEFAULT_REDDIT_CALL_TO_ACTION`.
+   */
+  protected readonly redditCallToActionOptions = REDDIT_CALL_TO_ACTIONS;
+  /** Named in the empty option's label, so "send nothing" shows what upstream will apply. */
+  protected readonly redditDefaultCallToAction = DEFAULT_REDDIT_CALL_TO_ACTION;
   /**
    * True when the current objective is one the picker does not offer — today only `video_views`.
    *
@@ -546,6 +573,26 @@ export class ImplementationTabComponent implements OnInit {
    * else would change what an operator who touches nothing receives.
    */
   protected readonly redditObjective = signal<RedditObjective>(DEFAULT_REDDIT_OBJECTIVE);
+  /**
+   * Link to an EXISTING Reddit post to promote. Ungated, because both creators read it: the
+   * legacy path extracts the post id and builds the ad from it (`reddit-ads.service.ts`), exactly
+   * as campaign-service does.
+   *
+   * Not validated here. Both creators parse the link themselves, both reject a bad one before any
+   * campaign or ad group exists, and both accept shapes the other does not — a third parser on
+   * this side could only refuse a link that would have worked upstream, which is the one failure
+   * this control cannot afford.
+   */
+  protected readonly redditPostUrl = signal('');
+  /**
+   * The image a NEW post is composed from, and the button that post carries. Offered only while
+   * `redditCreativeAvailable()`; see that input for why these two and not `redditPostUrl`.
+   *
+   * Both are ignored upstream once a post URL is set — an existing post already has its image and
+   * its button — so the template says so rather than leaving an operator to wonder which won.
+   */
+  protected readonly redditImageUrl = signal('');
+  protected readonly redditCallToAction = signal<RedditCallToAction | ''>('');
   /**
    * Microsoft's four editable inputs (LFXV2-3312). Signal-backed like the Meta and Reddit blocks,
    * so `campaignForm.valueChanges` never sees them and each handler must `emitDraft()` by hand.
@@ -1596,6 +1643,21 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  protected onRedditPostUrlInput(event: Event): void {
+    this.redditPostUrl.set((event.target as HTMLInputElement).value.trim());
+    this.emitDraft();
+  }
+
+  protected onRedditImageUrlInput(event: Event): void {
+    this.redditImageUrl.set((event.target as HTMLInputElement).value.trim());
+    this.emitDraft();
+  }
+
+  protected onRedditCallToActionChange(event: Event): void {
+    this.redditCallToAction.set((event.target as HTMLSelectElement).value as RedditCallToAction | '');
+    this.emitDraft();
+  }
+
   protected onMetaLifetimeBudgetChange(event: Event): void {
     this.metaLifetimeBudget.set((event.target as HTMLInputElement).checked);
     this.emitDraft();
@@ -1902,6 +1964,17 @@ export class ImplementationTabComponent implements OnInit {
               // back to the same objective when it is absent, so an explicit value is the only
               // thing that makes the payload say what the screen shows.
               objective: this.redditObjective(),
+              // Omitted when blank rather than sent empty: upstream treats an empty `postUrl` as
+              // "author a post instead", and an empty `callToAction` as "use the default" — both
+              // the same decision an absent key makes, so a blank string would only add a value
+              // for a reader to misread.
+              ...(this.redditPostUrl() ? { postUrl: this.redditPostUrl() } : {}),
+              // Gated on the capability, not merely on the text, for the reason the Google
+              // creative is: with the cutover dark these two reach a creator that reads neither,
+              // and a create that silently discards them still reports success. The draft keeps
+              // what was typed; only the request drops it.
+              ...(this.redditCreativeAvailable() && this.redditImageUrl() ? { imageUrl: this.redditImageUrl() } : {}),
+              ...(this.redditCreativeAvailable() && this.redditCallToAction() ? { callToAction: this.redditCallToAction() as RedditCallToAction } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
             },
           }
@@ -2229,6 +2302,17 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.redditObjective !== undefined) {
       this.redditObjective.set(draft.redditObjective);
     }
+    // Restored on the same terms, and on `!== undefined` rather than truthiness for the reason the
+    // Microsoft arrays below are: an empty string is a deliberate clear, not an older draft.
+    if (draft.redditPostUrl !== undefined) {
+      this.redditPostUrl.set(draft.redditPostUrl);
+    }
+    if (draft.redditImageUrl !== undefined) {
+      this.redditImageUrl.set(draft.redditImageUrl);
+    }
+    if (draft.redditCallToAction !== undefined) {
+      this.redditCallToAction.set(draft.redditCallToAction);
+    }
 
     // Microsoft (LFXV2-3312), on the same present-only rule. The arrays restore on `!== undefined`
     // rather than on truthiness, which is the whole point: an EMPTY list is a deliberate clear the
@@ -2344,14 +2428,14 @@ export class ImplementationTabComponent implements OnInit {
       // The remaining signal-backed values, on the same terms as the Meta block above: snapshotted
       // rather than referenced, and named explicitly rather than spread.
       //
-      // Scoped to the per-platform BUDGETS, which is the whole of what this snapshot needs to
-      // carry, and the boundary is drawn by asking one question per field: can a user change it?
+      // Scoped by asking one question per field: can a user change it?
       //
-      // These can. The template binds `(input)` and `(change)` on the LinkedIn budget pair,
-      // and `(input)` on the Reddit budget, so an operator types a number the brief did not
-      // recommend and that number exists nowhere but this component. Losing it is the money-shaped
-      // half of LFXV2-3315: the campaign silently reverts to the recommended spend, a decision the
-      // operator did not make and the form does not show them re-making.
+      // These can — each one is bound to a handler in this component's template, so an operator
+      // sets a value the brief did not recommend and that value exists nowhere but this
+      // component. Losing a budget is the money-shaped half of LFXV2-3315: the campaign silently
+      // reverts to the recommended spend, a decision the operator did not make and the form does
+      // not show them re-making. The Reddit objective and post fields fail the same way, buying a
+      // different campaign or none at all.
       //
       // The brief-derived ARRAYS are deliberately NOT here — `metaVariants`, `linkedInVariants`,
       // `redditVariants` and the four Reddit targeting lists. They have no editor: the full set of
@@ -2378,6 +2462,11 @@ export class ImplementationTabComponent implements OnInit {
       linkedInLifetimeBudget: this.linkedInLifetimeBudget(),
       redditBudgetUsd: this.redditBudgetUsd(),
       redditObjective: this.redditObjective(),
+      // Snapshotted whatever `redditCreativeAvailable()` says — see the draft interface for why a
+      // capability must not decide what the draft remembers.
+      redditPostUrl: this.redditPostUrl(),
+      redditImageUrl: this.redditImageUrl(),
+      redditCallToAction: this.redditCallToAction(),
     });
   }
 

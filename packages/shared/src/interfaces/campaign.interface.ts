@@ -656,15 +656,29 @@ export interface CampaignImplementationDraft {
    */
   redditBudgetUsd?: number;
   /**
-   * The Reddit objective, carried for the reason the block above reserves: it is a real editor —
-   * the section's second editable control — so a tab switch would otherwise revert a chosen
-   * objective to the default and change the campaign that gets bought without saying so.
+   * The Reddit objective, carried for the reason the block above reserves: it is a real editor,
+   * so a tab switch would otherwise revert a chosen objective to the default and change the
+   * campaign that gets bought without saying so.
    *
    * Typed `RedditObjective`, not `SelectableRedditObjective`: a draft written while an objective
    * was offered must still round-trip after it is withdrawn, which is the case
    * `redditObjectiveIsUnavailable` exists to render.
    */
   redditObjective?: RedditObjective;
+  /**
+   * The Reddit promoted-post fields, carried for the same reason as the objective.
+   *
+   * All three round-trip regardless of `redditCreativeEnabled`. A capability answer decides what
+   * the REQUEST carries, never what the draft remembers: withholding the controls already stops
+   * the values reaching a creator that would discard them, and dropping them from the draft as
+   * well would destroy an operator's text on a capability read they never saw.
+   *
+   * `redditCallToAction` is typed to allow `''` — the empty choice is a real selection meaning
+   * "let upstream apply `DEFAULT_REDDIT_CALL_TO_ACTION`", distinct from the key being absent.
+   */
+  redditPostUrl?: string;
+  redditImageUrl?: string;
+  redditCallToAction?: RedditCallToAction | '';
   /**
    * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
    * and the optional CPC bid.
@@ -3034,6 +3048,28 @@ export interface CampaignListResult {
    * `null` for unanswered).
    */
   googleCreativeEnabled: boolean;
+
+  /**
+   * Whether a Reddit promoted post AUTHORED from `imageUrl`/`callToAction` will actually be
+   * created.
+   *
+   * Narrower than its Google sibling, because the two arms diverge per field rather than
+   * wholesale. `postUrl` — promote an EXISTING post — is read by both creators: the legacy path
+   * extracts the post id and creates the ad from it (`reddit-ads.service.ts`), exactly as
+   * campaign-service does. So `postUrl` is NOT gated by this and must stay offered whatever the
+   * cutover state; gating it would withhold a control that works today.
+   *
+   * What only campaign-service has is the author-a-post path: with no `postUrl` and an
+   * `imageUrl`, it composes and submits a new promoted post carrying `callToAction`
+   * (`internal/platform/reddit/client.go`). The legacy creator reads neither key, so with the
+   * cutover dark an operator who supplies an image gets a campaign and ad group with NO ad, and
+   * the create still reports success — the same silent discard `googleCreativeEnabled` exists to
+   * prevent.
+   *
+   * This is therefore `cutoverOwnsCreate()` and nothing else. Read the same way as the three
+   * above and modelled the same way on the client (`boolean | null`, `null` for unanswered).
+   */
+  redditCreativeEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------

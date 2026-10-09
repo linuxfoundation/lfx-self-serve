@@ -1294,6 +1294,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: true,
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
           })
         );
 
@@ -1326,6 +1327,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: true,
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
           })
         );
 
@@ -1369,6 +1371,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: false,
             googleChannelsEnabled: true,
             googleCreativeEnabled: true,
+            redditCreativeEnabled: true,
           })
         );
 
@@ -1426,6 +1429,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: true,
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('planning', 'paid-marketing');
@@ -1468,6 +1472,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: true,
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
           })
         );
         load();
@@ -1481,6 +1486,7 @@ describe('CampaignsComponent brief persistence', () => {
           demandGenEnabled: true,
           googleChannelsEnabled: false,
           googleCreativeEnabled: false,
+          redditCreativeEnabled: false,
         });
         capability.complete();
         await fixture.whenStable();
@@ -1510,6 +1516,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: true,
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -1540,6 +1547,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: true,
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
           })
         );
 
@@ -1565,6 +1573,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: true,
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
           })
         );
 
@@ -1603,6 +1612,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: true,
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -1642,6 +1652,7 @@ describe('CampaignsComponent brief persistence', () => {
           demandGenEnabled: true,
           googleChannelsEnabled: false,
           googleCreativeEnabled: false,
+          redditCreativeEnabled: false,
         });
         pending.complete();
         await fixture.whenStable();
@@ -1681,6 +1692,7 @@ describe('CampaignsComponent brief persistence', () => {
           demandGenEnabled: true,
           googleChannelsEnabled: false,
           googleCreativeEnabled: false,
+          redditCreativeEnabled: false,
         });
         second.complete();
         await fixture.whenStable();
@@ -1704,6 +1716,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: true,
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
           })
         );
 
@@ -1729,6 +1742,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: false,
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
+            redditCreativeEnabled: true,
           })
         );
         await withSavedBrief();
@@ -1744,6 +1758,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: false,
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
+            redditCreativeEnabled: true,
           })
         );
         selectFoundation('cncf');
@@ -1772,6 +1787,7 @@ describe('CampaignsComponent brief persistence', () => {
           demandGenEnabled: false,
           googleChannelsEnabled: false,
           googleCreativeEnabled: true,
+          redditCreativeEnabled: true,
         });
         await fixture.whenStable();
 
@@ -1802,6 +1818,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: false,
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
+            redditCreativeEnabled: true,
           })
         );
         await withSavedBrief();
@@ -1832,6 +1849,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: false,
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
+            redditCreativeEnabled: true,
           })
         );
         await withSavedBrief();
@@ -1865,6 +1883,7 @@ describe('CampaignsComponent brief persistence', () => {
           demandGenEnabled: false,
           googleChannelsEnabled: false,
           googleCreativeEnabled: true,
+          redditCreativeEnabled: true,
         });
         await fixture.whenStable();
         expect(optimizeText()).toContain('Brief B campaign');
@@ -1929,6 +1948,7 @@ describe('CampaignsComponent brief persistence', () => {
             demandGenEnabled: false,
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
+            redditCreativeEnabled: true,
           })
         );
         load();

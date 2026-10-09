@@ -3035,6 +3035,9 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     redditVariants: () => unknown[];
     redditBudgetUsd: () => number;
     redditObjective: () => string;
+    redditPostUrl: () => string;
+    redditImageUrl: () => string;
+    redditCallToAction: () => string;
     metaVariants: () => unknown[];
     submit(): void;
   }
@@ -3044,7 +3047,13 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * Mount as the parent does, carrying ONLY the previous mount's emitted draft — which is all
    * that survives the component's teardown in production.
    */
-  async function mount(draft: CampaignImplementationDraft | null): Promise<{
+  async function mount(
+    draft: CampaignImplementationDraft | null,
+    // Left UNSET by default, which is the `null` the parent holds before its capability read
+    // answers — so every test that does not name it runs with the authored-post controls
+    // withheld, the state a deployment with the cutover dark is in.
+    redditCreative?: boolean
+  ): Promise<{
     fixture: ComponentFixture<ImplementationTabComponent>;
     latest: () => CampaignImplementationDraft | null;
   }> {
@@ -3052,6 +3061,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     if (draft) f.componentRef.setInput('draft', draft);
+    if (redditCreative !== undefined) f.componentRef.setInput('redditCreativeEnabled', redditCreative);
     f.componentRef.setInput('briefData', brief());
     f.detectChanges();
     await f.whenStable();
@@ -3085,6 +3095,32 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
 
   function pickRedditObjective(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
     const select = f.nativeElement.querySelector('[data-testid="implementation-reddit-objective"]') as HTMLSelectElement;
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
+    f.detectChanges();
+  }
+
+  function typeRedditPostUrl(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const input = f.nativeElement.querySelector('[data-testid="implementation-reddit-post-url"]') as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
+
+  /** Returns null when the capability withholds the control, which several tests assert on. */
+  function redditImageUrlInput(f: ComponentFixture<ImplementationTabComponent>): HTMLInputElement | null {
+    return f.nativeElement.querySelector('[data-testid="implementation-reddit-image-url"]') as HTMLInputElement | null;
+  }
+
+  function typeRedditImageUrl(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const input = redditImageUrlInput(f) as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
+
+  function pickRedditCallToAction(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const select = f.nativeElement.querySelector('[data-testid="implementation-reddit-call-to-action"]') as HTMLSelectElement;
     select.value = value;
     select.dispatchEvent(new Event('change'));
     f.detectChanges();
@@ -3203,6 +3239,132 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(sentConfig('redditConfig')['objective']).toBe('awareness');
   });
 
+  /**
+   * The Post URL is UNGATED, and this is the test that holds that open. Both creators read the
+   * field and build the ad from it — the legacy one extracts the post id in
+   * `reddit-ads.service.ts` exactly as campaign-service does — so gating it behind the creative
+   * capability would withhold a control that works in every deployment. Mounted with the
+   * capability left unanswered, which is the state that withholds the other two.
+   */
+  it('offers the reddit post url while the creative capability is unanswered', async () => {
+    const first = await mount(null);
+    typeRedditPostUrl(first.fixture, 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.redditPostUrl).toBe('https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
+
+    const second = await mount(draft);
+    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(second.fixture);
+    second.fixture.detectChanges();
+    at(second.fixture).submit();
+
+    expect(at(second.fixture).redditPostUrl()).toBe('https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
+    expect(sentConfig('redditConfig')['postUrl']).toBe('https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
+  });
+
+  /**
+   * An untouched Post URL sends no key at all. An empty string is not neutral upstream: the Go
+   * client branches on `PostURL != ""` to choose between promoting a post and authoring one, and
+   * a blank value is the same decision as an absent key, so sending one only gives a reader
+   * something to misread.
+   */
+  it('omits the reddit post url when it was never typed', async () => {
+    const f = (await mount(null)).fixture;
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(f);
+    f.detectChanges();
+    at(f).submit();
+
+    expect('postUrl' in sentConfig('redditConfig')).toBe(false);
+  });
+
+  /**
+   * The authored-post pair on an explicit yes: typed through the real bindings, carried across
+   * the remount, and dispatched. `Shop Now` is neither the component default nor upstream's, so a
+   * restore that dropped the field could not coincide with a re-stamp.
+   */
+  it('carries the reddit creative pair through a tab round-trip and into the request', async () => {
+    const first = await mount(null, true);
+    typeRedditImageUrl(first.fixture, 'https://cdn.example.org/promo.png');
+    pickRedditCallToAction(first.fixture, 'Shop Now');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.redditImageUrl).toBe('https://cdn.example.org/promo.png');
+    expect(draft?.redditCallToAction).toBe('Shop Now');
+
+    const second = await mount(draft, true);
+    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(second.fixture);
+    second.fixture.detectChanges();
+    at(second.fixture).submit();
+
+    const config = sentConfig('redditConfig');
+    expect(config['imageUrl']).toBe('https://cdn.example.org/promo.png');
+    expect(config['callToAction']).toBe('Shop Now');
+  });
+
+  /**
+   * The empty CTA choice is a real selection, not a missing one: it sends no key, which is what
+   * makes upstream apply `defaultRedditCTA`. Asserting the key's ABSENCE rather than an empty
+   * string, because upstream rejects any value outside its set and `''` is not in it.
+   */
+  it('sends no call to action for the default choice', async () => {
+    const f = (await mount(null, true)).fixture;
+    typeRedditImageUrl(f, 'https://cdn.example.org/promo.png');
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(f);
+    f.detectChanges();
+    at(f).submit();
+
+    const config = sentConfig('redditConfig');
+    expect(config['imageUrl']).toBe('https://cdn.example.org/promo.png');
+    expect('callToAction' in config).toBe(false);
+  });
+
+  /**
+   * The withholding itself, at both `null` and `false`. With the cutover dark the legacy creator
+   * reads neither key, so a rendered Image URL would be typed, accepted, and discarded into a
+   * campaign with no ad — the same silent discard the Google creative capability exists to
+   * prevent.
+   */
+  it.each([[undefined], [false]])('renders no authored-post controls while redditCreativeEnabled is %s', async (capability) => {
+    const f = (await mount(null, capability as boolean | undefined)).fixture;
+
+    expect(redditImageUrlInput(f)).toBeNull();
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-call-to-action"]')).toBeNull();
+  });
+
+  /**
+   * A withheld capability must not reach the REQUEST either, even when a draft written while it
+   * was granted still carries the values. The draft deliberately keeps them — destroying an
+   * operator's text on a capability answer they never saw would be worse — so the request is the
+   * only place the gate can be enforced, and this is the test that proves it is.
+   */
+  it('drops a restored creative pair from the request while the capability is withheld', async () => {
+    const granted = await mount(null, true);
+    typeRedditImageUrl(granted.fixture, 'https://cdn.example.org/promo.png');
+    pickRedditCallToAction(granted.fixture, 'Shop Now');
+    const draft = granted.latest();
+    granted.fixture.destroy();
+
+    const withheld = await mount(draft, false);
+    at(withheld.fixture).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(withheld.fixture);
+    withheld.fixture.detectChanges();
+    at(withheld.fixture).submit();
+
+    // Remembered...
+    expect(at(withheld.fixture).redditImageUrl()).toBe('https://cdn.example.org/promo.png');
+    expect(at(withheld.fixture).redditCallToAction()).toBe('Shop Now');
+    // ...and not sent.
+    const config = sentConfig('redditConfig');
+    expect('imageUrl' in config).toBe(false);
+    expect('callToAction' in config).toBe(false);
+  });
+
   // === LinkedIn: the budget pair ===
 
   /**
@@ -3268,6 +3430,27 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(first.latest()?.redditObjective).toBe('traffic');
   });
 
+  it('emits the draft when the reddit post url handler runs', async () => {
+    const first = await mount(null);
+    typeRedditPostUrl(first.fixture, 'https://redd.it/abc123');
+
+    expect(first.latest()?.redditPostUrl).toBe('https://redd.it/abc123');
+  });
+
+  it('emits the draft when the reddit image url handler runs', async () => {
+    const first = await mount(null, true);
+    typeRedditImageUrl(first.fixture, 'https://cdn.example.org/promo.png');
+
+    expect(first.latest()?.redditImageUrl).toBe('https://cdn.example.org/promo.png');
+  });
+
+  it('emits the draft when the reddit call to action handler runs', async () => {
+    const first = await mount(null, true);
+    pickRedditCallToAction(first.fixture, 'Sign Up');
+
+    expect(first.latest()?.redditCallToAction).toBe('Sign Up');
+  });
+
   it('emits the draft when the linkedin budget handler runs', async () => {
     const first = await mount(null);
     typeLinkedInBudget(first.fixture, 1750);
@@ -3302,12 +3485,23 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    *
    * Reddit has no brief-seeded budget to beat, so its 500 is the component default by nature; it
    * is asserted to pin that an omitted field is not turned into some OTHER value — and the same
-   * for `redditObjective`, which every draft written before the picker shipped omits.
+   * for `redditObjective` and the three promoted-post fields, which every draft written before
+   * those controls shipped omits. The post fields start EMPTY by design: the brief recommends no
+   * post and no image, so there is nothing to seed and an omitted field must leave them blank
+   * rather than acquire a value from anywhere.
    */
   it('leaves the platform values seeded when an older draft omits them', async () => {
     const first = await mount(null);
     const legacy = { ...(first.latest() as CampaignImplementationDraft) } as Record<string, unknown>;
-    for (const key of ['redditBudgetUsd', 'redditObjective', 'linkedInBudgetUsd', 'linkedInLifetimeBudget']) {
+    for (const key of [
+      'redditBudgetUsd',
+      'redditObjective',
+      'redditPostUrl',
+      'redditImageUrl',
+      'redditCallToAction',
+      'linkedInBudgetUsd',
+      'linkedInLifetimeBudget',
+    ]) {
       delete legacy[key];
     }
     first.fixture.destroy();
@@ -3322,6 +3516,9 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
 
     expect(c.redditBudgetUsd()).toBe(500);
     expect(c.redditObjective()).toBe('conversions');
+    expect(c.redditPostUrl()).toBe('');
+    expect(c.redditImageUrl()).toBe('');
+    expect(c.redditCallToAction()).toBe('');
     expect(c.linkedInBudgetUsd()).toBe(7300);
     expect(c.linkedInLifetimeBudget()).toBe(true);
   });

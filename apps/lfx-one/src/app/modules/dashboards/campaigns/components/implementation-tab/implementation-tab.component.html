@@ -1221,6 +1221,71 @@
             </div>
           </div>
 
+          <!-- The ad itself. Without one of these two routes the create still succeeds and still
+               reports success, and what it leaves behind is a campaign and an ad group with no ad
+               — nothing serves and nothing says so. -->
+          <div class="mb-4 flex flex-col gap-4">
+            <!-- Promote an EXISTING post. Offered whatever the cutover state, because both
+                 creators read this field and build the ad from it. Deliberately not validated
+                 here: both parse the link themselves and reject a bad one before anything is
+                 created, and they accept slightly different shapes, so a check on this side could
+                 only refuse a link that would have worked. -->
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="reddit-post-url">Post URL</label>
+              <input
+                id="reddit-post-url"
+                type="url"
+                [value]="redditPostUrl()"
+                (input)="onRedditPostUrlInput($event)"
+                placeholder="https://www.reddit.com/r/kubernetes/comments/abc123/..."
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-reddit-post-url" />
+              <p class="text-xs text-gray-500">
+                An existing Reddit post to promote — a reddit.com post link, a redd.it link, or the post id on its own. Leave it blank to have one composed from
+                the image below instead.
+              </p>
+            </div>
+
+            <!-- Compose a NEW post. Withheld unless the capability says yes: the other creator
+                 reads neither field, so in that deployment both would be typed, accepted and
+                 discarded into a campaign with no ad. Nothing typed is cleared when it is
+                 withheld — the draft keeps it and offers it back if the answer changes. -->
+            @if (redditCreativeAvailable()) {
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-medium text-gray-700" for="reddit-image-url">Image URL</label>
+                  <input
+                    id="reddit-image-url"
+                    type="url"
+                    [value]="redditImageUrl()"
+                    (input)="onRedditImageUrlInput($event)"
+                    placeholder="https://example.org/promo.png"
+                    class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    data-testid="implementation-reddit-image-url" />
+                  <p class="text-xs text-gray-500">Ignored when a post URL is set — that post already has its own image.</p>
+                </div>
+
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-medium text-gray-700" for="reddit-call-to-action">Call to Action</label>
+                  <select
+                    id="reddit-call-to-action"
+                    (change)="onRedditCallToActionChange($event)"
+                    class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    data-testid="implementation-reddit-call-to-action">
+                    <!-- The empty choice is a real selection, not a placeholder: it sends nothing
+                         and lets upstream apply its own default. Named rather than blank so the
+                         operator can see which button they are choosing by not choosing. -->
+                    <option value="" [selected]="redditCallToAction() === ''">Default ({{ redditDefaultCallToAction }})</option>
+                    @for (cta of redditCallToActionOptions; track cta) {
+                      <option [value]="cta" [selected]="cta === redditCallToAction()">{{ cta }}</option>
+                    }
+                  </select>
+                  <p class="text-xs text-gray-500">Button on the composed post. Ignored when a post URL is set.</p>
+                </div>
+              </div>
+            }
+          </div>
+
           <!-- Targeting, all AI-recommended from the brief. Rendered read-only so the operator can
                REVIEW what will dispatch; editing them is a separate change. -->
           @if (redditEffectiveGeoTargets().length > 0) {
