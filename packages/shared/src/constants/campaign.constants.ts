@@ -1410,6 +1410,68 @@ export const REDDIT_OBJECTIVE_LABELS: Readonly<Record<RedditObjective, string>> 
 } as const;
 
 /**
+ * The call-to-action button labels Reddit accepts on a promoted post.
+ *
+ * Mirrors `redditCTAs` in lfx-v2-campaign-service `internal/platform/reddit/client.go:552`, which
+ * captured them live from the Reddit Ads API v3 post-create validation on 2026-08-20. The values
+ * are Reddit's exact title-case labels — that casing is what must be sent — and the order here is
+ * upstream's textual order so the two lists diff against each other directly.
+ *
+ * Upstream matches case-insensitively and rejects anything outside the set, so this list is what
+ * bounds the choice offered here: a label absent from it cannot be sent at all, whether or not
+ * Reddit would accept it. Re-capture both sides together if upstream's set changes.
+ *
+ * Only consulted on the author-a-post path (an `imageUrl` with no `postUrl`); upstream ignores the
+ * CTA entirely when the campaign points at an existing post.
+ */
+export const REDDIT_CALL_TO_ACTIONS = [
+  'Apply Now',
+  'Contact Us',
+  'Download',
+  'Get a Quote',
+  'Get Showtimes',
+  'Install',
+  'Learn More',
+  'Order Now',
+  'Play Now',
+  'Pre-order Now',
+  'See Menu',
+  'Shop Now',
+  'Sign Up',
+  'View More',
+  'Watch Now',
+  'Book Now',
+  'Buy Tickets',
+  'Get Directions',
+  'Listen Now',
+  'Read More',
+  'Subscribe',
+  'Visit Store',
+  'Donate Now',
+  'Remind Me',
+] as const;
+
+/**
+ * The CTA upstream falls back to when none is sent — `defaultRedditCTA` in the same upstream file
+ * (`client.go:139`). Stated here so the control can pre-select what an empty field would produce
+ * rather than presenting a blank that silently resolves to something else.
+ *
+ * Must stay a member of `REDDIT_CALL_TO_ACTIONS`, exactly as upstream requires of its own default;
+ * `campaign.constants.spec.ts` pins that.
+ */
+export const DEFAULT_REDDIT_CALL_TO_ACTION = 'Learn More';
+
+/**
+ * The concrete video optimization goals Reddit accepts — `validVideoGoals` in the same upstream
+ * file (`client.go:539`).
+ *
+ * Required for, and only for, the `video_views` objective: Reddit has no bare `VIDEO_VIEWS` goal,
+ * so a video-view campaign must name one of these, and upstream validates it before any mutating
+ * call. Sending one with any other objective is pointless, not fatal.
+ */
+export const REDDIT_VIDEO_GOALS = ['VIDEO_VIEW_6S', 'VIDEO_VIEW_15S'] as const;
+
+/**
  * Shown when a creation job can no longer be found on either polling source.
  *
  * Lives in shared constants rather than in `campaign-proxy.service.ts` because both tiers

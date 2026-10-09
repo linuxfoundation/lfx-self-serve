@@ -10,6 +10,8 @@ import type {
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   MICROSOFT_KEYWORDS_WINDOWS,
+  REDDIT_CALL_TO_ACTIONS,
+  REDDIT_VIDEO_GOALS,
 } from '../constants/campaign.constants';
 
 // ---------------------------------------------------------------------------
@@ -78,6 +80,12 @@ export type CampaignProgramType = 'events' | 'education';
 export type CampaignDeliveryType = 'paid-marketing' | 'email';
 
 export type RedditObjective = 'awareness' | 'traffic' | 'conversions' | 'video_views';
+
+/** One of the promoted-post CTA labels Reddit accepts — see `REDDIT_CALL_TO_ACTIONS`. */
+export type RedditCallToAction = (typeof REDDIT_CALL_TO_ACTIONS)[number];
+
+/** One of the concrete video optimization goals Reddit accepts — see `REDDIT_VIDEO_GOALS`. */
+export type RedditVideoGoal = (typeof REDDIT_VIDEO_GOALS)[number];
 
 export interface RedditObjectiveParams {
   readonly redditObjective: string;
@@ -1013,6 +1021,23 @@ export interface RedditBriefCopy {
   recommendedGeos: string[];
 }
 
+/**
+ * What the Reddit section may ask for when creating a campaign.
+ *
+ * Reaches lfx-v2-campaign-service's Reddit wire struct (`internal/dispatch/reddit.go`) by JSON tag
+ * alone: the controller forwards `redditConfig` verbatim, so a field named to match a tag there
+ * needs no server-layer mapping here. Every field below is spelled to match one.
+ *
+ * ONLY the campaign-service arm honours `imageUrl`, `callToAction`, `conversionPixelId` and
+ * `videoGoal`. The LEGACY vendor-direct creator (`server/services/reddit-ads.service.ts`) reads
+ * `objective` and `postUrl` and nothing else, and it is what serves a create while the three-flag
+ * create cutover is dark — the deployment state `canCreateDemandGen` (`campaign-service.service.ts`)
+ * documents as the most likely one in effect. Sending any of the four on the legacy arm is
+ * therefore silently dropped: the operator supplies creative and gets a campaign with no ad. Any
+ * control that populates them has to gate on which arm will serve, the way `demandGenEnabled`
+ * already reports the mirror-image case (there legacy has the capability and campaign-service does
+ * not), or extend the legacy creator to match.
+ */
 export interface RedditCampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -1028,7 +1053,28 @@ export interface RedditCampaignCreateRequest {
   variants: RedditAdVariant[];
   project?: string;
   objective?: RedditObjective;
+  /** An existing Reddit post to promote. Set it and upstream ignores `imageUrl`/`callToAction`. */
   postUrl?: string;
+  /**
+   * Image for a post upstream authors itself. The author-a-post path: without either this or
+   * `postUrl` the campaign is created with no ad and cannot serve.
+   */
+  imageUrl?: string;
+  /** Button label on an authored post. Empty resolves upstream to `DEFAULT_REDDIT_CALL_TO_ACTION`. */
+  callToAction?: RedditCallToAction;
+  /**
+   * Overrides the ad account's own conversion pixel for this campaign.
+   *
+   * Upstream resolves the pixel from the connection first and refuses the create when neither the
+   * connection nor the campaign supplies one — for EVERY objective, not just conversions. Its own
+   * comment argues the connection is the right source, since the pixel identifies the advertiser
+   * and is one per ad account, so per-campaign entry turns an account-level constant into
+   * something an operator can get wrong once per campaign. This tier cannot read connections at
+   * all, so the field exists as an always-offered override, never as the primary way to set it.
+   */
+  conversionPixelId?: string;
+  /** Required by upstream for, and only for, the `video_views` objective. */
+  videoGoal?: RedditVideoGoal;
 }
 
 export interface RedditCampaignCreateResult {
