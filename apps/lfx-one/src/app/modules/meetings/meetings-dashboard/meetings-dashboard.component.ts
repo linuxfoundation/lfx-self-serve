@@ -677,7 +677,7 @@ export class MeetingsDashboardComponent {
     const lens$ = toObservable(this.activeLens);
     const timeFilter$ = toObservable(this.timeFilter);
 
-    return toSignal(
+    const fetched = toSignal(
       combineLatest([lens$, timeFilter$, this.refresh$]).pipe(
         switchMap(([lens, timeFilter]) => {
           // Skip when not on Me lens, not viewing upcoming, or during SSR.
@@ -696,6 +696,15 @@ export class MeetingsDashboardComponent {
       ),
       { initialValue: [] as Meeting[] }
     );
+
+    // Meetings the viewer just removed themselves from drop out of the list and its counts straight away: the
+    // refetch can still return them while the grant and registrant indexes catch up. An organizer cannot remove
+    // themselves, so an organized meeting is never dropped.
+    return computed(() => {
+      const removed = this.meetingService.removedRegistrationMeetingIds();
+      const meetings = fetched();
+      return removed.size === 0 ? meetings : meetings.filter((meeting) => meeting.organizer || !removed.has(meeting.id));
+    });
   }
 
   private initializeRawUserPastMeetings(): Signal<PastMeeting[]> {
