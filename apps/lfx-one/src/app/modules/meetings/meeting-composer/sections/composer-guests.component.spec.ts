@@ -356,6 +356,10 @@ describe('ComposerGuestsComponent', () => {
       expect(resolve({ meeting_type: 'Board', show_meeting_attendees: true })).toBeNull();
     });
 
+    it('reports a restricted meeting as decided off, so a group default cannot switch sharing on', () => {
+      expect(resolve({ restricted: true, show_meeting_attendees: true })).toBe(false);
+    });
+
     it('reports an opt-out for a meeting whose flag the API omitted', () => {
       expect(resolve({ show_meeting_attendees: undefined })).toBe(false);
     });
