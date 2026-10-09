@@ -1,16 +1,74 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
-  <!-- Time range: one either/or control, kept visually apart from the on/off filters beside it -->
-  <lfx-filter-pills
-    variant="segmented"
-    ariaLabel="Time range"
-    [options]="timeTabOptions"
-    [selectedFilter]="timeFilter()"
-    (filterChange)="onTimeTabChange($event)"
-    data-testid="time-filter-tabs" />
+<div class="flex flex-col gap-3">
+  <!-- Row 1: time range, search and dropdowns; search takes the leftover width -->
+  <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+    <!-- Time range: one either/or control, kept visually apart from the on/off filters in row 2 -->
+    <lfx-filter-pills
+      variant="segmented"
+      ariaLabel="Time range"
+      [options]="timeTabOptions"
+      [selectedFilter]="timeFilter()"
+      (filterChange)="onTimeTabChange($event)"
+      data-testid="time-filter-tabs" />
 
+    <!-- Search Input -->
+    <div class="flex-1">
+      <lfx-input-text
+        [form]="searchForm"
+        control="search"
+        placeholder="Search meetings..."
+        icon="fa-light fa-search"
+        styleClass="w-full"
+        size="small"
+        data-testid="meetings-search-input"></lfx-input-text>
+    </div>
+
+    <!-- Foundation Filter Dropdown -->
+    @if (showFoundationFilter()) {
+      <div class="w-full sm:w-48">
+        <lfx-select
+          [form]="searchForm"
+          control="foundationFilter"
+          size="small"
+          [options]="foundationOptions()"
+          styleClass="w-full"
+          (onChange)="onFoundationFilterChange($event.value)"
+          data-testid="foundation-filter-dropdown"></lfx-select>
+      </div>
+    }
+
+    <!-- Project Filter Dropdown -->
+    @if (showProjectFilter()) {
+      <div class="w-full sm:w-48">
+        <lfx-select
+          [form]="searchForm"
+          control="projectFilter"
+          size="small"
+          [options]="projectOptions()"
+          styleClass="w-full"
+          (onChange)="onProjectFilterChange($event.value)"
+          data-testid="project-filter-dropdown"></lfx-select>
+      </div>
+    }
+
+    <!-- Meeting Type Filter Dropdown -->
+    <div class="w-full sm:w-64">
+      <lfx-select
+        [form]="searchForm"
+        control="meetingType"
+        size="small"
+        [options]="meetingTypeOptions()"
+        placeholder="Select Type"
+        [showClear]="true"
+        styleClass="w-full"
+        (onChange)="onMeetingTypeChange($event.value)"
+        data-testid="meeting-type-filter"></lfx-select>
+    </div>
+  </div>
+
+  <!-- Row 2: on/off filters, kept below so they never squeeze the search box -->
   @if (showPendingRsvpFilter() || showAcceptedFilter() || showOrganizerFilter() || showDeclinedFilter()) {
     <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Filters">
       <!-- Pending RSVP (Me lens, upcoming only) -->
@@ -59,58 +117,4 @@
       <span class="text-xs" [class]="active ? 'text-blue-600' : 'text-gray-500'" [attr.data-testid]="'filter-pill-count-' + id">{{ count }}</span>
     </button>
   </ng-template>
-
-  <!-- Search Input -->
-  <div class="flex-1">
-    <lfx-input-text
-      [form]="searchForm"
-      control="search"
-      placeholder="Search meetings..."
-      icon="fa-light fa-search"
-      styleClass="w-full"
-      size="small"
-      data-testid="meetings-search-input"></lfx-input-text>
-  </div>
-
-  <!-- Foundation Filter Dropdown -->
-  @if (showFoundationFilter()) {
-    <div class="w-full sm:w-48">
-      <lfx-select
-        [form]="searchForm"
-        control="foundationFilter"
-        size="small"
-        [options]="foundationOptions()"
-        styleClass="w-full"
-        (onChange)="onFoundationFilterChange($event.value)"
-        data-testid="foundation-filter-dropdown"></lfx-select>
-    </div>
-  }
-
-  <!-- Project Filter Dropdown -->
-  @if (showProjectFilter()) {
-    <div class="w-full sm:w-48">
-      <lfx-select
-        [form]="searchForm"
-        control="projectFilter"
-        size="small"
-        [options]="projectOptions()"
-        styleClass="w-full"
-        (onChange)="onProjectFilterChange($event.value)"
-        data-testid="project-filter-dropdown"></lfx-select>
-    </div>
-  }
-
-  <!-- Meeting Type Filter Dropdown -->
-  <div class="w-full sm:w-64">
-    <lfx-select
-      [form]="searchForm"
-      control="meetingType"
-      size="small"
-      [options]="meetingTypeOptions()"
-      placeholder="Select Type"
-      [showClear]="true"
-      styleClass="w-full"
-      (onChange)="onMeetingTypeChange($event.value)"
-      data-testid="meeting-type-filter"></lfx-select>
-  </div>
 </div>
