@@ -267,7 +267,7 @@ describe('buildHealthMetricsOverviewMembersRoute', () => {
   // Pins each target's full route, including the nulls that clear a stale cut on arrival.
   it.each([
     ['mem.atrisk', 'risk', { riskBucket: null, riskPage: null }],
-    ['mem.renewals', 'renewals', { renewalsPage: null }],
+    ['mem.renewals', 'renewals', { renewalsWindow: null, renewalsPage: null }],
     ['mem.list', 'list', { memTier: null, memNps: null, memSearch: null, memPage: null }],
     ['mem.board', 'board', { boardCohort: null, boardPage: null }],
   ] as const)('links %s to its section with its arrival filters', (target, fragment, queryParams) => {
