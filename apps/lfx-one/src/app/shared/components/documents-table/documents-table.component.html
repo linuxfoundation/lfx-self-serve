@@ -113,6 +113,16 @@
               >{{ doc.name }}</span
             >
           }
+          @let kindTag = doc | documentKindTag;
+          @if (kindTag) {
+            <lfx-tag
+              [value]="kindTag.value"
+              [severity]="kindTag.severity"
+              [rounded]="true"
+              styleClass="shrink-0"
+              [attr.data-testid]="testIdPrefix() + '-kind-tag-' + doc.id">
+            </lfx-tag>
+          }
         </div>
       </td>
 

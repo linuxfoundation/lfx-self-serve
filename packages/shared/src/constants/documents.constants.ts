@@ -3,6 +3,7 @@
 
 import { TagSeverity } from '../interfaces/components.interface';
 import { MyDocumentSource } from '../interfaces/my-document.interface';
+import { DocumentKind } from '../interfaces/project.interface';
 
 /** Label constant for the documents feature — follows the existing COMMITTEE_LABEL, MAILING_LIST_LABEL pattern. */
 export const DOCUMENT_LABEL = { singular: 'Document', plural: 'Documents' };
@@ -25,4 +26,13 @@ export const MY_DOCUMENT_SOURCE_TAGS: Record<MyDocumentSource, { value: string; 
   summary: { value: 'Meeting', severity: 'secondary', icon: 'fa-light fa-list-check', iconClass: 'text-gray-400' },
   mailing_list: { value: 'Mailing List', severity: 'warn', icon: 'fa-light fa-envelope', iconClass: 'text-gray-400' },
   project: { value: 'Project', severity: 'accent', icon: 'fa-light fa-folder', iconClass: 'text-gray-400' },
+};
+
+/** Label bubble shown next to a document's name, keyed by what the document is. */
+export const DOCUMENT_KIND_TAGS: Record<DocumentKind, { value: string; severity: TagSeverity }> = {
+  file: { value: 'File', severity: 'info' },
+  link: { value: 'Link', severity: 'success' },
+  recording: { value: 'Recording', severity: 'secondary' },
+  transcript: { value: 'Transcript', severity: 'secondary' },
+  summary: { value: 'Summary', severity: 'secondary' },
 };

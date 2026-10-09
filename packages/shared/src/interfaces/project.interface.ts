@@ -158,6 +158,9 @@ export interface MeetingWriteAccess {
 
 export type ProjectDocumentType = 'file' | 'link' | 'folder';
 
+/** What a non-folder document is, as shown in the label bubble next to its name. */
+export type DocumentKind = 'file' | 'link' | 'recording' | 'transcript' | 'summary';
+
 /**
  * Subsystem a project-lens document was sourced from.
  * Used by the BFF to carry attribution and by the UI to drive source filtering.
@@ -204,6 +207,11 @@ export interface ProjectDocument {
   project_uid?: string;
   /** Subsystem this document was sourced from (project, committee, meeting, etc.) */
   document_source?: ProjectDocumentSource;
+  /**
+   * File vs link for rows whose `type` is always 'link' upstream (meeting attachments, mailing list
+   * artifacts). Left unset where `type` or `document_source` already says what the row is.
+   */
+  document_kind?: DocumentKind;
   /** Display name of the source entity (committee name, meeting title, etc.) */
   document_source_name?: string;
   /** Committee UID — set on committee_document rows so the UI can build a download URL */
