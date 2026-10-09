@@ -321,12 +321,14 @@
             </div>
           }
           <!--
-          Auto ECLA toggle (#1988). Hidden entirely when ACS denies the write — the disabled-with-
-          banner pattern needs #1989 to explain itself, and the design prefers withholding a
-          control the viewer cannot use over showing one that only fails. Hidden on the pre-sign
-          preview too: the flag lives on the corporate signature record, which does not exist yet
-          for a preview row. The control is intentionally coarse: one switch, no pending copy —
-          the optimistic flip and a toast for the written value or the refusal are the whole of the feedback.
+          Auto ECLA toggle (#1988). Shown to anyone who can read a signed agreement, because
+          whether the setting is on is a fact about the agreement rather than a control that only
+          means something to whoever can use it (#3406). A viewer who cannot change it gets the
+          switch disabled; only a viewer off the agreement's CLA manager roster also gets a
+          sentence naming the role that can. Hidden on the pre-sign preview:
+          the flag lives on the corporate signature record, which does not exist yet for a preview
+          row. The control is intentionally coarse: one switch, no pending copy — the optimistic
+          flip and a toast for the written value or the refusal are the whole of the feedback.
         -->
           @if (showAutoEclaToggle()) {
             <div class="flex items-start gap-3 rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="org-easycla-detail-auto-ecla">
@@ -335,8 +337,8 @@
                 data-testid="org-easycla-detail-auto-ecla-toggle"
                 [checked]="autoEclaValue()"
                 (checkedChange)="onAutoEclaToggle($event)"
-                [disabled]="autoEclaPending()"
-                ariaLabel="Auto ECLA"
+                [disabled]="autoEclaDisabled()"
+                [ariaLabel]="autoEclaAriaLabel()"
                 dataTest="org-easycla-detail-auto-ecla-toggle" />
               <div class="flex flex-col gap-1">
                 <label for="org-easycla-detail-auto-ecla-toggle" class="font-medium text-sm text-gray-900 cursor-pointer">Auto ECLA</label>
@@ -347,6 +349,9 @@
                     Off — employees matching the approval list still need to individually acknowledge this CLA before they're covered.
                   }
                 </p>
+                @if (autoEclaLocked()) {
+                  <p class="text-xs text-gray-500" data-testid="org-easycla-detail-auto-ecla-locked-hint">{{ autoEclaLockedHint }}</p>
+                }
                 <a
                   href="/docs"
                   target="_blank"
