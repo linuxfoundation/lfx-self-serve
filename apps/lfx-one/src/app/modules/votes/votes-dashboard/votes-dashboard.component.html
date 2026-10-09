@@ -28,6 +28,18 @@
       }
     </div>
 
+    @if (isMeLens()) {
+      <div class="mb-6" data-testid="votes-me-stats">
+        <lfx-stat-card-grid [cards]="myVoteStatCards()" [columns]="2" [loading]="myVotesLoading()" (actionClick)="onMyVoteStatClick($event)" />
+      </div>
+      @if (myVotesError()) {
+        <div class="flex flex-col items-center gap-3 py-8" role="alert" data-testid="votes-load-error">
+          <p>Unable to load your votes</p>
+          <lfx-button label="Retry" icon="fa-light fa-arrow-rotate-left" (onClick)="refreshVotes()" data-testid="votes-retry" />
+        </div>
+      }
+    }
+
     <!-- Dashboard-level empty state: only when there are genuinely no votes (no active filter). -->
     <!-- Keep the table mounted in every other case so its form subscription doesn't re-fire on remount. -->
     @if (!isMeLens() && !loading() && votes().length === 0 && !hasActiveFilters()) {
@@ -41,9 +53,10 @@
       </lfx-empty-state>
     } @else {
       <lfx-votes-table
+        [class.hidden]="isMeLens() && myVotesError()"
         [votes]="isMeLens() ? filteredMyVotes() : votes()"
         [hasPMOAccess]="!isMeLens() && canWrite()"
-        [loading]="isMeLens() ? myVotesLoading() : loading()"
+        [loading]="isMeLens() ? myVotesLoading() || myVotesError() : loading()"
         [totalRecords]="isMeLens() ? filteredMyVotes().length : totalRecords()"
         [rowsPerPage]="rowsPerPage()"
         [first]="currentFirst()"
@@ -54,6 +67,12 @@
         [showFoundationFilter]="showFoundationFilter()"
         [showProjectFilter]="showProjectFilter()"
         [showDraftTab]="!isMeLens()"
+        [(statusTab)]="myVotesStatusTab"
+        [quickFilter]="isMeLens() ? myVotesQuickFilter() : null"
+        [quickFilterNowMs]="myVotesNowMs()"
+        [scopeActive]="isMeLens() && (!!foundationFilter() || !!projectFilter())"
+        (statusTabSelected)="onStatusTabSelected()"
+        (filtersReset)="onFiltersReset()"
         (foundationFilterChange)="onFoundationFilterChange($event)"
         (projectFilterChange)="onProjectFilterChange($event)"
         (viewVote)="onViewVote($event)"

@@ -34,4 +34,8 @@ export interface StatCardItem {
   iconContainerClass: string;
   /** Optional period-over-period delta (e.g., "+8% vs. prior period"). */
   delta?: StatCardDelta;
+  /** Optional keyed action; absent cells remain display-only. */
+  action?: string;
+  selected?: boolean;
+  disabled?: boolean;
 }

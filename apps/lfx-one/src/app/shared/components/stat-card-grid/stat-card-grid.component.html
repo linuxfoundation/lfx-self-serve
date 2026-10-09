@@ -4,11 +4,11 @@
 <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
   <div class="grid w-full grid-cols-1" [class]="gridColsClass() + ' ' + gridDividerClass()">
     @for (card of cards(); track card.label) {
-      <div class="flex items-center gap-3 p-4" [attr.data-testid]="'stat-card-' + card.label">
+      <ng-template #cellContent>
         <div class="flex items-center justify-center w-11 h-11 rounded-full flex-shrink-0" [class]="card.iconContainerClass">
           <i [class]="card.icon + ' text-xl'" aria-hidden="true"></i>
         </div>
-        <div class="flex flex-col gap-0.5">
+        <div class="flex flex-col gap-0.5 min-w-0">
           @if (loading()) {
             <p class="text-xl font-medium text-gray-400">&mdash;</p>
           } @else {
@@ -27,7 +27,23 @@
             </p>
           }
         </div>
-      </div>
+      </ng-template>
+      @if (card.action; as action) {
+        <button
+          type="button"
+          class="flex items-center gap-3 p-4 min-w-0 text-left transition-colors enabled:hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:-outline-offset-2"
+          [class.bg-blue-50]="card.selected"
+          [disabled]="loading() || card.disabled"
+          [attr.aria-pressed]="!!card.selected"
+          [attr.data-testid]="'stat-card-' + action"
+          (click)="actionClick.emit(action)">
+          <ng-container [ngTemplateOutlet]="cellContent" />
+        </button>
+      } @else {
+        <div class="flex items-center gap-3 p-4" [attr.data-testid]="'stat-card-' + card.label">
+          <ng-container [ngTemplateOutlet]="cellContent" />
+        </div>
+      }
     }
   </div>
 </lfx-card>
