@@ -1410,6 +1410,95 @@ export const REDDIT_OBJECTIVE_LABELS: Readonly<Record<RedditObjective, string>> 
 } as const;
 
 /**
+ * The objective both creators fall back to when a request omits one.
+ *
+ * Stated here because it has to be what the picker starts on. Nothing has ever sent `objective`,
+ * so every Reddit campaign created to date was built from this default on whichever arm served it
+ * — `defaultRedditObjective` upstream (`client.go:135`) and `config.objective ?? 'conversions'` in
+ * the legacy creator (`reddit-ads.service.ts`), which agree. Seeding the control with anything
+ * else would quietly change what an operator who touches nothing gets.
+ */
+export const DEFAULT_REDDIT_OBJECTIVE: RedditObjective = 'conversions';
+
+/**
+ * The objectives the picker offers, as distinct from the four `RedditObjective` admits.
+ *
+ * `video_views` is withheld because it cannot currently succeed. Reddit has no bare `VIDEO_VIEWS`
+ * optimization goal, so a video-view campaign must name a concrete one; upstream requires a
+ * `videoGoal` from `REDDIT_VIDEO_GOALS` for that objective and refuses the create without it, and
+ * no control collects one yet. (The legacy creator does not refuse — it sends its own
+ * `optimizationGoal: 'VIDEO_VIEWS'`, which is the value Reddit has no such goal for, so that arm
+ * fails at Reddit instead of locally.) Offer it once a goal control exists on both roads.
+ *
+ * `REDDIT_OBJECTIVE_LABELS` stays total over `RedditObjective` rather than being narrowed to this
+ * list, so a draft holding a withheld objective still renders a name instead of `undefined` — the
+ * same split, for the same reason, as `META_SELECTABLE_OBJECTIVES` and `META_OBJECTIVE_LABELS`.
+ */
+export const REDDIT_SELECTABLE_OBJECTIVES = ['awareness', 'traffic', 'conversions'] as const;
+
+/**
+ * The call-to-action button labels Reddit accepts on a promoted post.
+ *
+ * Mirrors `redditCTAs` in lfx-v2-campaign-service `internal/platform/reddit/client.go:552`, which
+ * captured them live from the Reddit Ads API v3 post-create validation on 2026-08-20. The values
+ * are Reddit's exact title-case labels — that casing is what must be sent — and the order here is
+ * upstream's textual order so the two lists diff against each other directly.
+ *
+ * Upstream matches case-insensitively and rejects anything outside the set, so this list is what
+ * bounds the choice offered here: a label absent from it cannot be sent at all, whether or not
+ * Reddit would accept it. Re-capture both sides together if upstream's set changes.
+ *
+ * Only consulted on the author-a-post path (an `imageUrl` with no `postUrl`); upstream ignores the
+ * CTA entirely when the campaign points at an existing post.
+ */
+export const REDDIT_CALL_TO_ACTIONS = [
+  'Apply Now',
+  'Contact Us',
+  'Download',
+  'Get a Quote',
+  'Get Showtimes',
+  'Install',
+  'Learn More',
+  'Order Now',
+  'Play Now',
+  'Pre-order Now',
+  'See Menu',
+  'Shop Now',
+  'Sign Up',
+  'View More',
+  'Watch Now',
+  'Book Now',
+  'Buy Tickets',
+  'Get Directions',
+  'Listen Now',
+  'Read More',
+  'Subscribe',
+  'Visit Store',
+  'Donate Now',
+  'Remind Me',
+] as const;
+
+/**
+ * The CTA upstream falls back to when none is sent — `defaultRedditCTA` in the same upstream file
+ * (`client.go:139`). Stated here so the control can pre-select what an empty field would produce
+ * rather than presenting a blank that silently resolves to something else.
+ *
+ * Must stay a member of `REDDIT_CALL_TO_ACTIONS`, exactly as upstream requires of its own default;
+ * `campaign.constants.spec.ts` pins that.
+ */
+export const DEFAULT_REDDIT_CALL_TO_ACTION = 'Learn More';
+
+/**
+ * The concrete video optimization goals Reddit accepts — `validVideoGoals` in the same upstream
+ * file (`client.go:539`).
+ *
+ * Required for, and only for, the `video_views` objective: Reddit has no bare `VIDEO_VIEWS` goal,
+ * so a video-view campaign must name one of these, and upstream validates it before any mutating
+ * call. Sending one with any other objective is pointless, not fatal.
+ */
+export const REDDIT_VIDEO_GOALS = ['VIDEO_VIEW_6S', 'VIDEO_VIEW_15S'] as const;
+
+/**
  * Shown when a creation job can no longer be found on either polling source.
  *
  * Lives in shared constants rather than in `campaign-proxy.service.ts` because both tiers
@@ -2278,13 +2367,22 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
  * Max gets there by its own route, the asset-group check in `ToggleStatus`
  * (`internal/platform/googleads/pmax.go`). Either way it is discovered at launch.
  *
+ * And the refusal is PERMANENT, which is why this sentence does not offer "add the ad" as the
+ * remedy. Both inputs to the gate come from the persisted `Result` blob — `googleAdsToggleTargets`
+ * (`internal/dispatch/googleads.go:2687`) and `googleAdsToggleAssetGroup` (`:2614`) each return
+ * early on an empty `Result` and unmarshal nothing else, and the call site says so outright
+ * (`:2083-2089`). Nothing re-reads Google. So an ad an operator adds by hand in the Ads UI is
+ * never discovered, and activation from LFX stays refused for the life of the campaign. The
+ * service's own gate message says the same of an adopted row: un-pausing "happens in Google Ads"
+ * (`:2559-2560`).
+ *
  * This is the standing line, shown on a section before anything is typed. The form also says it
  * about the current state, naming the channels that are actually empty, in the Implementation
  * tab's `googleCreativeEmptyWarning` — which is a warning and not a refusal, precisely because
  * upstream accepts this shape.
  */
 export const GOOGLE_CREATIVE_REQUIRED_NOTICE =
-  'Without creative this campaign is created as an empty shell: it has no ad, it cannot serve, and activation is refused until the ad (or, on Performance Max, the asset group) exists.';
+  'Without creative this campaign is created as an empty shell: it has no ad and it cannot serve. Activating it from LFX is then refused permanently — adding the ad in Google Ads afterwards does not lift the refusal — so it has to be finished and launched in Google Ads, or recreated here with creative.';
 
 /**
  * The bidding strategies campaign-service accepts, in the caller vocabulary it accepts them in.

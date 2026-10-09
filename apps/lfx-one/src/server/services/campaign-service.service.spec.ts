@@ -4058,6 +4058,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       demandGenEnabled: true,
       googleChannelsEnabled: false,
       googleCreativeEnabled: false,
+      redditCreativeEnabled: false,
     });
   });
 
@@ -4214,6 +4215,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       demandGenEnabled: true,
       googleChannelsEnabled: false,
       googleCreativeEnabled: false,
+      redditCreativeEnabled: false,
     });
   });
 });

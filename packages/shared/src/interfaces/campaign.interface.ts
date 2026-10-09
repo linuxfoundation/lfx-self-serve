@@ -10,6 +10,9 @@ import type {
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   MICROSOFT_KEYWORDS_WINDOWS,
+  REDDIT_CALL_TO_ACTIONS,
+  REDDIT_SELECTABLE_OBJECTIVES,
+  REDDIT_VIDEO_GOALS,
 } from '../constants/campaign.constants';
 
 // ---------------------------------------------------------------------------
@@ -78,6 +81,15 @@ export type CampaignProgramType = 'events' | 'education';
 export type CampaignDeliveryType = 'paid-marketing' | 'email';
 
 export type RedditObjective = 'awareness' | 'traffic' | 'conversions' | 'video_views';
+
+/** An objective the picker currently offers — a subset of `RedditObjective`, see that constant. */
+export type SelectableRedditObjective = (typeof REDDIT_SELECTABLE_OBJECTIVES)[number];
+
+/** One of the promoted-post CTA labels Reddit accepts — see `REDDIT_CALL_TO_ACTIONS`. */
+export type RedditCallToAction = (typeof REDDIT_CALL_TO_ACTIONS)[number];
+
+/** One of the concrete video optimization goals Reddit accepts — see `REDDIT_VIDEO_GOALS`. */
+export type RedditVideoGoal = (typeof REDDIT_VIDEO_GOALS)[number];
 
 export interface RedditObjectiveParams {
   readonly redditObjective: string;
@@ -644,6 +656,30 @@ export interface CampaignImplementationDraft {
    */
   redditBudgetUsd?: number;
   /**
+   * The Reddit objective, carried for the reason the block above reserves: it is a real editor,
+   * so a tab switch would otherwise revert a chosen objective to the default and change the
+   * campaign that gets bought without saying so.
+   *
+   * Typed `RedditObjective`, not `SelectableRedditObjective`: a draft written while an objective
+   * was offered must still round-trip after it is withdrawn, which is the case
+   * `redditObjectiveIsUnavailable` exists to render.
+   */
+  redditObjective?: RedditObjective;
+  /**
+   * The Reddit promoted-post fields, carried for the same reason as the objective.
+   *
+   * All three round-trip regardless of `redditCreativeEnabled`. A capability answer decides what
+   * the REQUEST carries, never what the draft remembers: withholding the controls already stops
+   * the values reaching a creator that would discard them, and dropping them from the draft as
+   * well would destroy an operator's text on a capability read they never saw.
+   *
+   * `redditCallToAction` is typed to allow `''` — the empty choice is a real selection meaning
+   * "let upstream apply `DEFAULT_REDDIT_CALL_TO_ACTION`", distinct from the key being absent.
+   */
+  redditPostUrl?: string;
+  redditImageUrl?: string;
+  redditCallToAction?: RedditCallToAction | '';
+  /**
    * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
    * and the optional CPC bid.
    *
@@ -1013,6 +1049,23 @@ export interface RedditBriefCopy {
   recommendedGeos: string[];
 }
 
+/**
+ * What the Reddit section may ask for when creating a campaign.
+ *
+ * Reaches lfx-v2-campaign-service's Reddit wire struct (`internal/dispatch/reddit.go`) by JSON tag
+ * alone: the controller forwards `redditConfig` verbatim, so a field named to match a tag there
+ * needs no server-layer mapping here. Every field below is spelled to match one.
+ *
+ * ONLY the campaign-service arm honours `imageUrl`, `callToAction`, `conversionPixelId` and
+ * `videoGoal`. The LEGACY vendor-direct creator (`server/services/reddit-ads.service.ts`) reads
+ * `objective` and `postUrl` and nothing else, and it is what serves a create while the three-flag
+ * create cutover is dark — the deployment state `canCreateDemandGen` (`campaign-service.service.ts`)
+ * documents as the most likely one in effect. Sending any of the four on the legacy arm is
+ * therefore silently dropped: the operator supplies creative and gets a campaign with no ad. Any
+ * control that populates them has to gate on which arm will serve, the way `demandGenEnabled`
+ * already reports the mirror-image case (there legacy has the capability and campaign-service does
+ * not), or extend the legacy creator to match.
+ */
 export interface RedditCampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -1028,7 +1081,38 @@ export interface RedditCampaignCreateRequest {
   variants: RedditAdVariant[];
   project?: string;
   objective?: RedditObjective;
+  /** An existing Reddit post to promote. Set it and upstream ignores `imageUrl`/`callToAction`. */
   postUrl?: string;
+  /**
+   * Image for a post upstream authors itself. The author-a-post path: without either this or
+   * `postUrl` the campaign is created with no ad and cannot serve.
+   */
+  imageUrl?: string;
+  /** Button label on an authored post. Empty resolves upstream to `DEFAULT_REDDIT_CALL_TO_ACTION`. */
+  callToAction?: RedditCallToAction;
+  /**
+   * Overrides the ad account's own conversion pixel for this campaign.
+   *
+   * Upstream prefers this campaign-level value and falls back to the connection's pixel, refusing
+   * the create when neither supplies one — for EVERY objective, not just conversions. Its own
+   * comment argues the connection is the right source, since the pixel identifies the advertiser
+   * and is one per ad account, so per-campaign entry turns an account-level constant into
+   * something an operator can get wrong once per campaign.
+   *
+   * Declared for the wire contract only — NO control populates it, so the implementation tab
+   * cannot resolve that refusal and a deploy whose connection carries no pixel cannot create a
+   * Reddit campaign from here at all. Offering it is a product decision nobody has taken; this
+   * field is the half that would be needed if they did.
+   */
+  conversionPixelId?: string;
+  /**
+   * Required by upstream for, and only for, the `video_views` objective.
+   *
+   * Declared for the wire contract only — nothing populates it either, which is precisely why
+   * `REDDIT_SELECTABLE_OBJECTIVES` withholds `video_views`: offering that objective without this
+   * field would offer a create upstream always refuses.
+   */
+  videoGoal?: RedditVideoGoal;
 }
 
 export interface RedditCampaignCreateResult {
@@ -2974,6 +3058,28 @@ export interface CampaignListResult {
    * `null` for unanswered).
    */
   googleCreativeEnabled: boolean;
+
+  /**
+   * Whether a Reddit promoted post AUTHORED from `imageUrl`/`callToAction` will actually be
+   * created.
+   *
+   * Narrower than its Google sibling, because the two arms diverge per field rather than
+   * wholesale. `postUrl` — promote an EXISTING post — is read by both creators: the legacy path
+   * extracts the post id and creates the ad from it (`reddit-ads.service.ts`), exactly as
+   * campaign-service does. So `postUrl` is NOT gated by this and must stay offered whatever the
+   * cutover state; gating it would withhold a control that works today.
+   *
+   * What only campaign-service has is the author-a-post path: with no `postUrl` and an
+   * `imageUrl`, it composes and submits a new promoted post carrying `callToAction`
+   * (`internal/platform/reddit/client.go`). The legacy creator reads neither key, so with the
+   * cutover dark an operator who supplies an image gets a campaign and ad group with NO ad, and
+   * the create still reports success — the same silent discard `googleCreativeEnabled` exists to
+   * prevent.
+   *
+   * This is therefore `cutoverOwnsCreate()` and nothing else. Read the same way as the three
+   * above and modelled the same way on the client (`boolean | null`, `null` for unanswered).
+   */
+  redditCreativeEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------

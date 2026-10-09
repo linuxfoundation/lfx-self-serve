@@ -27,7 +27,9 @@
   user is reading in the form below. The error arm still gets role="alert" on the banner: an
   assertive announcement is the point there, and it is a different region from this one.
 -->
-<div role="status" aria-live="polite" class="sr-only" data-testid="implementation-brief-status-live">{{ briefPersistenceAnnouncement() }}</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-brief-status-live">
+  {{ briefPersistenceAnnouncement() }}
+</div>
 
 <!--
   Google empty-creative warning, announced.
@@ -47,8 +49,40 @@
 
   The visible `<p>` carries no role of its own — the text would otherwise be announced twice,
   the same reason `briefPersistenceAnnouncement` stays empty in its `error` state.
+
+  `aria-atomic="true"` on every live region in this template is not a fix: with a single
+  interpolated text node there is no partial update for a non-atomic region to clip, which is why
+  #3402 adjudicated it Low. It is added because the module is inconsistent and this template's
+  regions are the ones in hand — all three of them, the brief-status one above, the Google
+  creative-empty one below and the Reddit no-ad one after it — while among the campaigns
+  module's single-interpolation sr-only regions, `campaign-negative-keywords-form.component.html:11`
+  and `optimization-tab.component.html:248` carry it while `campaigns.component.html:243` and
+  `:256` and `planning-tab.component.html:36` and `:68` do not. Those four are untouched here
+  rather than swept in: none of them is Reddit or Google creative, and widening this commit into
+  two more components buys nothing an operator can observe. (`audience-builder-tab.component.html:150`
+  is excluded on its merits, not overlooked — it is the one region here that is neither `sr-only`
+  nor a single text node, so `aria-atomic` would genuinely change what it announces, which makes
+  it a behavioural change and not this commit's parity sweep.)
 -->
-<div role="status" aria-live="polite" class="sr-only" data-testid="implementation-google-creative-empty-live">{{ googleCreativeEmptyWarning() }}</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-creative-empty-live">
+  {{ googleCreativeEmptyWarning() }}
+</div>
+
+<!--
+  Reddit no-ad warning, announced.
+
+  Top-level and outside the guard for the reason the two regions above are: the visible copy lives
+  inside `@if (redditNoAdWarning())`, so it is created by the very change that gives it its text,
+  and an aria-live element inserted with its text already present is not reliably announced.
+
+  Polite, and for the same reason the Google warning is: the campaign it describes IS created,
+  submit stays enabled, and the legacy creator's no-post path is a workflow an operator may be
+  choosing on purpose. Nothing here is a refusal, so nothing here interrupts. The visible `<p>`
+  carries no role of its own, or the sentence would be announced twice.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-reddit-no-ad-live">
+  {{ redditNoAdWarning() }}
+</div>
 
 <!-- Nothing renders in the 'off' state — see briefPersistence. -->
 @switch (briefPersistence().status) {
@@ -1175,6 +1209,126 @@
                 are created paused.
               </p>
             </div>
+
+            <!-- Objective. Until now the field was declared on the request and never sent, so both
+                 creators fell back to their own default and every Reddit campaign was built as
+                 Conversions with nothing on screen saying so. The picker starts on that same
+                 default, so turning it on changes nobody's campaign. -->
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="reddit-objective">Objective</label>
+              <select
+                id="reddit-objective"
+                (change)="onRedditObjectiveChange($event)"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-reddit-objective">
+                @for (objective of redditObjectiveOptions; track objective) {
+                  <option [value]="objective" [selected]="objective === redditObjective()">{{ redditObjectiveLabels[objective] }}</option>
+                }
+                <!--
+                  The Meta select's restored-value case, for the same reason and with the same
+                  shape: `[selected]` per option rather than `[value]` on the select, because the
+                  select's value binding is applied while this option does not yet exist and falls
+                  back to index 0. Disabled so a withheld objective stays visible without becoming
+                  newly choosable. `redditObjectiveLabels` is total over `RedditObjective`, so this
+                  can never print `undefined`.
+                -->
+                @if (redditObjectiveIsUnavailable()) {
+                  <option [value]="redditObjective()" [selected]="true" disabled>{{ redditObjectiveLabels[redditObjective()] }} (no longer available)</option>
+                }
+              </select>
+            </div>
+          </div>
+
+          <!-- The ad itself. Without one of these two routes the create still succeeds and still
+               reports success, and what it leaves behind is a campaign and an ad group with no ad
+               — nothing serves and nothing says so. -->
+          <div class="mb-4 flex flex-col gap-4">
+            <!-- Promote an EXISTING post. Offered whatever the cutover state, because both
+                 creators read this field and build the ad from it. Deliberately not validated
+                 here: both parse the link themselves and reject a bad one before anything is
+                 created, and they accept slightly different shapes, so a check on this side could
+                 only refuse a link that would have worked. That includes the browser's own check:
+                 the field is type="text", not type="url", because a bare post id is a valid entry
+                 here and type="url" would reject it. -->
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="reddit-post-url">Post URL</label>
+              <input
+                id="reddit-post-url"
+                type="text"
+                [value]="redditPostUrl()"
+                (input)="onRedditPostUrlInput($event)"
+                placeholder="https://www.reddit.com/r/kubernetes/comments/abc123/..."
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-reddit-post-url" />
+              <p class="text-xs text-gray-500">
+                An existing Reddit post to promote — a reddit.com post link, a redd.it link, or the post id on its own.
+                @if (redditCreativeAvailable()) {
+                  Leave it blank to have one composed from the image below instead.
+                }
+              </p>
+            </div>
+
+            <!-- Compose a NEW post. Withheld unless the capability says yes: the other creator
+                 reads neither field, so in that deployment both would be typed, accepted and
+                 discarded into a campaign with no ad. Nothing typed is cleared when it is
+                 withheld — the draft keeps it and offers it back if the answer changes. -->
+            @if (redditCreativeAvailable()) {
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-medium text-gray-700" for="reddit-image-url">Image URL</label>
+                  <input
+                    id="reddit-image-url"
+                    type="url"
+                    [value]="redditImageUrl()"
+                    (input)="onRedditImageUrlInput($event)"
+                    placeholder="https://example.org/promo.png"
+                    class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    data-testid="implementation-reddit-image-url" />
+                  <p class="text-xs text-gray-500">Ignored when a post URL is set — that post already has its own image.</p>
+                </div>
+
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-medium text-gray-700" for="reddit-call-to-action">Call to Action</label>
+                  <select
+                    id="reddit-call-to-action"
+                    (change)="onRedditCallToActionChange($event)"
+                    class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    data-testid="implementation-reddit-call-to-action">
+                    <!-- The empty choice is a real selection, not a placeholder: it sends nothing
+                         and lets upstream apply its own default. Named rather than blank so the
+                         operator can see which button they are choosing by not choosing. -->
+                    <option value="" [selected]="redditCallToAction() === ''">Default ({{ redditDefaultCallToAction }})</option>
+                    @for (cta of redditCallToActionOptions; track cta) {
+                      <option [value]="cta" [selected]="cta === redditCallToAction()">{{ cta }}</option>
+                    }
+                    <!--
+                      The objective select's restored-value case, same shape and same reason: a
+                      stored label Reddit has since retired matches no option above, so without
+                      this the control would silently read "Default" while the signal still sent
+                      the stale label and upstream refused it. The label prints as stored — unlike
+                      the objective there is no labels map to look it up in, the value IS the
+                      label.
+                    -->
+                    @if (redditCallToActionIsUnavailable()) {
+                      <option [value]="redditCallToAction()" [selected]="true" disabled>{{ redditCallToAction() }} (no longer available)</option>
+                    }
+                  </select>
+                  <p class="text-xs text-gray-500">Button on the composed post. Ignored when a post URL is set.</p>
+                </div>
+              </div>
+            }
+
+            <!-- Said BEFORE the create, beside the controls that answer it. The same product
+                 already says it afterwards, in the created-campaigns list below
+                 (`implementation-reddit-no-ad-notice`), by which point the campaign exists and
+                 nothing above can still be typed.
+
+                 No role on this element — the sr-only region at the top of the template announces
+                 it, and a role here would announce it twice. amber-700 rather than amber-600 for
+                 the contrast reason the Google warning records. -->
+            @if (redditNoAdWarning()) {
+              <p class="text-xs text-amber-700" data-testid="implementation-reddit-no-ad-warning">{{ redditNoAdWarning() }}</p>
+            }
           </div>
 
           <!-- Targeting, all AI-recommended from the brief. Rendered read-only so the operator can
@@ -1343,10 +1497,18 @@
                 </a>
               </div>
               @if (campaign.platform === 'reddit-ads' && campaign.adCount === 0) {
+                <!--
+                  This used to end "then attach it to this campaign", which is an instruction that cannot work.
+                  Activation needs BOTH child ids (`internal/dispatch/reddit.go:484-485`), and they come from
+                  `redditChildIDs` (`:817-832`), which reads only the persisted Result blob. Nothing re-reads
+                  Reddit, so an ad attached by hand upstream is never discovered and the refusal never lifts.
+                  The gate's own message says as much, that this "leaves un-pausing to Reddit Ads Manager".
+                -->
                 <div class="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2">
-                  <p class="text-xs font-medium text-amber-800">
+                  <p class="text-xs font-medium text-amber-800" data-testid="implementation-reddit-no-ad-notice">
                     <i class="fa-light fa-triangle-exclamation mr-1" aria-hidden="true"></i>
-                    Ads require a Reddit post — submit a promoted post in Reddit Ads Manager, then attach it to this campaign.
+                    This campaign has no ad, so it cannot serve, and activating it from LFX stays refused — an ad added in Reddit Ads Manager afterwards is not
+                    picked up here. Build and launch the campaign in Reddit Ads Manager instead.
                   </p>
                 </div>
               }

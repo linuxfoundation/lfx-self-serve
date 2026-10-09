@@ -9,6 +9,8 @@ import {
   CAMPAIGN_ALERT_THRESHOLDS,
   CAMPAIGN_EMAIL_TYPES,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
+  DEFAULT_REDDIT_CALL_TO_ACTION,
+  DEFAULT_REDDIT_OBJECTIVE,
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
@@ -29,6 +31,10 @@ import {
   META_OBJECTIVE_LABELS,
   META_OBJECTIVE_PARAMS,
   META_SELECTABLE_OBJECTIVES,
+  REDDIT_CALL_TO_ACTIONS,
+  REDDIT_OBJECTIVE_LABELS,
+  REDDIT_SELECTABLE_OBJECTIVES,
+  REDDIT_VIDEO_GOALS,
   campaignToggleAction,
   canonicalMicrosoftMatchType,
   isMicrosoftMatchType,
@@ -770,5 +776,67 @@ describe('Google channel enums and creative catalogue', () => {
         for (const control of rule.controls) expect(lists).toContain(control);
       }
     }
+  });
+});
+
+/**
+ * Guards on the Reddit values copied from lfx-v2-campaign-service rather than derived here. They
+ * cannot detect upstream drift — only a re-capture does that — but they do pin the invariants
+ * upstream states about its own tables, so a careless edit on this side fails here instead of as
+ * an opaque Reddit 400 at create time.
+ */
+describe('Reddit promoted-post contract', () => {
+  /** Upstream requires this of `defaultRedditCTA`, and a default outside the list is unsendable. */
+  it('keeps the default call to action inside the accepted set', () => {
+    expect(REDDIT_CALL_TO_ACTIONS).toContain(DEFAULT_REDDIT_CALL_TO_ACTION);
+  });
+
+  /**
+   * Upstream keys its CTA table on the UPPER-CASED label for case-insensitive lookup, so two
+   * labels differing only in case would be one entry there and two rows in any control built from
+   * this list. Checking the upper-cased forms catches that; checking the labels alone would not.
+   */
+  it('gives every call to action a distinct case-insensitive label', () => {
+    const upper = REDDIT_CALL_TO_ACTIONS.map((cta) => cta.toUpperCase());
+    expect(new Set(upper).size).toBe(REDDIT_CALL_TO_ACTIONS.length);
+  });
+
+  /** Reddit matches the label exactly once case is folded; a padded one is rejected. */
+  it('sends every call to action trimmed and non-empty', () => {
+    for (const cta of REDDIT_CALL_TO_ACTIONS) {
+      expect(cta).toBe(cta.trim());
+      expect(cta.length).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * Pinned as a whole set, not by count: Reddit has no bare `VIDEO_VIEWS` goal, so a video-view
+   * campaign must name one of exactly these, and upstream rejects anything else before it creates.
+   */
+  it('offers exactly the video goals upstream accepts', () => {
+    expect([...REDDIT_VIDEO_GOALS]).toEqual(['VIDEO_VIEW_6S', 'VIDEO_VIEW_15S']);
+  });
+
+  /**
+   * The picker's set is a SUBSET of `RedditObjective`, never a value outside it.
+   *
+   * `REDDIT_OBJECTIVE_LABELS` is typed total over `RedditObjective`, so its keys are that type at
+   * runtime — an objective added to the picker without being added to the union would have no
+   * label here, and the control would render a blank row. The types catch that on the constant
+   * itself; this catches it after a cast, which is how the picker list is written.
+   */
+  it('offers only objectives the request type admits', () => {
+    for (const objective of REDDIT_SELECTABLE_OBJECTIVES) {
+      expect(Object.keys(REDDIT_OBJECTIVE_LABELS)).toContain(objective);
+    }
+  });
+
+  /**
+   * And the default is one of them. It seeds the control on a fresh campaign, so a default outside
+   * the picker's set would open every new Reddit campaign on a value shown as
+   * "(no longer available)" and disabled — unchangeable except by picking something else.
+   */
+  it('seeds the picker with an objective the picker offers', () => {
+    expect([...REDDIT_SELECTABLE_OBJECTIVES]).toContain(DEFAULT_REDDIT_OBJECTIVE);
   });
 });
