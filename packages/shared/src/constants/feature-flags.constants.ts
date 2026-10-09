@@ -3,6 +3,13 @@
 
 export const AKRITES_ENABLED_FLAG = 'akrites-enabled';
 export const MKTG_OS_AGENTS_ENABLED_FLAG = 'mktg-os-agents-enabled';
+/**
+ * Dark-launch gate for initiative attribution (lfx-crowdfunding #256). Crowdfunding uses the same
+ * LaunchDarkly client id, so this one toggle also shows the project/org picker in its fundraise form. Here it hides the
+ * Project/Foundation lens Initiatives route and sidebar entry (#347). Browser-only: the BFF stays open,
+ * and CF's writer check on the project is the authorization boundary.
+ */
+export const CROWDFUNDING_ATTRIBUTION_STEP_FLAG = 'crowdfunding-attribution-step';
 export const MY_CLAS_ENABLED_FLAG = 'my-clas-enabled';
 /**
  * Dark-launch gate for the M2 My CLAs overlay (#1738) — Sign CLA, Status column,

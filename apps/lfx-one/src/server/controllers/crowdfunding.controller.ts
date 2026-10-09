@@ -14,7 +14,7 @@ import {
   UpdateAnnouncementInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
-import { stripHtml } from '@lfx-one/shared/utils';
+import { isUuid, stripHtml } from '@lfx-one/shared/utils';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { CrowdfundingService } from '../services/crowdfunding.service';
@@ -27,10 +27,19 @@ const parseNonNegativeInt = (val: unknown): number | undefined => {
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
 };
 
+/** Optional `projectUid` scope for the initiatives list/stats (Project/Foundation lens). Interpolated into the CF path, so it must be a UUID. */
+const parseProjectUid = (val: unknown, operation: string): string | undefined => {
+  if (val == null || val === '') return undefined;
+  if (typeof val !== 'string' || !isUuid(val)) {
+    throw ServiceValidationError.forField('projectUid', 'projectUid must be a UUID', { operation });
+  }
+  return val;
+};
+
 export class CrowdfundingController {
   private readonly crowdfundingService = new CrowdfundingService();
 
-  // GET /api/crowdfunding/initiatives
+  // GET /api/crowdfunding/initiatives[?projectUid=]
   public async getMyInitiatives(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_my_initiatives');
 
@@ -39,9 +48,14 @@ export class CrowdfundingController {
         throw new AuthenticationError('User authentication required', { operation: 'get_my_initiatives' });
       }
 
-      const { pageSize, offset } = req.query;
+      const { pageSize, offset, projectUid } = req.query;
 
-      const initiatives = await this.crowdfundingService.getMyInitiatives(req, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
+      const initiatives = await this.crowdfundingService.getMyInitiatives(
+        req,
+        parseNonNegativeInt(pageSize),
+        parseNonNegativeInt(offset),
+        parseProjectUid(projectUid, 'get_my_initiatives')
+      );
 
       logger.success(req, 'get_my_initiatives', startTime, { result_count: initiatives.data.length });
 
@@ -157,7 +171,7 @@ export class CrowdfundingController {
     }
   }
 
-  // GET /api/crowdfunding/initiatives-stats
+  // GET /api/crowdfunding/initiatives-stats[?projectUid=]
   public async getInitiativesStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_initiatives_stats');
 
@@ -166,7 +180,7 @@ export class CrowdfundingController {
         throw new AuthenticationError('User authentication required', { operation: 'get_initiatives_stats' });
       }
 
-      const stats = await this.crowdfundingService.getInitiativesStats(req);
+      const stats = await this.crowdfundingService.getInitiativesStats(req, parseProjectUid(req.query['projectUid'], 'get_initiatives_stats'));
 
       logger.success(req, 'get_initiatives_stats', startTime);
 

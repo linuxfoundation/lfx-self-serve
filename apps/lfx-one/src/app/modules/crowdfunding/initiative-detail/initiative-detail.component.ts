@@ -33,6 +33,13 @@ export class InitiativeDetailComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly crowdfundingService = inject(CrowdfundingService);
 
+  // ─── Public Fields ─────────────────────────────────────────────────────────
+  // Opened from a Project/Foundation lens Initiatives page (#347): go back there, keeping ?project=.
+  private readonly lens: string | undefined = this.route.snapshot.data['lens'];
+  protected readonly isLensPage = this.lens === 'project' || this.lens === 'foundation';
+  protected readonly backLink = this.isLensPage ? `/${this.lens}/initiatives` : '/crowdfunding/initiatives';
+  protected readonly backQueryParams: Record<string, string> = this.isLensPage ? this.route.snapshot.queryParams : {};
+
   // ─── WritableSignals ───────────────────────────────────────────────────────
   protected readonly isLoading = signal(true);
   protected readonly activeTab = signal<string>('overview');
