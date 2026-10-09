@@ -21,7 +21,20 @@ export function getMailingListGroupsIoUrl(
   if (groupName && domain) {
     return `https://${domain}/g/${encodeURIComponent(groupName)}`;
   }
-  return list?.service?.url || null;
+  return toHttpUrl(list?.service?.url);
+}
+
+/** Returns the URL only when it parses with an http(s) scheme — guards `[href]` bindings against `javascript:` values. */
+function toHttpUrl(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  try {
+    const { protocol } = new URL(value);
+    return protocol === 'https:' || protocol === 'http:' ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Canonical tier-prefixed mailing-list link with the flat `/mailing-lists/...` fallback baked in (GH-1567). */
