@@ -665,6 +665,37 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
     expect(meetings).toHaveLength(1);
     expect(meetings[0].my_rsvp?.response_type).toBe('accepted');
   });
+
+  it('flags a meeting as invited through a committee only when a committee registration backs it', async () => {
+    const meetings: Partial<Meeting>[] = [
+      { id: 'via-committee', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: true },
+      { id: 'direct', title: 'Sync', start_time: tomorrow, duration: 60, use_new_invite_email_address: true },
+    ];
+
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      switch (params?.type) {
+        case 'v1_meeting':
+          return queryPage(meetings);
+        case 'v1_meeting_registrant':
+          return queryPage([
+            { uid: 'reg-c', meeting_id: 'via-committee', type: 'committee' },
+            { uid: 'reg-d', meeting_id: 'direct', type: 'direct' },
+          ]);
+        default:
+          return queryPage([]);
+      }
+    });
+
+    const service = new UserService();
+    Object.assign(service, {
+      meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items },
+      accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
+    });
+
+    const result = await service.getUserMeetings(req);
+
+    expect(Object.fromEntries(result.map((m) => [m.id, m.invited_via_committee]))).toEqual({ 'via-committee': true, direct: false });
+  });
 });
 
 describe('UserService.getPendingActions Review Agenda lens scoping (GH-2991)', () => {
