@@ -1944,6 +1944,8 @@ export interface MeLensMeetingFilters {
   project: string | null;
   /** Keep only meetings with no RSVP recorded (upcoming only). */
   pendingRsvpOnly: boolean;
+  /** Keep only meetings the viewer accepted (upcoming only). */
+  acceptedOnly: boolean;
   /** Keep only meetings the viewer organized (created), matching the "Organized by you" chip. */
   organizerOnly: boolean;
   /** Viewer username/LFID used by the `organizerOnly` predicate; null disables matching. */

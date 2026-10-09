@@ -1159,6 +1159,16 @@ export function isMeetingDeclinedForAllOccurrences(meeting: Pick<Meeting, 'my_rs
 }
 
 /**
+ * True when the viewer's applicable RSVP is an acceptance.
+ * @description Reads the BFF-resolved `my_rsvp` (the RSVP for the current/next occurrence), so a
+ * series accepted for one date counts, while "maybe" and "declined" do not. Backs the "Accepted"
+ * filter chip on My Meetings.
+ */
+export function isMeetingAccepted(meeting: Pick<Meeting, 'my_rsvp'> | null | undefined): boolean {
+  return meeting?.my_rsvp?.response_type === 'accepted';
+}
+
+/**
  * Counts individual meeting dates that have not ended and start before `endMs`.
  * @description Recurring meetings contribute one per active occurrence in the window (cancelled
  * occurrences excluded); one-time meetings contribute one. In-progress meetings count, matching

@@ -25,6 +25,9 @@ export class MeetingsTopBarComponent {
   public readonly pendingRsvpOnly = input<boolean>(false);
   public readonly showPendingRsvpFilter = input<boolean>(false);
   public readonly pendingRsvpCount = input<number>(0);
+  public readonly acceptedOnly = input<boolean>(false);
+  public readonly showAcceptedFilter = input<boolean>(false);
+  public readonly acceptedCount = input<number>(0);
   public readonly organizerOnly = input<boolean>(false);
   public readonly showOrganizerFilter = input<boolean>(false);
   public readonly organizerCount = input<number>(0);
@@ -38,6 +41,7 @@ export class MeetingsTopBarComponent {
   public readonly searchQueryChange = output<string>();
   public readonly timeFilterChange = output<'upcoming' | 'past'>();
   public readonly pendingRsvpOnlyChange = output<boolean>();
+  public readonly acceptedOnlyChange = output<boolean>();
   public readonly organizerOnlyChange = output<boolean>();
   public readonly showDeclinedChange = output<boolean>();
 
@@ -91,6 +95,8 @@ export class MeetingsTopBarComponent {
   public onToggleChip(id: string): void {
     if (id === 'pending') {
       this.pendingRsvpOnlyChange.emit(!this.pendingRsvpOnly());
+    } else if (id === 'accepted') {
+      this.acceptedOnlyChange.emit(!this.acceptedOnly());
     } else if (id === 'organizer') {
       this.organizerOnlyChange.emit(!this.organizerOnly());
     } else if (id === 'declined') {

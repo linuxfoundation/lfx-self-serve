@@ -11,13 +11,20 @@
     (filterChange)="onTimeTabChange($event)"
     data-testid="time-filter-tabs" />
 
-  @if (showPendingRsvpFilter() || showOrganizerFilter() || showDeclinedFilter()) {
+  @if (showPendingRsvpFilter() || showAcceptedFilter() || showOrganizerFilter() || showDeclinedFilter()) {
     <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Filters">
       <!-- Pending RSVP (Me lens, upcoming only) -->
       @if (showPendingRsvpFilter()) {
         <div data-testid="pending-rsvp-filter-pills">
           <ng-container
             *ngTemplateOutlet="toggleChip; context: { id: 'pending', label: 'Pending RSVP', count: pendingRsvpCount(), active: pendingRsvpOnly() }" />
+        </div>
+      }
+
+      <!-- Accepted (Me lens, upcoming only): only meetings the viewer said yes to -->
+      @if (showAcceptedFilter()) {
+        <div data-testid="accepted-filter-pills">
+          <ng-container *ngTemplateOutlet="toggleChip; context: { id: 'accepted', label: 'Accepted', count: acceptedCount(), active: acceptedOnly() }" />
         </div>
       }
 

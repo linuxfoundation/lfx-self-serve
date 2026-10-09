@@ -29,6 +29,7 @@ import {
   getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
   hasMeetingEnded,
+  isMeetingAccepted,
   isMeetingHiddenAsDeclined,
   isMeetingInviteResponsesEnabled,
   isMeetingOrganizedByViewer,
@@ -130,6 +131,7 @@ export class MeetingsDashboardComponent {
   public foundationFilter: WritableSignal<string | null>;
   public projectFilter: WritableSignal<string | null>;
   public pendingRsvpOnly: WritableSignal<boolean>;
+  public acceptedOnly: WritableSignal<boolean>;
   public organizerOnly: WritableSignal<boolean>;
   public showDeclined: WritableSignal<boolean>;
   public showFoundationFilter: Signal<boolean>;
@@ -181,6 +183,7 @@ export class MeetingsDashboardComponent {
   protected readonly nextWindowCount: Signal<number>;
   protected readonly nextMeetingLabel: Signal<string>;
   protected readonly pendingRsvpCount: Signal<number>;
+  protected readonly acceptedCount: Signal<number>;
   protected readonly earliestPendingRsvpLabel: Signal<string>;
   protected readonly organizerCount: Signal<number>;
   protected readonly declinedCount: Signal<number>;
@@ -217,6 +220,7 @@ export class MeetingsDashboardComponent {
     this.foundationFilter = signal<string | null>(null);
     this.projectFilter = signal<string | null>(null);
     this.pendingRsvpOnly = signal<boolean>(false);
+    this.acceptedOnly = signal<boolean>(false);
     this.organizerOnly = signal<boolean>(false);
     this.showDeclined = signal<boolean>(false);
     this.hasMore = computed(() => this.activeLens() !== 'me' && (this.timeFilter() === 'past' ? !!this.pastPageToken() : !!this.upcomingPageToken()));
@@ -253,6 +257,7 @@ export class MeetingsDashboardComponent {
     this.nextWindowCount = this.initNextWindowCount();
     this.nextMeetingLabel = this.initNextMeetingLabel();
     this.pendingRsvpCount = computed(() => this.attendingUpcomingUserMeetings().filter((m) => this.isPendingRsvp(m)).length);
+    this.acceptedCount = computed(() => this.attendingUpcomingUserMeetings().filter((m) => isMeetingAccepted(m)).length);
     this.earliestPendingRsvpLabel = this.initEarliestPendingRsvpLabel();
     this.organizerCount = this.initOrganizerCount();
     this.declinedCount = computed(() => this.sortedUpcomingUserMeetings().length - this.attendingUpcomingUserMeetings().length);
@@ -370,9 +375,10 @@ export class MeetingsDashboardComponent {
     this.timeFilter.set(value);
     this.foundationFilter.set(null);
     this.projectFilter.set(null);
-    // Pending RSVP is an upcoming-only concept, so it resets on tab switch. "Organized by me" is
-    // valid on both tabs and deliberately persists across them.
+    // Pending RSVP and Accepted are upcoming-only concepts, so they reset on tab switch. "Organized
+    // by me" is valid on both tabs and deliberately persists across them.
     this.pendingRsvpOnly.set(false);
+    this.acceptedOnly.set(false);
     this.showDeclined.set(false);
     this.router.navigate([], {
       relativeTo: this.route,
@@ -388,6 +394,7 @@ export class MeetingsDashboardComponent {
     this.foundationFilter.set(null);
     this.projectFilter.set(null);
     this.pendingRsvpOnly.set(false);
+    this.acceptedOnly.set(false);
     this.organizerOnly.set(false);
     this.showDeclined.set(false);
   }
@@ -443,6 +450,7 @@ export class MeetingsDashboardComponent {
     const foundationFilter$ = toObservable(this.foundationFilter);
     const projectFilter$ = toObservable(this.projectFilter);
     const pendingRsvpOnly$ = toObservable(this.pendingRsvpOnly);
+    const acceptedOnly$ = toObservable(this.acceptedOnly);
     const organizerOnly$ = toObservable(this.organizerOnly);
     const showDeclined$ = toObservable(this.showDeclined);
     // The viewer LFID backs the "Organized by me" predicate and can resolve after the meetings do,
@@ -457,12 +465,26 @@ export class MeetingsDashboardComponent {
       foundationFilter$,
       projectFilter$,
       pendingRsvpOnly$,
+      acceptedOnly$,
       organizerOnly$,
       viewerUsername$,
       showDeclined$,
     ]).pipe(
       switchMap(
-        ([lens, timeFilter, searchQuery, meetingType, rawMeetings, foundation, project, pendingRsvpOnly, organizerOnly, viewerUsername, showDeclined]) => {
+        ([
+          lens,
+          timeFilter,
+          searchQuery,
+          meetingType,
+          rawMeetings,
+          foundation,
+          project,
+          pendingRsvpOnly,
+          acceptedOnly,
+          organizerOnly,
+          viewerUsername,
+          showDeclined,
+        ]) => {
           if (lens !== 'me' || timeFilter !== 'upcoming') {
             return of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true });
           }
@@ -472,6 +494,7 @@ export class MeetingsDashboardComponent {
             foundation,
             project,
             pendingRsvpOnly,
+            acceptedOnly,
             organizerOnly,
             viewerUsername,
             showDeclined,
@@ -576,6 +599,7 @@ export class MeetingsDashboardComponent {
           project,
           // Pending-RSVP chip is upcoming-only, so past-meeting filtering always passes `false`.
           pendingRsvpOnly: false,
+          acceptedOnly: false,
           organizerOnly,
           viewerUsername,
           // Past meetings are attendance history; an earlier decline doesn't hide them.
@@ -741,7 +765,7 @@ export class MeetingsDashboardComponent {
   }
 
   private filterMeLensMeetings<T extends Meeting>(items: T[], filters: MeLensMeetingFilters): T[] {
-    const { searchQuery, meetingType, foundation, project, pendingRsvpOnly, organizerOnly, viewerUsername, showDeclined } = filters;
+    const { searchQuery, meetingType, foundation, project, pendingRsvpOnly, acceptedOnly, organizerOnly, viewerUsername, showDeclined } = filters;
     let filtered = items;
 
     if (!showDeclined) {
@@ -764,6 +788,11 @@ export class MeetingsDashboardComponent {
       // Pending = no RSVP recorded on meetings that collect LFX RSVPs. Pre-feature meetings
       // never collected responses, so they must not appear as "pending" (GH-1951).
       filtered = filtered.filter((m) => this.isPendingRsvp(m));
+    }
+
+    if (acceptedOnly) {
+      // Only meetings the viewer said yes to — a clean view of what they will attend.
+      filtered = filtered.filter((m) => isMeetingAccepted(m));
     }
 
     if (organizerOnly) {
@@ -1077,6 +1106,7 @@ export class MeetingsDashboardComponent {
         !!this.foundationFilter() ||
         !!this.projectFilter() ||
         this.pendingRsvpOnly() ||
+        this.acceptedOnly() ||
         this.organizerOnly()
     );
   }
@@ -1095,6 +1125,7 @@ export class MeetingsDashboardComponent {
               foundation: this.foundationFilter(),
               project: this.projectFilter(),
               pendingRsvpOnly: this.pendingRsvpOnly(),
+              acceptedOnly: this.acceptedOnly(),
               organizerOnly: this.organizerOnly(),
               viewerUsername: this.userService.viewerUsername(),
               showDeclined: this.showDeclined(),

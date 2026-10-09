@@ -54,6 +54,7 @@ import {
   fromMeetingApiVotingStatuses,
   getMeetingOrganizerDisplayName,
   isCalendarDeadlinePast,
+  isMeetingAccepted,
   isMeetingDeclinedForAllOccurrences,
   isMeetingHiddenAsDeclined,
   isMeetingInviteResponsesEnabled,
@@ -1734,6 +1735,31 @@ describe('isMeetingDeclinedForAllOccurrences', () => {
     expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: rsvp({ response_type: 'maybe' }) }))).toBe(false);
     expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: null }))).toBe(false);
     expect(isMeetingDeclinedForAllOccurrences(null)).toBe(false);
+  });
+});
+
+describe('isMeetingAccepted', () => {
+  const rsvp = (response_type: MeetingRsvp['response_type'], scope: MeetingRsvp['scope'] = 'all'): MeetingRsvp => ({
+    id: 'r1',
+    meeting_id: 'm1',
+    registrant_id: 'reg1',
+    username: 'alovelace',
+    email: 'ada@example.com',
+    response_type,
+    scope,
+    created_at: '2026-01-01T00:00:00Z',
+  });
+
+  it('is true for an acceptance, whatever its scope', () => {
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('accepted') }))).toBe(true);
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('accepted', 'single') }))).toBe(true);
+  });
+
+  it('is false for maybe, declined, or no RSVP', () => {
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('maybe') }))).toBe(false);
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('declined') }))).toBe(false);
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: null }))).toBe(false);
+    expect(isMeetingAccepted(null)).toBe(false);
   });
 });
 
