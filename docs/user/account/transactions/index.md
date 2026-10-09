@@ -4,7 +4,7 @@ description: View your billing and purchase history in LFX Self Serve.
 audience: [all]
 product_area: Account
 tags: [account, transactions, billing, purchases, history, receipts]
-last_updated: 2026-08-19
+last_updated: 2026-10-09
 intercom_collection: Account
 ---
 
@@ -15,9 +15,8 @@ The Transactions tab shows your Linux Foundation purchase history — payments f
 ### What you can do
 
 - View your complete purchase history
-- See transaction details including amount, date, and item purchased
+- See each purchase's name, order ID, date, type, and amount
 - Filter by transaction type using tabs: All Transactions, Event Tickets, Training, Certifications, Bundles, Subscriptions, Individual Support
-- Download a receipt or invoice from the transaction detail view, when available
 
 ### Who this applies to
 
@@ -28,14 +27,20 @@ All authenticated users can view their own transactions. Each user sees only the
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select [**Profile & Account**](/profile) from the left navigation sidebar.
 3. Open the **Transactions** tab, or go directly to `/profile/transactions`.
-4. Select a transaction to view its details.
 
 ### What a transaction record shows
 
-- Item name and description (for example, a training course or event registration)
-- Transaction date
-- Amount charged
-- Receipt or invoice download options, when available, in the transaction detail view
+Each transaction is a row in the table with these columns:
+
+- **Name** — the item purchased, such as a training course or event registration
+- **Order ID**
+- **Date**
+- **Type** — the kind of purchase, matching the filter tabs above the table
+- **Transaction Value** — the amount charged
+
+### Get a receipt or invoice
+
+The Transactions tab doesn't offer receipt or invoice downloads. For an event registration, open your registration confirmation email and download the invoice receipt PDF from the **Payment Information** section. Turn off any pop-up blockers first, or the PDF won't download. If you can't find your confirmation email, or you need a receipt for another type of purchase, contact LFX support.
 
 ### Empty state
 
