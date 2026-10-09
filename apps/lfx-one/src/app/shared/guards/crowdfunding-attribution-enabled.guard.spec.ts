@@ -16,7 +16,10 @@ describe('crowdfundingAttributionEnabledGuard', () => {
   let getBooleanFlag: ReturnType<typeof vi.fn>;
   let waitForReady: ReturnType<typeof vi.fn>;
   let router: {
+    url: string;
     parseUrl: ReturnType<typeof vi.fn>;
+    createUrlTree: ReturnType<typeof vi.fn>;
+    getCurrentNavigation: ReturnType<typeof vi.fn>;
   };
 
   const route: Route = { path: 'project/initiatives', data: { lens: 'project' } };
@@ -41,7 +44,10 @@ describe('crowdfundingAttributionEnabledGuard', () => {
     );
 
     router = {
-      parseUrl: vi.fn().mockImplementation((url: string) => ({ redirected: url })),
+      url: '/',
+      parseUrl: vi.fn().mockReturnValue({ queryParams: {} }),
+      createUrlTree: vi.fn().mockImplementation((commands: string[], opts: unknown) => ({ denied: commands[0], opts })),
+      getCurrentNavigation: vi.fn().mockReturnValue({ extractedUrl: { queryParams: { project: 'my-project' } } }),
     };
 
     TestBed.configureTestingModule({
@@ -83,8 +89,8 @@ describe('crowdfundingAttributionEnabledGuard', () => {
 
     const result = await runGuard();
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/');
-    expect(result).toEqual({ redirected: '/' });
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: 'my-project' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'my-project' } } });
     expect(waitForReady).not.toHaveBeenCalled();
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
@@ -102,8 +108,8 @@ describe('crowdfundingAttributionEnabledGuard', () => {
 
     const result = await runGuard();
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/');
-    expect(result).toEqual({ redirected: '/' });
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: 'my-project' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'my-project' } } });
   });
 
   it('fails closed to / when the provider never becomes ready', async () => {
@@ -117,8 +123,8 @@ describe('crowdfundingAttributionEnabledGuard', () => {
     vi.useRealTimers();
 
     expect(waitForReady).toHaveBeenCalledWith({ guard: 'crowdfundingAttributionEnabledGuard', flag: CROWDFUNDING_ATTRIBUTION_STEP_FLAG });
-    expect(router.parseUrl).toHaveBeenCalledWith('/');
-    expect(result).toEqual({ redirected: '/' });
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: 'my-project' } });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'my-project' } } });
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 });

@@ -7,13 +7,15 @@ import { CanMatchFn, Router } from '@angular/router';
 import { CROWDFUNDING_ATTRIBUTION_STEP_FLAG } from '@lfx-one/shared/constants';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
+import { deniedOverview } from './mktg-os-agents-enabled.guard';
 
 /**
  * CanMatch guard gating the Project/Foundation lens Initiatives routes (#347) behind the
  * `crowdfunding-attribution-step` flag, shared with the Crowdfunding app. SSR defers to the browser,
- * a local override decides before the provider is consulted, and an unready provider fails closed.
+ * a local override decides before the provider is consulted, and an unready provider fails closed. A denial
+ * lands on the lens overview with `?project=` kept, not on `/` (the Me lens).
  */
-export const crowdfundingAttributionEnabledGuard: CanMatchFn = async () => {
+export const crowdfundingAttributionEnabledGuard: CanMatchFn = async (route) => {
   const platformId = inject(PLATFORM_ID);
 
   // LaunchDarkly is unavailable during SSR, so the browser run of this guard makes the real decision.
@@ -27,16 +29,16 @@ export const crowdfundingAttributionEnabledGuard: CanMatchFn = async () => {
   // A locally pinned value decides on its own; see `FEATURE_FLAG_OVERRIDE_STORAGE_KEY`.
   const override = featureFlagService.getFlagOverride(CROWDFUNDING_ATTRIBUTION_STEP_FLAG);
   if (override !== undefined) {
-    return override ? true : router.parseUrl('/');
+    return override ? true : deniedOverview(router, route);
   }
 
   if (!featureFlagService.providerReady()) {
     const ready = await featureFlagService.waitForReady({ guard: 'crowdfundingAttributionEnabledGuard', flag: CROWDFUNDING_ATTRIBUTION_STEP_FLAG });
     // Dark launch: fail CLOSED when LaunchDarkly never becomes ready. waitForReady() reports the timeout to RUM.
     if (!ready) {
-      return router.parseUrl('/');
+      return deniedOverview(router, route);
     }
   }
 
-  return featureFlagService.getBooleanFlag(CROWDFUNDING_ATTRIBUTION_STEP_FLAG, false)() ? true : router.parseUrl('/');
+  return featureFlagService.getBooleanFlag(CROWDFUNDING_ATTRIBUTION_STEP_FLAG, false)() ? true : deniedOverview(router, route);
 };
