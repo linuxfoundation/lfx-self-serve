@@ -142,7 +142,7 @@ export class MailingListDashboardComponent {
     // Canonical tier-prefixed view link comes pre-computed on the row VM, flat fallback included (GH-1567).
     this.router.navigate(mailingList.viewCommands, {
       queryParams: mailingList.linkQueryParams,
-      state: { backLabel: this.isMeLens() ? `My ${this.mailingListLabelPlural}` : this.mailingListLabelPlural },
+      state: { backLabel: this.isMeLens() ? `My ${this.mailingListLabelPlural}` : this.mailingListLabelPlural, fromMeLens: this.isMeLens() },
     });
   }
 

@@ -309,6 +309,8 @@ export interface MailingListTableRowVm extends GroupsIOMailingList {
   viewCommands: string[];
   /** `?project=` for the view link — present only when the list carries a `project_slug`. */
   linkQueryParams: { project: string } | null;
+  /** Public Groups.io page for the list, when derivable from its domain/service */
+  groupsIoUrl: string | null;
   /** Me-lens subscription fields, present only when the row was sourced from `MyMailingList` */
   my_delivery_mode?: MailingListMemberDeliveryMode;
   my_mod_status?: MailingListMemberModStatus;
