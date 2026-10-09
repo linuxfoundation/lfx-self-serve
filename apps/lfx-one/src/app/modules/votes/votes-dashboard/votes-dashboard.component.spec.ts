@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { PollStatus, VoteResponseStatus } from '@lfx-one/shared';
-import { Lens, Vote } from '@lfx-one/shared/interfaces';
+import { Lens, ProjectContext, Vote } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -49,6 +49,7 @@ describe('VotesDashboardComponent personal summary', () => {
   let dashboard: VotesDashboardComponent;
   let table: VotesTableComponent;
   let activeLens: WritableSignal<Lens>;
+  let activeContext: WritableSignal<ProjectContext | null>;
   let getMyVotes: ReturnType<typeof vi.fn>;
   const cards = () => dashboard['myVoteStatCards']();
   const rows = () => table['displayedVotes']().map((row) => row.uid);
@@ -70,6 +71,7 @@ describe('VotesDashboardComponent personal summary', () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(NOW);
     activeLens = signal<Lens>('me');
+    activeContext = signal<ProjectContext | null>(null);
     getMyVotes = vi.fn(() => of(feed));
     TestBed.configureTestingModule({
       imports: [VotesDashboardComponent],
@@ -77,11 +79,23 @@ describe('VotesDashboardComponent personal summary', () => {
         provideRouter([]),
         MessageService,
         { provide: PLATFORM_ID, useValue: 'server' },
-        { provide: VoteService, useValue: { getMyVotes, mergeRecentlyOpenedVotes: (votes: Vote[]) => votes } },
+        {
+          provide: VoteService,
+          useValue: {
+            getMyVotes,
+            mergeRecentlyOpenedVotes: (votes: Vote[]) => votes,
+            getVotesCountByProject: vi.fn(() => of(20)),
+            getVotesByProjectPaginated: vi.fn((_uid: string, _rows: number, pageToken?: string, _search?: string, filters?: string[]) => {
+              const pageUid = pageToken ? 'second-page' : 'first-page';
+              const uid = filters?.includes(`status:${PollStatus.ENDED}`) ? 'ended-first-page' : pageUid;
+              return of({ data: [vote(uid, 1)], page_token: pageToken ? undefined : 'page-two' });
+            }),
+          },
+        },
         { provide: CommitteeService, useValue: { getCommitteesByProject: vi.fn(() => of([])) } },
         { provide: LensService, useValue: { activeLens } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true), hasBoardRole: signal(true), hasProjectRole: signal(true) } },
-        { provide: ProjectContextService, useValue: { activeContext: signal(null), canWrite: signal(false) } },
+        { provide: ProjectContextService, useValue: { activeContext, canWrite: signal(false) } },
       ],
     });
     // Keep the real dashboard, summary and table; unrelated drawers never participate in these scenarios.
@@ -113,6 +127,29 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(element('stat-card-needs-vote')?.getAttribute('aria-pressed')).toBe('false');
     expect(table.statusTab()).toBe('all');
     expect(rows()).toEqual(feed.map((item) => item.uid));
+  });
+
+  it.each<Lens>(['project', 'foundation'])('keeps %s page rows aligned with the paginator when reselecting a status', async (lens) => {
+    activeContext.set({ uid: 'project-a', name: 'Synthetic Project', slug: 'synthetic-project' });
+    activeLens.set(lens);
+    await settle();
+    table = fixture.debugElement.query(By.directive(VotesTableComponent)).componentInstance;
+    table['onStatusTabChange'](PollStatus.ACTIVE);
+    await settle();
+    dashboard['onPageChange']({ first: 10, rows: 10 });
+    await settle();
+    expect(rows()).toEqual(['second-page']);
+    expect(table.first()).toBe(10);
+
+    table['onStatusTabChange'](PollStatus.ACTIVE);
+    await settle();
+    expect(rows()).toEqual(['second-page']);
+    expect(table.first()).toBe(10);
+
+    table['onStatusTabChange'](PollStatus.ENDED);
+    await settle();
+    expect(rows()).toEqual(['ended-first-page']);
+    expect(table.first()).toBe(0);
   });
 
   it('aggregates returned foundation/project/group scope, excluding search, status and page from totals', async () => {

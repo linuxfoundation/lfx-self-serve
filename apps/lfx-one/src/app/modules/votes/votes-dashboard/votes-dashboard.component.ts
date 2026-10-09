@@ -8,15 +8,15 @@ import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
-import { MY_VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
 import { PollStatus, VOTE_LABEL, VOTES_PAGE_WALK_LIMIT, VoteResponseStatus } from '@lfx-one/shared';
+import { MY_VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
 import { Committee, Lens, MyVotesQuickFilter, PaginatedResponse, ProjectContext, StatCardItem, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
+import { findCursorWalkStartIndex, getUserTimezone, matchesMyVotesQuickFilter, recordPageToken, resolveCursorWalkOutcome } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
-import { findCursorWalkStartIndex, getUserTimezone, matchesMyVotesQuickFilter, recordPageToken, resolveCursorWalkOutcome } from '@lfx-one/shared/utils';
 import { formatInTimeZone } from 'date-fns-tz';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, combineLatest, EMPTY, expand, filter, finalize, last, map, Observable, of, switchMap, take, tap } from 'rxjs';
@@ -134,7 +134,9 @@ export class VotesDashboardComponent {
 
   protected onStatusTabSelected(): void {
     this.myVotesQuickFilter.set(null);
-    this.currentFirst.set(0);
+    if (this.isMeLens()) {
+      this.currentFirst.set(0);
+    }
   }
 
   protected onFiltersReset(): void {
@@ -265,7 +267,7 @@ export class VotesDashboardComponent {
       for (const vote of this.filteredMyVotes()) {
         if (vote.committee_name?.trim()) names.add(vote.committee_name);
       }
-      return [{ label: 'All Groups', value: null }, ...[...names].sort((a, b) => a.localeCompare(b)).map((name) => ({ label: name, value: name }))];
+      return [{ label: 'All Groups', value: null }, ...[...names].sort((a, b) => a.localeCompare(b, 'en-US')).map((name) => ({ label: name, value: name }))];
     });
   }
 

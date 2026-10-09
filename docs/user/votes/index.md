@@ -26,6 +26,8 @@ To view and cast votes, select **My Votes** from the left navigation sidebar in 
 
 To manage polls for a specific context, switch to your **Project** or **Foundation** lens using the lens switcher, then select **Votes** from the left navigation sidebar. The votes dashboard (route: `/project/votes` or `/foundation/votes`) lists all polls for your active project or foundation context. Use the tabs to filter: **All**, **Active**, **Draft**, **Ended**.
 
+In the Project and Foundation lenses, selecting the current status tab again keeps your current page. Selecting a different status returns to the first page and loads matching polls.
+
 ### My Votes summary
 
 Two summary cells above the table help you find approaching deadlines and outstanding responses:
@@ -38,6 +40,8 @@ Counts describe the returned personal feed within your selected foundation, proj
 Select a cell to filter the table and switch to **Active**. Select the same cell again to clear only the summary filter, leaving **Active** selected; select the other cell to switch filters. Search, group, foundation, project, and rows per page are preserved, and the table returns to its first page. Selecting any status tab, including **Active** again, clears the summary filter.
 
 If your filters have no matches, **No results found** keeps the controls available. **Reset filters** clears the summary and table filters. If a scope change removes the selected group, only that group selection is cleared.
+
+My Votes group choices use consistent English alphabetical ordering across browser and server locales.
 
 While loading, the cells show dashes and cannot be selected. A successfully loaded empty feed shows zero. If loading fails, counts are unavailable and **Unable to load your votes** appears instead of the no-invitations message. Select **Retry** to reload without losing your search and group controls.
 
