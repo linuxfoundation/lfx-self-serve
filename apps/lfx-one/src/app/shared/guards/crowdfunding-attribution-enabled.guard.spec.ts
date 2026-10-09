@@ -83,7 +83,7 @@ describe('crowdfundingAttributionEnabledGuard', () => {
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 
-  it('redirects to / when the local override says the flag is off, without waiting for READY', async () => {
+  it('denies to the lens overview when the local override says the flag is off, without waiting for READY', async () => {
     getFlagOverride.mockReturnValue(false);
     providerReady.set(false);
 
@@ -103,7 +103,7 @@ describe('crowdfundingAttributionEnabledGuard', () => {
     expect(result).toBe(true);
   });
 
-  it('redirects to / once the provider is ready and the flag is off', async () => {
+  it('denies to the lens overview once the provider is ready and the flag is off', async () => {
     getBooleanFlag.mockReturnValue(signal(false));
 
     const result = await runGuard();
@@ -112,7 +112,7 @@ describe('crowdfundingAttributionEnabledGuard', () => {
     expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'my-project' } } });
   });
 
-  it('fails closed to / when the provider never becomes ready', async () => {
+  it('fails closed to the lens overview when the provider never becomes ready', async () => {
     vi.useFakeTimers();
     providerReady.set(false);
 
@@ -126,5 +126,18 @@ describe('crowdfundingAttributionEnabledGuard', () => {
     expect(router.createUrlTree).toHaveBeenCalledWith(['/project/overview'], { queryParams: { project: 'my-project' } });
     expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'my-project' } } });
     expect(getBooleanFlag).not.toHaveBeenCalled();
+  });
+
+  it('denies an Org Lens route to the addressed organization overview (#348)', async () => {
+    getBooleanFlag.mockReturnValue(signal(false));
+    router.getCurrentNavigation.mockReturnValue({
+      extractedUrl: { root: { children: { primary: { segments: ['org', 'acme-inc', 'initiatives'].map((path) => ({ path })) } } } },
+    });
+    router.parseUrl.mockImplementation((url: string) => ({ redirected: url }));
+
+    const result = await TestBed.runInInjectionContext(() => crowdfundingAttributionEnabledGuard({ path: 'initiatives', data: { lens: 'org' } }, segments));
+
+    expect(result).toEqual({ redirected: '/org/acme-inc/overview' });
+    expect(router.createUrlTree).not.toHaveBeenCalled();
   });
 });

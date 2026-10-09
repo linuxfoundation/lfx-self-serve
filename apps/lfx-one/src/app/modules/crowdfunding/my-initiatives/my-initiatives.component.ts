@@ -1,24 +1,36 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, linkedSignal, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { ButtonComponent } from '@components/button/button.component';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
-import { CrowdfundingInitiativesStats, InitiativesResponse, NavLens, StatCardItem } from '@lfx-one/shared/interfaces';
-import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_INITIATIVES_RESPONSE, NAV_LENSES } from '@lfx-one/shared/constants';
+import {
+  CrowdfundingInitiativesStats,
+  InitiativesLoadError,
+  InitiativesResponse,
+  InitiativesScope,
+  Lens,
+  NavLens,
+  StatCardItem,
+} from '@lfx-one/shared/interfaces';
+import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_CROWDFUNDING_STATS, EMPTY_INITIATIVES_RESPONSE, NAV_LENSES } from '@lfx-one/shared/constants';
 import { formatCurrency } from '@lfx-one/shared/utils';
+import { AccountContextService } from '@services/account-context.service';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { filter, finalize, scan, startWith, switchMap, tap } from 'rxjs/operators';
+import { of } from 'rxjs';
+import { catchError, filter, finalize, scan, startWith, switchMap, tap } from 'rxjs/operators';
 import { InitiativesListComponent } from './components/initiatives-list/initiatives-list.component';
 
 @Component({
   selector: 'lfx-my-initiatives',
-  imports: [ButtonComponent, StatCardGridComponent, RouteLoadingComponent, InitiativesListComponent],
+  imports: [ButtonComponent, EmptyStateComponent, StatCardGridComponent, RouteLoadingComponent, InitiativesListComponent],
   templateUrl: './my-initiatives.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -28,23 +40,34 @@ export class MyInitiativesComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly crowdfundingService = inject(CrowdfundingService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly accountContext = inject(AccountContextService);
 
   // ─── Public Fields ─────────────────────────────────────────────────────────
   protected readonly crowdfundingUrl = `${environment.urls.crowdfunding}?fundraise=true`;
-  // The Project/Foundation lens routes reuse this page scoped to the lens's project (#347); elsewhere it lists
-  // the caller's own initiatives.
-  protected readonly isLensPage = NAV_LENSES.includes(this.route.snapshot.data['lens'] as NavLens);
+  // The Project/Foundation (#347) and Org (#348) lens routes reuse this page scoped to the lens's entity; elsewhere
+  // it lists the caller's own initiatives.
+  private readonly lens = this.route.snapshot.data['lens'] as Lens | undefined;
+  private readonly isOrgLens = this.lens === 'org';
+  protected readonly isLensPage = this.isOrgLens || NAV_LENSES.includes(this.lens as NavLens);
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
   protected readonly isLoading = signal(true);
   protected readonly loadingMore = signal(false);
+  protected readonly loadError = signal<InitiativesLoadError | null>(null);
+  // Bumped by Try again to refetch the same scope.
+  private readonly reloadCount = signal(0);
 
   // ─── Computed Signals ─────────────────────────────────────────────────────
-  // '' = the caller's own initiatives; otherwise the lens project's uid.
-  private readonly projectUid = computed(() => (this.isLensPage ? this.projectContextService.activeContextUid() : ''));
-  protected readonly projectName = computed(() => this.projectContextService.activeContext()?.name ?? '');
-  // Pagination driver — back to the first page whenever the lens project changes.
-  private readonly page = linkedSignal({ source: this.projectUid, computation: (uid) => ({ uid, offset: 0 }) });
+  // undefined = the caller's own initiatives; a lens scope with uid '' = the lens entity has not resolved yet.
+  private readonly scope: Signal<InitiativesScope | undefined> = this.initScope();
+  protected readonly entityName = computed(() =>
+    this.isOrgLens ? this.accountContext.selectedAccount().accountName : (this.projectContextService.activeContext()?.name ?? '')
+  );
+  // Pagination driver — back to the first page whenever the lens entity changes or Try again is clicked.
+  private readonly page = linkedSignal({
+    source: () => ({ scope: this.scope(), reload: this.reloadCount() }),
+    computation: ({ scope }) => ({ scope, offset: 0 }),
+  });
   private readonly initiativesState: Signal<InitiativesResponse> = this.initInitiatives();
   protected readonly initiatives = computed(() => this.initiativesState().data);
   protected readonly initiativesHasMore = computed(() => this.initiativesState().data.length < this.initiativesState().total);
@@ -63,18 +86,44 @@ export class MyInitiativesComponent {
     this.page.update((curr) => ({ ...curr, offset: curr.offset + DEFAULT_CROWDFUNDING_PAGE_SIZE }));
   }
 
+  protected onRetry(): void {
+    this.reloadCount.update((count) => count + 1);
+  }
+
   // ─── Private Initializers ──────────────────────────────────────────────────
+  private initScope(): Signal<InitiativesScope | undefined> {
+    return computed(
+      (): InitiativesScope | undefined => {
+        if (this.isOrgLens) return { kind: 'organizations', uid: this.accountContext.selectedAccount().uid ?? '' };
+        if (this.isLensPage) return { kind: 'projects', uid: this.projectContextService.activeContextUid() };
+        return undefined;
+      },
+      // The selected account is re-set as its display fields hydrate; only a different entity is a new scope.
+      { equal: (a, b) => a?.kind === b?.kind && a?.uid === b?.uid }
+    );
+  }
+
   private initInitiatives(): Signal<InitiativesResponse> {
     return toSignal(
       toObservable(this.page).pipe(
-        // On a lens route, wait for the lens context to resolve a project rather than listing the caller's own.
-        filter(({ uid }) => !this.isLensPage || !!uid),
-        // A first page (initial load or a project switch) shows the loader, not the previous project's rows.
-        tap(({ offset }) => offset === 0 && this.isLoading.set(true)),
-        switchMap(({ uid, offset }) =>
-          this.crowdfundingService
-            .getMyInitiatives({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset, projectUid: uid || undefined })
-            .pipe(finalize(() => this.loadingMore.set(false)))
+        // On a lens route, wait for the lens context to resolve its entity rather than listing the caller's own.
+        filter(({ scope }) => !scope || !!scope.uid),
+        // A first page (initial load, entity switch, retry) shows the loader, not the previous entity's rows.
+        tap(({ offset }) => {
+          if (offset !== 0) return;
+          this.isLoading.set(true);
+          this.loadError.set(null);
+        }),
+        switchMap(({ scope, offset }) =>
+          this.crowdfundingService.getMyInitiatives({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset, scope }).pipe(
+            // Only scoped calls error (the caller's own list falls back to empty in the service): 403 = not a writer on
+            // the entity, anything else = CF or its FGA check is down.
+            catchError((err: HttpErrorResponse) => {
+              this.loadError.set(err.status === 403 ? 'forbidden' : 'unavailable');
+              return of(EMPTY_INITIATIVES_RESPONSE);
+            }),
+            finalize(() => this.loadingMore.set(false))
+          )
         ),
         scan((acc, curr) => (curr.offset === 0 ? curr : { ...curr, data: [...acc.data, ...curr.data] }), EMPTY_INITIATIVES_RESPONSE),
         tap(() => this.isLoading.set(false))
@@ -85,10 +134,16 @@ export class MyInitiativesComponent {
 
   private initStats(): Signal<CrowdfundingInitiativesStats | undefined> {
     return toSignal(
-      toObservable(this.projectUid).pipe(
-        filter((uid) => !this.isLensPage || !!uid),
-        // startWith(undefined): the cards show their loading state, not the previous project's numbers.
-        switchMap((uid) => this.crowdfundingService.getMyInitiativesStats(uid || undefined).pipe(startWith(undefined)))
+      toObservable(computed(() => ({ scope: this.scope(), reload: this.reloadCount() }))).pipe(
+        filter(({ scope }) => !scope || !!scope.uid),
+        // startWith(undefined): the cards show their loading state, not the previous entity's numbers. A failed scoped
+        // call shows zeroes; the list's error state is what the page shows in that case.
+        switchMap(({ scope }) =>
+          this.crowdfundingService.getMyInitiativesStats(scope).pipe(
+            catchError(() => of(EMPTY_CROWDFUNDING_STATS)),
+            startWith(undefined)
+          )
+        )
       )
     );
   }

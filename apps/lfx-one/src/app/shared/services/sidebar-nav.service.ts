@@ -25,10 +25,12 @@ import {
 } from '@lfx-one/shared/constants';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { isFormationStageGate, isGwEmbedAllowedForSlug } from '@lfx-one/shared/utils';
+import { AccountContextService } from '@services/account-context.service';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -52,6 +54,8 @@ export class SidebarNavService {
   private readonly userService = inject(UserService);
   private readonly writerGrantsService = inject(WriterGrantsService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
+  private readonly accountContext = inject(AccountContextService);
+  private readonly orgRoleGrants = inject(OrgRoleGrantsService);
 
   /** The section EasyCLA is inserted into; matched by label because the tree is built inline. */
   private readonly orgEngagementSectionLabel = 'Organization Engagement';
@@ -171,13 +175,20 @@ export class SidebarNavService {
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
     const base = this.orgLensItems();
     const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(base) : base;
-    if (!this.isOrgLensRoiEnabled()) return items;
+    const afterProjectsItems = [
+      ...(this.isOrgLensRoiEnabled() ? [this.orgRoiNavItem()] : []),
+      // Initiatives (#348) is dark-launched and follows a direct writer grant on the selected organization — CF lists an
+      // organization's initiatives to its writers only, and b2b_org writer access does not cascade from a parent.
+      ...(this.isCrowdfundingAttributionEnabled() && this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '')
+        ? [this.orgInitiativesNavItem()]
+        : []),
+    ];
+    if (afterProjectsItems.length === 0) return items;
     const projectsIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('projects'));
-    const roi = this.orgRoiNavItem();
-    // Append rather than prepend if Projects ever goes away, so ROI can't silently jump to the top.
-    if (projectsIndex === -1) return [...items, roi];
+    // Append rather than prepend if Projects ever goes away, so these can't silently jump to the top.
+    if (projectsIndex === -1) return [...items, ...afterProjectsItems];
     const afterProjects = projectsIndex + 1;
-    return [...items.slice(0, afterProjects), roi, ...items.slice(afterProjects)];
+    return [...items.slice(0, afterProjects), ...afterProjectsItems, ...items.slice(afterProjects)];
   });
 
   // Me Lens nav with feature-flagged sections stripped (Security/Akrites and Mentorship are dark-launched),
@@ -764,6 +775,13 @@ export class SidebarNavService {
     icon: 'fa-light fa-chart-mixed-up-circle-dollar',
     routerLink: this.orgLensNavigation.orgLensPath('roi'),
     testId: 'sidebar-org-roi',
+  }));
+
+  private readonly orgInitiativesNavItem: Signal<SidebarMenuItem> = computed(() => ({
+    label: 'Initiatives',
+    icon: 'fa-light fa-box-dollar',
+    routerLink: this.orgLensNavigation.orgLensPath('initiatives'),
+    testId: 'sidebar-org-initiatives',
   }));
 
   private readonly orgEasyclaNavItem: Signal<SidebarMenuItem> = computed(() => ({

@@ -88,6 +88,24 @@ function orgLensPageRoutes(): Routes {
       ],
     },
     {
+      // Initiatives attributed to the organization (#348): the My Initiatives page and detail scoped by `data.lens`.
+      // Componentless parent so the dark-launch guard covers both children.
+      path: 'initiatives',
+      canMatch: [crowdfundingAttributionEnabledGuard],
+      data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your organization.', icon: 'fa-light fa-box-dollar' },
+      children: [
+        {
+          path: '',
+          loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
+        },
+        {
+          path: ':slug',
+          data: { title: 'Initiative' },
+          loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
+        },
+      ],
+    },
+    {
       path: 'overview',
       data: {
         lens: 'org',

@@ -18,10 +18,12 @@ import {
   ORG_LENS_ROI_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { AccountContextService } from '@services/account-context.service';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -48,6 +50,8 @@ describe('SidebarNavService', () => {
   const gatewazeEmbedEnabled = signal(false);
   const crowdfundingAttributionEnabled = signal(false);
   const canWrite = signal(false);
+  const selectedOrgUid = signal<string | null>(null);
+  const orgWriterSet = signal(new Set<string>());
   /** Settable so the Gatewaze embed's tenant gate can be exercised; the embed is AAIF-only. */
   const selectedProject = signal<{ slug: string } | null>(null);
   const selectedFoundation = signal<{ slug: string } | null>(null);
@@ -81,6 +85,8 @@ describe('SidebarNavService', () => {
     gatewazeEmbedEnabled.set(false);
     crowdfundingAttributionEnabled.set(false);
     canWrite.set(false);
+    selectedOrgUid.set(null);
+    orgWriterSet.set(new Set());
 
     TestBed.configureTestingModule({
       providers: [
@@ -138,6 +144,8 @@ describe('SidebarNavService', () => {
         // shape, so the builder is stubbed to the legacy form; `orgSegment` names an organization for
         // the cases that assert the org-scoped form.
         { provide: OrgLensNavigationService, useValue: { orgLensPath: (page: string) => (orgSegment() ? `/org/${orgSegment()}/${page}` : `/org/${page}`) } },
+        { provide: AccountContextService, useValue: { selectedAccount: () => ({ accountId: '', accountName: 'Acme', uid: selectedOrgUid() }) } },
+        { provide: OrgRoleGrantsService, useValue: { writerSet: orgWriterSet } },
       ],
     });
   });
@@ -448,6 +456,29 @@ describe('SidebarNavService', () => {
     expect(orgLinks.filter((link) => !link.startsWith('/org/acme-inc/'))).toEqual([]);
     expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
     expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
+  });
+
+  it('shows Initiatives after Projects and ROI on the org lens only for a direct writer on the selected organization with the flag on', () => {
+    const orgUid = '001000000000000AAA';
+    activeLens.set('org');
+    orgSegment.set('acme-inc');
+    selectedOrgUid.set(orgUid);
+    orgRoiEnabled.set(true);
+    const service = TestBed.inject(SidebarNavService);
+
+    orgWriterSet.set(new Set([orgUid]));
+    expect(findByLink(service.sidebarItems(), '/org/acme-inc/initiatives')).toBeUndefined();
+
+    crowdfundingAttributionEnabled.set(true);
+    orgWriterSet.set(new Set(['001000000000000BBB']));
+    expect(findByLink(service.sidebarItems(), '/org/acme-inc/initiatives')).toBeUndefined();
+
+    orgWriterSet.set(new Set([orgUid]));
+    const items = service.sidebarItems();
+    const itemLabels = labels(items);
+    expect(findByLink(items, '/org/acme-inc/initiatives')).toEqual(expect.objectContaining({ label: 'Initiatives', testId: 'sidebar-org-initiatives' }));
+    expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
+    expect(itemLabels.indexOf('Initiatives')).toBe(itemLabels.indexOf('ROI Metrics') + 1);
   });
 
   it('inserts Formations between Events and Mailing Lists on foundation lens for a full-access user when the flag is on', () => {
