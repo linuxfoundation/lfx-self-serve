@@ -30,10 +30,10 @@ describe('MailingListViewComponent indexed address', () => {
     });
 
     // The route param is supplied independently of the list's project or parent service.
+    TestBed.overrideProvider(ActivatedRoute, { useValue: { paramMap: of(convertToParamMap({ id: 'ml-1' })) } });
     if (navState) {
       vi.spyOn(TestBed.inject(Router), 'getCurrentNavigation').mockReturnValue({ extras: { state: navState } } as never);
     }
-    TestBed.overrideProvider(ActivatedRoute, { useValue: { paramMap: of(convertToParamMap({ id: 'ml-1' })) } });
     const component = TestBed.runInInjectionContext(() => new MailingListViewComponent());
 
     expect(getMailingList).toHaveBeenCalledWith('ml-1');
