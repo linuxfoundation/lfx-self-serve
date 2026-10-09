@@ -1315,6 +1315,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleBiddingError: Signal<string | null> = this.initGoogleBiddingError();
   protected readonly googleCreativeError: Signal<string | null> = this.initGoogleCreativeError();
   protected readonly googleCreativeEmptyWarning: Signal<string | null> = this.initGoogleCreativeEmptyWarning();
+  protected readonly redditNoAdWarning: Signal<string | null> = this.initRedditNoAdWarning();
   protected readonly campaignName: Signal<string> = this.initCampaignName();
 
   // === Form Array Accessors ===
@@ -3195,6 +3196,44 @@ export class ImplementationTabComponent implements OnInit {
       // early on an empty `Result`, and the call site states it (`:2083-2089`). Nothing re-reads
       // Google, so creative added by hand upstream is never discovered here.
       return `${sentence} Activating it from LFX stays refused even after that, so launch it in Google Ads.`;
+    });
+  }
+
+  /**
+   * That a Reddit create is about to make a campaign with no ad in it, or null when it is not.
+   *
+   * The pre-submit half of a sentence this product only ever said afterwards. The created-campaigns
+   * list already carries `implementation-reddit-no-ad-notice` once `adCount` comes back 0, which is
+   * after the campaign, its ad group and its budget exist and the operator has nothing left to
+   * change. This says the same thing while a post URL can still be typed.
+   *
+   * A warning and not a block, for the reason {@link initGoogleCreativeEmptyWarning} is one: both
+   * creators ACCEPT this shape and report success, so refusing it here would refuse a create the
+   * platform makes. The legacy creator's no-post branch is a documented workflow in its own right —
+   * it writes the variant headlines into `steps` for an operator to paste into Reddit Ads Manager
+   * (`reddit-ads.service.ts:599-630`) — and `canSubmit` deliberately does not read this.
+   *
+   * Judged on the two gates the payload itself uses, so the warning can never disagree with what is
+   * sent. `postUrl` goes on both arms and creates the ad on either (`reddit-ads.service.ts:603`,
+   * `internal/platform/reddit/client.go:1622`). `imageUrl` authors a post only when the cutover owns
+   * the create AND only when no post URL is set (`client.go:1629-1652`); with the capability dark or
+   * unanswered the payload drops it, so a typed image does not avert this warning — it is withheld,
+   * and withheld means no ad.
+   */
+  private initRedditNoAdWarning(): Signal<string | null> {
+    return computed(() => {
+      if (!this.showRedditSection()) return null;
+      if (this.redditPostUrl()) return null;
+      if (this.redditCreativeAvailable() && this.redditImageUrl()) return null;
+      // Names only the fields the operator can actually see: with the authored-post controls
+      // withheld, an image URL is not a remedy and telling them to supply one would be advice they
+      // cannot take.
+      const missing = this.redditCreativeAvailable() ? 'No post URL and no image URL' : 'No post URL';
+      // "Stays refused" rather than "add the ad later", and it is the same permanence the Google
+      // warning states: activation needs both child ids (`internal/dispatch/reddit.go:484-485`) and
+      // they come from `redditChildIDs` (`:817-832`), which reads only the persisted Result blob.
+      // Nothing re-reads Reddit, so an ad attached by hand upstream is never discovered.
+      return `${missing}, so this campaign is created with no ad: the campaign and its ad group are made and the create reports success, but nothing serves. Activating it from LFX then stays refused permanently, so either supply a post above or build and launch the campaign in Reddit Ads Manager.`;
     });
   }
 

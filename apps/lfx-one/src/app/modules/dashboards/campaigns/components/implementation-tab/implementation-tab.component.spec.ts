@@ -3038,6 +3038,8 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     redditPostUrl: () => string;
     redditImageUrl: () => string;
     redditCallToAction: () => string;
+    redditNoAdWarning: () => string | null;
+    canSubmit: () => boolean;
     metaVariants: () => unknown[];
     submit(): void;
   }
@@ -3363,6 +3365,137 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const config = sentConfig('redditConfig');
     expect('imageUrl' in config).toBe(false);
     expect('callToAction' in config).toBe(false);
+  });
+
+  // === Reddit: the pre-submit no-ad warning ===
+
+  /** Render the Reddit section, which is what `redditNoAdWarning` is scoped to. */
+  function selectReddit(f: ComponentFixture<ImplementationTabComponent>): Internals {
+    const c = at(f);
+    c.selectedPlatforms.set(['reddit-ads']);
+    f.detectChanges();
+    return c;
+  }
+
+  const warningText = (f: ComponentFixture<ImplementationTabComponent>): string | undefined =>
+    (f.nativeElement.querySelector('[data-testid="implementation-reddit-no-ad-warning"]') as HTMLElement | null)?.textContent?.trim();
+
+  /**
+   * The warning, and the fact that it is only a warning.
+   *
+   * Both creators accept a Reddit create with no post and no image — they make the campaign and its
+   * ad group, return success, and leave nothing that can serve — so the button must stay live. The
+   * `canSubmit` assertion is the half that matters most: turning this into a refusal would block a
+   * create the platform makes, which is the one thing this section's controls are forbidden to do.
+   */
+  it('warns before submit when a reddit create would make no ad, without blocking it', async () => {
+    const f = (await mount(null, true)).fixture;
+    const c = selectReddit(f);
+
+    expect(c.redditNoAdWarning()).toBe(
+      'No post URL and no image URL, so this campaign is created with no ad: the campaign and its ad group are made and the create reports success, ' +
+        'but nothing serves. Activating it from LFX then stays refused permanently, so either supply a post above or build and launch the campaign in Reddit Ads Manager.'
+    );
+    expect(warningText(f)).toBe(c.redditNoAdWarning());
+    expect(c.canSubmit()).toBe(true);
+  });
+
+  /**
+   * With the authored-post controls withheld there is no image field on screen, so naming one would
+   * be advice the operator cannot take. Asserted at both withheld states, since `null` (unanswered)
+   * and `false` (answered no) reach the template by different routes.
+   */
+  it.each([[undefined], [false]])('names only the post url while redditCreativeEnabled is %s', async (capability) => {
+    const f = (await mount(null, capability as boolean | undefined)).fixture;
+    const c = selectReddit(f);
+
+    expect(c.redditNoAdWarning()).toContain('No post URL, so this campaign is created with no ad');
+    expect(c.redditNoAdWarning()).not.toContain('image URL');
+  });
+
+  /** A post URL is the one answer that works on both arms, so it clears the warning on both. */
+  it.each([[undefined], [true]])('clears once a post url is typed, with redditCreativeEnabled %s', async (capability) => {
+    const f = (await mount(null, capability as boolean | undefined)).fixture;
+    const c = selectReddit(f);
+    expect(c.redditNoAdWarning()).not.toBeNull();
+
+    typeRedditPostUrl(f, 'https://redd.it/abc123');
+
+    expect(c.redditNoAdWarning()).toBeNull();
+    expect(warningText(f)).toBeUndefined();
+  });
+
+  /** An image authors the post upstream, so with the capability granted it is a real answer too. */
+  it('clears once an image url is typed while the capability is granted', async () => {
+    const f = (await mount(null, true)).fixture;
+    const c = selectReddit(f);
+
+    typeRedditImageUrl(f, 'https://cdn.example.org/promo.png');
+
+    expect(c.redditNoAdWarning()).toBeNull();
+  });
+
+  /**
+   * The asymmetry that makes this warning worth having, and the one a warning keyed on the controls
+   * instead of on the payload's own gates would get wrong: a draft written while the capability was
+   * granted still carries an image, the remount still remembers it, and the request still drops it
+   * — so there is still no ad, and the warning must still fire.
+   */
+  it('keeps warning about a remembered image the request will not carry', async () => {
+    const granted = await mount(null, true);
+    typeRedditImageUrl(granted.fixture, 'https://cdn.example.org/promo.png');
+    const draft = granted.latest();
+    granted.fixture.destroy();
+
+    const withheld = await mount(draft, false);
+    const c = selectReddit(withheld.fixture);
+
+    expect(c.redditImageUrl()).toBe('https://cdn.example.org/promo.png');
+    expect(c.redditNoAdWarning()).not.toBeNull();
+  });
+
+  /** Nothing here belongs to a campaign Reddit is not part of. */
+  it('says nothing when reddit is not selected', async () => {
+    const f = (await mount(null, true)).fixture;
+    const c = at(f);
+    c.selectedPlatforms.set(['linkedin-ads']);
+    f.detectChanges();
+
+    expect(c.redditNoAdWarning()).toBeNull();
+  });
+
+  /**
+   * How it reaches a screen reader, which is a separate question from what it says — and the same
+   * one the Google warning's region answers. The region must be in the DOM BEFORE the sentence
+   * appears: an aria-live element inserted with its text already in it is not reliably announced,
+   * and the visible copy's guard IS the sentence, so no placement inside that guard works.
+   *
+   * Each assertion fails against a different wrong fix: the region existing while empty rules out
+   * wrapping it in an `@if`; the text pins that it carries the message; and the bare `<p>` rules
+   * out putting `role="status"` on the visible element, which would announce it twice.
+   */
+  it('announces the no-ad warning politely, from a region that outlives it', async () => {
+    const f = (await mount(null, true)).fixture;
+    const find = (testId: string): HTMLElement | null => f.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    // Away from the brief's own selection first, so the region is observed with nothing to say and
+    // the sentence arrives as a CONTENT change in an element that already existed.
+    at(f).selectedPlatforms.set(['linkedin-ads']);
+    f.detectChanges();
+
+    const live = find('implementation-reddit-no-ad-live');
+    expect(live).not.toBeNull();
+    expect(live?.textContent?.trim()).toBe('');
+    expect(live?.getAttribute('role')).toBe('status');
+    expect(live?.getAttribute('aria-live')).toBe('polite');
+    expect(live?.getAttribute('aria-atomic')).toBe('true');
+
+    const c = selectReddit(f);
+    expect(find('implementation-reddit-no-ad-live')).toBe(live);
+    expect(live?.textContent?.trim()).toBe(c.redditNoAdWarning());
+
+    const visible = find('implementation-reddit-no-ad-warning');
+    expect(visible?.getAttribute('role')).toBeNull();
+    expect(visible?.getAttribute('aria-live')).toBeNull();
   });
 
   // === LinkedIn: the budget pair ===

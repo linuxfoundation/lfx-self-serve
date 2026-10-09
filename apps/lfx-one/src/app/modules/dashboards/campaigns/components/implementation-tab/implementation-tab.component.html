@@ -66,6 +66,22 @@
   {{ googleCreativeEmptyWarning() }}
 </div>
 
+<!--
+  Reddit no-ad warning, announced.
+
+  Top-level and outside the guard for the reason the two regions above are: the visible copy lives
+  inside `@if (redditNoAdWarning())`, so it is created by the very change that gives it its text,
+  and an aria-live element inserted with its text already present is not reliably announced.
+
+  Polite, and for the same reason the Google warning is: the campaign it describes IS created,
+  submit stays enabled, and the legacy creator's no-post path is a workflow an operator may be
+  choosing on purpose. Nothing here is a refusal, so nothing here interrupts. The visible `<p>`
+  carries no role of its own, or the sentence would be announced twice.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-reddit-no-ad-live">
+  {{ redditNoAdWarning() }}
+</div>
+
 <!-- Nothing renders in the 'off' state — see briefPersistence. -->
 @switch (briefPersistence().status) {
   @case ('saving') {
@@ -1283,6 +1299,18 @@
                   <p class="text-xs text-gray-500">Button on the composed post. Ignored when a post URL is set.</p>
                 </div>
               </div>
+            }
+
+            <!-- Said BEFORE the create, beside the controls that answer it. The same product
+                 already says it afterwards, in the created-campaigns list below
+                 (`implementation-reddit-no-ad-notice`), by which point the campaign exists and
+                 nothing above can still be typed.
+
+                 No role on this element — the sr-only region at the top of the template announces
+                 it, and a role here would announce it twice. amber-700 rather than amber-600 for
+                 the contrast reason the Google warning records. -->
+            @if (redditNoAdWarning()) {
+              <p class="text-xs text-amber-700" data-testid="implementation-reddit-no-ad-warning">{{ redditNoAdWarning() }}</p>
             }
           </div>
 
