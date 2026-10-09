@@ -233,9 +233,11 @@ export class MeetingCardComponent implements OnInit {
   public readonly effectivelyInvited: Signal<boolean> = computed(() => (this.isInvited() && !this.optimisticLeft()) || this.optimisticInvited());
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
   public readonly attendeeListShared: Signal<boolean> = computed(() => isMeetingAttendeeListShared(this.meeting()));
-  public readonly canLeaveMeeting: Signal<boolean> = computed(
+  public readonly isRegisteredAttendee: Signal<boolean> = computed(
     () => this.authenticated() && this.effectivelyInvited() && !this.meeting().organizer && !this.pastMeeting()
   );
+  // A committee-sourced registration follows committee membership, so it cannot be removed from here.
+  public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee() && !this.meeting().invited_via_committee);
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );

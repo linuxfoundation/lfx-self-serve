@@ -17,7 +17,7 @@
         }
 
         <!-- Registered Badge (upcoming meetings the viewer is registered for) -->
-        @if (canLeaveMeeting()) {
+        @if (isRegisteredAttendee()) {
           <lfx-tag value="Registered" severity="success" icon="fa-light fa-circle-check" data-testid="registered-badge"></lfx-tag>
         }
 
@@ -469,22 +469,23 @@
               [href]="meetingDetailUrl()"
               target="_blank">
             </lfx-button>
-            @if (canLeaveMeeting()) {
-              <lfx-button
-                class="shrink-0"
-                icon="fa-light fa-user-xmark"
-                size="small"
-                severity="secondary"
-                ariaLabel="Remove myself from this meeting"
-                pTooltip="Remove myself from this meeting"
-                tooltipPosition="top"
-                data-testid="leave-meeting-button"
-                [loading]="leavingMeeting()"
-                (click)="confirmLeaveMeeting()">
-              </lfx-button>
-            }
           }
         </div>
+        @if (canLeaveMeeting()) {
+          <div class="mt-2">
+            <lfx-button
+              class="w-full"
+              styleClass="w-full"
+              icon="fa-light fa-user-xmark"
+              label="Remove Myself"
+              size="small"
+              severity="secondary"
+              data-testid="leave-meeting-button"
+              [loading]="leavingMeeting()"
+              (onClick)="confirmLeaveMeeting()">
+            </lfx-button>
+          </div>
+        }
       </div>
     </div>
 

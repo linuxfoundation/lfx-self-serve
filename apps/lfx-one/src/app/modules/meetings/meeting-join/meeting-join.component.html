@@ -498,17 +498,19 @@
                           <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
                         }
                       }
-                      <lfx-button
-                        class="w-full"
-                        styleClass="w-full"
-                        icon="fa-light fa-user-xmark"
-                        label="Remove Myself"
-                        size="small"
-                        severity="secondary"
-                        [loading]="leavingMeeting()"
-                        (onClick)="confirmLeaveMeeting()"
-                        data-testid="leave-meeting-button">
-                      </lfx-button>
+                      @if (canLeaveMeeting()) {
+                        <lfx-button
+                          class="w-full"
+                          styleClass="w-full"
+                          icon="fa-light fa-user-xmark"
+                          label="Remove Myself"
+                          size="small"
+                          severity="secondary"
+                          [loading]="leavingMeeting()"
+                          (onClick)="confirmLeaveMeeting()"
+                          data-testid="leave-meeting-button">
+                        </lfx-button>
+                      }
                     </div>
                   } @else if (canRegisterForMeeting()) {
                     <lfx-button

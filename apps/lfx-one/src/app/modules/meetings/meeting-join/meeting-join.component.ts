@@ -379,6 +379,7 @@ export class MeetingJoinComponent implements OnInit {
   // Computed signals for invited/registration status
   public isInvited: Signal<boolean>;
   public effectivelyInvited: Signal<boolean>;
+  public canLeaveMeeting: Signal<boolean>;
   // Matches the BFF roster gate: an invitee sees the other guests only when the organizer shares them.
   protected attendeeListShared = computed(() => isMeetingAttendeeListShared(this.meeting()));
   protected canViewGuests = computed(() => !!this.meeting()?.organizer || (this.effectivelyInvited() && this.attendeeListShared()));
@@ -508,6 +509,8 @@ export class MeetingJoinComponent implements OnInit {
     // Initialize invited/registration signals
     this.isInvited = this.initializeIsInvited();
     this.effectivelyInvited = computed(() => (this.isInvited() && !this.optimisticLeft()) || this.optimisticInvited());
+    // A committee-sourced registration follows committee membership, so it cannot be removed from here.
+    this.canLeaveMeeting = computed(() => this.effectivelyInvited() && !this.meeting()?.invited_via_committee);
     this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
     this.canToggleRsvpView = this.initializeCanToggleRsvpView();
     this.currentUserRsvp = this.initializeCurrentUserRsvp();

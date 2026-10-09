@@ -1323,3 +1323,53 @@ describe('UserService.getPendingActions managed applications (GH-3131)', () => {
     expect(actions.map((action) => action.type)).toEqual(expectedTypes.filter((type) => type !== failed));
   });
 });
+
+describe('UserService.getUserMeetingRegistrations', () => {
+  const req = {} as unknown as Request;
+  let service: UserService;
+
+  const registrantPage = (rows: Partial<MeetingRegistrant>[]) => ({
+    resources: rows.map((data) => ({ id: String(data.uid), type: 'v1_meeting_registrant', data })),
+  });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getUsernameFromAuth.mockReset().mockResolvedValue('testuser');
+    service = new UserService();
+  });
+
+  it('marks a meeting as committee-sourced when any of the caller registrations for it came from a committee', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      registrantPage([
+        { uid: 'r1', meeting_id: 'via-committee', type: 'committee' },
+        { uid: 'r2', meeting_id: 'direct-only', type: 'direct' },
+        { uid: 'r3', meeting_id: 'mixed', type: 'direct' },
+        { uid: 'r4', meeting_id: 'mixed', type: 'committee' },
+      ])
+    );
+
+    const registrations = await service.getUserMeetingRegistrations(req, 'user@example.com');
+
+    expect(Object.fromEntries(registrations)).toEqual({ 'via-committee': true, 'direct-only': false, mixed: true });
+  });
+
+  it('keeps getUserRegisteredMeetingIds returning just the meeting ids', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      registrantPage([
+        { uid: 'r1', meeting_id: 'm1', type: 'committee' },
+        { uid: 'r2', meeting_id: 'm2', type: 'direct' },
+      ])
+    );
+
+    const ids = await service.getUserRegisteredMeetingIds(req, 'user@example.com');
+
+    expect([...ids].sort()).toEqual(['m1', 'm2']);
+  });
+
+  it('returns an empty result when the caller has no email or username to match on', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+
+    expect((await service.getUserMeetingRegistrations(req, undefined)).size).toBe(0);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});

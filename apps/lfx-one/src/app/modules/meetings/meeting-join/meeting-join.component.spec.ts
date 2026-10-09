@@ -1103,6 +1103,13 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).not.toBeNull();
     });
 
+    it('does not offer it to someone invited through a committee, and does not offer registering either', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: false, invited: true, invited_via_committee: true }));
+
+      expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).toBeNull();
+      expect(fixture.nativeElement.querySelector(REGISTER_BUTTON)).toBeNull();
+    });
+
     it('does not offer it to an organizer', async () => {
       const fixture = await createFixture(buildMeeting({ organizer: true, invited: true }));
 

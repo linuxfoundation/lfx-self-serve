@@ -18,7 +18,7 @@ The Meetings section lets you create, manage, and join meetings for your Linux F
 - Join meetings via the public meeting join page — no LFX account required
 - Register yourself for a public, non-restricted meeting you weren't invited to (requires signing in)
 - RSVP (Yes/No/Maybe) to a meeting you're invited to (requires signing in)
-- Remove yourself from an upcoming meeting you're registered for, from its card or its page (requires signing in). If you were added through a committee, leave the committee instead; if you were added through a mailing list, a later list sync can add you back
+- Remove yourself from an upcoming meeting you're registered for, from its card or its page (requires signing in). The option isn't shown when you were added through a committee; leave the committee instead. If you were added through a mailing list, a later list sync can add you back
 - Generate a draft meeting agenda with AI assistance, or start from a pre-built agenda template
 - View a past meeting's recording, transcript, and AI summary, if you have access
 - Upload or view meeting materials (files and links)

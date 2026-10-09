@@ -82,14 +82,14 @@ export class MeetingController {
       // forwarding it to /query/resources would send an unsupported param upstream.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { skip_registrants: _skipRegistrants, ...meetingQuery } = req.query as Record<string, any>;
-      const [{ data: meetings, page_token }, registeredMeetingIds] = await Promise.all([
+      const [{ data: meetings, page_token }, registrations] = await Promise.all([
         this.meetingService.getMeetings(req, meetingQuery, 'v1_meeting', true),
-        this.userService.getUserRegisteredMeetingIds(req, userEmail),
+        this.userService.getUserMeetingRegistrations(req, userEmail),
       ]);
 
       // List cards never surface the host key — strip it from every item unconditionally.
       const result = meetings.map((m) => {
-        const meeting = { ...m, invited: registeredMeetingIds.has(m.id) };
+        const meeting = { ...m, invited: registrations.has(m.id), invited_via_committee: registrations.get(m.id) === true };
         stripHostKey(meeting);
         return meeting;
       });

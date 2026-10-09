@@ -959,6 +959,17 @@ export class UserService {
    * @returns Set of meeting IDs the user is registered for
    */
   public async getUserRegisteredMeetingIds(req: Request, email?: string): Promise<Set<string>> {
+    return new Set((await this.getUserMeetingRegistrations(req, email)).keys());
+  }
+
+  /**
+   * Gets the meetings the user is registered for, with whether any of their registrations came from a committee.
+   * Same lookup and failure behavior as {@link getUserRegisteredMeetingIds}, which this backs.
+   * @param req - Express request object
+   * @param email - Optional user email address; if omitted, only username lookup is performed
+   * @returns Map of meeting ID to whether the user is registered for it through a committee
+   */
+  public async getUserMeetingRegistrations(req: Request, email?: string): Promise<Map<string, boolean>> {
     const normalizedEmail = email?.toLowerCase() ?? '';
     const username = await getUsernameFromAuth(req);
 
@@ -967,7 +978,7 @@ export class UserService {
     if (username) filtersOr.push(`username:${stripAuthPrefix(username)}`);
 
     if (filtersOr.length === 0) {
-      return new Set();
+      return new Map();
     }
 
     // Match on data.email OR data.username in a single round trip. Using `filters_or` (field-level)
@@ -994,14 +1005,16 @@ export class UserService {
       return [] as MeetingRegistrant[];
     });
 
-    const meetingIds = new Set<string>();
-    for (const r of registrants) meetingIds.add(r.meeting_id);
+    const registrations = new Map<string, boolean>();
+    for (const r of registrants) {
+      registrations.set(r.meeting_id, registrations.get(r.meeting_id) === true || r.type === 'committee');
+    }
 
     logger.debug(req, 'get_user_registered_meeting_ids', 'Collected unique meeting IDs', {
-      total_unique_meeting_ids: meetingIds.size,
+      total_unique_meeting_ids: registrations.size,
     });
 
-    return meetingIds;
+    return registrations;
   }
 
   /**

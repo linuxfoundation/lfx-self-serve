@@ -556,6 +556,13 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(component.canLeaveMeeting()).toBe(false);
   });
 
+  it('does not offer the action to someone invited through a committee, but still shows they are registered', async () => {
+    const component = await mount({ ...INVITEE, invited_via_committee: true } as Meeting);
+
+    expect(component.isRegisteredAttendee()).toBe(true);
+    expect(component.canLeaveMeeting()).toBe(false);
+  });
+
   it('keeps the action hidden on a card rebuilt after the list refetched a stale invited flag', async () => {
     removedIds.set(new Set(['meeting-1']));
 
