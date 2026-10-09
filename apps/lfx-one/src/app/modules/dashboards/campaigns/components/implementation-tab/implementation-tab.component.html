@@ -1498,17 +1498,41 @@
               </div>
               @if (campaign.platform === 'reddit-ads' && campaign.adCount === 0) {
                 <!--
-                  This used to end "then attach it to this campaign", which is an instruction that cannot work.
-                  Activation needs BOTH child ids (`internal/dispatch/reddit.go:484-485`), and they come from
-                  `redditChildIDs` (`:817-832`), which reads only the persisted Result blob. Nothing re-reads
-                  Reddit, so an ad attached by hand upstream is never discovered and the refusal never lifts.
-                  The gate's own message says as much, that this "leaves un-pausing to Reddit Ads Manager".
+                  Two corrections live in this sentence, pulling in opposite directions. Keep both.
+                  Line numbers below are a hint; the named symbol is the real reference.
+
+                  1. Activating from LFX does not recover this. It used to end "then attach it to this
+                  campaign", implying LFX could activate afterwards. On campaign-service it cannot: the
+                  both-child-ids guard (`internal/dispatch/reddit.go:484-485`) takes them from
+                  `redditChildIDs` (`:817-832`), which reads only the persisted Result blob, so an ad
+                  attached by hand upstream is never discovered.
+
+                  The wording is "will not change that", NOT "stays refused", because that refusal is
+                  campaign-service's alone and this block renders for BOTH create arms: `results()` is set
+                  from `pollJob` (`implementation-tab.component.ts:2688`) and from the legacy synchronous
+                  `createCampaign` subscribe (`:2087`), whose `executeRedditCampaignCreation`
+                  (`reddit-ads.service.ts:461`) returns `adCount: 0` when no post URL was given. A legacy
+                  campaign is keyed by Reddit's numeric id, so it takes the legacy arm of
+                  `updateCampaignStatus` (`campaign-proxy.service.ts:1921`), which checks only that the ad
+                  account is whitelisted — no ad-existence guard. Activating changes nothing on either arm,
+                  which is the claim that holds; "refused" would be false on the legacy one.
+
+                  2. The campaign already EXISTS, so do not say "build". The replacement over-corrected to
+                  "Build and launch the campaign in Reddit Ads Manager", inviting a duplicate: `adCount === 0`
+                  is reached with the campaign and ad group already created upstream and PAUSED.
+                  campaign-service hit the same defect (`docs/knowledge/code/internal-platform-reddit.md:263-265`):
+                  "the definite-failure arms omitted the campaign/ad-group context, so an operator following
+                  them literally builds a SECOND campaign while the first sits PAUSED and orphaned".
+
+                  `initRedditNoAdWarning` (`implementation-tab.component.ts:3271`) keeps the "build and launch"
+                  wording ON PURPOSE — it is the PRE-SUBMIT half, fired while a post URL can still be typed and
+                  before anything exists upstream. Do not align the two.
                 -->
                 <div class="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2">
                   <p class="text-xs font-medium text-amber-800" data-testid="implementation-reddit-no-ad-notice">
                     <i class="fa-light fa-triangle-exclamation mr-1" aria-hidden="true"></i>
-                    This campaign has no ad, so it cannot serve, and activating it from LFX stays refused — an ad added in Reddit Ads Manager afterwards is not
-                    picked up here. Build and launch the campaign in Reddit Ads Manager instead.
+                    This campaign has no ad, so it cannot serve, and activating it from LFX will not change that — an ad added in Reddit Ads Manager afterwards
+                    is not picked up here. Add the ad to this campaign in Reddit Ads Manager and launch it from there.
                   </p>
                 </div>
               }

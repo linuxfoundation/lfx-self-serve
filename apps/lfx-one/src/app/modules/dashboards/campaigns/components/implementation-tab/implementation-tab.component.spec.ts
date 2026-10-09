@@ -5468,25 +5468,48 @@ describe('ImplementationTabComponent reddit results notice', () => {
   const notice = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="implementation-reddit-no-ad-notice"]');
 
   /**
-   * The Reddit no-ad notice, and specifically the part of it that is a claim about upstream.
+   * The Reddit no-ad notice carries TWO claims that pull against each other, and the notice has
+   * been wrong in both directions. Each assertion below pins one of them.
    *
-   * A Reddit campaign created with no ad can never be activated from LFX. The gate needs both
-   * child ids (`internal/dispatch/reddit.go:484-485`) and takes them from `redditChildIDs`
-   * (`:817-832`), which reads only the persisted Result blob — nothing re-reads Reddit, so an ad
-   * attached by hand in Ads Manager is never discovered. The notice said to do exactly that
-   * ("then attach it to this campaign") until #3432.
+   * (Line numbers are a hint; the named symbol beside each is the real reference.)
    *
-   * Pinned on the clause that carries the claim rather than the whole sentence, so rewording is
-   * free and quietly dropping the correction is not. The earlier false wording is asserted absent
-   * for the same reason: pinning a string by value is what let it stay green through five review
-   * rounds on #3402, and only an assertion about what must NOT be there catches a revert.
+   * 1. LFX activation never recovers. On the campaign-service arm the both-child-ids guard
+   *    (`internal/dispatch/reddit.go:484-485`) takes them from `redditChildIDs` (`:817-832`),
+   *    which reads only the persisted Result blob — nothing re-reads Reddit, so an ad attached by
+   *    hand in Ads Manager is never discovered. The claim is pinned as "will not change that"
+   *    rather than "stays refused" because this notice also renders for legacy-created campaigns:
+   *    `results()` is set from the `createCampaign` subscribe (`implementation-tab.component.ts:2087`)
+   *    as well as from `pollJob` (`:2688`), and a legacy campaign's toggle takes the legacy arm of
+   *    `updateCampaignStatus` (`campaign-proxy.service.ts:1921`), which has no ad-existence guard
+   *    and is NOT refused — it just activates a campaign with no ad to serve. Pinning the refusal
+   *    would pin a sentence that is false on one of the two arms that render it.
+   * 2. The campaign and ad group ALREADY EXIST. This notice renders only on `adCount === 0`,
+   *    which is reached with both upstream resources created and PAUSED, so the recovery must
+   *    name THIS campaign. Telling the operator to build one orphans the first — the defect
+   *    campaign-service recorded at
+   *    `docs/knowledge/code/internal-platform-reddit.md:263-265`.
+   *
+   * Pinned on the clauses that carry the claims rather than the whole sentence, so rewording is
+   * free and quietly dropping a correction is not. The second clause keeps "the ad" rather than
+   * the bare "to this campaign": the object matters, since what has to be named is the ad landing
+   * on the campaign that already exists, and the verb is left loose so Add/Attach both pass.
+   *
+   * The negative assertion matches a PATTERN, not the one phrase that happened to ship. "Build and
+   * launch the campaign" was the instance; the defect is any create-verb aimed at a campaign, and
+   * "Create a new campaign in Reddit Ads Manager" would pass a literal `not.toContain` while
+   * orphaning the first campaign exactly as before. It deliberately does NOT forbid "launch the
+   * campaign" — the campaign exists and launching it from Ads Manager is the right answer — nor
+   * the older "attach it to this campaign", which is correct now that the sentence also denies
+   * that LFX activation helps. Forbidding a phrase by value is how a guard ends up refusing the
+   * correct wording.
    */
-  it('tells a Reddit campaign with no ad that LFX activation will not recover', () => {
+  it('tells a Reddit campaign with no ad that LFX will not recover and points at the existing campaign', () => {
     atResults(0);
 
     expect(notice()).not.toBeNull();
-    expect(notice()?.textContent).toContain('activating it from LFX stays refused');
-    expect(notice()?.textContent).not.toContain('attach it to this campaign');
+    expect(notice()?.textContent).toContain('activating it from LFX will not change that');
+    expect(notice()?.textContent).toContain('the ad to this campaign');
+    expect(notice()?.textContent).not.toMatch(/\b(build|create|make|set up)\b[^.]{0,40}\bcampaign\b/i);
   });
 
   /** The notice is about the no-ad state, so a campaign that got an ad must not carry it. */
