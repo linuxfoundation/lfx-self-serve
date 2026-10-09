@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing]
-last_updated: 2026-09-11
+last_updated: 2026-10-09
 intercom_collection: Account
 ---
 
@@ -102,7 +102,7 @@ Your transaction history includes all purchases made through the LFX platform un
 
 ## Can I download a receipt or invoice?
 
-Receipt availability varies by transaction type. Open the **Transactions** tab (`/profile/transactions`), select a transaction, and use the available options in its detail view.
+Not from LFX Self Serve — the **Transactions** tab (`/profile/transactions`) lists your purchases but has no receipt or invoice download. For an event registration, download the invoice receipt PDF from the **Payment Information** section of your registration confirmation email; turn off any pop-up blockers first. For anything else, or if you can't find the email, contact LFX support. See [Get a receipt or invoice](../transactions/#get-a-receipt-or-invoice).
 
 ## Why is a purchase missing from my transaction history?
 

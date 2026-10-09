@@ -16,7 +16,7 @@ export const isMentorshipMentorTermUnderway = (term: MentorshipUpstreamMentorPro
 };
 
 /** The term that starts last; a term with no start loses to any term with one. Ties keep the first. */
-export const latestStartingMentorshipMentorTerm = (terms: readonly MentorshipUpstreamMentorProgramTerm[]): MentorshipUpstreamMentorProgramTerm =>
+const latestStartingMentorshipMentorTerm = (terms: readonly MentorshipUpstreamMentorProgramTerm[]): MentorshipUpstreamMentorProgramTerm =>
   terms.reduce((best, term) => ((mentorshipMentorTermStartMs(term) ?? -Infinity) > (mentorshipMentorTermStartMs(best) ?? -Infinity) ? term : best));
 
 /**

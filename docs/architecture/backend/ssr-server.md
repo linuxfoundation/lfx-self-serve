@@ -128,8 +128,28 @@ Angular's `AngularNodeAppEngine` receives the complete request context, includin
 The server implements **graceful degradation** for rendering errors:
 
 - **404 Not Found**: Proper HTTP status for missing routes
+- **503 Service Unavailable**: in-place retry view when a page's project couldn't be loaded (transient upstream failure)
 - **401 Unauthorized**: Authentication-required responses
 - **500 Internal Server Error**: Comprehensive error logging with fallback responses
+
+In-place not-found and unavailable views set `ServerRequestContext.notFound` or
+`ServerRequestContext.unavailable` during rendering. The SSR handler rewrites a
+200 response to 404 or 503 respectively, retaining the requested URL and rendered
+shell. `applySsrRenderStatus` preserves response headers and gives 404 precedence if
+both flags are set; existing non-200 responses remain unchanged.
+The unavailable view's **Try again** action reads the latest failed destination from
+`ProjectRecoveryService`, including query parameters and fragments. Guards update it
+before redirecting, so repeated failures refresh the target even when Angular skips
+the same-URL recovery redirect. Selected-project newsletter access and Formation
+CanMatch lookups share the strict lookup/retry policy without bypassing their access,
+stage or feature-flag checks. Non-transient selected-project lookup failures show
+not-found in-place; successful permission or stage denials still redirect to overview.
+Query-selected Formation overview and checklist routes use the same strict cache to
+avoid conflicting stage redirects. A cancelled Formation navigation cannot overwrite
+a newer recovery target. The service owns destination writes and clearing, and the
+view clears it on destruction. The target is distinct from the previous SPA address.
+When recovery state is absent (SSR/hydration), it falls back to the current browser
+path with its fragment, which retains the directly requested address.
 
 ## 🚀 Production Deployment Architecture
 

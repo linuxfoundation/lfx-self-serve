@@ -1,13 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS } from '../constants/mentorship-mentor.constants';
+import type { MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS, MENTORSHIP_MENTOR_PROGRAM_STATUSES } from '../constants/mentorship-mentor.constants';
 import type { MentorshipLfxProfileFields, MentorshipUpstreamLfxProfileFields } from './mentorship-lfx-profile-card.interface';
 import type {
   MentorshipUpstreamApplicationStatus,
   MentorshipUpstreamApplicationTerm,
   MentorshipUpstreamProgramTermStatus,
-  MentorshipUpstreamTask,
 } from './mentorship-mentee.interface';
 import type {
   MentorshipApplicantTaskStatus,
@@ -256,22 +255,18 @@ export interface MentorshipMentorProgramStats {
   applicants: number;
 }
 
-/** Term lifecycle badge on the mentor My Programs card. */
-export type MentorshipMentorProgramTermStatus = 'active-term' | 'upcoming' | 'completed';
+/** A mentor's program status: `completed` once every term is closed, otherwise `open`. */
+export type MentorshipMentorProgramStatus = (typeof MENTORSHIP_MENTOR_PROGRAM_STATUSES)[number];
 
-/** Program row on the mentor My Programs list. */
+/** Program row on the mentor My Programs list and the program-detail header. The counts cover all the program's terms. */
 export interface MentorshipMentorProgram {
   id: string;
   slug: string;
   name: string;
   projectName: string;
-  term: string;
-  termStatus: MentorshipMentorProgramTermStatus;
+  status: MentorshipMentorProgramStatus;
   stats: MentorshipMentorProgramStats;
   logoUrl?: string;
-  /** ISO `YYYY-MM-DD` term bounds, shown on the mentor program-detail page subtitle. */
-  termStartDate?: string;
-  termEndDate?: string;
 }
 
 export type MentorshipMentorProgramsResponse = {
@@ -531,19 +526,21 @@ export interface MentorshipUpstreamProgramApplicationRow {
   updated_on: string;
 }
 
-/** The term a My Programs card is shown by, and the group that puts the card in. No term means zero counts. */
-export interface MentorshipMentorProgramTermChoice {
-  term?: MentorshipUpstreamMentorProgramTerm;
-  termStatus: MentorshipMentorProgramTermStatus;
-}
-
 /**
- * One term's rows of a mentor's program, sorted the way the My Programs card and the program detail tabs
- * count them: mentees are accepted and graduated applications, applicants are every application, and tasks
- * to review are submitted tasks on accepted mentees' applications.
+ * One row of upstream `GET /mentorship/v1/me/mentor-programs`: a published program the caller is an active mentor
+ * of. `stats` counts all the program's terms. `status` stays a plain string: the BFF maps it and logs a value it
+ * does not know.
  */
-export interface MentorshipMentorProgramRows {
-  mentees: MentorshipUpstreamProgramApplicationRow[];
-  applicants: MentorshipUpstreamProgramApplicationRow[];
-  tasksToReview: MentorshipUpstreamTask[];
+export interface MentorshipUpstreamMentoredProgram {
+  id: string;
+  slug?: string;
+  name: string;
+  project_name?: string;
+  logo_url?: string;
+  status: string;
+  stats: {
+    mentees: number;
+    applicants: number;
+    tasks_to_review: number;
+  };
 }

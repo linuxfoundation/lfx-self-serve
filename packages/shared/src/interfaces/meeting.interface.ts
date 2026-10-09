@@ -297,11 +297,15 @@ export interface Meeting {
   youtube_upload_enabled: boolean | null;
   /**
    * Share the guest list in calendar invites: when on, each guest's ICS lists the other
-   * attendees and their last known RSVP instead of the recipient alone. Board and restricted
-   * meetings can never opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF
-   * forces the field off on write. In LFX it also decides whether an invitee who is not an
-   * organizer can see the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]`
-   * to them when it is off, and the meeting card and meeting page hide their guest lists to match.
+   * attendees and their last known RSVP instead of the recipient alone. Board meetings can never
+   * opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF forces the field off on
+   * write. A restricted meeting keeps any explicit `true` the BFF receives from a caller allowed to
+   * edit it — in practice only the meeting v2 composer (`allowRestricted`) sends one, since the pre-v2
+   * wizard locks the control off — and any other write is forced off. In LFX it also decides whether an invitee who is not an organizer can see
+   * the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]` to them when it is
+   * off — and always for Board and restricted meetings, whose lists stay hidden in LFX even when a
+   * restricted meeting opted in (that opt-in reaches calendar invites only) — and the meeting card and
+   * meeting page hide their guest lists to match.
    * `GET /api/meetings/:uid/registrants` (tolerant listing) and `GET /api/meetings/:uid/rsvp`
    * apply the same rule. Past-meeting participants ignore it and go to organizers and the people on
    * them instead, so meetings already held keep their attendance (#2827).
@@ -2141,6 +2145,16 @@ export interface MeetingComposerEditScope {
   kind: RecurringMeetingEditScope;
   /** Set for `occurrence` only. */
   label?: string;
+}
+
+/** Options for the show-attendees lock (`isShowMeetingAttendeesLocked` and its helpers). */
+export interface ShowMeetingAttendeesLockOptions {
+  /**
+   * Let restricted (invite-only) meetings opt in — only board meetings lock.
+   * @description Meeting v2 composer only (`meeting-v2-enabled`). Everything else — the pre-v2 wizard and
+   * every read of a stored meeting — keeps the default rule, so existing meetings are unaffected.
+   */
+  allowRestricted?: boolean;
 }
 
 /** Composer surface: the full sectioned drawer, or the condensed quick create dialog. */

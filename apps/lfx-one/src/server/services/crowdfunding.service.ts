@@ -10,6 +10,7 @@ import {
   DonationStats,
   InitiativeDetail,
   InitiativesResponse,
+  InitiativesScope,
   MyDonationsResponse,
   PaymentMethod,
   PresignedURLResult,
@@ -169,25 +170,30 @@ async function cfFetchNullable<T>(req: Request, operation: string, path: string)
 }
 
 export class CrowdfundingService {
-  public async getMyInitiatives(req: Request, pageSize?: number, offset?: number): Promise<InitiativesResponse> {
-    const startTime = logger.startOperation(req, 'cf_get_my_initiatives', { pageSize, offset });
+  /**
+   * The caller's own initiatives, or — with a `scope` — every initiative attributed to that project or organization
+   * (any status; CF's gateway rule requires writer on the entity and returns 403 otherwise).
+   */
+  public async getMyInitiatives(req: Request, pageSize?: number, offset?: number, scope?: InitiativesScope): Promise<InitiativesResponse> {
+    const startTime = logger.startOperation(req, 'cf_get_my_initiatives', { pageSize, offset, scope_kind: scope?.kind, scope_uid: scope?.uid });
 
     const limit = pageSize ?? DEFAULT_CROWDFUNDING_PAGE_SIZE;
     const off = offset ?? 0;
-    const raw = await cfFetch<BackendCrowdfundingResponse>(req, 'getMyInitiatives', `/crowdfunding/me/initiatives?limit=${limit}&offset=${off}`);
+    const base = scope ? `/crowdfunding/${scope.kind}/${encodeURIComponent(scope.uid)}/initiatives` : '/crowdfunding/me/initiatives';
+    const raw = await cfFetch<BackendCrowdfundingResponse>(req, 'getMyInitiatives', `${base}?limit=${limit}&offset=${off}`);
     const data = raw.data.map(mapToInitiativeBase);
 
     logger.success(req, 'cf_get_my_initiatives', startTime, { count: data.length });
     return { data, total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
   }
 
-  public async getInitiativesStats(req: Request): Promise<CrowdfundingInitiativesStats> {
+  public async getInitiativesStats(req: Request, scope?: InitiativesScope): Promise<CrowdfundingInitiativesStats> {
     // Page through all initiatives so stats reflect the user's complete set, not just the first page.
     const PAGE_SIZE = 100;
     const allInitiatives: Awaited<ReturnType<typeof this.getMyInitiatives>>['data'] = [];
     let offset = 0;
     while (true) {
-      const page = await this.getMyInitiatives(req, PAGE_SIZE, offset);
+      const page = await this.getMyInitiatives(req, PAGE_SIZE, offset, scope);
       allInitiatives.push(...page.data);
       if (allInitiatives.length >= page.total || page.data.length === 0) break;
       offset += PAGE_SIZE;
@@ -203,7 +209,8 @@ export class CrowdfundingService {
   public async getInitiativeBySlug(req: Request, slug: string): Promise<InitiativeDetail | null> {
     const startTime = logger.startOperation(req, 'cf_get_initiative_by_slug', { slug });
 
-    // /crowdfunding/me/initiatives — owner-scoped endpoint; requires the user's bearer token; owner-scoped via Crowdfunding's FGA check (initiative owners only, not public access)
+    // /crowdfunding/me/initiatives/{slug} — requires the user's bearer token; CF's canManage allows the owner or a manager
+    // of the attributed project/organization (any status), so lens Initiatives pages open their writers' detail too.
     const raw = await cfFetchNullable<BackendInitiative>(req, 'getInitiativeBySlug', `/crowdfunding/me/initiatives/${encodeURIComponent(slug)}`);
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_by_slug', 'Initiative not found', { slug });

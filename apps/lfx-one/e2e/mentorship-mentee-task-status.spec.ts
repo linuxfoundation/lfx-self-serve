@@ -39,7 +39,8 @@ const STATUS_DROPDOWN = `[data-test="mentee-tasks-status-dropdown-${TASK_ID}"]`;
 /** Shape of the synthetic task the applications stub serves. */
 interface StubTask {
   status: string;
-  submitFile: string | null;
+  submitFile: 'required' | null;
+  hasFile?: boolean;
 }
 
 /** The one synthetic accepted application, carrying the one non-prerequisite task in the given state. */
@@ -60,6 +61,7 @@ function acceptedApplication(task: StubTask) {
         category: 'non_prerequisite',
         status: task.status,
         submitFile: task.submitFile,
+        hasFile: task.hasFile ?? false,
         updatedOn: '2026-06-02T10:00:00Z',
       },
     ],

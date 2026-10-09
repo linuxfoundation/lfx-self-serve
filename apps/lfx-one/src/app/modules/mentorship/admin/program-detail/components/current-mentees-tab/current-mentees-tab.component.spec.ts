@@ -28,6 +28,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeNoteDialogComponent } from '../../../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
+import { MentorshipTaskFileService } from '../../../../services/mentorship-task-file.service';
 import { CurrentMenteesTabComponent } from './current-mentees-tab.component';
 
 describe('CurrentMenteesTabComponent', () => {
@@ -141,6 +142,7 @@ describe('CurrentMenteesTabComponent', () => {
         // Stub the dialog service so the spec never touches PrimeNG's DialogService,
         // and so we can assert on the exact assignee payload the tab hands off.
         { provide: MentorshipTaskDialogService, useValue: { openCreate, openEdit } },
+        { provide: MentorshipTaskFileService, useValue: { download: vi.fn() } },
       ],
     });
 

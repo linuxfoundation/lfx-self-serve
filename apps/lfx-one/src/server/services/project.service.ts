@@ -356,7 +356,7 @@ export class ProjectService {
     const filtered = await this.fetchAllProjectsFiltered(req, query, failOnPartial);
 
     // Add writer access field to all projects
-    return await this.accessCheckService.addAccessToResources(req, filtered, 'project');
+    return await this.accessCheckService.addProjectWriterToResources(req, filtered);
   }
 
   /**
@@ -399,13 +399,16 @@ export class ProjectService {
     }
 
     if (access) {
-      const writerProject = await this.accessCheckService.addAccessToResource(req, project, 'project');
-      // Skip the meeting_coordinator/auditor checks when already a writer. Per model.fga,
-      // `auditor: … or writer or …` — writer already implies auditor, so that round trip can't
-      // change the outcome. `meeting_coordinator: [user]` is a direct-only grant — writer does NOT
+      const writerProject = await this.accessCheckService.addProjectWriterToResource(req, project);
+      // Skip the meeting_coordinator/auditor checks when already a writer. The `writer` field is
+      // resolved from `writer_guard`, and every `writer_guard` holder also holds `auditor_guard`
+      // (bare `writer` composes into `auditor`, `global_writer` into `auditor_guard`). Independently,
+      // both consumers of `auditor` (FormationCardComponent and ProjectContextService's settings-access
+      // check) read `writer === true || auditor === true`,
+      // so the round trip can't change its outcome. `meeting_coordinator: [user]` is a direct-only grant — writer does NOT
       // imply it at the FGA level — but every consumer of this field (e.g. writer.guard.ts) already
       // treats `writer === true` as sufficient on its own before ever reading meetingCoordinator,
-      // and upstream `meetings_creator: writer or meeting_coordinator` makes the same true one level
+      // and upstream `meetings_creator: writer_guard or meeting_coordinator` makes the same true one level
       // up. So the round trip could return a different raw value for a writer, but never a
       // different access outcome — skipping it is safe for that reason alone.
       // Return the field as undefined (omitted) rather than false — false would be a
@@ -440,7 +443,7 @@ export class ProjectService {
       // admin-link guard) — same rationale, and the same Strict variant, as meeting_coordinator above.
       if (includeAuditor) {
         const isAuditor = await this.accessCheckService
-          .checkSingleAccessStrict(req, { resource: 'project', id: project.uid, access: 'auditor' })
+          .checkSingleAccessStrict(req, { resource: 'project', id: project.uid, access: 'auditor_guard' })
           .catch((error) => {
             logger.warning(req, 'get_project_by_id', 'auditor check failed, skipping field', {
               project_uid: project.uid,
@@ -661,8 +664,9 @@ export class ProjectService {
   }
 
   /**
-   * Fetches a single project by slug using NATS for slug resolution
-   * First resolves slug to ID via NATS, then fetches project data
+   * Resolves a slug via HTTP, preserving missing/denied versus transient failures,
+   * then fetches project data with the existing access and optional role checks.
+   * The NATS resolver returns the same empty reply for misses and internal failures.
    */
   public async getProjectBySlug(
     req: Request,
@@ -670,18 +674,15 @@ export class ProjectService {
     includeMeetingCoordinator: boolean = false,
     includeAuditor: boolean = false
   ): Promise<Project> {
-    const natsResult = await this.getProjectIdBySlug(req, projectSlug);
-
-    if (!natsResult.exists || !natsResult.uid) {
-      throw new ResourceNotFoundError('Project', projectSlug, {
-        operation: 'get_project_by_slug_via_nats',
-        service: 'project_service',
-        path: '/nats/project-slug-lookup',
-      });
-    }
+    const { uid } = await this.microserviceProxy.proxyRequest<{ uid: string }>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/slug-to-uid/${encodeURIComponent(projectSlug)}`,
+      'GET'
+    );
 
     // Now fetch the project using the resolved ID
-    return this.getProjectById(req, natsResult.uid, true, includeMeetingCoordinator, includeAuditor);
+    return this.getProjectById(req, uid, true, includeMeetingCoordinator, includeAuditor);
   }
 
   public async getProjectSettings(req: Request, uid: string): Promise<ProjectSettings> {
@@ -708,7 +709,7 @@ export class ProjectService {
     // and answers "is this address known?" with a distinguishable 404, so without this gate a
     // read-only caller could probe directory membership through this route off the 404-vs-403
     // split. Strict so an access-service outage fails closed instead of degrading to "not a writer".
-    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer' });
+    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer_guard' });
 
     if (!canWrite) {
       throw new AuthorizationError('You do not have permission to manage project permissions', {
@@ -895,7 +896,7 @@ export class ProjectService {
     // addresses through this route and read directory membership off the 404-vs-403 split.
     // Strict so an access-service outage fails closed instead of degrading to a definitive
     // "not a writer".
-    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer' });
+    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer_guard' });
 
     if (!canWrite) {
       throw new AuthorizationError('You do not have permission to update project staff', {
@@ -2361,8 +2362,10 @@ export class ProjectService {
     // failed root means no reliable root group to anchor the frontend's grouping fallback, so
     // Promise.all propagates a root-query rejection instead of returning an incomplete 200
     // (GH-1607 review).
+    // Marked incomplete by any branch the traversal or detail fan-out drops, so callers can tell a partial list.
+    const budget = { remaining: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES, incomplete: false };
     const [subFoundations, rootDetail] = await Promise.all([
-      this.discoverSubFoundations(req, rootProject.uid, rootProject.slug, rootProject.name),
+      this.discoverSubFoundations(req, rootProject.uid, rootProject.slug, rootProject.name, 0, budget),
       this.getFoundationProjectsDetail(rootProject.slug),
     ]);
 
@@ -2394,6 +2397,7 @@ export class ProjectService {
           const tagged = detail.projects.map((project) => ({ ...project, groupFoundationSlug: groupSlug, groupFoundationName: groupName }));
           bucket.set(groupSlug, [...(bucket.get(groupSlug) ?? []), ...tagged]);
         } catch (error) {
+          budget.incomplete = true;
           logger.warning(req, 'get_foundation_projects_detail_grouped', 'Failed to fetch detail for a discovered foundation, omitting its own rows', {
             foundation_slug: slug,
             err: error,
@@ -2440,9 +2444,10 @@ export class ProjectService {
       foundation_slug: foundationSlug,
       group_count: groups.length,
       total_count: totalCount,
+      complete: !budget.incomplete,
     });
 
-    return { groups, totalCount };
+    return { groups, totalCount, complete: !budget.incomplete };
   }
 
   /**
@@ -8664,10 +8669,11 @@ export class ProjectService {
     nearestVisibleSlug: string,
     nearestVisibleName: string,
     depth: number = 0,
-    budget: { remaining: number } = { remaining: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES },
+    budget: { remaining: number; incomplete: boolean } = { remaining: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES, incomplete: false },
     gate: { active: number; queue: (() => void)[] } = { active: 0, queue: [] }
   ): Promise<{ uid: string; slug: string; name: string; visible: boolean; groupSlug: string; groupName: string }[]> {
     if (depth >= FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH) {
+      budget.incomplete = true;
       logger.warning(req, 'discover_sub_foundations', 'Hit max traversal depth, stopping this branch', {
         parent_uid: parentUid,
         depth,
@@ -8692,6 +8698,7 @@ export class ProjectService {
         // .catch() below turns into a clean "stop this branch" rather than a silent undercount.
         { failOnPartial: true }
       ).catch((error) => {
+        budget.incomplete = true;
         logger.warning(req, 'discover_sub_foundations', 'Failed to resolve children, stopping traversal at this branch', {
           parent_uid: parentUid,
           depth,
@@ -8713,6 +8720,7 @@ export class ProjectService {
     const results = await Promise.all(
       traversalCandidates.map(async (child) => {
         if (budget.remaining <= 0) {
+          budget.incomplete = true;
           logger.warning(req, 'discover_sub_foundations', 'Hit max discovered sub-foundation count, stopping traversal', {
             parent_uid: parentUid,
             depth,
@@ -9424,7 +9432,7 @@ export class ProjectService {
       return projects;
     }
 
-    const writerChecked = await this.accessCheckService.addAccessToResources(req, projects, 'project');
+    const writerChecked = await this.accessCheckService.addProjectWriterToResources(req, projects);
     if (!includeMeetingCoordinator) {
       return writerChecked.filter((p) => p.writer === true);
     }

@@ -734,8 +734,10 @@ export interface OrgClaGroup {
    * agreement's CLA manager list. Per viewer, unlike the rest of this row, so the list response
    * is never cached. Server-decided by an exact LF username match, so the browser MUST NOT work
    * it out itself. False when there is no
-   * list or no username, so visibility fails closed. The Approval List and Acknowledgments
-   * controls also need the loaded list's own `canEdit`.
+   * list or no username, so the write controls fail closed: the Approval List and Invalidate
+   * controls are hidden, and the Auto ECLA toggle renders disabled with the sentence naming CLA
+   * Manager. The Approval List and Acknowledgments controls also need the loaded list's own
+   * `canEdit`.
    */
   viewerIsClaManager: boolean;
 }

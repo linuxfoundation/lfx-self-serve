@@ -508,6 +508,14 @@ export const ACS_CLA_AUTO_ECLA_ACTION = 'update';
 export const ACS_CLA_PROJECT_ORG_OBJECT_TYPE = 'project|organization';
 
 /**
+ * Shown under the Auto ECLA toggle to a viewer off the agreement's CLA manager roster, who may
+ * read the setting but not change it (#3406). A roster CLA manager whom ACS denies gets the
+ * disabled switch without it, since it would contradict them. Wording is a placeholder pending a product pass; it lives here so that pass is a
+ * one-line edit rather than a hunt through the template.
+ */
+export const ORG_CLA_AUTO_ECLA_LOCKED_HINT = 'Only CLA Managers can change this setting.';
+
+/**
  * Tab order of the Organization Lens CLA Group detail page. `OrgClaDetailTab` is derived from
  * this, so the set exists once: a tab added here is a compile error everywhere that switches on
  * the union until it is handled.
@@ -821,8 +829,9 @@ export const ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY = {
  * The signed-document download on a CLA Group's Overview.
  *
  * Shown disabled rather than hidden off the roster, so a reader who cannot download learns the
- * document exists and who to ask. It is the only control on this surface that behaves that way;
- * the Auto ECLA toggle is still withheld, and #3406 is the ticket to bring it here.
+ * document exists and who to ask — the same read-visible, write-gated shape the Auto ECLA toggle
+ * takes. The approval-list mutations and Invalidate still disappear instead, because their
+ * presence says nothing about the agreement on its own.
  */
 export const ORG_CLA_DOWNLOAD_COPY = {
   offRosterTooltip: 'Only a CLA Manager named on this CCLA can download the signed document',

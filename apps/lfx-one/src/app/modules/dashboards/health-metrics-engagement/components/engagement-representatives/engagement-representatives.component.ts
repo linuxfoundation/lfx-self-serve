@@ -18,9 +18,9 @@ import {
   HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS,
 } from '@lfx-one/shared/constants';
 import {
+  buildHealthMetricsEngagementRepLabels,
   filterHealthMetricsEngagementRepRows,
   formatHealthMetricsEngagementRatio,
-  formatIsoDateLabel,
   selectHealthMetricsEngagementRepCounts,
   selectHealthMetricsEngagementRepPeriod,
 } from '@lfx-one/shared/utils';
@@ -39,6 +39,7 @@ import type {
   HealthMetricsEngagementRepQuery,
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementRepRow,
+  HealthMetricsEngagementRepRowLabels,
   HealthMetricsEngagementRepRowView,
 } from '@lfx-one/shared/interfaces';
 
@@ -96,11 +97,14 @@ export class EngagementRepresentativesComponent {
 
   /** Narrowing the table must land the reader on rows, so any change to the cut restarts paging. */
   protected readonly first = linkedSignal<string, number>({
-    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}`),
+    source: computed(
+      () =>
+        `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedProjectSlug() ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}`
+    ),
     computation: () => 0,
   });
 
-  private readonly dateLabelsByRow: Signal<Map<HealthMetricsEngagementRepRow, string>> = this.initDateLabelsByRow();
+  private readonly rowLabelsByRow: Signal<Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowLabels>> = this.initRowLabelsByRow();
   private readonly rowViewsByRow: Signal<Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>> = this.initRowViewsByRow();
   protected readonly rowViews: Signal<HealthMetricsEngagementRepRowView[]> = this.initRowViews();
   protected readonly totalRecords = computed(() => this.rowViews().length);
@@ -136,13 +140,13 @@ export class EngagementRepresentativesComponent {
     this.first.set(event.first ?? 0);
   }
 
-  // Keyed off the response alone because `lastAttendedDate` is all-time: `formatIsoDateLabel` builds
-  // a fresh `Intl` formatter per call, and the period pill must not pay for one per loaded row.
-  private initDateLabelsByRow(): Signal<Map<HealthMetricsEngagementRepRow, string>> {
+  // Keyed off the response alone because these labels are all-time: `formatIsoDateLabel` builds a
+  // fresh `Intl` formatter per call, and the period pill must not pay for one per loaded row.
+  private initRowLabelsByRow(): Signal<Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowLabels>> {
     return computed(
       () =>
-        new Map<HealthMetricsEngagementRepRow, string>(
-          this.response().rows.map((row) => [row, row.lastAttendedDate ? formatIsoDateLabel(row.lastAttendedDate) : '—'])
+        new Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowLabels>(
+          this.response().rows.map((row) => [row, buildHealthMetricsEngagementRepLabels(row)])
         )
     );
   }
@@ -152,11 +156,12 @@ export class EngagementRepresentativesComponent {
   private initRowViewsByRow(): Signal<Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>> {
     return computed(() => {
       const range = this.chrome.selectedRange();
-      const dateLabels = this.dateLabelsByRow();
+      const rowLabels = this.rowLabelsByRow();
 
       return new Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>(
         this.response().rows.map((row) => {
           const period = selectHealthMetricsEngagementRepPeriod(row, range);
+          const labels = rowLabels.get(row) ?? buildHealthMetricsEngagementRepLabels(row);
 
           return [
             row,
@@ -164,7 +169,7 @@ export class EngagementRepresentativesComponent {
               row,
               period,
               attendedLabel: formatHealthMetricsEngagementRatio(period?.meetingsAttended ?? null, period?.meetingsInvited ?? null),
-              lastAttendedLabel: dateLabels.get(row) ?? '—',
+              ...labels,
             },
           ];
         })
@@ -196,7 +201,7 @@ export class EngagementRepresentativesComponent {
   }
 
   private initQuery(): HealthMetricsEngagementRepQuery {
-    return { foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '' };
+    return { foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '', projectSlug: this.chrome.selectedProjectSlug() };
   }
 
   private initResponse(): Signal<HealthMetricsEngagementRepresentatives> {
@@ -211,7 +216,7 @@ export class EngagementRepresentativesComponent {
 
     return toSignal(
       toObservable(this.query).pipe(
-        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug),
+        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug && a.projectSlug === b.projectSlug),
         tap((query) => {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);

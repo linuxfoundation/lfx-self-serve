@@ -43,3 +43,20 @@ export interface HealthMetricsL2SubNavItem {
   /** e.g. `3 dormant`; empty when nothing qualifies. */
   note: string;
 }
+
+/** One project in the Health Metrics header's project selector. */
+export interface HealthMetricsProjectOption {
+  slug: string;
+  name: string;
+  initials: string;
+  /** Avatar palette class hashed from the slug, so a project keeps its color. */
+  colorClass: string;
+}
+
+/** One step of the header's project-list load: `projects` is `null` while loading or after a failure. */
+export interface HealthMetricsProjectListState {
+  projects: readonly HealthMetricsProjectOption[] | null;
+  /** False when the server dropped part of the hierarchy, so a missing slug may still be valid. */
+  complete: boolean;
+  failed: boolean;
+}

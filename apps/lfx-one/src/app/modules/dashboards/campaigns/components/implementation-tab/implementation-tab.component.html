@@ -29,6 +29,27 @@
 -->
 <div role="status" aria-live="polite" class="sr-only" data-testid="implementation-brief-status-live">{{ briefPersistenceAnnouncement() }}</div>
 
+<!--
+  Google empty-creative warning, announced.
+
+  Sits here, at the top level, for the reason the region above does: it has to be in the DOM
+  BEFORE the text appears. The visible warning is guarded by the warning text itself
+  (`@if (googleCreativeEmptyWarning())`), so an element inside that guard can never exist before
+  there is something to announce — it is created by the very change that gives it the sentence,
+  which is the insertion case that does not reliably announce. No placement inside the guard
+  fixes that; only a region outside it does.
+
+  Polite rather than `role="alert"`, and that is the whole distinction this warning exists to
+  draw. The blocking error beside it takes the creative out of the state campaign-service will
+  accept, so it interrupts; this one reports a campaign that WILL be created and then will not
+  serve, with submit still enabled. Interrupting an operator mid-field to say the thing they are
+  allowed to do is allowed would be the wrong urgency.
+
+  The visible `<p>` carries no role of its own — the text would otherwise be announced twice,
+  the same reason `briefPersistenceAnnouncement` stays empty in its `error` state.
+-->
+<div role="status" aria-live="polite" class="sr-only" data-testid="implementation-google-creative-empty-live">{{ googleCreativeEmptyWarning() }}</div>
+
 <!-- Nothing renders in the 'off' state — see briefPersistence. -->
 @switch (briefPersistence().status) {
   @case ('saving') {
@@ -541,6 +562,28 @@
             }
           </div>
         </div>
+      }
+
+      <!--
+        The two creative messages, one blocking and one not, placed after every section because
+        each speaks about the set of sections rather than about one of them.
+
+        The error is a refusal campaign-service would make anyway once a creative is non-empty, so
+        `canSubmit` reads it and the button goes dead. The warning is the opposite case: upstream
+        ACCEPTS a channel with no creative at all — refusing it here would block a create the
+        platform makes — but nothing else tells the operator the campaign they are about to make
+        cannot serve, so it is said here and submit stays enabled.
+      -->
+      @if (googleCreativeError()) {
+        <p role="alert" class="text-xs text-red-600" data-testid="implementation-google-creative-error">{{ googleCreativeError() }}</p>
+      }
+      @if (googleCreativeEmptyWarning()) {
+        <!--
+          amber-700, not the amber-600 that reads as the obvious warning colour: at #E17100 that
+          scale step is 3.2:1 on white, under the 4.5:1 WCAG AA floor this 12px text has to clear.
+          amber-700 (#BB4D00) is 5.0:1. The red-600 error above already clears it at 4.8:1.
+        -->
+        <p class="text-xs text-amber-700" data-testid="implementation-google-creative-empty-warning">{{ googleCreativeEmptyWarning() }}</p>
       }
 
       <!-- LinkedIn Ads Section -->

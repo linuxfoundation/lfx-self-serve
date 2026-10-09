@@ -47,6 +47,7 @@ import {
   MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
   MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS,
+  MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS,
   MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
   MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
   MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE,
@@ -1325,7 +1326,6 @@ export function mentorshipApplicantTaskRows(tasks: ReadonlyArray<MentorshipAppli
     createdLabel: formatMentorshipTaskDateLabel(task.createdOn),
     dueLabel: formatMentorshipApplicantTaskDueLabel(task),
     updatedLabel: formatMentorshipTaskDateLabel(task.updatedOn),
-    canView: !!task.hasSubmission,
     canDownload: !!task.hasSubmission,
   }));
 }
@@ -1348,11 +1348,6 @@ export function buildMentorshipTaskUpdate(task: MentorshipApplicantTask, value: 
   if (value.requiresFileSubmission !== !!task.requiresFileSubmission) update.requiresFileSubmission = value.requiresFileSubmission;
   if (value.status !== undefined && value.status !== task.status) update.status = value.status;
   return update;
-}
-
-/** Inclusive UTC date range for term / invitation columns, e.g. `Jul 1, 2026 – Aug 31, 2026`. */
-export function formatMentorshipDateRange(start: string, end: string): string {
-  return `${formatIsoDateLabel(start)} – ${formatIsoDateLabel(end)}`;
 }
 
 /** Short month-year for the terms table, e.g. `Sep 2026`. */
@@ -1464,8 +1459,8 @@ export function mentorshipMenteeTaskStatusFields(
 /**
  * Build a display-ready task row from the fields both mentee phases share, so the
  * template reads flat fields instead of recomputing presentation logic in bindings.
- * `submitFile` is `null` (no submission), `'required'` (needs upload), or a URL
- * (file already uploaded). `nowMs` decides `pastDue`.
+ * `submitFile` is `'required'` when the task needs a file and `hasFile` says whether one
+ * is stored. `nowMs` decides `pastDue`.
  */
 export function buildMentorshipMenteeTaskView(
   input: {
@@ -1473,8 +1468,8 @@ export function buildMentorshipMenteeTaskView(
     title: string;
     description: string;
     status: MentorshipMenteeTaskStatus;
-    submitFile: string | null;
-    fileUrl?: string;
+    submitFile: 'required' | null;
+    hasFile: boolean;
     dueDate?: string;
     submittedDate?: string;
   },
@@ -1485,25 +1480,38 @@ export function buildMentorshipMenteeTaskView(
   // it would read as `pending` in the dropdown yet render unstyled and vanish
   // under the Pending filter (which matches on the normalised status).
   const statusFields = mentorshipMenteeTaskStatusFields(input.status);
-  const hasUploadedFile = (input.submitFile === 'required' && !!input.fileUrl) || (!!input.submitFile && input.submitFile !== 'required');
-  // The uploaded-file URL can live on either `fileUrl` or directly on `submitFile`
-  // (the documented `null` / `'required'` / URL contract). Fall back to `submitFile`
-  // so View/Download render for the URL-on-submitFile shape too.
-  const submitFileUrl = input.submitFile && input.submitFile !== 'required' ? input.submitFile : null;
   return {
     id: input.id,
     title: input.title,
     description: input.description,
     ...statusFields,
-    hasUploadedFile,
-    needsUpload: input.submitFile === 'required' && !input.fileUrl,
-    // Raw stored file, not the `fileUrl` display fallback: upstream reads the stored `file` when a request sends none.
-    requiresFile: !!input.submitFile && !input.fileUrl,
-    fileUrl: input.fileUrl ?? submitFileUrl,
+    hasUploadedFile: input.hasFile,
+    requiresFile: input.submitFile === 'required' && !input.hasFile,
+    // Read from the stored status: the normalised one folds `complete` into `submitted`, whose file can still be replaced.
+    fileLocked: input.status === 'complete',
     dueDate: input.dueDate ?? null,
     pastDue: isMentorshipTaskPastDue(input.dueDate, nowMs),
     submittedDate: input.submittedDate ?? null,
   };
+}
+
+/** Whether a task file's name ends in an extension the picker offers and the BFF accepts, in any case. */
+export function hasMentorshipTaskFileExtension(fileName: string): boolean {
+  const dot = fileName.lastIndexOf('.');
+  return dot !== -1 && MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS.includes(fileName.slice(dot).toLowerCase());
+}
+
+/**
+ * A task file's name made safe to write into the multipart `Content-Disposition` the BFF sends upstream: path
+ * separators, quotes and control characters become `_`, and a run of dots becomes one, so the result passes
+ * `isSafeUploadFileName`. Upstream cleans the name further, to `[A-Za-z0-9._-]`, so nothing a mentee picked is refused here.
+ */
+export function sanitizeMentorshipTaskFileName(fileName: string): string {
+  // eslint-disable-next-line no-control-regex
+  return fileName
+    .replace(/[/\\"\x00-\x1f\x7f]/g, '_')
+    .replace(/\.{2,}/g, '.')
+    .trim();
 }
 
 /** Whether a value is a status a mentee may request (`in_progress` or `submitted`). Narrows for the controller and the row. */
@@ -1520,7 +1528,7 @@ export function isMentorshipMentorTaskReviewDecision(value: unknown): value is M
  * Status dropdown state for one task row. A mentee can only move `pending → in_progress` and
  * `in_progress → submitted`, so the current option stays enabled, the legal next move is enabled
  * and every other option is disabled. A submitted (or complete) task is locked. `submitted` is also
- * disabled while the task requires a file that is not stored yet, since the BFF never sends `file`,
+ * disabled while the task requires a file that is not uploaded yet, since upstream refuses that move,
  * and once the task is past due, when a pending task can still be started. The hint explains a
  * disabled forward move or a locked row; only the past-due and file-required hints show on screen,
  * and past due wins over file required.
@@ -1611,7 +1619,7 @@ export function buildMentorshipMenteeApplicationView(
             description: task.description,
             status: task.status,
             submitFile: task.submitFile,
-            fileUrl: task.fileUrl,
+            hasFile: task.hasFile,
             dueDate: task.dueDate,
             submittedDate: task.submittedOn,
           },

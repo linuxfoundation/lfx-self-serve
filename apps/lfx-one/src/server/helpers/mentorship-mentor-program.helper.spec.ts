@@ -3,34 +3,17 @@
 
 import '@angular/compiler';
 
-import type {
-  MentorshipMentorProgram,
-  MentorshipUpstreamMentorProgram,
-  MentorshipUpstreamMentorProgramTerm,
-  MentorshipUpstreamProgramApplicationRow,
-  MentorshipUpstreamTask,
-} from '@lfx-one/shared/interfaces';
+import type { MentorshipUpstreamMentoredProgram, MentorshipUpstreamProgramApplicationRow, MentorshipUpstreamTask } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
 import {
-  chooseMentorshipMentorProgramTerm,
-  compareMentorshipMentorProgramCards,
   groupMentorshipMentorProgramTasks,
-  mapMentorshipMentorProgramCard,
+  mapMentorshipMentorProgram,
   mapMentorshipMentorProgramLists,
-  sortMentorshipMentorProgramRows,
+  mentorshipMentorProgramTermIds,
 } from './mentorship-mentor-program.helper';
 
-const NOW = new Date('2026-09-17T12:00:00.000Z');
 const OTHER_PROGRAM_ID = '1a2b3c4d-0000-4000-8000-000000000002';
-
-const term = (id: string, status: MentorshipUpstreamMentorProgramTerm['status'], start?: string, end?: string): MentorshipUpstreamMentorProgramTerm => ({
-  id,
-  name: id,
-  status,
-  start_date_time: start,
-  end_date_time: end,
-});
 
 const application = (id: string, status: MentorshipUpstreamProgramApplicationRow['status']): MentorshipUpstreamProgramApplicationRow => ({
   user_id: `user-${id}`,
@@ -52,173 +35,86 @@ const task = (id: string, status: MentorshipUpstreamTask['status'], applicationI
   updated_on: '2026-08-01T00:00:00Z',
 });
 
-describe('chooseMentorshipMentorProgramTerm', () => {
-  it('picks the open term that started most recently as the active term', () => {
-    const terms = [
-      term('spring', 'open', '2026-03-01T00:00:00Z'),
-      term('fall', 'open', '2026-09-01T00:00:00Z'),
-      term('winter', 'open', '2026-12-01T00:00:00Z'),
-    ];
-
-    expect(chooseMentorshipMentorProgramTerm(terms, NOW)).toEqual({ term: terms[1], termStatus: 'active-term' });
-  });
-
-  it('prefers a started open term over a closed one that started later', () => {
-    const terms = [term('fall', 'open', '2026-09-01T00:00:00Z'), term('late', 'closed', '2026-09-10T00:00:00Z')];
-
-    expect(chooseMentorshipMentorProgramTerm(terms, NOW).term?.id).toBe('fall');
-  });
-
-  it('with only open terms that start later, picks the one that starts first as upcoming', () => {
-    const terms = [term('spring-27', 'open', '2027-03-01T00:00:00Z'), term('undated', 'open'), term('winter', 'open', '2026-12-01T00:00:00Z')];
-
-    expect(chooseMentorshipMentorProgramTerm(terms, NOW)).toEqual({ term: terms[2], termStatus: 'upcoming' });
-  });
-
-  it('prefers an upcoming open term over a closed one', () => {
-    const terms = [term('summer', 'closed', '2026-06-01T00:00:00Z'), term('winter', 'open', '2026-12-01T00:00:00Z')];
-
-    expect(chooseMentorshipMentorProgramTerm(terms, NOW)).toEqual({ term: terms[1], termStatus: 'upcoming' });
-  });
-
-  it('picks an undated open term as upcoming when it is the only open one', () => {
-    const terms = [term('undated', 'open')];
-
-    expect(chooseMentorshipMentorProgramTerm(terms, NOW)).toEqual({ term: terms[0], termStatus: 'upcoming' });
-  });
-
-  it('with no open term, picks the closed term that started most recently as completed', () => {
-    const terms = [
-      term('spring', 'closed', '2026-03-01T00:00:00Z'),
-      term('summer', 'closed', '2026-06-01T00:00:00Z'),
-      term('gone', 'deleted', '2026-08-01T00:00:00Z'),
-    ];
-
-    expect(chooseMentorshipMentorProgramTerm(terms, NOW)).toEqual({ term: terms[1], termStatus: 'completed' });
-  });
-
-  it('with no terms, or only deleted ones, chooses none and groups the card as upcoming', () => {
-    expect(chooseMentorshipMentorProgramTerm([], NOW)).toEqual({ termStatus: 'upcoming' });
-    expect(chooseMentorshipMentorProgramTerm([term('gone', 'deleted', '2026-08-01T00:00:00Z')], NOW)).toEqual({ termStatus: 'upcoming' });
-  });
-});
-
-describe('sortMentorshipMentorProgramRows', () => {
-  const applications = [
-    application('a-accepted', 'accepted'),
-    application('a-graduated', 'graduated'),
-    application('a-pending', 'pending'),
-    application('a-declined', 'declined'),
-    application('a-withdrawn', 'withdrawn'),
-    application('a-hold', 'hold'),
-  ];
-
-  it('counts accepted and graduated applications as mentees and every application as an applicant', () => {
-    const rows = sortMentorshipMentorProgramRows(applications, []);
-
-    expect(rows.mentees.map((row) => row.application_id)).toEqual(['a-accepted', 'a-graduated']);
-    expect(rows.applicants).toHaveLength(6);
-    expect(rows.applicants).not.toBe(applications);
-  });
-
-  it("counts only submitted tasks on an accepted mentee's application as tasks to review", () => {
-    const tasks = [
-      task('t-review', 'submitted', 'a-accepted'),
-      task('t-in-progress', 'in_progress', 'a-accepted'),
-      task('t-complete', 'complete', 'a-accepted'),
-      task('t-graduated', 'submitted', 'a-graduated'),
-      task('t-pending', 'submitted', 'a-pending'),
-      task('t-elsewhere', 'submitted', 'a-unknown'),
-      task('t-unlinked', 'submitted'),
-    ];
-
-    expect(sortMentorshipMentorProgramRows(applications, tasks).tasksToReview.map((row) => row.id)).toEqual(['t-review']);
-  });
-});
-
-describe('mapMentorshipMentorProgramCard', () => {
-  const program: MentorshipUpstreamMentorProgram = {
+describe('mapMentorshipMentorProgram', () => {
+  const item: MentorshipUpstreamMentoredProgram = {
     id: 'program-1',
-    name: 'GridFlow',
     slug: 'gridflow',
+    name: 'GridFlow',
+    project_name: ' LF Energy ',
     logo_url: 'https://cdn.example.org/gridflow.png',
-    skills: [],
-    terms: [],
-    mentors: [],
+    status: 'open',
+    stats: { mentees: 3, applicants: 7, tasks_to_review: 2 },
   };
 
-  it("builds the card from the program, its project, the chosen term's dates and the row counts", () => {
-    const fall = term('Fall 2026', 'open', '2026-09-01T00:00:00Z', '2026-12-15T23:59:59Z');
-    const rows = sortMentorshipMentorProgramRows([application('a1', 'accepted'), application('a2', 'pending')], [task('t1', 'submitted', 'a1')]);
-
-    expect(mapMentorshipMentorProgramCard(program, { project_name: ' LF Energy ' }, { term: fall, termStatus: 'active-term' }, rows)).toEqual({
-      id: 'program-1',
-      slug: 'gridflow',
-      name: 'GridFlow',
-      projectName: 'LF Energy',
-      term: 'Fall 2026',
-      termStatus: 'active-term',
-      stats: { mentees: 1, tasksToReview: 1, applicants: 2 },
-      logoUrl: 'https://cdn.example.org/gridflow.png',
-      termStartDate: '2026-09-01',
-      termEndDate: '2026-12-15',
+  it("builds the card from the upstream row, with upstream's status and program-wide counts", () => {
+    expect(mapMentorshipMentorProgram(item)).toEqual({
+      program: {
+        id: 'program-1',
+        slug: 'gridflow',
+        name: 'GridFlow',
+        projectName: 'LF Energy',
+        status: 'open',
+        stats: { mentees: 3, tasksToReview: 2, applicants: 7 },
+        logoUrl: 'https://cdn.example.org/gridflow.png',
+      },
+      unknownStatus: false,
     });
   });
 
-  it('leaves out what the program or its term does not have', () => {
-    const card = mapMentorshipMentorProgramCard({ ...program, logo_url: undefined }, {}, { termStatus: 'upcoming' }, sortMentorshipMentorProgramRows([], []));
+  it('keeps a completed status', () => {
+    expect(mapMentorshipMentorProgram({ ...item, status: 'completed' })).toEqual({
+      program: expect.objectContaining({ status: 'completed' }),
+      unknownStatus: false,
+    });
+  });
 
-    expect(card).toEqual({
+  it('shows a status it does not know as open and flags it', () => {
+    expect(mapMentorshipMentorProgram({ ...item, status: 'archived' })).toEqual({
+      program: expect.objectContaining({ status: 'open' }),
+      unknownStatus: true,
+    });
+  });
+
+  it('falls back to the id for the slug and leaves out what the row does not have', () => {
+    const { program } = mapMentorshipMentorProgram({ ...item, slug: undefined, project_name: undefined, logo_url: undefined });
+
+    expect(program).toEqual({
       id: 'program-1',
-      slug: 'gridflow',
+      slug: 'program-1',
       name: 'GridFlow',
       projectName: '',
-      term: '',
-      termStatus: 'upcoming',
-      stats: { mentees: 0, tasksToReview: 0, applicants: 0 },
+      status: 'open',
+      stats: { mentees: 3, tasksToReview: 2, applicants: 7 },
     });
   });
 
-  it('keeps the calendar date a term date was written with, whatever its offset', () => {
-    const card = mapMentorshipMentorProgramCard(
-      program,
-      {},
-      { term: term('x', 'open', '2026-09-01T00:00:00+05:00', '2026-12-15T20:00:00-08:00'), termStatus: 'active-term' },
-      sortMentorshipMentorProgramRows([], [])
-    );
+  it('falls back to the id for an empty slug and drops an empty logo', () => {
+    const { program } = mapMentorshipMentorProgram({ ...item, slug: '', logo_url: '' });
 
-    expect(card.termStartDate).toBe('2026-09-01');
-    expect(card.termEndDate).toBe('2026-12-15');
-  });
-
-  it('drops a term date that does not parse', () => {
-    const card = mapMentorshipMentorProgramCard(
-      program,
-      {},
-      { term: term('x', 'open', 'soon'), termStatus: 'upcoming' },
-      sortMentorshipMentorProgramRows([], [])
-    );
-
-    expect(card.termStartDate).toBeUndefined();
-    expect(card.termEndDate).toBeUndefined();
+    expect(program.slug).toBe('program-1');
+    expect(program).not.toHaveProperty('logoUrl');
   });
 });
 
-describe('compareMentorshipMentorProgramCards', () => {
-  const card = (name: string, termStatus: MentorshipMentorProgram['termStatus']): MentorshipMentorProgram => ({
-    id: name,
-    slug: name,
-    name,
-    projectName: '',
-    term: '',
-    termStatus,
-    stats: { mentees: 0, tasksToReview: 0, applicants: 0 },
+describe('mentorshipMentorProgramTermIds', () => {
+  const onTerm = (id: string, termId?: string): MentorshipUpstreamProgramApplicationRow => ({
+    ...application(id, 'accepted'),
+    ...(termId === undefined ? {} : { term: { id: termId, name: termId, status: 'open' as const } }),
   });
 
-  it('orders active terms, then upcoming, then completed, each by name', () => {
-    const cards = [card('Zeta', 'completed'), card('Beta', 'upcoming'), card('Alpha', 'completed'), card('Gamma', 'active-term'), card('Delta', 'active-term')];
+  it('lists each term an application is on once, in the order first seen, skipping applications with no term', () => {
+    expect(mentorshipMentorProgramTermIds([onTerm('a1', 'term-b'), onTerm('a2', 'term-a'), onTerm('a3'), onTerm('a4', 'term-b')])).toEqual([
+      'term-b',
+      'term-a',
+    ]);
+  });
 
-    expect([...cards].sort(compareMentorshipMentorProgramCards).map((row) => row.name)).toEqual(['Delta', 'Gamma', 'Beta', 'Alpha', 'Zeta']);
+  it('keeps a term whose id is empty, so the UUID check refuses it', () => {
+    expect(mentorshipMentorProgramTermIds([onTerm('a1', 'term-a'), onTerm('a2', '')])).toEqual(['term-a', '']);
+  });
+
+  it('lists no terms for no applications', () => {
+    expect(mentorshipMentorProgramTermIds([])).toEqual([]);
   });
 });
 
@@ -246,7 +142,6 @@ describe('mapMentorshipMentorProgramLists', () => {
   it('makes every application an applicant and the accepted and graduated ones mentees, keyed by application id', () => {
     const lists = mapMentorshipMentorProgramLists(
       [row('a1', 'accepted'), row('a2', 'graduated'), row('a3', 'pending'), row('a4', 'hold'), row('a5', 'declined')],
-      'Fall 2026',
       new Map()
     );
 
@@ -283,7 +178,6 @@ describe('mapMentorshipMentorProgramLists', () => {
           ],
         }),
       ],
-      'Fall 2026',
       new Map([['a1', [task('t1', 'submitted', 'a1')]]])
     );
 
@@ -314,8 +208,23 @@ describe('mapMentorshipMentorProgramLists', () => {
     ]);
   });
 
-  it("falls back to the chosen term's name and empty strings, and leaves tasks out when they were not read", () => {
-    const [applicant] = mapMentorshipMentorProgramLists([row('a1', 'pending')], 'Fall 2026', new Map()).applicants;
+  it("takes each row's term from its own application", () => {
+    const lists = mapMentorshipMentorProgramLists(
+      [
+        row('a1', 'accepted', { term: { id: 'term-1', name: 'Summer 2026', status: 'closed' } }),
+        row('a2', 'accepted', { term: { id: 'term-2', name: 'Fall 2026', status: 'open' } }),
+      ],
+      new Map()
+    );
+
+    expect(lists.mentees.map((mentee) => [mentee.id, mentee.termName])).toEqual([
+      ['a1', 'Summer 2026'],
+      ['a2', 'Fall 2026'],
+    ]);
+  });
+
+  it('falls back to empty strings when the application has no term or details, and leaves tasks out when they were not read', () => {
+    const [applicant] = mapMentorshipMentorProgramLists([row('a1', 'pending')], new Map()).applicants;
 
     expect(applicant).toEqual({
       id: 'a1',
@@ -324,7 +233,7 @@ describe('mapMentorshipMentorProgramLists', () => {
       status: 'pending',
       tasksSubmitted: 0,
       tasksTotal: 0,
-      termName: 'Fall 2026',
+      termName: '',
       createdOn: '2026-08-01',
       updatedOn: '2026-08-01',
       otherApplications: [],

@@ -5,7 +5,11 @@
 // which needs the JIT compiler under vitest.
 import '@angular/compiler';
 
-import type { NextFunction, Request, Response } from 'express';
+import compression from 'compression';
+import express, { type NextFunction, type Request, type RequestHandler, type Response } from 'express';
+import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { Writable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../services/logger.service', () => ({
@@ -159,6 +163,331 @@ describe('MentorshipTaskController', () => {
       expect(logged).toContain('"fields":["name","description","status"]');
       expect(logged).not.toContain('private-task-name');
       expect(logged).not.toContain('private-task-text');
+    });
+  });
+
+  describe('downloadTaskFile', () => {
+    const TASK_ID = '8b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e';
+    const fileReq = (headers: Record<string, string> = {}, taskId: unknown = TASK_ID): Request => ({ ...buildReq({ taskId }), headers }) as Request;
+
+    /** A writable stand-in for the Express response, so the controller's pipeline really streams into it. */
+    const streamRes = () => {
+      const chunks: Buffer[] = [];
+      const headers = new Map<string, string>();
+      const out = new Writable({
+        write(chunk, _encoding, callback) {
+          out.headersSent = true;
+          chunks.push(Buffer.from(chunk));
+          callback();
+        },
+      }) as Writable & {
+        headersSent: boolean;
+        status: ReturnType<typeof vi.fn>;
+        setHeader: (name: string, value: string) => void;
+        getHeader: (name: string) => string | undefined;
+        removeHeader: (name: string) => void;
+      };
+      out.headersSent = false;
+      out.status = vi.fn(() => out);
+      out.setHeader = (name, value) => headers.set(name.toLowerCase(), value);
+      out.getHeader = (name) => headers.get(name.toLowerCase());
+      out.removeHeader = (name) => headers.delete(name.toLowerCase());
+      return { out, res: out as unknown as Response, headers, body: () => Buffer.concat(chunks).toString() };
+    };
+
+    it('streams the upstream body with its file headers, and logs only the task id and status', async () => {
+      const open = vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+        new Response('file-bytes', {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Length': '10',
+            'Content-Disposition': 'attachment; filename="report.pdf"',
+            'Cache-Control': 'private, max-age=0',
+            ETag: '"abc"',
+            'Last-Modified': 'Tue, 06 Oct 2026 10:00:00 GMT',
+            'Accept-Ranges': 'bytes',
+            'X-Internal-Trace': 'internal-only',
+          },
+        })
+      );
+      const { out, res, headers, body } = streamRes();
+
+      await controller.downloadTaskFile(fileReq(), res, next);
+
+      expect(open).toHaveBeenCalledWith(expect.anything(), TASK_ID, undefined);
+      expect(out.status).toHaveBeenCalledWith(200);
+      expect(Object.fromEntries(headers)).toEqual({
+        'content-type': 'application/pdf',
+        'content-length': '10',
+        'content-disposition': 'attachment; filename="report.pdf"',
+        'cache-control': 'private, max-age=0, no-transform',
+        etag: '"abc"',
+        'last-modified': 'Tue, 06 Oct 2026 10:00:00 GMT',
+        'accept-ranges': 'bytes',
+        'x-content-type-options': 'nosniff',
+      });
+      expect(body()).toBe('file-bytes');
+      expect(out.writableFinished).toBe(true);
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'download_mentorship_task_file', 0, { taskId: TASK_ID, status: 200 });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('forwards a single byte range and passes the 206 and its Content-Range through', async () => {
+      const open = vi
+        .spyOn(MentorshipTaskService.prototype, 'openTaskFile')
+        .mockResolvedValue(new Response('le-by', { status: 206, headers: { 'Content-Range': 'bytes 2-6/10', 'Content-Length': '5' } }));
+      const { out, res, headers, body } = streamRes();
+
+      await controller.downloadTaskFile(fileReq({ range: 'bytes=2-6' }), res, next);
+
+      expect(open).toHaveBeenCalledWith(expect.anything(), TASK_ID, 'bytes=2-6');
+      expect(out.status).toHaveBeenCalledWith(206);
+      expect(headers.get('content-range')).toBe('bytes 2-6/10');
+      expect(headers.get('content-length')).toBe('5');
+      expect(body()).toBe('le-by');
+    });
+
+    it.each(['bytes=0-', 'bytes=-500', 'bytes=0-1023'])('forwards the range %s', async (range) => {
+      const open = vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(new Response('x', { status: 206 }));
+
+      await controller.downloadTaskFile(fileReq({ range }), streamRes().res, next);
+
+      expect(open).toHaveBeenCalledWith(expect.anything(), TASK_ID, range);
+    });
+
+    it.each(['bytes=0-1,5-6', 'items=0-1', 'bytes=a-b', 'bytes=0-1\r\nX-Injected: 1', 'bytes=1234567890123456-', 'bytes=-'])(
+      'drops the range %j and asks for the whole file',
+      async (range) => {
+        const open = vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(new Response('x', { status: 200 }));
+
+        await controller.downloadTaskFile(fileReq({ range }), streamRes().res, next);
+
+        expect(open).toHaveBeenCalledWith(expect.anything(), TASK_ID, undefined);
+      }
+    );
+
+    it('adds an attachment disposition and no-store caching when upstream sends neither', async () => {
+      vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+        new Response('x', { status: 200, headers: { 'Content-Type': 'text/plain' } })
+      );
+      const { res, headers } = streamRes();
+
+      await controller.downloadTaskFile(fileReq(), res, next);
+
+      expect(headers.get('content-disposition')).toBe(`attachment; filename="submission"; filename*=UTF-8''submission`);
+      expect(headers.get('cache-control')).toBe('private, no-store, no-transform');
+      expect(headers.get('x-content-type-options')).toBe('nosniff');
+    });
+
+    it.each(['inline; filename="report.pdf"', 'inline', 'form-data; name="file"; filename="report.pdf"', 'attachmentish; filename="report.pdf"'])(
+      'replaces the upstream disposition %j with an attachment',
+      async (disposition) => {
+        vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+          new Response('x', { status: 200, headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': disposition } })
+        );
+        const { res, headers } = streamRes();
+
+        await controller.downloadTaskFile(fileReq(), res, next);
+
+        expect(headers.get('content-disposition')).toBe(`attachment; filename="submission"; filename*=UTF-8''submission`);
+        expect(next).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each(['ATTACHMENT; filename="report.pdf"', 'Attachment', 'attachment;filename="report.pdf"'])(
+      'keeps the upstream attachment disposition %j in any case',
+      async (disposition) => {
+        vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+          new Response('x', { status: 200, headers: { 'Content-Disposition': disposition } })
+        );
+        const { res, headers } = streamRes();
+
+        await controller.downloadTaskFile(fileReq(), res, next);
+
+        expect(headers.get('content-disposition')).toBe(disposition);
+      }
+    );
+
+    it('drops the upstream length and ranges, and keeps the other file headers, when upstream compresses the body', async () => {
+      vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+        new Response('file-bytes', {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Length': '4',
+            'Content-Range': 'bytes 0-3/4',
+            'Accept-Ranges': 'bytes',
+            'Content-Encoding': 'gzip',
+            'Content-Disposition': 'attachment; filename="report.pdf"',
+            ETag: '"abc"',
+          },
+        })
+      );
+      const { res, headers, body } = streamRes();
+
+      await controller.downloadTaskFile(fileReq(), res, next);
+
+      expect(headers.has('content-length')).toBe(false);
+      expect(headers.has('content-range')).toBe(false);
+      expect(headers.has('accept-ranges')).toBe(false);
+      expect(headers.has('content-encoding')).toBe(false);
+      expect(headers.get('content-type')).toBe('application/pdf');
+      expect(headers.get('content-disposition')).toBe('attachment; filename="report.pdf"');
+      expect(headers.get('etag')).toBe('"abc"');
+      expect(body()).toBe('file-bytes');
+    });
+
+    it.each([
+      ['a task id that is not a UUID', '12'],
+      ['a task id that is repeated', [TASK_ID, TASK_ID]],
+      ['a blank task id', '   '],
+    ])('rejects %s with a 400 and no upstream call', async (_label, taskId) => {
+      const open = vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile');
+      const { out, res } = streamRes();
+
+      await controller.downloadTaskFile(fileReq({}, taskId), res, next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(open).not.toHaveBeenCalled();
+      expect(out.status).not.toHaveBeenCalled();
+    });
+
+    it.each([403, 404, 416, 503])('passes an upstream %i on to next before anything is sent', async (statusCode) => {
+      vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockRejectedValue(Object.assign(new Error('upstream'), { statusCode }));
+      const { out, res, headers } = streamRes();
+
+      await controller.downloadTaskFile(fileReq(), res, next);
+
+      expect(statusCodes()).toEqual([statusCode]);
+      expect(out.status).not.toHaveBeenCalled();
+      expect(headers.size).toBe(0);
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('logs and ends the response, without calling next, when the stream fails after the headers are sent', async () => {
+      const streamError = new Error('upstream connection reset');
+      const failingBody = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('part'));
+        },
+        async pull(controller) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          controller.error(streamError);
+        },
+      });
+      vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(new Response(failingBody, { status: 200 }));
+      const { out, res, body } = streamRes();
+      const end = vi.spyOn(out, 'end');
+
+      await controller.downloadTaskFile(fileReq(), res, next);
+
+      expect(body()).toBe('part');
+      expect(next).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(expect.anything(), 'download_mentorship_task_file', 0, streamError, { stage: 'streaming' });
+      expect(end).toHaveBeenCalled();
+      expect(logger.success).not.toHaveBeenCalled();
+    });
+
+    it('hands a failure before the first byte to next with the response still whole and no file headers set', async () => {
+      const streamError = new Error('upstream connection reset');
+      const failingBody = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.error(streamError);
+        },
+      });
+      vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+        new Response(failingBody, { status: 200, headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="a.pdf"' } })
+      );
+      const { out, res, headers } = streamRes();
+
+      await controller.downloadTaskFile(fileReq(), res, next);
+
+      expect(next).toHaveBeenCalledWith(streamError);
+      expect(headers.size).toBe(0);
+      expect(out.status).not.toHaveBeenCalled();
+      // pipeline() would have destroyed the response, leaving the error handler nothing to answer on.
+      expect(out.destroyed).toBe(false);
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('keeps an upstream no-transform once rather than adding a second', async () => {
+      vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+        new Response('x', { status: 200, headers: { 'Cache-Control': 'private, no-transform, no-store' } })
+      );
+      const { res, headers } = streamRes();
+
+      await controller.downloadTaskFile(fileReq(), res, next);
+
+      expect(headers.get('cache-control')).toBe('private, no-transform, no-store');
+    });
+
+    it('is not compressed by the app-wide compression middleware, so a ranged text download keeps its byte headers', async () => {
+      const text = 'submission text '.repeat(512);
+      vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+        new Response(text.slice(0, 4096), {
+          status: 206,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': '4096', 'Content-Range': `bytes 0-4095/${text.length}`, ETag: '"t1"' },
+        })
+      );
+      const app = express();
+      // @types/compression brings its own @types/express, so its handler type does not match this one (server.ts uses require() for the same reason).
+      app.use(compression({ threshold: 0 }) as unknown as RequestHandler);
+      app.get('/tasks/:taskId/file', (req, res, nextFn) => controller.downloadTaskFile(req, res, nextFn));
+      const server = await new Promise<Server>((resolve) => {
+        const listening = app.listen(0, '127.0.0.1', () => resolve(listening));
+      });
+      try {
+        const { port } = server.address() as AddressInfo;
+        const response = await fetch(`http://127.0.0.1:${port}/tasks/${TASK_ID}/file`, { headers: { 'Accept-Encoding': 'gzip', Range: 'bytes=0-4095' } });
+
+        expect(response.status).toBe(206);
+        expect(response.headers.get('content-encoding')).toBeNull();
+        expect(response.headers.get('content-length')).toBe('4096');
+        expect(response.headers.get('content-range')).toBe(`bytes 0-4095/${text.length}`);
+        expect(await response.text()).toBe(text.slice(0, 4096));
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+
+    it('keeps the length and ranges when upstream labels the body identity, which is not compressed', async () => {
+      vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+        new Response('file-bytes', {
+          status: 200,
+          headers: { 'Content-Type': 'application/pdf', 'Content-Length': '10', 'Accept-Ranges': 'bytes', 'Content-Encoding': 'Identity' },
+        })
+      );
+      const { res, headers } = streamRes();
+
+      await controller.downloadTaskFile(fileReq(), res, next);
+
+      expect(headers.get('content-length')).toBe('10');
+      expect(headers.get('accept-ranges')).toBe('bytes');
+    });
+
+    it('ends the response with the file headers for an empty body', async () => {
+      vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile').mockResolvedValue(
+        new Response('', { status: 200, headers: { 'Content-Type': 'text/plain', 'Content-Disposition': 'attachment; filename="empty.txt"' } })
+      );
+      const { out, res, headers, body } = streamRes();
+
+      await controller.downloadTaskFile(fileReq(), res, next);
+
+      expect(body()).toBe('');
+      expect(out.writableFinished).toBe(true);
+      expect(headers.get('content-disposition')).toBe('attachment; filename="empty.txt"');
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('passes an AuthenticationError to next without opening the file when no user is signed in', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const open = vi.spyOn(MentorshipTaskService.prototype, 'openTaskFile');
+
+      await controller.downloadTaskFile(fileReq(), streamRes().res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+      expect(open).not.toHaveBeenCalled();
     });
   });
 

@@ -22,10 +22,15 @@ const updateHandler = vi.fn((_req: express.Request, res: express.Response) => {
   res.json({ id: 'task' });
 });
 
+const downloadHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.status(200).send('file-bytes');
+});
+
 vi.mock('../controllers/mentorship-task.controller', () => ({
   MentorshipTaskController: class {
     public createTasks = createHandler;
     public updateTask = updateHandler;
+    public downloadTaskFile = downloadHandler;
   },
 }));
 let impersonatingStub = false;
@@ -117,5 +122,15 @@ describe('mentorship task router — task edit impersonation gate', () => {
 
     expect(res.status).toBe(200);
     expect(updateHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mentorship task router — GET /:taskId/file', () => {
+  it('reaches the controller while impersonating, since it only reads', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/tasks/${TASK_ID}/file`);
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('file-bytes');
+    expect(downloadHandler).toHaveBeenCalledTimes(1);
   });
 });

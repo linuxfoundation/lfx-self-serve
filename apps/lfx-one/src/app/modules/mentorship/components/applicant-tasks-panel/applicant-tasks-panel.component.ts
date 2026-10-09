@@ -17,8 +17,8 @@ import { MentorshipTaskUpdate, MentorshipApplicantTask, MentorshipApplicantTaskR
 import { buildMentorshipTaskUpdate, filterMentorshipApplicantTasks } from '@lfx-one/shared/utils';
 import { startWith, take } from 'rxjs';
 
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
+import { MentorshipTaskFileService } from '../../services/mentorship-task-file.service';
 import { MentorshipTaskUpdateService } from '../../services/mentorship-task-update.service';
 
 type TaskStatusForm = FormGroup<{ status: FormControl<MentorshipApplicantTaskStatus> }>;
@@ -28,8 +28,7 @@ type TaskStatusForm = FormGroup<{ status: FormControl<MentorshipApplicantTaskSta
  * The Edit dialog and the status select save through the BFF route both pages share: the saved task goes to
  * `taskSaved`, which patches the caller's list, and a failed save puts the select back and toasts why. The caller is a
  * callback rather than an output because collapsing the row destroys this panel while a save is still in flight, and
- * Angular drops an output emitted after destroy. View and download stub to the coming-soon toast, as file transfer is
- * not wired.
+ * Angular drops an output emitted after destroy. Download saves the mentee's submission file.
  */
 @Component({
   selector: 'lfx-mentorship-applicant-tasks-panel',
@@ -38,8 +37,8 @@ type TaskStatusForm = FormGroup<{ status: FormControl<MentorshipApplicantTaskSta
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ApplicantTasksPanelComponent {
-  private readonly comingSoon = inject(MentorshipComingSoonService);
   private readonly taskDialog = inject(MentorshipTaskDialogService);
+  private readonly taskFile = inject(MentorshipTaskFileService);
   private readonly taskUpdate = inject(MentorshipTaskUpdateService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -82,12 +81,8 @@ export class ApplicantTasksPanelComponent {
     this.initStatusSelectLock();
   }
 
-  protected onViewTask(task: MentorshipApplicantTaskRow): void {
-    this.comingSoon.notify(`View ${task.name} for ${this.applicantName()}`);
-  }
-
   protected onDownloadTask(task: MentorshipApplicantTaskRow): void {
-    this.comingSoon.notify(`Download ${task.name} for ${this.applicantName()}`);
+    this.taskFile.download(task.id);
   }
 
   /** Opens the shared task-form dialog in edit mode and saves what it changed. */

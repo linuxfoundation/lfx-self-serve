@@ -544,8 +544,14 @@ export class MeetingService {
     };
 
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board/restricted meeting into sharing its guest list in calendar invites.
-    if (isShowMeetingAttendeesLocked(createPayload.meeting_type, createPayload.restricted)) {
+    // to opt a board meeting into sharing its guest list in calendar invites. A restricted meeting
+    // keeps any explicit `true` from a caller allowed to edit it — in practice only the meeting v2
+    // composer sends one, since the pre-v2 wizard locks the control off — and is forced off otherwise.
+    if (
+      isShowMeetingAttendeesLocked(createPayload.meeting_type, createPayload.restricted, {
+        allowRestricted: createPayload.show_meeting_attendees === true,
+      })
+    ) {
       createPayload.show_meeting_attendees = false;
     }
 
@@ -619,8 +625,10 @@ export class MeetingService {
     const meetingType = submittedType || existingMeeting.meeting_type;
     const restricted = meetingData.restricted ?? existingMeeting.restricted;
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board/restricted meeting into sharing its guest list in calendar invites.
-    if (isShowMeetingAttendeesLocked(meetingType, restricted)) {
+    // to opt a board meeting into sharing its guest list in calendar invites. A restricted meeting
+    // keeps any explicit `true` from a caller allowed to edit it (in practice only the meeting v2
+    // composer sends one; the pre-v2 wizard locks the control off) and is forced off otherwise.
+    if (isShowMeetingAttendeesLocked(meetingType, restricted, { allowRestricted: meetingData.show_meeting_attendees === true })) {
       updatePayload.show_meeting_attendees = false;
     } else if (meetingData.show_meeting_attendees == null && isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted)) {
       // Unlocking a locked meeting with no choice of its own. Upstream keeps whatever the body

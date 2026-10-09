@@ -6,7 +6,6 @@ import {
   MentorshipAdminMentorStatus,
   MentorshipApplicantTaskStatus,
   MentorshipMenteeStatus,
-  MentorshipMentorProgramTermStatus,
   MentorshipMentorStatus,
   MentorshipProgramStatus,
   MentorshipUpstreamApplicationStatus,
@@ -42,8 +41,11 @@ export const MENTORSHIP_ME_APPLICATIONS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/app
  */
 export const MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/program-memberships`;
 
-/** Upstream path for the programs the signed-in user administers, with their term, counts and `admin_status`. */
+/** Upstream path for the programs the signed-in user administers, with their program-wide counts and `admin_status`. */
 export const MENTORSHIP_ME_PROGRAMS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/programs`;
+
+/** Upstream path for the published programs the signed-in user is an active mentor of, with their status and program-wide counts. */
+export const MENTORSHIP_ME_MENTOR_PROGRAMS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/mentor-programs`;
 
 /** Upstream applications collection; an application's tasks live at `/{id}/tasks`. */
 export const MENTORSHIP_APPLICATIONS_PATH = '/mentorship/v1/applications';
@@ -51,8 +53,35 @@ export const MENTORSHIP_APPLICATIONS_PATH = '/mentorship/v1/applications';
 /** Upstream mentor invites; the invited mentor answers at `/{token}/accept` or `/{token}/decline`. */
 export const MENTORSHIP_MENTOR_INVITES_PATH = '/mentorship/v1/mentor-invites';
 
-/** Upstream tasks collection; a mentee changes a task's status at `/{id}/submission`, and a mentor reviews it at `/{id}/review`. */
+/**
+ * Upstream tasks collection; a mentee changes a task's status at `/{id}/submission`, and a mentor reviews it at `/{id}/review`.
+ * A task's submission file is uploaded at `/{id}/file-upload`, read at `/{id}/file-download` and removed at `/{id}/file`.
+ */
 export const MENTORSHIP_TASKS_PATH = '/mentorship/v1/tasks';
+
+/**
+ * Timeout (ms) for a task file upload or download, matching the upstream and gateway transfer timeout, since a 20 MB file
+ * can outlast the API client's 30 s default.
+ */
+export const MENTORSHIP_TASK_FILE_TRANSFER_TIMEOUT_MS = 120_000;
+
+/** Upstream download headers the BFF passes on to the browser. Range support keeps a resumed download working. */
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_HEADERS: readonly string[] = [
+  'content-type',
+  'content-length',
+  'content-disposition',
+  'cache-control',
+  'etag',
+  'last-modified',
+  'content-range',
+  'accept-ranges',
+];
+
+/** Of those, the ones that count encoded bytes, so they are dropped when upstream compresses the body that `fetch` decodes. */
+export const MENTORSHIP_TASK_FILE_ENCODED_BYTE_HEADERS: readonly string[] = ['content-length', 'content-range', 'accept-ranges'];
+
+/** The one `Range` shape passed upstream, a single byte range; any other is dropped and the whole file is sent. */
+export const MENTORSHIP_TASK_FILE_RANGE_PATTERN = /^bytes=(\d{1,15}-\d{0,15}|-\d{1,15})$/;
 
 /**
  * Upstream programs collection. A program's terms live at `/{id}/terms/{termId}` and a term takes
@@ -78,8 +107,8 @@ export const MENTORSHIP_LF_PROJECT_MAX_LIMIT = 50;
 /** Page size for a program's applications: the largest `limit` upstream accepts there, which resets anything above it to 10. */
 export const MENTORSHIP_PROGRAM_APPLICATIONS_PAGE_SIZE = 50;
 
-/** Most programs whose rows the mentor My Programs read loads at once. */
-export const MENTORSHIP_MENTOR_PROGRAM_READ_CONCURRENCY = 5;
+/** Most term task reads the mentor program detail runs at once. */
+export const MENTORSHIP_MENTOR_TERM_TASK_READ_CONCURRENCY = 5;
 
 /** Longest search text the admin reads send upstream; anything longer is cut. */
 export const MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH = 100;
@@ -154,9 +183,6 @@ export const MENTORSHIP_ADMIN_MENTOR_STATUS_MAP: Readonly<Record<string, Mentors
   declined: 'declined',
   withdrawn: 'withdrawn',
 };
-
-/** The order of the groups on mentor My Programs. */
-export const MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_ORDER: readonly MentorshipMentorProgramTermStatus[] = ['active-term', 'upcoming', 'completed'];
 
 /** Application statuses a mentor's program counts as its mentees. */
 export const MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES: readonly MentorshipUpstreamApplicationStatus[] = ['accepted', 'graduated'];

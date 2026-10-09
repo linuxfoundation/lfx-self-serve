@@ -17,7 +17,7 @@
  * does not hold it. `{orgName}` is accepted only by states rendered to a caller who holds the org.
  */
 
-import { OrgLensEmptyStateCopy, OrgLensEmptyStateName } from '../interfaces/org-lens-empty-state.interface';
+import { OrgLensEmptyStateCopy, OrgLensEmptyStateName, OrgLensSectionErrorOutcome } from '../interfaces/org-lens-empty-state.interface';
 import { LINKS_CONFIG } from './links.config';
 
 /** In-app route of the LFX profile attributions page (FR-006 primary) — environment-agnostic. */
@@ -116,3 +116,9 @@ export const ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL = 'Retrying…';
  * receives one renders `section-could-not-verify`, never the no-access wording (FR-015).
  */
 export const ORG_LENS_UNVERIFIABLE_ACCESS_CODES: ReadonlySet<string> = new Set(['ROLE_GRANTS_UNAVAILABLE', 'ACCESS_CHECK_UNAVAILABLE']);
+
+/**
+ * Severity order (lowest number wins) for reducing a section carousel's per-pipeline outcomes to one
+ * overall outcome: a gate-level `denied`/`unverifiable` always outranks a single failed pipeline.
+ */
+export const ORG_LENS_OUTCOME_SEVERITY: Record<OrgLensSectionErrorOutcome, number> = { denied: 0, unverifiable: 1, failed: 2, records: 3 };

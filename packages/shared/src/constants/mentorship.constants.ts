@@ -195,6 +195,20 @@ export const MENTORSHIP_TASK_UPDATE_ERROR_MESSAGES: Readonly<Record<number, stri
   404: 'This task no longer exists. Refresh the page and try again.',
 };
 
+/** Task file downloads, for the mentee and the task's reviewers (its mentors and program admins). */
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_SUMMARY = 'Could not download the file';
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_FALLBACK = 'We could not download this file right now. Please try again.';
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_TOAST_LIFE = 5000;
+/** Saved under this name when the response names no file; upstream always sends one. */
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_FALLBACK_NAME = 'submission';
+
+/** Download failures with their own copy, keyed by the BFF's status. A 503 means object storage is not configured upstream. */
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  403: 'You do not have access to this file.',
+  404: 'This file is no longer available. Refresh the page and try again.',
+  503: 'File downloads are unavailable right now. Please try again later.',
+};
+
 /**
  * Toast `summary` shown by every mentorship register form when submit is blocked by
  * client-side validation. Shared so a copy change lands on both mentor and mentee forms
@@ -235,6 +249,21 @@ export const MENTORSHIP_ADMIN_TERM_REOPENED_MESSAGE = 'Term re-opened.';
 export const MENTORSHIP_ADMIN_TERM_DELETED_MESSAGE = 'Term deleted.';
 export const MENTORSHIP_ADMIN_TERM_WRITE_FAILED_MESSAGE = "The term couldn't be saved. Please try again.";
 export const MENTORSHIP_ADMIN_TERM_WRITE_IN_FLIGHT_MESSAGE = 'Another term change is still being saved.';
+
+/** Statuses a program admin may hide: both are upstream `published`. A `hidden` program may be unhidden. */
+export const MENTORSHIP_PROGRAM_HIDEABLE_STATUSES: readonly MentorshipProgramStatus[] = ['open', 'completed'];
+export const MENTORSHIP_PROGRAM_HIDE_DESCRIPTION = 'Hide this program from public view. Mentees can no longer find it or apply.';
+export const MENTORSHIP_PROGRAM_UNHIDE_DESCRIPTION = 'Make this program publicly visible again so mentees can find it and apply.';
+export const MENTORSHIP_PROGRAM_HIDE_CONFIRM =
+  'Are you sure you want to hide this program? It will no longer be publicly visible, and mentees will not be able to find it or apply. A program with active applications cannot be hidden.';
+export const MENTORSHIP_PROGRAM_UNHIDE_CONFIRM = 'Are you sure you want to unhide this program? It will be publicly visible again.';
+export const MENTORSHIP_PROGRAM_HIDDEN_MESSAGE = 'Program hidden.';
+export const MENTORSHIP_PROGRAM_UNHIDDEN_MESSAGE = 'Program unhidden.';
+/** Upstream answers a refused hide or unhide with one 409 for both causes, so each message names every cause it covers. */
+export const MENTORSHIP_PROGRAM_HIDE_BLOCKED_MESSAGE =
+  "This program can't be hidden: it has active applications, or its status has changed. The page has been refreshed.";
+export const MENTORSHIP_PROGRAM_UNHIDE_BLOCKED_MESSAGE = "This program can't be made visible: its status has changed. The page has been refreshed.";
+export const MENTORSHIP_PROGRAM_VISIBILITY_FAILED_MESSAGE = "The program's visibility couldn't be changed. Please try again.";
 
 /**
  * Underline tabs on `/mentorship/admin/:programId`. Order matches the admin screenshot;
@@ -583,7 +612,6 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     slug: 'gridflow-time-series-ingestion-pipeline',
     name: 'GridFlow: Time-Series Ingestion Pipeline',
     projectName: 'LF Energy',
-    term: 'Fall 2026',
     status: 'open',
     stats: { mentors: 4, mentees: 2, graduated: 6 },
     logoUrl: mentorshipArtworkIconUrl('lf-energy', 'grid-exchange-fabric'),
@@ -595,7 +623,6 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     slug: 'apicurio-registry-prompt-template-playground',
     name: 'Apicurio Registry: Prompt Template Playground',
     projectName: 'CNCF',
-    term: 'Winter 2026',
     status: 'pending-review',
     stats: { mentors: 2, mentees: 0, graduated: 0 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'apicurio-registry'),
@@ -607,7 +634,6 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     slug: 'janusgraph-adjacency-cache-instrumentation',
     name: 'JanusGraph: Adjacency Cache Instrumentation',
     projectName: 'LF AI & Data',
-    term: 'Fall 2026',
     status: 'open',
     stats: { mentors: 1, mentees: 1, graduated: 2 },
     logoUrl: mentorshipArtworkIconUrl('lfai', 'janusgraph'),
@@ -619,7 +645,6 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     slug: 'thanos-fan-out-query-observability',
     name: 'Thanos: Fan-Out Query Observability',
     projectName: 'CNCF',
-    term: 'Summer 2026',
     status: 'completed',
     stats: { mentors: 2, mentees: 0, graduated: 3 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'thanos'),

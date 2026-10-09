@@ -15,6 +15,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApplicantTasksPanelComponent } from '../../../../components/applicant-tasks-panel/applicant-tasks-panel.component';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
+import { MentorshipTaskFileService } from '../../../../services/mentorship-task-file.service';
 import { MentorshipTaskUpdateService } from '../../../../services/mentorship-task-update.service';
 import { MentorApplicantsTabComponent } from './mentor-applicants-tab.component';
 
@@ -78,6 +79,7 @@ describe('MentorApplicantsTabComponent', () => {
           useValue: { openCreate: vi.fn().mockReturnValue(EMPTY), openCreateGroup: vi.fn().mockReturnValue(EMPTY), openEdit: vi.fn().mockReturnValue(EMPTY) },
         },
         { provide: MentorshipTaskUpdateService, useValue: { update, isUpdating: () => false } },
+        { provide: MentorshipTaskFileService, useValue: { download: vi.fn() } },
       ],
     });
 
