@@ -191,6 +191,7 @@ interface AtRiskRow extends AtRiskBucketTotals {
 }
 
 interface RenewalRow {
+  SCOPE_RECORDS: number | null;
   TOTAL_RECORDS: number | null;
   RENEWALS_COUNT: number | null;
   VALUE_USD: number | null;
@@ -633,21 +634,22 @@ export class HealthMetricsMembersService {
           dues_usd,
           has_outstanding_balance,
           has_renewed,
+          COALESCE(${columns.flag}, FALSE) AS in_window,
           ${columns.totals}_renewals_count AS renewals_count,
           ${columns.totals}_dues_usd AS window_dues_usd
         FROM ${MEMBERSHIP_RENEWALS_VIEW}
         WHERE foundation_slug = ?
           AND account_id IS NOT NULL
           AND account_id <> ''
-          AND ${columns.flag} = TRUE
       ),
       totals AS (
         SELECT
-          COUNT(*) AS total_records,
-          -- The model repeats its foundation totals on every row, so any one row carries them.
+          COUNT(*) AS scope_records,
+          COUNT_IF(in_window) AS total_records,
+          -- The model repeats its foundation totals on every row, so an empty window still reads them off the others.
           ANY_VALUE(renewals_count) AS renewals_count,
           ANY_VALUE(window_dues_usd) AS value_usd,
-          COUNT_IF(dues_usd IS NULL) AS without_dues_count
+          COUNT_IF(in_window AND dues_usd IS NULL) AS without_dues_count
         FROM scoped
       ),
       page AS (
@@ -662,6 +664,7 @@ export class HealthMetricsMembersService {
           has_renewed,
           TRUE AS is_page_row
         FROM scoped
+        WHERE in_window
         ORDER BY renewal_date ASC NULLS LAST, dues_usd DESC NULLS LAST, account_id ASC
         LIMIT ${pageSize} OFFSET ${offset}
       )
@@ -679,14 +682,14 @@ export class HealthMetricsMembersService {
     });
 
     const first = result.rows[0];
-    const totalRecords = Number(first?.TOTAL_RECORDS ?? 0);
+    const modelled = Number(first?.SCOPE_RECORDS ?? 0) > 0;
     return {
       rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapRenewal),
-      totalRecords,
-      // The model's totals count only known dues; no renewal in the window is a measured zero, an unset total stays null.
+      totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
+      // An unset model total stays null; a foundation with no renewal rows at all has nothing due, a measured zero.
       summary: {
-        renewalCount: totalRecords > 0 ? toNullableNumber(first?.RENEWALS_COUNT) : 0,
-        valueUsd: totalRecords > 0 ? toNullableNumber(first?.VALUE_USD) : 0,
+        renewalCount: modelled ? toNullableNumber(first?.RENEWALS_COUNT) : 0,
+        valueUsd: modelled ? toNullableNumber(first?.VALUE_USD) : 0,
         withoutDuesCount: Number(first?.WITHOUT_DUES_COUNT ?? 0),
       },
     };

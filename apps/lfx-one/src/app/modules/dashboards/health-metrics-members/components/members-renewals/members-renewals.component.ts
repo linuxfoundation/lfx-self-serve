@@ -74,6 +74,8 @@ export class MembersRenewalsComponent {
   protected readonly loadFailed = signal<boolean>(false);
   /** The foundation the shown response belongs to, so a new foundation's read holds the skeleton, not the old figures. */
   private readonly responseSlug = signal<string | null>(null);
+  /** The window the shown response belongs to, so a window change holds its own skeleton under the pills. */
+  private readonly responseWindow = signal<HealthMetricsMembersRenewalsWindow | null>(null);
   protected readonly window = signal<HealthMetricsMembersRenewalsWindow>(
     this.toWindow(this.initialParams.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.renewalsWindow))
   );
@@ -100,8 +102,9 @@ export class MembersRenewalsComponent {
       this.loading() &&
       (this.response() === HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED || this.responseSlug() !== (this.projectContextService.selectedFoundation()?.slug ?? ''))
   );
-  /** Only a measured zero says nothing is due; an unset count keeps the rows. */
-  protected readonly noneDue = computed(() => this.response().summary.renewalCount === 0);
+  protected readonly windowRead = computed(() => this.loading() && this.responseWindow() !== this.window());
+  /** Follows the rows the table would show, not the model total, so a matched row is never hidden. */
+  protected readonly noneDue = computed(() => this.totalRecords() === 0);
   protected readonly windowPhrase = computed(() => HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_PHRASES[this.window()]);
 
   public constructor() {
@@ -171,6 +174,7 @@ export class MembersRenewalsComponent {
               if (this.clampPage(response)) return;
 
               this.responseSlug.set(query.foundationSlug);
+              this.responseWindow.set(query.window);
 
               this.loading.set(!foundationSeen);
               this.countChange.emit(query.foundationSlug && !this.loadFailed() ? response.summary.renewalCount : null);

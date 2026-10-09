@@ -724,7 +724,7 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
 
 describe('HealthMetricsMembersService.getRenewals', () => {
   const query = { foundationSlug: 'acme', window: '90_days' as const, offset: 0, pageSize: 10 };
-  const totals = { TOTAL_RECORDS: 3, RENEWALS_COUNT: 3, VALUE_USD: 185000, WITHOUT_DUES_COUNT: 1 };
+  const totals = { SCOPE_RECORDS: 5, TOTAL_RECORDS: 3, RENEWALS_COUNT: 3, VALUE_USD: 185000, WITHOUT_DUES_COUNT: 1 };
 
   function renewalRow(overrides: Record<string, unknown> = {}) {
     return {
@@ -764,22 +764,25 @@ describe('HealthMetricsMembersService.getRenewals', () => {
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_RENEWALS');
     const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('totals AS'));
     expect(scoped).toContain("AND account_id <> ''");
-    expect(scoped).toContain(`AND ${flag} = TRUE`);
+    expect(scoped).toContain(`COALESCE(${flag}, FALSE) AS in_window`);
+    expect(scoped).not.toContain(`${flag} = TRUE`);
+    expect(sql.slice(sql.indexOf('page AS'))).toContain('FROM scoped\n        WHERE in_window\n');
     expect(scoped).toContain(`${totalsPrefix}_renewals_count AS renewals_count`);
     expect(scoped).toContain(`${totalsPrefix}_dues_usd AS window_dues_usd`);
     expect(scoped).not.toContain('has_renewed, FALSE');
     expect(sql).not.toMatch(/renewal_status/i);
   });
 
-  it("takes the window's count and value from the model, counting the renewals without dues", async () => {
+  it("takes the window's count and value from the model before the window filter, counting the renewals without dues", async () => {
     await new HealthMetricsMembersService().getRenewals(req, query);
 
     const [sql] = renewalsRead();
     const totalsCte = sql.slice(sql.indexOf('totals AS'), sql.indexOf('page AS'));
-    expect(totalsCte).toContain('COUNT(*) AS total_records');
+    expect(totalsCte).toContain('COUNT(*) AS scope_records');
+    expect(totalsCte).toContain('COUNT_IF(in_window) AS total_records');
     expect(totalsCte).toContain('ANY_VALUE(renewals_count) AS renewals_count');
     expect(totalsCte).toContain('ANY_VALUE(window_dues_usd) AS value_usd');
-    expect(totalsCte).toContain('COUNT_IF(dues_usd IS NULL) AS without_dues_count');
+    expect(totalsCte).toContain('COUNT_IF(in_window AND dues_usd IS NULL) AS without_dues_count');
   });
 
   it('pages soonest first, largest dues first on a date, and clamps an oversized page and offset', async () => {
@@ -849,8 +852,24 @@ describe('HealthMetricsMembersService.getRenewals', () => {
     });
   });
 
-  it('reads measured zeros when no renewal falls in the window', async () => {
-    for (const rows of [[], [{ TOTAL_RECORDS: 0, RENEWALS_COUNT: null, VALUE_USD: null, WITHOUT_DUES_COUNT: 0, IS_PAGE_ROW: null, ACCOUNT_ID: null }]]) {
+  it("reads the model's totals for an empty window, and keeps an unset one null", async () => {
+    const empty = { ...totals, TOTAL_RECORDS: 0, WITHOUT_DUES_COUNT: 0, IS_PAGE_ROW: null, ACCOUNT_ID: null };
+    execute.mockResolvedValue({ rows: [{ ...empty, RENEWALS_COUNT: 0, VALUE_USD: 0 }] });
+    expect(await new HealthMetricsMembersService().getRenewals(req, query)).toEqual({
+      rows: [],
+      totalRecords: 0,
+      summary: { renewalCount: 0, valueUsd: 0, withoutDuesCount: 0 },
+    });
+
+    execute.mockResolvedValue({ rows: [{ ...empty, RENEWALS_COUNT: null, VALUE_USD: null }] });
+    expect((await new HealthMetricsMembersService().getRenewals(req, query)).summary).toEqual({ renewalCount: null, valueUsd: null, withoutDuesCount: 0 });
+  });
+
+  it('reads measured zeros when the foundation has no renewal rows at all', async () => {
+    for (const rows of [
+      [],
+      [{ SCOPE_RECORDS: 0, TOTAL_RECORDS: 0, RENEWALS_COUNT: null, VALUE_USD: null, WITHOUT_DUES_COUNT: 0, IS_PAGE_ROW: null, ACCOUNT_ID: null }],
+    ]) {
       execute.mockResolvedValue({ rows });
 
       expect(await new HealthMetricsMembersService().getRenewals(req, query)).toEqual({

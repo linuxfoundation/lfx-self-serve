@@ -188,6 +188,39 @@ describe('MembersRenewalsComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { renewalsWindow: '180_days', renewalsPage: null } }));
   });
 
+  it("holds a skeleton under the pills, not the old window's figures, while a newly picked window reads", async () => {
+    await render();
+    getMembersRenewals.mockReturnValue(new Subject<HealthMetricsMembersRenewals>());
+
+    fixture.nativeElement.querySelector('[data-testid="filter-pill-180_days"]').click();
+    await settle();
+
+    expect(query('members-renewals-window')).not.toBeNull();
+    expect(query('members-renewals-loading')).not.toBeNull();
+    expect(query('members-renewals-value')).toBeNull();
+    expect(text('members-renewals-count')).toBe('—');
+  });
+
+  it('keeps the pills on a failed window read, so another window can still be picked', async () => {
+    await render();
+    getMembersRenewals.mockReturnValue(throwError(() => new Error('gateway timeout')));
+
+    fixture.nativeElement.querySelector('[data-testid="filter-pill-180_days"]').click();
+    await settle();
+
+    expect(query('members-renewals-error')).not.toBeNull();
+    expect(query('members-renewals-window')).not.toBeNull();
+    expect(text('members-renewals-count')).toBe('—');
+
+    getMembersRenewals.mockReturnValue(of(response()));
+    fixture.nativeElement.querySelector('[data-testid="filter-pill-this_year"]').click();
+    await settle();
+
+    expect(getMembersRenewals).toHaveBeenLastCalledWith(expect.objectContaining({ window: 'this_year' }));
+    expect(query('members-renewals-error')).toBeNull();
+    expect(text('members-renewals-value')).toBe('$185K');
+  });
+
   it('starts on the window the URL carries, and falls back for one it does not know', async () => {
     await render(response(), { renewalsWindow: 'this_year' });
     expect(getMembersRenewals).toHaveBeenCalledWith(expect.objectContaining({ window: 'this_year' }));
@@ -250,6 +283,13 @@ describe('MembersRenewalsComponent', () => {
     expect(text('members-renewals-value')).toBe('—');
     expect(text('members-renewals-due')).toBe('—');
     expect(counts.at(-1)).toBeNull();
+  });
+
+  it('shows the matched rows, not the empty state, when the model count reads zero', async () => {
+    await render(response({ summary: { renewalCount: 0, valueUsd: 0, withoutDuesCount: 0 } }));
+
+    expect(query('members-renewals-empty')).toBeNull();
+    expect(query(`members-renewals-row-${ACCOUNT_ID}`)).not.toBeNull();
   });
 
   // A failed read must not render copy that asserts nothing is due.

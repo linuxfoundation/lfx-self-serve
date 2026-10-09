@@ -3,19 +3,14 @@
 
 <!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
 <div class="flex flex-col gap-4" data-testid="members-renewals">
-  @if (loadFailed()) {
-    <lfx-empty-state
-      icon="fa-light fa-triangle-exclamation"
-      title="Renewals unavailable"
-      subtitle="We could not load this foundation's upcoming renewals. Refresh the page to try again."
-      data-testid="members-renewals-error" />
-  } @else if (firstRead()) {
+  @if (firstRead()) {
     <p-skeleton height="20rem" borderRadius="0.5rem" data-testid="members-renewals-loading" aria-hidden="true" />
   } @else {
+    <!-- The pills stay up on a failed read, so another window can still be picked. -->
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-renewals-controls">
       <lfx-filter-pills [options]="windowOptions" [selectedFilter]="window()" (filterChange)="onWindowChange($event)" data-testid="members-renewals-window" />
       <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-renewals-count">
-        @if (loading()) {
+        @if (loading() || loadFailed()) {
           &mdash;
         } @else {
           {{ countLabel() }}
@@ -23,7 +18,15 @@
       </span>
     </div>
 
-    @if (!loading() && noneDue()) {
+    @if (loadFailed()) {
+      <lfx-empty-state
+        icon="fa-light fa-triangle-exclamation"
+        title="Renewals unavailable"
+        subtitle="We could not load this foundation's upcoming renewals. Refresh the page to try again."
+        data-testid="members-renewals-error" />
+    } @else if (windowRead()) {
+      <p-skeleton height="16rem" borderRadius="0.5rem" data-testid="members-renewals-loading" aria-hidden="true" />
+    } @else if (!loading() && noneDue()) {
       <lfx-empty-state
         icon="fa-light fa-calendar-check"
         [title]="'No renewals ' + windowPhrase()"
