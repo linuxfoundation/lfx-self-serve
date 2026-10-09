@@ -59,10 +59,6 @@ export class PublicMeetingController {
       meeting_id: id,
     });
 
-    // The body depends on the passcode header and the session (host_key for organizers), neither of
-    // which is part of the URL a cache keys on, so no cache may keep it.
-    res.setHeader('Cache-Control', 'private, no-store');
-
     try {
       // Check if the meeting UID is provided
       if (!this.validateMeetingId(id, 'get_public_meeting_by_id', req, next)) {
@@ -371,9 +367,6 @@ export class PublicMeetingController {
     const startTime = logger.startOperation(req, 'get_public_meeting_occurrences', {
       meeting_id: id,
     });
-
-    // Gated by the passcode header and the session, not the URL — see getMeetingById.
-    res.setHeader('Cache-Control', 'private, no-store');
 
     try {
       if (!this.validateMeetingId(id, 'get_public_meeting_occurrences', req, next)) {
