@@ -580,7 +580,7 @@ export class OrgEasyclaDetailComponent {
   protected readonly notStartedCopy = ORG_CLA_NOT_STARTED_COPY;
 
   /**
-   * Read from the status rather than from `signed` being false, unlike `canDownload` above.
+   * Read from the status rather than from `signed` being false, unlike `showDownload` above.
    * Sanctions occupy the same status slot, and a sanctioned agreement carries its own explanatory
    * body in the design — walking that viewer through how to start signing would talk past the
    * reason they cannot.
@@ -1483,7 +1483,7 @@ export class OrgEasyclaDetailComponent {
    * exists.
    *
    * The roster conjunct is the authorization half. EasyCLA authorizes the signed document on an
-   * ACS `project` or `project|organization` grant, and the organization-level grant that let the
+   * ACS `project` or `project|organization` grant, and the company-level grant that let the
    * viewer open this page is not one of them, so an organization admin is routinely refused. The
    * roster stands in for that grant rather than duplicating it, because holding the CLA manager
    * role is what issues it, so there is no second ACS conjunct here as there is on the Auto ECLA

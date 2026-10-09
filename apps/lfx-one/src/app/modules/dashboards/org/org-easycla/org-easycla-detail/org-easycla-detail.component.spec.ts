@@ -34,6 +34,7 @@ import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import type { Confirmation } from 'primeng/api';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
+import { Tooltip } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
@@ -208,6 +209,17 @@ describe('OrgEasyclaDetailComponent', () => {
 
   function identifySomeoneElse(fixture: ComponentFixture<OrgEasyclaDetailComponent>): HTMLButtonElement | null {
     return byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null;
+  }
+
+  /**
+   * What the download's `[tooltip]` is actually bound to, read off the directive rather than the
+   * DOM: PrimeNG only renders the tooltip element on hover, which jsdom cannot produce. Asserting
+   * the rendered text would therefore be impossible, and asserting only the accessible name would
+   * leave the binding free to be dropped with every test still green.
+   */
+  function downloadTooltipContent(fixture: ComponentFixture<OrgEasyclaDetailComponent>): string | undefined {
+    const host = fixture.debugElement.query(By.css('[data-testid="org-easycla-detail-download"] p-button'));
+    return host?.injector.get(Tooltip, null)?.content as string | undefined;
   }
 
   /** Unavailable to activate, but still in the tab order so the aria-label reason is reachable. */
@@ -1913,6 +1925,7 @@ describe('OrgEasyclaDetailComponent', () => {
     // a disabled button is not focusable and so never receives the hover a sighted reader gets.
     expect(control?.querySelector('button')?.disabled).toBe(true);
     expect(control?.querySelector('[aria-label]')?.getAttribute('aria-label')).toContain(ORG_CLA_DOWNLOAD_COPY.offRosterTooltip);
+    expect(downloadTooltipContent(fixture)).toBe(ORG_CLA_DOWNLOAD_COPY.offRosterTooltip);
   });
 
   it('offers the download enabled, with no reason attached, to a CLA manager on the roster', async () => {
@@ -1921,6 +1934,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
     expect(control?.querySelector('button')?.disabled).toBe(false);
     expect(control?.querySelector('[aria-label]')?.getAttribute('aria-label')).not.toContain(ORG_CLA_DOWNLOAD_COPY.offRosterTooltip);
+    expect(downloadTooltipContent(fixture)).toBeUndefined();
   });
 
   it('refuses the download for an off-roster viewer reached another way', async () => {
