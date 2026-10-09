@@ -33,20 +33,22 @@ function row(
   sortRank: number,
   memberCount: number | null,
   revenueUsd: number | null,
-  newMemberCount = 0
+  newMemberCount = 0,
+  memberSharePct: number | null = null,
+  revenueSharePct: number | null = null
 ): HealthMetricsMembersTierYear {
-  return { year, tier, sortRank, memberCount, newMemberCount, revenueUsd, isPartialYear: year === 2026 };
+  return { year, tier, sortRank, memberCount, newMemberCount, revenueUsd, memberSharePct, revenueSharePct, isPartialYear: year === 2026 };
 }
 
 const TIERS: HealthMetricsMembersTiers = {
   rows: [
-    row(2024, 'Gold', 2, 10, 500_000),
-    row(2024, 'Platinum', 1, 5, 1_000_000),
-    row(2025, 'Gold', 2, 15, 750_000, 6),
-    row(2025, 'Platinum', 1, 5, 1_000_000, 1),
-    row(2025, 'Silver', 3, 0, 0),
-    row(2026, 'Gold', 2, 16, 800_000, 2),
-    row(2026, 'Platinum', 1, 6, 1_200_000, 1),
+    row(2024, 'Gold', 2, 10, 500_000, 0, 66.7, 33.3),
+    row(2024, 'Platinum', 1, 5, 1_000_000, 0, 33.3, 66.7),
+    row(2025, 'Gold', 2, 15, 750_000, 6, 75, 42.9),
+    row(2025, 'Platinum', 1, 5, 1_000_000, 1, 25, 57.1),
+    row(2025, 'Silver', 3, 0, 0, 0, 0, 0),
+    row(2026, 'Gold', 2, 16, 800_000, 2, 72.7, 40),
+    row(2026, 'Platinum', 1, 6, 1_200_000, 1, 27.3, 60),
   ],
   foundationRevenue: [
     { range: 'YTD', totalUsd: 4_000_000 },
@@ -179,9 +181,10 @@ describe('MembersTiersComponent', () => {
     const totals = [...(query('members-tiers-total-members')?.querySelectorAll('td') ?? [])].map((cell) => cell.textContent?.trim());
     expect(totals).toEqual(['15', '20', '22']);
     expect(text('members-tiers-total-revenue')).toContain('$1.8M');
+    expect(text('members-tiers-matrix-unit')).toBe('exact counts');
   });
 
-  it('charts each tier as its share of the year, with the total under each year', async () => {
+  it('charts each tier as its modelled share of the year, with the total under each year', async () => {
     await render();
     const data = chartData();
 
@@ -191,8 +194,25 @@ describe('MembersTiersComponent', () => {
       ['2026', '22'],
     ]);
     expect(data?.datasets.map((dataset) => dataset.label)).toEqual(['Platinum', 'Gold', 'Silver']);
-    expect(data?.datasets[1].data).toEqual([(10 / 15) * 100, 75, (16 / 22) * 100]);
+    expect(data?.datasets[1].data).toEqual([66.7, 75, 72.7]);
     expect(text('members-tiers-legend')).toBe('Platinum Gold Silver');
+  });
+
+  it('charts and tabulates revenue in revenue mode', async () => {
+    await render();
+
+    fixture.nativeElement.querySelector('[data-testid="filter-pill-revenue"]').click();
+    await settle();
+    const data = chartData();
+
+    expect(data?.labels).toEqual([
+      ['2024', '$1.5M'],
+      ['2025', '$1.8M'],
+      ['2026', '$2M'],
+    ]);
+    expect(data?.datasets[1].data).toEqual([33.3, 42.9, 40]);
+    expect(text('members-tiers-matrix-unit')).toBe('in USD');
+    expect(text('members-tiers-cell-1-2025')).toBe('$750K');
   });
 
   it('says the period has no figures while still showing the other years', async () => {

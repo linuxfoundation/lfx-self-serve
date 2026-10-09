@@ -48,6 +48,8 @@ function tierRow(overrides: Record<string, unknown> = {}) {
     MEMBER_COUNT: 12,
     NEW_MEMBER_COUNT: 3,
     TIER_REVENUE_USD: 600000,
+    TIER_SHARE_OF_MEMBERS_PCT: 40,
+    TIER_SHARE_OF_REVENUE_PCT: 17.1,
     IS_PARTIAL_YEAR: false,
     ...overrides,
   };
@@ -94,6 +96,8 @@ describe('HealthMetricsMembersService.getTiers', () => {
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_TIER_YEAR');
     expect(sql).toContain('AND year IS NOT NULL');
     expect(sql).toContain('AND membership_tier IS NOT NULL');
+    expect(sql).toContain('tier_share_of_members_pct');
+    expect(sql).toContain('tier_share_of_revenue_pct');
     expect(sql).toContain('ORDER BY year DESC, tier_sort_rank ASC NULLS LAST, membership_tier ASC');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP + 1}`);
     expect(sql).not.toMatch(/WHERE[\s\S]*year\s*=/);
@@ -113,7 +117,19 @@ describe('HealthMetricsMembersService.getTiers', () => {
   it('maps tier rows and leaves out a period with no foundation total', async () => {
     const response = await new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' });
 
-    expect(response.rows).toEqual([{ year: 2025, tier: 'Gold', sortRank: 2, memberCount: 12, newMemberCount: 3, revenueUsd: 600000, isPartialYear: false }]);
+    expect(response.rows).toEqual([
+      {
+        year: 2025,
+        tier: 'Gold',
+        sortRank: 2,
+        memberCount: 12,
+        newMemberCount: 3,
+        revenueUsd: 600000,
+        memberSharePct: 40,
+        revenueSharePct: 17.1,
+        isPartialYear: false,
+      },
+    ]);
     expect(response.foundationRevenue).toEqual([
       { range: 'COMPLETED_YEAR_3', totalUsd: 2000000 },
       { range: 'COMPLETED_YEAR', totalUsd: 3500000 },
@@ -122,11 +138,16 @@ describe('HealthMetricsMembersService.getTiers', () => {
   });
 
   it('keeps null counts null, sorts an unranked tier last and drops a row without a tier', async () => {
-    respond([tierRow({ MEMBER_COUNT: null, TIER_SORT_RANK: null, IS_PARTIAL_YEAR: null }), tierRow({ MEMBERSHIP_TIER: null })], []);
+    respond(
+      [tierRow({ MEMBER_COUNT: null, TIER_SORT_RANK: null, IS_PARTIAL_YEAR: null, TIER_SHARE_OF_MEMBERS_PCT: null }), tierRow({ MEMBERSHIP_TIER: null })],
+      []
+    );
 
     const response = await new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' });
 
-    expect(response.rows).toEqual([expect.objectContaining({ memberCount: null, sortRank: Number.MAX_SAFE_INTEGER, isPartialYear: false })]);
+    expect(response.rows).toEqual([
+      expect.objectContaining({ memberCount: null, memberSharePct: null, sortRank: Number.MAX_SAFE_INTEGER, isPartialYear: false }),
+    ]);
     expect(response.foundationRevenue).toEqual([]);
   });
 
@@ -563,6 +584,8 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
       OUTSTANDING_BALANCE_USD: 70000,
       DAYS_OVERDUE: 104,
       LAST_ENGAGED_DATE: new Date(Date.UTC(2026, 2, 4)),
+      AGING_BUCKET: '90_plus_days',
+      CHURN_RISK: 'High',
       SORT_RANK: 1,
       ...overrides,
     };
@@ -587,6 +610,9 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
     const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('matched AS'));
     expect(scoped).toContain("AND account_id <> ''");
     expect(scoped).toContain('AND aging_bucket IN (?, ?)');
+    expect(scoped).toContain('churn_risk');
+    const page = sql.slice(sql.indexOf('page AS'));
+    expect(page).toMatch(/aging_bucket,\s+churn_risk,/);
     expect(sql).not.toMatch(/FROM scoped WHERE/);
   });
 
@@ -634,6 +660,8 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
           outstandingBalanceUsd: 70000,
           daysOverdue: 104,
           lastEngagedDate: '2026-03-04',
+          churnRisk: 'High',
+          agingBucket: '90_plus_days',
         },
       ],
     });
@@ -643,11 +671,16 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
     execute.mockResolvedValue({ rows: [{ ...totals, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
     expect(await new HealthMetricsMembersService().getAtRisk(req, query)).toMatchObject({ rows: [], totalRecords: 3 });
 
-    execute.mockResolvedValue({ rows: [atRiskRow({ ACCOUNT_NAME: '', MEMBERSHIP_TIER: '', LAST_ENGAGED_DATE: null })] });
+    execute.mockResolvedValue({
+      rows: [atRiskRow({ ACCOUNT_NAME: '', MEMBERSHIP_TIER: '', LAST_ENGAGED_DATE: null, CHURN_RISK: 'Severe', AGING_BUCKET: null })],
+    });
     expect((await new HealthMetricsMembersService().getAtRisk(req, query)).rows[0]).toMatchObject({
       accountName: '0014100000AcmeRsk1',
       membershipTier: null,
       lastEngagedDate: null,
+      // A value outside the model's own set is not shown as a risk level.
+      churnRisk: null,
+      agingBucket: null,
     });
   });
 
@@ -690,8 +723,8 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
 });
 
 describe('HealthMetricsMembersService.getRenewals', () => {
-  const query = { foundationSlug: 'acme', offset: 0, pageSize: 10 };
-  const totals = { TOTAL_RECORDS: 3, VALUE_USD: 185000, WITHOUT_DUES_COUNT: 1 };
+  const query = { foundationSlug: 'acme', window: '90_days' as const, offset: 0, pageSize: 10 };
+  const totals = { TOTAL_RECORDS: 3, RENEWALS_COUNT: 3, VALUE_USD: 185000, WITHOUT_DUES_COUNT: 1 };
 
   function renewalRow(overrides: Record<string, unknown> = {}) {
     return {
@@ -701,8 +734,10 @@ describe('HealthMetricsMembersService.getRenewals', () => {
       ACCOUNT_NAME: 'Acme Studios',
       MEMBERSHIP_TIER: 'General',
       RENEWAL_DATE: new Date(Date.UTC(2026, 10, 18)),
+      DAYS_UNTIL_RENEWAL: 40,
       DUES_USD: 20000,
       HAS_OUTSTANDING_BALANCE: true,
+      HAS_RENEWED: false,
       ...overrides,
     };
   }
@@ -716,27 +751,34 @@ describe('HealthMetricsMembersService.getRenewals', () => {
     execute.mockResolvedValue({ rows: [renewalRow()] });
   });
 
-  it('scopes to unrenewed renewals in the next 90 days and never reads renewal_status', async () => {
-    await new HealthMetricsMembersService().getRenewals(req, query);
+  it.each([
+    ['90_days', 'is_renewing_within_90_days', 'foundation_within_90_days'],
+    ['180_days', 'is_renewing_within_180_days', 'foundation_within_180_days'],
+    ['this_year', 'is_renewing_this_year', 'foundation_this_year'],
+  ] as const)('scopes the %s window to its model flag and totals, renewed rows included', async (window, flag, totalsPrefix) => {
+    await new HealthMetricsMembersService().getRenewals(req, { ...query, window });
 
     const [sql, binds] = renewalsRead();
-    expect(binds).toEqual(['acme', 90]);
+    expect(binds).toEqual(['acme']);
     expect(sql.match(/\?/g)).toHaveLength(binds.length);
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_RENEWALS');
     const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('totals AS'));
     expect(scoped).toContain("AND account_id <> ''");
-    expect(scoped).toContain('AND days_until_renewal BETWEEN 0 AND ?');
-    expect(scoped).toContain('AND COALESCE(has_renewed, FALSE) = FALSE');
+    expect(scoped).toContain(`AND ${flag} = TRUE`);
+    expect(scoped).toContain(`${totalsPrefix}_renewals_count AS renewals_count`);
+    expect(scoped).toContain(`${totalsPrefix}_dues_usd AS window_dues_usd`);
+    expect(scoped).not.toContain('has_renewed, FALSE');
     expect(sql).not.toMatch(/renewal_status/i);
   });
 
-  it('totals the whole window, counting the renewals without dues', async () => {
+  it("takes the window's count and value from the model, counting the renewals without dues", async () => {
     await new HealthMetricsMembersService().getRenewals(req, query);
 
     const [sql] = renewalsRead();
     const totalsCte = sql.slice(sql.indexOf('totals AS'), sql.indexOf('page AS'));
     expect(totalsCte).toContain('COUNT(*) AS total_records');
-    expect(totalsCte).toContain('SUM(dues_usd) AS value_usd');
+    expect(totalsCte).toContain('ANY_VALUE(renewals_count) AS renewals_count');
+    expect(totalsCte).toContain('ANY_VALUE(window_dues_usd) AS value_usd');
     expect(totalsCte).toContain('COUNT_IF(dues_usd IS NULL) AS without_dues_count');
   });
 
@@ -761,11 +803,22 @@ describe('HealthMetricsMembersService.getRenewals', () => {
           accountName: 'Acme Studios',
           membershipTier: 'General',
           renewalDate: '2026-11-18',
+          daysUntilRenewal: 40,
           duesUsd: 20000,
           hasOutstandingBalance: true,
+          hasRenewed: false,
         },
       ],
     });
+  });
+
+  it('reports the model count over the paged rows when the two differ, and maps a renewed row', async () => {
+    execute.mockResolvedValue({ rows: [renewalRow({ RENEWALS_COUNT: 2, HAS_RENEWED: true })] });
+
+    const result = await new HealthMetricsMembersService().getRenewals(req, query);
+    expect(result.totalRecords).toBe(3);
+    expect(result.summary.renewalCount).toBe(2);
+    expect(result.rows[0].hasRenewed).toBe(true);
   });
 
   it('keeps the totals when the page is past the end, and maps missing fields to null, not zero', async () => {
@@ -773,19 +826,31 @@ describe('HealthMetricsMembersService.getRenewals', () => {
     expect(await new HealthMetricsMembersService().getRenewals(req, query)).toMatchObject({ rows: [], totalRecords: 3 });
 
     execute.mockResolvedValue({
-      rows: [renewalRow({ ACCOUNT_NAME: '', MEMBERSHIP_TIER: '', RENEWAL_DATE: null, DUES_USD: null, HAS_OUTSTANDING_BALANCE: null })],
+      rows: [
+        renewalRow({
+          ACCOUNT_NAME: '',
+          MEMBERSHIP_TIER: '',
+          RENEWAL_DATE: null,
+          DAYS_UNTIL_RENEWAL: null,
+          DUES_USD: null,
+          HAS_OUTSTANDING_BALANCE: null,
+          HAS_RENEWED: null,
+        }),
+      ],
     });
     expect((await new HealthMetricsMembersService().getRenewals(req, query)).rows[0]).toMatchObject({
       accountName: '0014100000AcmeRnw1',
       membershipTier: null,
       renewalDate: null,
+      daysUntilRenewal: null,
       duesUsd: null,
       hasOutstandingBalance: false,
+      hasRenewed: false,
     });
   });
 
   it('reads measured zeros when no renewal falls in the window', async () => {
-    for (const rows of [[], [{ TOTAL_RECORDS: 0, VALUE_USD: null, WITHOUT_DUES_COUNT: 0, IS_PAGE_ROW: null, ACCOUNT_ID: null }]]) {
+    for (const rows of [[], [{ TOTAL_RECORDS: 0, RENEWALS_COUNT: null, VALUE_USD: null, WITHOUT_DUES_COUNT: 0, IS_PAGE_ROW: null, ACCOUNT_ID: null }]]) {
       execute.mockResolvedValue({ rows });
 
       expect(await new HealthMetricsMembersService().getRenewals(req, query)).toEqual({

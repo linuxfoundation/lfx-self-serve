@@ -58,7 +58,7 @@ export class MembersTiersComponent {
     buildHealthMetricsMembersTiersView(this.response(), this.chrome.selectedRange(), this.mode())
   );
 
-  protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.view()));
+  protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.view(), this.mode()));
   protected readonly chartOptions: ChartOptions<'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
@@ -144,10 +144,10 @@ export class MembersTiersComponent {
     this.settled.emit();
   }
 
-  /** One stacked dataset per tier, as its share of each year's members; the year's total sits under its label. */
-  private buildChart(view: HealthMetricsMembersTiersView): ChartData<'bar'> {
+  /** One stacked dataset per tier, as its share of each year's members or revenue; the year's total sits under its label. */
+  private buildChart(view: HealthMetricsMembersTiersView, mode: HealthMetricsMembersTiersMode): ChartData<'bar'> {
     return {
-      labels: view.years.map((year) => [String(year.year), year.totalMembersLabel]),
+      labels: view.years.map((year) => [String(year.year), mode === 'members' ? year.totalMembersLabel : year.totalRevenueLabel]),
       datasets: view.tiers.map((tier) => ({
         label: tier.tier,
         data: tier.cells.map((cell) => cell.sharePct),
@@ -169,7 +169,7 @@ export class MembersTiersComponent {
     const cell = tier?.cells[yearIndex];
     if (!tier || !cell) return '';
 
-    // An unmeasured count has no share to state.
+    // An unmeasured value has no share to state.
     return cell.sharePct === null ? `${tier.tier}: ${cell.label}` : `${tier.tier}: ${cell.label} (${Math.round(cell.sharePct)}%)`;
   }
 }

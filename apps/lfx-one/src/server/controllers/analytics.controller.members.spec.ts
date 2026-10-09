@@ -410,19 +410,32 @@ describe('AnalyticsController.getMembersRenewals', () => {
     getRenewals.mockResolvedValue(HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED);
   });
 
-  it('defaults to the first page and returns the response', async () => {
+  it('defaults to the 90-day window and the first page, and returns the response', async () => {
     const { res, next, promise } = call(valid, 'getMembersRenewals');
     await promise;
 
     expect(next).not.toHaveBeenCalled();
-    expect(getRenewals).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', offset: 0, pageSize: HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE });
+    expect(getRenewals).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      window: '90_days',
+      offset: 0,
+      pageSize: HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+    });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED);
   });
 
-  it('passes the page', async () => {
-    await call({ ...valid, offset: '10', pageSize: '10' }, 'getMembersRenewals').promise;
+  it('passes the window and the page', async () => {
+    await call({ ...valid, window: 'this_year', offset: '10', pageSize: '10' }, 'getMembersRenewals').promise;
 
-    expect(getRenewals).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', offset: 10, pageSize: 10 });
+    expect(getRenewals).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', window: 'this_year', offset: 10, pageSize: 10 });
+  });
+
+  it.each(['30_days', 'THIS_YEAR'])('rejects window %o', async (window) => {
+    const { next, promise } = call({ ...valid, window }, 'getMembersRenewals');
+    await promise;
+
+    expect(rejectedField(next)).toBe('window');
+    expect(getRenewals).not.toHaveBeenCalled();
   });
 
   it('falls back to the default page size past the cap', async () => {

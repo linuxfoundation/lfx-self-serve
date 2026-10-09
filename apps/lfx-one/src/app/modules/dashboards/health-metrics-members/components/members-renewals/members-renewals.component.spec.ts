@@ -23,6 +23,8 @@ function renewal(overrides: Partial<HealthMetricsMembersRenewal> = {}): HealthMe
     renewalDate: '2026-11-18',
     duesUsd: 20000,
     hasOutstandingBalance: false,
+    daysUntilRenewal: 40,
+    hasRenewed: false,
     ...overrides,
   };
 }
@@ -100,8 +102,8 @@ describe('MembersRenewalsComponent', () => {
   it('reads the selected foundation, renders the hero and count, and settles with the count', async () => {
     await render();
 
-    expect(getMembersRenewals).toHaveBeenCalledWith({ foundationSlug: 'acme', offset: 0, pageSize: 10 });
-    expect(text('members-renewals-window')).toBe('Next 90 days');
+    expect(getMembersRenewals).toHaveBeenCalledWith({ foundationSlug: 'acme', window: '90_days', offset: 0, pageSize: 10 });
+    expect(text('members-renewals-window')).toBe('Next 90 days Next 180 days This year');
     expect(text('members-renewals-value')).toBe('$185K');
     expect(text('members-renewals-due')).toBe('3');
     expect(text('members-renewals-count')).toBe('3 renewals');
@@ -116,9 +118,21 @@ describe('MembersRenewalsComponent', () => {
     expect(text(`members-renewals-row-${ACCOUNT_ID}-name`)).toBe('Acme Motors');
     expect(text(`members-renewals-row-${ACCOUNT_ID}-tier`)).toBe('Gold Membership');
     expect(text(`members-renewals-row-${ACCOUNT_ID}-date`)).toBe('Nov 18, 2026');
+    expect(text(`members-renewals-row-${ACCOUNT_ID}-days`)).toBe('In 40 days');
     expect(text(`members-renewals-row-${ACCOUNT_ID}-dues`)).toBe('$20K');
     expect(query(`members-renewals-row-${ACCOUNT_ID}-balance`)).toBeNull();
-    expect(fixture.nativeElement.querySelectorAll('th')).toHaveLength(4);
+    expect(query(`members-renewals-row-${ACCOUNT_ID}-renewed`)).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('th')).toHaveLength(5);
+  });
+
+  it('marks a renewed membership and drops its countdown', async () => {
+    await render(response({ rows: [renewal({ hasRenewed: true, daysUntilRenewal: 12 })] }));
+
+    const marker = query(`members-renewals-row-${ACCOUNT_ID}-renewed`);
+    expect(marker?.textContent?.trim()).toBe('Renewed');
+    expect(marker?.classList).toContain('text-emerald-700');
+    expect(marker?.querySelector('i')?.classList).toContain('fa-circle-check');
+    expect(text(`members-renewals-row-${ACCOUNT_ID}-days`)).toBe('—');
   });
 
   it('marks a renewing member that carries an outstanding balance', async () => {
@@ -148,7 +162,10 @@ describe('MembersRenewalsComponent', () => {
 
     expect(getMembersRenewals).toHaveBeenCalledWith(expect.objectContaining({ offset: 20 }));
     expect(counts.every((count) => count === 30)).toBe(true);
-    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { renewalsPage: 3 }, preserveFragment: true, replaceUrl: true }));
+    expect(navigate).toHaveBeenLastCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { renewalsWindow: null, renewalsPage: 3 }, preserveFragment: true, replaceUrl: true })
+    );
   });
 
   it('starts on the page the URL carries, and falls back for a value it cannot honour', async () => {
@@ -160,6 +177,26 @@ describe('MembersRenewalsComponent', () => {
     expect(getMembersRenewals).toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }));
   });
 
+  it('re-reads a newly picked window from page 1 and writes it to the URL', async () => {
+    await render(response({ totalRecords: 30 }), { renewalsPage: '3' });
+    getMembersRenewals.mockClear();
+
+    fixture.nativeElement.querySelector('[data-testid="filter-pill-180_days"]').click();
+    await settle();
+
+    expect(getMembersRenewals).toHaveBeenCalledWith(expect.objectContaining({ window: '180_days', offset: 0 }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { renewalsWindow: '180_days', renewalsPage: null } }));
+  });
+
+  it('starts on the window the URL carries, and falls back for one it does not know', async () => {
+    await render(response(), { renewalsWindow: 'this_year' });
+    expect(getMembersRenewals).toHaveBeenCalledWith(expect.objectContaining({ window: 'this_year' }));
+
+    TestBed.resetTestingModule();
+    await render(response(), { renewalsWindow: '30_days' });
+    expect(getMembersRenewals).toHaveBeenCalledWith(expect.objectContaining({ window: '90_days' }));
+  });
+
   // The totals join still reports the real count past the end, so the page must move back.
   it('lands on the last page holding rows, settling once and rewriting the URL', async () => {
     await render(response({ rows: [], totalRecords: 12 }), { renewalsPage: '9' }, response({ totalRecords: 12 }));
@@ -168,7 +205,7 @@ describe('MembersRenewalsComponent', () => {
     expect(getMembersRenewals).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 10 }));
     expect(getMembersRenewals).toHaveBeenCalledTimes(2);
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
-    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { renewalsPage: 2 } }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { renewalsWindow: null, renewalsPage: 2 } }));
   });
 
   it('re-reads from page 1 and blanks the count for a newly selected foundation', async () => {
@@ -198,9 +235,10 @@ describe('MembersRenewalsComponent', () => {
     await render(NONE_DUE);
 
     expect(text('members-renewals-empty')).toContain('No renewals in the next 90 days');
-    // The read proves only that the window is empty, not that a later renewal exists.
-    expect(text('members-renewals-empty')).not.toContain('further out');
     expect(query('members-renewals-table')).toBeNull();
+    // The window pills stay, so an empty window is not a dead end.
+    expect(query('members-renewals-window')).not.toBeNull();
+    expect(text('members-renewals-count')).toBe('0 renewals');
     expect(counts.at(-1)).toBe(0);
   });
 
