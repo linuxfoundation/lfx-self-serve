@@ -1132,3 +1132,10 @@ export const MEETING_DURATION_OPTIONS = [
   { label: '120 minutes', value: 120 },
   { label: 'Custom...', value: 'custom' },
 ];
+
+/**
+ * Collapsed height, in px, of a meeting's description before "See more" (V2 agenda, E3-01): the
+ * public join page's 200, so the V2 page reads the same as the page it replaces (the past-meeting
+ * details page uses 300, and is not part of this redesign).
+ */
+export const MEETING_AGENDA_COLLAPSED_HEIGHT_PX = 200;
