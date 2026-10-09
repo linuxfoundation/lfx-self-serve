@@ -2,9 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, signal } from '@angular/core';
+import type { Provider } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, provideRouter, Router } from '@angular/router';
+import type { IsActiveMatchOptions } from '@angular/router';
 import { LensItem, User } from '@lfx-one/shared/interfaces';
+import type { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -15,10 +18,6 @@ import { UserService } from '@services/user.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SidebarComponent } from './sidebar.component';
-
-import type { Provider } from '@angular/core';
-import type { IsActiveMatchOptions } from '@angular/router';
-import type { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 
 const sidebarServiceStubs = (setProject = vi.fn()): Provider[] => [
   { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },

@@ -4,6 +4,7 @@
 import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { afterNextRender, Component, computed, inject, input, model, Signal, signal, viewChild } from '@angular/core';
 import { Router, RouterModule } from '@angular/router';
+import type { IsActiveMatchOptions } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { LensTabsComponent } from '@components/lens-tabs/lens-tabs.component';
@@ -23,8 +24,6 @@ import { UserService } from '@services/user.service';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-
-import type { IsActiveMatchOptions } from '@angular/router';
 
 const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
   'executive-director': 'fa-light fa-briefcase',
