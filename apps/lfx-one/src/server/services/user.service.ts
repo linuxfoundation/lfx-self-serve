@@ -540,10 +540,7 @@ export class UserService {
 
       if ((email || username) && normalizedMeetings.length > 0) {
         try {
-          const [userRsvps, activeRegistrants] = await Promise.all([
-            this.fetchAllUserRsvps(req, email, username),
-            this.fetchUserActiveRegistrantIdentities(req, email, username),
-          ]);
+          const { userRsvps, activeRegistrants } = await this.fetchUserRsvpsAndRegistrants(req, email, username);
 
           // Group all RSVPs per meeting so recurring series can be resolved against the
           // occurrence the card is actually representing. Drop RSVPs whose `registrant_id` isn't
@@ -1426,10 +1423,7 @@ export class UserService {
     const rsvpEligibleMeetings = inWindowMeetings.filter((meeting) => isMeetingInviteResponsesEnabled(meeting));
     if (rsvpEligibleMeetings.length > 0) {
       try {
-        const [userRsvps, activeRegistrants] = await Promise.all([
-          this.fetchAllUserRsvps(req, email, username),
-          this.fetchUserActiveRegistrantIdentities(req, email, username),
-        ]);
+        const { userRsvps, activeRegistrants } = await this.fetchUserRsvpsAndRegistrants(req, email, username);
         rsvpActions = this.transformMissingRsvpsToActions(rsvpEligibleMeetings, userRsvps, activeRegistrants);
       } catch (error) {
         logger.warning(req, 'get_user_pending_actions', 'RSVP prerequisite lookup failed, suppressing Set RSVP actions', { err: error });
@@ -1542,6 +1536,74 @@ export class UserService {
 
     const now = Date.now();
     return votes.filter((v) => v.status === PollStatus.ACTIVE && !!v.end_time && new Date(v.end_time).getTime() > now);
+  }
+
+  /**
+   * Fetch the user's RSVPs together with their active registrant identities.
+   * @description RSVP rows are matched by the auth email/username, but those fields are unreliable on
+   * RSVP records: the email can differ from the auth email (accounts with several addresses) and the
+   * username is often null. `registrant_id` is the field RSVPs reliably carry — it is what
+   * `MeetingService.getMeetingRsvpForCurrentUser` matches on — so any of the user's active
+   * registrants that the identity query did not already cover get a second query by `registrant_id`.
+   * Without it a meeting whose RSVP is only reachable that way comes back with `my_rsvp: null`,
+   * showing as "pending" in the list while its card (which resolves via the registrant) shows the
+   * response. The identity and registrant lookups still run in parallel; the extra query only
+   * covers registrants with no RSVP found yet.
+   */
+  private async fetchUserRsvpsAndRegistrants(
+    req: Request,
+    email: string | null,
+    username: string | null
+  ): Promise<{ userRsvps: MeetingRsvp[]; activeRegistrants: { uids: Set<string>; meetingIds: Set<string> } }> {
+    const [identityRsvps, activeRegistrants] = await Promise.all([
+      this.fetchAllUserRsvps(req, email, username),
+      this.fetchUserActiveRegistrantIdentities(req, email, username),
+    ]);
+
+    const covered = new Set(identityRsvps.map((rsvp) => rsvp.registrant_id));
+    const uncovered = [...activeRegistrants.uids].filter((uid) => !covered.has(uid));
+    if (uncovered.length === 0) {
+      return { userRsvps: identityRsvps, activeRegistrants };
+    }
+
+    const byRegistrant = await this.fetchRsvpsByRegistrantIds(req, uncovered);
+    const seen = new Set(identityRsvps.map((rsvp) => rsvp.id));
+    const userRsvps = [...identityRsvps, ...byRegistrant.filter((rsvp) => !seen.has(rsvp.id))];
+
+    logger.debug(req, 'fetch_user_rsvps', 'Found RSVPs missed by the email/username lookup', {
+      uncovered_registrants: uncovered.length,
+      recovered_rsvps: userRsvps.length - identityRsvps.length,
+    });
+
+    return { userRsvps, activeRegistrants };
+  }
+
+  /**
+   * Fetch `v1_meeting_rsvp` rows for the given registrant UIDs, in OR-filter batches so a user with
+   * many registrations stays within the query string limit. Same `failOnPartial` stance as
+   * {@link fetchAllUserRsvps}: a truncated set must fail the caller closed, not under-report.
+   */
+  private async fetchRsvpsByRegistrantIds(req: Request, registrantUids: string[]): Promise<MeetingRsvp[]> {
+    const batches: string[][] = [];
+    for (let i = 0; i < registrantUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(registrantUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
+
+    const results = await Promise.all(
+      batches.map((batch) =>
+        fetchAllQueryResources<MeetingRsvp>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'v1_meeting_rsvp',
+              filters_or: batch.map((uid) => `registrant_id:${uid}`),
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        )
+      )
+    );
+    return results.flat();
   }
 
   /**
