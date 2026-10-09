@@ -3,8 +3,10 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
+import { ButtonComponent } from '@components/button/button.component';
 import { PENDING_ACTION_FADE_OUT_MS } from '@lfx-one/shared/constants';
 import type { Meeting, PendingActionItem } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
@@ -12,7 +14,7 @@ import { UserService } from '@services/user.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationService } from '@shared/services/invitation.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { PendingActionsDrawerComponent } from './pending-actions-drawer.component';
@@ -337,6 +339,140 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     expect(byTestId('pending-actions-drawer-section-other')?.querySelectorAll('[data-testid="pending-actions-drawer-item-BriefAction"]').length).toBe(1);
   });
 
+  const applicationRow = (overrides: Partial<PendingActionItem> = {}): PendingActionItem =>
+    row('JoinApplication', 'Applicant', {
+      badge: 'Group Alpha',
+      committeeUid: 'group-alpha',
+      applicationUid: 'application-1',
+      applicationApplicantEmail: 'applicant@example.com',
+      applicationApplicantName: 'Applicant Name',
+      ...overrides,
+    });
+
+  it('places independent same-email applications after invitations and before formation, without links or Dismiss', async () => {
+    const first = applicationRow({ buttonLink: '/must-not-navigate' });
+    const second = applicationRow({ committeeUid: 'group-beta', badge: 'Group Beta', applicationApplicantName: undefined });
+    await render([formationRow(), second, row('Invitation', 'Invite A'), first]);
+
+    expect(sectionIds()).toEqual([
+      'pending-actions-drawer-section-invitations',
+      'pending-actions-drawer-section-applications',
+      'pending-actions-drawer-section-formation',
+    ]);
+    const applications = byTestId('pending-actions-drawer-section-applications');
+    const rows = applications?.querySelectorAll('[data-testid="pending-actions-drawer-item-JoinApplication"]');
+    expect(rows?.length).toBe(2);
+    expect(rows?.[0].textContent).toContain('applicant@example.com');
+    expect(rows?.[0].textContent).toContain('Group Beta');
+    expect(rows?.[0].querySelector('[data-testid="pending-actions-drawer-application-name"]')).toBeNull();
+    expect(rows?.[1].textContent).toContain('Applicant Name');
+    expect(rows?.[1].textContent).toContain('applicant@example.com');
+    expect(rows?.[1].textContent).toContain('Group Alpha');
+    expect(applications?.querySelector('a')).toBeNull();
+    expect(applications?.querySelector('[data-testid^="pending-actions-drawer-dismiss-"]')).toBeNull();
+    expect(byTestId('pending-actions-drawer-section-count-applications')?.textContent?.trim()).toBe('2');
+    expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(4)');
+
+    fixture.componentRef.setInput('pendingActions', [formationRow(), first, row('Invitation', 'Invite A')]);
+    fixture.detectChanges();
+    expect(applications?.querySelectorAll('[data-testid="pending-actions-drawer-item-JoinApplication"]').length).toBe(1);
+    expect(applications?.textContent).toContain('Group Alpha');
+    expect(applications?.textContent).not.toContain('Group Beta');
+    expect(byTestId('pending-actions-drawer-section-count-applications')?.textContent?.trim()).toBe('1');
+    expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(3)');
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+    expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
+  });
+
+  it('retains rows and counts while only the matched approval loads and every review control is disabled', async () => {
+    await render([applicationRow(), applicationRow({ committeeUid: 'group-beta', badge: 'Group Beta' })]);
+    fixture.componentRef.setInput('processingApplicationKey', 'JoinApplication-group-alpha-application-1');
+    fixture.detectChanges();
+
+    const section = byTestId('pending-actions-drawer-section-applications');
+    const approvals = section?.querySelectorAll('[data-testid="pending-actions-drawer-application-approve"] button');
+    expect(approvals?.[0].textContent).toContain('Saving');
+    expect(approvals?.[1].textContent).toContain('Approve');
+    const controls = Array.from(section?.querySelectorAll<HTMLButtonElement>('button') ?? []);
+    expect(controls).toHaveLength(4);
+    expect(controls.every((button) => button.disabled)).toBe(true);
+    const loadingButtons = fixture.debugElement
+      .queryAll(By.directive(ButtonComponent))
+      .map((element) => element.componentInstance as ButtonComponent)
+      .filter((button) => button.loading());
+    expect(loadingButtons).toHaveLength(1);
+    expect(loadingButtons[0].label()).toBe('Saving');
+    expect(byTestId('pending-actions-drawer-section-count-applications')?.textContent?.trim()).toBe('2');
+    expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(2)');
+
+    fixture.componentRef.setInput('processingApplicationKey', null);
+    fixture.detectChanges();
+    expect(controls.every((button) => !button.disabled)).toBe(true);
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+    expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
+  });
+
+  it.each(['committeeUid', 'applicationUid', 'applicationApplicantEmail'] as const)(
+    'disables review when %s is missing without dropping the row',
+    async (field) => {
+      await render([applicationRow({ [field]: undefined })]);
+      const controls = Array.from(byTestId('pending-actions-drawer-section-applications')?.querySelectorAll<HTMLButtonElement>('button') ?? []);
+      expect(controls).toHaveLength(2);
+      expect(controls.every((button) => button.disabled)).toBe(true);
+      expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(1)');
+    }
+  );
+
+  it('preserves distinct incomplete request views when the feed reorders and replaces rows', async () => {
+    const first = applicationRow({ applicationUid: undefined, text: 'first@example.com', applicationApplicantEmail: 'first@example.com' });
+    const second = applicationRow({ applicationUid: undefined, text: 'second@example.com', applicationApplicantEmail: 'second@example.com' });
+    await render([first, second]);
+    const getRows = () => Array.from(document.body.querySelectorAll<HTMLElement>('[data-testid="pending-actions-drawer-item-JoinApplication"]'));
+    const initial = getRows();
+    fixture.componentRef.setInput('pendingActions', [{ ...second }, { ...first }]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const reordered = getRows();
+    expect(reordered[0]).toBe(initial[1]);
+    expect(reordered[1]).toBe(initial[0]);
+    expect(reordered.map((row) => row.querySelector('[data-testid="pending-actions-drawer-application-email"]')?.textContent?.trim())).toEqual([
+      'second@example.com',
+      'first@example.com',
+    ]);
+
+    const third = applicationRow({ applicationUid: undefined, text: 'third@example.com', applicationApplicantEmail: 'third@example.com' });
+    fixture.componentRef.setInput('pendingActions', [{ ...second }, third]);
+    fixture.detectChanges();
+    expect(getRows()[0]).toBe(initial[1]);
+    expect(initial[0].isConnected).toBe(false);
+    expect(getRows().map((row) => row.querySelector('[data-testid="pending-actions-drawer-application-email"]')?.textContent?.trim())).toEqual([
+      'second@example.com',
+      'third@example.com',
+    ]);
+    expect(
+      getRows()
+        .flatMap((row) => Array.from(row.querySelectorAll<HTMLButtonElement>('button')))
+        .every((button) => button.disabled)
+    ).toBe(true);
+  });
+
+  it('cannot cookie-complete or dismiss an application through generic row handlers', async () => {
+    await render([applicationRow()]);
+    const component = fixture.componentInstance;
+    const application = component['visibleRows']()[0];
+    component['handleAgendaOrOtherClick'](application);
+    component['handleDismiss'](application);
+    component['startCompletion'](application);
+    fixture.detectChanges();
+
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+    expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
+    expect(component['completingRowKeys']().size).toBe(0);
+    expect(byTestId('pending-actions-drawer-item-JoinApplication')).not.toBeNull();
+    expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(1)');
+  });
+
   it('renders the empty state and no sections when nothing is visible', async () => {
     await render([]);
 
@@ -422,5 +558,42 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     const meetings = byTestId('pending-actions-drawer-section-meetings');
     expect(meetings?.querySelector('[data-testid="pending-actions-drawer-rsvp-buttons"]')).not.toBeNull();
     expect(meetings?.querySelector('[data-testid="meeting-rsvp-button-yes"]')).not.toBeNull();
+  });
+
+  it('loads a new RSVP after an empty feed refresh without closing the drawer', async () => {
+    await render([row('Survey', 'Survey A')]);
+    fixture.componentRef.setInput('pendingActions', []);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(byTestId('pending-actions-drawer-empty')).not.toBeNull();
+
+    fixture.componentRef.setInput('pendingActions', [row('RSVP', 'New meeting', { meetingUid: 'meeting-1' })]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.visible()).toBe(true);
+    expect(byTestId('pending-actions-drawer-rsvp-loading')).toBeNull();
+    expect(byTestId('meeting-rsvp-button-yes')).not.toBeNull();
+  });
+
+  it('recovers a failed RSVP load on replacement feeds while the same drawer remains open', async () => {
+    const action = row('RSVP', 'Synthetic meeting', { meetingUid: 'meeting-1', buttonLink: '/meetings/meeting-1' });
+    meetingService.getMeeting.mockReturnValueOnce(throwError(() => new Error('Transient outage')));
+    await render([action]);
+    expect(byTestId('meeting-rsvp-button-yes')).toBeNull();
+    expect(byTestId('pending-actions-drawer-item-RSVP')?.querySelector('a')?.getAttribute('href')).toBe('/meetings/meeting-1');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(meetingService.getMeeting).toHaveBeenCalledOnce();
+
+    fixture.componentRef.setInput('pendingActions', [{ ...action }]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.visible()).toBe(true);
+    expect(byTestId('meeting-rsvp-button-yes')).not.toBeNull();
+    expect(meetingService.getMeeting).toHaveBeenCalledTimes(2);
   });
 });

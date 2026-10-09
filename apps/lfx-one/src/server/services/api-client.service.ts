@@ -236,6 +236,17 @@ export class ApiClientService {
     customHeaders?: Record<string, string>,
     options?: ApiRequestOptions
   ): Promise<ApiResponse<T>> {
+    const requestTimeoutMs = options?.timeoutMs ?? this.config.timeout;
+    const timeoutMs = options?.deadlineAt === undefined ? requestTimeoutMs : Math.min(requestTimeoutMs, options.deadlineAt - Date.now());
+    if (timeoutMs <= 0) {
+      throw new MicroserviceError('Request deadline exceeded before dispatch', 408, 'TIMEOUT', {
+        operation: 'api_client_deadline',
+        service: 'api_client_service',
+        path: url,
+        transportFailure: true,
+      });
+    }
+
     // Check if data is FormData (from form-data package for Node.js)
     const isFormData = data && typeof data === 'object' && typeof data.append === 'function' && typeof data.getHeaders === 'function';
     // A raw Buffer body (e.g. proxying a binary file upload) carries its own Content-Type via
@@ -264,7 +275,6 @@ export class ApiClientService {
       Object.assign(headers, customHeaders);
     }
 
-    const timeoutMs = options?.timeoutMs ?? this.config.timeout;
     const requestInit: RequestInit = {
       method,
       headers,

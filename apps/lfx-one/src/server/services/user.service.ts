@@ -5,6 +5,7 @@ import {
   LATEST_PAST_MEETINGS_FETCH_SIZE,
   LATEST_PAST_MEETINGS_RETURN_LIMIT,
   NATS_CONFIG,
+  PENDING_ACTION_BUTTON_ICON,
   PENDING_ACTION_SEVERITY,
   PROFILE_BIO_MAX_LENGTH,
   PROFILE_VISIBILITY_DEFAULTS,
@@ -21,6 +22,7 @@ import {
   ActiveWeeksStreakRow,
   ApiGatewayUserProfile,
   IndexedVote,
+  ManagedPendingApplication,
   Meeting,
   MeetingOccurrence,
   MeetingRegistrant,
@@ -428,7 +430,7 @@ export class UserService {
    * @param projectUid - Optional project UID; omit for unscoped (all-grants) aggregation
    * @param email - User email, or null when the auth context carries only a username (GH-2987) —
    *   strictly email-keyed sources (pending invitations) are skipped in that case
-   * @param projectSlug - Optional project slug; supplied together with projectUid on lens-scoped calls (controller-enforced) — its presence alone gates off the Me-lens-only sources (invitations, formation items)
+   * @param projectSlug - Optional project slug; supplied together with projectUid on lens-scoped calls (controller-enforced) — its presence alone gates off the Me-lens-only sources (invitations, formation items, join applications)
    * @param limit - Optional cap on the response size (aggregator still runs in full;
    *   this just shrinks the payload for callers that only need a top-N view)
    * @returns Array of pending action items
@@ -1363,10 +1365,10 @@ export class UserService {
     // context carries no email (username-only identity, GH-2987).
     const isMeLens = !projectUid && !projectSlug;
 
-    // Phase 1: surveys, meetings, pending votes, and (Me-lens only) invitations are independent —
+    // Phase 1: surveys, meetings, pending votes, and Me-only review/assigned sources are independent —
     // issue them in parallel. Each source has its own `.catch` returning [] so one flaky source
     // can't wipe the whole list.
-    const [surveyRows, meetings, pendingVotes, pendingInvitations, formationItems] = await Promise.all([
+    const [surveyRows, meetings, pendingVotes, pendingInvitations, formationItems, pendingApplications] = await Promise.all([
       this.fetchPendingSurveyResponses(req, projectUid).catch((error) => {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch surveys for pending actions', { err: error });
         return [] as SurveyResponseRecord[];
@@ -1405,6 +1407,14 @@ export class UserService {
               return [] as MyFormationItemRow[];
             })
         : Promise.resolve([] as MyFormationItemRow[]),
+
+      // Review authority comes from committee writer access, not the caller's email identity.
+      isMeLens
+        ? this.committeeService.getManagedPendingApplications(req).catch((error) => {
+            logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending join applications', { err: error });
+            return [] as ManagedPendingApplication[];
+          })
+        : Promise.resolve([] as ManagedPendingApplication[]),
     ]);
 
     const inWindowMeetings = this.filterMeetingsInWindow(meetings);
@@ -1414,6 +1424,7 @@ export class UserService {
     const surveyActions = this.transformSurveysToActions(req, surveyRows);
     const invitationActions = this.transformInvitationsToActions(pendingInvitations);
     const formationItemActions = this.transformFormationItemsToActions(formationItems);
+    const applicationActions = this.transformApplicationsToActions(pendingApplications);
 
     // Phase 2: RSVP + registrant lookups only pay off when at least one in-window meeting
     // collects LFX RSVPs. Pre-feature series still produce Review Agenda actions on project/foundation lenses, but they
@@ -1439,10 +1450,10 @@ export class UserService {
     // Order by actionability: pending invitations are the most actionable (someone is waiting on
     // the user to join) and only ever appear on the Me lens, so they lead. Formation checklist
     // items come next — assigned work with a due date is more actionable than an RSVP (GH-1956).
-    // RSVPs and votes have closing windows next. Surveys are time-bounded by their cutoff. Review
+    // Join applications follow assigned work. RSVPs and votes have closing windows next. Surveys are time-bounded by their cutoff. Review
     // Agenda appears only on project/foundation lenses and is informational, so it still goes last
     // there — with the card's display cap, plentiful meetings shouldn't crowd out real responses.
-    return [...invitationActions, ...formationItemActions, ...rsvpActions, ...voteActions, ...surveyActions, ...meetingActions];
+    return [...invitationActions, ...formationItemActions, ...applicationActions, ...rsvpActions, ...voteActions, ...surveyActions, ...meetingActions];
   }
 
   /**
@@ -1692,6 +1703,22 @@ export class UserService {
    */
   private transformInvitationsToActions(invitations: PendingInvitation[]): PendingActionItem[] {
     return buildInvitationActions(invitations);
+  }
+
+  /** Emit only the applicant/group identity and review address; omit private application details. */
+  private transformApplicationsToActions(applications: ManagedPendingApplication[]): PendingActionItem[] {
+    return applications.map((application) => ({
+      type: 'JoinApplication',
+      badge: application.committee_name,
+      text: application.applicant_name ? `${application.applicant_name} (${application.applicant_email})` : application.applicant_email,
+      icon: PENDING_ACTION_BUTTON_ICON.JoinApplication,
+      severity: PENDING_ACTION_SEVERITY.JoinApplication,
+      buttonText: '',
+      committeeUid: application.committee_uid,
+      applicationUid: application.uid,
+      applicationApplicantEmail: application.applicant_email,
+      applicationApplicantName: application.applicant_name,
+    }));
   }
 
   /**

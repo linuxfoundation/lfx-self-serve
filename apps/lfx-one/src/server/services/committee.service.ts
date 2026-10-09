@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CHAT_WEBHOOK_URL_MAX_LENGTH, SLACK_INCOMING_WEBHOOK_URL_PATTERN, UUID_REGEX } from '@lfx-one/shared/constants';
+import {
+  ACCESS_CHECK_BATCH_SIZE,
+  CHAT_WEBHOOK_URL_MAX_LENGTH,
+  PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
+  SLACK_INCOMING_WEBHOOK_URL_PATTERN,
+  UUID_REGEX,
+} from '@lfx-one/shared/constants';
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
@@ -25,6 +31,7 @@ import {
   RejectCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   GroupsIOMailingList,
+  ManagedPendingApplication,
   MyCommittee,
   MyPendingApplication,
   PendingCommitteeInviteForOrg,
@@ -43,6 +50,7 @@ import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundE
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources, FetchAllQueryResourcesOptions } from '../helpers/query-service.helper';
+import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { logger } from '../services/logger.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating, getEffectiveEmail } from '../utils/auth-helper';
@@ -1638,6 +1646,96 @@ export class CommitteeService {
     }));
   }
 
+  /** Returns pending applications the caller can review, reconciling index lag with live status. */
+  public async getManagedPendingApplications(req: Request): Promise<ManagedPendingApplication[]> {
+    const deadlineAt = Date.now() + PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS;
+    const requestOptions: ApiRequestOptions = { deadlineAt };
+    const indexed = await fetchAllQueryResources<CommitteeJoinApplication>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            type: 'committee_application',
+            tags_all: ['status:pending'],
+            page_size: 100,
+            ...(pageToken && { page_token: pageToken }),
+          },
+          undefined,
+          undefined,
+          requestOptions
+        ),
+      { failOnPartial: true }
+    );
+    const candidates = [...new Map(indexed.map((application) => [`${application.committee_uid}/${application.uid}`, application])).values()];
+    if (candidates.length === 0) return [];
+
+    // Effective writer checks include inherited grants, unlike direct-grant or membership filters.
+    const committeeUids = [...new Set(candidates.map((application) => application.committee_uid))];
+    // The upstream query already filters viewer access, but cannot enumerate effective writers.
+    // Contain that source's cost without replacing inherited grants with an incomplete direct-grant filter.
+    const managedCommitteeUids = new Set<string>();
+    for (let start = 0; start < committeeUids.length; start += ACCESS_CHECK_BATCH_SIZE) {
+      const batch = committeeUids.slice(start, start + ACCESS_CHECK_BATCH_SIZE);
+      const access = await this.accessCheckService.checkAccessStrict(
+        req,
+        batch.map((id) => ({ resource: 'committee', id, access: 'writer' })),
+        requestOptions
+      );
+      for (const id of batch) {
+        if (access.get(`${id}#writer`) === true) managedCommitteeUids.add(id);
+      }
+    }
+    const authorized = candidates.filter((application) => managedCommitteeUids.has(application.committee_uid));
+    if (authorized.length === 0) return [];
+
+    const liveResults = await settleInBatches(
+      authorized,
+      10,
+      (application) =>
+        this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(
+          req,
+          'LFX_V2_SERVICE',
+          `/committees/${application.committee_uid}/applications/${application.uid}`,
+          'GET',
+          {},
+          undefined,
+          undefined,
+          requestOptions
+        ),
+      { deadlineAt }
+    );
+    const pending: CommitteeJoinApplication[] = [];
+    for (const [index, result] of liveResults.entries()) {
+      if (result.status === 'rejected') {
+        // Revoked access or removed applications are no longer actionable; other outages fail the source.
+        const error = result.reason;
+        if (error?.statusCode === 403 || error?.status === 403 || error?.statusCode === 404 || error?.status === 404) continue;
+        throw error;
+      }
+      const candidate = authorized[index];
+      const live = result.value;
+      if (live?.uid === candidate.uid && live.committee_uid === candidate.committee_uid && live.status === 'pending') {
+        pending.push(live);
+      }
+    }
+    if (pending.length === 0) return [];
+
+    const pendingCommitteeUids = [...new Set(pending.map((application) => application.committee_uid))];
+    const committees = new Map<string, Committee>();
+    for (let start = 0; start < pendingCommitteeUids.length; start += ACCESS_CHECK_BATCH_SIZE) {
+      const batch = await this.getCommitteesByIds(req, pendingCommitteeUids.slice(start, start + ACCESS_CHECK_BATCH_SIZE), requestOptions);
+      for (const [uid, committee] of batch) committees.set(uid, committee);
+    }
+    return pending.map((application) => ({
+      ...application,
+      committee_name: committees.get(application.committee_uid)?.name ?? application.committee_uid,
+    }));
+  }
+
   /**
    * Fetches join applications for a committee from the query index.
    */
@@ -2050,7 +2148,7 @@ export class CommitteeService {
    * that can tolerate a partial/degraded result (e.g. `OrgLensGroupsService`) must catch this
    * themselves and decide their own fallback.
    */
-  public async getCommitteesByIds(req: Request, uids: string[]): Promise<Map<string, Committee>> {
+  public async getCommitteesByIds(req: Request, uids: string[], options?: ApiRequestOptions): Promise<Map<string, Committee>> {
     const unique = Array.from(new Set(uids)).filter(Boolean);
     if (unique.length === 0) return new Map();
 
@@ -2068,11 +2166,20 @@ export class CommitteeService {
           return await fetchAllQueryResources<Committee>(
             req,
             (pageToken) =>
-              this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-                type: 'committee',
-                filters_or: batch.map((uid) => `uid:${uid}`),
-                ...(pageToken && { page_token: pageToken }),
-              }),
+              this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(
+                req,
+                'LFX_V2_SERVICE',
+                '/query/resources',
+                'GET',
+                {
+                  type: 'committee',
+                  filters_or: batch.map((uid) => `uid:${uid}`),
+                  ...(pageToken && { page_token: pageToken }),
+                },
+                undefined,
+                undefined,
+                options
+              ),
             { failOnPartial: true }
           );
         } catch (error) {

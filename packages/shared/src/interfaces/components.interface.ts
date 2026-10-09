@@ -530,13 +530,13 @@ export interface ProgressItemWithChart extends ProgressItem {
  * Pending-action row discriminator. String union (not enum) so it round-trips through JSON
  * without value-vs-key reverse-mapping footguns.
  */
-export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda' | 'Submitted' | 'Invitation' | 'BriefAction' | 'FormationItem';
+export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda' | 'Submitted' | 'Invitation' | 'JoinApplication' | 'BriefAction' | 'FormationItem';
 
 /**
  * Pending-actions drawer section discriminator. String union for consistency with `PendingActionType`;
  * derived client-side by the drawer's grouping computed — it never crosses a serialization boundary.
  */
-export type PendingActionSection = 'meetings' | 'votes' | 'surveys' | 'invitations' | 'formation' | 'other';
+export type PendingActionSection = 'meetings' | 'votes' | 'surveys' | 'invitations' | 'applications' | 'formation' | 'other';
 
 /**
  * Pending action item for task list
@@ -567,8 +567,14 @@ export interface PendingActionItem {
   voteUid?: string;
   /** committee_invite UID (set on Invitation action types). Used by the dashboard to call accept/decline on the invitation. */
   inviteUid?: string;
-  /** committee_uid the invitation is for (set on Invitation action types). Paired with `inviteUid` to call accept/decline. */
+  /** committee_uid for an invitation or join application; pairs with the corresponding review UID. */
   committeeUid?: string;
+  /** Join application UID; pairs with committeeUid to identify the review address. */
+  applicationUid?: string;
+  /** Applicant email, always supplied for join application actions. */
+  applicationApplicantEmail?: string;
+  /** Optional applicant display name; the email remains visible when present. */
+  applicationApplicantName?: string;
   /** Committee/group display name (set on Invitation action types). Used for the "You've joined {Group}" toast and the accept/decline `aria-label`, so the copy doesn't have to be parsed back out of `text`. */
   inviteGroupName?: string;
   /** Owning project slug for the invited group (set on Invitation action types) — drives the `?project=` query param on the view link (GH-1566). */

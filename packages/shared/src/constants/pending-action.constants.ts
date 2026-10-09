@@ -15,6 +15,7 @@ export const PENDING_ACTION_SEVERITY: Record<PendingActionType, TagSeverity> = {
   Agenda: 'secondary', // gray — informational read-before-meeting cue
   Submitted: 'success', // green — completed survey/feedback acknowledgement, distinguishes from pending Survey
   Invitation: 'success', // green — matches the design's green invite pill
+  JoinApplication: 'warn', // amber — awaiting a manager decision
   BriefAction: 'secondary', // gray — AI-suggested follow-up, not a deadline-bound obligation
   FormationItem: 'accent', // violet — the Me-lens design's "Formation item" badge, distinct from the amber action-needed rows (#2732)
 };
@@ -27,6 +28,7 @@ export const PENDING_ACTION_BUTTON_ICON: Record<PendingActionType, string> = {
   Agenda: 'fa-light fa-list',
   Submitted: 'fa-light fa-circle-check',
   Invitation: 'fa-light fa-user-plus',
+  JoinApplication: 'fa-light fa-user-check',
   BriefAction: 'fa-light fa-list-check',
   FormationItem: 'fa-light fa-diagram-project',
 };
@@ -39,6 +41,7 @@ export const PENDING_ACTION_LABEL: Record<PendingActionType, string> = {
   Agenda: 'Agenda',
   Submitted: 'Submitted',
   Invitation: 'Invitation',
+  JoinApplication: 'Join request',
   BriefAction: 'From Weekly Brief',
   FormationItem: 'Formation item',
 };
@@ -55,6 +58,7 @@ export const PENDING_ACTION_SECTION: Record<PendingActionType, PendingActionSect
   Survey: 'surveys',
   Submitted: 'surveys', // completed-survey acknowledgement; closest kin if it ever reaches the drawer
   Invitation: 'invitations',
+  JoinApplication: 'applications',
   FormationItem: 'formation',
   BriefAction: 'other',
 };
@@ -65,6 +69,7 @@ export const PENDING_ACTION_SECTION_LABEL: Record<PendingActionSection, string> 
   votes: 'Votes',
   surveys: 'Surveys',
   invitations: 'Invitations',
+  applications: 'Applications',
   formation: 'Formation',
   other: 'Other',
 };
@@ -79,8 +84,9 @@ const PENDING_ACTION_SECTION_RANK = {
   votes: 1,
   surveys: 2,
   invitations: 3,
-  formation: 4,
-  other: 5,
+  applications: 4,
+  formation: 5,
+  other: 6,
 } as const satisfies Record<PendingActionSection, number>;
 
 /** Fixed render order of the drawer sections; sections with no visible rows are skipped. */
@@ -108,3 +114,6 @@ export const PENDING_ACTION_SKELETON_HOLD_MS = 500;
  * so it still collapses — just ~this many ms later.
  */
 export const PENDING_ACTION_EMPTY_GRACE_MS = 250;
+
+/** Total upstream budget for Me-dashboard join-request discovery, including paging, authorization, and enrichment. */
+export const PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS = 5000;

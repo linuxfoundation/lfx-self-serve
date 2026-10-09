@@ -47,15 +47,26 @@
               <div
                 class="pending-action-card px-4 py-3"
                 [class.is-completing]="completingRowKeys().has(item.rowKey)"
+                [class.is-application]="item.type === 'JoinApplication'"
                 [attr.data-testid]="'pending-actions-drawer-item-' + item.type">
-                <div class="flex items-center gap-4">
+                <div class="flex items-center gap-4" [class.flex-wrap]="item.type === 'JoinApplication'">
                   <!-- Left: badge (fixed width so titles align) -->
                   <div class="w-36 shrink-0">
                     <lfx-tag [value]="typeLabels[item.type]" [severity]="item.severity" [icon]="item.icon" styleClass="inline-flex whitespace-nowrap" />
                   </div>
                   <!-- Middle: meeting/action name -->
-                  <div class="flex-1 min-w-0">
-                    @if (item.isFormationItem) {
+                  <div class="flex-1 min-w-0" [class]="item.type === 'JoinApplication' ? 'basis-full sm:basis-0' : ''">
+                    @if (item.type === 'JoinApplication') {
+                      <div class="flex flex-col gap-1 min-w-0 break-words [overflow-wrap:anywhere]">
+                        @if (item.applicationApplicantName) {
+                          <span class="text-sm font-medium text-gray-900" data-testid="pending-actions-drawer-application-name">{{
+                            item.applicationApplicantName
+                          }}</span>
+                        }
+                        <span class="text-sm text-gray-900" data-testid="pending-actions-drawer-application-email">{{ item.applicationApplicantEmail }}</span>
+                        <span class="text-xs text-gray-500" data-testid="pending-actions-drawer-application-group">{{ item.badge }}</span>
+                      </div>
+                    } @else if (item.isFormationItem) {
                       <!-- Formation item (#2732): bold title over a gray meta line — project · due · required for Active. The
                            title wraps rather than truncating, so no hover-only `title` tooltip is needed to reach the full text. -->
                       <div class="flex flex-col gap-0.5 min-w-0">
@@ -99,7 +110,28 @@
 
                   <!-- Right: CTA(s) -->
                   <div class="shrink-0">
-                    @if (item.isRsvpInline) {
+                    @if (item.type === 'JoinApplication') {
+                      <div class="flex flex-wrap items-center gap-2">
+                        <lfx-button
+                          size="small"
+                          severity="primary"
+                          [label]="processingApplicationKey() === item.rowKey ? 'Saving' : 'Approve'"
+                          [loading]="processingApplicationKey() === item.rowKey"
+                          [disabled]="processingApplicationKey() !== null || !item.committeeUid || !item.applicationUid || !item.applicationApplicantEmail"
+                          [ariaLabel]="'Approve application from ' + item.applicationApplicantEmail + ' to ' + item.badge"
+                          (onClick)="approveApplicationRequested.emit(item)"
+                          data-testid="pending-actions-drawer-application-approve" />
+                        <lfx-button
+                          size="small"
+                          severity="secondary"
+                          [text]="true"
+                          label="Reject"
+                          [disabled]="processingApplicationKey() !== null || !item.committeeUid || !item.applicationUid || !item.applicationApplicantEmail"
+                          [ariaLabel]="'Reject application from ' + item.applicationApplicantEmail + ' to ' + item.badge"
+                          (onClick)="rejectApplicationRequested.emit(item)"
+                          data-testid="pending-actions-drawer-application-reject" />
+                      </div>
+                    } @else if (item.isRsvpInline) {
                       @if (item.isMeetingLoading || !item.meeting) {
                         <div class="flex items-center gap-2" data-testid="pending-actions-drawer-rsvp-loading">
                           <p-skeleton width="4.5rem" height="2rem" />
@@ -191,7 +223,7 @@
                   <!-- Dismiss — skeleton while RSVP meeting data is loading, real button once ready. Invitations are resolved
                        server-side (Accept/Decline), never cookie-dismissed, so they render no Dismiss control. Formation items
                        are resolved on the checklist and stay until done or skipped (#1956, #2732), so they're excluded too. -->
-                  @if (!item.isInvitation && !item.isFormationItem) {
+                  @if (item.type !== 'JoinApplication' && !item.isInvitation && !item.isFormationItem) {
                     @if (item.isRsvpInline && (item.isMeetingLoading || !item.meeting)) {
                       <p-skeleton width="4.5rem" height="1.25rem" styleClass="shrink-0" />
                     } @else {
