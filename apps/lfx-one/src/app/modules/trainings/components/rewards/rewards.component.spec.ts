@@ -57,7 +57,7 @@ describe('RewardsComponent subject transitions', () => {
   let fixture: ComponentFixture<RewardsComponent>;
   const user = signal<Record<string, string> | null>({ [LFID_CLAIM]: 'first-user' });
   const impersonating = signal(false);
-  const viewerUsername = computed(() => user()?.['username'] || user()?.[LFID_CLAIM] || null);
+  const viewerUsername = computed(() => user()?.[LFID_CLAIM] || user()?.['username'] || null);
   const getSummary = vi.fn();
   let confirmationService: ConfirmationService;
 

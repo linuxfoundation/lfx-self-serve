@@ -106,8 +106,8 @@
                 <button
                   type="button"
                   class="flex items-center gap-3 p-4 text-left transition-colors hover:bg-gray-50"
-                  [class.bg-blue-50]="pendingRsvpOnly()"
-                  [attr.aria-pressed]="pendingRsvpOnly()"
+                  [class.bg-blue-50]="meetingView() === 'pending'"
+                  [attr.aria-pressed]="meetingView() === 'pending'"
                   (click)="onPendingRsvpStatClick()"
                   data-testid="meetings-me-stat-pending-rsvp">
                   <div class="flex items-center justify-center w-11 h-11 rounded-full bg-amber-100 text-amber-600 flex-shrink-0">
@@ -231,7 +231,7 @@
         </div>
       }
 
-      <!-- Top Bar with Tabs, Search, and Meeting Type Filter -->
+      <!-- Primary meeting views and controlled secondary filters -->
       <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg border border-gray-200 p-4 -mx-0 mb-8">
         @if (upcomingMeetings() || pastMeetings()) {
           <lfx-meetings-top-bar
@@ -240,13 +240,13 @@
             [projectOptions]="projectOptions()"
             [showFoundationFilter]="showFoundationFilter()"
             [showProjectFilter]="showProjectFilter()"
-            [timeFilter]="timeFilter()"
-            [pendingRsvpOnly]="pendingRsvpOnly()"
-            [showPendingRsvpFilter]="activeLens() === 'me' && timeFilter() === 'upcoming'"
-            [pendingRsvpCount]="pendingRsvpCount()"
-            [organizerOnly]="organizerOnly()"
-            [showOrganizerFilter]="activeLens() === 'me'"
-            [organizerCount]="organizerCount()"
+            [meetingView]="meetingView()"
+            [showPersonalViews]="activeLens() === 'me'"
+            [pendingRsvpCount]="timeFilter() === 'upcoming' ? pendingRsvpCount() : null"
+            [organizerCount]="timeFilter() === 'upcoming' ? organizerCount() : null"
+            [meetingTypeFilter]="meetingTypeFilter()"
+            [foundationFilter]="foundationFilter()"
+            [projectFilter]="projectFilter()"
             [showDeclined]="showDeclined()"
             [showDeclinedFilter]="activeLens() === 'me' && timeFilter() === 'upcoming' && (declinedCount() > 0 || showDeclined())"
             [declinedCount]="declinedCount()"
@@ -256,9 +256,7 @@
             (projectFilterChange)="onProjectFilterChange($event)"
             [searchQuery]="searchQuery()"
             (searchQueryChange)="searchQuery.set($event)"
-            (timeFilterChange)="onTimeFilterChange($event)"
-            (pendingRsvpOnlyChange)="pendingRsvpOnly.set($event)"
-            (organizerOnlyChange)="organizerOnly.set($event)" />
+            (meetingViewChange)="onMeetingViewChange($event)" />
         }
       </div>
     </div>

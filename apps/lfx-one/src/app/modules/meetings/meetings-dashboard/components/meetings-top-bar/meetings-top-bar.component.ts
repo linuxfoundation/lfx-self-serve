@@ -1,18 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
-import { Component, effect, input, output } from '@angular/core';
+import { Component, computed, effect, input, output, Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { FilterPillOption } from '@lfx-one/shared/interfaces';
+import { FilterPillOption, MeetingDashboardView } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-meetings-top-bar',
-  imports: [NgTemplateOutlet, ReactiveFormsModule, InputTextComponent, SelectComponent, FilterPillsComponent],
+  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, FilterPillsComponent],
   templateUrl: './meetings-top-bar.component.html',
 })
 export class MeetingsTopBarComponent {
@@ -21,13 +20,13 @@ export class MeetingsTopBarComponent {
   public projectOptions = input<{ label: string; value: string | null }[]>([]);
   public showFoundationFilter = input<boolean>(false);
   public showProjectFilter = input<boolean>(false);
-  public readonly timeFilter = input<'upcoming' | 'past'>('upcoming');
-  public readonly pendingRsvpOnly = input<boolean>(false);
-  public readonly showPendingRsvpFilter = input<boolean>(false);
-  public readonly pendingRsvpCount = input<number>(0);
-  public readonly organizerOnly = input<boolean>(false);
-  public readonly showOrganizerFilter = input<boolean>(false);
-  public readonly organizerCount = input<number>(0);
+  public readonly meetingView = input<MeetingDashboardView>('upcoming');
+  public readonly showPersonalViews = input<boolean>(false);
+  public readonly pendingRsvpCount = input<number | null>(null);
+  public readonly organizerCount = input<number | null>(null);
+  public readonly meetingTypeFilter = input<string | null>(null);
+  public readonly foundationFilter = input<string | null>(null);
+  public readonly projectFilter = input<string | null>(null);
   public readonly showDeclined = input<boolean>(false);
   public readonly showDeclinedFilter = input<boolean>(false);
   public readonly declinedCount = input<number>(0);
@@ -36,15 +35,8 @@ export class MeetingsTopBarComponent {
   public readonly projectFilterChange = output<string | null>();
   public readonly searchQuery = input<string>('');
   public readonly searchQueryChange = output<string>();
-  public readonly timeFilterChange = output<'upcoming' | 'past'>();
-  public readonly pendingRsvpOnlyChange = output<boolean>();
-  public readonly organizerOnlyChange = output<boolean>();
+  public readonly meetingViewChange = output<MeetingDashboardView>();
   public readonly showDeclinedChange = output<boolean>();
-
-  public readonly timeTabOptions: FilterPillOption[] = [
-    { id: 'upcoming', label: 'Upcoming' },
-    { id: 'past', label: 'Past' },
-  ];
 
   public searchForm: FormGroup = new FormGroup({
     search: new FormControl(''),
@@ -52,6 +44,8 @@ export class MeetingsTopBarComponent {
     foundationFilter: new FormControl<string | null>(null),
     projectFilter: new FormControl<string | null>(null),
   });
+
+  public readonly meetingViewOptions = this.initMeetingViewOptions();
 
   public constructor() {
     this.searchForm
@@ -62,9 +56,17 @@ export class MeetingsTopBarComponent {
       });
 
     effect(() => {
-      const query = this.searchQuery();
-      if (this.searchForm.get('search')?.value !== query) {
-        this.searchForm.get('search')?.setValue(query, { emitEvent: false });
+      const selections = {
+        search: this.searchQuery(),
+        meetingType: this.meetingTypeFilter(),
+        foundationFilter: this.foundationFilter(),
+        projectFilter: this.projectFilter(),
+      };
+      for (const [name, value] of Object.entries(selections)) {
+        const control = this.searchForm.get(name);
+        if (control?.value !== value) {
+          control?.setValue(value, { emitEvent: false });
+        }
       }
     });
   }
@@ -83,18 +85,29 @@ export class MeetingsTopBarComponent {
     this.projectFilterChange.emit(value);
   }
 
-  public onTimeTabChange(value: string): void {
-    this.timeFilterChange.emit(value as 'upcoming' | 'past');
+  public onMeetingViewChange(value: string): void {
+    this.meetingViewChange.emit(value as MeetingDashboardView);
   }
 
-  /** Each chip is an independent on/off filter, so a click inverts that chip's current state. */
-  public onToggleChip(id: string): void {
-    if (id === 'pending') {
-      this.pendingRsvpOnlyChange.emit(!this.pendingRsvpOnly());
-    } else if (id === 'organizer') {
-      this.organizerOnlyChange.emit(!this.organizerOnly());
-    } else if (id === 'declined') {
-      this.showDeclinedChange.emit(!this.showDeclined());
-    }
+  public onShowDeclinedChange(): void {
+    this.showDeclinedChange.emit(!this.showDeclined());
+  }
+
+  private initMeetingViewOptions(): Signal<FilterPillOption[]> {
+    return computed<FilterPillOption[]>(() => {
+      const options: FilterPillOption[] = [
+        { id: 'upcoming', label: 'Upcoming' },
+        { id: 'past', label: 'Past' },
+      ];
+      if (this.showPersonalViews()) {
+        const pendingCount = this.pendingRsvpCount();
+        const organizerCount = this.organizerCount();
+        options.push(
+          { id: 'pending', label: pendingCount === null ? 'Pending RSVP' : `Pending RSVP (${pendingCount})` },
+          { id: 'organizer', label: organizerCount === null ? 'Organized by me' : `Organized by me (${organizerCount})` }
+        );
+      }
+      return options;
+    });
   }
 }

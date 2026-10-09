@@ -1,10 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, signal } from '@angular/core';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { ApplicationRef, Component, input, output, signal } from '@angular/core';
 import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
-import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingOccurrence, MeetingRsvp, User } from '@lfx-one/shared/interfaces';
 import { MeetingInviteeAttendeesComponent } from '@app/modules/meetings/components/meeting-invitee-attendees/meeting-invitee-attendees.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
@@ -49,7 +52,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
   async function mount(meeting: Meeting = MEETING, pinned: MeetingOccurrence | null = null): Promise<MeetingCardComponent> {
     TestBed.configureTestingModule({
       providers: [
-        { provide: UserService, useValue: { user: signal(null), authenticated: signal(false) } },
+        { provide: UserService, useValue: { user: signal(null), authenticated: signal(false), refreshUserMeetings: vi.fn() } },
         { provide: ProjectService, useValue: { project: signal(null) } },
         { provide: MeetingComposerService, useValue: { open: composerOpen } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
@@ -378,6 +381,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
 class RsvpButtonGroupStubComponent {
   public readonly meeting = input<Meeting>();
   public readonly occurrenceId = input<string | undefined>();
+  public readonly rsvpChanged = output<MeetingRsvp>();
 }
 
 @Component({ selector: 'lfx-meeting-invitee-attendees', template: '' })
@@ -418,7 +422,7 @@ describe('MeetingCardComponent — invitee panels', () => {
       deferBlockBehavior: DeferBlockBehavior.Manual,
       providers: [
         provideRouter([]),
-        { provide: UserService, useValue: { user: signal(null), authenticated: signal(true), viewerUsername: signal(null) } },
+        { provide: UserService, useValue: { user: signal(null), authenticated: signal(true), viewerUsername: signal(null), refreshUserMeetings: vi.fn() } },
         { provide: ProjectService, useValue: { project: signal(null) } },
         { provide: MeetingComposerService, useValue: { open: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
@@ -469,5 +473,113 @@ describe('MeetingCardComponent — invitee panels', () => {
 
     expect(card.querySelector('lfx-rsvp-button-group')).not.toBeNull();
     expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
+  });
+});
+
+describe('MeetingCardComponent — RSVP cache freshness', () => {
+  it.each([
+    [false, true],
+    [true, true],
+    [false, false],
+    [true, false],
+  ])('updates pending consumers only after a successful write (organizer=%s, success=%s)', async (organizer, success) => {
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        public observe = vi.fn();
+        public unobserve = vi.fn();
+        public disconnect = vi.fn();
+      }
+    );
+    const toastAdd = vi.fn();
+    TestBed.configureTestingModule({
+      deferBlockBehavior: DeferBlockBehavior.Manual,
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: ProjectService, useValue: { project: signal(null) } },
+        { provide: MeetingComposerService, useValue: { open: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
+        { provide: MessageService, useValue: { add: toastAdd } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(MeetingCardComponent, { add: { providers: [] } });
+    await TestBed.compileComponents();
+    const meetingService = TestBed.inject(MeetingService);
+    vi.spyOn(meetingService, 'getMeetingAttachments').mockReturnValue(of([]));
+    const userService = TestBed.inject(UserService);
+    userService.user.set({ username: 'viewer', email: 'synthetic@example.com' } as User);
+    userService.authenticated.set(true);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    const http = TestBed.inject(HttpTestingController);
+    for (const request of http.match('/api/profile')) {
+      request.flush({ profile: {} });
+    }
+    const meeting = {
+      id: 'synthetic-rsvp',
+      project_uid: 'synthetic-project',
+      title: 'Synthetic RSVP meeting',
+      start_time: '2099-01-01T10:00:00Z',
+      duration: 30,
+      timezone: 'UTC',
+      invited: true,
+      organizer,
+      is_invite_responses_enabled: true,
+      show_meeting_attendees: false,
+      my_rsvp: null,
+    } as Meeting;
+    let pendingIds: string[] = [];
+    const subscription = userService.getUserMeetings().subscribe((meetings) => {
+      pendingIds = meetings.filter((row) => row.is_invite_responses_enabled && !row.my_rsvp).map((row) => row.id);
+    });
+    http.expectOne('/api/user/meetings').flush([meeting]);
+    expect(pendingIds).toEqual(['synthetic-rsvp']);
+
+    const fixture = TestBed.createComponent(MeetingCardComponent);
+    fixture.componentRef.setInput('meetingInput', meeting);
+    fixture.componentInstance.showMyRsvp.set(organizer);
+    fixture.detectChanges();
+    for (const block of await fixture.getDeferBlocks()) {
+      await block.render(DeferBlockState.Complete);
+    }
+    fixture.detectChanges();
+    for (const request of http.match('/api/meetings/synthetic-rsvp/rsvp/me')) {
+      request.flush(null);
+    }
+    const buttons = fixture.debugElement.query(By.directive(RsvpButtonGroupComponent)).componentInstance as RsvpButtonGroupComponent;
+    buttons.handleRsvpClick('accepted');
+    const write = http.expectOne('/api/meetings/synthetic-rsvp/rsvp');
+    const rsvp: MeetingRsvp = {
+      id: 'synthetic-response',
+      meeting_id: meeting.id,
+      registrant_id: 'synthetic-registrant',
+      username: 'viewer',
+      email: 'synthetic@example.com',
+      created_at: '2099-01-01T00:00:00Z',
+      response_type: 'accepted',
+      scope: 'all',
+    };
+    if (success) {
+      write.flush(rsvp);
+      http.expectOne('/api/user/meetings').flush([{ ...meeting, my_rsvp: rsvp }]);
+      expect(pendingIds).toEqual([]);
+    } else {
+      write.flush({ error: 'Synthetic write rejected' }, { status: 403, statusText: 'Forbidden' });
+      http.expectNone('/api/user/meetings');
+      expect(pendingIds).toEqual(['synthetic-rsvp']);
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'RSVP Failed' }));
+    }
+    fixture.detectChanges();
+    for (const request of http.match('/api/meetings/synthetic-rsvp/rsvp/me')) {
+      request.flush(success ? rsvp : null);
+    }
+    for (const request of http.match('/api/profile')) {
+      request.flush({ profile: {} });
+    }
+    http.verify();
+    subscription.unsubscribe();
   });
 });

@@ -346,6 +346,10 @@ export class MeetingCardComponent implements OnInit {
       .subscribe(() => this.optimisticInvited.set(false));
   }
 
+  public onRsvpChanged(): void {
+    this.userService.refreshUserMeetings();
+  }
+
   /**
    * Re-checks edit permission on the meeting itself before opening the edit surface.
    * @description `meeting().organizer` is whatever the list payload said when the card first rendered,

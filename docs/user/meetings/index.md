@@ -4,7 +4,7 @@ description: Schedule, manage, and join project meetings with calendar integrati
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, calendar, join, zoom, virtual]
-last_updated: 2026-10-04
+last_updated: 2026-10-09
 intercom_collection: Meetings
 ---
 
@@ -40,13 +40,22 @@ The left navigation label for this section depends on which lens you're in:
 - **Foundation or Project lens**: the sidebar item is **Meetings**, scoped to that foundation or project. This is where the **Create Meeting** button appears, if you have write access.
 - **Org lens**: the sidebar item is also labeled **Meetings**, but it opens a meeting analytics view for the org rather than the shared meetings dashboard — there's no Create Meeting button here.
 
-Me, Foundation, and Project lenses share the same dashboard, just scoped differently. Choose **Upcoming** or **Past** with the time control at the left of the filter bar. In the Me lens, these on/off filters sit beside it, each showing how many meetings it matches:
+Me, Foundation, and Project lenses share the same dashboard, just scoped differently. My Meetings has four rounded-pill views. **Upcoming** is selected by default; selecting another view replaces the previous one:
 
-- **Pending RSVP** (Upcoming only) — meetings that collect RSVPs and that you haven't answered yet.
-- **Organized by me** (Upcoming and Past) — meetings you created.
-- **Show declined** (Upcoming only) — My Meetings hides a meeting you declined for every date, because declining doesn't remove you from the guest list and only an organizer can do that. Turn this on to see those meetings again. Declining a single date keeps the meeting in your list, and a meeting you organized always stays in your list even if you declined every date. The filter appears only when you have declined meetings.
+- **Upcoming** — your upcoming meetings across projects.
+- **Past** — your ordinary meeting history, including meetings organized by other people.
+- **Pending RSVP** — upcoming meetings that collect RSVPs and that you haven't answered yet. Meetings without RSVP tracking aren't pending. For a recurring series, a recorded response for another date still counts as a response.
+- **Organized by me** — upcoming meetings you own. The current owner takes precedence over the original creator; when no owner is recorded, the creator is used. Inherited management access alone doesn't make you the organizer for this view.
 
-At the top of My Meetings, the Upcoming stats show **Meetings in the Next 7 Days**, which counts each date (a weekly series adds one per week), and **Need Your RSVP**. Select **Need Your RSVP** to turn on the Pending RSVP filter. Both stats leave out meetings you declined for every date, except meetings you organized.
+Available Pending RSVP and Organized by me counts describe upcoming meetings before search, foundation, project, or meeting-type filters. Counts are omitted while viewing Past because the upcoming source isn't loaded there. Search and meeting type stay selected when changing views. Foundation/project selections stay selected between upcoming views, but clear when crossing to or from Past.
+
+**Show declined** remains a separate Upcoming modifier. My Meetings hides a meeting you declined for every date, because declining doesn't remove you from the guest list and only an organizer can do that. Turn it on to see those meetings again. Declining a single date keeps the series in your list, and a meeting you organize always stays in your list even if you declined every date. The modifier appears when you have declined meetings or have already enabled it.
+
+At the top of My Meetings, the Upcoming stats show **Meetings in the Next 7 Days**, which counts each date (a weekly series adds one per week), and **Need Your RSVP**. Selecting **Need Your RSVP** opens Pending RSVP, even from Organized by me; selecting it again leaves Pending RSVP selected. Both stats leave out meetings you declined for every date, except meetings you organize. After a successful RSVP update, pending results and totals refresh without leaving the page.
+
+When filters produce no results, **Reset filters** clears search, foundation, project, meeting type, and Show declined. It returns Pending RSVP or Organized by me to Upcoming, while keeping Past selected if you're already viewing history. Empty special views use this same recovery.
+
+Foundation and Project dashboards keep their two **Upcoming**/**Past** time choices and existing calendar, paging, and **Subscribe** controls. Leaving a personal special view switches to ordinary Upcoming; personal RSVP or organizer selection never narrows a scoped list.
 
 Empty states differ by lens:
 

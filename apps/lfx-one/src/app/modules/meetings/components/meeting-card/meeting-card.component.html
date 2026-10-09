@@ -316,7 +316,8 @@
             <!-- Organizer view with optional toggle for invited organizers -->
             @if (canToggleRsvpView() && showMyRsvp()) {
               <!-- Show RSVP Button Group when organizer toggles to set their own RSVP -->
-              <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+              <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id" (rsvpChanged)="onRsvpChanged()">
+              </lfx-rsvp-button-group>
             } @else {
               <!-- Show RSVP Details for organizers (default view) -->
               <lfx-meeting-rsvp-details
@@ -359,7 +360,8 @@
           @if (effectivelyInvited() && (inviteResponsesEnabled() || attendeeListShared())) {
             @defer (on viewport) {
               @if (inviteResponsesEnabled()) {
-                <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+                <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id" (rsvpChanged)="onRsvpChanged()">
+                </lfx-rsvp-button-group>
               }
               @if (attendeeListShared()) {
                 <lfx-meeting-invitee-attendees [meeting]="meeting()" [occurrence]="occurrence()" />

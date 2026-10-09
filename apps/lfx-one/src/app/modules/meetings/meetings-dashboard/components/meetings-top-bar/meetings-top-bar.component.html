@@ -1,109 +1,83 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
-  <!-- Time range: one either/or control, kept visually apart from the on/off filters beside it -->
-  <lfx-filter-pills
-    variant="segmented"
-    ariaLabel="Time range"
-    [options]="timeTabOptions"
-    [selectedFilter]="timeFilter()"
-    (filterChange)="onTimeTabChange($event)"
-    data-testid="time-filter-tabs" />
-
-  @if (showPendingRsvpFilter() || showOrganizerFilter() || showDeclinedFilter()) {
-    <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Filters">
-      <!-- Pending RSVP (Me lens, upcoming only) -->
-      @if (showPendingRsvpFilter()) {
-        <div data-testid="pending-rsvp-filter-pills">
-          <ng-container
-            *ngTemplateOutlet="toggleChip; context: { id: 'pending', label: 'Pending RSVP', count: pendingRsvpCount(), active: pendingRsvpOnly() }" />
-        </div>
-      }
-
-      <!-- Organized by me (Me lens, upcoming + past) -->
-      @if (showOrganizerFilter()) {
-        <div data-testid="organizer-filter-pills">
-          <ng-container
-            *ngTemplateOutlet="toggleChip; context: { id: 'organizer', label: 'Organized by me', count: organizerCount(), active: organizerOnly() }" />
-        </div>
-      }
-
-      <!-- Show declined (Me lens, upcoming only): meetings declined for every date are hidden by default -->
-      @if (showDeclinedFilter()) {
-        <div data-testid="declined-filter-pills">
-          <ng-container *ngTemplateOutlet="toggleChip; context: { id: 'declined', label: 'Show declined', count: declinedCount(), active: showDeclined() }" />
-        </div>
-      }
-    </div>
-  }
-
-  <ng-template #toggleChip let-id="id" let-label="label" let-count="count" let-active="active">
-    <button
-      type="button"
-      class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm border transition-colors"
-      [class]="active ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'"
-      [attr.aria-pressed]="active"
-      [attr.aria-label]="label + ', ' + count"
-      [attr.data-testid]="'filter-pill-' + id"
-      (click)="onToggleChip(id)">
-      <i class="fa-light text-xs" [class]="active ? 'fa-square-check' : 'fa-square'" aria-hidden="true"></i>
-      <span>{{ label }}</span>
-      <span class="text-xs" [class]="active ? 'text-blue-600' : 'text-gray-500'" [attr.data-testid]="'filter-pill-count-' + id">{{ count }}</span>
-    </button>
-  </ng-template>
-
-  <!-- Search Input -->
-  <div class="flex-1">
-    <lfx-input-text
-      [form]="searchForm"
-      control="search"
-      placeholder="Search meetings..."
-      icon="fa-light fa-search"
-      styleClass="w-full"
-      size="small"
-      data-testid="meetings-search-input"></lfx-input-text>
+<div class="flex min-w-0 flex-col gap-3">
+  <div class="flex min-w-0 flex-wrap items-center gap-2" role="group" aria-label="Meeting views" data-testid="meeting-view-pills">
+    <lfx-filter-pills
+      class="min-w-0 max-w-full"
+      [options]="meetingViewOptions()"
+      [selectedFilter]="meetingView()"
+      (filterChange)="onMeetingViewChange($event)" />
   </div>
 
-  <!-- Foundation Filter Dropdown -->
-  @if (showFoundationFilter()) {
-    <div class="w-full sm:w-48">
+  <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+    <div class="min-w-0 w-full sm:w-auto sm:flex-1 sm:basis-48">
+      <lfx-input-text
+        [form]="searchForm"
+        control="search"
+        placeholder="Search meetings..."
+        icon="fa-light fa-search"
+        styleClass="w-full"
+        size="small"
+        data-testid="meetings-search-input"></lfx-input-text>
+    </div>
+
+    @if (showFoundationFilter()) {
+      <div class="min-w-0 w-full sm:w-48 sm:max-w-full">
+        <lfx-select
+          [form]="searchForm"
+          control="foundationFilter"
+          size="small"
+          [options]="foundationOptions()"
+          styleClass="w-full"
+          (onChange)="onFoundationFilterChange($event.value)"
+          data-testid="foundation-filter-dropdown"></lfx-select>
+      </div>
+    }
+
+    @if (showProjectFilter()) {
+      <div class="min-w-0 w-full sm:w-48 sm:max-w-full">
+        <lfx-select
+          [form]="searchForm"
+          control="projectFilter"
+          size="small"
+          [options]="projectOptions()"
+          styleClass="w-full"
+          (onChange)="onProjectFilterChange($event.value)"
+          data-testid="project-filter-dropdown"></lfx-select>
+      </div>
+    }
+
+    <div class="min-w-0 w-full sm:w-64 sm:max-w-full">
       <lfx-select
         [form]="searchForm"
-        control="foundationFilter"
+        control="meetingType"
         size="small"
-        [options]="foundationOptions()"
+        [options]="meetingTypeOptions()"
+        placeholder="Select Type"
+        [showClear]="true"
         styleClass="w-full"
-        (onChange)="onFoundationFilterChange($event.value)"
-        data-testid="foundation-filter-dropdown"></lfx-select>
+        (onChange)="onMeetingTypeChange($event.value)"
+        data-testid="meeting-type-filter"></lfx-select>
     </div>
-  }
 
-  <!-- Project Filter Dropdown -->
-  @if (showProjectFilter()) {
-    <div class="w-full sm:w-48">
-      <lfx-select
-        [form]="searchForm"
-        control="projectFilter"
-        size="small"
-        [options]="projectOptions()"
-        styleClass="w-full"
-        (onChange)="onProjectFilterChange($event.value)"
-        data-testid="project-filter-dropdown"></lfx-select>
-    </div>
-  }
-
-  <!-- Meeting Type Filter Dropdown -->
-  <div class="w-full sm:w-64">
-    <lfx-select
-      [form]="searchForm"
-      control="meetingType"
-      size="small"
-      [options]="meetingTypeOptions()"
-      placeholder="Select Type"
-      [showClear]="true"
-      styleClass="w-full"
-      (onChange)="onMeetingTypeChange($event.value)"
-      data-testid="meeting-type-filter"></lfx-select>
+    @if (showDeclinedFilter()) {
+      <div class="min-w-0 max-w-full" data-testid="declined-filter-pills">
+        <button
+          type="button"
+          class="inline-flex max-w-full items-center gap-1.5 px-3 py-1 rounded-full text-sm border transition-colors"
+          [class]="showDeclined() ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'"
+          [attr.aria-pressed]="showDeclined()"
+          [attr.aria-label]="'Show declined, ' + declinedCount()"
+          data-testid="filter-pill-declined"
+          (click)="onShowDeclinedChange()">
+          <i class="fa-light text-xs" [class]="showDeclined() ? 'fa-square-check' : 'fa-square'" aria-hidden="true"></i>
+          <span>Show declined</span>
+          <span class="text-xs" [class]="showDeclined() ? 'text-blue-600' : 'text-gray-500'" data-testid="filter-pill-count-declined">
+            {{ declinedCount() }}
+          </span>
+        </button>
+      </div>
+    }
   </div>
 </div>
