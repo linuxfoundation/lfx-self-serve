@@ -72,7 +72,7 @@ export class SidebarNavService {
   private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
-  /** Dark-launch gate for the M3 org-lens CLA module; hides the EasyCLA Management section when off. */
+  /** Dark-launch gate for the M3 org-lens CLA module; hides the EasyCLA nav entry when off. */
   private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
@@ -786,12 +786,10 @@ export class SidebarNavService {
     label: 'EasyCLA',
     icon: 'fa-light fa-file-signature',
     routerLink: this.orgLensNavigation.orgLensPath('easycla'),
-    // Stays highlighted on an agreement's detail page, `/org/{segment}/easycla/{claGroupId}`.
     activeOnSubpaths: true,
     testId: 'sidebar-org-easycla',
   }));
 
-  // EasyCLA is an administrative surface, so it has a section of its own rather than sitting among the engagement pages (#3358).
   private readonly orgEasyclaSection: Signal<SidebarMenuItem> = computed(() => ({
     label: 'EasyCLA Management',
     isSection: true,
@@ -863,11 +861,6 @@ export class SidebarNavService {
     ];
   });
 
-  /**
-   * Places the EasyCLA Management section directly above Organization Profile, so it follows
-   * Organization Engagement and Profile keeps its divider. Appended if Profile ever goes away,
-   * so the section can never land above the engagement pages.
-   */
   private withEasyclaSection(items: SidebarMenuItem[]): SidebarMenuItem[] {
     const profileIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('profile'));
     if (profileIndex === -1) return [...items, this.orgEasyclaSection()];

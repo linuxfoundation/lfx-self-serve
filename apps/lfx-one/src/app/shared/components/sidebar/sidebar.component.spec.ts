@@ -16,7 +16,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SidebarComponent } from './sidebar.component';
 
-/** Everything the sidebar injects apart from the Router, stubbed for a class-level test. */
 const sidebarServiceStubs = (setProject = vi.fn()): Provider[] => [
   { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
   {
@@ -97,11 +96,6 @@ describe('SidebarComponent — same-lens project switch re-enters the lens landi
   });
 });
 
-/**
- * Items are highlighted on an exact path match unless they opt in with `activeOnSubpaths` (#3358),
- * which EasyCLA does so it stays highlighted on an agreement's detail page. The options are read
- * off the decorated tree, then exercised against a real Router so the test proves what they match.
- */
 describe('SidebarComponent — link-active options (#3358)', () => {
   @Component({ selector: 'lfx-blank-page', template: '' })
   class BlankPageStubComponent {}

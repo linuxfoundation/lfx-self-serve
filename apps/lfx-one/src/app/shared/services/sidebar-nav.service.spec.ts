@@ -418,7 +418,6 @@ describe('SidebarNavService', () => {
     ]);
     expect(itemLabels.indexOf('EasyCLA Management')).toBe(itemLabels.indexOf('Organization Engagement') + 1);
     expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA Management') + 1);
-    // Organization Engagement is back to the engagement pages only.
     expect(labels(sectionItems(items, 'Organization Engagement'))).toEqual([
       'People',
       'Code Contributions',
@@ -447,13 +446,11 @@ describe('SidebarNavService', () => {
 
     const itemLabels = labels(TestBed.inject(SidebarNavService).sidebarItems());
 
-    // The two flags are independent: neither placement may displace the other.
+    // The two flags are independent: EasyCLA must not displace ROI's slot, or vice versa.
     expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
     expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA Management') + 1);
   });
 
-  // The flag-gated entries are placed by looking their neighbours up by address; both sides must
-  // agree on the org-scoped form or ROI and the EasyCLA section silently fall to the end of the nav.
   it('addresses every Org Lens item to the selected organization and still places ROI and the EasyCLA section by their neighbours', () => {
     activeLens.set('org');
     orgEasyclaEnabled.set(true);

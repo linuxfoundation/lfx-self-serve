@@ -31,10 +31,7 @@ const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
   contributor: 'fa-light fa-code',
 };
 
-const EXACT_PATH_MATCH: IsActiveMatchOptions = { paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' };
-const SUBPATH_MATCH: IsActiveMatchOptions = { ...EXACT_PATH_MATCH, paths: 'subset' };
-
-/** `SidebarMenuItem` as rendered: derived test id, external-link flag, `@for` track key and link-active options filled in at every level. */
+/** `SidebarMenuItem` as rendered: derived test id, external-link flag and `@for` track key filled in at every level. */
 type DecoratedSidebarMenuItem = Omit<SidebarMenuItem, 'items'> & {
   testId: string;
   trackKey: string;
@@ -70,6 +67,9 @@ export class SidebarComponent {
   private readonly userService = inject(UserService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly featureFlagService = inject(FeatureFlagService);
+
+  private static readonly exactPathMatch: IsActiveMatchOptions = { paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' };
+  private static readonly subpathMatch: IsActiveMatchOptions = { ...SidebarComponent.exactPathMatch, paths: 'subset' };
 
   public readonly items = input.required<SidebarMenuItem[]>();
   public readonly footerItems = input<SidebarMenuItem[]>([]);
@@ -280,14 +280,14 @@ export class SidebarComponent {
     });
   }
 
-  /** Test id, external-link flag, `@for` track key and link-active options for an item and, recursively, its children. */
+  /** Test id, external-link flag and `@for` track key for an item and, recursively, its children. */
   private decorate(item: SidebarMenuItem): DecoratedSidebarMenuItem {
     return {
       ...item,
       testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
       trackKey: this.trackKey(item),
       external: item.url ? this.isExternalUrl(item.url) : undefined,
-      activeMatchOptions: item.activeOnSubpaths ? SUBPATH_MATCH : EXACT_PATH_MATCH,
+      activeMatchOptions: item.activeOnSubpaths ? SidebarComponent.subpathMatch : SidebarComponent.exactPathMatch,
       items: item.items?.map((childItem) => this.decorate(childItem)),
     };
   }
