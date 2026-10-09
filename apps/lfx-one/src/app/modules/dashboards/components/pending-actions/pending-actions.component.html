@@ -46,7 +46,7 @@
   </ng-template>
 </p-confirmdialog>
 
-@if (!isSectionHidden() && (totalVisible() > 0 || isSectionGracePending() || isSectionFading())) {
+@if (!isSectionHidden() && (totalVisible() > 0 || drawerVisible() || isSectionGracePending() || isSectionFading())) {
   <section class="pending-actions-section" [class.is-fading]="isSectionFading()" data-testid="dashboard-pending-actions-section">
     <!-- Section header with inline divider -->
     <div class="flex items-center gap-3 mb-6">

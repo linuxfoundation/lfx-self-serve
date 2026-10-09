@@ -289,6 +289,8 @@ describe('PendingActionsComponent — saved-only application review', () => {
   it.each(decisions)('keeps the drawer open when the final %s saves, through empty refresh and explicit close', async (decision) => {
     fixture = await render(applications().slice(0, 3));
     await openDrawer();
+    const section = byTestId(fixture, 'dashboard-pending-actions-section');
+    expect(section).not.toBeNull();
     for (let remaining = 3; remaining > 0; remaining--) {
       save = new Subject<unknown>();
       reviewClient.approveApplication.mockReturnValue(save);
@@ -307,13 +309,19 @@ describe('PendingActionsComponent — saved-only application review', () => {
     expect(document.body.querySelector('[data-testid="pending-actions-drawer-empty"]')?.textContent).toContain('All caught up!');
     expect(document.body.querySelector('[data-testid="pending-actions-drawer-count"]')?.textContent).toContain('(0)');
     expect(fixture.componentInstance['drawerVisible']()).toBe(true);
+    expect(byTestId(fixture, 'dashboard-pending-actions-section')).toBe(section);
 
     fixture.componentRef.setInput('pendingActions', []);
     await stabilize();
     expect(document.body.querySelector('[data-testid="pending-actions-drawer-empty"]')?.textContent).toContain('All caught up!');
+    expect(byTestId(fixture, 'dashboard-pending-actions-section')).toBe(section);
     document.body.querySelector<HTMLButtonElement>('[data-testid="pending-actions-drawer-close"]')!.click();
     await stabilize();
     expect(fixture.componentInstance['drawerVisible']()).toBe(false);
+    expect(byTestId(fixture, 'dashboard-pending-actions-section')).toBe(section);
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    await stabilize();
+    expect(byTestId(fixture, 'dashboard-pending-actions-section')).toBeNull();
   });
 
   it.each(cases)('keeps the request when $decision from $surface is cancelled or fails, and permits a retry', async ({ surface, decision }) => {

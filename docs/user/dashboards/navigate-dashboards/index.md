@@ -25,6 +25,8 @@ The **Me** lens (the default view at `/`) shows your personal activity across al
 
 If you manage groups, **My Pending Actions** also shows **Join request** rows across all the groups you can manage, with the applicant's email, optional name, and group. Select **View all** to review requests in the Pending Actions drawer. **Approve** asks you to confirm the applicant and group; **Reject** lets you add optional notes. A request disappears only after your decision is saved, and the drawer stays open while the list refreshes. After the final action is resolved, the drawer shows **All caught up!** and stays open until you close it. Users without managed groups or pending requests see no join-request rows.
 
+The drawer updates as the list refreshes, including loading RSVP controls for new meeting actions. Once the list is empty, the **My Pending Actions** section fades away after you close the drawer.
+
 ## Foundation lens
 
 The **Foundation** lens (`/foundation/overview`) is available to board members, executive directors, LF Staff, and users with a writer role on the foundation (including root writers). It shows foundation-level health metrics, project summaries, and governance activity. Under **Metrics** in the left navigation, executive directors and LF Staff additionally see **Health Metrics** (`/foundation/health-metrics`) and [Social Listening](../../social-listening/) (`/foundation/social-listening`).

@@ -525,4 +525,22 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     expect(meetings?.querySelector('[data-testid="pending-actions-drawer-rsvp-buttons"]')).not.toBeNull();
     expect(meetings?.querySelector('[data-testid="meeting-rsvp-button-yes"]')).not.toBeNull();
   });
+
+  it('loads a new RSVP after an empty feed refresh without closing the drawer', async () => {
+    await render([row('Survey', 'Survey A')]);
+    fixture.componentRef.setInput('pendingActions', []);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(byTestId('pending-actions-drawer-empty')).not.toBeNull();
+
+    fixture.componentRef.setInput('pendingActions', [row('RSVP', 'New meeting', { meetingUid: 'meeting-1' })]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.visible()).toBe(true);
+    expect(byTestId('pending-actions-drawer-rsvp-loading')).toBeNull();
+    expect(byTestId('meeting-rsvp-button-yes')).not.toBeNull();
+  });
 });

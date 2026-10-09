@@ -79,13 +79,11 @@ export class PendingActionsDrawerComponent {
   protected readonly sectionedRows: Signal<DrawerActionSection[]> = this.initSectionedRows();
 
   public constructor() {
-    // When the drawer becomes visible, eagerly load Meeting payloads for every RSVP row so the inline RSVP buttons render immediately.
-    // Subscribe only to the visibility signal (not `visibleRows`) — `visibleRows` re-emits every time `meetingCache` updates,
-    // which would cause an O(n) rescan per fetched meeting (O(n²) overall). Read `visibleRows()` synchronously inside the
-    // subscribe instead so each fetch fires exactly once per row.
-    toObservable(this.visible)
+    // Load missing RSVP meetings when the drawer opens or receives a refreshed feed while open.
+    // Watch the raw input, not `visibleRows`: cache updates would otherwise rescan every row per fetched meeting (O(n²)).
+    toObservable(computed(() => (this.visible() ? this.pendingActions() : null)))
       .pipe(
-        filter((isVisible) => isVisible),
+        filter((actions) => actions !== null),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(() => {
