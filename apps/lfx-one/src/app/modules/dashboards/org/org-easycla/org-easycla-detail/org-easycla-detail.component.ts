@@ -29,6 +29,7 @@ import {
   ORG_CLA_DESIGNEE_REFUSAL_COPY,
   ORG_CLA_DESIGNEE_START_COPY,
   ORG_CLA_DETAIL_TABS,
+  ORG_CLA_DOWNLOAD_COPY,
   ORG_CLA_IDENTIFY_MANAGER_COPY,
   ORG_CLA_HEADING_STATUS,
   ORG_CLA_LOCKED_TAB_COPY,
@@ -529,11 +530,13 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly coverageHint = computed(() => this.initCoverageHint());
 
-  // Read from `signed` rather than the status, because this component serves two sources and only
-  // the flag answers both: the preview builds an agreement nobody has signed, and `status` there
-  // is `not-started` while on a sanctioned list row it says nothing about whether a document
-  // exists. Offering the download on an agreement without one is a control that can only fail.
-  protected readonly canDownload = computed(() => this.claGroup()?.signed === true);
+  protected readonly showDownload = computed(() => this.claGroup()?.signed === true);
+
+  protected readonly canDownload = computed(() => this.initCanDownload());
+
+  protected readonly downloadBlockedReason = computed(() => (this.canDownload() ? undefined : ORG_CLA_DOWNLOAD_COPY.offRosterTooltip));
+
+  protected readonly downloadAriaLabel = computed(() => this.initDownloadAriaLabel());
 
   /**
    * Whether the Auto ECLA toggle is shown at all.
@@ -577,7 +580,7 @@ export class OrgEasyclaDetailComponent {
   protected readonly notStartedCopy = ORG_CLA_NOT_STARTED_COPY;
 
   /**
-   * Read from the status rather than from `signed` being false, unlike `canDownload` above.
+   * Read from the status rather than from `signed` being false, unlike `showDownload` above.
    * Sanctions occupy the same status slot, and a sanctioned agreement carries its own explanatory
    * body in the design — walking that viewer through how to start signing would talk past the
    * reason they cannot.
@@ -899,7 +902,7 @@ export class OrgEasyclaDetailComponent {
   protected onDownload(): void {
     const group = this.claGroup();
     const orgUid = this.accountContext.selectedAccount()?.uid;
-    if (!group || !orgUid || this.downloading()) return;
+    if (!group || !orgUid || !this.canDownload() || this.downloading()) return;
 
     this.downloading.set(true);
     this.claService
@@ -1466,6 +1469,42 @@ export class OrgEasyclaDetailComponent {
 
   private initTabs(): OrgClaDetailTabView[] {
     return ORG_CLA_DETAIL_TABS.map((tab) => ({ ...tab, badge: this.tabBadge(tab.id) }));
+  }
+
+  /**
+   * Whether the control does anything, as opposed to {@link showDownload}, which is whether it is
+   * on the page at all. Off the roster it renders disabled and explains itself, because a reader
+   * who cannot download is better served learning the document exists and who to ask than by a
+   * section that silently loses a button.
+   *
+   * Read from `signed` rather than the status, because this component serves two sources and only
+   * the flag answers both: the preview builds an agreement nobody has signed, and `status` there
+   * is `not-started` while on a sanctioned list row it says nothing about whether a document
+   * exists.
+   *
+   * The roster conjunct is the authorization half. EasyCLA authorizes the signed document on an
+   * ACS `project` or `project|organization` grant, and the company-level grant that let the
+   * viewer open this page is not one of them, so an organization admin is routinely refused. The
+   * roster stands in for that grant rather than duplicating it, because holding the CLA manager
+   * role is what issues it, so there is no second ACS conjunct here as there is on the Auto ECLA
+   * toggle. The two disagree only while ACS propagates, which is what `onDownload`'s fail-closed
+   * toast covers. Restricting the control is the decided shape rather than widening the
+   * producer's ACL.
+   */
+  private initCanDownload(): boolean {
+    const group = this.claGroup();
+    return group?.signed === true && group.viewerIsClaManager === true;
+  }
+
+  /**
+   * The reason a disabled control is disabled belongs in the accessible name, not only in the
+   * tooltip: a disabled button is not focusable, so a keyboard or screen-reader user never reaches
+   * the hover the sighted reader gets. Same reasoning as the refused sign control above.
+   */
+  private initDownloadAriaLabel(): string {
+    if (this.downloading()) return 'Preparing the signed CCLA PDF for download';
+    if (!this.canDownload()) return `Download signed CCLA PDF. ${ORG_CLA_DOWNLOAD_COPY.offRosterTooltip}`;
+    return 'Download signed CCLA PDF';
   }
 
   /**

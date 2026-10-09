@@ -825,6 +825,18 @@ export const ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY = {
   invalidateOnly: 'Invalidate to remove for good.',
 } as const;
 
+/**
+ * The signed-document download on a CLA Group's Overview.
+ *
+ * Shown disabled rather than hidden off the roster, so a reader who cannot download learns the
+ * document exists and who to ask — the same read-visible, write-gated shape the Auto ECLA toggle
+ * takes. The approval-list mutations and Invalidate still disappear instead, because their
+ * presence says nothing about the agreement on its own.
+ */
+export const ORG_CLA_DOWNLOAD_COPY = {
+  offRosterTooltip: 'Only a CLA Manager named on this CCLA can download the signed document',
+} as const;
+
 /** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
 export const ORG_CLA_ACKNOWLEDGMENTS_EM_DASH = '—';
 

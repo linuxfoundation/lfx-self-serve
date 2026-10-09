@@ -363,7 +363,7 @@
               </div>
             </div>
           }
-          @if (canDownload()) {
+          @if (showDownload()) {
             <!--
             `severity="secondary"` with `outlined`, the pairing the survey-preview and profile
             dialogs use for a bordered action. `outlined` alone takes the primary colour, which
@@ -376,7 +376,9 @@
               severity="secondary"
               [outlined]="true"
               [loading]="downloading()"
-              [ariaLabel]="downloading() ? 'Preparing the signed CCLA PDF for download' : 'Download signed CCLA PDF'"
+              [disabled]="!canDownload()"
+              [ariaLabel]="downloadAriaLabel()"
+              [tooltip]="downloadBlockedReason()"
               (onClick)="onDownload()"
               data-testid="org-easycla-detail-download" />
           }
