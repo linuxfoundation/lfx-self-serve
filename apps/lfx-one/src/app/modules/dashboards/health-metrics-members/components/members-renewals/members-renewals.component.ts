@@ -96,15 +96,14 @@ export class MembersRenewalsComponent {
   protected readonly totalRecords = computed(() => this.response().totalRecords);
   protected readonly countLabel = computed(() => buildHealthMetricsMembersRenewalsCountLabel(this.totalRecords()));
   protected readonly first = computed(() => (this.page() - 1) * this.size);
-  /** Holds the skeleton until a foundation's first read lands; later reads keep the figures and load in the table. */
-  protected readonly firstRead = computed(
-    () =>
-      this.loading() &&
-      (this.response() === HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED || this.responseSlug() !== (this.projectContextService.selectedFoundation()?.slug ?? ''))
-  );
+  /** Holds the skeleton until a foundation's first read lands, failed or not, so a later window read keeps the pills. */
+  protected readonly firstRead = computed(() => {
+    const slug = this.projectContextService.selectedFoundation()?.slug ?? '';
+    return this.loading() && (!slug || this.responseSlug() !== slug);
+  });
   protected readonly windowRead = computed(() => this.loading() && this.responseWindow() !== this.window());
-  /** Follows the rows the table would show, not the model total, so a matched row is never hidden. */
-  protected readonly noneDue = computed(() => this.totalRecords() === 0);
+  /** Needs no matched rows and a measured zero total, so neither a row nor the sub-nav's model count is contradicted. */
+  protected readonly noneDue = computed(() => this.totalRecords() === 0 && this.response().summary.renewalCount === 0);
   protected readonly windowPhrase = computed(() => HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_PHRASES[this.window()]);
 
   public constructor() {
