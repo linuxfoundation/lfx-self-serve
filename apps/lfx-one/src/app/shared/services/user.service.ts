@@ -481,9 +481,9 @@ export class UserService {
   private initViewerUsername(): Signal<string | null> {
     return computed(() => {
       const user = this.user();
-      // The optional `username` alias is often absent; the namespaced LFID claim is the canonical
-      // identity (it matches meeting created_by/host usernames), so fall back to it.
-      return user?.username || user?.['https://sso.linuxfoundation.org/claims/username'] || null;
+      // Meeting owner/creator records use the canonical LFID; keep the alias-only fallback for
+      // sessions without the namespaced claim.
+      return user?.['https://sso.linuxfoundation.org/claims/username'] || user?.username || null;
     });
   }
 

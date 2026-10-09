@@ -1936,6 +1936,9 @@ export interface MeetingTypeBadge {
  */
 export type PastMeetingSort = (typeof PAST_MEETING_SORT)[keyof typeof PAST_MEETING_SORT];
 
+/** Mutually exclusive meeting dashboard views; personal views use upcoming meetings only. */
+export type MeetingDashboardView = 'upcoming' | 'past' | 'pending' | 'organizer';
+
 /**
  * Client-side filter criteria applied to the Me lens meeting lists (My Meetings), which are
  * fetched once and filtered in the browser rather than re-queried per filter change.
@@ -1949,13 +1952,11 @@ export interface MeLensMeetingFilters {
   foundation: string | null;
   /** Project UID; takes precedence over `foundation` when both are set. */
   project: string | null;
-  /** Keep only meetings with no RSVP recorded (upcoming only). */
-  pendingRsvpOnly: boolean;
-  /** Keep only meetings the viewer accepted (upcoming only). */
-  acceptedOnly: boolean;
-  /** Keep only meetings the viewer organized (created), matching the "Organized by you" chip. */
-  organizerOnly: boolean;
-  /** Viewer username/LFID used by the `organizerOnly` predicate; null disables matching. */
+  /** Primary view; Pending RSVP and Organized by me are upcoming-only. */
+  view: MeetingDashboardView;
+  /** Keep only upcoming meetings the viewer accepted. */
+  acceptedOnly?: boolean;
+  /** Canonical viewer username/LFID for owner-first organizer matching; null never matches. */
   viewerUsername: string | null;
   /** Keep meetings the viewer declined for every occurrence; when false they are hidden. */
   showDeclined: boolean;

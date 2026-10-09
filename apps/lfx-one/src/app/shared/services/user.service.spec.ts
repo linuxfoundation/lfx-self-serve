@@ -35,6 +35,25 @@ describe('UserService', () => {
     service = TestBed.inject(UserService);
   });
 
+  it.each([
+    [{ 'https://sso.linuxfoundation.org/claims/username': 'canonical' }, 'canonical'],
+    [{ username: 'display-alias', 'https://sso.linuxfoundation.org/claims/username': 'canonical' }, 'canonical'],
+    [{ username: 'alias-only' }, 'alias-only'],
+    [{}, null],
+    [null, null],
+  ])('resolves meeting comparison identity from %j', (user, expected) => {
+    service.user.set(user as User | null);
+    expect(service.viewerUsername()).toBe(expected);
+  });
+
+  it('updates meeting comparison identity when the canonical claim resolves late', () => {
+    service.user.set({ username: 'display-alias' } as User);
+    expect(service.viewerUsername()).toBe('display-alias');
+
+    service.user.set({ username: 'display-alias', 'https://sso.linuxfoundation.org/claims/username': 'canonical' } as User);
+    expect(service.viewerUsername()).toBe('canonical');
+  });
+
   it('falls back to the Auth0 picture claim when no avatar has been uploaded', () => {
     service.user.set({ picture: 'https://cdn.auth0.com/stale.png' } as User);
     expect(service.effectiveAvatarUrl()).toBe('https://cdn.auth0.com/stale.png');
