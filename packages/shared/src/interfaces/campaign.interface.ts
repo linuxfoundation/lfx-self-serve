@@ -1396,6 +1396,10 @@ export interface GoogleCreativeFieldSpec {
    * Minimum non-empty entries upstream requires ONCE A CREATIVE IS SUPPLIED for this channel. A
    * channel with no creative at all is accepted (see `GOOGLE_CREATIVE_REQUIRED_NOTICE` for what that
    * costs), so this is a floor within a creative, never a reason to block a create outright.
+   *
+   * No control validator carries it, for that reason — a validator sees one control and cannot
+   * tell a half-filled creative from an empty one. The Implementation tab checks it at submit
+   * instead, over the whole assembled creative.
    */
   min?: number;
   /** Maximum entries upstream accepts. Omitted where upstream sets no bound. */
@@ -1407,8 +1411,35 @@ export interface GoogleCreativeFieldSpec {
    * measures width before anything is created.
    */
   width?: number;
+  /**
+   * A `text` field Google marks required ONCE A CREATIVE IS SUPPLIED for this channel — the scalar
+   * counterpart of {@link min}, and bounded by the same rule: a channel with no creative at all is
+   * accepted upstream, so this is a floor within a creative and never a reason to block a create.
+   *
+   * Machine-readable rather than stated only in {@link hint}, because the submit-time check reads
+   * it. Set where campaign-service refuses the creative without the field:
+   * `demandgen_creative.go`, `display_creative.go` and `pmax_creative.go` each require a business
+   * name, and a responsive display ad additionally requires its single long headline.
+   */
+  requiredOnce?: boolean;
   /** Anything true of this field that its bounds do not say, shown beneath the control. */
   hint?: string;
+}
+
+/**
+ * One "at least one of these" rule over a channel's list fields.
+ *
+ * Not expressible as a per-field {@link GoogleCreativeFieldSpec.min}: the requirement is on the
+ * PAIR, and putting `min: 1` on either member would refuse a creative that supplied only the other
+ * one — which upstream accepts. Demand Gen and Display both state it over the two marketing-image
+ * arrays (`demandgen_creative.go`, `display_creative.go`); Performance Max has no such rule because
+ * it requires both arrays independently, which its two `min: 1` entries already carry.
+ */
+export interface GoogleCreativeEitherOrRule {
+  /** The `control` names of the list fields, at least one of which must be non-empty. */
+  controls: readonly string[];
+  /** What is missing, as a clause that follows the channel's label in the submit-time message. */
+  message: string;
 }
 
 /**

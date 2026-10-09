@@ -60,6 +60,7 @@ import {
   GOOGLE_CAMPAIGN_NAME_TOKENS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
+  GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
@@ -88,6 +89,8 @@ import type {
   GoogleBiddingOption,
   GoogleBiddingStrategy,
   GoogleCampaignChannel,
+  GoogleCreativeChannel,
+  GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
   GoogleCreativeSection,
   LinkedInAccount,
@@ -100,6 +103,7 @@ import type {
   MicrosoftKeyword,
   RedditAdVariant,
 } from '@lfx-one/shared/interfaces';
+import { codePointLength } from '@lfx-one/shared/utils';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
@@ -1067,6 +1071,11 @@ export class ImplementationTabComponent implements OnInit {
     // The bidding plan's own checking, which is a computed rather than control validators — see the
     // form declaration. Scoped to Google because the plan only exists there.
     if (googleSelected && this.googleBiddingError() !== null) return false;
+    // A creative that was STARTED but is below Google's minimums, which campaign-service refuses
+    // once it is non-empty. Deliberately not the empty case — that one is accepted upstream and
+    // carries a warning instead ({@link googleCreativeEmptyWarning}), because blocking it would
+    // refuse a create upstream makes.
+    if (googleSelected && this.googleCreativeError() !== null) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -1224,6 +1233,8 @@ export class ImplementationTabComponent implements OnInit {
   private readonly googleStrategyNeedsTarget: Signal<boolean> = this.initGoogleStrategyNeedsTarget();
   protected readonly googleTakesConversionActions: Signal<boolean> = this.initGoogleTakesConversionActions();
   protected readonly googleBiddingError: Signal<string | null> = this.initGoogleBiddingError();
+  protected readonly googleCreativeError: Signal<string | null> = this.initGoogleCreativeError();
+  protected readonly googleCreativeEmptyWarning: Signal<string | null> = this.initGoogleCreativeEmptyWarning();
   protected readonly campaignName: Signal<string> = this.initCampaignName();
 
   // === Form Array Accessors ===
@@ -2930,6 +2941,121 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * What a STARTED creative is still missing, in one sentence, or null when none is.
+   *
+   * The companion to {@link googleCreativeEmptyWarning}, and the two split on exactly the line
+   * campaign-service splits on. Each of the three creative validators opens with an `empty()` gate
+   * that ACCEPTS the creative and only then enforces its minimums (`demandgen_creative.go:277`,
+   * `pmax_creative.go:247`, `display_creative.go:169`). So a creative that has nothing in it is a
+   * create upstream makes — blocking it here would be the over-refusal this whole road forbids, and
+   * it gets the warning instead. A creative with something in it but below a minimum is a create
+   * upstream REFUSES, and surfacing that refusal before the round trip can never refuse more than
+   * upstream would.
+   *
+   * Judged on {@link googleCreativePayload} rather than on the controls, so "empty" means exactly
+   * what the wire means: the payload builder omits a field that trims to nothing and omits a
+   * channel whose whole creative is empty, which is the same shape `empty()` tests. Reading the
+   * controls instead would need a second definition of empty to drift against this one.
+   *
+   * A computed rather than control validators, for the reason {@link initGoogleBiddingError}
+   * records: it walks only the sections currently rendered, so a stale value in a withheld channel
+   * can never block a create. `canSubmit` reads it and the template prints it.
+   */
+  private initGoogleCreativeError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const payload = this.googleCreativePayload();
+      for (const section of this.googleCreativeSections()) {
+        const creative = payload[section.groupName];
+        // Absent is the wholly-empty case, which upstream accepts — the warning's business, not this.
+        if (creative === undefined) continue;
+        const missing = this.googleCreativeShortfall(section.channel, creative);
+        if (missing !== null) return `${section.label} creative ${missing}`;
+      }
+      return null;
+    });
+  }
+
+  /**
+   * The first minimum a non-empty creative fails, as a clause, or null when it meets them all.
+   *
+   * Three rule kinds, every one of them campaign-service's own and none of them tighter: the
+   * catalogued `min` on a list, the `requiredOnce` scalars Google marks required, and the
+   * either-or pairs no per-field bound can state ({@link GOOGLE_CREATIVE_EITHER_OR_RULES}).
+   * Catalogue order is report order, so the message names the field highest in the section the
+   * operator is looking at.
+   */
+  private googleCreativeShortfall(channel: GoogleCreativeChannel, creative: Record<string, string | string[]>): string | null {
+    // Widened to the interface, as every other reader of the catalogue does: the constant's
+    // `as const` gives each entry a literal type carrying only the keys that entry happens to set,
+    // so `field.min` and `field.requiredOnce` are not readable across the union without this.
+    const fields: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+    for (const field of fields) {
+      const value = creative[field.control];
+      if (field.kind === 'text') {
+        // The payload omits a scalar that trims to nothing, so presence IS non-emptiness here.
+        if (field.requiredOnce === true && value === undefined) return `needs a ${field.label.toLowerCase()}.`;
+        continue;
+      }
+      if (field.min === undefined) continue;
+      const count = Array.isArray(value) ? value.length : 0;
+      if (count < field.min) {
+        const entries = field.min === 1 ? 'entry' : 'entries';
+        return `needs at least ${field.min} ${entries} in ${field.label} — ${count} given.`;
+      }
+    }
+    const rules: readonly GoogleCreativeEitherOrRule[] = GOOGLE_CREATIVE_EITHER_OR_RULES[channel];
+    for (const rule of rules) {
+      const satisfied = rule.controls.some((control) => {
+        const value = creative[control];
+        return Array.isArray(value) && value.length > 0;
+      });
+      if (!satisfied) return rule.message;
+    }
+    return null;
+  }
+
+  /**
+   * Which rendered channels would be created with NO creative at all, as one sentence, or null.
+   *
+   * Non-blocking on purpose, and that is the whole point of it. campaign-service accepts this
+   * shape deliberately — `pmax_creative.go`'s `empty()` docblock records why: a campaign with no
+   * asset group is still a real, reconcilable campaign an operator can finish in the Google Ads
+   * UI, and refusing it would also refuse ADOPTION of a campaign that already exists upstream with
+   * its assets built by hand. Demand Gen adds that every campaign created before the feature
+   * existed was that shape. So a guard that blocked here would refuse creates upstream makes.
+   *
+   * But nothing else ever tells the operator at create time, and the create is not the end of it:
+   * on EVERY one of the three channels the refusal simply arrives later, at activation. An empty
+   * creative leaves `AdID` blank (`demandgen.go:326`, `display.go:298`), `googleAdsToggleTargets`
+   * then yields no targets for a campaign with no ad group list, and the activation gate refuses
+   * with `ErrCampaignNotProvisioned` (`internal/dispatch/googleads.go:2561`, `:2687`). Performance
+   * Max reaches the same refusal by its own route, through the asset-group check in `ToggleStatus`
+   * (`internal/platform/googleads/pmax.go`). So the campaign and its budget are created, the call
+   * returns success, and the status toggle will later reject it — a warning beneath the creative
+   * sections is the only place that fact fits.
+   *
+   * Reads the same {@link googleCreativePayload} the blocking check does, so the two agree on what
+   * empty means and no channel can be both empty and short of a minimum.
+   */
+  private initGoogleCreativeEmptyWarning(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const payload = this.googleCreativePayload();
+      const empty = this.googleCreativeSections().filter((section) => payload[section.groupName] === undefined);
+      if (empty.length === 0) return null;
+      const names = empty.map((section) => section.label).join(' and ');
+      const verb = empty.length === 1 ? 'has' : 'have';
+      const sentence = `${names} ${verb} no creative. The campaign and its budget are still created, but it cannot serve until the assets are added in Google Ads.`;
+      // Claimed unconditionally because it is true of every empty channel, not just Performance
+      // Max: the activation gate refuses a campaign whose ad never got created just as it refuses
+      // one whose asset group never did. Naming both objects keeps the sentence accurate on all
+      // three without splitting it per channel.
+      return `${sentence} Activation is refused until the ad (or, on Performance Max, the asset group) exists.`;
+    });
+  }
+
+  /**
    * The bidding plan as the request carries it, or `{}` when there is nothing to send.
    *
    * Gated by the SAME computeds the template renders, so what the operator can see is exactly what
@@ -2997,11 +3123,13 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The bounds a creative field is validated against — `max` and `width`, never `min`.
    *
-   * `min` is deliberately absent. campaign-service ACCEPTS a channel with no creative at all, and
-   * a minimum enforced here would refuse a create that upstream would have made: an operator who
-   * wants the campaign and budget now, and the assets later, is doing something the platform
-   * supports. `min` is shown as guidance in the section instead ({@link GOOGLE_CREATIVE_FIELD_SPECS}),
-   * which is where a floor that only applies to a PARTIALLY filled creative belongs.
+   * `min` is deliberately absent, and so is `requiredOnce`. campaign-service ACCEPTS a channel with
+   * no creative at all, and a validator carrying either one would refuse a create that upstream
+   * would have made: an operator who wants the campaign and budget now, and the assets later, is
+   * doing something the platform supports. A control validator cannot tell the two cases apart —
+   * it sees one control and never the group — which is exactly why the floor is enforced at submit
+   * by {@link googleCreativeError}, where the whole creative is in view and the empty one can be
+   * let through.
    *
    * `max` and `width` are the other direction: both are hard upstream bounds, so enforcing them
    * refuses only what Google would have refused anyway — after the campaign already exists, which
@@ -3025,9 +3153,11 @@ export class ImplementationTabComponent implements OnInit {
    * static catalogue entry, so the answer cannot change between two change-detection passes and a
    * method on the render path would be re-deriving a constant.
    *
-   * `min` is stated as guidance only. No validator enforces it ({@link creativeFieldValidators}
-   * explains why), so this line is what tells an operator that a half-filled Performance Max
-   * creative will be refused by Google even though this form will submit it.
+   * `min` is stated here as guidance, and enforced elsewhere: no control validator carries it
+   * ({@link creativeFieldValidators} explains why), but {@link googleCreativeError} refuses a
+   * half-filled creative at submit. This line is what tells the operator the floor exists BEFORE
+   * they run into it — the message beneath the creative sections names one field at a time, and
+   * only after the creative has been started.
    */
   private creativeFieldGuidance(field: GoogleCreativeFieldSpec): string {
     const parts: string[] = [];
@@ -3076,15 +3206,36 @@ export class ImplementationTabComponent implements OnInit {
    * trimmed entries ({@link splitCreativeLines} trims each line); this makes the scalar fields
    * agree with it and with the wire.
    *
-   * Keeps Angular's own `maxlength` error shape — `{ requiredLength, actualLength }` — so the
-   * message in {@link creativeFieldError} reads the same key it always did. `actualLength` reports
-   * the trimmed length, which is the number the bound was actually applied to.
+   * Measured in CODE POINTS, not UTF-16 units, because `String.length` disagrees with BOTH of the
+   * regimes campaign-service measures these widths in on every non-BMP character. Upstream counts
+   * `assetGroupName` and `callToActionText` with `utf8.RuneCountInString` — a straight rune count —
+   * and every other scalar with `textWeight` (`demandgen_creative.go:406`), which sums
+   * `googleAdsCharWeight` per rune and so charges a wide character 2. The two are not the same
+   * number, and this validator matches neither exactly; it does not have to. Every rune weighs at
+   * least 1, so the code-point count is a LOWER BOUND on the display weight and never exceeds the
+   * rune count, which puts this bound on the permissive side of both — it can fail to catch a
+   * refusal upstream will make, which costs a round trip, but it can never refuse a create upstream
+   * would have accepted. `String.length` has no such guarantee: at a width of 30, a 16-emoji
+   * headline is 32 UTF-16 units and 16 runes, so measuring it the JS way refuses a value upstream
+   * counts as 16 and accepts. (15 emoji is exactly 30 units and squeaks through the old check —
+   * the over-refusal starts at the first emoji past half the width.) Same over-refusal the
+   * trimming above exists to avoid, one layer down.
+   * {@link codePointLength} is the shared helper for this and is documented as `len([]rune(s))`;
+   * the Microsoft keyword box documents the same hazard.
+   *
+   * Local rather than the shared `maxCodePointsValidator`, which trims and counts code points
+   * identically, for one reason: that validator reports its own `maxCodePoints` error key, and
+   * every message in {@link creativeFieldError} reads Angular's `maxlength` shape. Keeping
+   * `{ requiredLength, actualLength }` is what lets the width change without touching the error
+   * rendering at all. `actualLength` reports the trimmed code-point count, which is the number the
+   * bound was actually applied to.
    */
   private creativeTextBounds(width: number): ValidatorFn {
     return (control: AbstractControl): ValidationErrors | null => {
       const text = typeof control.value === 'string' ? control.value.trim() : '';
-      if (text.length <= width) return null;
-      return { maxlength: { requiredLength: width, actualLength: text.length } };
+      const length = codePointLength(text);
+      if (length <= width) return null;
+      return { maxlength: { requiredLength: width, actualLength: length } };
     };
   }
 
@@ -3099,7 +3250,7 @@ export class ImplementationTabComponent implements OnInit {
       if (field.max !== undefined && lines.length > field.max) {
         return { creativeListMax: { label: field.label, max: field.max, actual: lines.length } };
       }
-      if (field.width !== undefined && lines.some((line) => line.length > (field.width as number))) {
+      if (field.width !== undefined && lines.some((line) => codePointLength(line) > (field.width as number))) {
         return { creativeListWidth: { label: field.label, width: field.width } };
       }
       return null;
