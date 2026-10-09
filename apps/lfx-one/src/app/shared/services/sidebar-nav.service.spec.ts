@@ -394,49 +394,56 @@ describe('SidebarNavService', () => {
     );
   });
 
-  it('hides EasyCLA from the org lens while the M3 flag is off', () => {
+  it('renders no EasyCLA Management section and no EasyCLA entry on the org lens while the M3 flag is off', () => {
     activeLens.set('org');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
+    expect(labels(items)).not.toContain('EasyCLA Management');
     expect(findByLink(items, '/org/easycla')).toBeUndefined();
     expect(labels(sectionItems(items, 'Organization Engagement'))).not.toContain('EasyCLA');
   });
 
-  it('puts EasyCLA between Code Contributions and Events inside Organization Engagement', () => {
+  it('gives EasyCLA its own EasyCLA Management section between Organization Engagement and Organization Profile', () => {
     activeLens.set('org');
     orgEasyclaEnabled.set(true);
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
-    const engagement = sectionItems(items, 'Organization Engagement');
-    const engagementLabels = labels(engagement);
+    const itemLabels = labels(items);
+    const easycla = items.find((item) => item.label === 'EasyCLA Management');
 
-    // The M3 prototype nests it in the section — a top-level entry beside Memberships/Projects is wrong.
-    expect(findByLink(items, '/org/easycla')).toBeUndefined();
-    expect(findByLink(engagement, '/org/easycla')).toEqual(
-      expect.objectContaining({ label: 'EasyCLA', routerLink: '/org/easycla', testId: 'sidebar-org-easycla' })
-    );
-    expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
-    expect(engagementLabels.indexOf('Events')).toBe(engagementLabels.indexOf('EasyCLA') + 1);
+    expect(easycla).toEqual(expect.objectContaining({ isSection: true, expanded: true }));
+    expect(easycla?.items).toEqual([
+      expect.objectContaining({ label: 'EasyCLA', icon: 'fa-light fa-file-signature', routerLink: '/org/easycla', testId: 'sidebar-org-easycla' }),
+    ]);
+    expect(itemLabels.indexOf('EasyCLA Management')).toBe(itemLabels.indexOf('Organization Engagement') + 1);
+    expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA Management') + 1);
+    // Organization Engagement is back to the engagement pages only.
+    expect(labels(sectionItems(items, 'Organization Engagement'))).toEqual([
+      'People',
+      'Code Contributions',
+      'Events',
+      'Training & Certification',
+      'Meetings',
+      COMMITTEE_LABEL.plural,
+    ]);
   });
 
-  it('keeps ROI after Projects while EasyCLA stays in the section when both flags are on', () => {
+  it('keeps ROI after Projects and the EasyCLA section above Organization Profile when both flags are on', () => {
     activeLens.set('org');
     orgEasyclaEnabled.set(true);
     orgRoiEnabled.set(true);
 
-    const items = TestBed.inject(SidebarNavService).sidebarItems();
-    const itemLabels = labels(items);
-    const engagementLabels = labels(sectionItems(items, 'Organization Engagement'));
+    const itemLabels = labels(TestBed.inject(SidebarNavService).sidebarItems());
 
-    // The two flags are independent: EasyCLA must not displace ROI's slot, or vice versa.
+    // The two flags are independent: neither placement may displace the other.
     expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
-    expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
+    expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA Management') + 1);
   });
 
-  // The flag-gated items are placed by looking their neighbours up by address; both sides must
-  // agree on the org-scoped form or ROI/EasyCLA silently fall to the end of their section.
-  it('addresses every Org Lens item to the selected organization and still places ROI and EasyCLA by their neighbours', () => {
+  // The flag-gated entries are placed by looking their neighbours up by address; both sides must
+  // agree on the org-scoped form or ROI and the EasyCLA section silently fall to the end of the nav.
+  it('addresses every Org Lens item to the selected organization and still places ROI and the EasyCLA section by their neighbours', () => {
     activeLens.set('org');
     orgEasyclaEnabled.set(true);
     orgRoiEnabled.set(true);
@@ -444,18 +451,18 @@ describe('SidebarNavService', () => {
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
     const engagement = sectionItems(items, 'Organization Engagement');
+    const easycla = sectionItems(items, 'EasyCLA Management');
     const itemLabels = labels(items);
-    const engagementLabels = labels(engagement);
 
     expect(findByLink(items, '/org/acme-inc/overview')).toEqual(expect.objectContaining({ label: 'Dashboard' }));
     expect(findByLink(items, '/org/acme-inc/roi')).toEqual(expect.objectContaining({ label: 'ROI Metrics', testId: 'sidebar-org-roi' }));
     expect(findByLink(engagement, '/org/acme-inc/people')).toEqual(expect.objectContaining({ label: 'People' }));
     // Phase 2 (lfx-self-serve#2743): EasyCLA is addressed like every other Org Lens item.
-    expect(findByLink(engagement, '/org/acme-inc/easycla')).toEqual(expect.objectContaining({ label: 'EasyCLA', testId: 'sidebar-org-easycla' }));
-    const orgLinks = [...items, ...engagement].map((item) => item.routerLink).filter((link): link is string => !!link);
+    expect(findByLink(easycla, '/org/acme-inc/easycla')).toEqual(expect.objectContaining({ label: 'EasyCLA', testId: 'sidebar-org-easycla' }));
+    const orgLinks = [...items, ...engagement, ...easycla].map((item) => item.routerLink).filter((link): link is string => !!link);
     expect(orgLinks.filter((link) => !link.startsWith('/org/acme-inc/'))).toEqual([]);
     expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
-    expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
+    expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA Management') + 1);
   });
 
   it('shows Initiatives after Projects and ROI on the org lens only for a direct writer on the selected organization with the flag on', () => {

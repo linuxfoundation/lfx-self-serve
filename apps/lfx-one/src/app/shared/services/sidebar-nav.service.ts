@@ -57,8 +57,6 @@ export class SidebarNavService {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
 
-  /** The section EasyCLA is inserted into; matched by label because the tree is built inline. */
-  private readonly orgEngagementSectionLabel = 'Organization Engagement';
   /** The Me lens section My Formations (#2753) is appended to; matched by label for the same reason. */
   private readonly meEngagementSectionLabel = 'My Engagement';
 
@@ -74,7 +72,7 @@ export class SidebarNavService {
   private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
-  /** Dark-launch gate for the M3 org-lens CLA module; hides the EasyCLA nav entry when off. */
+  /** Dark-launch gate for the M3 org-lens CLA module; hides the EasyCLA Management section when off. */
   private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
@@ -174,7 +172,7 @@ export class SidebarNavService {
 
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
     const base = this.orgLensItems();
-    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(base) : base;
+    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaSection(base) : base;
     const afterProjectsItems = [
       ...(this.isOrgLensRoiEnabled() ? [this.orgRoiNavItem()] : []),
       // Initiatives (#348) is dark-launched and follows a direct writer grant on the selected organization — CF lists an
@@ -791,6 +789,14 @@ export class SidebarNavService {
     testId: 'sidebar-org-easycla',
   }));
 
+  // EasyCLA is an administrative surface, so it has a section of its own rather than sitting among the engagement pages (#3358).
+  private readonly orgEasyclaSection: Signal<SidebarMenuItem> = computed(() => ({
+    label: 'EasyCLA Management',
+    isSection: true,
+    expanded: true,
+    items: [this.orgEasyclaNavItem()],
+  }));
+
   /**
    * Org Lens items address the selected organization (`/org/{segment}/{page}`, spec 050 US2) and
    * re-render on every switch; while nothing is selected they fall back to the legacy `/org/{page}`
@@ -817,7 +823,7 @@ export class SidebarNavService {
       // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
       // top-level item or a section when re-enabled.
       {
-        label: this.orgEngagementSectionLabel,
+        label: 'Organization Engagement',
         isSection: true,
         expanded: true,
         items: [
@@ -856,23 +862,19 @@ export class SidebarNavService {
   });
 
   /**
-   * The M3 prototype places EasyCLA inside Organization Engagement, between Code Contributions
-   * and Events — not at top level beside Memberships/Projects. Falls back to the end of the
-   * section if Code Contributions moves, so the item can never land above People.
+   * Places the EasyCLA Management section directly above Organization Profile, so it follows
+   * Organization Engagement and Profile keeps its divider. Appended if Profile ever goes away,
+   * so the section can never land above the engagement pages.
    */
-  private withEasyclaNavItem(items: SidebarMenuItem[]): SidebarMenuItem[] {
-    return items.map((item) => {
-      if (!item.isSection || item.label !== this.orgEngagementSectionLabel || !item.items) return item;
-      const afterContributions = item.items.findIndex((child) => child.routerLink === this.orgLensNavigation.orgLensPath('contributions')) + 1;
-      const at = afterContributions === 0 ? item.items.length : afterContributions;
-      return { ...item, items: [...item.items.slice(0, at), this.orgEasyclaNavItem(), ...item.items.slice(at)] };
-    });
+  private withEasyclaSection(items: SidebarMenuItem[]): SidebarMenuItem[] {
+    const profileIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('profile'));
+    if (profileIndex === -1) return [...items, this.orgEasyclaSection()];
+    return [...items.slice(0, profileIndex), this.orgEasyclaSection(), ...items.slice(profileIndex)];
   }
 
   /**
-   * Appends My Formations (#2753) as the last child of the Me lens's My Engagement section —
-   * mirrors `withEasyclaNavItem`. Only called while `formation-enabled` is on, so the static
-   * `meLensItems` tree stays flag-free.
+   * Appends My Formations (#2753) as the last child of the Me lens's My Engagement section. Only
+   * called while `formation-enabled` is on, so the static `meLensItems` tree stays flag-free.
    */
   private withMyFormationsNavItem(items: SidebarMenuItem[]): SidebarMenuItem[] {
     return items.map((item) => {
