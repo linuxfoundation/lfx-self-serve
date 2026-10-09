@@ -428,7 +428,7 @@ describe('SidebarNavService', () => {
     ]);
   });
 
-  it('keeps EasyCLA highlighted on its detail pages and every other Org Lens item on exact matches only', () => {
+  it('opts only EasyCLA into subpath highlighting across the Org Lens tree', () => {
     activeLens.set('org');
     orgEasyclaEnabled.set(true);
     orgRoiEnabled.set(true);
