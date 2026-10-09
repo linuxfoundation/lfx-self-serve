@@ -43,6 +43,15 @@ export interface InitiativeBase {
 
 export type InitiativesResponse = OffsetPaginatedResponse<InitiativeBase>;
 
+/** CF entity a lens Initiatives page lists for: `projects/{uuid}` (#347) or `organizations/{sfid}` (#348). */
+export interface InitiativesScope {
+  kind: 'projects' | 'organizations';
+  uid: string;
+}
+
+/** Why a lens-scoped initiatives list could not load: CF's writer check refused (403), or CF/FGA is down. */
+export type InitiativesLoadError = 'forbidden' | 'unavailable';
+
 // Initiative detail types — GET /api/crowdfunding/initiatives/:slug.
 
 export interface SponsorEntry {

@@ -23,6 +23,7 @@ import {
   DonationStats,
   InitiativeDetail,
   InitiativesResponse,
+  InitiativesScope,
   MyDonationsResponse,
   PaymentMethod,
   PresignedURLResult,
@@ -39,23 +40,24 @@ import { catchError, Observable, of } from 'rxjs';
 export class CrowdfundingService {
   private readonly http = inject(HttpClient);
 
-  /** The caller's own initiatives, or — with `projectUid` — those attributed to that project (Project/Foundation lens). */
-  public getMyInitiatives(params?: { pageSize?: number; offset?: number; projectUid?: string }): Observable<InitiativesResponse> {
-    let httpParams = new HttpParams();
+  /**
+   * The caller's own initiatives, or — with a `scope` — those attributed to that project or organization (lens
+   * Initiatives pages). A scoped call surfaces its errors (403 not a writer, 5xx CF/FGA down) for the page to show;
+   * the caller's own list keeps its empty fallback.
+   */
+  public getMyInitiatives(params?: { pageSize?: number; offset?: number; scope?: InitiativesScope }): Observable<InitiativesResponse> {
+    let httpParams = this.scopeParams(params?.scope);
     if (params?.pageSize != null) httpParams = httpParams.set('pageSize', String(params.pageSize));
     if (params?.offset != null) httpParams = httpParams.set('offset', String(params.offset));
-    if (params?.projectUid) httpParams = httpParams.set('projectUid', params.projectUid);
 
-    return this.http
-      .get<InitiativesResponse>('/api/crowdfunding/initiatives', { params: httpParams })
-      .pipe(catchError(this.handleCfError(EMPTY_INITIATIVES_RESPONSE, 'getMyInitiatives')));
+    const request = this.http.get<InitiativesResponse>('/api/crowdfunding/initiatives', { params: httpParams });
+    return params?.scope ? request : request.pipe(catchError(this.handleCfError(EMPTY_INITIATIVES_RESPONSE, 'getMyInitiatives')));
   }
 
-  public getMyInitiativesStats(projectUid?: string): Observable<CrowdfundingInitiativesStats> {
-    const params = projectUid ? new HttpParams().set('projectUid', projectUid) : undefined;
-    return this.http
-      .get<CrowdfundingInitiativesStats>('/api/crowdfunding/initiatives-stats', { params })
-      .pipe(catchError(this.handleCfError(EMPTY_CROWDFUNDING_STATS, 'getMyInitiativesStats')));
+  /** Stats for `getMyInitiatives`'s set; scoped calls surface their errors the same way. */
+  public getMyInitiativesStats(scope?: InitiativesScope): Observable<CrowdfundingInitiativesStats> {
+    const request = this.http.get<CrowdfundingInitiativesStats>('/api/crowdfunding/initiatives-stats', { params: this.scopeParams(scope) });
+    return scope ? request : request.pipe(catchError(this.handleCfError(EMPTY_CROWDFUNDING_STATS, 'getMyInitiativesStats')));
   }
 
   public getInitiativeBySlug(slug: string): Observable<InitiativeDetail | null> {
@@ -165,6 +167,12 @@ export class CrowdfundingService {
     return this.http
       .get<CrowdfundingTransactionList>(`/api/crowdfunding/initiatives/${encodeURIComponent(slug)}/my-transactions`, { params: httpParams })
       .pipe(catchError(this.handleCfError(EMPTY_TRANSACTION_LIST, 'getMyInitiativeTransactions')));
+  }
+
+  private scopeParams(scope?: InitiativesScope): HttpParams {
+    const params = new HttpParams();
+    if (!scope) return params;
+    return params.set(scope.kind === 'projects' ? 'projectUid' : 'orgUid', scope.uid);
   }
 
   private handleCfError<T>(fallback: T, label: string) {

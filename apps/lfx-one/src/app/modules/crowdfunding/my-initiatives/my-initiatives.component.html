@@ -12,7 +12,7 @@
           @if (isLensPage) {
             <h1 class="font-display font-light text-2xl" data-testid="my-initiatives-title">Initiatives</h1>
             <p class="mt-1 text-sm text-gray-500" data-testid="my-initiatives-description">
-              Fundraising initiatives on LFX Crowdfunding run on behalf of {{ projectName() }}
+              Fundraising initiatives on LFX Crowdfunding run on behalf of {{ entityName() }}
             </p>
           } @else {
             <h1 class="font-display font-light text-2xl" data-testid="my-initiatives-title">My Initiatives</h1>
@@ -34,17 +34,38 @@
         </div>
       </div>
 
-      <!-- Stats -->
-      <lfx-stat-card-grid [cards]="statCards()" [loading]="!stats()" data-testid="initiatives-me-stats" />
+      @switch (loadError()) {
+        @case ('forbidden') {
+          <lfx-empty-state
+            icon="fa-light fa-lock"
+            title="You don't have access to these initiatives"
+            [subtitle]="'Only writers on ' + entityName() + ' can see the initiatives run on its behalf.'"
+            data-testid="initiatives-error-forbidden" />
+        }
+        @case ('unavailable') {
+          <lfx-empty-state
+            icon="fa-light fa-triangle-exclamation"
+            title="Initiatives couldn't be loaded"
+            subtitle="LFX Crowdfunding is unavailable right now. Try again in a moment."
+            ctaLabel="Try again"
+            ctaIcon="fa-light fa-rotate-right"
+            (ctaClick)="onRetry()"
+            data-testid="initiatives-error-unavailable" />
+        }
+        @default {
+          <!-- Stats -->
+          <lfx-stat-card-grid [cards]="statCards()" [loading]="!stats()" data-testid="initiatives-me-stats" />
 
-      <!-- Initiatives list with filter pills -->
-      <lfx-initiatives-list
-        [initiatives]="initiatives()"
-        [createUrl]="crowdfundingUrl"
-        [hasMore]="initiativesHasMore()"
-        [loadingMore]="loadingMore()"
-        (loadMore)="onLoadMoreInitiatives()"
-        (initiativeClick)="onInitiativeClick($event)" />
+          <!-- Initiatives list with filter pills -->
+          <lfx-initiatives-list
+            [initiatives]="initiatives()"
+            [createUrl]="crowdfundingUrl"
+            [hasMore]="initiativesHasMore()"
+            [loadingMore]="loadingMore()"
+            (loadMore)="onLoadMoreInitiatives()"
+            (initiativeClick)="onInitiativeClick($event)" />
+        }
+      }
     </div>
   </div>
 }
