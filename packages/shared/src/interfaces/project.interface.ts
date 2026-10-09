@@ -293,31 +293,6 @@ export interface ProjectDocumentQueryResult {
   uploaded_by_username?: string;
 }
 
-export interface PendingSurveyRow {
-  SURVEY_ID: string;
-  SURVEY_TITLE: string;
-  SURVEY_STATUS: string;
-  SURVEY_COHORT_DATE: string;
-  SURVEY_CUTOFF_DATE: string;
-  COMMITTEE_ID: string;
-  COMMITTEE_NAME: string;
-  COMMITTEE_CATEGORY: string;
-  PROJECT_ID: string;
-  PROJECT_SLUG: string;
-  PROJECT_NAME: string;
-  RESPONSE_ID: string;
-  RESPONSE_DATE: string;
-  FIRST_NAME: string;
-  LAST_NAME: string;
-  EMAIL: string;
-  ACCOUNT_ID: string;
-  ACCOUNT_NAME: string;
-  ORGANIZATION_ID: string;
-  ORGANIZATION_NAME: string;
-  RESPONSE_TYPE: string;
-  SURVEY_LINK: string;
-}
-
 /**
  * Reduced boolean summary of the caller's DIRECT `writer` grants — whether at least one
  * directly-writable project satisfies `computeIsFoundation`, and whether at least one does not.

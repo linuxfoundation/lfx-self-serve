@@ -24,8 +24,6 @@ import {
   HEALTH_OVERVIEW_SIGNAL_PERIOD_RANGES,
   NATS_CONFIG,
   PAID_CAMPAIGN_LIMIT,
-  PENDING_ACTION_SEVERITY,
-  PENDING_ACTION_SURVEYS_ROW_LIMIT,
   PROJECT_SETTINGS_NOT_FOUND_CODE,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   ROOT_PROJECT_SLUG,
@@ -133,8 +131,6 @@ import {
   NpsSummaryResponse,
   OutstandingBalanceSummaryResponse,
   ParticipatingOrgsSummaryResponse,
-  PendingActionItem,
-  PendingSurveyRow,
   PerFoundationAnalytics,
   Project,
   ProjectCodeCommitsDailyRow,
@@ -1542,81 +1538,6 @@ export class ProjectService {
       avgUniqueContributors: Math.round(avgUniqueContributors * 10) / 10,
       totalWeeks: result.rows.length,
     };
-  }
-
-  /**
-   * Get pending survey actions for a user.
-   * Queries for non-responded surveys and transforms them into PendingActionItem format.
-   * When `projectSlug` is omitted, returns surveys across all of the user's projects (Me-lens).
-   * @deprecated Orphaned: user pending actions read the `survey_response` index since #2987; this
-   *   Snowflake path only serves /api/projects/pending-action-surveys — removal tracked in #3057.
-   * @param email - User's email from OIDC authentication
-   * @param projectSlug - Optional project slug; omit for unscoped (all-projects) results
-   * @returns Array of pending action items with survey links
-   */
-  public async getPendingActionSurveys(email: string, projectSlug?: string): Promise<PendingActionItem[]> {
-    // The COMMITTEE_CATEGORY='Board' filter was dropped — a pending survey is a pending
-    // action regardless of which committee runs it. If the table grows to include noisy
-    // categories in the future, reintroduce a committee-scoped filter here rather than a
-    // hardcoded board gate.
-    // Normalize email (trim + lowercase) to match the sibling Snowflake methods in this file
-    // — the Snowflake column stores emails lowercased and an un-normalized input silently
-    // misses rows when the caller passed a mixed-case address.
-    const normalizedEmail = email.trim().toLowerCase();
-
-    const conditions = ['EMAIL = ?', 'SURVEY_CUTOFF_DATE > CURRENT_DATE()', "RESPONSE_TYPE = 'non_response'"];
-    const binds: string[] = [normalizedEmail];
-    if (projectSlug) {
-      conditions.push('PROJECT_SLUG = ?');
-      binds.push(projectSlug);
-    }
-
-    // LIMIT bounds the micro-partition scan on the Me-lens unscoped path (no PROJECT_SLUG
-    // predicate), where Snowflake would otherwise filter only by EMAIL. Paired with the
-    // ORDER BY, the result set is the N most-urgent pending surveys — the dashboard surfaces
-    // far fewer than this cap, and the scoped path is naturally small too.
-    const query = `
-      SELECT
-        SURVEY_TITLE,
-        SURVEY_CUTOFF_DATE,
-        PROJECT_NAME,
-        SURVEY_LINK
-      FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_PENDING_ACTION_SURVEYS
-      WHERE ${conditions.join(' AND ')}
-      ORDER BY SURVEY_CUTOFF_DATE ASC
-      LIMIT ${PENDING_ACTION_SURVEYS_ROW_LIMIT}
-    `;
-
-    const result = await this.snowflakeService.execute<PendingSurveyRow>(query, binds);
-
-    // Transform database rows to PendingActionItem format
-    return result.rows.map((row) => {
-      // Format the cutoff date as a readable string
-      const cutoffDate = new Date(row.SURVEY_CUTOFF_DATE);
-      const formattedDate = cutoffDate.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
-
-      // Format due date for display below title
-      const displayDate = cutoffDate.toLocaleDateString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-      });
-
-      return {
-        type: 'Survey',
-        badge: row.PROJECT_NAME,
-        text: `${row.SURVEY_TITLE} is due ${formattedDate}`,
-        icon: 'fa-regular fa-clipboard-list',
-        severity: PENDING_ACTION_SEVERITY.Survey,
-        buttonText: 'Submit Survey',
-        buttonLink: row.SURVEY_LINK,
-        date: `Due ${displayDate}`,
-      };
-    });
   }
 
   /**

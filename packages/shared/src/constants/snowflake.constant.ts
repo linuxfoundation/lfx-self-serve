@@ -105,14 +105,3 @@ export const SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE = 'Data is temporarily unavail
  * error. With page sizes ≤ 100 this keeps `OFFSET` at or below 10,000,000, far inside the accepted range.
  */
 export const MAX_SNOWFLAKE_PAGINATION_PAGE = 100_000;
-
-/**
- * Row cap for the pending-surveys query in `getPendingActionSurveys`.
- * @description When the Me-lens path calls this without a `PROJECT_SLUG` predicate, Snowflake
- * would otherwise filter only by `EMAIL`, widening the micro-partition scan for users enrolled
- * in many projects. Pairing the existing `ORDER BY SURVEY_CUTOFF_DATE ASC` with this cap keeps
- * the 50 most-urgent pending surveys — far more than the dashboard surfaces today (≤10 rows)
- * — while bounding compute on the unscoped path. The same cap applies to the scoped path; a
- * single user is extremely unlikely to have >50 open surveys within a single project.
- */
-export const PENDING_ACTION_SURVEYS_ROW_LIMIT = 50;

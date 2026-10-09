@@ -29,7 +29,6 @@ import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { ProjectService } from '../services/project.service';
-import { getEffectiveEmail } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 const FOLDER_UID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -539,53 +538,6 @@ export class ProjectController {
       });
 
       res.status(204).send();
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /projects/pending-action-surveys - Get pending survey actions for the authenticated user
-   */
-  public async getPendingActionSurveys(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_pending_action_surveys');
-
-    try {
-      // Extract user email from auth context (impersonation-aware)
-      const userEmail = getEffectiveEmail(req);
-      if (!userEmail) {
-        const validationError = ServiceValidationError.forField('email', 'User email not found in authentication context', {
-          operation: 'get_pending_action_surveys',
-          service: 'project_controller',
-          path: req.path,
-        });
-
-        next(validationError);
-        return;
-      }
-
-      // Extract projectSlug from query parameters
-      const projectSlug = req.query['projectSlug'] as string | undefined;
-      if (!projectSlug) {
-        const validationError = ServiceValidationError.forField('projectSlug', 'projectSlug query parameter is required', {
-          operation: 'get_pending_action_surveys',
-          service: 'project_controller',
-          path: req.path,
-        });
-
-        next(validationError);
-        return;
-      }
-
-      // Get pending surveys from service
-      const pendingActions = await this.projectService.getPendingActionSurveys(userEmail, projectSlug);
-
-      logger.success(req, 'get_pending_action_surveys', startTime, {
-        project_slug: projectSlug,
-        survey_count: pendingActions.length,
-      });
-
-      res.json(pendingActions);
     } catch (error) {
       next(error);
     }

@@ -201,22 +201,6 @@ export class ProjectService {
   }
 
   /**
-   * Get pending action surveys for the current user
-   * @param projectSlug - Project slug to filter surveys
-   * @returns Observable of pending action items with survey links
-   */
-  public getPendingActionSurveys(projectSlug: string): Observable<PendingActionItem[]> {
-    const params = new HttpParams().set('projectSlug', projectSlug);
-
-    return this.http.get<PendingActionItem[]>('/api/projects/pending-action-surveys', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch pending action surveys:', error);
-        return of([]);
-      })
-    );
-  }
-
-  /**
    * Get all pending actions (surveys + meetings + votes + RSVPs) for the current user.
    * Omit all arguments to run unscoped across all of the user's FGA grants (Me-lens — one
    * request instead of N project-scoped fan-outs). Provide `projectSlug` and `projectUid` to

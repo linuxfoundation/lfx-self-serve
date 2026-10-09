@@ -82,8 +82,6 @@ vi.mock('@lfx-one/shared/constants', async () => {
     HEALTH_METRICS_RANGES: {},
     isHealthMetricsRange: vi.fn(),
     NATS_CONFIG: {},
-    PENDING_ACTION_SEVERITY: {},
-    PENDING_ACTION_SURVEYS_ROW_LIMIT: 0,
     // Real values, not []: normalizeHealthScoreCategory (getFoundationProjectsDetail) validates the
     // upstream HEALTH_SCORE_CATEGORY_V2 string against this set, so an empty stub would silently null
     // out every genuine category.
