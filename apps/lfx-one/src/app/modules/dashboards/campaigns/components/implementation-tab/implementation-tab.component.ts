@@ -3046,12 +3046,17 @@ export class ImplementationTabComponent implements OnInit {
       if (empty.length === 0) return null;
       const names = empty.map((section) => section.label).join(' and ');
       const verb = empty.length === 1 ? 'has' : 'have';
-      const sentence = `${names} ${verb} no creative. The campaign and its budget are still created, but it cannot serve until the assets are added in Google Ads.`;
+      const sentence = `${names} ${verb} no creative. The campaign and its budget are still created, but it cannot serve until the assets are added AND the campaign is enabled in Google Ads.`;
       // Claimed unconditionally because it is true of every empty channel, not just Performance
       // Max: the activation gate refuses a campaign whose ad never got created just as it refuses
-      // one whose asset group never did. Naming both objects keeps the sentence accurate on all
-      // three without splitting it per channel.
-      return `${sentence} Activation is refused until the ad (or, on Performance Max, the asset group) exists.`;
+      // one whose asset group never did.
+      //
+      // "Enabled in Google Ads" rather than "then activate here", because the refusal never
+      // lifts. Both gate inputs come from the persisted `Result` blob — `googleAdsToggleTargets`
+      // (`internal/dispatch/googleads.go:2687`) and `googleAdsToggleAssetGroup` (`:2614`) return
+      // early on an empty `Result`, and the call site states it (`:2083-2089`). Nothing re-reads
+      // Google, so creative added by hand upstream is never discovered here.
+      return `${sentence} Activating it from LFX stays refused even after that, so launch it in Google Ads.`;
     });
   }
 

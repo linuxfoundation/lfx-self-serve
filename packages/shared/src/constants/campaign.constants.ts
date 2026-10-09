@@ -2278,13 +2278,22 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
  * Max gets there by its own route, the asset-group check in `ToggleStatus`
  * (`internal/platform/googleads/pmax.go`). Either way it is discovered at launch.
  *
+ * And the refusal is PERMANENT, which is why this sentence does not offer "add the ad" as the
+ * remedy. Both inputs to the gate come from the persisted `Result` blob — `googleAdsToggleTargets`
+ * (`internal/dispatch/googleads.go:2687`) and `googleAdsToggleAssetGroup` (`:2614`) each return
+ * early on an empty `Result` and unmarshal nothing else, and the call site says so outright
+ * (`:2083-2089`). Nothing re-reads Google. So an ad an operator adds by hand in the Ads UI is
+ * never discovered, and activation from LFX stays refused for the life of the campaign. The
+ * service's own gate message says the same of an adopted row: un-pausing "happens in Google Ads"
+ * (`:2559-2560`).
+ *
  * This is the standing line, shown on a section before anything is typed. The form also says it
  * about the current state, naming the channels that are actually empty, in the Implementation
  * tab's `googleCreativeEmptyWarning` — which is a warning and not a refusal, precisely because
  * upstream accepts this shape.
  */
 export const GOOGLE_CREATIVE_REQUIRED_NOTICE =
-  'Without creative this campaign is created as an empty shell: it has no ad, it cannot serve, and activation is refused until the ad (or, on Performance Max, the asset group) exists.';
+  'Without creative this campaign is created as an empty shell: it has no ad and it cannot serve. Activating it from LFX is then refused permanently — adding the ad in Google Ads afterwards does not lift the refusal — so it has to be finished and launched in Google Ads, or recreated here with creative.';
 
 /**
  * The bidding strategies campaign-service accepts, in the caller vocabulary it accepts them in.

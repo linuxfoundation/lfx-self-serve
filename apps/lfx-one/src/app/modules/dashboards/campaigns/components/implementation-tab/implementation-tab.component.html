@@ -27,7 +27,9 @@
   user is reading in the form below. The error arm still gets role="alert" on the banner: an
   assertive announcement is the point there, and it is a different region from this one.
 -->
-<div role="status" aria-live="polite" class="sr-only" data-testid="implementation-brief-status-live">{{ briefPersistenceAnnouncement() }}</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-brief-status-live">
+  {{ briefPersistenceAnnouncement() }}
+</div>
 
 <!--
   Google empty-creative warning, announced.
@@ -47,8 +49,22 @@
 
   The visible `<p>` carries no role of its own — the text would otherwise be announced twice,
   the same reason `briefPersistenceAnnouncement` stays empty in its `error` state.
+
+  `aria-atomic="true"` on both regions is not a fix: with a single interpolated text node there is
+  no partial update for a non-atomic region to clip, which is why #3402 adjudicated it Low. It is
+  added because the module is inconsistent and these two are the ones in hand — among the campaigns
+  module's single-interpolation sr-only regions, `campaign-negative-keywords-form.component.html:11`
+  and `optimization-tab.component.html:248` carry it while `campaigns.component.html:243` and
+  `:256` and `planning-tab.component.html:36` and `:68` do not. Those four are untouched here
+  rather than swept in: none of them is Reddit or Google creative, and widening this commit into
+  two more components buys nothing an operator can observe. (`audience-builder-tab.component.html:150`
+  is excluded on its merits, not overlooked — it is the one region here that is neither `sr-only`
+  nor a single text node, so `aria-atomic` would genuinely change what it announces, which makes
+  it a behavioural change and not this commit's parity sweep.)
 -->
-<div role="status" aria-live="polite" class="sr-only" data-testid="implementation-google-creative-empty-live">{{ googleCreativeEmptyWarning() }}</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-creative-empty-live">
+  {{ googleCreativeEmptyWarning() }}
+</div>
 
 <!-- Nothing renders in the 'off' state — see briefPersistence. -->
 @switch (briefPersistence().status) {
@@ -1343,10 +1359,18 @@
                 </a>
               </div>
               @if (campaign.platform === 'reddit-ads' && campaign.adCount === 0) {
+                <!--
+                  This used to end "then attach it to this campaign", which is an instruction that cannot work.
+                  Activation needs BOTH child ids (`internal/dispatch/reddit.go:484-485`), and they come from
+                  `redditChildIDs` (`:820-832`), which reads only the persisted Result blob. Nothing re-reads
+                  Reddit, so an ad attached by hand upstream is never discovered and the refusal never lifts.
+                  The gate's own message says as much, that this "leaves un-pausing to Reddit Ads Manager".
+                -->
                 <div class="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2">
-                  <p class="text-xs font-medium text-amber-800">
+                  <p class="text-xs font-medium text-amber-800" data-testid="implementation-reddit-no-ad-notice">
                     <i class="fa-light fa-triangle-exclamation mr-1" aria-hidden="true"></i>
-                    Ads require a Reddit post — submit a promoted post in Reddit Ads Manager, then attach it to this campaign.
+                    This campaign has no ad, so it cannot serve, and activating it from LFX stays refused — an ad added in Reddit Ads Manager afterwards is not
+                    picked up here. Build and launch the campaign in Reddit Ads Manager instead.
                   </p>
                 </div>
               }

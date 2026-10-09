@@ -21,6 +21,7 @@ import {
 import type {
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
+  CampaignCreateResult,
   CampaignImplementationDraft,
   GoogleCreativeChannel,
   GoogleCreativeFieldSpec,
@@ -4652,8 +4653,8 @@ describe('ImplementationTabComponent google creative minimums', () => {
     const c = seedChannel(fixture, { includeDisplay: true });
 
     expect(c['googleCreativeEmptyWarning']()).toBe(
-      `${GOOGLE_CREATIVE_SECTION_TITLES.display} has no creative. The campaign and its budget are still created, but it cannot serve until the assets are added in Google Ads. ` +
-        'Activation is refused until the ad (or, on Performance Max, the asset group) exists.'
+      `${GOOGLE_CREATIVE_SECTION_TITLES.display} has no creative. The campaign and its budget are still created, but it cannot serve until the assets are added AND the campaign is enabled in Google Ads. ` +
+        'Activating it from LFX stays refused even after that, so launch it in Google Ads.'
     );
     expect(c['canSubmit']()).toBe(true);
   });
@@ -4664,8 +4665,8 @@ describe('ImplementationTabComponent google creative minimums', () => {
 
     expect(c['googleCreativeEmptyWarning']()).toBe(
       `${GOOGLE_CREATIVE_SECTION_TITLES['demand-gen']} and ${GOOGLE_CREATIVE_SECTION_TITLES.display} have no creative. ` +
-        'The campaign and its budget are still created, but it cannot serve until the assets are added in Google Ads. ' +
-        'Activation is refused until the ad (or, on Performance Max, the asset group) exists.'
+        'The campaign and its budget are still created, but it cannot serve until the assets are added AND the campaign is enabled in Google Ads. ' +
+        'Activating it from LFX stays refused even after that, so launch it in Google Ads.'
     );
   });
 
@@ -4677,9 +4678,15 @@ describe('ImplementationTabComponent google creative minimums', () => {
    * Performance Max arrives at the same refusal through `ToggleStatus`'s own asset-group check
    * (`internal/platform/googleads/pmax.go`). Claiming it for Performance Max alone — as this
    * sentence once did — understated what happens to the other two.
+   *
+   * The clause also has to say the refusal never LIFTS. Both gate inputs come from the persisted
+   * `Result` blob (`internal/dispatch/googleads.go:2687`, `:2614`, call site `:2083-2089`), so an
+   * ad added by hand upstream is never discovered and activation from LFX stays refused. An
+   * earlier wording — "refused until the ad ... exists" — read as a precondition the operator
+   * could satisfy, and this assertion pinned it by value, which is what kept it green.
    */
   it('claims the activation refusal for every empty channel', () => {
-    const activation = 'Activation is refused until the ad (or, on Performance Max, the asset group) exists.';
+    const activation = 'Activating it from LFX stays refused even after that, so launch it in Google Ads.';
 
     const c = seedChannel(fixture, { includeDisplay: true });
     expect(c['googleCreativeEmptyWarning']()).toContain(activation);
@@ -4738,6 +4745,11 @@ describe('ImplementationTabComponent google creative minimums', () => {
     expect(live?.textContent?.trim()).toBe('');
     expect(live?.getAttribute('role')).toBe('status');
     expect(live?.getAttribute('aria-live')).toBe('polite');
+    // Pinned so the attribute cannot be dropped silently. Both regions, because the sibling
+    // brief-status one is the only other live region in this template and the pair is the
+    // whole of what this commit standardised.
+    expect(live?.getAttribute('aria-atomic')).toBe('true');
+    expect(find('implementation-brief-status-live')?.getAttribute('aria-atomic')).toBe('true');
 
     const c = seedChannel(fixture, { includeDisplay: true });
     expect(find('implementation-google-creative-empty-live')).toBe(live);
@@ -4751,6 +4763,82 @@ describe('ImplementationTabComponent google creative minimums', () => {
     c['campaignForm'].controls.displayCreative.patchValue({ businessName: 'Acme' });
     fixture.detectChanges();
     expect(find('implementation-google-creative-error')?.getAttribute('role')).toBe('alert');
+  });
+});
+
+/**
+ * The results step's Reddit notice. Uses `configureGoogleTab` deliberately: that helper is a
+ * plain ImplementationTabComponent harness with nothing Google-specific in its providers, and
+ * the results step renders straight off the `results` signal with no capability gate.
+ */
+describe('ImplementationTabComponent reddit results notice', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /**
+   * A Reddit result exactly as `campaign-proxy.service.ts:2054-2064` builds one, with only the ad
+   * count varied. `type` is `'social'` — Reddit has no `CampaignType` of its own — and
+   * `adGroupCount` is the literal `1` the proxy hardcodes even when no ad was created, so a
+   * notice keyed on the ad group rather than on `adCount` would not fire on the real payload.
+   */
+  const redditResult = (adCount: number): CampaignCreateResult => ({
+    platform: 'reddit-ads',
+    type: 'social',
+    campaignName: 'Synthetic Summit 2026',
+    campaignId: 't3_synthetic',
+    adGroupCount: 1,
+    keywordCount: 0,
+    adCount,
+    campaignUrl: 'https://ads.reddit.com/',
+    steps: [],
+  });
+
+  /** The results step is driven straight off these two protected signals. */
+  const atResults = (adCount: number): void => {
+    const c = fixture.componentInstance as unknown as {
+      results: { set(v: CampaignCreateResult[]): void };
+      step: { set(v: 'results'): void };
+    };
+    c.results.set([redditResult(adCount)]);
+    c.step.set('results');
+    fixture.detectChanges();
+  };
+
+  const notice = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="implementation-reddit-no-ad-notice"]');
+
+  /**
+   * The Reddit no-ad notice, and specifically the part of it that is a claim about upstream.
+   *
+   * A Reddit campaign created with no ad can never be activated from LFX. The gate needs both
+   * child ids (`internal/dispatch/reddit.go:484-485`) and takes them from `redditChildIDs`
+   * (`:820-832`), which reads only the persisted Result blob — nothing re-reads Reddit, so an ad
+   * attached by hand in Ads Manager is never discovered. The notice said to do exactly that
+   * ("then attach it to this campaign") until #3432.
+   *
+   * Pinned on the clause that carries the claim rather than the whole sentence, so rewording is
+   * free and quietly dropping the correction is not. The earlier false wording is asserted absent
+   * for the same reason: pinning a string by value is what let it stay green through five review
+   * rounds on #3402, and only an assertion about what must NOT be there catches a revert.
+   */
+  it('tells a Reddit campaign with no ad that LFX activation will not recover', () => {
+    atResults(0);
+
+    expect(notice()).not.toBeNull();
+    expect(notice()?.textContent).toContain('activating it from LFX stays refused');
+    expect(notice()?.textContent).not.toContain('attach it to this campaign');
+  });
+
+  /** The notice is about the no-ad state, so a campaign that got an ad must not carry it. */
+  it('omits the Reddit no-ad notice once an ad exists', () => {
+    atResults(1);
+
+    expect(notice()).toBeNull();
   });
 });
 
