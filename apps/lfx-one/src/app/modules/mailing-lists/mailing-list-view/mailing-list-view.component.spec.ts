@@ -4,6 +4,7 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { GroupsIOMailingList } from '@lfx-one/shared/interfaces';
+import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -20,6 +21,7 @@ describe('MailingListViewComponent indexed address', () => {
         provideRouter([]),
         { provide: MailingListService, useValue: { getMailingList } },
         { provide: ProjectContextService, useValue: {} },
+        { provide: LensService, useValue: { setLens: vi.fn() } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
@@ -40,5 +42,20 @@ describe('MailingListViewComponent indexed address', () => {
   it('does not display a bare group name as an email when the domain is missing', () => {
     const component = createComponent({ uid: 'ml-1', group_name: 'main' } as GroupsIOMailingList);
     expect(component.emailAddress()).toBe('');
+  });
+
+  it('builds the Groups.io link from the list domain and group name', () => {
+    const component = createComponent({ uid: 'ml-1', group_name: 'main', domain: 'lists.example.org' } as GroupsIOMailingList);
+    expect(component.groupsIoUrl()).toBe('https://lists.example.org/g/main');
+  });
+
+  it('falls back to the parent service URL when the domain is missing', () => {
+    const component = createComponent({ uid: 'ml-1', group_name: 'main', service: { url: 'https://groups.io/g/parent' } } as GroupsIOMailingList);
+    expect(component.groupsIoUrl()).toBe('https://groups.io/g/parent');
+  });
+
+  it('has no Groups.io link when nothing can be derived', () => {
+    const component = createComponent({ uid: 'ml-1', group_name: 'main' } as GroupsIOMailingList);
+    expect(component.groupsIoUrl()).toBeNull();
   });
 });

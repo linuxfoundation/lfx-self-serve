@@ -12,6 +12,18 @@ export function getMailingListEmail(list: Pick<GroupsIOMailingList, 'group_name'
   return groupName && domain ? `${groupName}@${domain}` : '';
 }
 
+/** Public Groups.io page for the list, built from its indexed domain; falls back to the parent service URL. */
+export function getMailingListGroupsIoUrl(
+  list: (Pick<GroupsIOMailingList, 'group_name' | 'domain'> & { service?: { url?: string | null } | null }) | null | undefined
+): string | null {
+  const groupName = list?.group_name?.trim();
+  const domain = list?.domain?.trim();
+  if (groupName && domain) {
+    return `https://${domain}/g/${encodeURIComponent(groupName)}`;
+  }
+  return list?.service?.url || null;
+}
+
 /** Canonical tier-prefixed mailing-list link with the flat `/mailing-lists/...` fallback baked in (GH-1567). */
 export function getMailingListCommands(list: Pick<GroupsIOMailingList, 'uid' | 'is_foundation'>, leaf?: 'edit'): string[] {
   const flatFallback = leaf ? ['/mailing-lists', list.uid, leaf] : ['/mailing-lists', list.uid];
