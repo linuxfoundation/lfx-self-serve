@@ -303,6 +303,37 @@ export class CommitteeDashboardComponent {
       });
   }
 
+  /**
+   * Refreshes My Groups after leaving a group. The membership query index can lag the upstream
+   * leave write, so poll until the group drops out of the list before the final reload. If it never
+   * does within the polling window, reload anyway so the list reflects the latest index state.
+   */
+  public reloadMyCommitteesAfterLeave(committeeUid: string): void {
+    this.reloadMyCommittees();
+
+    let pollSucceeded = false;
+
+    timer(400, 400)
+      .pipe(
+        take(6),
+        exhaustMap(() => this.committeeService.getMyCommittees()),
+        filter((committees) => !committees.some((committee) => committee.uid === committeeUid)),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          pollSucceeded = true;
+          this.reloadMyCommittees();
+        },
+        complete: () => {
+          if (!pollSucceeded) {
+            this.reloadMyCommittees();
+          }
+        },
+      });
+  }
+
   public openCreateDialog(): void {
     const uid = this.project()?.uid;
     if (!uid) {

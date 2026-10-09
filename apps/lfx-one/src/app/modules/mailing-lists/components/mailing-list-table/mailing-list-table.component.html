@@ -197,10 +197,13 @@
           <td>
             <div class="flex items-center justify-end">
               <lfx-button
-                label="Leave"
+                icon="fa-light fa-arrow-right-from-bracket"
                 severity="danger"
                 size="small"
                 [text]="true"
+                styleClass="h-8 w-8"
+                tooltip="Leave Mailing List"
+                [ariaLabel]="'Leave ' + (mailingList.title || mailingList.group_name)"
                 [disabled]="!mailingList.my_member_uid"
                 (onClick)="onLeave($event, mailingList)"
                 [attr.data-testid]="'mailing-list-leave-' + mailingList.uid">
