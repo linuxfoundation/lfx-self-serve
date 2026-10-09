@@ -107,19 +107,6 @@ export interface MentorshipLfProject {
 /** One lazy-load page of LF projects; `page_token` is the cursor for the next page and is left out once the list is exhausted. */
 export type MentorshipLfProjectsResponse = PaginatedResponse<MentorshipLfProject>;
 
-/** LFX user option surfaced in the admin Mentors tab "invite mentor" picker. */
-export interface MentorshipInvitableUser {
-  id: string;
-  name: string;
-  email: string;
-  avatarUrl?: string;
-}
-
-export type MentorshipInvitableUsersResponse = {
-  data: MentorshipInvitableUser[];
-  total: number;
-};
-
 /** Result of the program-name availability lookup. */
 export interface MentorshipNameAvailability {
   available: boolean;
@@ -299,7 +286,7 @@ export interface MentorshipApplicantTask {
   updatedOn: string;
   /** ISO `YYYY-MM-DD` when set; omitted for prerequisite tasks with no fixed due date. */
   dueOn?: string;
-  /** Whether the mentee uploaded a file the admin can view or download. */
+  /** Whether the mentee uploaded a file, which the admin or mentor downloads through `GET /api/mentorship/tasks/:taskId/file`. */
   hasSubmission?: boolean;
   /**
    * Whether completing this task requires the mentee to upload a file. Set by the
@@ -309,6 +296,38 @@ export interface MentorshipApplicantTask {
   requiresFileSubmission?: boolean;
 }
 
+/**
+ * Body of `POST /api/mentorship/tasks`, from the admin and mentor program details: one task, created once for each accepted
+ * mentee's application. `dueDate` is a date-only `YYYY-MM-DD`. The assignee, term and owner come from upstream, never from the browser.
+ */
+export interface MentorshipTaskCreateRequest {
+  applicationIds: string[];
+  name: string;
+  description: string;
+  dueDate?: string;
+  requiresFileSubmission?: boolean;
+}
+
+/** Response of `POST /api/mentorship/tasks`: the application ids whose task was created, and those whose was not. */
+export interface MentorshipTaskCreateResponse {
+  created: string[];
+  failed: string[];
+}
+
+/**
+ * Body of `PATCH /api/mentorship/tasks/:taskId`, from the admin and mentor program details. Every field is optional and an absent one
+ * is left unchanged, but at least one is required: the status select sends `status` alone, the edit dialog sends whichever fields it
+ * changed. `dueDate` is a date-only `YYYY-MM-DD`, and an empty string clears it. `requiresFileSubmission` turns the mentee's file
+ * requirement on or off.
+ */
+export interface MentorshipTaskUpdate {
+  name?: string;
+  description?: string;
+  dueDate?: string;
+  requiresFileSubmission?: boolean;
+  status?: MentorshipApplicantTaskStatus;
+}
+
 /** Resolved display fields for one row in the applicant tasks sub-table. */
 export interface MentorshipApplicantTaskRow extends MentorshipApplicantTask {
   statusLabel: string;
@@ -316,7 +335,6 @@ export interface MentorshipApplicantTaskRow extends MentorshipApplicantTask {
   createdLabel: string;
   dueLabel: string;
   updatedLabel: string;
-  canView: boolean;
   canDownload: boolean;
 }
 
@@ -478,6 +496,76 @@ export interface MentorshipEnrollCreateRequest {
   termsAccepted: true;
 }
 
+/**
+ * A saved open term in the edit wizard. `term` is the term as the wizard holds it, its term dates moved to the first of their month
+ * for the month pickers; `stored` holds the dates upstream has, which Update sends back as they are while the admin leaves the
+ * term's dates alone, so an edit elsewhere never moves them.
+ */
+export interface MentorshipEnrollSavedTerm {
+  term: MentorshipProgramTerm;
+  stored: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>;
+}
+
+/** One open term in the update body: `id` names a saved open term to change, and a term without one is created. */
+export interface MentorshipEnrollUpdateTerm extends MentorshipEnrollCreateTerm {
+  id?: string;
+}
+
+/**
+ * Request body for `PATCH /api/mentorship/admin/programs/:programId`: the create body's program fields, without terms acceptance,
+ * and `terms` as the program's full set of open terms. An open term left out is deleted, and closed terms are never sent; a
+ * program with no open terms leaves `terms` out. The logo goes through its own route.
+ */
+export type MentorshipEnrollUpdateRequest = Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'> & { terms?: MentorshipEnrollUpdateTerm[] };
+
+/** One prerequisite as upstream stores it in a program's `task_templates`. `submitFile` is `'required'` when the mentee must attach a file. */
+export interface MentorshipUpstreamTaskTemplate {
+  name: string;
+  description: string;
+  submitFile: 'required' | null;
+  dueDate: string | null;
+}
+
+/** One open term in the upstream program update: RFC 3339 instants in UTC, and `id` only for a saved term. */
+export interface MentorshipUpstreamOpenTerm {
+  id?: string;
+  name: string;
+  start_date_time: string;
+  end_date_time: string;
+  application_start_date: string;
+  application_end_date: string;
+}
+
+/**
+ * Upstream body for `PATCH /mentorship/v1/programs/{id}`, a partial merge with snake_case keys. Every optional text field is
+ * sent, `''` when blank, so an admin can clear it. `terms`, when sent, replaces the program's open terms in the same transaction.
+ */
+export interface MentorshipUpstreamProgramUpdate {
+  name: string;
+  description: string;
+  repo_link: string;
+  website_url: string;
+  code_of_conduct: string;
+  cii_project_id: string;
+  industry: string;
+  skills: string[];
+  task_templates: MentorshipUpstreamTaskTemplate[];
+  project_uid: string;
+  project_slug: string;
+  project_name: string;
+  project_logo_url: string;
+  terms?: MentorshipUpstreamOpenTerm[];
+}
+
+/**
+ * What the program looked like when the edit wizard opened. Validation compares against it, so a date the program already had
+ * stays valid after it has passed.
+ */
+export interface MentorshipEnrollEditBaseline {
+  terms: MentorshipProgramTerm[];
+  prerequisites: MentorshipPrerequisite[];
+}
+
 /** Response from `POST /api/mentorship/admin/programs`: what the wizard keeps so a failed logo upload can retry without a second create. */
 export interface MentorshipEnrollProgramRef {
   id: string;
@@ -489,6 +577,20 @@ export interface MentorshipEnrollProgramRef {
 /** Response from `POST /api/mentorship/admin/programs/:programId/logo`. */
 export interface MentorshipProgramLogoUploadResult {
   logoUrl: string;
+}
+
+/**
+ * The calls one Submit makes, in order. There is no review step: create already leaves the program `pending`. An edit's Update
+ * makes `update` (the program fields and its open terms in one call), then `logo`.
+ */
+export type MentorshipEnrollSubmitStep = 'create' | 'update' | 'logo';
+
+export type MentorshipEnrollSubmitPhase = 'idle' | 'creating' | 'updating' | 'uploading-logo' | 'failed' | 'done';
+
+/** Shown in the wizard after a failed submit. `step` says which write failed; `message` is the banner text. */
+export interface MentorshipEnrollSubmitFailure {
+  step: MentorshipEnrollSubmitStep;
+  message: string;
 }
 
 /** The upstream fields the BFF reads from the program a create returns. */
@@ -504,4 +606,47 @@ export interface MentorshipUpstreamLogoUpload {
   filename: string;
   content_type: string;
   size: number;
+}
+
+/**
+ * Upstream body from `GET /mentorship/v1/programs/{id}/enroll-template`. Upstream omits an empty `prerequisites`, and a
+ * prerequisite's `description`, `submitFile` and `dueDate` are `null` when unset.
+ */
+export interface MentorshipUpstreamEnrollTemplate {
+  program: {
+    id: string;
+    name: string;
+    description?: string | null;
+    repo_link?: string | null;
+    website_url?: string | null;
+    code_of_conduct?: string | null;
+    cii_project_id?: string | null;
+    /** Comma-separated Technologies. */
+    industry?: string | null;
+    project_uid?: string | null;
+    project_slug?: string | null;
+    project_name?: string | null;
+    project_logo_url?: string | null;
+    logo_url?: string | null;
+  };
+  skills?: string[] | null;
+  /** The program's stored task templates, passed through as they are, so their keys are camelCase unlike `program`'s. */
+  prerequisites?: { name: string; description?: string | null; submitFile?: string | null; dueDate?: string | null }[] | null;
+}
+
+/** Response from `GET /api/mentorship/admin/programs/:programId/enroll-template`: what the wizard copies from an existing program. */
+export interface MentorshipEnrollImport {
+  name: string;
+  /** `null` when the template has no project uid. */
+  project: MentorshipLfProject | null;
+  description: string;
+  repositoryUrl: string;
+  websiteUrl: string;
+  codeOfConductUrl: string;
+  ciiProjectId: string;
+  technologies: string[];
+  skills: string[];
+  prerequisites: MentorshipPrerequisite[];
+  /** The program's current logo, `''` when it has none. Import leaves it out; the edit wizard shows it. */
+  logoUrl: string;
 }

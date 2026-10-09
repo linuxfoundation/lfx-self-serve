@@ -3,7 +3,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { listNewsletters, createNewsletter, updateNewsletter, scheduleNewsletter, cancelScheduleNewsletter } = vi.hoisted(() => ({
+const { getMyNewsletters, listNewsletters, createNewsletter, updateNewsletter, scheduleNewsletter, cancelScheduleNewsletter } = vi.hoisted(() => ({
+  getMyNewsletters: vi.fn(),
   listNewsletters: vi.fn(),
   createNewsletter: vi.fn(),
   updateNewsletter: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock('@lfx-one/shared/utils', () => ({ isUuid: vi.fn((v: unknown) => typeof v
 
 vi.mock('../services/newsletter.service', () => ({
   NewsletterService: class {
+    public getMyNewsletters = getMyNewsletters;
     public listNewsletters = listNewsletters;
     public createNewsletter = createNewsletter;
     public updateNewsletter = updateNewsletter;
@@ -37,7 +39,8 @@ vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
-import { ServiceValidationError } from '../errors';
+import { MicroserviceError, ServiceValidationError } from '../errors';
+import { logger } from '../services/logger.service';
 import { NewsletterController } from './newsletter.controller';
 
 function buildRes() {
@@ -53,6 +56,34 @@ const validPayload = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe('NewsletterController.getMyNewsletters', () => {
+  it.each(['true', undefined, 'false', 'TRUE', '1', ['true'], { value: 'true' }])('opts in only for literal include_status=%j', async (includeStatus) => {
+    const response = { newsletters: [{ id: 'n1', project_uid: 'p1', subject: 'Synthetic issue' }], complete: false };
+    getMyNewsletters.mockResolvedValue(response);
+    const req = { query: { include_status: includeStatus } } as any;
+    const res = buildRes();
+    const next = vi.fn();
+    await new NewsletterController().getMyNewsletters(req, res, next);
+    expect(res.json).toHaveBeenCalledWith(includeStatus === 'true' ? response : response.newsletters);
+    expect(logger.success).toHaveBeenCalledWith(req, 'get_my_newsletters', 0, { count: 1, complete: false });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([new Error('discovery failed'), new MicroserviceError('expired', 401, 'UNAUTHORIZED')])(
+    'propagates discovery/auth failures without serializing or duplicate logging',
+    async (error) => {
+      getMyNewsletters.mockRejectedValue(error);
+      const res = buildRes();
+      const next = vi.fn();
+      await new NewsletterController().getMyNewsletters({ query: { include_status: 'true' } } as any, res, next);
+      expect(next).toHaveBeenCalledExactlyOnceWith(error);
+      expect(res.json).not.toHaveBeenCalled();
+      expect(logger.success).not.toHaveBeenCalled();
+      expect(logger.error).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe('NewsletterController.listNewsletters — status allowlist', () => {

@@ -76,6 +76,7 @@ export class AdminComponent {
     void this.router.navigate(['/mentorship/admin/enroll']);
   }
 
+  /** Reads the first page again with the filters last applied: a Retry after a failed load, or a card that added its logo. */
   protected retryPrograms(): void {
     this.retry$.next();
   }

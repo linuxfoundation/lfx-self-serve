@@ -944,6 +944,7 @@ export interface OrgClaSignHandoffDialogData {
   projectSfid: string;
   claGroupId: string;
   attestations: OrgClaSignAttestations;
+  claGroupName?: string;
 }
 
 /**

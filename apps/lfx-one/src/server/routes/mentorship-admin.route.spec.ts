@@ -11,7 +11,7 @@ import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Router-level coverage for the impersonation gate on the admin reviewer-note write, the task create and the mentor status change. The
+ * Router-level coverage for the impersonation gate on the admin reviewer-note write and the mentor status change. The
  * middleware has its own unit tests, but those call it directly and would keep passing if it were dropped from these
  * routes.
  */
@@ -20,20 +20,36 @@ const noteHandler = vi.fn((_req: express.Request, res: express.Response) => {
   res.status(204).end();
 });
 
-const taskUpdateHandler = vi.fn((_req: express.Request, res: express.Response) => {
-  res.json({ id: 'task' });
-});
-
 const mentorHandler = vi.fn((_req: express.Request, res: express.Response) => {
   res.status(204).end();
 });
 
-const tasksHandler = vi.fn((_req: express.Request, res: express.Response) => {
-  res.json({ created: [], failed: [] });
+const inviteHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.status(204).end();
+});
+
+const candidatesHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.json({ data: [] });
 });
 
 const createProgramHandler = vi.fn((_req: express.Request, res: express.Response) => {
   res.status(201).json({ id: 'program' });
+});
+
+const updateProgramHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.json({ id: 'program' });
+});
+
+const hideProgramHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.status(204).end();
+});
+
+const unhideProgramHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.status(204).end();
+});
+
+const enrollTemplateHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.json({ name: 'Example Program' });
 });
 
 // Records what the raw parser left on `req.body`, which is what the real controller's 415 and empty-body checks read.
@@ -44,11 +60,15 @@ const logoHandler = vi.fn((req: express.Request, res: express.Response) => {
 vi.mock('../controllers/mentorship-admin.controller', () => ({
   MentorshipAdminController: class {
     public createProgram = createProgramHandler;
+    public updateProgram = updateProgramHandler;
+    public hideProgram = hideProgramHandler;
+    public unhideProgram = unhideProgramHandler;
+    public getEnrollTemplate = enrollTemplateHandler;
     public uploadProgramLogo = logoHandler;
     public updateApplicationNote = noteHandler;
-    public createTasks = tasksHandler;
-    public updateTask = taskUpdateHandler;
     public updateProgramMentor = mentorHandler;
+    public inviteProgramMentor = inviteHandler;
+    public getMentorCandidates = candidatesHandler;
   },
 }));
 let impersonatingStub = false;
@@ -85,13 +105,6 @@ const putNote = (): Promise<Response> =>
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ note: 'needs a second look' }),
-  });
-
-const postTasks = (): Promise<Response> =>
-  fetch(`${baseUrl}/api/mentorship/admin/tasks`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ applicationIds: [APPLICATION_ID], name: 'Read the guide', description: 'Start with chapter one' }),
   });
 
 beforeAll(async () => {
@@ -133,49 +146,6 @@ describe('mentorship admin router — reviewer note impersonation gate', () => {
   });
 });
 
-describe('mentorship admin router — task create impersonation gate', () => {
-  it('refuses the task create with 403 while impersonating and never reaches the controller', async () => {
-    const res = await postTasks();
-
-    expect(res.status).toBe(403);
-    expect(tasksHandler).not.toHaveBeenCalled();
-  });
-
-  it('admits the task create when not impersonating', async () => {
-    impersonatingStub = false;
-
-    const res = await postTasks();
-
-    expect(res.status).toBe(200);
-    expect(tasksHandler).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('mentorship admin router — task edit impersonation gate', () => {
-  const patchTask = (): Promise<Response> =>
-    fetch(`${baseUrl}/api/mentorship/admin/tasks/${APPLICATION_ID}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ status: 'completed' }),
-    });
-
-  it('refuses the task edit with 403 while impersonating and never reaches the controller', async () => {
-    const res = await patchTask();
-
-    expect(res.status).toBe(403);
-    expect(taskUpdateHandler).not.toHaveBeenCalled();
-  });
-
-  it('admits the task edit when not impersonating', async () => {
-    impersonatingStub = false;
-
-    const res = await patchTask();
-
-    expect(res.status).toBe(200);
-    expect(taskUpdateHandler).toHaveBeenCalledTimes(1);
-  });
-});
-
 describe('mentorship admin router — mentor status change impersonation gate', () => {
   it('refuses the mentor change with 403 while impersonating and never reaches the controller', async () => {
     const res = await patchMentor();
@@ -191,6 +161,71 @@ describe('mentorship admin router — mentor status change impersonation gate', 
 
     expect(res.status).toBe(204);
     expect(mentorHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mentorship admin router — program hide and unhide impersonation gate', () => {
+  const postVisibility = (action: 'hide' | 'unhide'): Promise<Response> =>
+    fetch(`${baseUrl}/api/mentorship/admin/programs/${PROGRAM_ID}/${action}`, { method: 'POST' });
+
+  it.each([
+    ['hide', hideProgramHandler],
+    ['unhide', unhideProgramHandler],
+  ] as const)('refuses %s with 403 while impersonating and never reaches the controller', async (action, handler) => {
+    const res = await postVisibility(action);
+
+    expect(res.status).toBe(403);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['hide', hideProgramHandler],
+    ['unhide', unhideProgramHandler],
+  ] as const)('admits %s when not impersonating', async (action, handler) => {
+    impersonatingStub = false;
+
+    const res = await postVisibility(action);
+
+    expect(res.status).toBe(204);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mentorship admin router — mentor invite impersonation gate', () => {
+  const postInvite = (): Promise<Response> =>
+    fetch(`${baseUrl}/api/mentorship/admin/programs/${PROGRAM_ID}/mentors`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lfid: 'ada' }),
+    });
+
+  it('refuses the invite with 403 while impersonating and never reaches the controller', async () => {
+    const res = await postInvite();
+
+    expect(res.status).toBe(403);
+    expect(inviteHandler).not.toHaveBeenCalled();
+  });
+
+  it('admits the invite when not impersonating', async () => {
+    impersonatingStub = false;
+
+    const res = await postInvite();
+
+    expect(res.status).toBe(204);
+    expect(inviteHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mentorship admin router — POST /programs/:programId/mentor-candidates', () => {
+  it('reaches the controller while impersonating, since it only reads', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/admin/programs/${PROGRAM_ID}/mentor-candidates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ search: 'ada' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(candidatesHandler).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -216,6 +251,40 @@ describe('mentorship admin router — program create impersonation gate', () => 
 
     expect(res.status).toBe(201);
     expect(createProgramHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mentorship admin router — program update impersonation gate', () => {
+  const patchProgram = (): Promise<Response> =>
+    fetch(`${baseUrl}/api/mentorship/admin/programs/${PROGRAM_ID}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Example Program' }),
+    });
+
+  it('refuses the program update with 403 while impersonating and never reaches the controller', async () => {
+    const res = await patchProgram();
+
+    expect(res.status).toBe(403);
+    expect(updateProgramHandler).not.toHaveBeenCalled();
+  });
+
+  it('admits the program update when not impersonating', async () => {
+    impersonatingStub = false;
+
+    const res = await patchProgram();
+
+    expect(res.status).toBe(200);
+    expect(updateProgramHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mentorship admin router — GET /programs/:programId/enroll-template', () => {
+  it('reaches the controller while impersonating, since it only reads', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/admin/programs/${PROGRAM_ID}/enroll-template`);
+
+    expect(res.status).toBe(200);
+    expect(enrollTemplateHandler).toHaveBeenCalledTimes(1);
   });
 });
 

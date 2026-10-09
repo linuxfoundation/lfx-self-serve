@@ -405,14 +405,14 @@ describe('mentorship router — mentor endpoints', () => {
 
   const tasksBody = JSON.stringify({ applicationIds: ['5d1c8e2f-3a4b-4c6d-8e9f-0a1b2c3d4e5f'], name: 'Task', description: 'Details' });
 
-  it('routes POST /api/mentorship/mentor/tasks (auth required, not 404)', async () => {
-    const res = await fetch(`${baseUrl}/api/mentorship/mentor/tasks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: tasksBody });
+  it('routes POST /api/mentorship/tasks (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/tasks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: tasksBody });
 
     expect(res.status).toBe(401);
   });
 
   it('refuses a task create while impersonating, before the controller runs', async () => {
-    const res = await fetch(`${baseUrl}/api/mentorship/mentor/tasks`, {
+    const res = await fetch(`${baseUrl}/api/mentorship/tasks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-test-impersonating': 'true' },
       body: tasksBody,

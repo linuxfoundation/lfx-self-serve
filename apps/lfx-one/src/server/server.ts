@@ -4,7 +4,7 @@
 import { APP_BASE_HREF } from '@angular/common';
 import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
-import { GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
+import { GW_EMBED_ROUTE_PREFIXES, GW_EMBED_STYLESHEET_ROUTE } from '@lfx-one/shared/constants';
 import { AuthContext, RuntimeConfig, ServerRequestContext, User } from '@lfx-one/shared/interfaces';
 import { redactLoggedUrl } from '@lfx-one/shared/utils/auth-fragment.utils';
 import express, { NextFunction, Request, Response } from 'express';
@@ -19,6 +19,7 @@ import { ProfileController } from './controllers/profile.controller';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
+import { applySsrRenderStatus } from './helpers/ssr-render-status.helper';
 import { resolvePublishableGwSupabaseKey } from './helpers/supabase-key.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
@@ -39,6 +40,7 @@ import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
 import formationsRouter from './routes/formations.route';
 import projectApplicationsRouter from './routes/project-applications.route';
+import gwEmbedStylesheetRouter from './routes/gw-embed-stylesheet.route';
 import gwProxyRouter from './routes/gw-proxy.route';
 import impersonationRouter from './routes/impersonation.route';
 import mailingListsRouter from './routes/mailing-lists.route';
@@ -76,6 +78,7 @@ import akritesRouter from './routes/akrites.route';
 import mktgAgentsRouter from './routes/mktg-agents.route';
 import weeklyBriefRouter from './routes/weekly-brief.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
+import { LaunchDarklyServerService } from './services/launchdarkly-server.service';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
 import { sessionStoreService } from './services/session-store.service';
@@ -386,6 +389,9 @@ app.use('/public/api/foundations', publicFoundationsRouter);
 app.use('/public/api/groups', publicGroupsRouter);
 app.use('/public/api/profile', publicProfileRouter);
 app.use('/public/api/projects', publicProjectsRouter);
+// The Gatewaze embed's stylesheet, scoped to the LFX chrome and cached by hashed name. Public:
+// the loader fetches it without credentials and the content is public (see the controller).
+app.use(GW_EMBED_STYLESHEET_ROUTE, gwEmbedStylesheetRouter);
 
 app.use('/api/projects', projectsRouter);
 app.use('/api/committees', committeesRouter);
@@ -562,6 +568,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     // "not configured" message, which is the right outcome for a misconfiguration.
     gwSupabaseAnonKey: resolvePublishableGwSupabaseKey(req),
     gwLfidStartUrl: process.env['GW_LFID_START_URL'] || '',
+    gwEmbedUrl: process.env['GW_EMBED_URL'] || '',
   };
 
   logger.debug(req, 'intercom_ssr_context', 'Intercom SSR inputs resolved', {
@@ -578,6 +585,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     auth,
     runtimeConfig,
     notFound: false,
+    unavailable: false,
     providers: [
       { provide: APP_BASE_HREF, useValue: process.env['PCC_BASE_URL'] },
       { provide: REQUEST, useValue: req },
@@ -593,15 +601,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
 
       applySsrCacheHeaders(response);
 
-      // Web `Response.status` is read-only, so rebuild with 404 when the render flagged not-found.
-      // Buffer the body first (404 pages are small) so we never hand a consumed stream to the new Response.
-      if (renderContext.notFound && response.status === 200) {
-        const body = await response.text();
-        const finalResponse = new globalThis.Response(body, { status: 404, statusText: 'Not Found', headers: response.headers });
-        return writeResponseToNodeResponse(finalResponse, res);
-      }
-
-      return writeResponseToNodeResponse(response, res);
+      return writeResponseToNodeResponse(await applySsrRenderStatus(response, renderContext), res);
     })
     .catch((error) => {
       logger.error(req, 'ssr_render', ssrStartTime, error, {
@@ -782,6 +782,8 @@ async function gracefulShutdown(signal: string): Promise<void> {
         }
       )
     ),
+    // Closes the LaunchDarkly streaming connection only if a flag was ever evaluated on this pod.
+    raceDrain('launchdarkly', LaunchDarklyServerService.shutdownIfInitialized()),
   ]);
 
   logger.success(undefined, 'graceful_shutdown', startTime, {});

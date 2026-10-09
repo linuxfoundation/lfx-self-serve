@@ -238,8 +238,8 @@ export class CampaignService {
     request: CampaignCreateRequest,
     projectSlug: string,
     briefId: string
-  ): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
-    return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string }>('/api/campaigns/create', request, {
+  ): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string; indeterminate?: boolean }> {
+    return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string; indeterminate?: boolean }>('/api/campaigns/create', request, {
       params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
     });
   }

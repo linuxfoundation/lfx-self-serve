@@ -4,13 +4,15 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRouteSnapshot, convertToParamMap, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
+import { ActivatedRouteSnapshot, convertToParamMap, RedirectCommand, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
+import { TRANSIENT_RETRY_DELAY_MS } from '@lfx-one/shared/constants';
 import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@shared/services/persona.service';
 import { ProjectContextService } from '@shared/services/project-context.service';
+import { ProjectRecoveryService } from '@shared/services/project-recovery.service';
 import { ProjectService } from '@shared/services/project.service';
-import { firstValueFrom, Observable, of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { defer, firstValueFrom, Observable, of, throwError } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { newsletterAccessGuard } from './newsletter-access.guard';
 
@@ -49,12 +51,14 @@ describe('newsletterAccessGuard', () => {
       data: {},
     }) as unknown as ActivatedRouteSnapshot;
 
-  const runGuard = async (r: ActivatedRouteSnapshot): Promise<boolean | UrlTree> => {
-    const result = TestBed.runInInjectionContext(() => newsletterAccessGuard(r, {} as RouterStateSnapshot));
+  const runGuard = async (r: ActivatedRouteSnapshot): Promise<boolean | UrlTree | RedirectCommand> => {
+    const result = TestBed.runInInjectionContext(() =>
+      newsletterAccessGuard(r, { url: '/project/newsletters?project=query-slug#section' } as RouterStateSnapshot)
+    );
     // The no-:projectUid ED fast path returns `true` synchronously and the no-context
     // fallback a bare UrlTree; every other branch returns an Observable.
     if (result instanceof Observable) {
-      return firstValueFrom(result as Observable<boolean | UrlTree>);
+      return firstValueFrom(result as Observable<boolean | UrlTree | RedirectCommand>);
     }
     return result as boolean | UrlTree;
   };
@@ -82,6 +86,49 @@ describe('newsletterAccessGuard', () => {
         { provide: Router, useValue: router },
       ],
     });
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it.each([400, 401, 403, 404])('renders in-place not-found for a query-slug HTTP %s', async (status) => {
+    getProjectStrict.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+
+    const result = await runGuard(route({ query: { project: 'missing-project' } }));
+
+    expect(result).toBeInstanceOf(RedirectCommand);
+    expect(router.parseUrl).toHaveBeenCalledWith('/not-found');
+    expect((result as RedirectCommand).navigationBehaviorOptions).toEqual({ skipLocationChange: true });
+    expect(router.createUrlTree).not.toHaveBeenCalled();
+  });
+
+  it('allows a query-slug writer when the shared transient retry succeeds', async () => {
+    vi.useFakeTimers();
+    const request = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
+      .mockReturnValueOnce(of({ slug: 'query-slug', writer: true }));
+    getProjectStrict.mockReturnValue(defer(request));
+
+    const result = runGuard(route({ query: { project: 'query-slug' } }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+
+    expect(await result).toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(getProject).not.toHaveBeenCalled();
+  });
+
+  it('keeps a persistent query-slug failure in-place with the full retry destination', async () => {
+    vi.useFakeTimers();
+    getProjectStrict.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+
+    const result = runGuard(route({ query: { project: 'query-slug' } }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+
+    const redirect = (await result) as RedirectCommand;
+    expect(redirect).toBeInstanceOf(RedirectCommand);
+    expect(redirect.navigationBehaviorOptions?.skipLocationChange).toBe(true);
+    expect(TestBed.inject(ProjectRecoveryService).retryUrl).toBe('/project/newsletters?project=query-slug#section');
+    expect(getProject).not.toHaveBeenCalled();
   });
 
   it('allows the executive-director persona synchronously on routes without a :projectUid', async () => {
@@ -200,7 +247,7 @@ describe('newsletterAccessGuard', () => {
     const result = await runGuard(route({ query: { project: 'query-slug' } }));
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith('query-slug', false);
+    expect(getProjectStrict).toHaveBeenCalledWith('query-slug');
     expect(getProject).not.toHaveBeenCalledWith('ctx-slug', false);
   });
 
@@ -258,6 +305,6 @@ describe('newsletterAccessGuard', () => {
     projectsByKey['aaif'] = { slug: 'aaif', writer: false };
     const result = await runGuard(route({ query: { project: 'aaif' }, lens: 'foundation' }));
     expect(result).toEqual({ denied: '/foundation/overview', opts: { queryParams: { project: 'aaif' } } });
-    expect(getProject).toHaveBeenCalledWith('aaif', false);
+    expect(getProjectStrict).toHaveBeenCalledWith('aaif');
   });
 });

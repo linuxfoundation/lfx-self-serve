@@ -21,6 +21,7 @@ import {
   PersonaDetections,
   PersonaProject,
   PersonaType,
+  RootMarketingOpsGrants,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -47,7 +48,7 @@ export class PersonaDetectionService {
   private readonly rootWriterRequestCache = new WeakMap<Request, Promise<boolean>>();
   private readonly lfStaffRequestCache = new WeakMap<Request, Promise<boolean>>();
   private readonly rootMarketingAuditorRequestCache = new WeakMap<Request, Promise<boolean>>();
-  private readonly rootCampaignManagerRequestCache = new WeakMap<Request, Promise<boolean>>();
+  private readonly rootMarketingOpsRequestCache = new WeakMap<Request, Promise<RootMarketingOpsGrants>>();
   private readonly rootAuditorRequestCache = new WeakMap<Request, Promise<boolean>>();
   // Dedupes the projectSlug -> uid NATS lookup within a single request — checkMarketingAuditorAccess
   // and checkCampaignManagerAccess both resolve the same slug in the same getPersonas Promise.all.
@@ -134,10 +135,10 @@ export class PersonaDetectionService {
     const marketingOpsFgaEnabled = isServerFeatureEnabled(ServerFeatureFlag.MarketingOpsFga);
     const needsMarketingAuditor = marketingOpsFgaEnabled && (marketingRelations === 'both' || marketingRelations === 'marketing_auditor');
     const needsCampaignManager = marketingOpsFgaEnabled && (marketingRelations === 'both' || marketingRelations === 'campaign_manager');
-    // isMarketingAuditorRootGrant/isCampaignManagerRootGrant reuse checkRootMarketingAuditor/
-    // checkRootCampaignManager's own per-request WeakMap cache (see below) — checkMarketingAuditorAccess/
-    // checkCampaignManagerAccess already call these internally, so resolving them again here doesn't
-    // add a round trip. Surfacing them separately lets the frontend tell a ROOT-cascading grant apart
+    // isMarketingAuditorRootGrant reuses checkRootMarketingAuditor's per-request WeakMap cache (see
+    // below), so it adds no round trip. isCampaignManagerRootGrant asks for the cascading ROOT
+    // `marketing_ops` alone (checkRootCampaignManagerCascade): the frontend treats a true value as
+    // a grant on every project, which ROOT `global_marketing_ops` is not. Surfacing them separately lets the frontend tell a ROOT-cascading grant apart
     // from a project-scoped one instead of inferring scope from the `projectSlug` it happened to pass
     // (Copilot finding, PR #1835).
     const [detections, isRootWriter, isLFStaff, isAuditor, isMarketingAuditor, isCampaignManager, isMarketingAuditorRootGrant, isCampaignManagerRootGrant] =
@@ -149,7 +150,7 @@ export class PersonaDetectionService {
         needsMarketingAuditor ? this.checkMarketingAuditorAccess(req, projectSlug) : Promise.resolve(false),
         needsCampaignManager ? this.checkCampaignManagerAccess(req, projectSlug) : Promise.resolve(false),
         needsMarketingAuditor ? this.checkRootMarketingAuditor(req) : Promise.resolve(false),
-        needsCampaignManager ? this.checkRootCampaignManager(req) : Promise.resolve(false),
+        needsCampaignManager ? this.checkRootCampaignManagerCascade(req) : Promise.resolve(false),
       ]);
 
     // Compute the per-request persona list without mutating the cached detections object.
@@ -178,6 +179,12 @@ export class PersonaDetectionService {
     };
   }
 
+  /**
+   * Checks whether the current user holds `writer_guard` on the tenant ROOT project. Surfaced as
+   * `isRootWriter`. Request-cached, resolves the ROOT uid via NATS, and fails closed to `false`.
+   * The ROOT `global_writer` half does not cascade, so a ROOT grant does not answer for a named
+   * project — see {@link checkProjectWriter}.
+   */
   public async checkRootWriter(req: Request): Promise<boolean> {
     const cached = this.rootWriterRequestCache.get(req);
     if (cached) return cached;
@@ -186,7 +193,7 @@ export class PersonaDetectionService {
     const promise = resolveRootProjectUid(req, this.natsService)
       .then((rootUid) => {
         if (!rootUid) return false;
-        return this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: rootUid, access: 'writer' });
+        return this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: rootUid, access: 'writer_guard' });
       })
       .catch((error) => {
         logger.warning(req, 'check_root_writer', 'Root-writer check failed, assuming no bypass', { err: error });
@@ -194,6 +201,15 @@ export class PersonaDetectionService {
       });
     this.rootWriterRequestCache.set(req, promise);
     return promise;
+  }
+
+  /**
+   * `writer_guard` on `projectSlug` — the scoped form of {@link checkRootWriter}, for a request that
+   * names a project. `global_writer` does not cascade and is withheld per project (Draft,
+   * Confidential), so a ROOT grant must not answer for a named project. Fails closed to `false`.
+   */
+  public async checkProjectWriter(req: Request, projectSlug: string): Promise<boolean> {
+    return this.checkProjectAccess(req, projectSlug, 'writer_guard', 'check_project_writer');
   }
 
   /**
@@ -231,29 +247,38 @@ export class PersonaDetectionService {
   }
 
   /**
-   * Checks whether the current user holds `marketing_ops` on the tenant ROOT project — NOT
-   * `campaign_manager` itself. Unlike `marketing_auditor`, `campaign_manager` does not cascade
-   * from parent (per the model: `campaign_manager: executive_director or marketing_ops`, with no
-   * `campaign_manager from parent` disjunct). Only the `marketing_ops` half cascades, so a ROOT
-   * `executive_director` grant must NOT be treated as campaign_manager on every descendant
-   * project — only a ROOT `marketing_ops` grant may be. An ED-only-on-ROOT caller falls through
-   * to {@link checkCampaignManagerAccess}'s per-project check instead.
+   * Checks whether the current user holds `marketing_ops` or `global_marketing_ops` on the tenant
+   * ROOT project — NOT `campaign_manager` itself. `campaign_manager` has no `from parent` disjunct
+   * (`campaign_manager: executive_director or marketing_ops or global_marketing_ops`), so a ROOT
+   * `executive_director` grant must NOT be treated as campaign_manager everywhere. This is the
+   * signal for requests that name no project; a request that names one is answered by that
+   * project's own `campaign_manager` relation (see {@link checkCampaignManagerAccess}).
+   * `global_marketing_ops` is included because the marketing-ops team moves to it as
+   * `marketing_ops` is retired.
    */
   public async checkRootCampaignManager(req: Request): Promise<boolean> {
-    return this.checkRootAccess(req, this.rootCampaignManagerRequestCache, 'marketing_ops', 'check_root_campaign_manager');
+    const grants = await this.checkRootMarketingOps(req);
+    return grants.marketingOps || grants.globalMarketingOps;
   }
 
   /**
-   * Checks whether the current user holds `auditor` on the tenant ROOT project — the Formations
-   * queue's (`foundation/formations`, GH-1958) authorization boundary. Unlike
-   * `checkRootMarketingAuditor`/`checkRootCampaignManager`, `auditor` has no project-scoped variant
-   * to fold in, so callers never need a `checkAuditorAccess(req, projectSlug)` counterpart — this is
-   * the whole check. Mirrors {@link checkRootWriter}: request-cached, resolves the ROOT uid via
-   * NATS, and fails closed to `false` so transient errors never widen access. `auditor` is already a
-   * real `AccessCheckAccessType`, so this needs no fabricated-stand-in TODO.
+   * The cascading half of {@link checkRootCampaignManager}: ROOT `marketing_ops` only. Backs
+   * `isCampaignManagerRootGrant`, which the frontend stores as a grant for every project, and
+   * `requireMarketingAccess`'s named-project campaign pass, so it must exclude
+   * `global_marketing_ops` — that relation does not cascade from ROOT.
+   */
+  public async checkRootCampaignManagerCascade(req: Request): Promise<boolean> {
+    return (await this.checkRootMarketingOps(req)).marketingOps;
+  }
+
+  /**
+   * Checks whether the current user holds `auditor_guard` on the tenant ROOT project — the Formations
+   * queue's (`foundation/formations`, GH-1958) authorization boundary, enforced by `requireAuditor`.
+   * Mirrors {@link checkRootWriter}: request-cached, resolves the ROOT uid via NATS, and fails closed
+   * to `false` so transient errors never widen access.
    */
   public async checkRootAuditor(req: Request): Promise<boolean> {
-    return this.checkRootAccess(req, this.rootAuditorRequestCache, 'auditor', 'check_root_auditor');
+    return this.checkRootAccess(req, this.rootAuditorRequestCache, 'auditor_guard', 'check_root_auditor');
   }
 
   /** ROOT grant OR a grant scoped to `projectSlug` (when given). Mirrors `requireMarketingAccess`. */
@@ -263,19 +288,54 @@ export class PersonaDetectionService {
   }
 
   /**
-   * A cascading ROOT `marketing_ops` grant OR a `campaign_manager` grant scoped to `projectSlug`
-   * (when given) — the latter also catches a project-scoped `executive_director`, which does not
-   * cascade and so cannot be resolved via the ROOT short-circuit. Mirrors `requireMarketingAccess`.
+   * `campaign_manager` on `projectSlug` when given — that relation already folds in the cascading
+   * `marketing_ops`, the per-project `global_marketing_ops`, and a project-scoped
+   * `executive_director`, so a ROOT-only `global_marketing_ops` grant must not short-circuit it:
+   * it does not cascade and would otherwise answer for every project. ROOT `marketing_ops` does
+   * cascade, so it answers first and the result never depends on the slug lookup succeeding.
+   * Without a slug, the ROOT grant from {@link checkRootCampaignManager}. This is a client hint;
+   * `requireMarketingAccess` enforces against the named project's own relation.
    */
   private async checkCampaignManagerAccess(req: Request, projectSlug?: string): Promise<boolean> {
-    if (await this.checkRootCampaignManager(req)) return true;
+    if (!projectSlug) return this.checkRootCampaignManager(req);
+    if (await this.checkRootCampaignManagerCascade(req)) return true;
     return this.checkProjectAccess(req, projectSlug, 'campaign_manager', 'check_project_campaign_manager');
+  }
+
+  /**
+   * ROOT `marketing_ops` and `global_marketing_ops` in one batched access check, cached per request,
+   * so {@link checkRootCampaignManager} and {@link checkRootCampaignManagerCascade} share a single
+   * round trip. Fails closed to no grants.
+   */
+  private checkRootMarketingOps(req: Request): Promise<RootMarketingOpsGrants> {
+    const cached = this.rootMarketingOpsRequestCache.get(req);
+    if (cached) return cached;
+
+    const none: RootMarketingOpsGrants = { marketingOps: false, globalMarketingOps: false };
+    const promise = resolveRootProjectUid(req, this.natsService)
+      .then(async (rootUid) => {
+        if (!rootUid) return none;
+        const results = await this.accessCheckService.checkAccess(req, [
+          { resource: 'project', id: rootUid, access: 'marketing_ops' },
+          { resource: 'project', id: rootUid, access: 'global_marketing_ops' },
+        ]);
+        return {
+          marketingOps: results.get(`${rootUid}#marketing_ops`) ?? false,
+          globalMarketingOps: results.get(`${rootUid}#global_marketing_ops`) ?? false,
+        };
+      })
+      .catch((error) => {
+        logger.warning(req, 'check_root_campaign_manager', 'Root marketing_ops/global_marketing_ops check failed, assuming no access', { err: error });
+        return none;
+      });
+    this.rootMarketingOpsRequestCache.set(req, promise);
+    return promise;
   }
 
   private async checkProjectAccess(
     req: Request,
     projectSlug: string | undefined,
-    access: 'marketing_auditor' | 'campaign_manager',
+    access: 'marketing_auditor' | 'campaign_manager' | 'writer_guard',
     operation: string
   ): Promise<boolean> {
     if (!projectSlug) return false;
@@ -308,7 +368,7 @@ export class PersonaDetectionService {
   private async checkRootAccess(
     req: Request,
     cache: WeakMap<Request, Promise<boolean>>,
-    access: 'marketing_auditor' | 'campaign_manager' | 'marketing_ops' | 'auditor',
+    access: 'marketing_auditor' | 'auditor_guard',
     operation: string
   ): Promise<boolean> {
     const cached = cache.get(req);

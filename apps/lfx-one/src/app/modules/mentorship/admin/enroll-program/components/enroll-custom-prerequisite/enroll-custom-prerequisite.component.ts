@@ -23,6 +23,8 @@ export class EnrollCustomPrerequisiteComponent {
   public readonly item = input.required<MentorshipPrerequisite>();
   public readonly index = input.required<number>();
   public readonly showErrors = input(false);
+  /** Set once the program is saved, so the answers can no longer change. */
+  public readonly locked = input(false);
   public readonly itemChange = output<MentorshipPrerequisite>();
   public readonly deleted = output<void>();
 
@@ -76,6 +78,16 @@ export class EnrollCustomPrerequisiteComponent {
       this.emitChange();
       this.formSnapshot.set(this.form.getRawValue());
     });
+
+    toObservable(this.locked)
+      .pipe(takeUntilDestroyed())
+      .subscribe((locked) => {
+        if (locked) {
+          this.form.disable({ emitEvent: false });
+        } else {
+          this.form.enable({ emitEvent: false });
+        }
+      });
   }
 
   protected onDelete(): void {

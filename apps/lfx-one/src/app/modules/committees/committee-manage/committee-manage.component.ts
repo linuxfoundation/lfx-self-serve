@@ -18,8 +18,9 @@ import {
   ProjectContext,
   SucceededMemberOperations,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation } from '@lfx-one/shared/utils';
+import { computeIsFoundation, getSelectableCommitteeCategories } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
@@ -59,6 +60,7 @@ export class CommitteeManageComponent {
   private readonly messageService = inject(MessageService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
+  private readonly personaService = inject(PersonaService);
   private readonly destroyRef = inject(DestroyRef);
   // Mode and state signals
   public mode = signal<'create' | 'edit'>('create');
@@ -140,6 +142,7 @@ export class CommitteeManageComponent {
     // lens kind (mirror: meeting-manage post-GH-1432).
     syncEntityProjectContext(this.committeeEntityContext, this.projectContextService, this.router, this.destroyRef, { preferEntityKind: true });
     this.initCommitteeContextFallback();
+    this.initCategoryFromUrl();
 
     // Initialize step based on mode
     this.currentStep = toSignal(
@@ -226,7 +229,7 @@ export class CommitteeManageComponent {
       control?.markAsDirty();
     });
 
-    if (this.form.invalid) {
+    if (this.form.invalid || (!this.isEditMode() && !this.isStepValid(this.formSteps.CATEGORY))) {
       this.messageService.add({
         severity: 'error',
         summary: 'Validation Error',
@@ -471,6 +474,33 @@ export class CommitteeManageComponent {
       });
   }
 
+  /** Applies a create link's category once persona detection settles, then clears selections that become unavailable. Edit preserves saved categories. */
+  private initCategoryFromUrl(): void {
+    const category = this.route.snapshot.queryParamMap.get('category');
+    if (this.route.snapshot.paramMap.has('id')) {
+      return;
+    }
+    const personaState = computed(() => ({ loaded: this.personaService.personaLoaded(), persona: this.personaService.currentPersona() }));
+    let initialized = false;
+    toObservable(personaState)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(({ loaded, persona }) => {
+        if (!loaded) return;
+        const control = this.form.get('category');
+        const categories = getSelectableCommitteeCategories(persona);
+        if (!initialized) {
+          initialized = true;
+          // A user may have picked a category while detection was pending; do not overwrite it.
+          if (!control?.value && category && categories.some((option) => option.value === category)) {
+            control?.setValue(category);
+          }
+        }
+        if (control?.value && !categories.some((option) => option.value === control.value)) {
+          control.setValue('');
+        }
+      });
+  }
+
   /**
    * Access predicate for evictOnWriteAccessLoss — mirrors writerGuard's committees standard
    * (project writer only: 'committees' is not in COMMITTEE_WRITE_FEATURES, so no committee-writer
@@ -650,7 +680,13 @@ export class CommitteeManageComponent {
   private isStepValid(step: number): boolean {
     switch (step) {
       case this.formSteps.CATEGORY:
-        // Category must be selected
+        // Create checks read the current persona synchronously too, before the normalization stream settles.
+        if (!this.isEditMode()) {
+          return (
+            this.personaService.personaLoaded() &&
+            getSelectableCommitteeCategories(this.personaService.currentPersona()).some((option) => option.value === this.form.get('category')?.value)
+          );
+        }
         return !!(this.form.get('category')?.value && this.form.get('category')?.valid);
 
       case this.formSteps.BASIC_INFO:

@@ -26,8 +26,12 @@ import {
   EVENT_TERM_YEAR_PATTERN,
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
+  EMAIL_HERO_PREVIEW_HOSTS,
+  EMAIL_HERO_PREVIEW_IMAGE_PATH,
+  HUBSPOT_APP_HOST_PATTERN,
 } from '@lfx-one/shared/constants';
 import type {
+  AudienceBriefState,
   AudienceComposedList,
   AudienceComposeUnattachedEvent,
   BriefMetrics,
@@ -66,14 +70,14 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { EmailBodyPreviewComponent } from '@components/email-body-preview/email-body-preview.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { TextareaComponent } from '@components/textarea/textarea.component';
+import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { firstValueFrom, skip, Subscription, take } from 'rxjs';
+import { finalize, firstValueFrom, skip, Subscription, take } from 'rxjs';
 
 import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
 import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
@@ -119,7 +123,11 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
 function withUnlinkedCta(body: string, unlinkedLabel: string): string {
   if (unlinkedLabel === '') return body;
   const fragment = `<div><strong>${escapeHtml(unlinkedLabel)}</strong></div>`;
-  return body.includes(stripResourceLoadingHtml(fragment)) ? body : `${body}${fragment}`;
+  // The rich editor re-serializes a hand-edited body with `<p>` where the server wrote `<div>`,
+  // so the folded label is looked for in both shapes.
+  const asParagraph = fragment.replace(/^<div>/, '<p>').replace(/<\/div>$/, '</p>');
+  const alreadyFolded = [fragment, asParagraph].some((candidate) => body.includes(stripResourceLoadingHtml(candidate)));
+  return alreadyFolded ? body : `${body}${fragment}`;
 }
 
 @Component({
@@ -134,7 +142,7 @@ function withUnlinkedCta(body: string, unlinkedLabel: string): string {
     CheckboxComponent,
     EmailBodyPreviewComponent,
     InputTextComponent,
-    TextareaComponent,
+    RichEditorComponent,
     SelectComponent,
     PlanningTabComponent,
     ImplementationTabComponent,
@@ -731,6 +739,32 @@ export class CampaignsComponent {
   protected readonly briefCampaignsDemandGenEnabled = signal<boolean | null>(null);
 
   /**
+   * Whether this deployment can create a Performance Max, Video or Display Google campaign —
+   * `null` while unanswered.
+   *
+   * The sibling of `briefCampaignsDemandGenEnabled` in every respect: same two writers, same
+   * three-state model, same reason `null` is not collapsed into `false` (the Implementation tab's
+   * draft restore would otherwise rewrite a saved selection from an answer the server never
+   * gave). It is a SEPARATE signal rather than a widened one because the server derives the two
+   * capabilities by opposite rules — Demand Gen survives a dark cutover and these three do not —
+   * so one value cannot stand for both.
+   */
+  protected readonly briefCampaignsGoogleChannelsEnabled = signal<boolean | null>(null);
+
+  /**
+   * Whether a Google creative supplied with the create will actually reach Google — `null` while
+   * unanswered.
+   *
+   * The third sibling, with the same three-state model and the same two writers as the other two.
+   * It tracks `cutoverOwnsCreate()` alone: the creative objects ride on `googleAdsConfig`, which
+   * only the campaign-service create path builds, so with the cutover dark the legacy creator
+   * discards them in silence. Separate from `briefCampaignsGoogleChannelsEnabled` because that one
+   * additionally requires the Google-channels flag, and the window where the cutover owns the
+   * create with that flag off is one where Demand Gen creative works.
+   */
+  protected readonly briefCampaignsGoogleCreativeEnabled = signal<boolean | null>(null);
+
+  /**
    * Generation counter for the campaign-list read — the same mechanism as `emailSearchGeneration`,
    * reused rather than reinvented.
    *
@@ -1137,6 +1171,39 @@ export class CampaignsComponent {
    */
   protected readonly emailBriefResolving = signal(false);
   /**
+   * The event the email brief is for, as the Audience tab tells events apart: slug, then name, then
+   * registration URL. See the tab's `eventKey`.
+   */
+  protected readonly emailEventKey = computed(() => {
+    const details = this.emailBriefOutput()?.eventDetails;
+    return (details?.slug || details?.name || details?.registrationUrl || '').trim().toLowerCase();
+  });
+  /** The Audience tab is writing this brief's send audience. See its `audienceWriteInFlight`. */
+  protected readonly emailAudienceWriteInFlight = signal(false);
+  /**
+   * How the last Audience-tab warm-up save ended when it produced no usable id: the brief was
+   * saved but not approved, the save failed outright, or a brief this session does not own
+   * already exists. `'none'` otherwise. Cleared with the id. Only ever `'none'`, `'unapproved'`,
+   * `'failed'` or `'unopened'`.
+   */
+  private readonly emailBriefSaveOutcome = signal<AudienceBriefState>('none');
+  /** The conflict-specific recovery for a failed warm-up save, shown by the Audience tab; '' otherwise. */
+  protected readonly emailBriefSaveMessage = signal('');
+  /**
+   * Why the Audience tab has (or has no) brief to attach to. An empty `emailBriefId` used to read
+   * as "save the plan first" in every case, though the tab saves it itself on open -- so the real
+   * cause is a save still running, a save that failed, or a brief that is not approved.
+   */
+  protected readonly emailBriefState = computed<AudienceBriefState>(() => {
+    if (this.emailBriefId() !== '') {
+      return 'ready';
+    }
+    if (this.emailBriefResolving()) {
+      return 'resolving';
+    }
+    return this.emailBriefSaveOutcome();
+  });
+  /**
    * The brief id the last audience read was for, so the Audience tab's retry re-reads THAT brief.
    *
    * Not `emailBriefId`: a restore deliberately leaves that empty for an unapproved brief (see
@@ -1455,7 +1522,8 @@ export class CampaignsComponent {
    * omits AND made the BROWSER fetch it, which the server-side guard cannot prevent. Same
    * validator as the controller, so the two cannot drift.
    *
-   * NOT rendered in the preview, and that is deliberate.
+   * Rendered in the preview ONLY for https `linuxfoundation.org` hosts, through
+   * `emailHeroPreviewUrl`; every other host is named, never loaded.
    *
    * `canonicalHttpUrl` is a literal/name denylist: it does NOT resolve DNS, so a hostname that
    * resolves to a private address still passes it. campaign-service's dial-time guard covers
@@ -1463,10 +1531,10 @@ export class CampaignsComponent {
    * value into an `<img [src]>` made the operator's browser fetch an arbitrary host from inside
    * their network, and `referrerpolicy` suppressed the referrer without stopping the request.
    *
-   * The preview therefore NAMES the image rather than loading it (see `emailHeroImageHost`).
-   * This value is still what gets STAGED -- campaign-service fetches and re-hosts it behind its
-   * own guard at that point -- so it remains the right thing to send, and the wrong thing to
-   * render.
+   * The preview therefore NAMES the image rather than loading it, except for the allowlisted
+   * hosts above (see `emailHeroImageHost`). This value is still what gets STAGED --
+   * campaign-service fetches and re-hosts it behind its own guard at that point -- so it remains
+   * the right thing to send, and the wrong thing to render for any other host.
    */
   protected readonly emailHeroImageUrl = computed<string>(() => {
     if (!this.emailBodyIsStageable()) return '';
@@ -1612,7 +1680,8 @@ export class CampaignsComponent {
    * There is no re-hosted asset to show instead -- campaign-service re-hosts the bytes when the
    * draft is staged, and the brief carries only the scraped URL at preview time. So the preview
    * names the image rather than loading it: the operator still sees that a banner will be
-   * attached and where it came from, and no request leaves the browser.
+   * attached and where it came from, and no request leaves the browser. The one exception is an
+   * image on one of `EMAIL_HERO_PREVIEW_HOSTS`, which `emailHeroPreviewUrl` renders as the real banner.
    */
   protected readonly emailHeroImageHost = computed<string>(() => {
     // `new URL('')` throws, so the try/catch covers the empty case too -- an explicit
@@ -1620,6 +1689,30 @@ export class CampaignsComponent {
     // handles that input.
     try {
       return new URL(this.emailHeroImageUrl()).host;
+    } catch {
+      return '';
+    }
+  });
+
+  /**
+   * The hero URL, but ONLY when it is safe to let the operator's browser fetch it; '' otherwise.
+   *
+   * The "name, never load" rule above exists because a scraped hostname can resolve to a private
+   * address. That risk does not apply to the Foundation's own event sites, so an https URL on one
+   * of `EMAIL_HERO_PREVIEW_HOSTS`, with an image path and no query, is rendered as the real banner.
+   * The match is on the parsed hostname (a suffix test on the raw string would accept
+   * `evil.com/?.linuxfoundation.org`), and any other URL keeps the named-only note.
+   *
+   * Exact hosts and an image path, not the `*.linuxfoundation.org` zone: LFX One and the SSO host
+   * live in that zone, and the image request carries the operator's same-site cookies, so a
+   * scraped `og:image` of the app's own `/logout` signed the operator out as the preview rendered.
+   */
+  protected readonly emailHeroPreviewUrl = computed<string>(() => {
+    try {
+      const url = new URL(this.emailHeroImageUrl());
+      const safe =
+        url.protocol === 'https:' && EMAIL_HERO_PREVIEW_HOSTS.has(url.hostname) && url.search === '' && EMAIL_HERO_PREVIEW_IMAGE_PATH.test(url.pathname);
+      return safe ? url.href : '';
     } catch {
       return '';
     }
@@ -1716,9 +1809,49 @@ export class CampaignsComponent {
    * ("connect HubSpot", "pick a template") and the one they cannot are both surfaced here.
    */
   protected readonly emailStaging = signal<'idle' | 'staging' | 'done' | 'error'>('idle');
+  /**
+   * A stage ended WITHOUT a terminal answer, so a HubSpot draft may still be created against this
+   * brief's audience: the poll lost track of the job or timed out, the create was accepted with no
+   * job or reported `indeterminate`, it failed after it was sent, or a reset cancelled it after
+   * dispatch.
+   *
+   * `emailStaging` becomes `'error'` on those paths, which released every lock keyed on it while the
+   * background dispatcher could still resolve the audience. So this holds them -- audience writes,
+   * the type and segment pickers, and Stage itself (a retry could duplicate the draft) -- until the
+   * operator confirms they checked HubSpot (`onAcknowledgeStagingUnresolved`).
+   *
+   * SCOPED to the project and brief the stage was for, and kept per scope. The component survives
+   * foundation switches and brief resets, so a single flag locked foundation B on A's stage -- and
+   * let B's acknowledgement clear A's protection without anyone checking A's portal. Now it holds
+   * only the matching context, and A's warning is still there on return to A.
+   */
+  protected readonly emailStagingUnresolved = computed(() => this.unresolvedStages().has(this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId())));
+  /** Every project/brief with an unresolved stage. See `emailStagingUnresolved`. */
+  private readonly unresolvedStages = signal<ReadonlySet<string>>(new Set());
+  /**
+   * The project/brief of a create that has been DISPATCHED and has not reached a terminal answer.
+   *
+   * Held apart from `emailStaging`, which is display state: a brief reset calls `cancelStagingPoll`
+   * and idles it, yet the create cannot be recalled and its job may still resolve that brief's
+   * audience. A cancel therefore turns a dispatched stage into an unresolved one for its scope.
+   */
+  private dispatchedStage: { projectSlug: string; briefId: string } | null = null;
+  /**
+   * Scopes whose create REQUEST is still awaiting its HTTP response. Separate from the unresolved
+   * hold: a reset can record a stage as unresolved while its create is still on the wire, and the
+   * acknowledgement must not be accepted until that request settles -- checking HubSpot before the
+   * draft can appear, then staging again, is how the duplicate is made.
+   */
+  private readonly createsOnWire = signal<ReadonlySet<string>>(new Set());
+  /** The scope on screen has a create request still awaiting its response. */
+  protected readonly emailStageCreateOnWire = computed(() => this.createsOnWire().has(this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId())));
+  /** A stage is in flight OR unresolved: what every lock that protects a stage keys on. */
+  protected readonly emailStagingHeld = computed(() => this.emailStaging() === 'staging' || this.emailStagingUnresolved());
 
   /** Terminal message for the staging attempt — empty while idle or in flight. */
   protected readonly emailStagingMessage = signal<string>('');
+  /** HubSpot link to the staged draft; '' when the service sent none or it is not an http(s) URL. */
+  protected readonly emailStagingDraftUrl = signal<string>('');
 
   /**
    * Whether a send can be staged right now.
@@ -1742,7 +1875,13 @@ export class CampaignsComponent {
       // and `failed`, and a build that ends in `failed` still yields an audience object. Gating
       // on existence alone would re-admit the exact refusal this guard exists to prevent.
       this.emailAudience()?.status === 'built' &&
+      // Not while that audience is being REPLACED. A re-attach or a replacement compose leaves the
+      // old row `built` until its reply lands, so staging then cloned a draft against the list the
+      // operator was in the middle of replacing.
+      !this.emailAudienceWriteInFlight() &&
       this.emailStaging() !== 'staging' &&
+      // Not over an UNRESOLVED stage: its draft may still be created, so a retry could duplicate it.
+      !this.emailStagingUnresolved() &&
       // A generation IN FLIGHT, not just a staging one. `onStageEmailSend` reads `emailCopy()`
       // unconditionally, and a regeneration clears it only when the response lands -- so staging
       // during one sends the PREVIOUS copy while the operator watches new copy being written.
@@ -2162,6 +2301,8 @@ export class CampaignsComponent {
         this.briefCampaignsStale.set(false);
         this.briefCampaignsToggleEnabled.set(false);
         this.briefCampaignsDemandGenEnabled.set(null);
+        this.briefCampaignsGoogleChannelsEnabled.set(null);
+        this.briefCampaignsGoogleCreativeEnabled.set(null);
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
         // set would report the previous foundation's outage against a foundation never queried.
         this.briefCampaignsUnavailable.set(false);
@@ -2244,6 +2385,23 @@ export class CampaignsComponent {
     this.selectorForm.controls.emailSegment.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       this.onSelectEmailSegment(value);
     });
+
+    // Both pickers that change what a stage SENDS are locked while one is in flight. Invalidating
+    // the generation (as both handlers do) stops the UI from reporting the abandoned stage, but it
+    // cannot recall a create already on the wire: `onStageEmailSend` snapshots the copy before its
+    // awaits, so switching mid-stage cloned a HubSpot draft with the PREVIOUS selection's copy.
+    // Disabled through the CONTROLS, not a `[disabled]` binding, which fights ReactiveForms.
+    toObservable(this.emailStagingHeld)
+      .pipe(takeUntilDestroyed())
+      .subscribe((held) => {
+        for (const control of [this.selectorForm.controls.emailType, this.selectorForm.controls.emailSegment]) {
+          if (held) {
+            control.disable({ emitEvent: false });
+          } else {
+            control.enable({ emitEvent: false });
+          }
+        }
+      });
 
     // Clearing lives on the control's own stream rather than in a template handler: the
     // checkbox is form-driven now, so a `setValue(false)` from the reset paths must clear the
@@ -2657,9 +2815,34 @@ export class CampaignsComponent {
     this.emailAudienceSkipped.set(false);
   }
 
+  /** The operator checked HubSpot after a stage that ended without an answer; release ITS locks only. */
+  protected onAcknowledgeStagingUnresolved(): void {
+    // Not while this scope's create is still on the wire: the draft may not have appeared YET.
+    if (this.emailStageCreateOnWire()) {
+      return;
+    }
+    const key = this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId());
+    this.unresolvedStages.update((keys) => new Set([...keys].filter((k) => k !== key)));
+    // And its dispatch marker, if any is left for this scope: a reconciled stage must not be re-held
+    // by the next reset's `cancelStagingPoll`.
+    this.settleDispatchFor(this.activeFoundationSlug(), this.emailBriefId());
+  }
+
   /** The Audience tab asked to re-read the saved audience it could not verify. */
   protected onRetryAudienceRead(): void {
     void this.restoreEmailAudience(this.activeFoundationSlug(), this.emailAudienceReadBriefId);
+  }
+
+  /** The Audience tab asked to retry the brief save. It offers Retry only after a failed save. */
+  protected onRetryEmailBrief(): void {
+    // The Audience tab showed this conflict's recovery (`emailBriefSaveMessage`) beside the Retry
+    // being clicked, so the overwrite that message promises is granted now -- through the one
+    // function that pairs a promotion with its warning -- and the retry can actually succeed rather
+    // than repeat the same conflict.
+    if (this.emailBriefSaveMessage() !== '') {
+      this.emailSaveFailureMessage('');
+    }
+    this.warmEmailBriefId();
   }
 
   /**
@@ -2696,15 +2879,27 @@ export class CampaignsComponent {
    * prospect stays stageable under an "Alumni" selector.
    *
    * Deliberately a SUBSET of what a type change clears. A segment is not part of a brief's
-   * identity: one brief serves every segment and only the framing differs, so the brief id, the
-   * template suggestion and the staging poll are all left alone. A type change touches those
-   * because it moves the STAGE, and the stage is what names the brief.
+   * identity: one brief serves every segment and only the framing differs, so the brief id and the
+   * template suggestion are left alone. A type change touches those because it moves the STAGE,
+   * and the stage is what names the brief.
+   *
+   * The in-flight STAGE is not left alone, though. It was staging the previous segment's copy, so
+   * it is invalidated exactly as a type change does it -- and the picker is locked while one runs
+   * (see the constructor), since a create already on the wire cannot be recalled.
    */
   protected onSelectEmailSegment(segmentId: string): void {
     if (segmentId === this.selectedEmailSegmentId()) {
       return;
     }
     this.selectedEmailSegmentId.set(segmentId);
+
+    // Same pair as `onSelectEmailType`: invalidate the stage and clean up the state it owns, or the
+    // poll goes on to report "Draft created" for copy this segment no longer shows. Only an
+    // IN-FLIGHT poll -- a finished stage's confirmation is not erased by a later segment change.
+    this.emailStagingGeneration++;
+    if (this.emailStaging() === 'staging') {
+      this.cancelStagingPoll();
+    }
 
     this.emailCopyGeneration++;
     this.emailCopy.set(null);
@@ -2828,6 +3023,8 @@ export class CampaignsComponent {
       this.emailAudienceReadPending.set(false);
       this.emailAudienceReadUnavailable.set(false);
       this.emailBriefResolving.set(false);
+      this.emailBriefSaveOutcome.set('none');
+      this.emailBriefSaveMessage.set('');
       this.emailAudienceReadBriefId = '';
       this.emailAudienceScope.update((n) => n + 1);
       this.emailAudienceGeneration++;
@@ -3076,16 +3273,26 @@ export class CampaignsComponent {
     // precondition upstream actively refuses on (`resolveBuiltAudience`), so omitting it here
     // would let the enumeration drift from the guard it mirrors -- and the failure would arrive
     // from HubSpot after the draft work had begun rather than from this early return.
-    if (brief === null || sourceEmailId === '' || projectSlug === '' || this.emailAudience()?.status !== 'built') {
+    if (
+      brief === null ||
+      sourceEmailId === '' ||
+      projectSlug === '' ||
+      this.emailAudience()?.status !== 'built' ||
+      this.emailAudienceWriteInFlight() ||
+      this.emailStaging() === 'staging' ||
+      this.emailStagingUnresolved()
+    ) {
       return;
     }
 
     this.emailStaging.set('staging');
     this.emailStagingMessage.set('');
+    this.emailStagingDraftUrl.set('');
 
     // Bumped BEFORE the await below; the reset bumps the same counter to invalidate it.
     const generation = ++this.emailStagingGeneration;
     const isCurrent = (): boolean => generation === this.emailStagingGeneration;
+    let dispatched: { projectSlug: string; briefId: string } | null = null;
 
     try {
       // Shared with the audience build via `ensureEmailBriefId`, so the two actions cannot write
@@ -3094,6 +3301,22 @@ export class CampaignsComponent {
       // A reset can land during that await. Abandoning here is what stops the create below --
       // which CLONES a HubSpot draft -- from running against the previous brief.
       if (!isCurrent()) {
+        return;
+      }
+      // And the AUDIENCE can change during it: the Audience tab stays mounted, so a replacement
+      // compose or attach started while the brief id was resolving would otherwise have the create
+      // clone a draft against the list being replaced. Same gate `canStageEmail` holds, re-read.
+      // The unresolved check is re-made against the RESOLVED brief id: the on-screen key is
+      // `emailBriefId()`, which can be '' before the persist above assigns it. Its recovery is the
+      // HubSpot check, not another stage, so it gets its own copy.
+      if (this.unresolvedStages().has(this.stageScopeKey(projectSlug, briefId))) {
+        this.emailStaging.set('error');
+        this.emailStagingMessage.set('The last stage for this email ended without an answer. Check HubSpot and confirm before staging again.');
+        return;
+      }
+      if (this.emailAudienceWriteInFlight() || this.emailAudience()?.status !== 'built') {
+        this.emailStaging.set('error');
+        this.emailStagingMessage.set('The send audience changed while staging. Stage again once it has finished updating.');
         return;
       }
 
@@ -3212,7 +3435,28 @@ export class CampaignsComponent {
         },
       };
 
-      const outcome = await firstValueFrom(this.campaignService.createCampaign(request, projectSlug, briefId));
+      // Recorded BEFORE the await: from here the create is on the wire and cannot be recalled.
+      // Kept as a LOCAL too, so a stale reply settles its own dispatch and never its successor's.
+      dispatched = { projectSlug, briefId };
+      this.dispatchedStage = dispatched;
+      const wireKey = this.stageScopeKey(projectSlug, briefId);
+      this.createsOnWire.update((keys) => new Set([...keys, wireKey]));
+      const outcome = await firstValueFrom(
+        this.campaignService
+          .createCampaign(request, projectSlug, briefId)
+          // Released when the REQUEST settles, success or failure, whatever context is on screen.
+          .pipe(finalize(() => this.createsOnWire.update((keys) => new Set([...keys].filter((key) => key !== wireKey)))))
+      );
+      // A DEFINITE refusal created nothing, whatever is on screen now. A cancel during the await
+      // (`cancelStagingPoll`) held this dispatch as unresolved because the create might have
+      // started; the answer says it did not, so that hold is released here -- before the context
+      // check below, which would otherwise leave Stage, the pickers and audience writes locked
+      // over a draft that cannot exist. No earlier hold can be cleared by mistake: a held scope
+      // cannot start a stage.
+      if (outcome.error && !outcome.indeterminate) {
+        this.releaseStageHold(projectSlug, briefId);
+        this.settleDispatch(dispatched);
+      }
       // Checked here TOO, not only after the persist above. A reset landing during THIS await
       // leaves the request already sent -- the draft may well exist upstream -- but everything
       // after it belongs to the previous brief: the poll would run under the new context and
@@ -3224,6 +3468,12 @@ export class CampaignsComponent {
 
       if (outcome.error) {
         this.emailStaging.set('error');
+        // An error is not always a refusal: the BFF marks a create that MAY have started (accepted
+        // with no job, or unconfirmed after it left) as indeterminate. Held, or a retry duplicates it.
+        if (outcome.indeterminate) {
+          this.markStageUnresolved(projectSlug, briefId);
+        }
+        this.settleDispatch(dispatched);
         this.emailStagingMessage.set(outcome.error);
         return;
       }
@@ -3234,14 +3484,24 @@ export class CampaignsComponent {
       // a dispatcher failure read as a created draft. The paid path already polls
       // (`implementation-tab`'s `pollJob`); this is the same contract for email.
       if (!outcome.jobId) {
-        // No id to follow. Report the ack honestly rather than inventing an outcome.
+        // No id to follow. Report the ack honestly rather than inventing an outcome -- and hold the
+        // locks: the request WAS accepted, so a draft may still be created.
         this.emailStaging.set('error');
+        this.markStageUnresolved(projectSlug, briefId);
+        this.settleDispatch(dispatched);
         this.emailStagingMessage.set('Staging was accepted but returned nothing to track. Check HubSpot before retrying.');
         return;
       }
 
-      this.pollStagingJob(outcome.jobId, projectSlug);
+      this.pollStagingJob(outcome.jobId, projectSlug, briefId);
     } catch {
+      // A failure AFTER the create left is indeterminate: it may have reached the BFF and started.
+      // Fail closed and hold its scope; a failure before dispatch (the persist) has nothing to hold.
+      // ITS OWN dispatch, from the local: a stale rejection must not settle a newer stage's state.
+      if (dispatched !== null) {
+        this.markStageUnresolved(dispatched.projectSlug, dispatched.briefId);
+        this.settleDispatch(dispatched);
+      }
       // Guarded like every other write in this method. A reset mid-stage would otherwise raise a
       // failure banner for a brief nobody is looking at -- and on the email tab that reads as
       // "your staging failed" about work the operator has already navigated away from.
@@ -3251,7 +3511,13 @@ export class CampaignsComponent {
       // The cause is not surfaced: a create failure can carry upstream detail, and the job
       // result collapses every dispatcher error to one string anyway.
       this.emailStaging.set('error');
-      this.emailStagingMessage.set('Staging failed. Check the HubSpot connection and try again.');
+      // After dispatch the create may already be running, and the stage is held as unresolved:
+      // "try again" there invited a duplicate draft, so the copy points at HubSpot instead.
+      this.emailStagingMessage.set(
+        dispatched !== null
+          ? 'Staging ended without an answer and a draft may still be created. Check HubSpot before staging again.'
+          : 'Staging failed. Check the HubSpot connection and try again.'
+      );
     }
   }
 
@@ -3579,6 +3845,20 @@ export class CampaignsComponent {
       });
   }
   /**
+   * The staged draft's link, only when it points at HubSpot's app (`HUBSPOT_APP_HOST_PATTERN`);
+   * '' otherwise. The value comes from campaign-service and is not checked on the way through the
+   * BFF, so the host is pinned here, the same way list links are pinned server-side.
+   */
+  private hubspotDraftUrl(raw: string | undefined): string {
+    const href = canonicalHttpUrl(raw);
+    try {
+      return href !== '' && new URL(href).protocol === 'https:' && HUBSPOT_APP_HOST_PATTERN.test(new URL(href).hostname) ? href : '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
    * Abandon an in-flight staging poll and return the button to idle.
    *
    * CANCEL, do not merely bump past it: `pollStagingJob` never reads `emailStagingGeneration`,
@@ -3591,10 +3871,16 @@ export class CampaignsComponent {
    * are one operation.
    */
   private cancelStagingPoll(): void {
+    // A dispatched create is abandoned by the UI, not by HubSpot: hold its scope until confirmed.
+    if (this.dispatchedStage !== null) {
+      this.markStageUnresolved(this.dispatchedStage.projectSlug, this.dispatchedStage.briefId);
+      this.dispatchedStage = null;
+    }
     this.stagingJobSubscription?.unsubscribe();
     this.stagingJobSubscription = null;
     this.emailStaging.set('idle');
     this.emailStagingMessage.set('');
+    this.emailStagingDraftUrl.set('');
   }
 
   /**
@@ -3639,9 +3925,8 @@ export class CampaignsComponent {
    * point where its result is still useful. Composing is what needs the id, and by the time the
    * operator presses that button the round trip has long finished.
    *
-   * Silent on failure on purpose. The tab is usable with no brief -- that is the documented
-   * exploratory path -- and it states inline that a compose without one attaches nothing, so there
-   * is nothing to report here that the operator is not already told at the point of action.
+   * No banner of its own: the outcome is recorded in `emailBriefSaveOutcome`, and the Audience tab
+   * states it (with a Retry that calls this again) through `emailBriefState`.
    */
   private warmEmailBriefId(): void {
     const brief = this.emailBriefOutput();
@@ -3652,7 +3937,12 @@ export class CampaignsComponent {
     const scope = this.emailAudienceScope();
     this.emailBriefResolving.set(true);
     void this.ensureEmailBriefId(brief, projectSlug)
-      .catch(() => undefined)
+      .catch(() => {
+        if (scope === this.emailAudienceScope()) {
+          this.emailBriefSaveOutcome.set('failed');
+          this.emailBriefSaveMessage.set('');
+        }
+      })
       .finally(() => {
         // Only for the send that started it: a reset already cleared it, and a newer warm-up owns it.
         if (scope === this.emailAudienceScope()) {
@@ -3781,6 +4071,44 @@ export class CampaignsComponent {
     this.unattachedByScope.update((map) => new Map([...map].filter(([key]) => !drop.has(key))));
   }
 
+  /** The `unresolvedStages` key for a project and brief. */
+  private stageScopeKey(projectSlug: string, briefId: string): string {
+    return `${projectSlug}|${briefId}`;
+  }
+
+  /** Clears the dispatch marker only if it is still THIS dispatch, never a successor's. */
+  private settleDispatch(dispatched: { projectSlug: string; briefId: string } | null): void {
+    if (dispatched !== null && this.dispatchedStage === dispatched) {
+      this.dispatchedStage = null;
+    }
+  }
+
+  /**
+   * Clears the dispatch marker when it is for this scope. For the poll's exits, which know the scope
+   * they polled but not the dispatch object: once the job is recorded as unresolved it is no longer
+   * "abandoned by a cancel", and a leftover marker re-locked the brief on the next reset.
+   */
+  private settleDispatchFor(projectSlug: string, briefId: string): void {
+    if (this.dispatchedStage?.projectSlug === projectSlug && this.dispatchedStage.briefId === briefId) {
+      this.dispatchedStage = null;
+    }
+  }
+
+  /** Records a stage that ended without a terminal answer, for the project and brief it staged. */
+  private markStageUnresolved(projectSlug: string, briefId: string): void {
+    const key = this.stageScopeKey(projectSlug, briefId);
+    this.unresolvedStages.update((keys) => new Set([...keys, key]));
+  }
+
+  /** Releases a project/brief's unresolved-stage hold once an answer proves nothing was created. */
+  private releaseStageHold(projectSlug: string, briefId: string): void {
+    const key = this.stageScopeKey(projectSlug, briefId);
+    if (!this.unresolvedStages().has(key)) {
+      return;
+    }
+    this.unresolvedStages.update((keys) => new Set([...keys].filter((held) => held !== key)));
+  }
+
   /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
   private rememberBriefId(key: string, value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }): void {
     this.knownBriefIds.set(key, value);
@@ -3839,6 +4167,8 @@ export class CampaignsComponent {
           if (!mayWrite()) return;
           this.capabilityGeneration++;
           this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
+          this.briefCampaignsGoogleChannelsEnabled.set(result.googleChannelsEnabled);
+          this.briefCampaignsGoogleCreativeEnabled.set(result.googleCreativeEnabled);
         },
         // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
         // draft's selection on evidence a failed read does not have; leaving the previous value
@@ -3849,6 +4179,8 @@ export class CampaignsComponent {
         error: () => {
           if (!mayWrite()) return;
           this.briefCampaignsDemandGenEnabled.set(null);
+          this.briefCampaignsGoogleChannelsEnabled.set(null);
+          this.briefCampaignsGoogleCreativeEnabled.set(null);
         },
       });
   }
@@ -3905,6 +4237,8 @@ export class CampaignsComponent {
     this.briefCampaignsUnavailable.set(false);
     this.briefCampaignsToggleEnabled.set(false);
     this.briefCampaignsDemandGenEnabled.set(null);
+    this.briefCampaignsGoogleChannelsEnabled.set(null);
+    this.briefCampaignsGoogleCreativeEnabled.set(null);
 
     if (projectSlug === '' || briefId === null || briefId === '') {
       // No brief id means nothing was persisted this session and no restore supplied one, so
@@ -3929,6 +4263,8 @@ export class CampaignsComponent {
           if (mayWriteCapability()) {
             this.capabilityGeneration++;
             this.briefCampaignsDemandGenEnabled.set(result.demandGenEnabled);
+            this.briefCampaignsGoogleChannelsEnabled.set(result.googleChannelsEnabled);
+            this.briefCampaignsGoogleCreativeEnabled.set(result.googleCreativeEnabled);
           }
         },
         error: () => {
@@ -3945,6 +4281,8 @@ export class CampaignsComponent {
           // failure has established nothing and must not suppress an in-flight success.
           if (mayWriteCapability()) {
             this.briefCampaignsDemandGenEnabled.set(null);
+            this.briefCampaignsGoogleChannelsEnabled.set(null);
+            this.briefCampaignsGoogleCreativeEnabled.set(null);
           }
         },
       });
@@ -3977,7 +4315,7 @@ export class CampaignsComponent {
    * a job that never settles reports that rather than spinning forever, because a HubSpot draft
    * may exist either way and the operator needs to be told to go look.
    */
-  private pollStagingJob(jobId: string, projectSlug: string): void {
+  private pollStagingJob(jobId: string, projectSlug: string, briefId: string): void {
     const MAX_POLLS = Math.ceil(300_000 / CAMPAIGN_JOB_POLL_INTERVAL_MS);
     this.stagingJobSubscription?.unsubscribe();
     this.stagingJobSubscription = this.campaignService
@@ -3989,6 +4327,8 @@ export class CampaignsComponent {
           if (!outcome) {
             return;
           }
+          // A terminal answer: the job is no longer one a cancel could leave unresolved.
+          this.dispatchedStage = null;
           if (outcome.errors.length > 0) {
             this.emailStaging.set('error');
             this.emailStagingMessage.set(outcome.errors[0]);
@@ -4014,13 +4354,14 @@ export class CampaignsComponent {
           this.emailStaging.set('done');
           // The id is INCLUDED, because without it this message sends the user to hunt for one
           // draft among the hundreds the portal lists — the picker above says "Showing 100 of 500".
-          // `campaignId` is already on the result and was simply discarded here.
           //
-          // The id is shown rather than linked: a HubSpot deep link needs the PORTAL id, which the
-          // connection row does not reliably carry (it is empty for `tlf` today), and a link built
-          // without it points at whichever portal the reader happens to be signed into. An id the
-          // user can paste into HubSpot's own search is worth more than a link that may 404.
+          // It is also LINKED when campaign-service sent a link. That link is built upstream from
+          // the connection's portal id, so it targets the right portal instead of whichever one the
+          // reader is signed into; it is absent when the portal id is unknown, and the id alone is
+          // then what the operator pastes into HubSpot's search. `canonicalHttpUrl` keeps a
+          // non-http(s) value out of the `[href]`.
           const draftId = hubspotResult?.campaignId ?? '';
+          this.emailStagingDraftUrl.set(this.hubspotDraftUrl(hubspotResult?.hubspotUrl));
           this.emailStagingMessage.set(
             draftId === ''
               ? 'Draft created in HubSpot. Review and send it from there.'
@@ -4029,6 +4370,8 @@ export class CampaignsComponent {
         },
         error: () => {
           this.emailStaging.set('error');
+          this.markStageUnresolved(projectSlug, briefId);
+          this.settleDispatchFor(projectSlug, briefId);
           this.emailStagingMessage.set('Lost track of the staging job. Check HubSpot before retrying.');
         },
         complete: () => {
@@ -4036,6 +4379,8 @@ export class CampaignsComponent {
           // leaving the panel spinning or claiming a success nothing confirmed.
           if (this.emailStaging() === 'staging') {
             this.emailStaging.set('error');
+            this.markStageUnresolved(projectSlug, briefId);
+            this.settleDispatchFor(projectSlug, briefId);
             this.emailStagingMessage.set('Staging is taking longer than expected. Check HubSpot to see whether the draft was created.');
           }
         },
@@ -4555,16 +4900,46 @@ export class CampaignsComponent {
     if (pending !== null && pending.generation === this.emailBriefPersistGeneration && pending.conflict === conflict) {
       this.rememberBriefId(pending.key, { id: pending.id, etag: null, absence: 'overwrite' });
     }
+    return this.emailConflictText(conflict, consequence);
+  }
+
+  /**
+   * The conflict's message plus the consequence, with NO side effect. `emailSaveFailureMessage`
+   * renders through it after granting the staged overwrite; the Audience tab's brief banner uses it
+   * directly, because nothing has shown the warning at the point that text is recorded.
+   */
+  private emailConflictText(conflict: NonNullable<CampaignBriefPersistResult['conflict']>, consequence: string): string {
     // Capitalised, because the conflict message is a COMPLETE sentence ending in a period while
     // each consequence is a lowercase clause written to follow a comma. Joining them raw produced
     // "...re-enter the event URL to open it. so no audience was built."
-    const [first, ...rest] = consequence;
+    const [first = '', ...rest] = consequence;
     // The re-select step is appended HERE rather than in `conflictMessages`, which the paid
     // surface shares: a reload resets `selectedEmailTypeId` to the default, so under a non-default
     // stage re-entering the URL finds nothing until the operator picks the type back. That advice
     // is meaningless on paid, which has no type selector.
     const reselect = conflict === 'unowned-brief-exists' ? ' Re-select this email type first.' : '';
-    return `${this.conflictMessages[conflict]}${reselect} ${first.toUpperCase()}${rest.join('')}`;
+    return `${this.conflictMessages[conflict]}${reselect} ${first.toUpperCase()}${rest.join('')}`.trimEnd();
+  }
+
+  /**
+   * What an email persist that produced no usable id means for the Audience tab.
+   *
+   * `unowned-brief-exists` is told apart from a plain failure because Retry cannot clear it: the
+   * same save is refused again for as long as the page has not loaded the existing row.
+   */
+  private emailBriefOutcome(briefId: string, conflict: CampaignBriefPersistResult['conflict']): AudienceBriefState {
+    if (conflict === 'unowned-brief-exists') {
+      return 'unopened';
+    }
+    // A conflict is NOT "saved but unapproved" even when it carries an id: `stale-brief`,
+    // `unverified-validator` and `superseded-after-write` can return one with `approved: false`.
+    // Reading those as unapproved sent the operator to the Plan tab, and never surfaced the conflict
+    // message whose render is what grants the overwrite the retry needs -- so proceeding again hit
+    // the same conflict indefinitely.
+    if (conflict !== undefined) {
+      return 'failed';
+    }
+    return briefId !== '' ? 'unapproved' : 'failed';
   }
 
   /** The persist itself, wrapped by `ensureEmailBriefId`'s in-flight dedup. */
@@ -4669,6 +5044,8 @@ export class CampaignsComponent {
         return briefId;
       }
       this.emailBriefConflict = null;
+      this.emailBriefSaveOutcome.set('none');
+      this.emailBriefSaveMessage.set('');
       this.emailBriefId.set(briefId);
       // Re-read the brief's audience whenever an id lands with none known. A reset (re-proceeding
       // from Plan) clears `emailAudience` while this resolves the SAME brief through the ownership
@@ -4694,6 +5071,20 @@ export class CampaignsComponent {
         });
       }
       return briefId;
+    }
+    // Recorded for the Audience tab, which otherwise cannot tell "saved but not approved" from a
+    // failed save -- both return ''. Generation-guarded like every other write on this path.
+    if (generation === this.emailBriefPersistGeneration) {
+      this.emailBriefSaveOutcome.set(this.emailBriefOutcome(briefId, persisted.conflict));
+      // The conflict's own recovery, rendered on the Audience tab. Text only: the staged overwrite
+      // is NOT granted here, because nothing has shown the warning yet. `onRetryEmailBrief` grants
+      // it, from the Retry the operator clicks beside this message. `unowned-brief-exists` has its
+      // own fixed copy on the tab.
+      this.emailBriefSaveMessage.set(
+        persisted.conflict !== undefined && persisted.conflict !== 'unowned-brief-exists'
+          ? this.emailConflictText(persisted.conflict, 'so no lists can be attached yet. Use Retry at the top of this tab.')
+          : ''
+      );
     }
     return '';
   }
@@ -5149,6 +5540,8 @@ export class CampaignsComponent {
     this.emailAudienceReadPending.set(false);
     this.emailAudienceReadUnavailable.set(false);
     this.emailBriefResolving.set(false);
+    this.emailBriefSaveOutcome.set('none');
+    this.emailBriefSaveMessage.set('');
     this.emailAudienceReadBriefId = '';
     this.emailAudienceScope.update((n) => n + 1);
     this.emailCopy.set(null);

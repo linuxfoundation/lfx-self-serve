@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_ID, signal } from '@angular/core';
+import { PLATFORM_ID, signal, TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import {
@@ -13,14 +13,22 @@ import {
   GW_EMBED_SIGNIN_STATE_PARAM,
   GW_EMBED_STORAGE_KEY_PREFIX,
   GW_EMBED_STORAGE_KEY_SUFFIX,
+  GW_EMBED_STYLESHEET_ROUTE,
 } from '@lfx-one/shared/constants';
+import { GwEmbedManifest, GwHostContext, RuntimeConfig } from '@lfx-one/shared/interfaces';
 import { EMPTY } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectContextService } from '../../../shared/services/project-context.service';
 import { UserService } from '../../../shared/services/user.service';
-import { GwModuleOutletComponent } from './gw-module-outlet.component';
+import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '../../../shared/providers/runtime-config.provider';
+import { GwModuleOutletComponent, resolveGwEmbedStylesheetName } from './gw-module-outlet.component';
+
+// The loader is a real npm dependency that the unit-test builder bundles, so it cannot be mocked
+// at the module level; the mount path below stands it in through the component's loadEmbedLoader
+// seam, with a `ready` promise each test controls.
+const loaderMount = vi.fn();
 
 /**
  * These cover the host-side decisions the embed can't make for itself — session adoption, the
@@ -540,6 +548,125 @@ describe('GwModuleOutletComponent', () => {
     });
   });
 
+  describe('loading through @gatewaze/admin-embed', () => {
+    // Browser platform, like the impersonation block above: this is the one path that reaches the
+    // loader. The stand-in's `ready` is a deferred promise so the skeleton can be observed in
+    // flight, resolved with a manifest, or resolved with null (the loader's "nothing mounted").
+    let browserComponent: GwModuleOutletComponent;
+    let resolveReady: (manifest: GwEmbedManifest | null) => void;
+    let innerUnmount: ReturnType<typeof vi.fn>;
+
+    const EMBED_URL = 'https://admin.example.test/embed';
+    const MANIFEST: GwEmbedManifest = {
+      contract: 1,
+      version: '1.3.146',
+      entry: 'admin-embed-abc.js',
+      stylesheet: 'admin-embed-def.css',
+      modules: ['newsletters'],
+      builtAt: '',
+    };
+
+    const configure = (runtimeConfig: Partial<RuntimeConfig>): void => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        imports: [GwModuleOutletComponent],
+        providers: [
+          { provide: Router, useValue: { navigateByUrl: vi.fn(), events: EMPTY } },
+          { provide: MessageService, useValue: { add: vi.fn() } },
+          { provide: UserService, useValue: { user: signal(null), impersonating: signal(false) } },
+          { provide: ProjectContextService, useValue: { selectedFoundation: () => null, selectedProject: () => null } },
+          { provide: PLATFORM_ID, useValue: 'browser' },
+        ],
+      });
+      TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, {
+        ...DEFAULT_RUNTIME_CONFIG,
+        gwSupabaseUrl: 'https://data.example.test',
+        gwSupabaseAnonKey: 'anon',
+        gwLfidStartUrl: 'https://sso.example.test/start',
+        gwEmbedUrl: EMBED_URL,
+        ...runtimeConfig,
+      });
+      browserComponent = TestBed.createComponent(GwModuleOutletComponent).componentInstance;
+      (browserComponent as unknown as { loadEmbedLoader: () => Promise<unknown> }).loadEmbedLoader = async () => ({ mount: loaderMount });
+    };
+
+    beforeEach(() => {
+      innerUnmount = vi.fn();
+      loaderMount.mockReset().mockImplementation(() => ({
+        unmount: innerUnmount,
+        ready: new Promise<GwEmbedManifest | null>((resolve) => {
+          resolveReady = resolve;
+        }),
+      }));
+      configure({});
+    });
+
+    const mount = (): Promise<void> => (browserComponent as unknown as { mountEmbed: () => Promise<void> }).mountEmbed();
+    // The loader is reached after the auth-fragment step and the dynamic import, so wait for the
+    // call rather than counting microtask ticks.
+    const settle = (): Promise<void> => vi.waitFor(() => expect(loaderMount).toHaveBeenCalledTimes(1));
+
+    it('refuses to mount when GW_EMBED_URL is unset, before touching the loader', async () => {
+      configure({ gwEmbedUrl: '' });
+      await mount();
+      expect(loaderMount).not.toHaveBeenCalled();
+      expect(browserComponent['mountError']()).toContain('GW_EMBED_URL');
+    });
+
+    it('hands the loader the embed source and routes the stylesheet through the scoped endpoint', async () => {
+      const pending = mount();
+      await settle();
+      expect(loaderMount).toHaveBeenCalledTimes(1);
+      const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
+      expect(ctx.source.baseUrl).toBe(EMBED_URL);
+      expect(ctx.signIn.startUrl).toBe('https://sso.example.test/start');
+      expect(ctx.source.resolveStylesheetUrl?.(`${EMBED_URL}/admin-embed-def.css`)).toBe(`${GW_EMBED_STYLESHEET_ROUTE}/admin-embed-def.css`);
+      resolveReady(MANIFEST);
+      await pending;
+    });
+
+    it('keeps the skeleton up until the loader reports the embed mounted', async () => {
+      const pending = mount();
+      await settle();
+      // The loader has returned, but nothing is on screen yet.
+      expect(browserComponent['mounting']()).toBe(true);
+      expect(browserComponent['mountError']()).toBeNull();
+
+      resolveReady(MANIFEST);
+      await pending;
+      expect(browserComponent['mounting']()).toBe(false);
+      expect(browserComponent['mountError']()).toBeNull();
+    });
+
+    it('treats a null ready result as terminal and shows the error panel', async () => {
+      const pending = mount();
+      await settle();
+      resolveReady(null);
+      await pending;
+      expect(browserComponent['mounting']()).toBe(false);
+      expect(browserComponent['mountError']()).toContain('could not be loaded');
+    });
+
+    it('does not raise the error panel when teardown cancelled the mount', async () => {
+      const pending = mount();
+      await settle();
+      (browserComponent as unknown as { destroyed: boolean }).destroyed = true;
+      resolveReady(null);
+      await pending;
+      expect(browserComponent['mountError']()).toBeNull();
+    });
+
+    it('leaves a panel that onFatal already raised in place', async () => {
+      const pending = mount();
+      await settle();
+      const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
+      ctx.onFatal?.({ error_type: 'import_failed', code: 'gw_embed_contract_mismatch', message: 'Upgrade the loader.', recoverable: false });
+      resolveReady(null);
+      await pending;
+      expect(browserComponent['mountError']()).toBe('Upgrade the loader.');
+    });
+  });
+
   describe('syncEmbedToHostUrl', () => {
     // Re-dispatches popstate so the embed's own router follows a host navigation. The lastSyncedUrl
     // guard is the only thing between this and the unbounded NavigationEnd -> dispatch ->
@@ -845,5 +972,14 @@ describe('GwModuleOutletComponent', () => {
 
       expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info' }));
     });
+  });
+});
+
+describe('resolveGwEmbedStylesheetName', () => {
+  // The loader hands over the manifest's absolute stylesheet URL; only the hashed file name is
+  // sent to GW_EMBED_STYLESHEET_ROUTE, so the server never sees a path it did not construct itself.
+  it('keeps only the hashed file name', () => {
+    expect(resolveGwEmbedStylesheetName('https://admin.example.test/embed/admin-embed-C7yXdkZR.css')).toBe('admin-embed-C7yXdkZR.css');
+    expect(resolveGwEmbedStylesheetName('https://admin.example.test/embed/admin-embed-C7yXdkZR.css?x=1#y')).toBe('admin-embed-C7yXdkZR.css');
   });
 });

@@ -127,6 +127,8 @@ export interface MeetupRow {
   STARTS_AT: Date | string;
   EVENT_NAME: string;
   COMMUNITY: string;
+  /** Canonical OCG source community.name used for routing, distinct from display COMMUNITY */
+  COMMUNITY_SLUG: string;
   DATE: string;
   LOCATION: string;
   ROLES: string | null;

@@ -9,16 +9,21 @@ import { FilterService } from 'primeng/api';
 import {
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_ENROLL_IMPORT_FAILED,
+  MENTORSHIP_ENROLL_IMPORT_LIST_FAILED,
+  MENTORSHIP_ENROLL_LOGO_MAX_BYTES,
   MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE,
   MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE,
   MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
   MENTORSHIP_LF_PROJECT_REMOTE_FILTER_FIELD,
+  MENTORSHIP_PROGRAMS_MAX_LIMIT,
   MENTORSHIP_RICH_TEXT_RAW_MAX,
 } from '@lfx-one/shared/constants';
+import { MentorshipEnrollImport } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EnrollDetailsStepComponent } from './enroll-details-step.component';
@@ -354,5 +359,268 @@ describe('EnrollDetailsStepComponent — project lazy loading', () => {
     await fixture.whenStable();
 
     expect(fixture.componentInstance.project()).toBeNull();
+  });
+});
+
+describe('EnrollDetailsStepComponent — import from an existing program', () => {
+  const alpha = { id: 'uid-alpha', name: 'Alpha', slug: 'alpha' };
+  const template: MentorshipEnrollImport = {
+    name: 'Example Program',
+    project: alpha,
+    description: '<p>About it</p>',
+    repositoryUrl: 'https://repo.example/org/program',
+    websiteUrl: 'https://program.example',
+    codeOfConductUrl: 'https://program.example/coc',
+    ciiProjectId: '1234',
+    technologies: ['GO', 'Kubernetes'],
+    skills: ['Documentation'],
+    prerequisites: [{ id: 'imported-0', name: 'Read the guide', description: 'Chapter one', required: true, requireFile: false, custom: true }],
+    logoUrl: '',
+  };
+  let fixture: ComponentFixture<EnrollDetailsStepComponent>;
+  let form: FormGroup;
+  let getEnrollTemplate: ReturnType<typeof vi.fn>;
+
+  const importSelect = (): StubSelectComponent =>
+    fixture.debugElement
+      .queryAll(By.directive(StubSelectComponent))
+      .map((debugEl) => debugEl.componentInstance as StubSelectComponent)
+      .find((select) => select.inputId() === 'importProgramId') as StubSelectComponent;
+
+  const importOptionIds = (): string[] => (importSelect().options() as { value: string }[]).map((option) => option.value);
+  const importError = (): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="mentorship-enroll-import-error"]');
+
+  const pickImport = async (programId: string): Promise<void> => {
+    form.controls['importProgramId'].setValue(programId);
+    importSelect().onChange.emit({ value: programId });
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  const twoPrograms = (): Observable<unknown> =>
+    of({
+      data: [
+        { id: 'program-a', name: 'Program A' },
+        { id: 'program-b', name: 'Program B' },
+      ],
+    });
+
+  const setUp = async (
+    templateResponse: Observable<MentorshipEnrollImport>,
+    getPrograms: (...args: unknown[]) => Observable<unknown> = twoPrograms
+  ): Promise<void> => {
+    getEnrollTemplate = vi.fn(() => templateResponse);
+    TestBed.overrideComponent(EnrollDetailsStepComponent, { set: { imports: [ReactiveFormsModule, StubSelectComponent], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
+
+    await TestBed.configureTestingModule({
+      imports: [EnrollDetailsStepComponent],
+      providers: [
+        {
+          provide: MentorshipAdminService,
+          useValue: { getPrograms, getEnrollTemplate },
+        },
+        {
+          provide: MentorshipService,
+          useValue: { getLfProjects: () => of({ data: [] }), getCiiBadge: () => of(null), isProgramNameAvailable: () => of({ available: true }) },
+        },
+      ],
+    }).compileComponents();
+
+    const defaults = createEmptyMentorshipEnrollForm() as unknown as Record<string, unknown>;
+    form = new FormGroup(Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, new FormControl(value)])));
+
+    fixture = TestBed.createComponent(EnrollDetailsStepComponent);
+    fixture.componentRef.setInput('form', form);
+    fixture.detectChanges();
+  };
+
+  it('offers every program the admin manages, with None first', async () => {
+    await setUp(of(template));
+
+    expect(importOptionIds()).toEqual(['', 'program-a', 'program-b']);
+  });
+
+  it('reads every page of programs, not only the first', async () => {
+    const programs = Array.from({ length: MENTORSHIP_PROGRAMS_MAX_LIMIT + 3 }, (_, index) => ({ id: `program-${index}`, name: `Program ${index}` }));
+    const getPrograms = vi.fn((params: { offset: number; limit: number }) =>
+      of({ data: programs.slice(params.offset, params.offset + params.limit), total: programs.length })
+    );
+
+    await setUp(of(template), getPrograms as (...args: unknown[]) => Observable<unknown>);
+
+    expect(getPrograms.mock.calls.map(([params]) => params.offset)).toEqual([0, MENTORSHIP_PROGRAMS_MAX_LIMIT]);
+    expect(importOptionIds()).toEqual(['', ...programs.map((program) => program.id)]);
+    expect(importError()).toBeNull();
+  });
+
+  it('says the programs could not be loaded when any page fails, offering only None', async () => {
+    const programs = Array.from({ length: MENTORSHIP_PROGRAMS_MAX_LIMIT + 3 }, (_, index) => ({ id: `program-${index}`, name: `Program ${index}` }));
+    const getPrograms = vi.fn((params: { offset: number; limit: number }) =>
+      params.offset === 0 ? of({ data: programs.slice(0, params.limit), total: programs.length }) : throwError(() => new Error('upstream down'))
+    );
+
+    await setUp(of(template), getPrograms as (...args: unknown[]) => Observable<unknown>);
+    fixture.detectChanges();
+
+    expect(importOptionIds()).toEqual(['']);
+    expect(importSelect().loading()).toBe(false);
+    expect(importError()?.textContent).toContain(MENTORSHIP_ENROLL_IMPORT_LIST_FAILED);
+  });
+
+  it('puts the picker back on None when the step closes before the template arrives', async () => {
+    const template$ = new Subject<MentorshipEnrollImport>();
+    await setUp(template$);
+
+    await pickImport('program-a');
+    fixture.destroy();
+    template$.next(template);
+
+    expect(form.controls['importProgramId'].value).toBe('');
+    expect(form.controls['name'].value).toBe('');
+  });
+
+  it('keeps the picked program when the step closes after the template arrived', async () => {
+    await setUp(of(template));
+
+    await pickImport('program-a');
+    fixture.destroy();
+
+    expect(form.controls['importProgramId'].value).toBe('program-a');
+  });
+
+  it('fills the form from the template and keeps its project, though the picker has not loaded it', async () => {
+    await setUp(of(template));
+
+    await pickImport('program-a');
+
+    expect(getEnrollTemplate).toHaveBeenCalledWith('program-a');
+    expect(form.controls['name'].value).toBe('Example Program');
+    expect(form.controls['technologies'].value).toEqual(['GO', 'Kubernetes']);
+    expect(form.controls['skills'].value).toEqual(['Documentation']);
+    expect(form.controls['projectId'].value).toBe(alpha.id);
+    expect(form.controls['importProgramId'].value).toBe('program-a');
+    expect(fixture.componentInstance.project()).toEqual(alpha);
+    expect(importError()).toBeNull();
+  });
+
+  it('clears the logo the admin had picked, since the logo is not copied', async () => {
+    await setUp(of(template));
+    form.controls['logoFileName'].setValue('mine.png');
+    fixture.componentInstance.logoFile.set(new File(['png'], 'mine.png', { type: 'image/png' }));
+
+    await pickImport('program-a');
+
+    expect(fixture.componentInstance.logoFile()).toBeNull();
+    expect(form.controls['logoFileName'].value).toBe('');
+  });
+
+  it('shows the error, resets the select and leaves the rest of the form alone when the template fails', async () => {
+    await setUp(throwError(() => new Error('upstream down')));
+    form.controls['name'].setValue('Typed by hand');
+
+    await pickImport('program-a');
+
+    expect(importError()?.textContent).toContain(MENTORSHIP_ENROLL_IMPORT_FAILED);
+    expect(form.controls['importProgramId'].value).toBe('');
+    expect(form.controls['name'].value).toBe('Typed by hand');
+  });
+
+  it('drops the error on the next pick', async () => {
+    await setUp(throwError(() => new Error('upstream down')));
+    await pickImport('program-a');
+    expect(importError()).not.toBeNull();
+
+    getEnrollTemplate.mockReturnValue(of(template));
+    await pickImport('program-b');
+
+    expect(importError()).toBeNull();
+    expect(form.controls['name'].value).toBe('Example Program');
+  });
+
+  it('starts over without reading a template when None is picked', async () => {
+    await setUp(of(template));
+    await pickImport('program-a');
+
+    await pickImport('');
+
+    expect(getEnrollTemplate).toHaveBeenCalledTimes(1);
+    expect(form.controls['name'].value).toBe('');
+    expect(form.controls['projectId'].value).toBe('');
+    expect(fixture.componentInstance.project()).toBeNull();
+  });
+});
+
+describe('EnrollDetailsStepComponent — logo file', () => {
+  let fixture: ComponentFixture<EnrollDetailsStepComponent>;
+  let form: FormGroup;
+
+  const pickLogo = (file: File | null): void => {
+    const input = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    Object.defineProperty(input, 'files', { value: file ? [file] : [], configurable: true });
+    input!.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+  };
+
+  beforeEach(async () => {
+    TestBed.overrideComponent(EnrollDetailsStepComponent, { set: { imports: [ReactiveFormsModule, StubSelectComponent], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
+
+    await TestBed.configureTestingModule({
+      imports: [EnrollDetailsStepComponent],
+      providers: [
+        { provide: MentorshipAdminService, useValue: { getPrograms: () => of({ data: [] }) } },
+        {
+          provide: MentorshipService,
+          useValue: {
+            getLfProjects: () => of({ data: [] }),
+            getCiiBadge: () => of(null),
+            isProgramNameAvailable: () => of({ available: true }),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const defaults = createEmptyMentorshipEnrollForm() as unknown as Record<string, unknown>;
+    form = new FormGroup(Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, new FormControl(value)])));
+
+    URL.createObjectURL = vi.fn(() => 'blob:http://localhost/preview');
+    URL.revokeObjectURL = vi.fn();
+
+    fixture = TestBed.createComponent(EnrollDetailsStepComponent);
+    fixture.componentRef.setInput('form', form);
+    fixture.detectChanges();
+  });
+
+  it('exposes a valid picked file through the logoFile model', () => {
+    const file = new File(['png'], 'logo.png', { type: 'image/png' });
+
+    pickLogo(file);
+
+    expect(fixture.componentInstance.logoFile()).toBe(file);
+    expect(form.controls['logoFileName'].value).toBe('logo.png');
+  });
+
+  it('refuses a file of the wrong type and keeps the model empty', () => {
+    pickLogo(new File(['gif'], 'logo.gif', { type: 'image/gif' }));
+
+    expect(fixture.componentInstance.logoFile()).toBeNull();
+    expect(form.controls['logoFileName'].value).toBe('');
+  });
+
+  it('refuses a file over the size cap', () => {
+    const big = new File(['x'], 'logo.png', { type: 'image/png' });
+    Object.defineProperty(big, 'size', { value: MENTORSHIP_ENROLL_LOGO_MAX_BYTES + 1 });
+
+    pickLogo(big);
+
+    expect(fixture.componentInstance.logoFile()).toBeNull();
+  });
+
+  it('clears the model when the picker is emptied', () => {
+    pickLogo(new File(['png'], 'logo.png', { type: 'image/png' }));
+
+    pickLogo(null);
+
+    expect(fixture.componentInstance.logoFile()).toBeNull();
   });
 });

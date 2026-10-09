@@ -8,7 +8,6 @@ import type {
   MentorshipMentoringHistoryStatus,
   MentorshipMentorProfileResponse,
   MentorshipMentorProgramsResponse,
-  MentorshipMentorProgramTermStatus,
   MentorshipMentorRegisterFieldErrors,
   MentorshipMentorRegisterForm,
 } from '../interfaces/mentorship-mentor.interface';
@@ -23,17 +22,11 @@ export const MENTORSHIP_MENTOR_PAGE_TABS = [
   { value: 'profile' as const, label: 'Mentor Profile' },
 ];
 
-export const MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_LABELS: Record<MentorshipMentorProgramTermStatus, string> = {
-  'active-term': 'Active term',
-  upcoming: 'Upcoming',
-  completed: 'Completed',
-};
-
-export const MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES: Record<MentorshipMentorProgramTermStatus, string> = {
-  'active-term': 'bg-blue-50 text-blue-700',
-  upcoming: 'bg-amber-50 text-amber-700',
-  completed: 'bg-gray-100 text-gray-600',
-};
+/**
+ * Statuses of a mentor's program on upstream `GET /me/mentor-programs`, which the card shows with the admin card's
+ * `MENTORSHIP_PROGRAM_STATUS_LABELS` and `MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES`.
+ */
+export const MENTORSHIP_MENTOR_PROGRAM_STATUSES = ['open', 'completed'] as const;
 
 export const EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE: MentorshipMentorProgramsResponse = {
   data: [],
@@ -73,7 +66,7 @@ export const MENTORSHIP_MENTOR_TASK_AWAITING_REVIEW_LABEL = 'Awaiting Review';
 export const MENTORSHIP_MENTOR_TASK_APPROVED_LABEL = 'Approved';
 export const MENTORSHIP_MENTOR_TASK_APPROVE_LABEL = 'Approve';
 export const MENTORSHIP_MENTOR_TASK_REQUEST_CHANGES_LABEL = 'Request Changes';
-export const MENTORSHIP_MENTOR_TASK_OPEN_SUBMISSION_LABEL = 'Open Submission';
+export const MENTORSHIP_MENTOR_TASK_OPEN_SUBMISSION_LABEL = 'Download Submission';
 export const MENTORSHIP_MENTOR_TASK_SUBMITTED_VERB = 'submitted';
 export const MENTORSHIP_MENTOR_TASK_COMPLETED_VERB = 'completed';
 export const MENTORSHIP_MENTOR_TASKS_EMPTY_AWAITING = 'No tasks awaiting review.';
@@ -315,33 +308,6 @@ export const MENTORSHIP_MENTOR_NOTE_TOAST_LIFE = 5000;
  */
 export const MENTORSHIP_MENTOR_NOTE_SAVE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
   403: 'You can no longer edit notes on this program. Refresh the page and try again.',
-  404: 'This application no longer exists. Refresh the page and try again.',
-};
-
-export const MENTORSHIP_MENTOR_TASK_CREATE_SUCCESS_SUMMARY = 'Task created';
-export const MENTORSHIP_MENTOR_TASK_CREATE_PARTIAL_SUMMARY = 'Some tasks were not created';
-export const MENTORSHIP_MENTOR_TASK_CREATE_ERROR_SUMMARY = 'Could not create the task';
-
-/**
- * Most applications one mentor task create request takes, so one request cannot fan out without bound. The app
- * sends a larger group in batches of this size.
- */
-export const MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS = 100;
-
-/**
- * Shown when the create failed without a status of its own, such as a timeout or a 5xx. The task may still have
- * been created upstream, whose create is not idempotent, so the copy sends the mentor to the row, not to a retry.
- */
-export const MENTORSHIP_MENTOR_TASK_CREATE_ERROR_FALLBACK = "The task may not have been created. Check the mentee's row before trying again.";
-export const MENTORSHIP_MENTOR_TASK_CREATE_TOAST_LIFE = 5000;
-
-/**
- * Single-mentee task create failures with their own copy, keyed by the BFF's status. A 400 is most often a mentee
- * who is no longer accepted, a 403 the caller no longer mentoring the program, and a 404 an application that is gone.
- */
-export const MENTORSHIP_MENTOR_TASK_CREATE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
-  400: 'This mentee can no longer be given tasks. Refresh the page and try again.',
-  403: 'You can no longer create tasks on this program. Refresh the page and try again.',
   404: 'This application no longer exists. Refresh the page and try again.',
 };
 

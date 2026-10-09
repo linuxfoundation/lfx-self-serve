@@ -41,7 +41,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 /**
- * `#participation` — the foundation-wide roll-up the view computes itself, plus one row per meeting
+ * `#participation` — the foundation- or project-wide roll-up the view computes itself, plus one row per meeting
  * type. The hero reads the view's `all` row rather than summing the type rows, which would
  * double-count a meeting belonging to more than one group.
  */
@@ -163,6 +163,7 @@ export class EngagementMeetingParticipationComponent {
   private initQuery(): HealthMetricsEngagementParticipationQuery {
     return {
       foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
+      projectSlug: this.chrome.selectedProjectSlug(),
       range: this.chrome.selectedRange(),
     };
   }
@@ -179,7 +180,7 @@ export class EngagementMeetingParticipationComponent {
 
     return toSignal(
       toObservable(this.query).pipe(
-        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug && a.range === b.range),
+        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug && a.projectSlug === b.projectSlug && a.range === b.range),
         tap((query) => {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);

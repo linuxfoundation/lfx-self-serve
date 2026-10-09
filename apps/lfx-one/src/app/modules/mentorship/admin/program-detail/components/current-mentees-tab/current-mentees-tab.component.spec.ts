@@ -5,22 +5,22 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { MENTORSHIP_MENTEE_STATUS_LABELS, MENTORSHIP_MENTEE_STATUSES } from '@lfx-one/shared/constants';
 import {
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminMenteesQuery,
   MentorshipAdminDeclinePendingResponse,
   MentorshipAdminMenteesResponse,
-  MentorshipAdminTaskUpdate,
+  MentorshipTaskUpdate,
   MentorshipAdminTermOption,
   MentorshipApplicantTask,
-  MentorshipMentorTaskCreateRequest,
-  MentorshipMentorTaskCreateResponse,
+  MentorshipTaskCreateRequest,
+  MentorshipTaskCreateResponse,
   MentorshipProgramApplicant,
   MentorshipTaskDialogAssignee,
   MentorshipTaskFormValue,
 } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
+import { MentorshipService } from '@services/mentorship.service';
 import { ConfirmationService, MessageService, ToastMessageOptions } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
@@ -28,6 +28,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeNoteDialogComponent } from '../../../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
+import { MentorshipTaskFileService } from '../../../../services/mentorship-task-file.service';
 import { CurrentMenteesTabComponent } from './current-mentees-tab.component';
 
 describe('CurrentMenteesTabComponent', () => {
@@ -86,14 +87,14 @@ describe('CurrentMenteesTabComponent', () => {
   let fixture: ComponentFixture<CurrentMenteesTabComponent>;
   let openCreate: ReturnType<typeof vi.fn>;
   let openEdit: ReturnType<typeof vi.fn>;
-  let updateTask: ReturnType<typeof vi.fn<(taskId: string, body: MentorshipAdminTaskUpdate) => Observable<MentorshipApplicantTask>>>;
+  let updateTask: ReturnType<typeof vi.fn<(taskId: string, body: MentorshipTaskUpdate) => Observable<MentorshipApplicantTask>>>;
   let getProgramMentees: ReturnType<typeof vi.fn<(programId: string, query: MentorshipAdminMenteesQuery) => Observable<MentorshipAdminMenteesResponse>>>;
   let getApplicationTasks: ReturnType<typeof vi.fn<(applicationId: string) => Observable<MentorshipApplicantTask[]>>>;
   let updateApplicationStatus: ReturnType<typeof vi.fn<(applicationId: string, body: MentorshipAdminApplicationStatusUpdate) => Observable<void>>>;
   let withdrawApplication: ReturnType<typeof vi.fn<(applicationId: string) => Observable<void>>>;
   let declinePendingForTerm: ReturnType<typeof vi.fn<(programId: string, termId: string) => Observable<MentorshipAdminDeclinePendingResponse>>>;
   let updateApplicationNote: ReturnType<typeof vi.fn<(applicationId: string, note: string) => Observable<void>>>;
-  let createTasks: ReturnType<typeof vi.fn<(request: MentorshipMentorTaskCreateRequest) => Observable<MentorshipMentorTaskCreateResponse>>>;
+  let createTasks: ReturnType<typeof vi.fn<(request: MentorshipTaskCreateRequest) => Observable<MentorshipTaskCreateResponse>>>;
   /** What the stubbed dialog service closes with: an attendance type for Accept, a term for Decline by Term, a note. */
   let dialogResult: unknown;
   let dialogOpen: ReturnType<typeof vi.fn>;
@@ -134,14 +135,14 @@ describe('CurrentMenteesTabComponent', () => {
             withdrawApplication,
             declinePendingForTerm,
             updateApplicationNote,
-            createTasks,
-            updateTask,
           },
         },
+        { provide: MentorshipService, useValue: { createTasks, updateTask } },
         { provide: DialogService, useValue: { open: dialogOpen } },
         // Stub the dialog service so the spec never touches PrimeNG's DialogService,
         // and so we can assert on the exact assignee payload the tab hands off.
         { provide: MentorshipTaskDialogService, useValue: { openCreate, openEdit } },
+        { provide: MentorshipTaskFileService, useValue: { download: vi.fn() } },
       ],
     });
 
@@ -239,12 +240,17 @@ describe('CurrentMenteesTabComponent', () => {
     expect(note).toContain('Tasks Completed');
   });
 
-  it('offers every wire status in the status filter, and only the open terms in the term filter', () => {
+  it('offers the statuses the table shows in the status filter, and only the open terms in the term filter', () => {
     const component = fixture.componentInstance;
 
     expect(component['statusOptions'].map((option) => option.label)).toEqual([
       'All statuses',
-      ...MENTORSHIP_MENTEE_STATUSES.map((status) => MENTORSHIP_MENTEE_STATUS_LABELS[status]),
+      'Applied',
+      'Tasks Completed',
+      'Accepted',
+      'Declined',
+      'Withdrawn',
+      'Graduated',
     ]);
     expect(component['termOptions']().map((option) => option.label)).toEqual(['All open terms', 'Fall 2026', 'Winter 2027']);
   });
@@ -259,6 +265,18 @@ describe('CurrentMenteesTabComponent', () => {
     settle();
 
     expect(lastQuery()).toMatchObject({ status: 'declined', offset: 0 });
+  });
+
+  it('sends Applied and Tasks Completed as their display statuses', () => {
+    const component = fixture.componentInstance;
+
+    component['form'].controls.status.setValue('applied');
+    settle();
+    expect(lastQuery().status).toBe('applied');
+
+    component['form'].controls.status.setValue('tasks-completed');
+    settle();
+    expect(lastQuery().status).toBe('tasks-completed');
   });
 
   it('sends the chosen term id upstream, and drops the filter when it is cleared', () => {
@@ -670,6 +688,38 @@ describe('CurrentMenteesTabComponent', () => {
 
       patch('app_1', { ...tasks()[1], status: 'in-progress', name: 'Cover Letter v2' });
       expect(submittedOf('app_1')).toBe(2);
+    });
+
+    it('reads the page again when a status change moves the row out of the Applied filter', () => {
+      const patch = fixture.componentInstance['patchSavedTask'];
+      getProgramMentees.mockReturnValue(of({ data: [mentee({ tasksSubmitted: 4, tasksTotal: 5 })], total: 1 }));
+      fixture.componentInstance['form'].controls.status.setValue('applied');
+      settle();
+      clickViewTasks('app_1');
+      const reads = getProgramMentees.mock.calls.length;
+      getProgramMentees.mockReturnValue(of({ data: [], total: 0 }));
+
+      patch('app_1', { ...tasks()[1], status: 'completed' });
+      settle();
+
+      expect(getProgramMentees.mock.calls.length).toBe(reads + 1);
+      expect(lastQuery()).toMatchObject({ status: 'applied' });
+      expect(fixture.componentInstance['applications']()).toEqual([]);
+      expect(fixture.componentInstance['total']()).toBe(0);
+    });
+
+    it('keeps the page when a status change leaves the row in its filter', () => {
+      const patch = fixture.componentInstance['patchSavedTask'];
+      fixture.componentInstance['form'].controls.status.setValue('applied');
+      settle();
+      clickViewTasks('app_1');
+      const reads = getProgramMentees.mock.calls.length;
+
+      patch('app_1', { ...tasks()[1], status: 'completed' });
+      settle();
+
+      expect(submittedOf('app_1')).toBe(3);
+      expect(getProgramMentees.mock.calls.length).toBe(reads);
     });
 
     it('never takes the submitted count below zero', () => {

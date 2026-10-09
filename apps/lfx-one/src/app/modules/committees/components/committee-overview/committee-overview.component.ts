@@ -27,6 +27,7 @@ import {
   CommitteeEngagementWindow,
   CommitteeMember,
   CommitteePendingActionRow,
+  EditChairsDialogResult,
   Meeting,
   PastMeeting,
   PendingActionItem,
@@ -491,9 +492,6 @@ export class CommitteeOverviewComponent {
 
   // Chairs edit methods
   public startEditChairs(): void {
-    const currentChair = this.chairs().find((c) => c.role?.name === CommitteeMemberRole.CHAIR);
-    const currentViceChair = this.chairs().find((c) => c.role?.name === CommitteeMemberRole.VICE_CHAIR);
-
     const ref = this.dialogService.open(EditChairsDialogComponent, {
       header: 'Edit Chairs',
       width: '480px',
@@ -502,47 +500,50 @@ export class CommitteeOverviewComponent {
       draggable: false,
       data: {
         members: this.memberOptions(),
-        currentChairUid: currentChair?.uid || null,
-        currentViceChairUid: currentViceChair?.uid || null,
+        currentChairUids: this.chairs()
+          .filter((c) => c.role?.name === CommitteeMemberRole.CHAIR)
+          .map((c) => c.uid),
+        currentViceChairUids: this.chairs()
+          .filter((c) => c.role?.name === CommitteeMemberRole.VICE_CHAIR)
+          .map((c) => c.uid),
       },
     });
 
-    ref?.onClose.pipe(take(1)).subscribe((result: { chairUid: string | null; viceChairUid: string | null } | undefined) => {
+    ref?.onClose.pipe(take(1)).subscribe((result: EditChairsDialogResult | undefined) => {
       if (result) {
-        this.saveChairs(result.chairUid, result.viceChairUid);
+        this.saveChairs(result.chairUids, result.viceChairUids);
       }
     });
   }
 
-  public saveChairs(newChairUid: string | null, newViceChairUid: string | null): void {
+  public saveChairs(newChairUids: string[], newViceChairUids: string[]): void {
     const committeeId = this.committee().uid;
-    const currentChair = this.chairs().find((c) => c.role?.name === CommitteeMemberRole.CHAIR);
-    const currentViceChair = this.chairs().find((c) => c.role?.name === CommitteeMemberRole.VICE_CHAIR);
-
-    if (newChairUid && newChairUid === newViceChairUid) {
-      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Chair and Vice Chair must be different members' });
-      return;
-    }
+    const currentChairs = this.chairs().filter((c) => c.role?.name === CommitteeMemberRole.CHAIR);
+    const currentViceChairs = this.chairs().filter((c) => c.role?.name === CommitteeMemberRole.VICE_CHAIR);
 
     // Serialize: removals first, then assignments to avoid race conditions
     const removals: ReturnType<typeof this.committeeService.updateCommitteeMember>[] = [];
     const assignments: ReturnType<typeof this.committeeService.updateCommitteeMember>[] = [];
 
-    // Remove old chair role if changed
-    if (currentChair && currentChair.uid !== newChairUid) {
-      removals.push(this.committeeService.updateCommitteeMember(committeeId, currentChair.uid, { role: { name: CommitteeMemberRole.NONE } }));
+    for (const c of currentChairs) {
+      if (!newChairUids.includes(c.uid)) {
+        removals.push(this.committeeService.updateCommitteeMember(committeeId, c.uid, { role: { name: CommitteeMemberRole.NONE } }));
+      }
     }
-    // Remove old vice chair role if changed
-    if (currentViceChair && currentViceChair.uid !== newViceChairUid) {
-      removals.push(this.committeeService.updateCommitteeMember(committeeId, currentViceChair.uid, { role: { name: CommitteeMemberRole.NONE } }));
+    for (const c of currentViceChairs) {
+      if (!newViceChairUids.includes(c.uid)) {
+        removals.push(this.committeeService.updateCommitteeMember(committeeId, c.uid, { role: { name: CommitteeMemberRole.NONE } }));
+      }
     }
-    // Assign new chair
-    if (newChairUid && newChairUid !== currentChair?.uid) {
-      assignments.push(this.committeeService.updateCommitteeMember(committeeId, newChairUid, { role: { name: CommitteeMemberRole.CHAIR } }));
+    for (const uid of newChairUids) {
+      if (!currentChairs.some((c) => c.uid === uid)) {
+        assignments.push(this.committeeService.updateCommitteeMember(committeeId, uid, { role: { name: CommitteeMemberRole.CHAIR } }));
+      }
     }
-    // Assign new vice chair
-    if (newViceChairUid && newViceChairUid !== currentViceChair?.uid) {
-      assignments.push(this.committeeService.updateCommitteeMember(committeeId, newViceChairUid, { role: { name: CommitteeMemberRole.VICE_CHAIR } }));
+    for (const uid of newViceChairUids) {
+      if (!currentViceChairs.some((c) => c.uid === uid)) {
+        assignments.push(this.committeeService.updateCommitteeMember(committeeId, uid, { role: { name: CommitteeMemberRole.VICE_CHAIR } }));
+      }
     }
 
     if (removals.length === 0 && assignments.length === 0) {

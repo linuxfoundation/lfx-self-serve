@@ -522,6 +522,42 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN:
     value:
 
+  # Gates whether Performance Max, Video and Display Google campaigns may be OFFERED at all.
+  # Offering is not unlocking: turning this on allows a Performance Max or Display campaign to be
+  # created, and allows the Video box to appear disabled with its reason rather than vanish. No
+  # value of this flag permits a Video CREATE — see the Video paragraph at the end.
+  #
+  # The same question DEMAND_GEN asks, about a later campaign-service: "does the DEPLOYED service
+  # know these googleAdsConfig.channel values?". What goes wrong when it does not depends on how
+  # old the deployed service is, and operators should expect two different symptoms:
+  #
+  #   - Older than LFXV2-3257, there is no channel field at all. Go's JSON decoder drops the
+  #     unknown key, the service builds its default SEARCH campaign — real budget, no keywords,
+  #     and by its own documentation it "can never serve" — and the job reports SUCCESS. The wrong
+  #     campaign is found later in Google Ads with money already spent. This silent case is the
+  #     one DEMAND_GEN above exists for.
+  #   - LFXV2-3257 or later, the field exists and an unrecognised value is REFUSED by name
+  #     (unsupported channel "performance-max") before Google is contacted. The job fails; nothing
+  #     is created and nothing is charged.
+  #
+  # This flag default-denies both. Nothing on the LFX One side can tell the two versions apart:
+  # campaign-service exposes no version endpoint, and a successful create proves nothing about
+  # which channel it actually created.
+  #
+  # SEPARATE from DEMAND_GEN rather than folded into it. A deployment running LFXV2-3257 has had
+  # Demand Gen for months with that flag on, and widening it would turn these three on everywhere
+  # Demand Gen already is — precisely the guess this mechanism exists to avoid.
+  #
+  # Video is NOT unlocked by this flag, and no flag unlocks it. The Google Ads API has no call
+  # that creates a Video campaign, so campaign-service refuses one in the first statement of
+  # CreateVideoCampaign; the box is disabled in the form and the request is refused on the server
+  # whatever this is set to. Turning this on offers Performance Max and Display.
+  #
+  # Leaving it off is SAFE and is the default. Order: deploy a campaign-service that understands
+  # the three channels, confirm it, THEN set this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS:
+    value:
+
   # Gates FGA-based (marketing_auditor / campaign_manager) authorization on the marketing
   # analytics routes (analytics.route.ts) and campaigns routes (campaigns.route.ts). Same
   # accepted values and same default-deny as the campaign-service flags above.
@@ -606,6 +642,14 @@ environment:
   # Where the embed's "Sign in with LFID" button sends the user. The host appends a return_url
   # carrying a single-use nonce and adopts the returned session only if that nonce comes back.
   GW_LFID_START_URL:
+    value:
+  # Where the Gatewaze deployment serves the embeddable admin, e.g.
+  # https://admin.example.org/embed (no trailing slash). @gatewaze/admin-embed is a loader that
+  # reads <url>/manifest.json and imports the current admin bundle from there, so admin changes
+  # reach the embed on the next page load with no LFX release. The server also fetches the
+  # bundle's stylesheet from here to scope it (GW_EMBED_STYLESHEET_ROUTE). Empty = embed refuses
+  # to mount with a configuration error, same as the Supabase pair.
+  GW_EMBED_URL:
     value:
   # Serves PATCH /api/campaigns/:campaignId/status from campaign-service instead of the
   # per-platform SDK calls in campaign-proxy.service.ts (LFXV2-3226).

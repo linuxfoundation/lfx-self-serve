@@ -6,17 +6,19 @@ The server half — the `/api/gw/*` proxy, its authorization and header policy �
 
 ## Files
 
-| File                                                    | Role                                                   |
-| ------------------------------------------------------- | ------------------------------------------------------ |
-| `src/app/modules/gw/gw-module-outlet/`                  | The outlet component, template and spec                |
-| `src/app/modules/gw/gw.routes.ts`                       | Route definitions for both mounts                      |
-| `src/app/shared/guards/gatewaze-embed-enabled.guard.ts` | `CanMatch` flag gate                                   |
-| `src/app/shared/guards/gw-embed-tenant.guard.ts`        | `CanActivate` tenant allowlist gate                    |
-| `packages/shared/src/constants/gw-embed.constants.ts`   | Mount prefixes, enabled modules/features, storage keys |
-| `packages/shared/src/utils/gw-embed.utils.ts`           | Route-prefix resolution and the tenant allowlist test  |
-| `packages/shared/src/utils/auth-fragment.utils.ts`      | Redacting the auth fragment before it reaches RUM      |
-| `packages/shared/src/interfaces/gw-embed.interface.ts`  | The `GwHostContext` mount contract                     |
-| `apps/lfx-one/scripts/contain-gw-embed-css.mjs`         | Stylesheet containment build step                      |
+| File                                                       | Role                                                   |
+| ---------------------------------------------------------- | ------------------------------------------------------ |
+| `src/app/modules/gw/gw-module-outlet/`                     | The outlet component, template and spec                |
+| `src/app/modules/gw/gw.routes.ts`                          | Route definitions for both mounts                      |
+| `src/app/shared/guards/gatewaze-embed-enabled.guard.ts`    | `CanMatch` flag gate                                   |
+| `src/app/shared/guards/gw-embed-tenant.guard.ts`           | `CanActivate` tenant allowlist gate                    |
+| `packages/shared/src/constants/gw-embed.constants.ts`      | Mount prefixes, enabled modules/features, storage keys |
+| `packages/shared/src/utils/gw-embed.utils.ts`              | Route-prefix resolution and the tenant allowlist test  |
+| `packages/shared/src/utils/auth-fragment.utils.ts`         | Redacting the auth fragment before it reaches RUM      |
+| `packages/shared/src/interfaces/gw-embed.interface.ts`     | The `GwHostContext` mount contract                     |
+| `apps/lfx-one/scripts/lib/contain-gw-embed-css.mjs`        | Stylesheet containment transform                       |
+| `src/server/services/gw-embed-stylesheet.service.ts`       | Fetches, scopes, themes and caches the stylesheet      |
+| `src/server/controllers/gw-embed-stylesheet.controller.ts` | HTTP boundary for it (`GW_EMBED_STYLESHEET_ROUTE`)     |
 
 ## Why embed rather than port
 
@@ -35,10 +37,21 @@ Prefix matching is anchored on a segment boundary everywhere it happens (`pathna
 The outlet follows the same SSR-safe lazy-mount shape as `rich-editor.component.ts`:
 
 - `afterNextRender` + `isPlatformBrowser` — on the server this renders two empty mount points and nothing else.
-- `@gatewaze/admin-embed` is a **dynamic `import()`** inside that guard, never a static top-level import, so the React bundle is not pulled into the SSR graph.
-- Teardown on `DestroyRef.onDestroy` calls the handle's `unmount()`.
+- `@gatewaze/admin-embed` is a **dynamic `import()`** inside that guard, never a static top-level import, so nothing of the embed is pulled into the SSR graph.
+- Teardown on `DestroyRef.onDestroy` calls the handle's `unmount()`. Calling it before the handle's `ready` promise resolves cancels the mount.
 
 A skeleton shows from the first browser render until the embed mounts or fails, because the bundle is large and the container would otherwise sit empty.
+
+## Where the admin comes from
+
+`@gatewaze/admin-embed` is a small loader, not the admin. The Gatewaze deployment serves a library build of its admin at `GW_EMBED_URL` (e.g. `https://admin.dev.aaif.live/embed`): a `manifest.json` naming the current content-hashed entry and stylesheet, plus the files. The loader reads the manifest, checks that the bundle implements the host contract it was built for, injects the stylesheet, imports the entry and mounts it.
+
+Two consequences:
+
+- Admin changes reach this page on the next load. Gatewaze ships them by deploying its own image; no LFX release is involved.
+- The loader is only bumped when its host contract changes. A bundle built for a different contract is refused with `gw_embed_contract_mismatch` rather than mounted, which is the signal that the dependency needs a bump.
+
+The bundle is served by the same deployment as the API this host proxies to and the database behind it, so the embed can never run ahead of its own backend.
 
 The template carries three mutually exclusive states — loading, sign-in-required, mount-error — rather than a single generic failure.
 
@@ -58,7 +71,7 @@ The guard must be durable, not a synchronous re-entrancy flag. Angular wraps its
 
 The embed ships one large stylesheet. Loaded as-is it would restyle the host.
 
-`scripts/contain-gw-embed-css.mjs` transforms the published `admin.css` into `public/assets/gw/admin-embed.css` at build time — a deliberate build step, not runtime work, so the output is deterministic and diffable. It:
+The loader lets the host swap the stylesheet URL it fetches (`GwEmbedSource.resolveStylesheetUrl`). The outlet points it at `GW_EMBED_STYLESHEET_ROUTE` with the hashed file name, and `gw-embed-stylesheet.service.ts` fetches that file from `GW_EMBED_URL`, runs `scripts/lib/contain-gw-embed-css.mjs` over it, appends the theme layer and caches the result by name (the name is content-hashed on the Gatewaze side, so the server cache never goes stale). Browsers get a short `max-age` with `stale-while-revalidate` and an `ETag` rather than an immutable year: the body is LFX output under an upstream-hashed name, so a theme or transform fix must reach users without a URL change. The route is anonymous, so it brakes itself: failed names are remembered for a minute, only a few upstream fetches run at once, the upstream must answer `text/css` within the size cap, and a body with no rules is refused. The transform therefore runs once per Gatewaze release per pod, not in every browser, and no CSS parser ships to the client. It:
 
 - scopes every selector under the embed containers,
 - remaps root-element rules (`:root`/`html`/`body`) onto the embed containers so their declarations survive,
@@ -66,16 +79,14 @@ The embed ships one large stylesheet. Loaded as-is it would restyle the host.
 - drops `@import`,
 - freezes `rem` to px at the host's 14px root, so the host document and the Puck editor iframe render at one scale.
 
-The rem rebase is the one worth stating precisely, because the obvious reading of it is backwards. It does **not** stop the embed shrinking — it makes the shrink deliberate and uniform. Gatewaze authored against a 16px root; LFX sets `html { font-size: 14px }`. At 14px the embed's `text-sm` (`0.875rem`) resolves to 12.25px, which is exactly what `text-sm` renders everywhere else in LFX, so the panel matches its surroundings rather than its origin. Freezing to px also pins the Puck preview iframe, whose own root is the browser default 16px — without it the same declaration would render at 14px there and 12.25px in the host. See `REM_BASELINE_PX` in `scripts/lib/contain-gw-embed-css.mjs` (the transform itself; `scripts/contain-gw-embed-css.mjs` is the CLI wrapper around it).
+The rem rebase is the one worth stating precisely, because the obvious reading of it is backwards. It does **not** stop the embed shrinking — it makes the shrink deliberate and uniform. Gatewaze authored against a 16px root; LFX sets `html { font-size: 14px }`. At 14px the embed's `text-sm` (`0.875rem`) resolves to 12.25px, which is exactly what `text-sm` renders everywhere else in LFX, so the panel matches its surroundings rather than its origin. Freezing to px also pins the Puck preview iframe, whose own root is the browser default 16px — without it the same declaration would render at 14px there and 12.25px in the host. See `REM_BASELINE_PX` in `scripts/lib/contain-gw-embed-css.mjs`.
 
 **Portalled content is the hard part**, because it renders outside the outlet's subtree:
 
 - **Radix** components portal to `document.body` by default. The embed build threads a `container` prop so they land inside the scope instead.
 - **Puck** portals its overlay to the _editor iframe's_ `<body>`, a sibling of `#frame-root` — hence the fourth arm in the scope selector. Until that was added, the block outline and action bar were invisible: an `outline` referencing an undefined custom property is an invalid declaration, not a fallback.
 
-The LFX theme layer is appended **after** the contained CSS, so its token overrides win on source order without `!important`.
-
-> `yarn start` and every `yarn build:*` script (`build`, `build:development`, `build:dev-cluster`, `build:staging`, `build:production`) plus `watch` run `build:gw-css` first. It exits non-zero if `@gatewaze/admin-embed/admin.css` cannot be resolved, so a failed `yarn start` immediately after a dependency change usually means the embed package is not installed.
+The LFX theme layer (`src/styles/gw-embed-theme.css`) is appended **after** the contained CSS, so its token overrides win on source order without `!important`. The build copies it beside the server bundle (see the `build` script and the Dockerfile), and `scripts/check-gw-embed-palette.spec.mjs` keeps its hard-coded colours bound to `lfxColors`.
 
 ## Sign-in
 
@@ -98,13 +109,14 @@ Two rules about that fragment, both learned the hard way:
 
 ## Enablement
 
-**Three** gates, all of which must pass:
+**Four** gates, all of which must pass:
 
-| Gate                             | Kind                                                                 |
-| -------------------------------- | -------------------------------------------------------------------- |
-| `GW_EMBED_ALLOWED_PROJECT_SLUGS` | Hard-coded tenant allowlist — currently `agentic-ai-foundation` only |
-| `gatewaze-embed-enabled`         | Client flag (`CanMatch`)                                             |
-| `LFX_GATEWAZE_EMBED_ENABLED`     | Server env                                                           |
+| Gate                             | Kind                                                                                     |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| `GW_EMBED_ALLOWED_PROJECT_SLUGS` | Hard-coded tenant allowlist — currently `agentic-ai-foundation` only                     |
+| `gatewaze-embed-enabled`         | Client flag (`CanMatch`)                                                                 |
+| `LFX_GATEWAZE_EMBED_ENABLED`     | Server env                                                                               |
+| `GW_EMBED_URL`                   | Server env; where the loader fetches the admin from. Empty = the outlet refuses to mount |
 
 The tenant allowlist is a **data-isolation control, not a rollout convenience**. Gatewaze has no multi-foundation scoping yet — one deployment serves one tenant's content — so opening the embed from another foundation would render _that_ foundation's chrome around AAIF's newsletters. Wrong data under the wrong brand, not an empty state.
 

@@ -78,6 +78,9 @@
         </div>
       } @else {
         <span class="text-[12px] text-gray-500">{{ finding().keyLabel }}</span>
+        @if (finding().keySecondary; as keySecondary) {
+          <span class="text-[11px] text-gray-400" data-testid="health-metrics-overview-finding-key-secondary">{{ keySecondary }}</span>
+        }
       }
 
       @if (finding().linkRoute; as linkRoute) {

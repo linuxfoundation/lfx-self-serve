@@ -5,6 +5,7 @@ import {
   EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE,
   MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
   MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
+  MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE,
   MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
   MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE,
 } from '@lfx-one/shared/constants';
@@ -15,6 +16,7 @@ import {
   MentorshipMenteeProfileResponse,
   MentorshipMenteeRegisterRequest,
   MentorshipMenteeProfileUpdateRequest,
+  MentorshipMenteeTaskFileUploadResponse,
   MentorshipMenteeProfileUpdateResponse,
   MentorshipMenteeUpdatableTaskStatus,
   MentorshipUpstreamApplication,
@@ -22,11 +24,13 @@ import {
   MentorshipUpstreamProgram,
   MentorshipUpstreamProgramTerm,
   MentorshipUpstreamTask,
+  MentorshipUpstreamTaskFileUpload,
   MentorshipUpstreamTaskSubmissionUpdate,
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
 import { isMentorshipTaskPastDue } from '@lfx-one/shared/utils';
 import { Request } from 'express';
+import FormData from 'form-data';
 
 import {
   MENTORSHIP_APPLICATIONS_PATH,
@@ -36,6 +40,7 @@ import {
   MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY,
   MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES,
   MENTORSHIP_PROGRAMS_PATH,
+  MENTORSHIP_TASK_FILE_TRANSFER_TIMEOUT_MS,
   MENTORSHIP_TASKS_PATH,
 } from '../constants';
 import { ConflictError, InvalidRequestError, MicroserviceError } from '../errors';
@@ -157,8 +162,8 @@ export class MentorshipMenteeService {
 
   /**
    * Changes the status of one of the signed-in user's tasks through the assignee route,
-   * `PATCH /tasks/{id}/submission`. The body is only the status: upload is not wired, so `file` is never
-   * sent, and upstream checks a required file against the one already stored on the task. Its 400 (a
+   * `PATCH /tasks/{id}/submission`. The body is only the status: upstream refuses `file` there, and checks a
+   * required file against the one already uploaded through the file route. Its 400 (a
    * required file is missing), 403 (the gateway or the service refuses a non-assignee; the assignee grant
    * is written asynchronously, so a fresh task can briefly answer 403), 404 and 409 (not a legal move
    * from the task's status) propagate so the row can say why. The returned task is dropped and the pages
@@ -174,18 +179,54 @@ export class MentorshipMenteeService {
     logger.debug(req, 'mentorship_update_mentee_task_status', 'Updating mentee task status', { taskId, status });
     const taskPath = `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`;
     if (status === 'submitted') {
-      const task = await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, taskPath);
-      const applicationEndDate = await this.getTaskApplicationEndDate(req, task);
-      if (isMentorshipTaskPastDue(resolveMentorshipMenteeTaskDueDate(task, applicationEndDate), Date.now())) {
-        throw new InvalidRequestError(MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE, MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE, {
-          operation: 'mentorship_update_mentee_task_status',
-        });
-      }
+      await this.assertTaskNotPastDue(req, taskPath, MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE, 'mentorship_update_mentee_task_status');
     }
 
     const body: MentorshipUpstreamTaskSubmissionUpdate = { status };
     await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, `${taskPath}/submission`, 'PATCH', undefined, body);
     logger.debug(req, 'mentorship_update_mentee_task_status', 'Mentee task status updated', { taskId, status });
+  }
+
+  /**
+   * Uploads, or replaces, the submission file of one of the signed-in user's tasks. The bytes go upstream as the
+   * multipart part `file` under the browser's file name, which upstream cleans to `[A-Za-z0-9._-]`. Upstream decides the
+   * type from the bytes and refuses a non-assignee (403), a completed task (409), more than 20 MB (413), a type that is
+   * not PDF, DOC, DOCX or text (415), and unconfigured storage (503); each passes through.
+   *
+   * Like a submit, it is refused with a 400 (`TASK_PAST_DUE`) once the task is past due, since upstream enforces no
+   * deadline. The file name and the bytes are never logged.
+   */
+  public async uploadMenteeTaskFile(req: Request, taskId: string, fileName: string, file: Buffer): Promise<MentorshipMenteeTaskFileUploadResponse> {
+    logger.debug(req, 'mentorship_upload_mentee_task_file', 'Uploading mentee task file', { taskId, sizeBytes: file.byteLength });
+    const taskPath = `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`;
+    await this.assertTaskNotPastDue(req, taskPath, MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE, 'mentorship_upload_mentee_task_file');
+
+    const form = new FormData();
+    form.append('file', file, { filename: fileName, contentType: 'application/octet-stream' });
+    const uploaded = await proxyMentorshipRequest<MentorshipUpstreamTaskFileUpload>(
+      this.microserviceProxy,
+      req,
+      `${taskPath}/file-upload`,
+      'POST',
+      undefined,
+      form,
+      undefined,
+      undefined,
+      { timeoutMs: MENTORSHIP_TASK_FILE_TRANSFER_TIMEOUT_MS }
+    );
+    return { fileName: uploaded?.filename ?? '', contentType: uploaded?.content_type ?? '', size: uploaded?.size ?? 0 };
+  }
+
+  /**
+   * Removes the submission file of one of the signed-in user's tasks. Upstream allows it only while the task is not
+   * started or in progress (409 once submitted, when the file can only be replaced) and answers 204 when there is no
+   * file; its status passes through. Refused with a 400 (`TASK_PAST_DUE`) once the task is past due.
+   */
+  public async deleteMenteeTaskFile(req: Request, taskId: string): Promise<void> {
+    logger.debug(req, 'mentorship_delete_mentee_task_file', 'Removing mentee task file', { taskId });
+    const taskPath = `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`;
+    await this.assertTaskNotPastDue(req, taskPath, MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE, 'mentorship_delete_mentee_task_file');
+    await proxyMentorshipRequest<void>(this.microserviceProxy, req, `${taskPath}/file`, 'DELETE');
   }
 
   /**
@@ -232,7 +273,8 @@ export class MentorshipMenteeService {
   public async updateMenteeProfile(req: Request, request: MentorshipMenteeProfileUpdateRequest): Promise<MentorshipMenteeProfileUpdateResponse> {
     // Group names only: the values are personal data.
     logger.debug(req, 'mentorship_update_mentee_profile', 'Updating mentee profile', { changed_groups: Object.keys(request) });
-    const writesJsonColumn = request.skillSet !== undefined || request.demographics !== undefined || request.socioeconomics !== undefined;
+    const writesJsonColumn =
+      request.skillSet !== undefined || request.demographics !== undefined || request.socioeconomics !== undefined || request.country !== undefined;
     const stored = writesJsonColumn ? await this.getStoredMenteeProfile(req) : undefined;
     const upstream = await proxyMentorshipRequest<MentorshipUpstreamUserProfile>(
       this.microserviceProxy,
@@ -337,6 +379,18 @@ export class MentorshipMenteeService {
   /** The caller's own mentee applications, every page. */
   private listMenteeApplications(req: Request): Promise<MentorshipUpstreamApplication[]> {
     return listAllMentorshipPages<MentorshipUpstreamApplication>(this.microserviceProxy, req, MENTORSHIP_ME_APPLICATIONS_PATH, { role: 'mentee' });
+  }
+
+  /**
+   * Reads the task and refuses the change with a 400 (`TASK_PAST_DUE`) once the end of its due date's UTC day has
+   * passed. The due date resolves as it does on the page; a failed read propagates rather than skip the check.
+   */
+  private async assertTaskNotPastDue(req: Request, taskPath: string, message: string, operation: string): Promise<void> {
+    const task = await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, taskPath);
+    const applicationEndDate = await this.getTaskApplicationEndDate(req, task);
+    if (isMentorshipTaskPastDue(resolveMentorshipMenteeTaskDueDate(task, applicationEndDate), Date.now())) {
+      throw new InvalidRequestError(message, MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE, { operation });
+    }
   }
 
   /**

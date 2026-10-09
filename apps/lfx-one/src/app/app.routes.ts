@@ -36,6 +36,7 @@ import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enable
 import { orgLensRoiEnabledGuard } from './shared/guards/org-lens-roi-enabled.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mentorshipEnabledGuard } from './shared/guards/mentorship-enabled.guard';
+import { crowdfundingAttributionEnabledGuard } from './shared/guards/crowdfunding-attribution-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
@@ -83,6 +84,24 @@ function orgLensPageRoutes(): Routes {
           data: { title: 'CLA Group', description: "Corporate CLA for one of your organization's CLA Groups." },
           loadComponent: () =>
             import('./modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component').then((m) => m.OrgEasyclaDetailComponent),
+        },
+      ],
+    },
+    {
+      // Initiatives attributed to the organization (#348): the My Initiatives page and detail scoped by `data.lens`.
+      // Componentless parent so the dark-launch guard covers both children.
+      path: 'initiatives',
+      canMatch: [crowdfundingAttributionEnabledGuard],
+      data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your organization.', icon: 'fa-light fa-box-dollar' },
+      children: [
+        {
+          path: '',
+          loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
+        },
+        {
+          path: ':slug',
+          data: { title: 'Initiative' },
+          loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
         },
       ],
     },
@@ -428,6 +447,23 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
       },
+      // Initiatives attributed to the lens project (#347) — the My Initiatives page, scoped by `data.lens`.
+      {
+        path: 'foundation/initiatives',
+        title: 'Foundation Initiatives',
+        data: { lens: 'foundation' },
+        canMatch: [crowdfundingAttributionEnabledGuard],
+        canActivate: [projectQueryParamGuard],
+        loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
+      },
+      {
+        path: 'foundation/initiatives/:slug',
+        title: 'Initiative',
+        data: { lens: 'foundation' },
+        canMatch: [crowdfundingAttributionEnabledGuard],
+        canActivate: [projectQueryParamGuard],
+        loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
+      },
       // Formations queue (GH-1958) — dark-launched behind `formation-enabled` (CanMatch), auditor-only
       // (CanActivate). As of GH-2367 the queue scopes to the selected foundation's formations via
       // ProjectContextService.selectedFoundation (the whole subtree since GH-2368's upstream
@@ -545,6 +581,23 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
       },
+      // Initiatives attributed to the lens project (#347) — the My Initiatives page, scoped by `data.lens`.
+      {
+        path: 'project/initiatives',
+        title: 'Project Initiatives',
+        data: { lens: 'project' },
+        canMatch: [crowdfundingAttributionEnabledGuard],
+        canActivate: [projectQueryParamGuard],
+        loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
+      },
+      {
+        path: 'project/initiatives/:slug',
+        title: 'Initiative',
+        data: { lens: 'project' },
+        canMatch: [crowdfundingAttributionEnabledGuard],
+        canActivate: [projectQueryParamGuard],
+        loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
+      },
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
       {
         path: `project/${MKTG_OS_AGENTS_ROUTE_SEGMENT}`,
@@ -636,6 +689,15 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
       {
+        // Personal reader: route data restores Me on deep links from any lens.
+        path: 'newsletters/my',
+        pathMatch: 'full',
+        title: 'My Newsletters',
+        data: { lens: 'me', preload: false },
+        canActivate: [authGuard],
+        loadComponent: () => import('./modules/newsletters/my-newsletters/my-newsletters.component').then((m) => m.MyNewslettersComponent),
+      },
+      {
         // Canonical shareable newsletter permalink (GH-1550). Mounted ahead of
         // the lens-redirected `newsletters` mount below so the URL never
         // rewrites to /foundation/... or /project/..., whose mount-level
@@ -650,11 +712,8 @@ export const routes: Routes = [
       {
         path: 'newsletters',
         title: 'Newsletters',
-        // No newsletterAccessGuard at the mount: the Me-lens member feed
-        // (/newsletters/my) must be reachable by regular committee members.
-        // Every manager child route (list/create/edit/analytics) applies the
-        // guard itself in newsletters.routes.ts, and the /foundation and
-        // /project mounts above keep it — so manager surfaces stay gated.
+        // Publisher children apply newsletterAccessGuard in newsletters.routes.ts;
+        // the personal reader has its own Me-only route above.
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/newsletters/newsletters.routes').then((m) => m.NEWSLETTER_ROUTES),
       },
@@ -855,6 +914,11 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./layouts/main-layout/main-layout.component').then((m) => m.MainLayoutComponent),
     children: [
+      {
+        path: 'unavailable',
+        title: 'Temporarily Unavailable',
+        loadComponent: () => import('./modules/unavailable/unavailable.component').then((m) => m.UnavailableComponent),
+      },
       {
         path: '**',
         title: 'Page Not Found',

@@ -33,7 +33,9 @@ export const resolveMentorshipMenteeTaskDueDate = (task: MentorshipUpstreamTask,
 /**
  * Maps one `tasks` row to the mentee task shape. The service stores `category` as nullable, and a
  * task without one counts as non-prerequisite. Upstream records no separate submission time, so a
- * submitted task's `updated_on` stands in for it.
+ * submitted task's `updated_on` stands in for it. Upstream treats any `submit_file` value as required,
+ * and sends `file` as its own download route, which needs the caller's token, so only whether a file
+ * is stored reaches the browser.
  */
 export const mapMentorshipMenteeApplicationTask = (task: MentorshipUpstreamTask, applicationEndDate: string | undefined): MentorshipMenteeApplicationTask => ({
   id: task.id,
@@ -41,8 +43,8 @@ export const mapMentorshipMenteeApplicationTask = (task: MentorshipUpstreamTask,
   description: task.description ?? '',
   category: task.category ?? 'non_prerequisite',
   status: task.status,
-  submitFile: task.submit_file || null,
-  fileUrl: task.file || undefined,
+  submitFile: task.submit_file ? 'required' : null,
+  hasFile: !!task.file,
   dueDate: resolveMentorshipMenteeTaskDueDate(task, applicationEndDate),
   submittedOn: isSubmittedTask(task) ? task.updated_on : undefined,
   updatedOn: task.updated_on,

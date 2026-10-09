@@ -3,8 +3,8 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES, MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_LABELS } from '@lfx-one/shared/constants';
-import { MentorshipMentorProgram, MentorshipMentorProgramDetailTab, MentorshipMentorProgramTermStatus } from '@lfx-one/shared/interfaces';
+import { MENTORSHIP_MENTOR_PROGRAM_STATUSES, MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES, MENTORSHIP_PROGRAM_STATUS_LABELS } from '@lfx-one/shared/constants';
+import { MentorshipMentorProgram, MentorshipMentorProgramDetailTab } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { MentorProgramDetailHeaderComponent } from './mentor-program-detail-header.component';
@@ -15,11 +15,8 @@ describe('MentorProgramDetailHeaderComponent', () => {
     slug: 'gridflow-time-series-ingestion-pipeline',
     name: 'GridFlow: Ingestion Pipeline',
     projectName: 'LF Energy',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
+    status: 'open',
     stats: { mentees: 2, applicants: 1, tasksToReview: 3 },
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-12-15',
     ...overrides,
   });
 
@@ -56,36 +53,22 @@ describe('MentorProgramDetailHeaderComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-title"]')?.textContent?.trim()).toBe('GridFlow: Ingestion Pipeline');
   });
 
-  it('builds the season line from projectName, term, and the formatted date range', () => {
+  it('shows the project name alone as the season line, with no term or date range', () => {
     render();
-    const season = element().querySelector('[data-testid="mentorship-mentor-program-detail-season"]')?.textContent?.trim() ?? '';
-    // Bounded assertions rather than an exact match — the formatted range comes from a
-    // shared util whose exact format string isn't the header's contract.
-    expect(season).toContain('LF Energy');
-    expect(season).toContain('Fall 2026');
-    expect(season.split('·').length).toBe(3);
+    const season = element().querySelector('[data-testid="mentorship-mentor-program-detail-season"]')?.textContent?.trim();
+    expect(season).toBe('LF Energy');
   });
 
-  it('drops the date range from the season line when either bound is missing', () => {
-    // The header must not render "· undefined" or a partial range if only one bound is set.
-    render({ program: { termStartDate: undefined, termEndDate: undefined } });
-    const season = element().querySelector('[data-testid="mentorship-mentor-program-detail-season"]')?.textContent?.trim() ?? '';
-    expect(season).toBe('LF Energy · Fall 2026');
-  });
-
-  it.each<MentorshipMentorProgramTermStatus>(['active-term', 'upcoming', 'completed'])(
-    'renders the term-status badge with the shared label and class for %s',
-    (termStatus) => {
-      render({ program: { termStatus } });
-      const badge = element().querySelector('[data-testid="mentorship-mentor-program-detail-status"]');
-      expect(badge?.textContent?.trim()).toBe(MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_LABELS[termStatus]);
-      // The badge classes come from a shared map safelisted in tailwind.config.js — verify
-      // the exact string binding to lock the map/template wiring, not the visual output.
-      for (const cls of MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES[termStatus].split(' ')) {
-        expect(badge?.classList.contains(cls)).toBe(true);
-      }
+  it.each(MENTORSHIP_MENTOR_PROGRAM_STATUSES)('renders the program-status badge with the shared label and class for %s', (status) => {
+    render({ program: { status } });
+    const badge = element().querySelector('[data-testid="mentorship-mentor-program-detail-status"]');
+    expect(badge?.textContent?.trim()).toBe(MENTORSHIP_PROGRAM_STATUS_LABELS[status]);
+    // The badge classes come from a shared map safelisted in tailwind.config.js — verify
+    // the exact string binding to lock the map/template wiring, not the visual output.
+    for (const cls of MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES[status].split(' ')) {
+      expect(badge?.classList.contains(cls)).toBe(true);
     }
-  );
+  });
 
   it('renders every tab with its count and marks the active tab aria-selected', () => {
     render({ activeTab: 'applicants', tabCounts: { tasks: 3, mentees: 1, applicants: 1 } });

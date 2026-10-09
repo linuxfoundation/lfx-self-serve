@@ -4,10 +4,18 @@
 import '@angular/compiler';
 
 import { MENTORSHIP_MAX_OPEN_TERMS } from '@lfx-one/shared/constants';
+import type { MentorshipUpstreamEnrollTemplate } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
 import { ServiceValidationError } from '../errors';
-import { parseMentorshipEnrollCreateRequest, toMentorshipEnrollProgramRef, toMentorshipProgramLogoUploadResult } from './mentorship-enroll.helper';
+import {
+  parseMentorshipEnrollCreateRequest,
+  parseMentorshipEnrollUpdateRequest,
+  toMentorshipEnrollImport,
+  toMentorshipEnrollProgramRef,
+  toMentorshipProgramLogoUploadResult,
+  toMentorshipUpstreamProgramUpdate,
+} from './mentorship-enroll.helper';
 
 const OPERATION = 'create_mentorship_admin_program';
 const PROJECT_ID = '3f2c1a9e-7b4d-4c1e-9a55-0d6e8f1a2b3c';
@@ -163,6 +171,114 @@ describe('parseMentorshipEnrollCreateRequest', () => {
   });
 });
 
+describe('parseMentorshipEnrollUpdateRequest', () => {
+  const UPDATE = 'update_mentorship_admin_program';
+
+  it('keeps the program fields and the terms, and drops terms acceptance', () => {
+    expect(parseMentorshipEnrollUpdateRequest(validBody({ industry: ' Go, Rust ' }), UPDATE)).toEqual({
+      projectId: PROJECT_ID,
+      projectSlug: 'example-project',
+      projectName: 'Example Project',
+      name: 'Example Program',
+      description: '<p>Build things.</p>',
+      repositoryUrl: 'https://github.com/example/repo',
+      skills: ['Go', 'Testing'],
+      prerequisites: [{ name: 'Resume', description: 'Upload it.', required: true, requireFile: true, dueDate: null }],
+      industry: 'Go, Rust',
+      terms: [term()],
+    });
+  });
+
+  it('needs no terms and no terms acceptance', () => {
+    expect(parseMentorshipEnrollUpdateRequest(validBody({ terms: undefined, termsAccepted: undefined }), UPDATE)).not.toHaveProperty('terms');
+  });
+
+  it('keeps the open terms, with the UUID id of a saved one', () => {
+    const SAVED_TERM = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+    const request = parseMentorshipEnrollUpdateRequest(validBody({ terms: [{ ...term(), id: SAVED_TERM }, term({ name: ' Term 2 ' })] }), UPDATE);
+
+    expect(request.terms).toEqual([{ id: SAVED_TERM, ...term() }, term({ name: 'Term 2' })]);
+  });
+
+  it.each([
+    ['an empty list', []],
+    ['five terms', Array.from({ length: 5 }, () => term())],
+    ['a term id that is not a UUID', [{ ...term(), id: 'term-1' }]],
+    ['a term without a name', [term({ name: ' ' })]],
+  ])('refuses terms with %s', (_label, terms) => {
+    expect(() => parseMentorshipEnrollUpdateRequest(validBody({ terms }), UPDATE)).toThrow(ServiceValidationError);
+  });
+
+  it('refuses a body without a project or skills, as create does', () => {
+    expect(() => parseMentorshipEnrollUpdateRequest(validBody({ projectId: 'not-a-uuid' }), UPDATE)).toThrow(ServiceValidationError);
+    expect(() => parseMentorshipEnrollUpdateRequest(validBody({ skills: [] }), UPDATE)).toThrow(ServiceValidationError);
+  });
+});
+
+describe('toMentorshipUpstreamProgramUpdate', () => {
+  it('maps to snake_case, sends blank optional fields as empty text, and keeps only the picked prerequisites as task templates', () => {
+    const request = parseMentorshipEnrollUpdateRequest(
+      validBody({
+        terms: undefined,
+        prerequisites: [
+          { name: 'Resume', description: 'Upload it.', required: true, requireFile: true, dueDate: null },
+          { name: 'Essay', description: 'Why you.', required: true, requireFile: false, dueDate: '2030-01-15' },
+          { name: 'Cover Letter', description: 'Unpicked.', required: false, requireFile: true, dueDate: null },
+        ],
+      }),
+      'update_mentorship_admin_program'
+    );
+
+    expect(toMentorshipUpstreamProgramUpdate(request)).toEqual({
+      name: 'Example Program',
+      description: '<p>Build things.</p>',
+      repo_link: 'https://github.com/example/repo',
+      website_url: '',
+      code_of_conduct: '',
+      cii_project_id: '',
+      industry: '',
+      skills: ['Go', 'Testing'],
+      task_templates: [
+        { name: 'Resume', description: 'Upload it.', submitFile: 'required', dueDate: null },
+        { name: 'Essay', description: 'Why you.', submitFile: null, dueDate: '2030-01-15' },
+      ],
+      project_uid: PROJECT_ID,
+      project_slug: 'example-project',
+      project_name: 'Example Project',
+      project_logo_url: '',
+    });
+  });
+
+  it('sends a term end date as given, so a stored mid-month end is not moved', () => {
+    const request = parseMentorshipEnrollUpdateRequest(validBody({ terms: [term({ endDate: '2030-05-20' })] }), 'update');
+
+    expect(toMentorshipUpstreamProgramUpdate(request).terms?.[0].end_date_time).toBe('2030-05-20T23:59:59.999Z');
+  });
+
+  it('sends the open terms as UTC instants, a saved one with its id', () => {
+    const SAVED_TERM = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+    const request = parseMentorshipEnrollUpdateRequest(validBody({ terms: [{ ...term(), id: SAVED_TERM }, term({ name: 'Term 2' })] }), 'update');
+
+    expect(toMentorshipUpstreamProgramUpdate(request).terms).toEqual([
+      {
+        id: SAVED_TERM,
+        name: 'Term 1',
+        start_date_time: '2030-03-01T00:00:00Z',
+        end_date_time: '2030-05-31T23:59:59.999Z',
+        application_start_date: '2030-01-01T00:00:00Z',
+        application_end_date: '2030-02-28T23:59:59.999Z',
+      },
+      {
+        name: 'Term 2',
+        start_date_time: '2030-03-01T00:00:00Z',
+        end_date_time: '2030-05-31T23:59:59.999Z',
+        application_start_date: '2030-01-01T00:00:00Z',
+        application_end_date: '2030-02-28T23:59:59.999Z',
+      },
+    ]);
+  });
+});
+
 describe('toMentorshipEnrollProgramRef', () => {
   it('keeps the id, slug and status', () => {
     expect(toMentorshipEnrollProgramRef({ id: 'p-1', slug: 'example-program', status: 'pending' })).toEqual({
@@ -183,5 +299,113 @@ describe('toMentorshipProgramLogoUploadResult', () => {
     expect(
       toMentorshipProgramLogoUploadResult({ public_url: 'https://cdn.example/logo.png', filename: 'logo.png', content_type: 'image/png', size: 10 })
     ).toEqual({ logoUrl: 'https://cdn.example/logo.png' });
+  });
+});
+
+describe('toMentorshipEnrollImport', () => {
+  const PROJECT_UID = '5c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+  const template = (program: Record<string, unknown> = {}, rest: Record<string, unknown> = {}): MentorshipUpstreamEnrollTemplate =>
+    ({
+      program: { id: 'p-1', name: 'Existing Program', ...program },
+      skills: ['Go'],
+      ...rest,
+    }) as MentorshipUpstreamEnrollTemplate;
+
+  it('maps the program fields, the project, the technologies and the skills', () => {
+    const result = toMentorshipEnrollImport(
+      template({
+        description: '<p>About</p>',
+        repo_link: 'https://github.com/example/repo',
+        website_url: 'https://example.org',
+        code_of_conduct: 'https://example.org/coc',
+        cii_project_id: '1842',
+        industry: 'Go, Kubernetes',
+        project_uid: PROJECT_UID,
+        project_slug: 'example-project',
+        project_name: 'Example Project',
+        project_logo_url: 'https://cdn.example/project.png',
+      })
+    );
+
+    expect(result).toEqual({
+      name: 'Existing Program',
+      project: { id: PROJECT_UID, name: 'Example Project', slug: 'example-project', logoUrl: 'https://cdn.example/project.png' },
+      description: '<p>About</p>',
+      repositoryUrl: 'https://github.com/example/repo',
+      websiteUrl: 'https://example.org',
+      codeOfConductUrl: 'https://example.org/coc',
+      ciiProjectId: '1842',
+      technologies: ['Go', 'Kubernetes'],
+      skills: ['Go'],
+      prerequisites: [],
+      logoUrl: '',
+    });
+  });
+
+  it("keeps the program's logo for the edit wizard", () => {
+    expect(toMentorshipEnrollImport(template({ logo_url: ' https://cdn.example/logo.png ' })).logoUrl).toBe('https://cdn.example/logo.png');
+    expect(toMentorshipEnrollImport(template({ logo_url: null })).logoUrl).toBe('');
+  });
+
+  it('has no project when the template has no project uid', () => {
+    expect(toMentorshipEnrollImport(template()).project).toBeNull();
+    expect(toMentorshipEnrollImport(template({ project_uid: '  ', project_name: 'Orphan' })).project).toBeNull();
+  });
+
+  it('has no project when the template leaves out the project name or slug, so the admin picks one', () => {
+    expect(toMentorshipEnrollImport(template({ project_uid: PROJECT_UID, project_slug: 'example-project' })).project).toBeNull();
+    expect(toMentorshipEnrollImport(template({ project_uid: PROJECT_UID, project_name: 'Example Project', project_slug: ' ' })).project).toBeNull();
+  });
+
+  it('leaves the project logo out when it is empty', () => {
+    expect(
+      toMentorshipEnrollImport(template({ project_uid: PROJECT_UID, project_name: 'Example Project', project_slug: 'example-project', project_logo_url: '' }))
+        .project
+    ).toEqual({ id: PROJECT_UID, name: 'Example Project', slug: 'example-project' });
+  });
+
+  it('turns missing or null text fields into empty text', () => {
+    const result = toMentorshipEnrollImport(template({ description: null, repo_link: null, website_url: undefined, industry: null }));
+
+    expect(result).toMatchObject({ description: '', repositoryUrl: '', websiteUrl: '', codeOfConductUrl: '', ciiProjectId: '', technologies: [] });
+  });
+
+  it('trims the technologies, drops blanks and repeats, and keeps the first spelling', () => {
+    expect(toMentorshipEnrollImport(template({ industry: ' Go , ,kubernetes,GO, Kubernetes ,Rust' })).technologies).toEqual(['Go', 'kubernetes', 'Rust']);
+  });
+
+  it('copies the skills and tolerates a missing list', () => {
+    expect(toMentorshipEnrollImport(template({}, { skills: ['Go', 'Rust'] })).skills).toEqual(['Go', 'Rust']);
+    expect(toMentorshipEnrollImport(template({}, { skills: undefined })).skills).toEqual([]);
+  });
+
+  it('maps each prerequisite to a selected, editable one and asks for a file only when upstream set submitFile', () => {
+    const result = toMentorshipEnrollImport(
+      template(
+        {},
+        {
+          prerequisites: [
+            { name: 'Resume', description: 'Upload it', submitFile: 'required', dueDate: '2030-02-01' },
+            { name: 'Essay', description: null, submitFile: null, dueDate: null },
+          ],
+        }
+      )
+    );
+
+    expect(result.prerequisites).toEqual([
+      { id: 'imported-0', name: 'Resume', description: 'Upload it', required: true, requireFile: true, custom: true, dueDate: '2030-02-01' },
+      { id: 'imported-1', name: 'Essay', description: '', required: true, requireFile: false, custom: true },
+    ]);
+    expect(result.prerequisites[1]).not.toHaveProperty('dueDate');
+  });
+
+  it('asks for no file when submitFile is blank', () => {
+    const result = toMentorshipEnrollImport(template({}, { prerequisites: [{ name: 'Essay', submitFile: '' }] }));
+
+    expect(result.prerequisites[0].requireFile).toBe(false);
+  });
+
+  it('tolerates a template with no prerequisites', () => {
+    expect(toMentorshipEnrollImport(template({}, { prerequisites: undefined })).prerequisites).toEqual([]);
   });
 });

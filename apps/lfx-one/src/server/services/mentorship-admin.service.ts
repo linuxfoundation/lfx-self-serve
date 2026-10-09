@@ -6,8 +6,10 @@ import {
   MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
+  MENTORSHIP_ENROLL_NAME_TAKEN,
   MENTORSHIP_MAX_OPEN_TERMS,
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
+  MENTORSHIP_PROGRAM_NAME_TAKEN_ERROR_CODE,
   MENTORSHIP_PROGRAM_STATUSES,
 } from '@lfx-one/shared/constants';
 import {
@@ -16,31 +18,35 @@ import {
   MentorshipAdminMenteesQuery,
   MentorshipAdminMenteesResponse,
   MentorshipAdminMentorsQuery,
+  MentorshipAdminMentorCandidatesResponse,
+  MentorshipAdminMentorInviteRequest,
   MentorshipAdminMentorsResponse,
   MentorshipAdminMentorStatusUpdate,
   MentorshipAdminProgramPage,
   MentorshipAdminProgramTabCounts,
-  MentorshipAdminTaskUpdate,
   MentorshipAdminTermInput,
   MentorshipAdminTermOption,
   MentorshipAdminTermsQuery,
   MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
   MentorshipEnrollCreateRequest,
+  MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
-  MentorshipMentorTaskCreateRequest,
-  MentorshipMentorTaskCreateResponse,
+  MentorshipEnrollUpdateRequest,
   MentorshipProgramLogoUploadResult,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipProgramTermRow,
+  MentorshipProgramVisibilityAction,
   MentorshipTermRowStatus,
   MentorshipUpstreamAdministeredProgram,
   MentorshipUpstreamApplication,
   MentorshipUpstreamCreatedProgram,
+  MentorshipUpstreamEnrollTemplate,
   MentorshipUpstreamListResponse,
   MentorshipUpstreamLogoUpload,
   MentorshipUpstreamMemberManagementRow,
+  MentorshipUpstreamMentorCandidate,
   MentorshipUpstreamProgramApplicationRow,
   MentorshipUpstreamProgramHeader,
   MentorshipUpstreamProgramManagementSummary,
@@ -48,18 +54,18 @@ import {
   MentorshipUpstreamTask,
   MentorshipUpstreamTermManagementRow,
 } from '@lfx-one/shared/interfaces';
-import { lastDayOfMentorshipMonth, toMentorshipUtcEndOfDayInstant, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
+import { lastDayOfMentorshipMonth } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import {
   MENTORSHIP_ADMIN_APPLICATIONS_MAX_LIMIT,
+  MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_TO_UPSTREAM,
   MENTORSHIP_ADMIN_TASKS_MAX_LIMIT,
   MENTORSHIP_ADMIN_TERMS_MAX_LIMIT,
   MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES,
   MENTORSHIP_APPLICATIONS_PATH,
   MENTORSHIP_ME_PROGRAMS_PATH,
   MENTORSHIP_PROGRAMS_PATH,
-  MENTORSHIP_TASKS_PATH,
 } from '../constants';
 import { ConflictError, MicroserviceError } from '../errors';
 import {
@@ -68,20 +74,26 @@ import {
   mapMentorshipAdminProgram,
   mapMentorshipAdminTermRow,
 } from '../helpers/mentorship-admin-program.helper';
-import { buildMentorshipUpstreamTaskUpdate } from '../helpers/mentorship-admin-task.helper';
-import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest, withoutQueryInErrorPath } from '../helpers/mentorship-api.helper';
 import { saveMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
-import { toMentorshipEnrollProgramRef, toMentorshipProgramLogoUploadResult } from '../helpers/mentorship-enroll.helper';
-import { createMentorshipMenteeTasks } from '../helpers/mentorship-mentor-task.helper';
+import {
+  toMentorshipEnrollImport,
+  toMentorshipEnrollProgramRef,
+  toMentorshipProgramLogoUploadResult,
+  toMentorshipUpstreamProgramUpdate,
+  toMentorshipUpstreamTermDates,
+} from '../helpers/mentorship-enroll.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
 import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask } from '../helpers/mentorship-program-application.helper';
 
 import { logger } from './logger.service';
+import { MentorshipService } from './mentorship.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /** The program admin screens behind `/api/mentorship/admin`. */
 export class MentorshipAdminService {
   private readonly microserviceProxy = new MicroserviceProxyService();
+  private readonly mentorshipService = new MentorshipService();
 
   /**
    * The programs the caller administers, from one upstream `GET /me/programs` read: upstream searches, filters by
@@ -218,7 +230,7 @@ export class MentorshipAdminService {
         'GET',
         {
           type: query.type,
-          status: query.status,
+          status: query.status ? MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_TO_UPSTREAM[query.status] : undefined,
           term: query.termId,
           search: escapeMentorshipSearch(query.search),
           offset: query.offset ?? 0,
@@ -288,6 +300,45 @@ export class MentorshipAdminService {
     const total = upstream.meta?.total ?? data.length;
     logger.debug(req, 'mentorship_admin_get_program_mentors', 'Program mentors page built', { programId, count: data.length, total });
     return { data, total };
+  }
+
+  /**
+   * The people matching `search` that an admin may invite as a mentor of the program: anyone in Mentorship by name, and
+   * anyone with an LF account by exact LF username or full email. Upstream returns at most 10 and never an email; a
+   * missing name falls back to the LFID. The search is sent as typed: upstream escapes it for its own name and LFID
+   * match and looks an email up exactly, so escaping it here would break both. Upstream's 400 (an unpublished program),
+   * 403 and 503 pass through with the query cut from the error's path, since the search can be an email; a caller with
+   * no mentorship record finds no one.
+   */
+  public async getMentorCandidates(req: Request, programId: string, search: string): Promise<MentorshipAdminMentorCandidatesResponse> {
+    logger.debug(req, 'mentorship_admin_get_mentor_candidates', 'Searching mentor candidates', { programId });
+
+    let upstream: { data?: MentorshipUpstreamMentorCandidate[] };
+    try {
+      upstream = await proxyMentorshipRequest<{ data?: MentorshipUpstreamMentorCandidate[] }>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/mentor-candidates`,
+        'GET',
+        { search }
+      );
+    } catch (error) {
+      if (isMentorshipNotProvisionedError(error)) {
+        logger.warning(req, 'mentorship_admin_get_mentor_candidates', 'Caller has no mentorship record; returning no candidates', { programId });
+        return { data: [] };
+      }
+      throw withoutQueryInErrorPath(error);
+    }
+
+    const data = (upstream.data ?? [])
+      .filter((candidate) => !!candidate.lfid)
+      .map((candidate) => ({
+        lfid: candidate.lfid,
+        name: candidate.name?.trim() || candidate.lfid,
+        avatarUrl: candidate.avatar_url || undefined,
+      }));
+    logger.debug(req, 'mentorship_admin_get_mentor_candidates', 'Mentor candidates found', { programId, count: data.length });
+    return { data };
   }
 
   /** One page of a program's terms with their application counts, from one upstream term-management read. A caller with no mentorship record has no terms. */
@@ -382,32 +433,22 @@ export class MentorshipAdminService {
   }
 
   /**
-   * Gives accepted mentees a task, through the shared create the mentor route uses too, logged under the admin
-   * operation: the caller's local user id owns and authors each task, and with one application upstream's status
-   * passes through. Upstream checks the caller administers the program. The task's text is never logged.
+   * Invites the LF account behind `lfid` as a mentor of the program and returns the new member's id. Upstream creates
+   * the Mentorship user when there is none and emails the invite to the account's primary email. Its 400, 403, 409
+   * (already invited or a mentor), 422 (no LF account) and 503 (account lookup down) pass through.
    */
-  public async createTasks(req: Request, request: MentorshipMentorTaskCreateRequest): Promise<MentorshipMentorTaskCreateResponse> {
-    return createMentorshipMenteeTasks(this.microserviceProxy, req, request, 'create_mentorship_admin_tasks');
-  }
+  public async inviteProgramMentor(req: Request, programId: string, body: MentorshipAdminMentorInviteRequest): Promise<string | undefined> {
+    logger.debug(req, 'mentorship_admin_invite_program_mentor', 'Inviting program mentor', { programId });
 
-  /**
-   * Edits one task and returns it as the row reads it, so the page patches the row in place instead of reading the list
-   * again. Upstream checks the caller mentors or manages the task's program and is not its assignee (403), answers 404 for
-   * an unknown task and 400 for a submitted task that requires a file with none uploaded; its status passes through. Only
-   * the task id and the names of the fields sent are logged, never the task's text.
-   */
-  public async updateTask(req: Request, taskId: string, update: MentorshipAdminTaskUpdate): Promise<MentorshipApplicantTask> {
-    logger.debug(req, 'mentorship_admin_update_task', 'Updating task', { taskId, fields: Object.keys(update) });
-
-    const task = await proxyMentorshipRequest<MentorshipUpstreamTask>(
+    const member = await proxyMentorshipRequest<{ id?: string }>(
       this.microserviceProxy,
       req,
-      `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`,
-      'PATCH',
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/members`,
+      'POST',
       undefined,
-      buildMentorshipUpstreamTaskUpdate(update)
+      { lfid: body.lfid, member_type: 'mentor' }
     );
-    return mapMentorshipProgramTask(task);
+    return member?.id;
   }
 
   /**
@@ -460,6 +501,58 @@ export class MentorshipAdminService {
       body
     );
     return toMentorshipEnrollProgramRef(created);
+  }
+
+  /**
+   * Saves the edit wizard's program fields, and its open terms when sent, with upstream's partial update, which leaves the status
+   * as it is and replaces the open terms in the same transaction. The logo has its own route. Upstream's update does not check that
+   * the name is free, so the BFF asks first, leaving this program out, and answers 409 with no write when another program has the
+   * name. The check and the write are two calls, so two updates at once can still both pass it. Upstream's 400, 403, 404 and 409
+   * (an open term left out still has applications) pass through. Nothing in the body is logged.
+   */
+  public async updateProgram(req: Request, programId: string, body: MentorshipEnrollUpdateRequest): Promise<MentorshipEnrollProgramRef> {
+    logger.debug(req, 'mentorship_admin_update_program', 'Updating program', { programId, termCount: body.terms?.length });
+
+    const { available } = await this.mentorshipService.isProgramNameAvailable(req, body.name, programId);
+    if (!available) {
+      logger.warning(req, 'mentorship_admin_update_program', 'Another program has the name, skipping the write', { programId });
+      throw new ConflictError(MENTORSHIP_ENROLL_NAME_TAKEN, MENTORSHIP_PROGRAM_NAME_TAKEN_ERROR_CODE, { operation: 'mentorship_admin_update_program' });
+    }
+
+    const updated = await proxyMentorshipRequest<MentorshipUpstreamCreatedProgram>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}`,
+      'PATCH',
+      undefined,
+      toMentorshipUpstreamProgramUpdate(body)
+    );
+    return toMentorshipEnrollProgramRef(updated);
+  }
+
+  /**
+   * Hides a published program or unhides a hidden one with upstream's `POST .../hide` or `.../unhide`. Upstream refuses to hide a
+   * program that still has active applications, and to unhide an archived one; those refusals, and its 403 and 404, pass through.
+   */
+  public async setProgramVisibility(req: Request, programId: string, action: MentorshipProgramVisibilityAction): Promise<void> {
+    logger.debug(req, 'mentorship_admin_set_program_visibility', 'Changing program visibility', { programId, action });
+    await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/${action}`, 'POST');
+  }
+
+  /**
+   * Reads the details of an existing program for the enroll wizard's import. Upstream's 403, 404 and 5xx pass through. Nothing
+   * in the template is logged.
+   */
+  public async getEnrollTemplate(req: Request, programId: string): Promise<MentorshipEnrollImport> {
+    logger.debug(req, 'mentorship_admin_get_enroll_template', 'Reading enroll template', { programId });
+
+    const template = await proxyMentorshipRequest<MentorshipUpstreamEnrollTemplate>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/enroll-template`,
+      'GET'
+    );
+    return toMentorshipEnrollImport(template);
   }
 
   /**
@@ -559,18 +652,11 @@ export class MentorshipAdminService {
   }
 
   /**
-   * Upstream takes RFC 3339 timestamps, sent in UTC. Each date goes as the start of its day, except the application end,
-   * which goes as the end of its day so the term takes applications through that whole date, and the term end, which goes
-   * as the end of the last day of its month: the dialog picks months, and the UI treats a term as running through its end month.
+   * The term routes' body: the name and the dates as `toMentorshipUpstreamTermDates` sends them, the term end first moved to the last
+   * day of its month: the dialog picks months, and the UI treats a term as running through its end month.
    */
   private toUpstreamTermBody(input: MentorshipAdminTermInput): Record<string, string> {
-    return {
-      name: input.name,
-      start_date_time: toMentorshipUtcInstant(input.startDate),
-      end_date_time: toMentorshipUtcEndOfDayInstant(lastDayOfMentorshipMonth(input.endDate)),
-      application_start_date: toMentorshipUtcInstant(input.applicationStartDate),
-      application_end_date: toMentorshipUtcEndOfDayInstant(input.applicationEndDate),
-    };
+    return { name: input.name, ...toMentorshipUpstreamTermDates({ ...input, endDate: lastDayOfMentorshipMonth(input.endDate) }) };
   }
 
   /** Maps upstream's answer to a write; a status missing or one the table can't show falls back to `fallbackStatus`, the rest to the input. */

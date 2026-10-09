@@ -5,6 +5,10 @@ import {
   MENTORSHIP_ADMIN_DECISION_STATUSES,
   MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
+  MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH,
+  MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH,
+  MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH,
+  MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS,
   MENTORSHIP_ADMIN_MENTEE_TABS,
   MENTORSHIP_ADMIN_MENTEES_MAX_LIMIT,
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
@@ -12,28 +16,27 @@ import {
   MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES,
   MENTORSHIP_ATTENDANCE_TYPES,
   MENTORSHIP_ENROLL_LOGO_MIME_TYPES,
-  MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_PROGRAM_PAGE_SIZE,
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_PROGRAMS_MAX_LIMIT,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipAdminApplicationStatusUpdate,
+  MentorshipAdminMenteeStatusFilter,
   MentorshipAdminMenteeTab,
+  MentorshipAdminMentorInviteRequest,
   MentorshipAdminMentorStatus,
   MentorshipAdminMentorStatusUpdate,
   MentorshipAttendanceType,
-  MentorshipMenteeStatus,
+  MentorshipProgramVisibilityAction,
 } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, MicroserviceError, ServiceValidationError } from '../errors';
-import { parseMentorshipAdminTaskUpdate } from '../helpers/mentorship-admin-task.helper';
 import { parseMentorshipAdminTermInput } from '../helpers/mentorship-admin-term.helper';
 import { parseMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
-import { parseMentorshipEnrollCreateRequest } from '../helpers/mentorship-enroll.helper';
-import { parseMentorshipMentorTaskCreateRequest } from '../helpers/mentorship-mentor-task.helper';
+import { parseMentorshipEnrollCreateRequest, parseMentorshipEnrollUpdateRequest } from '../helpers/mentorship-enroll.helper';
 import { parseMentorshipAdminPaging, parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
 import { isMentorshipProgramStatus, MentorshipAdminService } from '../services/mentorship-admin.service';
@@ -96,6 +99,26 @@ export class MentorshipAdminController {
     }
   }
 
+  // GET /api/mentorship/admin/programs/:programId/enroll-template — the details the enroll wizard copies from an existing program
+  public async getEnrollTemplate(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_mentorship_admin_enroll_template';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      const template = await this.mentorshipAdminService.getEnrollTemplate(req, programId);
+
+      logger.success(req, operation, startTime, { programId, count: template.prerequisites.length });
+      res.json(template);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/mentorship/admin/programs/:programId/mentees?type=current|past&status&termId&search&offset&limit
   public async getProgramMentees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_mentorship_admin_program_mentees';
@@ -113,9 +136,11 @@ export class MentorshipAdminController {
         throw ServiceValidationError.forField('type', `type is required and must be one of: ${MENTORSHIP_ADMIN_MENTEE_TABS.join(', ')}`, { operation });
       }
 
+      const type = rawType as MentorshipAdminMenteeTab;
+      const statusFilters = MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS[type];
       const rawStatus = parseTrimmedString(getStrictStringQueryParam(req, 'status', operation));
-      if (rawStatus !== undefined && !(MENTORSHIP_MENTEE_STATUSES as readonly string[]).includes(rawStatus)) {
-        throw ServiceValidationError.forField('status', `status must be one of: ${MENTORSHIP_MENTEE_STATUSES.join(', ')}`, { operation });
+      if (rawStatus !== undefined && !(statusFilters as readonly string[]).includes(rawStatus)) {
+        throw ServiceValidationError.forField('status', `status must be one of: ${statusFilters.join(', ')}`, { operation });
       }
 
       const termId = parseTrimmedString(getStrictStringQueryParam(req, 'termId', operation));
@@ -131,8 +156,7 @@ export class MentorshipAdminController {
         operation,
       });
 
-      const type = rawType as MentorshipAdminMenteeTab;
-      const status = rawStatus as MentorshipMenteeStatus | undefined;
+      const status = rawStatus as MentorshipAdminMenteeStatusFilter | undefined;
       const mentees = await this.mentorshipAdminService.getProgramMentees(req, programId, { type, status, termId, search, offset, limit });
 
       logger.success(req, operation, startTime, { programId, type, status, offset, limit, result_count: mentees.data.length, total: mentees.total });
@@ -172,6 +196,29 @@ export class MentorshipAdminController {
 
       logger.success(req, operation, startTime, { programId, status, offset, limit, result_count: mentors.data.length, total: mentors.total });
       res.json(mentors);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/admin/programs/:programId/mentor-candidates — body { search } -> 200 { data }
+  public async getMentorCandidates(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_mentorship_admin_mentor_candidates';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+
+      const search = this.parseMentorCandidatesSearch(req.body, operation);
+
+      const candidates = await this.mentorshipAdminService.getMentorCandidates(req, programId, search);
+
+      logger.success(req, operation, startTime, { programId, result_count: candidates.data.length });
+      res.json(candidates);
     } catch (error) {
       next(error);
     }
@@ -287,58 +334,6 @@ export class MentorshipAdminController {
     }
   }
 
-  // POST /api/mentorship/admin/tasks  { applicationIds, name, description, dueDate?, requiresFileSubmission? } -> { created, failed }
-  // Auth: logged-in user required (401 otherwise). The body is validated with the task dialog's rules (400), the same
-  // as the mentor route. With one application upstream's status passes through; with several, the ones not created
-  // are listed in `failed`. Only ids and counts are logged, never the task's text.
-  public async createTasks(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const operation = 'create_mentorship_admin_tasks';
-    const startTime = logger.startOperation(req, operation);
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation });
-      }
-
-      const request = parseMentorshipMentorTaskCreateRequest(req.body, operation);
-      const result = await this.mentorshipAdminService.createTasks(req, request);
-
-      logger.success(req, operation, startTime, {
-        application_count: request.applicationIds.length,
-        created_count: result.created.length,
-        failed_count: result.failed.length,
-      });
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // PATCH /api/mentorship/admin/tasks/:taskId
-  // Auth: logged-in user required (401 otherwise). The id must be a UUID and the body is validated (400) before any upstream
-  // call. Returns the updated task so the page patches its row without reading the list again. Upstream checks the caller
-  // mentors or manages the program and is not the assignee; its 403, 404 and 400 pass through. Only the task id and the
-  // names of the fields changed are logged, never the task's text.
-  public async updateTask(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const operation = 'update_mentorship_admin_task';
-    const startTime = logger.startOperation(req, operation);
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation });
-      }
-
-      const taskId = this.requireUuidParam(req, 'taskId', operation);
-      const update = parseMentorshipAdminTaskUpdate(req.body, operation);
-      const task = await this.mentorshipAdminService.updateTask(req, taskId, update);
-
-      logger.success(req, operation, startTime, { taskId, fields: Object.keys(update) });
-      res.json(task);
-    } catch (error) {
-      next(error);
-    }
-  }
-
   // POST /api/mentorship/admin/programs/:programId/terms/:termId/decline-pending
   public async declinePendingForTerm(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'decline_mentorship_admin_pending_for_term';
@@ -355,6 +350,27 @@ export class MentorshipAdminController {
 
       logger.success(req, operation, startTime, { programId, termId, declinedCount: result.declinedCount });
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/admin/programs/:programId/mentors — body { lfid } -> 204
+  public async inviteProgramMentor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'invite_mentorship_admin_program_mentor';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      const body = this.parseMentorInvite(req.body, operation);
+      const memberId = await this.mentorshipAdminService.inviteProgramMentor(req, programId, body);
+
+      logger.success(req, operation, startTime, { programId, memberId });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }
@@ -400,6 +416,37 @@ export class MentorshipAdminController {
     } catch (error) {
       next(error);
     }
+  }
+
+  // PATCH /api/mentorship/admin/programs/:programId — the edit wizard's program fields; terms and the logo have their own routes
+  public async updateProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'update_mentorship_admin_program';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      const body = parseMentorshipEnrollUpdateRequest(req.body, operation);
+      const program = await this.mentorshipAdminService.updateProgram(req, programId, body);
+
+      logger.success(req, operation, startTime, { programId: program.id, status: program.status });
+      res.json(program);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/admin/programs/:programId/hide -> 204
+  public async hideProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.runProgramVisibilityAction(req, res, next, 'hide');
+  }
+
+  // POST /api/mentorship/admin/programs/:programId/unhide -> 204
+  public async unhideProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.runProgramVisibilityAction(req, res, next, 'unhide');
   }
 
   // POST /api/mentorship/admin/programs/:programId/logo — raw PNG or JPEG bytes -> 201 + { logoUrl }
@@ -525,6 +572,55 @@ export class MentorshipAdminController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** The shared shape of hide and unhide: authenticate, check the program id, write, answer 204. */
+  private async runProgramVisibilityAction(req: Request, res: Response, next: NextFunction, action: MentorshipProgramVisibilityAction): Promise<void> {
+    const operation = `${action}_mentorship_admin_program`;
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      await this.mentorshipAdminService.setProgramVisibility(req, programId, action);
+
+      logger.success(req, operation, startTime, { programId });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * The search comes in the body so it never reaches the logged request URL, and never goes into a log line here.
+   * Upstream refuses a search under the minimum with a 400; refusing it here saves the round trip. Length is counted in
+   * code points, as upstream counts runes, so an emoji is one character, not two UTF-16 units.
+   */
+  private parseMentorCandidatesSearch(body: unknown, operation: string): string {
+    const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+    const search = typeof raw['search'] === 'string' ? raw['search'].trim() : '';
+    const length = Array.from(search).length;
+    if (length < MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH || length > MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH) {
+      throw ServiceValidationError.forField(
+        'search',
+        `search must be ${MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH} to ${MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH} characters.`,
+        { operation }
+      );
+    }
+    return search;
+  }
+
+  /** `lfid` must be a non-blank string; only the LFID is forwarded, never an email or a user id. */
+  private parseMentorInvite(body: unknown, operation: string): MentorshipAdminMentorInviteRequest {
+    const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+    const lfid = typeof raw['lfid'] === 'string' ? raw['lfid'].trim() : '';
+    if (!lfid || lfid.length > MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH) {
+      throw ServiceValidationError.forField('lfid', `lfid must be 1 to ${MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH} characters.`, { operation });
+    }
+    return { lfid };
   }
 
   /** `status` must be one the admin can set on a mentor. */

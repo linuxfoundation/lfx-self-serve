@@ -14,6 +14,8 @@ import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 const getPersonas = vi.fn();
 const checkRootMarketingAuditor = vi.fn();
 const checkRootCampaignManager = vi.fn();
+const checkRootCampaignManagerCascade = vi.fn();
+const checkProjectWriter = vi.fn();
 const checkSingleAccess = vi.fn();
 const getProjectIdBySlug = vi.fn();
 
@@ -22,6 +24,8 @@ vi.mock('../utils/persona-helper', () => ({
     getPersonas: (...args: unknown[]) => getPersonas(...args),
     checkRootMarketingAuditor: (...args: unknown[]) => checkRootMarketingAuditor(...args),
     checkRootCampaignManager: (...args: unknown[]) => checkRootCampaignManager(...args),
+    checkRootCampaignManagerCascade: (...args: unknown[]) => checkRootCampaignManagerCascade(...args),
+    checkProjectWriter: (...args: unknown[]) => checkProjectWriter(...args),
   },
 }));
 
@@ -73,6 +77,9 @@ describe('requireMarketingAuditor / requireCampaignManager', () => {
     getPersonas.mockReset();
     checkRootMarketingAuditor.mockReset();
     checkRootCampaignManager.mockReset();
+    checkRootCampaignManagerCascade.mockReset();
+    checkRootCampaignManagerCascade.mockResolvedValue(false);
+    checkProjectWriter.mockReset();
     checkSingleAccess.mockReset();
     getProjectIdBySlug.mockReset();
     setFlag(true);
@@ -169,13 +176,40 @@ describe('requireMarketingAuditor / requireCampaignManager', () => {
       expect(verdict(next)).toBe('deny');
     });
 
-    it('allows a root writer', async () => {
+    it('allows a root writer that also holds writer_guard on the named project', async () => {
       getPersonas.mockResolvedValue(nonEd({ isRootWriter: true }));
+      checkProjectWriter.mockResolvedValue(true);
       const next = vi.fn();
 
       await requireCampaignManager(buildReq({ project: 'tlf' }), {} as Response, next as unknown as NextFunction);
 
       expect(verdict(next)).toBe('allow');
+      expect(checkProjectWriter).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    });
+
+    // The ROOT check admits `global_writer`, which is withheld on Draft/Confidential projects, so
+    // the named project decides — through the ordinary FGA path once the root pass does not apply.
+    it('falls through to the FGA checks for a root writer without writer_guard on the named project', async () => {
+      getPersonas.mockResolvedValue(nonEd({ isRootWriter: true }));
+      checkProjectWriter.mockResolvedValue(false);
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-withheld', slug: 'withheld', exists: true });
+      checkSingleAccess.mockResolvedValue(false);
+      const next = vi.fn();
+
+      await requireCampaignManager(buildReq({ project: 'withheld' }), {} as Response, next as unknown as NextFunction);
+
+      expect(verdict(next)).toBe('deny');
+      expect(checkSingleAccess).toHaveBeenCalledWith(expect.anything(), { resource: 'project', id: 'uid-withheld', access: 'campaign_manager' });
+    });
+
+    it('allows a root writer an unscoped request without a per-project check', async () => {
+      getPersonas.mockResolvedValue(nonEd({ isRootWriter: true }));
+      const next = vi.fn();
+
+      await requireCampaignManager(buildReq(), {} as Response, next as unknown as NextFunction);
+
+      expect(verdict(next)).toBe('allow');
+      expect(checkProjectWriter).not.toHaveBeenCalled();
     });
 
     it('does not bypass for LF staff without a marketing grant', async () => {
@@ -203,17 +237,47 @@ describe('requireMarketingAuditor / requireCampaignManager', () => {
       expect(getProjectIdBySlug).not.toHaveBeenCalled();
     });
 
-    it('allows via a root campaign_manager grant', async () => {
+    it('allows an unscoped campaign request via a root campaign-manager grant', async () => {
       getPersonas.mockResolvedValue(nonEd());
       checkRootCampaignManager.mockResolvedValue(true);
       const next = vi.fn();
 
-      await requireCampaignManager(buildReq({ project: 'tlf' }), {} as Response, next as unknown as NextFunction);
+      await requireCampaignManager(buildReq(), {} as Response, next as unknown as NextFunction);
 
       expect(verdict(next)).toBe('allow');
       // The two relations must not be conflated — a root marketing_auditor grant must not also
       // satisfy campaign_manager.
       expect(checkRootMarketingAuditor).not.toHaveBeenCalled();
+    });
+
+    // `campaign_manager` has no `from parent`, and ROOT `global_marketing_ops` does not cascade, so a
+    // request naming a project is answered by that project's own relation — never the ROOT grant.
+    it('answers a campaign request naming a project from that project, not the root grant', async () => {
+      getPersonas.mockResolvedValue(nonEd());
+      checkRootCampaignManager.mockResolvedValue(true);
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-child', slug: 'child', exists: true });
+      checkSingleAccess.mockResolvedValue(false);
+      const next = vi.fn();
+
+      await requireCampaignManager(buildReq({ project: 'child' }), {} as Response, next as unknown as NextFunction);
+
+      expect(verdict(next)).toBe('deny');
+      expect(checkRootCampaignManager).not.toHaveBeenCalled();
+      expect(checkSingleAccess).toHaveBeenCalledWith(expect.anything(), { resource: 'project', id: 'uid-child', access: 'campaign_manager' });
+    });
+
+    // ROOT `marketing_ops` cascades, so it answers a named project without the slug lookup, whose
+    // timeout or 503 would otherwise deny it as `project_not_found`.
+    it('allows a named-project campaign request via the cascading ROOT marketing_ops grant, before the slug lookup', async () => {
+      getPersonas.mockResolvedValue(nonEd());
+      checkRootCampaignManagerCascade.mockResolvedValue(true);
+      const next = vi.fn();
+
+      await requireCampaignManager(buildReq({ project: 'child' }), {} as Response, next as unknown as NextFunction);
+
+      expect(verdict(next)).toBe('allow');
+      expect(getProjectIdBySlug).not.toHaveBeenCalled();
+      expect(checkRootCampaignManager).not.toHaveBeenCalled();
     });
   });
 
@@ -417,6 +481,29 @@ describe('requireMarketingAuditor / requireCampaignManager', () => {
 
       expect(verdict(edNext)).toBe('allow');
       expect(verdict(staffNext)).toBe('allow');
+    });
+
+    it('admits a root writer on the tlf umbrella when it also holds writer_guard on tlf', async () => {
+      getPersonas.mockResolvedValue(nonEd({ isRootWriter: true }));
+      checkProjectWriter.mockResolvedValue(true);
+      const next = vi.fn();
+
+      await requireNorthStarAccess(buildReq({ foundationSlug: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+      expect(verdict(next)).toBe('allow');
+      expect(checkProjectWriter).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    });
+
+    it('refuses a root writer on the tlf umbrella without writer_guard on tlf or a root marketing_auditor grant', async () => {
+      getPersonas.mockResolvedValue(nonEd({ isRootWriter: true }));
+      checkProjectWriter.mockResolvedValue(false);
+      checkRootMarketingAuditor.mockResolvedValue(false);
+      const next = vi.fn();
+
+      await requireNorthStarAccess(buildReq({ foundationSlug: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+      expect(verdict(next)).toBe('deny');
+      expect(getProjectIdBySlug).not.toHaveBeenCalled();
     });
   });
 });

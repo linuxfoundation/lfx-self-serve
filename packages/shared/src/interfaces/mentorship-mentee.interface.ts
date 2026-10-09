@@ -20,6 +20,8 @@ export interface MentorshipMenteeRegisterForm {
   skillsHave: string[];
   skillsWant: string[];
   additionalNotes: string;
+  /** ISO 3166-1 alpha-2 code of the mentee's country of residence; `''` until one is picked. */
+  country: string;
   ageConsent: boolean;
   age: string;
   raceEthnicityConsent: boolean;
@@ -49,6 +51,7 @@ export interface MentorshipMenteeRegisterFieldErrors {
   introduction?: string;
   skillsHave?: string;
   skillsWant?: string;
+  country?: string;
   ageEligible?: string;
   workAuthorized?: string;
   noDuplicateProfile?: string;
@@ -68,6 +71,8 @@ export interface MentorshipMenteeRegisterRequest {
   skillsHave: string[];
   skillsWant: string[];
   additionalNotes: string;
+  /** ISO 3166-1 alpha-2 code from `COUNTRIES`; stored upstream as `address.country`. */
+  country: string;
   demographics?: MentorshipMenteeDemographics;
   ageEligible: boolean;
   workAuthorized: boolean;
@@ -132,8 +137,8 @@ export type MentorshipMenteeTaskCategory = 'prerequisite' | 'non_prerequisite';
  * One task on a mentee application.
  *
  * BFF mapping from `GET /mentorship/v1/applications/{id}/tasks`:
- * - `submitFile` ← `tasks.submit_file` (`null` | `'required'` | URL)
- * - `fileUrl` ← `tasks.file`
+ * - `submitFile` ← `'required'` when `tasks.submit_file` is set (upstream treats any value as required), else `null`
+ * - `hasFile` ← whether `tasks.file` is set (upstream sends its download route, which the browser cannot fetch)
  * - `dueDate` ← `tasks.due_date` as its UTC midnight instant, else, for a prerequisite task, the term's application
  *   close as the end of its UTC day
  * - `submittedOn` ← `tasks.updated_on` when status is `submitted` or `complete`
@@ -149,10 +154,10 @@ export interface MentorshipMenteeApplicationTask {
   description: string;
   category: MentorshipMenteeTaskCategory;
   status: MentorshipMenteeTaskStatus;
-  /** `null` = no submission needed, `'required'` = needs upload, URL string = file already uploaded */
-  submitFile: string | null;
-  /** Uploaded file URL — present when `submitFile` is a URL or after a successful upload */
-  fileUrl?: string;
+  /** `'required'` when the task needs a file before it can be submitted, else `null`. */
+  submitFile: 'required' | null;
+  /** Whether a submission file is stored; it downloads through `GET /api/mentorship/tasks/:taskId/file`. */
+  hasFile: boolean;
   /**
    * ISO 8601 UTC instant, rendered via `DatePipe` with `'UTC'`. The BFF turns a bare date into a UTC
    * instant (a task's own due date at the start of its day, a term's application close at the end of
@@ -186,23 +191,20 @@ export interface MentorshipMenteeTaskView {
   inProgress: boolean;
   /** Tailwind badge classes for the status pill. */
   statusClass: string;
-  /** A submission file already exists (renders View/Download). */
+  /** A submission file is stored (renders Download, and Replace or Remove while the file can change). */
   hasUploadedFile: boolean;
-  /** An upload is required but no file exists yet (renders Upload). */
-  needsUpload: boolean;
   /**
-   * True when upstream requires a file to submit (`submit_file` non-empty: `'required'` or a URL) and none is
-   * stored yet. Computed from the raw stored file, not the display-fallback `fileUrl`. Gates the `submitted`
-   * option. Note a URL-valued `submit_file` with no stored file also has `hasUploadedFile = true`; upstream
-   * still treats it as file-required, and no upstream path writes a URL there today.
+   * The task needs a file to be submitted and none is stored yet. Renders Upload, and gates the `submitted`
+   * option, since upstream refuses that move without the file.
    */
   requiresFile: boolean;
-  fileUrl: string | null;
+  /** The reviewer completed the task, so upstream refuses any change to its file. */
+  fileLocked: boolean;
   /** ISO 8601 UTC date string, or `null`. Rendered via `DatePipe` with `'UTC'`. */
   dueDate: string | null;
   /**
-   * True once the due date's UTC day has ended, when the task was built. A past-due task that is not
-   * submitted can no longer be submitted or have a file uploaded; `false` when there is no due date.
+   * True once the due date's UTC day has ended, when the task was built. A past-due task can no longer be
+   * submitted, and its file can no longer be uploaded, replaced or removed; `false` when there is no due date.
    */
   pastDue: boolean;
   /**
@@ -288,12 +290,14 @@ export interface MentorshipMenteeApplicationView {
  * - `skillsHave` ← `skill_set.skills`
  * - `skillsWant` ← `skill_set.improvementSkills`
  * - `additionalNotes` ← `skill_set.comments`
+ * - `country` ← `address.country` (ISO 3166-1 alpha-2), absent when none is stored
  */
 export interface MentorshipMenteeProfileDetails {
   aboutMe: string;
   skillsHave: string[];
   skillsWant: string[];
   additionalNotes?: string;
+  country?: string;
 }
 
 /** Status on an Application History row: the stored `applications.status` value. */
@@ -373,6 +377,8 @@ export interface MentorshipMenteeProfileUpdateRequest {
   skillSet?: MentorshipMenteeSkillSetUpdate;
   demographics?: MentorshipMenteeDemographicsGroupUpdate;
   socioeconomics?: MentorshipMenteeSocioeconomicsGroupUpdate;
+  /** ISO 3166-1 alpha-2 code from `COUNTRIES`, written to `address.country`. Omitted means unchanged. */
+  country?: string;
 }
 
 /** 200 body of `PATCH /api/mentorship/mentee/profile`: the saved profile, re-mapped. History is not returned. */
@@ -387,6 +393,7 @@ export interface MentorshipMenteeProfileFormValue {
   skillsHave: string[];
   skillsWant: string[];
   additionalNotes: string;
+  country: string;
 }
 
 /** `form.getRawValue()` of the demographics drawer: `${key}Consent` booleans and `${key}` answers per `MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS`. */
@@ -649,6 +656,16 @@ export interface MentorshipUpstreamMenteeSocioeconomicsInput {
 }
 
 /**
+ * The `address` column. The mentee forms own only `country` (ISO 3166-1 alpha-2, which the HR
+ * acceptance notice expands to a name); the index signature carries the legacy keys (`city`,
+ * `address1`, `zipCode`) a profile update keeps, because upstream replaces the column whole.
+ */
+export interface MentorshipUpstreamMenteeAddress {
+  country: string;
+  [key: string]: unknown;
+}
+
+/**
  * Body of `PUT /mentorship/v1/me/profiles/mentee`. `user_id` and `profile_type` are overridden
  * upstream from the token and path; the name, email and logo come from the LFX profile, and phone and
  * slug are intentionally not sent. A PUT to an existing profile replaces ALL columns, which is why the
@@ -660,12 +677,29 @@ export interface MentorshipUpstreamMenteeProfileInput extends MentorshipUpstream
   age_eligible: boolean;
   work_eligible: boolean;
   skill_set: MentorshipUpstreamMenteeSkillSetInput;
+  address: MentorshipUpstreamMenteeAddress;
   demographics?: MentorshipUpstreamMenteeDemographicsInput;
   socioeconomics?: MentorshipUpstreamMenteeSocioeconomicsInput;
 }
-/** Body for `PATCH /mentorship/v1/tasks/{id}/submission`. `file` is intentionally omitted: upload is not in scope. */
+/** Body for `PATCH /mentorship/v1/tasks/{id}/submission`. Upstream refuses `file` here: it is written only through the file route. */
 export interface MentorshipUpstreamTaskSubmissionUpdate {
   status: MentorshipMenteeUpdatableTaskStatus;
+}
+
+/** Upstream `201` from `POST /mentorship/v1/tasks/{id}/file-upload`. */
+export interface MentorshipUpstreamTaskFileUpload {
+  /** The multipart file name cleaned to `[A-Za-z0-9._-]`, at most 100 characters; the download returns it. */
+  filename: string;
+  /** The type upstream detected from the bytes, not the one the browser sent. */
+  content_type: string;
+  size: number;
+}
+
+/** BFF `201` from `POST /api/mentorship/mentee/tasks/:taskId/file`. */
+export interface MentorshipMenteeTaskFileUploadResponse {
+  fileName: string;
+  contentType: string;
+  size: number;
 }
 
 /**
@@ -731,4 +765,5 @@ export interface MentorshipUpstreamMenteeProfileUpdate {
   skill_set?: MentorshipUpstreamMenteeSkillSet;
   demographics?: MentorshipUpstreamMenteeDemographics;
   socioeconomics?: MentorshipUpstreamMenteeSocioeconomics;
+  address?: MentorshipUpstreamMenteeAddress;
 }

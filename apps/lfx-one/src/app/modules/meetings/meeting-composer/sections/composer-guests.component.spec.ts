@@ -7,7 +7,7 @@ import type { CommitteeMember, ComposerGuestRow, Meeting, MeetingRegistrantWithS
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -50,6 +50,7 @@ describe('ComposerGuestsComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         MeetingComposerFormService,
+        ConfirmationService,
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: CommitteeService, useValue: {} },

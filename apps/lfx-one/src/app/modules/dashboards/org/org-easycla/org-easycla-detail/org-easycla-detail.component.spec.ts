@@ -1146,6 +1146,7 @@ describe('OrgEasyclaDetailComponent', () => {
         projectSfid: 'a09410000182dD2AAI',
         claGroupId: GROUP_ID,
         attestations,
+        claGroupName: 'Nimbus Foundation CLA',
       });
     });
 

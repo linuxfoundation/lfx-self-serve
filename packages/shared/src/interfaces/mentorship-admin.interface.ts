@@ -12,8 +12,8 @@ import type {
   MENTORSHIP_TERM_ROW_STATUSES,
 } from '../constants/mentorship.constants';
 import type {
+  MentorshipApplicantDisplayStatus,
   MentorshipApplicantTask,
-  MentorshipApplicantTaskStatus,
   MentorshipMenteeStatus,
   MentorshipProgramApplicant,
   MentorshipProgramPersonBase,
@@ -32,12 +32,25 @@ export interface MentorshipProgramStats {
 /**
  * Program status as the admin list shows it (upstream `admin_status`, `_` written as `-`):
  * - `open` — published, with an open term or no terms yet
- * - `pending-review` — draft or submitted, awaiting approval
+ * - `pending-review` — pending, awaiting review
  * - `completed` — published, with only closed terms
  * - `rejected` — rejected
- * - `hidden` — archived or hidden
+ * - `hidden` — hidden
  */
 export type MentorshipProgramStatus = (typeof MENTORSHIP_PROGRAM_STATUSES)[number];
+
+/** A program admin's visibility change on the program-detail header: `hide` a published program, `unhide` a hidden one. */
+export type MentorshipProgramVisibilityAction = 'hide' | 'unhide';
+
+/** One row of the program-detail header's `…` menu, rendered with a description under the label. */
+export interface MentorshipProgramMenuItem {
+  action: MentorshipProgramVisibilityAction;
+  label: string;
+  icon: string;
+  description: string;
+  danger?: boolean;
+  command: () => void;
+}
 
 /** Core program fields as returned by the LFX One BFF for the mentorship admin list. */
 export interface MentorshipProgram {
@@ -48,11 +61,12 @@ export interface MentorshipProgram {
   name: string;
   /** Foundation / project sponsoring the program, e.g. "LF Energy". */
   projectName: string;
-  term: string;
   status: MentorshipProgramStatus;
   stats: MentorshipProgramStats;
   /** Optional program logo. When absent, the card renders an initials avatar. */
   logoUrl?: string;
+  /** True when upstream status is `pending` or `published` and the program has no logo (R12). List rows only. */
+  logoMissing?: boolean;
   createdOn: string;
   updatedOn: string;
 }
@@ -65,6 +79,9 @@ export type MentorshipProgramsResponse = {
 /** Admin program-detail underline tabs. */
 export type MentorshipProgramDetailTab = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)[number]['value'];
 
+/** One admin program-detail tab: its value, label and the count its badge reads. */
+export type MentorshipProgramDetailTabDefinition = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)[number];
+
 /** Mentor lifecycle on the admin Mentors tab; upstream's `active` mentor shows as Accepted. */
 export type MentorshipAdminMentorStatus = (typeof MENTORSHIP_ADMIN_MENTOR_STATUSES)[number];
 
@@ -74,6 +91,11 @@ export type MentorshipAdminMentorUpdateStatus = (typeof MENTORSHIP_ADMIN_MENTOR_
 /** Body of `PATCH /api/mentorship/admin/programs/:programId/mentors/:memberId`. */
 export interface MentorshipAdminMentorStatusUpdate {
   status: MentorshipAdminMentorUpdateStatus;
+}
+
+/** Body of `POST /api/mentorship/admin/programs/:programId/mentors`: the LFID of the picked candidate, invited as a mentor. */
+export interface MentorshipAdminMentorInviteRequest {
+  lfid: string;
 }
 
 /** One action on a Mentors tab row: `key` names its copy, `status` is what it sets. */
@@ -119,19 +141,6 @@ export interface MentorshipAdminTermInput {
 }
 
 /**
- * Body of `PATCH /api/mentorship/admin/tasks/:taskId`. Every field is optional and an absent one is left unchanged, but at least
- * one is required: the status select sends `status` alone, the edit dialog sends whichever fields it changed. `dueDate` is a date-only
- * `YYYY-MM-DD`, and an empty string clears it. `requiresFileSubmission` turns the mentee's file requirement on or off.
- */
-export interface MentorshipAdminTaskUpdate {
-  name?: string;
-  description?: string;
-  dueDate?: string;
-  requiresFileSubmission?: boolean;
-  status?: MentorshipApplicantTaskStatus;
-}
-
-/**
  * Body of `PATCH /mentorship/v1/tasks/{id}`. A field left out is unchanged; an empty `submit_file` or `due_date` clears it.
  * `submit_file` is `required` when the mentee must upload a file. Upstream refuses `application_status`, `program_term_status`
  * and `file` here, so none is sent.
@@ -145,7 +154,7 @@ export interface MentorshipUpstreamTaskUpdate {
 }
 
 /**
- * One row of upstream `GET /mentorship/v1/me/programs`: a program the caller administers, with the term and counts its card shows.
+ * One row of upstream `GET /mentorship/v1/me/programs`: a program the caller administers, with the program-wide counts its card shows.
  * `admin_status` stays a plain string: the BFF maps it to `MentorshipProgramStatus` and logs a value it does not know.
  */
 export interface MentorshipUpstreamAdministeredProgram {
@@ -159,8 +168,6 @@ export interface MentorshipUpstreamAdministeredProgram {
   /** Name of the program's LF project; absent when the program has none. */
   project_name?: string;
   logo_url?: string;
-  /** The latest open term, else the latest closed one; absent when the program has no terms. */
-  term?: Pick<MentorshipUpstreamProgramTerm, 'id' | 'name' | 'status'>;
   stats: MentorshipProgramStats;
   created_on: string;
   updated_on: string;
@@ -208,6 +215,12 @@ export interface MentorshipDeclineByTermDialogData {
 /** One of the two mentee tabs of an admin program page. */
 export type MentorshipAdminMenteeTab = (typeof MENTORSHIP_ADMIN_MENTEE_TABS)[number];
 
+/**
+ * The status filter of a mentee tab. Current Mentees filters on the statuses its table shows, so `pending` splits
+ * into `applied` and `tasks-completed`; Past Mentees filters on the wire status.
+ */
+export type MentorshipAdminMenteeStatusFilter = MentorshipMenteeStatus | MentorshipApplicantDisplayStatus;
+
 /** Count badges on the live admin program page. A count is `null` when its upstream read failed; the tab shows a dash. */
 export interface MentorshipAdminProgramTabCounts {
   currentMentees: number | null;
@@ -253,6 +266,27 @@ export interface MentorshipAdminMentorsResponse {
   total: number;
 }
 
+/**
+ * Body of `POST /api/mentorship/admin/programs/:programId/mentor-candidates`. The search is in the body, not the query
+ * string, because it can be a full email address and the request URL is logged on every line.
+ */
+export interface MentorshipAdminMentorCandidatesRequest {
+  search: string;
+}
+
+/** One person the Mentors tab can invite, from `POST /api/mentorship/admin/programs/:programId/mentor-candidates`. Never carries an email. */
+export interface MentorshipAdminMentorCandidate {
+  lfid: string;
+  /** Upstream's name, or the LFID when upstream has none. */
+  name: string;
+  avatarUrl?: string;
+}
+
+/** At most 10 candidates matching the search, from `POST /api/mentorship/admin/programs/:programId/mentor-candidates`. */
+export interface MentorshipAdminMentorCandidatesResponse {
+  data: MentorshipAdminMentorCandidate[];
+}
+
 /** One page of a program's terms, from `GET /api/mentorship/admin/programs/:programId/terms`. */
 export interface MentorshipAdminTermsResponse {
   data: MentorshipProgramTermRow[];
@@ -284,6 +318,13 @@ export interface MentorshipUpstreamMemberManagementRow {
   profile_created: boolean;
 }
 
+/** One row of upstream `GET /mentorship/v1/programs/{id}/mentor-candidates`. `name` and `avatar_url` may be missing. */
+export interface MentorshipUpstreamMentorCandidate {
+  lfid: string;
+  name?: string;
+  avatar_url?: string;
+}
+
 /** One row of upstream `GET /mentorship/v1/programs/{id}/term-management`: a term with its mentee application counts. */
 export interface MentorshipUpstreamTermManagementRow extends MentorshipUpstreamProgramTerm {
   pending: number;
@@ -301,8 +342,8 @@ export interface MentorshipAdminTasksState {
 /** Query of `GET /api/mentorship/admin/programs/:programId/mentees`. */
 export interface MentorshipAdminMenteesQuery {
   type: MentorshipAdminMenteeTab;
-  /** One wire status. */
-  status?: MentorshipMenteeStatus;
+  /** One display status on `current`, one wire status on `past`. */
+  status?: MentorshipAdminMenteeStatusFilter;
   /** UUID of one term. */
   termId?: string;
   search?: string;

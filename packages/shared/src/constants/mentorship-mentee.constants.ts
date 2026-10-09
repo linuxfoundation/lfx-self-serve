@@ -8,6 +8,7 @@ import type {
   MentorshipMenteeRegisterFieldErrors,
 } from '../interfaces/mentorship-mentee.interface';
 import type { MentorshipRegisterFailureOptions } from '../interfaces/mentorship.interface';
+import { COUNTRIES } from './countries.constants';
 
 export const MENTORSHIP_MENTEE_REGISTER_TITLE = 'Become a Mentee';
 
@@ -37,6 +38,16 @@ export const MENTORSHIP_MENTEE_SKILLS_HAVE_LABEL = 'What skills do you currently
 export const MENTORSHIP_MENTEE_SKILLS_WANT_LABEL = 'What skills would you like to improve?';
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL = 'Anything else you want mentors to know?';
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_PLACEHOLDER = 'Share any other context that would help a mentor get to know you.';
+
+/** The Country card: on register, in the profile edit drawer, and on the profile details card. */
+export const MENTORSHIP_MENTEE_COUNTRY_TITLE = 'Country';
+export const MENTORSHIP_MENTEE_COUNTRY_INTRO = 'Tell us the country you live in. The Linux Foundation HR team uses it to verify stipend eligibility.';
+export const MENTORSHIP_MENTEE_COUNTRY_LABEL = 'Country of residence';
+export const MENTORSHIP_MENTEE_COUNTRY_PLACEHOLDER = 'Select your country';
+export const MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE = 'Select your country of residence.';
+export const MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE = 'Select a country from the list.';
+/** The codes a mentee country may hold: the assigned ISO 3166-1 alpha-2 codes the dropdown offers, derived from `COUNTRIES`. */
+export const MENTORSHIP_MENTEE_COUNTRY_CODES: ReadonlySet<string> = new Set<string>(COUNTRIES.map((country) => country.value));
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX = 1000;
 
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_TITLE = 'Demographics';
@@ -161,6 +172,7 @@ export const MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS: readonly (keyof MentorshipMe
   'introduction',
   'skillsHave',
   'skillsWant',
+  'country',
   'ageEligible',
   'workAuthorized',
   'noDuplicateProfile',
@@ -390,7 +402,7 @@ export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_FALLBACK = 'We could not update
 /**
  * Statuses where the local view is stale, so the applications are re-read after the toast. A 400 counts:
  * the row only sends a task id and a status it has already validated, so in practice it is upstream's
- * file-required check, which means the cached task no longer says whether a file is needed.
+ * file-required check, which means the cached task no longer says whether a file is stored or needed.
  */
 export const MENTORSHIP_MENTEE_TASK_STATUS_STALE_STATUSES: readonly number[] = [400, 403, 404, 409];
 
@@ -403,7 +415,7 @@ export const MENTORSHIP_MENTEE_TASK_STATUS_STALE_STATUSES: readonly number[] = [
  * (400, 403, 404, 409) re-read the applications; any other status shows the fallback and keeps them.
  */
 export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_MESSAGES: Readonly<Record<number, string>> = {
-  400: 'This task could not be updated. If it needs a file, file upload is coming soon. Your tasks have been refreshed.',
+  400: 'This task could not be updated. If it needs a file, upload one first. Your tasks have been refreshed.',
   403: 'You do not have permission to update this task right now. If it is assigned to you, try again in a moment. Your tasks have been refreshed.',
   404: 'This task no longer exists. Your tasks have been refreshed.',
   409: 'This task has already moved on, so your change was not applied. Your tasks have been refreshed.',
@@ -415,12 +427,59 @@ export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_MESSAGES: Readonly<Record<numbe
  */
 export const MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE = 'TASK_PAST_DUE';
 export const MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE = 'The due date for this task has passed, so it can no longer be submitted.';
+/** The same 400 code, on a file upload or removal after the due date. */
+export const MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE = 'The due date for this task has passed, so its file can no longer change.';
+
+// ---------------------------------------------------------------------------
+// Task submission files
+// ---------------------------------------------------------------------------
+
+/** Upstream's cap on a task file (20 MiB). The picker, the BFF's raw body parser and upstream all use it. */
+export const MENTORSHIP_MENTEE_TASK_FILE_MAX_BYTES = 20 * 1024 * 1024;
+/** Extensions the picker offers and the BFF accepts. Upstream decides from the bytes: PDF, DOC, DOCX or UTF-8 text. */
+export const MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS: readonly string[] = ['.pdf', '.doc', '.docx', '.txt'];
+export const MENTORSHIP_MENTEE_TASK_FILE_ACCEPT = MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS.join(',');
+/** The browser sends the raw bytes with this type, and the BFF's parser reads no other; upstream ignores the type it is sent. */
+export const MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE = 'application/octet-stream';
+/**
+ * Request header that carries the file's name, URI-encoded. A header rather than a query value, because the request
+ * logger writes the URL on every line and a mentee's file name often carries their own name.
+ */
+export const MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER = 'X-File-Name';
+export const MENTORSHIP_MENTEE_TASK_FILE_TOO_LARGE_MESSAGE = 'The file is larger than 20 MB.';
+export const MENTORSHIP_MENTEE_TASK_FILE_TYPE_MESSAGE = 'Upload a PDF, DOC, DOCX or plain-text file.';
+export const MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_SUCCESS_SUMMARY = 'File uploaded';
+export const MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_SUCCESS_DETAIL = 'Your file has been saved.';
+export const MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_ERROR_SUMMARY = 'Could not upload file';
+export const MENTORSHIP_MENTEE_TASK_FILE_REMOVE_SUCCESS_SUMMARY = 'File removed';
+export const MENTORSHIP_MENTEE_TASK_FILE_REMOVE_SUCCESS_DETAIL = 'Your file has been removed.';
+export const MENTORSHIP_MENTEE_TASK_FILE_REMOVE_ERROR_SUMMARY = 'Could not remove file';
+export const MENTORSHIP_MENTEE_TASK_FILE_ERROR_FALLBACK = 'We could not change this file right now. Please try again.';
+
+/**
+ * Upload and removal failures with their own copy, keyed by status. A 400 is an empty or unreadable file, or the BFF's
+ * past-due check, which carries `MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE` and shows its own message. A 409 is a
+ * completed task's file, or removing a submitted task's file, which can only be replaced. A 503 means object storage is
+ * not configured upstream.
+ */
+export const MENTORSHIP_MENTEE_TASK_FILE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'This file could not be uploaded. Choose a file that is not empty.',
+  403: 'You do not have permission to change this file. Your tasks have been refreshed.',
+  404: 'This task no longer exists. Your tasks have been refreshed.',
+  409: 'This file can no longer change that way. Your tasks have been refreshed.',
+  413: MENTORSHIP_MENTEE_TASK_FILE_TOO_LARGE_MESSAGE,
+  415: MENTORSHIP_MENTEE_TASK_FILE_TYPE_MESSAGE,
+  503: 'File uploads are unavailable right now. Please try again later.',
+};
+
+/** File failures that mean the cached task is out of date, so the applications are re-read after the toast. */
+export const MENTORSHIP_MENTEE_TASK_FILE_STALE_STATUSES: readonly number[] = [403, 404, 409];
 
 /**
  * Reasons a status option is unavailable. They are read by assistive tech; the file-required and past-due
  * ones also show on screen. The past-due hint also describes the disabled Upload button.
  */
-export const MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED = 'This task needs a file before it can be submitted. File upload is coming soon.';
+export const MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED = 'This task needs a file before it can be submitted. Upload one first.';
 export const MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE = 'The due date has passed, so this task can no longer be submitted.';
 export const MENTORSHIP_MENTEE_TASK_HINT_START_FIRST = 'Start the task before submitting it.';
 export const MENTORSHIP_MENTEE_TASK_HINT_LOCKED = 'Submitted tasks can only be changed by your mentor.';
@@ -439,6 +498,7 @@ export const MENTORSHIP_MENTEE_PROFILE_ABOUT_EMPTY = 'No introduction added yet.
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_EMPTY = 'No skills added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EMPTY = 'No areas to improve added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_NOTES_EMPTY = 'No additional notes added yet.';
+export const MENTORSHIP_MENTEE_PROFILE_COUNTRY_EMPTY = 'No country added yet.';
 
 // ---------------------------------------------------------------------------
 // Mentee apply page — `/mentorship/mentee/apply?programId=&programTermId=`
@@ -554,7 +614,7 @@ export const MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS = {
 export const MENTORSHIP_UPSTREAM_MENTEE_SKILL_SET_KEYS = ['skills', 'improvementSkills', 'comments'] as const;
 
 /** Top-level keys the profile update accepts. Anything else is a 400. */
-export const MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS = ['introduction', 'skillSet', 'demographics', 'socioeconomics'] as const;
+export const MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS = ['introduction', 'skillSet', 'demographics', 'socioeconomics', 'country'] as const;
 export const MENTORSHIP_MENTEE_SKILL_SET_KEYS = ['skillsHave', 'skillsWant', 'additionalNotes'] as const;
 
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE = `You can add up to ${MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS} skills of up to ${MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH} characters each.`;

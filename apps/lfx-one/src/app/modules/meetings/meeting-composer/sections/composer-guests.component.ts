@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, type Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -19,7 +19,8 @@ import {
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { controlValueSignal } from '@shared/utils/form-control-signals.util';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { take } from 'rxjs';
@@ -36,7 +37,8 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
  */
 @Component({
   selector: 'lfx-composer-guests',
-  imports: [ButtonComponent, FeatureToggleComponent, UserSearchComponent, MeetingCommitteeManagerComponent, TooltipModule],
+  imports: [ButtonComponent, ConfirmDialogModule, FeatureToggleComponent, UserSearchComponent, MeetingCommitteeManagerComponent, TooltipModule],
+  providers: [ConfirmationService],
   templateUrl: './composer-guests.component.html',
 })
 export class ComposerGuestsComponent {
@@ -44,11 +46,33 @@ export class ComposerGuestsComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   protected readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
 
   protected readonly quickAddForm = this.meetingService.createRegistrantFormGroup();
+
+  /** User selected from search but not yet added; cleared on confirm or dismiss. */
+  protected readonly stagedGuest = signal<Record<string, unknown> | null>(null);
+
+  protected readonly stagedGuestDisplayName: Signal<string> = computed(() => {
+    const g = this.stagedGuest();
+    if (!g) return '';
+    return [g['first_name'], g['last_name']].filter(Boolean).join(' ') || String(g['email'] ?? '');
+  });
+
+  protected readonly stagedGuestInitials: Signal<string> = computed(() => {
+    const g = this.stagedGuest();
+    if (!g) return '';
+    return avatarInitials(g['first_name'] as string, g['last_name'] as string, g['email'] as string);
+  });
+
+  protected readonly stagedGuestSecondaryLine: Signal<string> = computed(() => {
+    const g = this.stagedGuest();
+    if (!g) return '';
+    return [g['email'], g['org_name']].filter(Boolean).join(' · ');
+  });
 
   protected readonly showMeetingAttendeesFeature = SHOW_MEETING_ATTENDEES_FEATURE;
 
@@ -181,13 +205,14 @@ export class ComposerGuestsComponent {
   );
 
   /**
-   * Adds the person picked from search, or falls back to the manual dialog.
+   * Stages the person picked from search rather than adding immediately.
    * @description The directory can return a person without a usable first/last name, which the add
    * payload requires. Handing those to the dialog prefilled beats dropping the pick silently.
+   * For valid picks we show a preview card and require an explicit "Add" click before committing.
    */
   protected onUserSelected(): void {
     if (this.quickAddForm.valid) {
-      this.addDirectGuest(this.quickAddForm.value);
+      this.stagedGuest.set(this.quickAddForm.value as Record<string, unknown>);
       this.quickAddForm.reset();
       return;
     }
@@ -197,8 +222,33 @@ export class ComposerGuestsComponent {
     this.openManualDialog(prefill);
   }
 
+  protected onConfirmStagedGuest(): void {
+    const guest = this.stagedGuest();
+    if (!guest) return;
+    this.stagedGuest.set(null);
+    this.addDirectGuest(guest);
+  }
+
+  protected onDismissStagedGuest(): void {
+    this.stagedGuest.set(null);
+  }
+
   protected onOpenManualDialog(): void {
     this.openManualDialog(null);
+  }
+
+  protected onRequestRemoveGuest(guest: MeetingRegistrantWithState, displayName: string): void {
+    const label = displayName || guest.email || 'this guest';
+    this.confirmationService.confirm({
+      header: 'Remove guest',
+      message: `Are you sure you want to remove ${label} from this meeting?`,
+      icon: 'fa-light fa-triangle-exclamation',
+      acceptLabel: 'Remove',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => this.onRemoveGuest(guest),
+    });
   }
 
   protected onRemoveGuest(guest: MeetingRegistrantWithState): void {

@@ -3,7 +3,7 @@
 
 import '@angular/compiler';
 
-import { MENTORSHIP_MAX_OPEN_TERMS_MESSAGE } from '@lfx-one/shared/constants';
+import { MENTORSHIP_ENROLL_NAME_TAKEN, MENTORSHIP_MAX_OPEN_TERMS_MESSAGE } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,6 +24,7 @@ vi.mock('../utils/auth-helper', () => ({
 
 const { MentorshipAdminService } = await import('./mentorship-admin.service');
 const { MicroserviceProxyService } = await import('./microservice-proxy.service');
+const { MentorshipService } = await import('./mentorship.service');
 const { MicroserviceError } = await import('../errors');
 const { logger } = await import('./logger.service');
 
@@ -36,7 +37,6 @@ const upstreamProgram = (id: string, name: string, overrides: Record<string, unk
   status: 'published',
   admin_status: 'open',
   project_name: 'Energy Project',
-  term: { id: 't', name: 'Spring', status: 'open' },
   stats: { mentors: 1, mentees: 2, graduated: 0 },
   created_on: '2026-01-01',
   updated_on: '2026-01-02',
@@ -68,16 +68,16 @@ describe('MentorshipAdminService.getPrograms', () => {
 
   it('lists the programs upstream returns, mapped for the card, with upstream’s total', async () => {
     stubUpstream({
-      rows: [upstreamProgram('p-a', 'Alpha'), upstreamProgram('p-b', 'Beta', { admin_status: 'completed', term: undefined })],
+      rows: [upstreamProgram('p-a', 'Alpha'), upstreamProgram('p-b', 'Beta', { admin_status: 'completed' })],
       total: 30,
     });
 
     const result = await service.getPrograms(buildReq(), paging);
 
     expect(result.total).toBe(30);
-    expect(result.data.map((p) => [p.id, p.status, p.term])).toEqual([
-      ['p-a', 'open', 'Spring'],
-      ['p-b', 'completed', ''],
+    expect(result.data.map((p) => [p.id, p.status])).toEqual([
+      ['p-a', 'open'],
+      ['p-b', 'completed'],
     ]);
   });
 
@@ -202,7 +202,9 @@ describe('MentorshipAdminService.getProgramPage', () => {
 
     const page = await service.getProgramPage(buildReq(), PROGRAM_ID);
 
-    expect(page.program).toMatchObject({ id: PROGRAM_ID, name: 'Grid', term: 'Fall', status: 'open' });
+    expect(page.program).toMatchObject({ id: PROGRAM_ID, name: 'Grid', status: 'open' });
+    // The header no longer carries a term name.
+    expect(page.program).not.toHaveProperty('term');
     expect(page.tabCounts).toEqual({ currentMentees: 7, pastMentees: 4, mentors: 2, terms: 3 });
     expect(page.terms).toEqual([
       { id: 't1', name: 'Fall', status: 'open' },
@@ -342,6 +344,16 @@ describe('MentorshipAdminService.getProgramMentees', () => {
     expect(result.data[0].tasks).toBeUndefined();
   });
 
+  it('sends Applied as applied and Tasks Completed as tasks_submitted', async () => {
+    const spy = stubProgramReads({ [`${PROGRAM_PATH}/applications`]: { data: [], meta: { total: 0, limit: 10, offset: 0 } } });
+
+    await service.getProgramMentees(buildReq(), PROGRAM_ID, { type: 'current', status: 'applied' });
+    await service.getProgramMentees(buildReq(), PROGRAM_ID, { type: 'current', status: 'tasks-completed' });
+
+    expect(spy.mock.calls[0][4]).toMatchObject({ status: 'applied' });
+    expect(spy.mock.calls[1][4]).toMatchObject({ status: 'tasks_submitted' });
+  });
+
   it('defaults to offset 0 and 10 rows, and never sends more than 50', async () => {
     const spy = stubProgramReads({ [`${PROGRAM_PATH}/applications`]: { data: [], meta: { total: 0, limit: 10, offset: 0 } } });
 
@@ -400,73 +412,6 @@ describe('MentorshipAdminService.getApplicationTasks', () => {
       [path, { limit: 100, offset: 0 }],
       [path, { limit: 100, offset: 1 }],
     ]);
-  });
-});
-
-describe('MentorshipAdminService.updateTask', () => {
-  const TASK_ID = '8b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e';
-  const upstreamTask = {
-    id: TASK_ID,
-    application_id: APPLICATION_ID,
-    assignee_id: 'mentee',
-    status: 'complete',
-    name: 'Read the guide',
-    description: 'private-task-text',
-    category: 'non_prerequisite',
-    custom: true,
-    submit_file: 'required',
-    due_date: '2030-01-31',
-    created_on: '2026-08-01T00:00:00Z',
-    updated_on: '2026-08-02T00:00:00Z',
-  };
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-    vi.mocked(logger.debug).mockClear();
-  });
-
-  it('patches the task upstream with the upstream spelling and returns the mapped task', async () => {
-    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue(upstreamTask as never);
-
-    const task = await new MentorshipAdminService().updateTask(buildReq(), TASK_ID, {
-      name: 'Read the guide',
-      status: 'completed',
-      dueDate: '',
-      requiresFileSubmission: true,
-    });
-
-    expect(task).toMatchObject({ id: TASK_ID, status: 'completed', requiresFileSubmission: true, dueOn: '2030-01-31' });
-    expect(spy).toHaveBeenCalledTimes(1);
-    const [, , path, method, , body] = spy.mock.calls[0];
-    expect(path).toBe(`/mentorship/v1/tasks/${TASK_ID}`);
-    expect(method).toBe('PATCH');
-    expect(body).toEqual({ name: 'Read the guide', status: 'complete', due_date: '', submit_file: 'required' });
-  });
-
-  it('makes no other upstream call, so the task list is not read again', async () => {
-    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue(upstreamTask as never);
-
-    await new MentorshipAdminService().updateTask(buildReq(), TASK_ID, { status: 'pending' });
-
-    expect(spy.mock.calls.map((call) => call[3])).toEqual(['PATCH']);
-  });
-
-  it.each([400, 403, 404])('passes an upstream %i on', async (status) => {
-    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockRejectedValue(new MicroserviceError('upstream', status, 'UPSTREAM'));
-
-    await expect(new MentorshipAdminService().updateTask(buildReq(), TASK_ID, { status: 'submitted' })).rejects.toMatchObject({ statusCode: status });
-  });
-
-  it('logs the task id and the field names, never the task text', async () => {
-    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue(upstreamTask as never);
-
-    await new MentorshipAdminService().updateTask(buildReq(), TASK_ID, { name: 'private-task-name', description: 'private-task-text' });
-
-    const logged = JSON.stringify(vi.mocked(logger.debug).mock.calls.map((call) => call.slice(1)));
-    expect(logged).toContain(TASK_ID);
-    expect(logged).toContain('"fields":["name","description"]');
-    expect(logged).not.toContain('private-task-name');
-    expect(logged).not.toContain('private-task-text');
   });
 });
 
@@ -568,6 +513,88 @@ describe('MentorshipAdminService.getProgramMentors', () => {
     stubProgramReads({ [MEMBERS_PATH]: new MicroserviceError('Forbidden', 403, 'FORBIDDEN') });
 
     await expect(service.getProgramMentors(buildReq(), PROGRAM_ID, {})).rejects.toMatchObject({ statusCode: 403 });
+  });
+});
+
+describe('MentorshipAdminService.getMentorCandidates', () => {
+  let service: InstanceType<typeof MentorshipAdminService>;
+  const CANDIDATES_PATH = `${PROGRAM_PATH}/mentor-candidates`;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('sends the search unescaped, and maps the candidates with the LFID standing in for a missing name', async () => {
+    const spy = stubProgramReads({
+      [CANDIDATES_PATH]: {
+        data: [{ lfid: 'ada_l', name: 'Ada Lovelace', avatar_url: 'https://cdn.example.com/ada.png' }, { lfid: 'bob' }, { lfid: '', name: 'No Account' }],
+      },
+    });
+
+    const result = await service.getMentorCandidates(buildReq(), PROGRAM_ID, 'ada_l');
+
+    expect(spy.mock.calls[0][4]).toEqual({ search: 'ada_l' });
+    expect(result).toEqual({
+      data: [
+        { lfid: 'ada_l', name: 'Ada Lovelace', avatarUrl: 'https://cdn.example.com/ada.png' },
+        { lfid: 'bob', name: 'bob', avatarUrl: undefined },
+      ],
+    });
+  });
+
+  it('finds no one for a caller with no mentorship record', async () => {
+    stubProgramReads({
+      [CANDIDATES_PATH]: new MicroserviceError('Unauthorized', 401, 'UNAUTHORIZED', { errorBody: { error: 'local user is not provisioned' } }),
+      '/mentorship/v1/me': {},
+    });
+
+    expect(await service.getMentorCandidates(buildReq(), PROGRAM_ID, 'ada')).toEqual({ data: [] });
+  });
+
+  it('passes any other upstream error on with the search cut from its path', async () => {
+    stubProgramReads({
+      [CANDIDATES_PATH]: new MicroserviceError('Service Unavailable', 503, 'SERVICE_UNAVAILABLE', {
+        path: `https://api.example.org${CANDIDATES_PATH}?search=ada%40example.org`,
+      }),
+    });
+
+    const error = await service.getMentorCandidates(buildReq(), PROGRAM_ID, 'ada@example.org').catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ statusCode: 503, path: `https://api.example.org${CANDIDATES_PATH}` });
+    expect(JSON.stringify(error)).not.toContain('example.org?');
+  });
+});
+
+describe('MentorshipAdminService.inviteProgramMentor', () => {
+  let service: InstanceType<typeof MentorshipAdminService>;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('posts the LFID as a mentor member and returns the new member id', async () => {
+    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ id: 'mem_1', status: 'invited' } as never);
+
+    const memberId = await service.inviteProgramMentor(buildReq(), PROGRAM_ID, { lfid: 'ada' });
+
+    expect(memberId).toBe('mem_1');
+    expect(spy.mock.calls[0][2]).toBe(`${PROGRAM_PATH}/members`);
+    expect(spy.mock.calls[0][3]).toBe('POST');
+    expect(spy.mock.calls[0][5]).toEqual({ lfid: 'ada', member_type: 'mentor' });
+  });
+
+  it.each([409, 422, 503])('passes an upstream %s on', async (status) => {
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockRejectedValue(new MicroserviceError('Upstream', status, 'UPSTREAM'));
+
+    await expect(service.inviteProgramMentor(buildReq(), PROGRAM_ID, { lfid: 'ada' })).rejects.toMatchObject({ statusCode: status });
   });
 });
 
@@ -696,93 +723,6 @@ describe('MentorshipAdminService application decisions', () => {
     expect(spy.mock.calls.every((call) => call[3] === 'GET')).toBe(true);
   });
 
-  describe('createTasks', () => {
-    const USER_ID = '1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e';
-    const MENTEE_USER_ID = '2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f';
-    const upstreamTermId = '3d4e5f6a-7b8c-4d9e-8f0a-2b3c4d5e6f7a';
-    const applicationIds = Array.from({ length: 7 }, (_, index) => `6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4${index}`);
-    const request = { applicationIds, name: 'Read the guide', description: 'private-task-text', dueDate: '2030-01-31', requiresFileSubmission: true };
-    const acceptedApplication = { id: 'x', role: 'mentee', status: 'accepted', user_id: MENTEE_USER_ID, program_term_id: upstreamTermId };
-
-    it('posts the task to the one application upstream, owned and authored by the caller, and lists it as created', async () => {
-      const id = applicationIds[0];
-      const spy = stubProgramReads({
-        '/mentorship/v1/me': { id: USER_ID },
-        [`/mentorship/v1/applications/${id}`]: acceptedApplication,
-        [`/mentorship/v1/applications/${id}/tasks`]: { id: 'task' },
-      });
-
-      const result = await service.createTasks(buildReq(), { ...request, applicationIds: [id] });
-
-      expect(result).toEqual({ created: [id], failed: [] });
-      const post = spy.mock.calls.find((call) => call[3] === 'POST');
-      expect(post?.[2]).toBe(`/mentorship/v1/applications/${id}/tasks`);
-      expect(post?.[5]).toMatchObject({
-        assignee_id: MENTEE_USER_ID,
-        program_term_id: upstreamTermId,
-        owner_id: USER_ID,
-        created_by: USER_ID,
-        name: 'Read the guide',
-        due_date: '2030-01-31',
-        submit_file: 'required',
-      });
-    });
-
-    it.each([403, 404, 409])('passes an upstream %i on when the one application fails', async (status) => {
-      const id = applicationIds[0];
-      stubProgramReads({
-        '/mentorship/v1/me': { id: USER_ID },
-        [`/mentorship/v1/applications/${id}`]: acceptedApplication,
-        [`/mentorship/v1/applications/${id}/tasks`]: new MicroserviceError('upstream', status, 'UPSTREAM'),
-      });
-
-      await expect(service.createTasks(buildReq(), { ...request, applicationIds: [id] })).rejects.toMatchObject({ statusCode: status });
-    });
-
-    it('answers 400 without posting when the application is not an accepted mentee', async () => {
-      const id = applicationIds[0];
-      const spy = stubProgramReads({
-        '/mentorship/v1/me': { id: USER_ID },
-        [`/mentorship/v1/applications/${id}`]: { ...acceptedApplication, status: 'graduated' },
-      });
-
-      await expect(service.createTasks(buildReq(), { ...request, applicationIds: [id] })).rejects.toMatchObject({ statusCode: 400 });
-      expect(spy.mock.calls.every((call) => call[3] !== 'POST')).toBe(true);
-    });
-
-    it('creates at most three tasks at once and lists the ones that failed, without logging the task text', async () => {
-      let inFlight = 0;
-      let peak = 0;
-      const failing = applicationIds[4];
-      vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockImplementation(async (_req, _service, path: string, method?: string) => {
-        if (path === '/mentorship/v1/me') return { id: USER_ID } as never;
-        if (method === 'POST') {
-          inFlight += 1;
-          peak = Math.max(peak, inFlight);
-          await new Promise((resolve) => setTimeout(resolve, 5));
-          inFlight -= 1;
-          if (path.includes(failing)) throw new MicroserviceError('upstream', 409, 'UPSTREAM');
-          return { id: 'task' } as never;
-        }
-        return acceptedApplication as never;
-      });
-
-      const result = await service.createTasks(buildReq(), request);
-
-      expect(result.failed).toEqual([failing]);
-      expect(result.created).toEqual(applicationIds.filter((id) => id !== failing));
-      expect(peak).toBeLessThanOrEqual(3);
-      expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'create_mentorship_admin_tasks', expect.any(String), {
-        applicationId: failing,
-        status: 409,
-        code: 'UPSTREAM',
-      });
-      const logged = JSON.stringify([...vi.mocked(logger.debug).mock.calls, ...vi.mocked(logger.warning).mock.calls].map((call) => call.slice(1)));
-      expect(logged).not.toContain('private-task-text');
-      expect(logged).not.toContain('Read the guide');
-    });
-  });
-
   it('declines the term pending applications and maps the count', async () => {
     const spy = stubProgramReads({
       [`/mentorship/v1/programs/${PROGRAM_ID}/terms/${TERM_ID}/applications/bulk-decline`]: { declined_count: 4 },
@@ -818,6 +758,32 @@ describe('MentorshipAdminService.updateProgramMentor', () => {
     stubProgramReads({ [MEMBER_PATH]: new MicroserviceError('upstream', status, 'UPSTREAM') });
 
     await expect(service.updateProgramMentor(buildReq(), PROGRAM_ID, MEMBER_ID, { status: 'active' })).rejects.toMatchObject({ statusCode: status });
+  });
+});
+
+describe('MentorshipAdminService.setProgramVisibility', () => {
+  let service: InstanceType<typeof MentorshipAdminService>;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each(['hide', 'unhide'] as const)('posts %s to the program with no body', async (action) => {
+    const spy = stubProgramReads({ [`${PROGRAM_PATH}/${action}`]: {} });
+
+    await service.setProgramVisibility(buildReq(), PROGRAM_ID, action);
+
+    expect(spy.mock.calls.map((call) => [call[2], call[3], call[5]])).toEqual([[`${PROGRAM_PATH}/${action}`, 'POST', undefined]]);
+  });
+
+  it.each([403, 404, 409])('passes an upstream %s on', async (status) => {
+    stubProgramReads({ [`${PROGRAM_PATH}/hide`]: new MicroserviceError('upstream', status, 'UPSTREAM') });
+
+    await expect(service.setProgramVisibility(buildReq(), PROGRAM_ID, 'hide')).rejects.toMatchObject({ statusCode: status });
   });
 });
 
@@ -988,6 +954,64 @@ describe('MentorshipAdminService term writes', () => {
   });
 });
 
+describe('MentorshipAdminService.getEnrollTemplate', () => {
+  const TEMPLATE_PATH = `/mentorship/v1/programs/${PROGRAM_ID}/enroll-template`;
+  const upstreamTemplate = {
+    program: {
+      id: PROGRAM_ID,
+      name: 'private-program-name',
+      description: 'private-program-description',
+      industry: 'Go, Rust',
+      repo_link: 'https://private.example/repo',
+    },
+    skills: ['private-skill'],
+    prerequisites: [{ name: 'Resume', description: 'private-prereq-description', submitFile: 'required', dueDate: null }],
+  };
+  let service: InstanceType<typeof MentorshipAdminService>;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('reads the template from the program path and returns it mapped', async () => {
+    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue(upstreamTemplate as never);
+
+    const result = await service.getEnrollTemplate(buildReq(), PROGRAM_ID);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0].slice(2, 4)).toEqual([TEMPLATE_PATH, 'GET']);
+    expect(result).toMatchObject({
+      name: 'private-program-name',
+      project: null,
+      technologies: ['Go', 'Rust'],
+      skills: ['private-skill'],
+      prerequisites: [{ id: 'imported-0', name: 'Resume', required: true, requireFile: true, custom: true }],
+    });
+  });
+
+  it.each([403, 404, 503])('passes an upstream %i through', async (status) => {
+    const error = MicroserviceError.fromMicroserviceResponse(status, 'Error', { error: 'nope' }, 'LFX_V2_SERVICE', TEMPLATE_PATH);
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockRejectedValue(error);
+
+    await expect(service.getEnrollTemplate(buildReq(), PROGRAM_ID)).rejects.toBe(error);
+  });
+
+  it('never logs the template contents', async () => {
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue(upstreamTemplate as never);
+
+    await service.getEnrollTemplate(buildReq(), PROGRAM_ID);
+
+    const logged = JSON.stringify(Object.values(logger).flatMap((fn) => vi.mocked(fn as () => void).mock.calls.map((call) => call.slice(1))));
+    for (const secret of ['private-program-name', 'private-program-description', 'private.example', 'private-skill', 'private-prereq-description']) {
+      expect(logged).not.toContain(secret);
+    }
+  });
+});
+
 describe('MentorshipAdminService program create and logo upload', () => {
   const PROGRAMS_PATH = '/mentorship/v1/programs';
   const createBody = {
@@ -1021,6 +1045,52 @@ describe('MentorshipAdminService program create and logo upload', () => {
 
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0].slice(2, 6)).toEqual([PROGRAMS_PATH, 'POST', undefined, createBody]);
+  });
+
+  it('patches the program with the snake_case update body and returns the id, slug and status', async () => {
+    const spy = vi
+      .spyOn(MicroserviceProxyService.prototype, 'proxyRequest')
+      .mockResolvedValue({ id: PROGRAM_ID, slug: 'private-program-name', status: 'published' } as never);
+    const updateBody = {
+      projectId: createBody.projectId,
+      projectSlug: createBody.projectSlug,
+      projectName: createBody.projectName,
+      name: createBody.name,
+      description: createBody.description,
+      repositoryUrl: createBody.repositoryUrl,
+      skills: createBody.skills,
+      prerequisites: [],
+    };
+    const nameCheck = vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable').mockResolvedValue({ available: true });
+
+    await expect(service.updateProgram(buildReq(), PROGRAM_ID, updateBody)).resolves.toEqual({
+      id: PROGRAM_ID,
+      slug: 'private-program-name',
+      status: 'published',
+    });
+
+    expect(nameCheck).toHaveBeenCalledWith(expect.anything(), updateBody.name, PROGRAM_ID);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0].slice(2, 5)).toEqual([`${PROGRAMS_PATH}/${PROGRAM_ID}`, 'PATCH', undefined]);
+    expect(spy.mock.calls[0][5]).toMatchObject({
+      name: updateBody.name,
+      repo_link: updateBody.repositoryUrl,
+      skills: updateBody.skills,
+      project_uid: updateBody.projectId,
+    });
+  });
+
+  it('answers 409 with no write when another program has the name', async () => {
+    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable').mockResolvedValue({ available: false });
+    const updateBody = { ...createBody, terms: undefined, termsAccepted: undefined };
+
+    await expect(service.updateProgram(buildReq(), PROGRAM_ID, updateBody)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'MENTORSHIP_PROGRAM_NAME_TAKEN',
+      message: MENTORSHIP_ENROLL_NAME_TAKEN,
+    });
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('falls back to the id when the created program has no slug', async () => {

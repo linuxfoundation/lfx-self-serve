@@ -18,7 +18,7 @@ import {
   MENTORSHIP_PERSON_PAGE_SIZE,
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { MentorshipMenteeStatus, MentorshipMentorProgramApplicant, MentorshipNoteRequest } from '@lfx-one/shared/interfaces';
+import { MentorshipApplicantTask, MentorshipMenteeStatus, MentorshipMentorProgramApplicant, MentorshipNoteRequest } from '@lfx-one/shared/interfaces';
 import {
   buildMentorshipProgramsUrl,
   formatIsoDateLabel,
@@ -48,6 +48,8 @@ import { PersonCellComponent } from '../../../../components/person-cell/person-c
 })
 export class MentorApplicantsTabComponent {
   public readonly applicants = input.required<MentorshipMentorProgramApplicant[]>();
+  /** Called with the application id and the task as saved from an expanded row, so the page patches its lists. */
+  public readonly taskSaved = input.required<(applicationId: string, task: MentorshipApplicantTask) => void>();
   public readonly noteRequested = output<MentorshipNoteRequest>();
 
   protected readonly pageSize = MENTORSHIP_PERSON_PAGE_SIZE;

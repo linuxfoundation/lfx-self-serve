@@ -24,6 +24,7 @@ describe('mapMentorshipMenteeProfile', () => {
       skill_set: { skills: ['Go', 'Python'], improvementSkills: ['Code Review'], comments: 'Test notes.' },
       demographics: { age: '20-39', gender: 'prefer-not-to-say', race: 'prefer-not-to-say' },
       socioeconomics: { income: 'prefer-not-to-say', educationLevel: 'college' },
+      address: { country: 'KE', city: 'Test City' },
     });
 
     expect(result).toEqual({
@@ -32,6 +33,7 @@ describe('mapMentorshipMenteeProfile', () => {
         skillsHave: ['Go', 'Python'],
         skillsWant: ['Code Review'],
         additionalNotes: 'Test notes.',
+        country: 'KE',
       },
       history: [],
       demographics: { age: '20-39', gender: 'prefer-not-to-say', raceEthnicity: 'prefer-not-to-say', income: 'prefer-not-to-say', education: 'college' },
@@ -64,9 +66,10 @@ describe('mapMentorshipMenteeProfile', () => {
   });
 
   it('ignores JSON columns that are not objects', () => {
-    const result = mapMentorshipMenteeProfile({ ...baseProfile, skill_set: ['Go'], demographics: 'college', socioeconomics: null });
+    const result = mapMentorshipMenteeProfile({ ...baseProfile, skill_set: ['Go'], demographics: 'college', socioeconomics: null, address: 'KE' });
 
     expect(result.profile.skillsHave).toEqual([]);
+    expect(result.profile).not.toHaveProperty('country');
     expect(result.demographics).toBeUndefined();
   });
 

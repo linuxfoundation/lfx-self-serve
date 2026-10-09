@@ -16,7 +16,9 @@ import { MailingListService } from '@services/mailing-list.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { SurveyService } from '@services/survey.service';
 import { UserService } from '@services/user.service';
+import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { EMPTY, of } from 'rxjs';
@@ -87,6 +89,8 @@ describe('CommitteeViewComponent', () => {
         },
         { provide: MeetingService, useValue: { getMeetingsByCommittee } },
         { provide: MailingListService, useValue: { getMailingListsByCommittee: vi.fn(() => of([])) } },
+        { provide: VoteService, useValue: { getVotesByCommittee: vi.fn(() => of([])), mergeRecentlyOpenedVotes: vi.fn((v: unknown[]) => v) } },
+        { provide: SurveyService, useValue: { getSurveysByCommittee: vi.fn(() => of([])) } },
         { provide: MessageService, useValue: { add: vi.fn(), clear: vi.fn() } },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: UserService, useValue: { user: signal(null), viewerUsername: signal<string | null>('viewer') } },
@@ -140,6 +144,43 @@ describe('CommitteeViewComponent', () => {
     flush();
 
     expect(getMeetingsByCommittee).toHaveBeenCalledTimes(1);
+  });
+
+  describe('Members tab badge', () => {
+    it('shows roster length (not total_members) for a writer who is not a regular member', () => {
+      // The admin has total_members=0 on the committee object, but the roster fetch returns 3 rows.
+      currentCommittee = {
+        ...committee,
+        total_members: 0,
+        my_role: undefined,
+        writer: true,
+        member_visibility: 'basic_profile',
+      } as unknown as Committee;
+      getCommitteeMembers.mockReturnValue(of([{ uid: 'm1' }, { uid: 'm2' }, { uid: 'm3' }]));
+
+      const component = createComponent();
+      flush();
+
+      const membersTab = component.tabConfig.find((t) => t.key === 'members');
+      expect(membersTab?.badge?.()).toBe(3);
+    });
+
+    it('falls back to total_members when the roster is not fetched (invite-only member)', () => {
+      currentCommittee = {
+        ...committee,
+        total_members: 5,
+        my_role: 'member',
+        writer: false,
+        auditor: false,
+        member_visibility: 'hidden',
+      } as unknown as Committee;
+
+      const component = createComponent();
+      flush();
+
+      const membersTab = component.tabConfig.find((t) => t.key === 'members');
+      expect(membersTab?.badge?.()).toBe(5);
+    });
   });
 
   describe('member_visibility gating', () => {

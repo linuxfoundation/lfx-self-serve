@@ -29,6 +29,7 @@ import {
   FoundationTotalProjectsResponse,
   HealthEventsMonthlyResponse,
   HealthMetricsDailyResponse,
+  HealthMetricsOverviewFindingsByRange,
   HealthMetricsOverviewKpisByRange,
   HealthMetricsOverviewRevenueByRange,
   MembershipTierResponse,
@@ -145,7 +146,6 @@ import {
   HealthMetricsTrainingPresenceQuery,
 } from '@lfx-one/shared/interfaces';
 import {
-  DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
   DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED,
   HEALTH_METRICS_NPS_DEFAULT_SUMMARY,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
@@ -241,18 +241,7 @@ export class AnalyticsService {
    */
   public getOrganizationMaintainers(accountId: string, foundationSlug: string): Observable<OrganizationMaintainersResponse> {
     const params = { accountId, foundationSlug };
-    return this.http.get<OrganizationMaintainersResponse>('/api/analytics/organization-maintainers', { params }).pipe(
-      catchError(() => {
-        return of({
-          maintainers: 0,
-          projects: 0,
-          accountId: '',
-          accountName: '',
-          monthlyData: [],
-          monthlyLabels: [],
-        });
-      })
-    );
+    return this.http.get<OrganizationMaintainersResponse>('/api/analytics/organization-maintainers', { params });
   }
 
   /**
@@ -263,17 +252,7 @@ export class AnalyticsService {
    */
   public getOrganizationContributors(accountId: string, foundationSlug: string): Observable<OrganizationContributorsResponse> {
     const params = { accountId, foundationSlug };
-    return this.http.get<OrganizationContributorsResponse>('/api/analytics/organization-contributors', { params }).pipe(
-      catchError(() => {
-        return of({
-          contributors: 0,
-          accountId: '',
-          accountName: '',
-          monthlyData: [],
-          monthlyLabels: [],
-        });
-      })
-    );
+    return this.http.get<OrganizationContributorsResponse>('/api/analytics/organization-contributors', { params });
   }
 
   /**
@@ -284,24 +263,7 @@ export class AnalyticsService {
    */
   public getMembershipTier(accountId: string, projectSlug: string): Observable<MembershipTierResponse> {
     const params = { accountId, projectSlug };
-    return this.http.get<MembershipTierResponse>('/api/analytics/membership-tier', { params }).pipe(
-      catchError(() => {
-        return of({
-          projectId: '',
-          projectName: '',
-          projectSlug: '',
-          isProjectActive: false,
-          accountId: '',
-          accountName: '',
-          membershipTier: '',
-          membershipPrice: 0,
-          startDate: '',
-          endDate: '',
-          renewalPrice: 0,
-          membershipStatus: '',
-        });
-      })
-    );
+    return this.http.get<MembershipTierResponse>('/api/analytics/membership-tier', { params });
   }
 
   /** Resolve display attributes + tier for the persona-authorised account IDs (drives selector + header badge). */
@@ -323,17 +285,7 @@ export class AnalyticsService {
    */
   public getCertifiedEmployees(accountId: string, foundationSlug: string): Observable<CertifiedEmployeesResponse> {
     const params = { accountId, foundationSlug };
-    return this.http.get<CertifiedEmployeesResponse>('/api/analytics/certified-employees', { params }).pipe(
-      catchError(() => {
-        return of({
-          certifications: 0,
-          certifiedEmployees: 0,
-          accountId: '',
-          monthlyData: [],
-          monthlyLabels: [],
-        });
-      })
-    );
+    return this.http.get<CertifiedEmployeesResponse>('/api/analytics/certified-employees', { params });
   }
 
   /**
@@ -344,16 +296,7 @@ export class AnalyticsService {
    */
   public getTrainingEnrollments(accountId: string, projectSlug: string): Observable<TrainingEnrollmentsResponse> {
     const params = { accountId, projectSlug };
-    return this.http.get<TrainingEnrollmentsResponse>('/api/analytics/training-enrollments', { params }).pipe(
-      catchError(() => {
-        return of({
-          totalEnrollments: 0,
-          dailyData: [],
-          accountId: '',
-          projectSlug: '',
-        });
-      })
-    );
+    return this.http.get<TrainingEnrollmentsResponse>('/api/analytics/training-enrollments', { params });
   }
 
   /**
@@ -365,19 +308,7 @@ export class AnalyticsService {
    */
   public getEventAttendanceMonthly(accountId: string, foundationSlug: string): Observable<OrganizationEventAttendanceMonthlyResponse> {
     const params = { accountId, foundationSlug };
-    return this.http.get<OrganizationEventAttendanceMonthlyResponse>('/api/analytics/event-attendance-monthly', { params }).pipe(
-      catchError(() => {
-        return of({
-          totalAttended: 0,
-          totalSpeakers: 0,
-          accountId: '',
-          accountName: '',
-          attendeesMonthlyData: [],
-          speakersMonthlyData: [],
-          monthlyLabels: [],
-        });
-      })
-    );
+    return this.http.get<OrganizationEventAttendanceMonthlyResponse>('/api/analytics/event-attendance-monthly', { params });
   }
 
   /**
@@ -420,13 +351,22 @@ export class AnalyticsService {
    * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'lfeurope')
    */
   public getFoundationProjectsDetailGrouped(foundationSlug: string): Observable<FoundationProjectsDetailGroupedResponse> {
+    return this.loadFoundationProjectsDetailGrouped(foundationSlug).pipe(catchError(() => of(DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED)));
+  }
+
+  /**
+   * Same cached read as {@link getFoundationProjectsDetailGrouped}, but errors propagate so a caller
+   * can tell a failed load from a foundation with no projects. A failure drops the cache entry.
+   * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'lfeurope')
+   */
+  public loadFoundationProjectsDetailGrouped(foundationSlug: string): Observable<FoundationProjectsDetailGroupedResponse> {
     if (!this.foundationProjectsDetailGroupedCache.has(foundationSlug)) {
       const req$ = this.http
         .get<FoundationProjectsDetailGroupedResponse>('/api/analytics/foundation-projects-detail-grouped', { params: { foundationSlug } })
         .pipe(
-          catchError(() => {
+          catchError((error) => {
             this.foundationProjectsDetailGroupedCache.delete(foundationSlug);
-            return of(DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED);
+            return throwError(() => error);
           }),
           shareReplay(1)
         );
@@ -464,11 +404,9 @@ export class AnalyticsService {
    * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'tlf')
    */
   public getFoundationActiveContributorsMonthlyDistinct(foundationSlug: string): Observable<FoundationActiveContributorsMonthlyDistinctResponse> {
-    return this.http
-      .get<FoundationActiveContributorsMonthlyDistinctResponse>('/api/analytics/foundation-active-contributors-monthly-distinct', {
-        params: { foundationSlug },
-      })
-      .pipe(catchError(() => of(DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT)));
+    return this.http.get<FoundationActiveContributorsMonthlyDistinctResponse>('/api/analytics/foundation-active-contributors-monthly-distinct', {
+      params: { foundationSlug },
+    });
   }
 
   /**
@@ -482,15 +420,7 @@ export class AnalyticsService {
   }
 
   public getFoundationTotalProjects(foundationSlug: string): Observable<FoundationTotalProjectsResponse> {
-    return this.http.get<FoundationTotalProjectsResponse>('/api/analytics/foundation-total-projects', { params: { foundationSlug } }).pipe(
-      catchError(() => {
-        return of({
-          totalProjects: 0,
-          monthlyData: [],
-          monthlyLabels: [],
-        });
-      })
-    );
+    return this.http.get<FoundationTotalProjectsResponse>('/api/analytics/foundation-total-projects', { params: { foundationSlug } });
   }
 
   /**
@@ -499,15 +429,7 @@ export class AnalyticsService {
    * @returns Observable of foundation total members response with cumulative monthly data
    */
   public getFoundationTotalMembers(foundationSlug: string): Observable<FoundationTotalMembersResponse> {
-    return this.http.get<FoundationTotalMembersResponse>('/api/analytics/foundation-total-members', { params: { foundationSlug } }).pipe(
-      catchError(() => {
-        return of({
-          totalMembers: 0,
-          monthlyData: [],
-          monthlyLabels: [],
-        });
-      })
-    );
+    return this.http.get<FoundationTotalMembersResponse>('/api/analytics/foundation-total-members', { params: { foundationSlug } });
   }
 
   /**
@@ -532,36 +454,12 @@ export class AnalyticsService {
    * @returns Observable of foundation value concentration response
    */
   public getFoundationValueConcentration(foundationSlug: string): Observable<FoundationValueConcentrationResponse> {
-    return this.http.get<FoundationValueConcentrationResponse>('/api/analytics/foundation-value-concentration', { params: { foundationSlug } }).pipe(
-      catchError(() => {
-        return of({
-          totalValue: 0,
-          top1Value: 0,
-          top3Value: 0,
-          top5Value: 0,
-          allOtherValue: 0,
-          totalProjectsCount: 0,
-          top1Percentage: 0,
-          top3Percentage: 0,
-          top5Percentage: 0,
-          allOtherPercentage: 0,
-        });
-      })
-    );
+    return this.http.get<FoundationValueConcentrationResponse>('/api/analytics/foundation-value-concentration', { params: { foundationSlug } });
   }
 
   /** Latest-day distinct-maintainer snapshot + daily trend for a foundation. */
   public getFoundationMaintainers(foundationSlug: string): Observable<FoundationMaintainersResponse> {
-    return this.http.get<FoundationMaintainersResponse>('/api/analytics/foundation-maintainers', { params: { foundationSlug } }).pipe(
-      catchError(() => {
-        return of({
-          currentMaintainers: 0,
-          asOfDate: null,
-          trendData: [],
-          trendLabels: [],
-        });
-      })
-    );
+    return this.http.get<FoundationMaintainersResponse>('/api/analytics/foundation-maintainers', { params: { foundationSlug } });
   }
 
   /**
@@ -569,9 +467,7 @@ export class AnalyticsService {
    * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'tlf')
    */
   public getFoundationMaintainersMonthly(foundationSlug: string): Observable<FoundationMaintainersMonthlyResponse> {
-    return this.http
-      .get<FoundationMaintainersMonthlyResponse>('/api/analytics/foundation-maintainers-monthly', { params: { foundationSlug } })
-      .pipe(catchError(() => of({ monthlyData: [], monthlyLabels: [] })));
+    return this.http.get<FoundationMaintainersMonthlyResponse>('/api/analytics/foundation-maintainers-monthly', { params: { foundationSlug } });
   }
 
   /**
@@ -589,9 +485,7 @@ export class AnalyticsService {
    * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'tlf')
    */
   public getFoundationEventsQuarterly(foundationSlug: string): Observable<FoundationEventsQuarterlyResponse> {
-    return this.http
-      .get<FoundationEventsQuarterlyResponse>('/api/analytics/foundation-events-quarterly', { params: { foundationSlug } })
-      .pipe(catchError(() => of({ quarterlyData: [], quarterlyLabels: [] })));
+    return this.http.get<FoundationEventsQuarterlyResponse>('/api/analytics/foundation-events-quarterly', { params: { foundationSlug } });
   }
 
   /**
@@ -624,16 +518,11 @@ export class AnalyticsService {
         .pipe(
           // Normalizes legacy v1 band names (stable/unsteady) a rolling-deploy old BFF may still emit, so the frontend never sees them.
           map((response) => mapV1DistributionToV2(response)),
-          catchError(() => {
+          catchError((error) => {
+            // Evict on error so the errored ReplaySubject (shareReplay has no refCount) doesn't
+            // permanently poison the cache — the next subscriber re-fetches instead of re-erroring forever.
             this.foundationHealthScoreDistributionCache.delete(foundationSlug);
-            return of({
-              excellent: 0,
-              healthy: 0,
-              fair: 0,
-              concerning: 0,
-              critical: 0,
-              unscored: 0,
-            });
+            return throwError(() => error);
           }),
           shareReplay(1)
         );
@@ -648,16 +537,7 @@ export class AnalyticsService {
    * @returns Observable of company bus factor response with top companies concentration metrics
    */
   public getCompanyBusFactor(foundationSlug: string): Observable<FoundationCompanyBusFactorResponse> {
-    return this.http.get<FoundationCompanyBusFactorResponse>('/api/analytics/company-bus-factor', { params: { foundationSlug } }).pipe(
-      catchError(() => {
-        return of({
-          topCompaniesCount: 0,
-          topCompaniesPercentage: 0,
-          otherCompaniesCount: 0,
-          otherCompaniesPercentage: 0,
-        });
-      })
-    );
+    return this.http.get<FoundationCompanyBusFactorResponse>('/api/analytics/company-bus-factor', { params: { foundationSlug } });
   }
 
   /**
@@ -788,19 +668,9 @@ export class AnalyticsService {
    */
   public getUniqueContributorsDaily(slug: string, entityType: 'foundation' | 'project'): Observable<UniqueContributorsDailyResponse> {
     const params = { slug, entityType };
-    return this.http
-      .get<UniqueContributorsDailyResponse>('/api/analytics/unique-contributors-daily', {
-        params,
-      })
-      .pipe(
-        catchError(() => {
-          return of({
-            data: [],
-            avgContributors: 0,
-            totalDays: 0,
-          });
-        })
-      );
+    return this.http.get<UniqueContributorsDailyResponse>('/api/analytics/unique-contributors-daily', {
+      params,
+    });
   }
 
   /**
@@ -1174,7 +1044,7 @@ export class AnalyticsService {
 
   /**
    * Get the Health Metrics Engagement "Meeting participation" roll-up and meeting-type table
-   * @param query - Foundation and period
+   * @param query - Foundation, project scope and period
    * @returns Observable of the roll-up row plus one row per meeting-type group
    */
   public getEngagementMeetingParticipation(query: HealthMetricsEngagementParticipationQuery): Observable<HealthMetricsEngagementMeetingParticipation> {
@@ -1182,6 +1052,9 @@ export class AnalyticsService {
       foundationSlug: query.foundationSlug,
       range: query.range,
     };
+    if (query.projectSlug) {
+      params['projectSlug'] = query.projectSlug;
+    }
 
     // Errors propagate: a null total renders "no participation data for this foundation", so a
     // swallowed failure would state that as measured fact. See `analytics-error-propagation.spec.ts`.
@@ -1195,11 +1068,14 @@ export class AnalyticsService {
 
   /**
    * Get the Health Metrics Engagement "Organization participation" table
-   * @param query - Foundation scope; the period, search and lapsed cut all resolve client-side
+   * @param query - Foundation and project scope; the period, search and lapsed cut all resolve client-side
    * @returns Observable of every organization with all four periods and the caption counts
    */
   public getEngagementOrgParticipation(query: HealthMetricsEngagementOrgQuery): Observable<HealthMetricsEngagementOrgParticipation> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+    if (query.projectSlug) {
+      params['projectSlug'] = query.projectSlug;
+    }
 
     // Errors propagate: an empty table renders "no organizations", so a swallowed failure would
     // state that as measured fact. See `analytics-error-propagation.spec.ts`.
@@ -1231,11 +1107,14 @@ export class AnalyticsService {
 
   /**
    * Get the Health Metrics Engagement "Representatives" table
-   * @param query - Foundation scope; the period pill, the filter cut and search all resolve client-side
+   * @param query - Foundation and project scope; the period pill, the filter cut and search all resolve client-side
    * @returns Observable of every representative with all four periods and the per-period caption counts
    */
   public getEngagementRepresentatives(query: HealthMetricsEngagementRepQuery): Observable<HealthMetricsEngagementRepresentatives> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+    if (query.projectSlug) {
+      params['projectSlug'] = query.projectSlug;
+    }
 
     // Errors propagate: an empty table renders "no representatives", so a swallowed failure would
     // state that as measured fact. See `analytics-error-propagation.spec.ts`.
@@ -1887,6 +1766,20 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsOverviewKpisByRange>('/api/analytics/health-overview-kpis', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] health-overview-kpis failed', { foundationSlug, error });
+        return of({});
+      })
+    );
+  }
+
+  /**
+   * Fetches the Overview findings for every selectable period in one call. Degrades to an empty map on
+   * failure, which the list renders as "not available yet" rather than an all-clear.
+   */
+  public getHealthOverviewSignals(foundationSlug: string): Observable<HealthMetricsOverviewFindingsByRange> {
+    const params = { foundationSlug };
+    return this.http.get<HealthMetricsOverviewFindingsByRange>('/api/analytics/health-overview-signals', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] health-overview-signals failed', { foundationSlug, error });
         return of({});
       })
     );
