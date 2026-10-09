@@ -1125,7 +1125,8 @@ export class MeetingsDashboardComponent {
               foundation: this.foundationFilter(),
               project: this.projectFilter(),
               pendingRsvpOnly: this.pendingRsvpOnly(),
-              acceptedOnly: this.acceptedOnly(),
+              // The Accepted chip is Me-lens only and the calendar never renders in the Me lens (see canShowCalendarView).
+              acceptedOnly: false,
               organizerOnly: this.organizerOnly(),
               viewerUsername: this.userService.viewerUsername(),
               showDeclined: this.showDeclined(),

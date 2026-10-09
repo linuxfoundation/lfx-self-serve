@@ -224,6 +224,19 @@ describe('MeetingsDashboardComponent', () => {
       expect(ids(component)).toEqual(['declined-one', 'pending', 'later']);
     });
 
+    it('clears the Accepted filter when switching time tabs', () => {
+      const component = createComponent();
+      flush();
+
+      component.acceptedOnly.set(true);
+      flush();
+      expect(ids(component)).toEqual(['later']);
+
+      component.onTimeFilterChange('past');
+      flush();
+      expect(component.acceptedOnly()).toBe(false);
+    });
+
     it('toggles the pending-RSVP filter from the stat', () => {
       const component = createComponent();
       flush();

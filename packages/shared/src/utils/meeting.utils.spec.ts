@@ -1755,6 +1755,28 @@ describe('isMeetingAccepted', () => {
     expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('accepted', 'single') }))).toBe(true);
   });
 
+  describe('recurring meetings', () => {
+    const NEXT_OCCURRENCE_ID = '4070908800';
+    const NEXT_START = '2099-01-01T10:00:00Z';
+    const recurring = (my_rsvp: MeetingRsvp | null): Meeting =>
+      buildMeetingFixture({
+        id: 'm1',
+        recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' },
+        occurrences: [{ occurrence_id: NEXT_OCCURRENCE_ID, start_time: NEXT_START, duration: 60 }],
+        my_rsvp,
+      });
+
+    it('counts an acceptance that covers the next date', () => {
+      expect(isMeetingAccepted(recurring(rsvp('accepted', 'all')))).toBe(true);
+      expect(isMeetingAccepted(recurring({ ...rsvp('accepted', 'single'), occurrence_id: NEXT_OCCURRENCE_ID }))).toBe(true);
+    });
+
+    it('does not count an acceptance given only for a different date', () => {
+      // The BFF falls back to the newest series RSVP when none applies to the next date.
+      expect(isMeetingAccepted(recurring({ ...rsvp('accepted', 'single'), occurrence_id: '1785247200' }))).toBe(false);
+    });
+  });
+
   it('is false for maybe, declined, or no RSVP', () => {
     expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('maybe') }))).toBe(false);
     expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('declined') }))).toBe(false);
