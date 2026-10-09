@@ -84,11 +84,13 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -141,6 +143,7 @@ import { RescheduleOccurrenceDialogComponent } from '../components/reschedule-oc
     GuestFormComponent,
     HostKeyPanelComponent,
     TooltipModule,
+    ConfirmDialogModule,
     DrawerModule,
     SkeletonModule,
     MeetingTimePipe,
@@ -153,12 +156,13 @@ import { RescheduleOccurrenceDialogComponent } from '../components/reschedule-oc
     MeetingMaterialsDrawerComponent,
     ImpersonationBannerComponent,
   ],
-  providers: [DialogService],
+  providers: [DialogService, ConfirmationService],
   templateUrl: './meeting-join.component.html',
 })
 export class MeetingJoinComponent implements OnInit {
   // Injected services
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly meetingService = inject(MeetingService);
@@ -269,6 +273,10 @@ export class MeetingJoinComponent implements OnInit {
   // Set immediately on self-registration success so the UI responds before the meeting refetch
   // settles the invited flag (query-service indexing lag).
   private optimisticInvited = signal(false);
+  // Set once the user removes themselves so the UI responds before the meeting refetch settles the
+  // invited flag (same query-service indexing lag, in the other direction).
+  private optimisticLeft = signal(false);
+  public leavingMeeting = signal(false);
   private readonly optimisticDeletedUids = signal(new Set<string>());
   private readonly optimisticAddedAttachments = signal<PastMeetingAttachment[]>([]);
   public emailError: Signal<boolean>;
@@ -488,6 +496,7 @@ export class MeetingJoinComponent implements OnInit {
       )
       .subscribe(() => {
         this.optimisticInvited.set(false);
+        this.optimisticLeft.set(false);
         this.optimisticAdditional.set(0);
         this.rosterCountBeforeAdd.set(null);
       });
@@ -498,7 +507,7 @@ export class MeetingJoinComponent implements OnInit {
 
     // Initialize invited/registration signals
     this.isInvited = this.initializeIsInvited();
-    this.effectivelyInvited = computed(() => this.isInvited() || this.optimisticInvited());
+    this.effectivelyInvited = computed(() => (this.isInvited() && !this.optimisticLeft()) || this.optimisticInvited());
     this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
     this.canToggleRsvpView = this.initializeCanToggleRsvpView();
     this.currentUserRsvp = this.initializeCurrentUserRsvp();
@@ -745,9 +754,22 @@ export class MeetingJoinComponent implements OnInit {
     dialogRef.onClose.pipe(take(1)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
         this.optimisticInvited.set(true);
+        this.optimisticLeft.set(false);
         this.registrantsRefresh$.next();
         this.refreshTrigger$.next();
       }
+    });
+  }
+
+  public confirmLeaveMeeting(): void {
+    this.confirmationService.confirm({
+      header: 'Remove Yourself',
+      message: `Remove yourself from "${this.meetingTitle()}"? You will no longer be invited and will lose your RSVP.`,
+      acceptLabel: 'Remove Me',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => this.leaveMeeting(),
     });
   }
 
@@ -1767,5 +1789,37 @@ export class MeetingJoinComponent implements OnInit {
       ),
       { initialValue: [] }
     );
+  }
+
+  private leaveMeeting(): void {
+    this.leavingMeeting.set(true);
+
+    this.meetingService
+      .removeMyMeetingRegistration(this.meeting().id)
+      .pipe(
+        take(1),
+        finalize(() => this.leavingMeeting.set(false))
+      )
+      .subscribe({
+        next: () => {
+          this.optimisticInvited.set(false);
+          this.optimisticLeft.set(true);
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Removed',
+            detail: 'You have been removed from this meeting.',
+          });
+          this.registrantsRefresh$.next();
+          this.refreshTrigger$.next();
+        },
+        error: (error: unknown) => {
+          const fallback = 'Unable to remove you from this meeting. Please try again.';
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: isBffValidationError(error) ? extractErrorMessage(error, fallback) : fallback,
+          });
+        },
+      });
   }
 }

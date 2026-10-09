@@ -16,6 +16,11 @@
           <lfx-tag value="Restricted" severity="warn" icon="fa-light fa-lock"></lfx-tag>
         }
 
+        <!-- Registered Badge (upcoming meetings the viewer is registered for) -->
+        @if (canLeaveMeeting()) {
+          <lfx-tag value="Registered" severity="success" icon="fa-light fa-circle-check" data-testid="registered-badge"></lfx-tag>
+        }
+
         <!-- Meeting Type Badge -->
         @if (meetingTypeBadge(); as badge) {
           @if (badge.text !== 'None') {
@@ -464,6 +469,20 @@
               [href]="meetingDetailUrl()"
               target="_blank">
             </lfx-button>
+            @if (canLeaveMeeting()) {
+              <lfx-button
+                class="shrink-0"
+                icon="fa-light fa-user-xmark"
+                size="small"
+                severity="secondary"
+                ariaLabel="Remove myself from this meeting"
+                pTooltip="Remove myself from this meeting"
+                tooltipPosition="top"
+                data-testid="leave-meeting-button"
+                [loading]="leavingMeeting()"
+                (click)="confirmLeaveMeeting()">
+              </lfx-button>
+            }
           }
         </div>
       </div>

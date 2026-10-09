@@ -643,6 +643,16 @@ export class MeetingService {
     );
   }
 
+  public removeMyMeetingRegistration(meetingUid: string): Observable<void> {
+    return this.http.delete<void>(`/api/meetings/${meetingUid}/registrants/self`).pipe(
+      take(1),
+      catchError((error) => {
+        console.error(`Failed to remove current user from meeting ${meetingUid}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
+
   /**
    * Strips metadata from MeetingRegistrantWithState to create CreateMeetingRegistrantRequest.
    *

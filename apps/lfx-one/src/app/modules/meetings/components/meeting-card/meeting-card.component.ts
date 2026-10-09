@@ -81,6 +81,7 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -128,6 +129,7 @@ export class MeetingCardComponent implements OnInit {
   private readonly meetingService = inject(MeetingService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly injector = inject(Injector);
   private readonly clipboard = inject(Clipboard);
   private readonly userService = inject(UserService);
@@ -227,6 +229,10 @@ export class MeetingCardComponent implements OnInit {
   public readonly effectivelyInvited: Signal<boolean> = computed(() => this.isInvited() || this.optimisticInvited());
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
   public readonly attendeeListShared: Signal<boolean> = computed(() => isMeetingAttendeeListShared(this.meeting()));
+  public readonly canLeaveMeeting: Signal<boolean> = computed(
+    () => this.authenticated() && this.effectivelyInvited() && !this.meeting().organizer && !this.pastMeeting()
+  );
+  public readonly leavingMeeting: WritableSignal<boolean> = signal(false);
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
@@ -493,6 +499,18 @@ export class MeetingCardComponent implements OnInit {
         this.additionalRegistrantsCount.set(this.additionalRegistrantsCount() + 1);
         this.refreshMeeting();
       }
+    });
+  }
+
+  public confirmLeaveMeeting(): void {
+    this.confirmationService.confirm({
+      header: 'Remove Yourself',
+      message: `Remove yourself from "${this.meetingTitle()}"? You will no longer be invited and will lose your RSVP.`,
+      acceptLabel: 'Remove Me',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => this.leaveMeeting(),
     });
   }
 
@@ -805,6 +823,37 @@ export class MeetingCardComponent implements OnInit {
         this.meetingDeleted.emit();
       }
     });
+  }
+
+  private leaveMeeting(): void {
+    this.leavingMeeting.set(true);
+
+    this.meetingService
+      .removeMyMeetingRegistration(this.meeting().id)
+      .pipe(
+        take(1),
+        finalize(() => this.leavingMeeting.set(false))
+      )
+      .subscribe({
+        next: () => {
+          this.optimisticInvited.set(false);
+          this.meeting.update((meeting) => ({ ...meeting, invited: false, my_rsvp: null }));
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Removed',
+            detail: 'You have been removed from this meeting.',
+          });
+          this.meetingDeleted.emit();
+        },
+        error: (error: unknown) => {
+          const fallback = 'Unable to remove you from this meeting. Please try again.';
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: isBffValidationError(error) ? extractErrorMessage(error, fallback) : fallback,
+          });
+        },
+      });
   }
 
   private refreshMeeting(): void {

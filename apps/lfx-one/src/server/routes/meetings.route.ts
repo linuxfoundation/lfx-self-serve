@@ -46,6 +46,9 @@ router.post('/:uid/registrants', (req, res, next) => meetingController.addMeetin
 // PUT /meetings/:uid/registrants - update registrants (handles single or multiple)
 router.put('/:uid/registrants', (req, res, next) => meetingController.updateMeetingRegistrants(req, res, next));
 
+// DELETE /meetings/:uid/registrants/self - remove the authenticated user as a registrant
+router.delete('/:uid/registrants/self', (req, res, next) => meetingController.removeMyMeetingRegistration(req, res, next));
+
 // DELETE /meetings/:uid/registrants - delete registrants (handles single or multiple)
 router.delete('/:uid/registrants', (req, res, next) => meetingController.deleteMeetingRegistrants(req, res, next));
 

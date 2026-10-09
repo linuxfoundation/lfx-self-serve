@@ -1204,6 +1204,53 @@ export class MeetingService {
   }
 
   /**
+   * Removes the authenticated user as a registrant of a meeting using their own bearer token.
+   * The caller's registrant records are resolved server-side (by email or username) so the client
+   * never needs a registrant UID; upstream re-verifies ownership and returns 403 for anyone else's
+   * record. Registrants added through a committee cannot be removed individually — the user has to
+   * leave the committee instead — so they are rejected here rather than surfacing an upstream 400.
+   * @returns the number of registrant records removed
+   */
+  public async removeMeetingRegistrantSelf(
+    req: Request,
+    meetingUid: string,
+    email: string | undefined,
+    username: string | undefined,
+    m2mToken: string
+  ): Promise<number> {
+    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken);
+
+    if (registrants.length === 0) {
+      throw new ResourceNotFoundError('Meeting registration', meetingUid, {
+        operation: 'remove_meeting_registrant_self',
+        service: 'meeting_service',
+      });
+    }
+
+    const removable = registrants.filter((registrant) => registrant.type !== 'committee');
+
+    if (removable.length === 0) {
+      throw ServiceValidationError.forField('registrant', 'You were added to this meeting through a committee. Leave the committee to stop being invited.', {
+        operation: 'remove_meeting_registrant_self',
+        service: 'meeting_service',
+      });
+    }
+
+    logger.debug(req, 'remove_meeting_registrant_self', 'Removing authenticated user as meeting registrant', {
+      meeting_id: meetingUid,
+      registrant_count: removable.length,
+    });
+
+    for (const registrant of removable) {
+      await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/self`, 'DELETE', {
+        registrant_id: registrant.uid,
+      });
+    }
+
+    return removable.length;
+  }
+
+  /**
    * Resend a meeting invitation to a specific registrant
    */
   public async resendMeetingInvitation(req: Request, meetingUid: string, registrantId: string): Promise<void> {
