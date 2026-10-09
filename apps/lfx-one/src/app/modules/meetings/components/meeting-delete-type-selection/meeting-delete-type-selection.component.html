@@ -65,8 +65,18 @@
       </div>
     </form>
 
+    <!-- Warning Message -->
+    <lfx-message severity="error" icon="fa-solid fa-circle-exclamation" styleClass="mt-6">
+      <ng-template #content>
+        <p class="text-sm">
+          Deleting or canceling here applies to all registrants of this meeting, not just yourself. This is not how you unregister yourself. This action cannot
+          be undone.
+        </p>
+      </ng-template>
+    </lfx-message>
+
     <!-- Action Buttons -->
-    <div class="mt-6 flex justify-end gap-3">
+    <div class="mt-4 flex justify-end gap-3">
       <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" type="button" (click)="onCancel()" data-testid="delete-type-cancel-button">
       </lfx-button>
 
@@ -146,6 +156,16 @@
         </div>
       </div>
     </div>
+
+    <!-- Warning Message -->
+    <lfx-message severity="error" icon="fa-light fa-triangle-exclamation" styleClass="mb-6">
+      <ng-template #content>
+        <p class="text-sm">
+          Deleting or canceling here applies to all registrants of this meeting, not just yourself. This is not how you unregister yourself. This action cannot
+          be undone.
+        </p>
+      </ng-template>
+    </lfx-message>
 
     <!-- Action Buttons -->
     <div class="flex justify-end gap-3">
