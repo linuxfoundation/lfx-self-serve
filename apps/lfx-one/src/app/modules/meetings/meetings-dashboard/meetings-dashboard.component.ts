@@ -597,7 +597,7 @@ export class MeetingsDashboardComponent {
           meetingType,
           foundation,
           project,
-          // Pending-RSVP chip is upcoming-only, so past-meeting filtering always passes `false`.
+          // Pending-RSVP and Accepted chips are upcoming-only, so past-meeting filtering always passes `false`.
           pendingRsvpOnly: false,
           acceptedOnly: false,
           organizerOnly,
