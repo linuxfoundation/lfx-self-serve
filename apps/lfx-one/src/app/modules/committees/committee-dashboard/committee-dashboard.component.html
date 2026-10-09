@@ -170,6 +170,7 @@
             (projectFilterChange)="onProjectFilterChange($event)"
             (resetRequested)="selectBehavioralClass(null)"
             (refresh)="refreshCommittees()"
+            (left)="reloadMyCommitteesAfterLeave($event)"
             (rowClick)="onCommitteeClick($event)"
             data-testid="committees-me-table">
           </lfx-committee-table>

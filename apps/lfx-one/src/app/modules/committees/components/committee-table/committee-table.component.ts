@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, output, PLATFORM_ID } from '@angular/core';
 import { FormGroup } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -17,9 +18,11 @@ import { getGroupCommands, resolveJoinModeSeverity, resolveRoleChip, resolveType
 import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
 import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
+import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
+import { committeeLeaveErrorMessage } from '@shared/utils/http-error.utils';
 
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-filter-bar.component';
 
@@ -47,6 +50,8 @@ export class CommitteeTableComponent {
   // Injected services
   private readonly personaService = inject(PersonaService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
+  private readonly committeeService = inject(CommitteeService);
   private readonly platformId = inject(PLATFORM_ID);
 
   // Inputs
@@ -72,6 +77,8 @@ export class CommitteeTableComponent {
 
   // Outputs
   public readonly refresh = output<void>();
+  /** Emits the committee uid once the user has left it, so the parent can wait for the membership index to catch up before reloading. */
+  public readonly left = output<string>();
   public readonly rowClick = output<Committee>();
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();
@@ -107,6 +114,30 @@ export class CommitteeTableComponent {
 
   /** Show the Role column only when the input data carries `my_role` (i.e. Me Lens — MyCommittee rows). */
   protected readonly hasRoleColumn = computed(() => this.tableRows().some((r) => r.my_role != null));
+
+  protected onLeave(event: Event, committee: CommitteeTableRowVm): void {
+    event.stopPropagation();
+
+    this.confirmationService.confirm({
+      message: `Are you sure you want to leave ${committee.name}? You will lose access to its meetings, votes and documents.`,
+      header: `Leave ${this.committeeLabel.singular}`,
+      acceptLabel: 'Leave',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-sm p-button-danger',
+      rejectButtonStyleClass: 'p-button-sm p-button-secondary',
+      accept: () => {
+        this.committeeService.leaveCommittee(committee.uid).subscribe({
+          next: () => {
+            this.messageService.add({ severity: 'success', summary: 'Left', detail: `You have left "${committee.name}"` });
+            this.left.emit(committee.uid);
+          },
+          error: (err: HttpErrorResponse) => {
+            this.messageService.add({ severity: 'error', summary: 'Unable to Leave', detail: committeeLeaveErrorMessage(err, committee.name), life: 6000 });
+          },
+        });
+      },
+    });
+  }
 
   protected onRowSelect(event: { data: CommitteeTableRowVm }): void {
     this.rowClick.emit(event.data);

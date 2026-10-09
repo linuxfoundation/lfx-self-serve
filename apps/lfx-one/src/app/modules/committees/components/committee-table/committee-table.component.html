@@ -61,6 +61,9 @@
                 <th>My Role</th>
               }
               <th>Last Updated</th>
+              @if (isMeLens()) {
+                <th><span class="sr-only">Actions</span></th>
+              }
               @if (canManageCommittee()) {
                 <th></th>
               }
@@ -214,6 +217,24 @@
               <td>
                 <span class="text-sm text-gray-700">{{ committee.updated_at | date: 'MMM d, y' }}</span>
               </td>
+              @if (isMeLens()) {
+                <td>
+                  <div class="flex items-center justify-end">
+                    <lfx-button
+                      icon="fa-light fa-arrow-right-from-bracket"
+                      severity="danger"
+                      size="small"
+                      [text]="true"
+                      styleClass="h-8 w-8"
+                      [pTooltip]="'Leave ' + committeeLabel.singular"
+                      tooltipPosition="top"
+                      [attr.aria-label]="'Leave ' + committee.name"
+                      (onClick)="onLeave($event, committee)"
+                      [attr.data-testid]="'committee-leave-' + committee.uid">
+                    </lfx-button>
+                  </div>
+                </td>
+              }
               @if (canManageCommittee()) {
                 <td>
                   <div class="flex items-center justify-end gap-1">
