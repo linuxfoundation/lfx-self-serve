@@ -4710,6 +4710,48 @@ describe('ImplementationTabComponent google creative minimums', () => {
     expect(c['googleCreativeEmptyWarning']()).toContain(GOOGLE_CREATIVE_SECTION_TITLES['performance-max']);
     expect(c['googleCreativeEmptyWarning']()).not.toContain(GOOGLE_CREATIVE_SECTION_TITLES.display);
   });
+
+  /**
+   * How the warning reaches a screen reader, which is not the same question as what it says.
+   *
+   * It is announced through a region that is ALWAYS in the DOM, never through a role on the `<p>`
+   * — the distinction this template already records above `implementation-brief-status-live` and
+   * already paid for once, when `role="status"` sat on banners that `@switch` destroyed and
+   * recreated and both messages could be missed. A live region inserted with its text already in
+   * it is not reliably announced; the region has to exist first and then have its CONTENTS change.
+   * The visible warning's guard IS the warning text, so anything inside it is created by the same
+   * change that gives it the sentence — there is no placement in there that announces reliably.
+   *
+   * Each assertion fails against a different wrong fix. The region being present while there is
+   * nothing to say is what rules out wrapping it in an `@if`; the text pins that it carries the
+   * message rather than an empty shell; the bare `<p>` rules out the two-attribute patch, which
+   * would announce the same sentence twice; and `role="alert"` on the sibling pins the asymmetry
+   * as deliberate rather than an oversight to be harmonised away later — assertive for the
+   * refusal that takes the submit button out, polite for the notice that leaves it live.
+   */
+  it('announces the empty-creative warning politely, from a region that outlives it', () => {
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    fixture.detectChanges();
+
+    const live = find('implementation-google-creative-empty-live');
+    expect(live).not.toBeNull();
+    expect(live?.textContent?.trim()).toBe('');
+    expect(live?.getAttribute('role')).toBe('status');
+    expect(live?.getAttribute('aria-live')).toBe('polite');
+
+    const c = seedChannel(fixture, { includeDisplay: true });
+    expect(find('implementation-google-creative-empty-live')).toBe(live);
+    expect(live?.textContent?.trim()).toBe(c['googleCreativeEmptyWarning']());
+
+    const visible = find('implementation-google-creative-empty-warning');
+    expect(visible?.textContent?.trim()).toBe(c['googleCreativeEmptyWarning']());
+    expect(visible?.getAttribute('role')).toBeNull();
+    expect(visible?.getAttribute('aria-live')).toBeNull();
+
+    c['campaignForm'].controls.displayCreative.patchValue({ businessName: 'Acme' });
+    fixture.detectChanges();
+    expect(find('implementation-google-creative-error')?.getAttribute('role')).toBe('alert');
+  });
 });
 
 /**

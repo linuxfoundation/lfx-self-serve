@@ -29,6 +29,27 @@
 -->
 <div role="status" aria-live="polite" class="sr-only" data-testid="implementation-brief-status-live">{{ briefPersistenceAnnouncement() }}</div>
 
+<!--
+  Google empty-creative warning, announced.
+
+  Sits here, at the top level, for the reason the region above does: it has to be in the DOM
+  BEFORE the text appears. The visible warning is guarded by the warning text itself
+  (`@if (googleCreativeEmptyWarning())`), so an element inside that guard can never exist before
+  there is something to announce — it is created by the very change that gives it the sentence,
+  which is the insertion case that does not reliably announce. No placement inside the guard
+  fixes that; only a region outside it does.
+
+  Polite rather than `role="alert"`, and that is the whole distinction this warning exists to
+  draw. The blocking error beside it takes the creative out of the state campaign-service will
+  accept, so it interrupts; this one reports a campaign that WILL be created and then will not
+  serve, with submit still enabled. Interrupting an operator mid-field to say the thing they are
+  allowed to do is allowed would be the wrong urgency.
+
+  The visible `<p>` carries no role of its own — the text would otherwise be announced twice,
+  the same reason `briefPersistenceAnnouncement` stays empty in its `error` state.
+-->
+<div role="status" aria-live="polite" class="sr-only" data-testid="implementation-google-creative-empty-live">{{ googleCreativeEmptyWarning() }}</div>
+
 <!-- Nothing renders in the 'off' state — see briefPersistence. -->
 @switch (briefPersistence().status) {
   @case ('saving') {
