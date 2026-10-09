@@ -6,6 +6,7 @@ import { Component, computed, inject, type Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { MessageComponent } from '@components/message/message.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
@@ -24,7 +25,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
  */
 @Component({
   selector: 'lfx-meeting-delete-type-selection',
-  imports: [NgClass, ReactiveFormsModule, ButtonComponent, RadioButtonComponent, SelectComponent],
+  imports: [NgClass, ReactiveFormsModule, ButtonComponent, MessageComponent, RadioButtonComponent, SelectComponent],
   templateUrl: './meeting-delete-type-selection.component.html',
 })
 export class MeetingDeleteTypeSelectionComponent {
