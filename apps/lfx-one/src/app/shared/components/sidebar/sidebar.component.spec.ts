@@ -15,6 +15,7 @@ import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
+import { EMPTY } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SidebarComponent } from './sidebar.component';
@@ -61,7 +62,7 @@ describe('SidebarComponent — same-lens project switch re-enters the lens landi
     TestBed.configureTestingModule({
       imports: [SidebarComponent],
       providers: [
-        { provide: Router, useValue: { url, navigate, parseUrl: (value: string) => new DefaultUrlSerializer().parse(value) } },
+        { provide: Router, useValue: { url, events: EMPTY, navigate, parseUrl: (value: string) => new DefaultUrlSerializer().parse(value) } },
         ...sidebarServiceStubs(setProject),
       ],
     });
@@ -105,12 +106,18 @@ describe('SidebarComponent — link-active options (#3358)', () => {
 
   const peopleLink = '/org/acme-inc/people';
   const easyclaLink = '/org/acme-inc/easycla';
+  const legacyEasyclaLink = '/org/easycla';
   const items: SidebarMenuItem[] = [
     { label: 'People', routerLink: peopleLink },
-    { label: 'EasyCLA Management', isSection: true, items: [{ label: 'EasyCLA', routerLink: easyclaLink, activeOnSubpaths: true }] },
+    {
+      label: 'EasyCLA Management',
+      isSection: true,
+      items: [{ label: 'EasyCLA', routerLink: easyclaLink, activeOnSubpaths: true, activeAliases: [legacyEasyclaLink] }],
+    },
   ];
 
   let router: Router;
+  let component: SidebarComponent;
   let decorated: ReturnType<SidebarComponent['itemsWithTestIds']>;
 
   beforeEach(async () => {
@@ -124,12 +131,14 @@ describe('SidebarComponent — link-active options (#3358)', () => {
     fixture.componentRef.setInput('items', items);
     await fixture.whenStable();
     router = TestBed.inject(Router);
-    decorated = fixture.componentInstance['itemsWithTestIds']();
+    component = fixture.componentInstance;
+    decorated = component['itemsWithTestIds']();
   });
 
   const peopleOptions = (): IsActiveMatchOptions => decorated[0].activeMatchOptions;
   const easyclaOptions = (): IsActiveMatchOptions | undefined => decorated[1].items?.[0]?.activeMatchOptions;
   const isActive = (link: string, options: IsActiveMatchOptions | undefined): boolean => !!options && router.isActive(link, options);
+  const highlightedByAlias = (item: { trackKey: string } | undefined): boolean => !!item && component['aliasHighlightedKeys']().has(item.trackKey);
 
   it('matches exact paths by default and subpaths only for an item that opts in, at any depth', () => {
     expect(peopleOptions()).toEqual({ paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' });
@@ -156,5 +165,33 @@ describe('SidebarComponent — link-active options (#3358)', () => {
 
     await router.navigateByUrl(peopleLink);
     expect(isActive(peopleLink, peopleOptions())).toBe(true);
+  });
+
+  it('highlights an aliased item on a detail page under its alias, as a leftover signing return leaves it', async () => {
+    await router.navigateByUrl(`${legacyEasyclaLink}/cla-group-1?org=org-1`);
+
+    expect(highlightedByAlias(decorated[1].items?.[0])).toBe(true);
+  });
+
+  it('still highlights an aliased item under its own link', async () => {
+    await router.navigateByUrl(`${easyclaLink}/cla-group-1`);
+
+    expect(highlightedByAlias(decorated[1].items?.[0])).toBe(true);
+  });
+
+  it('does not highlight an aliased item on a sibling page that only shares the alias prefix', async () => {
+    await router.navigateByUrl(`${legacyEasyclaLink}-other`);
+
+    expect(highlightedByAlias(decorated[1].items?.[0])).toBe(false);
+  });
+
+  it('leaves an item without aliases to exact routerLinkActive matching', async () => {
+    await router.navigateByUrl(peopleLink);
+    expect(highlightedByAlias(decorated[0])).toBe(false);
+    expect(isActive(peopleLink, peopleOptions())).toBe(true);
+
+    await router.navigateByUrl(`${peopleLink}/person-1`);
+    expect(highlightedByAlias(decorated[0])).toBe(false);
+    expect(isActive(peopleLink, peopleOptions())).toBe(false);
   });
 });

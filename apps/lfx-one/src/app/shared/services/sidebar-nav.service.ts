@@ -18,6 +18,7 @@ import {
   MENTORSHIP_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
+  ORG_EASYCLA_PATH,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
   SURVEY_LABEL,
@@ -787,6 +788,8 @@ export class SidebarNavService {
     icon: 'fa-light fa-file-signature',
     routerLink: this.orgLensNavigation.orgLensPath('easycla'),
     activeOnSubpaths: true,
+    // A signing return on the leftover mount stays at `/org/easycla/…` after it adopts the organization.
+    activeAliases: [ORG_EASYCLA_PATH],
     testId: 'sidebar-org-easycla',
   }));
 

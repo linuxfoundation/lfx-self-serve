@@ -439,6 +439,18 @@ describe('SidebarNavService', () => {
     expect(labels(optedIn)).toEqual(['EasyCLA']);
   });
 
+  it('aliases only EasyCLA, to the leftover /org/easycla mount, so an addressed link still highlights there', () => {
+    activeLens.set('org');
+    orgEasyclaEnabled.set(true);
+    orgRoiEnabled.set(true);
+    orgSegment.set('acme-inc');
+
+    const flatten = (items: SidebarMenuItem[]): SidebarMenuItem[] => items.flatMap((item) => [item, ...flatten(item.items ?? [])]);
+    const aliased = flatten(TestBed.inject(SidebarNavService).sidebarItems()).filter((item) => item.activeAliases);
+
+    expect(aliased).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: '/org/acme-inc/easycla', activeAliases: ['/org/easycla'] })]);
+  });
+
   it('keeps ROI after Projects and the EasyCLA section above Organization Profile when both flags are on', () => {
     activeLens.set('org');
     orgEasyclaEnabled.set(true);
