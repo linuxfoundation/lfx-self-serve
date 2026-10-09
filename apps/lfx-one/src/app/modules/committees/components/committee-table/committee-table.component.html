@@ -226,9 +226,9 @@
                       size="small"
                       [text]="true"
                       styleClass="h-8 w-8"
-                      [pTooltip]="'Leave ' + committeeLabel.singular"
-                      tooltipPosition="top"
-                      [attr.aria-label]="'Leave ' + committee.name"
+                      [tooltip]="'Leave ' + committeeLabel.singular"
+                      [ariaLabel]="'Leave ' + committee.name"
+                      [disabled]="committee.isLeaving"
                       (onClick)="onLeave($event, committee)"
                       [attr.data-testid]="'committee-leave-' + committee.uid">
                     </lfx-button>
@@ -278,3 +278,7 @@
     </div>
   }
 </lfx-card>
+
+@if (isMeLens()) {
+  <p-confirmDialog [key]="leaveConfirmKey"></p-confirmDialog>
+}

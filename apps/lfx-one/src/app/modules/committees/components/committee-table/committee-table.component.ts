@@ -3,7 +3,7 @@
 
 import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, input, output, PLATFORM_ID } from '@angular/core';
+import { Component, computed, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { FormGroup } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -23,6 +23,7 @@ import { PersonaService } from '@services/persona.service';
 import { committeeLeaveErrorMessage } from '@shared/utils/http-error.utils';
 
 import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-filter-bar.component';
 
@@ -38,6 +39,7 @@ import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-f
     TagComponent,
     CommitteeFilterBarComponent,
     TooltipModule,
+    ConfirmDialogModule,
     JoinModeLabelPipe,
     PlatformIconPipe,
     PlatformLabelPipe,
@@ -60,6 +62,8 @@ export class CommitteeTableComponent {
   public canManageCommittee = input<boolean>(false);
   public myCommitteeUids = input<Set<string>>(new Set());
   public readonly committeeLabel = COMMITTEE_LABEL;
+  /** Scopes the leave confirmation to this table's dialog host so it can't surface in another `<p-confirmDialog>` on the page. */
+  protected readonly leaveConfirmKey = 'committee-table-leave';
   public searchForm = input.required<FormGroup>();
   public votingStatusOptions = input.required<{ label: string; value: string | null }[]>();
   public joinModeOptions = input<{ label: string; value: string | null }[]>([]);
@@ -83,6 +87,9 @@ export class CommitteeTableComponent {
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();
   public readonly resetRequested = output<void>();
+
+  /** Committee uids with a leave in flight (kept after success until the reloaded list drops the row) so a second click can't fire a duplicate request. */
+  private readonly leavingUids = signal<ReadonlySet<string>>(new Set());
 
   protected readonly isBoardMember = computed(() => this.personaService.currentPersona() === 'board-member');
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.committees().length > 10 ? [10, 25, 50] : undefined));
@@ -109,6 +116,7 @@ export class CommitteeTableComponent {
       typeDisplay: resolveTypeDisplay(committee),
       roleChip: resolveRoleChip(committee.my_role),
       isMember: this.myCommitteeUids().has(committee.uid),
+      isLeaving: this.leavingUids().has(committee.uid),
     }))
   );
 
@@ -119,6 +127,7 @@ export class CommitteeTableComponent {
     event.stopPropagation();
 
     this.confirmationService.confirm({
+      key: this.leaveConfirmKey,
       message: `Are you sure you want to leave ${committee.name}? You will lose access to its meetings, votes and documents.`,
       header: `Leave ${this.committeeLabel.singular}`,
       acceptLabel: 'Leave',
@@ -126,12 +135,14 @@ export class CommitteeTableComponent {
       acceptButtonStyleClass: 'p-button-sm p-button-danger',
       rejectButtonStyleClass: 'p-button-sm p-button-secondary',
       accept: () => {
+        this.setLeaving(committee.uid, true);
         this.committeeService.leaveCommittee(committee.uid).subscribe({
           next: () => {
             this.messageService.add({ severity: 'success', summary: 'Left', detail: `You have left "${committee.name}"` });
             this.left.emit(committee.uid);
           },
           error: (err: HttpErrorResponse) => {
+            this.setLeaving(committee.uid, false);
             this.messageService.add({ severity: 'error', summary: 'Unable to Leave', detail: committeeLeaveErrorMessage(err, committee.name), life: 6000 });
           },
         });
@@ -162,5 +173,17 @@ export class CommitteeTableComponent {
     } catch {
       this.messageService.add({ severity: 'error', summary: 'Copy failed', detail: 'Could not access clipboard.' });
     }
+  }
+
+  private setLeaving(uid: string, leaving: boolean): void {
+    this.leavingUids.update((current) => {
+      const next = new Set(current);
+      if (leaving) {
+        next.add(uid);
+      } else {
+        next.delete(uid);
+      }
+      return next;
+    });
   }
 }

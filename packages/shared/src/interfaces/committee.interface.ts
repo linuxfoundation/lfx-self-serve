@@ -652,6 +652,8 @@ export interface CommitteeTableRowVm extends Committee {
    * Used in the Project/Foundation lens where `my_role` is not available on the row.
    */
   isMember: boolean;
+  /** True while a leave request for this committee is in flight or awaiting index propagation, so the row's Leave button can be disabled without a method call. */
+  isLeaving: boolean;
 }
 
 /**
