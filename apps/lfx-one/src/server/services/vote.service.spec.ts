@@ -325,6 +325,7 @@ describe('VoteService', () => {
 
     afterEach(() => {
       vi.useRealTimers();
+      vi.unstubAllGlobals();
       pollEndpoint.mockImplementation(() => Promise.resolve(true));
       fetchAllQueryResources.mockReset();
       getEffectiveEmail.mockReset();
@@ -353,8 +354,27 @@ describe('VoteService', () => {
     };
 
     it('confirms an email-only invitation even when the caller also has an LFID', async () => {
+      // Exercise the real proxy and JSON serialization; assert the HTTP contract, not proxy arity.
+      const { MicroserviceProxyService } = await vi.importActual<typeof import('./microservice-proxy.service')>('./microservice-proxy.service');
+      const upstream = new MicroserviceProxyService();
+      proxyRequest.mockImplementationOnce(upstream.proxyRequest.bind(upstream));
+      let ballot!: globalThis.Request;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string, options: RequestInit) => {
+          ballot = new globalThis.Request(url, options);
+          writes++;
+          accepted = true;
+          return new Response(null, { status: 204 });
+        })
+      );
+
       await settleSubmission();
 
+      expect(new URL(ballot.url).pathname).toBe('/vote_responses');
+      expect(ballot.method).toBe('POST');
+      expect(ballot.headers.has('X-Sync')).toBe(false);
+      expect(await ballot.json()).toEqual(payload);
       expect(queryReads).toBe(1);
       expectConfirmed();
     });
