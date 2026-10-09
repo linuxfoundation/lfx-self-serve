@@ -273,9 +273,10 @@ export class MeetingJoinComponent implements OnInit {
   // Set immediately on self-registration success so the UI responds before the meeting refetch
   // settles the invited flag (query-service indexing lag).
   private optimisticInvited = signal(false);
-  // Set once the user removes themselves so the UI responds before the meeting refetch settles the
-  // invited flag (same query-service indexing lag, in the other direction).
-  private optimisticLeft = signal(false);
+  // True once the user has removed themselves from the meeting on screen, so the UI responds before the meeting
+  // refetch settles the invited flag (same query-service indexing lag, in the other direction). Keyed by meeting
+  // id in the service, so a page that stays mounted across meetings never carries one meeting's removal to another.
+  private optimisticLeft = computed(() => this.meetingService.removedRegistrationMeetingIds().has(this.meeting()?.id ?? ''));
   public leavingMeeting = signal(false);
   private readonly optimisticDeletedUids = signal(new Set<string>());
   private readonly optimisticAddedAttachments = signal<PastMeetingAttachment[]>([]);
@@ -496,7 +497,6 @@ export class MeetingJoinComponent implements OnInit {
       )
       .subscribe(() => {
         this.optimisticInvited.set(false);
-        this.optimisticLeft.set(false);
         this.optimisticAdditional.set(0);
         this.rosterCountBeforeAdd.set(null);
       });
@@ -754,7 +754,7 @@ export class MeetingJoinComponent implements OnInit {
     dialogRef.onClose.pipe(take(1)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
         this.optimisticInvited.set(true);
-        this.optimisticLeft.set(false);
+        this.meetingService.clearRemovedRegistration(meeting.id);
         this.registrantsRefresh$.next();
         this.refreshTrigger$.next();
       }
@@ -764,7 +764,7 @@ export class MeetingJoinComponent implements OnInit {
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',
-      message: `Remove yourself from "${this.meetingTitle()}"? You will no longer be invited and will lose your RSVP.`,
+      message: `Remove yourself from "${this.meetingTitle()}"? You will no longer be invited to any occurrence and will lose your RSVP.`,
       acceptLabel: 'Remove Me',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
@@ -1792,10 +1792,11 @@ export class MeetingJoinComponent implements OnInit {
   }
 
   private leaveMeeting(): void {
+    const meetingId = this.meeting().id;
     this.leavingMeeting.set(true);
 
     this.meetingService
-      .removeMyMeetingRegistration(this.meeting().id)
+      .removeMyMeetingRegistration(meetingId)
       .pipe(
         take(1),
         finalize(() => this.leavingMeeting.set(false))
@@ -1803,7 +1804,7 @@ export class MeetingJoinComponent implements OnInit {
       .subscribe({
         next: () => {
           this.optimisticInvited.set(false);
-          this.optimisticLeft.set(true);
+          this.meetingService.markRegistrationRemoved(meetingId);
           this.messageService.add({
             severity: 'success',
             summary: 'Removed',

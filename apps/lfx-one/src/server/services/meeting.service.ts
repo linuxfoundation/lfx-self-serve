@@ -1041,7 +1041,8 @@ export class MeetingService {
     meetingUid: string,
     email: string | undefined,
     username: string | undefined,
-    m2mToken?: string
+    m2mToken?: string,
+    failOnPartial = false
   ): Promise<MeetingRegistrant[]> {
     const orClauses: string[] = [];
     if (email) orClauses.push(`email:${email.toLowerCase()}`);
@@ -1063,16 +1064,19 @@ export class MeetingService {
 
     const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
 
-    return fetchAllQueryResources<MeetingRegistrant>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        { ...params, ...(pageToken && { page_token: pageToken }) },
-        undefined,
-        headers
-      )
+    return fetchAllQueryResources<MeetingRegistrant>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          { ...params, ...(pageToken && { page_token: pageToken }) },
+          undefined,
+          headers
+        ),
+      { failOnPartial }
     );
   }
 
@@ -1207,8 +1211,12 @@ export class MeetingService {
    * Removes the authenticated user as a registrant of a meeting using their own bearer token.
    * The caller's registrant records are resolved server-side (by email or username) so the client
    * never needs a registrant UID; upstream re-verifies ownership and returns 403 for anyone else's
-   * record. Committee-sourced registrants are re-created by committee sync (and the ITX delete refuses them),
-   * so the user has to leave the committee instead; they are rejected here with a message that says so.
+   * record. A committee-sourced registration is re-created by committee sync (and the ITX delete refuses it),
+   * so when the caller has one the request is rejected before anything is deleted: removing only their other
+   * rows would leave them invited while reporting success.
+   * The lookup must be complete, since a partial page walk would delete only a prefix of the caller's rows.
+   * Every matching row is attempted; the call fails only when none could be removed, and a partial result is
+   * logged rather than reported as a failure, since the rows already deleted stay deleted.
    * @returns the number of registrant records removed
    */
   public async removeMeetingRegistrantSelf(
@@ -1218,7 +1226,7 @@ export class MeetingService {
     username: string | undefined,
     m2mToken: string
   ): Promise<number> {
-    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken);
+    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken, true);
 
     if (registrants.length === 0) {
       throw new ResourceNotFoundError('Meeting registration', meetingUid, {
@@ -1227,9 +1235,7 @@ export class MeetingService {
       });
     }
 
-    const removable = registrants.filter((registrant) => registrant.type !== 'committee');
-
-    if (removable.length === 0) {
+    if (registrants.some((registrant) => registrant.type === 'committee')) {
       throw ServiceValidationError.forField('registrant', 'You were added to this meeting through a committee. Leave the committee to stop being invited.', {
         operation: 'remove_meeting_registrant_self',
         service: 'meeting_service',
@@ -1238,16 +1244,34 @@ export class MeetingService {
 
     logger.debug(req, 'remove_meeting_registrant_self', 'Removing authenticated user as meeting registrant', {
       meeting_id: meetingUid,
-      registrant_count: removable.length,
+      registrant_count: registrants.length,
     });
 
-    for (const registrant of removable) {
-      await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/self`, 'DELETE', {
-        registrant_id: registrant.uid,
+    const outcomes = await Promise.allSettled(
+      registrants.map((registrant) =>
+        this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/self`, 'DELETE', {
+          registrant_id: registrant.uid,
+        })
+      )
+    );
+
+    const failures = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected');
+    const removedCount = outcomes.length - failures.length;
+
+    if (removedCount === 0) {
+      throw failures[0].reason;
+    }
+
+    if (failures.length > 0) {
+      logger.warning(req, 'remove_meeting_registrant_self', 'Removed some but not all of the caller registrations', {
+        meeting_id: meetingUid,
+        removed_count: removedCount,
+        failed_count: failures.length,
+        err: failures[0].reason,
       });
     }
 
-    return removable.length;
+    return removedCount;
   }
 
   /**

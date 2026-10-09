@@ -61,6 +61,9 @@ describe('MeetingCardComponent — edit-access re-check', () => {
         {
           provide: MeetingService,
           useValue: {
+            removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
+            markRegistrationRemoved: vi.fn(),
+            clearRemovedRegistration: vi.fn(),
             getMeetingDetail,
             getMeeting,
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
@@ -428,6 +431,9 @@ describe('MeetingCardComponent — invitee panels', () => {
         {
           provide: MeetingService,
           useValue: {
+            removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
+            markRegistrationRemoved: vi.fn(),
+            clearRemovedRegistration: vi.fn(),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: '' })),
@@ -484,6 +490,7 @@ describe('MeetingCardComponent — remove myself', () => {
   let toastAdd: ReturnType<typeof vi.fn>;
   let confirm: ReturnType<typeof vi.fn>;
   let removeMyMeetingRegistration: ReturnType<typeof vi.fn>;
+  let removedIds: ReturnType<typeof signal<ReadonlySet<string>>>;
 
   async function mount(meeting: Meeting = INVITEE, options: { authenticated?: boolean; past?: boolean } = {}): Promise<MeetingCardComponent> {
     TestBed.configureTestingModule({
@@ -499,6 +506,9 @@ describe('MeetingCardComponent — remove myself', () => {
         {
           provide: MeetingService,
           useValue: {
+            removedRegistrationMeetingIds: removedIds,
+            markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
+            clearRemovedRegistration: vi.fn(),
             removeMyMeetingRegistration,
             getPastMeetingRecording: vi.fn().mockReturnValue(of(null)),
             getPastMeetingSummary: vi.fn().mockReturnValue(of(null)),
@@ -526,6 +536,7 @@ describe('MeetingCardComponent — remove myself', () => {
     toastAdd = vi.fn();
     confirm = vi.fn();
     removeMyMeetingRegistration = vi.fn().mockReturnValue(of(undefined));
+    removedIds = signal<ReadonlySet<string>>(new Set());
   });
 
   it('offers the action to a signed-in invitee of an upcoming meeting', async () => {
@@ -543,6 +554,22 @@ describe('MeetingCardComponent — remove myself', () => {
     const component = await mount(meeting, options);
 
     expect(component.canLeaveMeeting()).toBe(false);
+  });
+
+  it('keeps the action hidden on a card rebuilt after the list refetched a stale invited flag', async () => {
+    removedIds.set(new Set(['meeting-1']));
+
+    const component = await mount();
+
+    expect(component.canLeaveMeeting()).toBe(false);
+  });
+
+  it('says the removal covers every occurrence', async () => {
+    const component = await mount();
+
+    component.confirmLeaveMeeting();
+
+    expect(confirm.mock.calls[0][0].message).toContain('any occurrence');
   });
 
   it('asks for confirmation first and removes only once it is accepted', async () => {

@@ -171,9 +171,9 @@ export class MeetingCardComponent implements OnInit {
    */
   public drawerGuestCount: WritableSignal<number | null> = signal(null);
   private readonly optimisticInvited: WritableSignal<boolean> = signal(false);
-  // Set once the user removes themselves so the card does not offer "Remove" again while the refetched
-  // `invited` flag is still stale (query-service indexing lag). Cleared when the card is reused for another meeting.
-  private readonly optimisticLeft: WritableSignal<boolean> = signal(false);
+  // True once the user has removed themselves, so the card does not offer "Remove" again while a refetched
+  // `invited` flag is stale (query-service indexing lag). Read from the service so it outlasts this card.
+  private readonly optimisticLeft: Signal<boolean> = computed(() => this.meetingService.removedRegistrationMeetingIds().has(this.meeting().id));
   // Host-flagged people surfaced by the registrants drawer, fed to the organizer chip so it
   // resolves the same organizer set the drawer badges (see resolvedHostsChange).
   public drawerHosts: WritableSignal<MeetingHostCandidate[]> = signal<MeetingHostCandidate[]>([]);
@@ -354,7 +354,6 @@ export class MeetingCardComponent implements OnInit {
       )
       .subscribe(() => {
         this.optimisticInvited.set(false);
-        this.optimisticLeft.set(false);
       });
   }
 
@@ -502,7 +501,7 @@ export class MeetingCardComponent implements OnInit {
     dialogRef.onClose.pipe(take(1)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
         this.optimisticInvited.set(true);
-        this.optimisticLeft.set(false);
+        this.meetingService.clearRemovedRegistration(meeting.id);
         this.additionalRegistrantsCount.set(this.additionalRegistrantsCount() + 1);
         this.refreshMeeting();
       }
@@ -512,7 +511,7 @@ export class MeetingCardComponent implements OnInit {
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',
-      message: `Remove yourself from "${this.meetingTitle()}"? You will no longer be invited and will lose your RSVP.`,
+      message: `Remove yourself from "${this.meetingTitle()}"? You will no longer be invited to any occurrence and will lose your RSVP.`,
       acceptLabel: 'Remove Me',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
@@ -833,10 +832,11 @@ export class MeetingCardComponent implements OnInit {
   }
 
   private leaveMeeting(): void {
+    const meetingId = this.meeting().id;
     this.leavingMeeting.set(true);
 
     this.meetingService
-      .removeMyMeetingRegistration(this.meeting().id)
+      .removeMyMeetingRegistration(meetingId)
       .pipe(
         take(1),
         finalize(() => this.leavingMeeting.set(false))
@@ -844,7 +844,7 @@ export class MeetingCardComponent implements OnInit {
       .subscribe({
         next: () => {
           this.optimisticInvited.set(false);
-          this.optimisticLeft.set(true);
+          this.meetingService.markRegistrationRemoved(meetingId);
           this.meeting.update((meeting) => ({ ...meeting, invited: false, my_rsvp: null }));
           this.messageService.add({
             severity: 'success',

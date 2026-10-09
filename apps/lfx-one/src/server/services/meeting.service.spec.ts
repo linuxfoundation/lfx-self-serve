@@ -448,23 +448,38 @@ describe('MeetingService.removeMeetingRegistrantSelf', () => {
     expect(query).toEqual({ registrant_id: 'reg-1' });
   });
 
-  it('looks the registrants up under the supplied M2M token', async () => {
+  it('looks the registrants up under the supplied M2M token and requires a complete result', async () => {
     const lookup = vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct')]);
     proxyRequest.mockResolvedValueOnce(undefined);
 
     await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
 
-    expect(lookup).toHaveBeenCalledWith(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+    expect(lookup).toHaveBeenCalledWith(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', true);
   });
 
-  it('skips committee-sourced rows and removes only the others', async () => {
+  it('rejects without deleting anything when a committee row sits alongside a direct one', async () => {
     vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-c', 'committee'), registrantRow('reg-d', 'direct')]);
-    proxyRequest.mockResolvedValueOnce(undefined);
 
-    const removed = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token');
+    await expect(service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token')).rejects.toMatchObject({ statusCode: 400 });
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('attempts every row and reports the number removed when one of them fails', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct'), registrantRow('reg-2', 'direct')]);
+    proxyRequest.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('upstream down'));
+
+    const removed = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
 
     expect(removed).toBe(1);
-    expect(proxyRequest.mock.calls[0][4]).toEqual({ registrant_id: 'reg-d' });
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails when none of the rows could be removed', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct'), registrantRow('reg-2', 'direct')]);
+    proxyRequest.mockRejectedValue(new Error('upstream down'));
+
+    await expect(service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token')).rejects.toThrow('upstream down');
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
   });
 
   it('rejects when the only registration came from a committee, without calling upstream', async () => {

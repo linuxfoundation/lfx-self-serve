@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
-import { inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import {
   LINKEDIN_PROFILE_PATTERN,
@@ -61,6 +61,15 @@ import { catchError, map, Observable, of, shareReplay, take, tap, throwError } f
 })
 export class MeetingService {
   public meeting: WritableSignal<Meeting | null> = signal(null);
+  private readonly removedRegistrationIds: WritableSignal<ReadonlySet<string>> = signal(new Set<string>());
+  /**
+   * Meetings the viewer has removed themselves from in this session.
+   * @description Lives here rather than on the card or page so it outlasts both: the list refetch that follows a
+   * removal destroys the cards, and a page that stays mounted across meeting ids would otherwise carry one
+   * meeting's removal over to the next. It bridges the query-service indexing lag, during which a refetch can
+   * still report `invited: true`.
+   */
+  public readonly removedRegistrationMeetingIds: Signal<ReadonlySet<string>> = this.removedRegistrationIds.asReadonly();
 
   private readonly http = inject(HttpClient);
   private readonly pastMeetingRecordingCache = new Map<string, { observable: Observable<PastMeetingRecording>; cachedAt: number }>();
@@ -641,6 +650,18 @@ export class MeetingService {
         return throwError(() => error);
       })
     );
+  }
+
+  public markRegistrationRemoved(meetingUid: string): void {
+    this.removedRegistrationIds.update((ids) => new Set(ids).add(meetingUid));
+  }
+
+  public clearRemovedRegistration(meetingUid: string): void {
+    this.removedRegistrationIds.update((ids) => {
+      const next = new Set(ids);
+      next.delete(meetingUid);
+      return next;
+    });
   }
 
   public removeMyMeetingRegistration(meetingUid: string): Observable<void> {

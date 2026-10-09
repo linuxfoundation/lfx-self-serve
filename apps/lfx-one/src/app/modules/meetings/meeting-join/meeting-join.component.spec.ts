@@ -41,6 +41,7 @@ describe('MeetingJoinComponent', () => {
   let getPastMeetingTranscript: ReturnType<typeof vi.fn>;
   let getPublicMeetingOccurrences: ReturnType<typeof vi.fn>;
   let removeMyMeetingRegistration: ReturnType<typeof vi.fn>;
+  let removedIds: ReturnType<typeof signal<ReadonlySet<string>>>;
   let toastAdd: ReturnType<typeof vi.fn>;
   let paramMap$: BehaviorSubject<ParamMap>;
   let queryParamMap$: BehaviorSubject<ParamMap>;
@@ -115,6 +116,7 @@ describe('MeetingJoinComponent', () => {
     getPastMeetingTranscript = vi.fn().mockReturnValue(of(null));
     getPublicMeetingOccurrences = vi.fn().mockReturnValue(of({ past: [], future: [] }));
     removeMyMeetingRegistration = vi.fn().mockReturnValue(of(undefined));
+    removedIds = signal<ReadonlySet<string>>(new Set());
     toastAdd = vi.fn();
 
     TestBed.configureTestingModule({
@@ -147,6 +149,9 @@ describe('MeetingJoinComponent', () => {
             getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: undefined })),
             getMyMeetingRegistrants,
             removeMyMeetingRegistration,
+            removedRegistrationMeetingIds: removedIds,
+            markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
+            clearRemovedRegistration: vi.fn(),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRsvpForCurrentUser: vi.fn().mockReturnValue(of(null)),
             getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
@@ -1088,6 +1093,14 @@ describe('MeetingJoinComponent', () => {
 
       expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).toBeNull();
       expect(fixture.nativeElement.querySelector(REGISTER_BUTTON)).not.toBeNull();
+    });
+
+    it('does not carry a removal from another meeting over to this one', async () => {
+      removedIds.set(new Set(['some-other-meeting']));
+
+      const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+      expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).not.toBeNull();
     });
 
     it('does not offer it to an organizer', async () => {

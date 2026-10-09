@@ -211,3 +211,22 @@ describe('MeetingService.removeMyMeetingRegistration', () => {
     expect(del).toHaveBeenCalledWith(`/api/meetings/${MEETING_UID}/registrants/self`);
   });
 });
+
+describe('MeetingService removed-registration state', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { delete: vi.fn(() => of(undefined)) } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('records a removal by meeting id and forgets it once the viewer registers again', () => {
+    service.markRegistrationRemoved('mtg-1');
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
+    expect(service.removedRegistrationMeetingIds().has('mtg-2')).toBe(false);
+
+    service.clearRemovedRegistration('mtg-1');
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(false);
+  });
+});
