@@ -586,12 +586,13 @@ describe('buildHealthMetricsEventsRevenueView', () => {
     const events = [
       revenueEvent(),
       revenueEvent({ eventId: 'later', eventStartDate: '2027-02-01', isPastEvent: false, goalMet: true, ranges: [] }),
+      revenueEvent({ eventId: 'undated', eventStartDate: null, isPastEvent: false, ranges: [] }),
       revenueEvent({ eventId: 'sooner', eventStartDate: '2026-11-20', isPastEvent: false, ranges: [] }),
     ];
 
     const current = buildHealthMetricsEventsRevenueView(revenue({ events }), 'YTD');
     expect(current.rows.map((row) => row.event.eventId)).toEqual(['rev-1']);
-    expect(current.upcomingRows.map((row) => row.event.eventId)).toEqual(['sooner', 'later']);
+    expect(current.upcomingRows.map((row) => row.event.eventId)).toEqual(['sooner', 'later', 'undated']);
     expect(current.upcomingRows.every((row) => row.goalStatus === null)).toBe(true);
 
     expect(buildHealthMetricsEventsRevenueView(revenue({ events }), 'COMPLETED_YEAR').upcomingRows).toEqual([]);

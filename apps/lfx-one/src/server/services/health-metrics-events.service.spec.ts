@@ -672,6 +672,7 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     expect(sql).toContain('is_revenue_goal_met,');
     expect(sql).toContain('combined_revenue_goal,');
     expect(sql).toContain('ORDER BY IFF(is_past_event = FALSE OR (');
+    expect(sql).toContain('), IFF(is_past_event = FALSE, 1, 0), event_start_date DESC NULLS LAST');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1}`);
   });
 

@@ -336,7 +336,7 @@ export function buildHealthMetricsEventsRevenueView(revenue: HealthMetricsEvents
     range === 'YTD'
       ? revenue.events
           .filter((event) => !event.isPastEvent)
-          .sort((a, b) => (a.eventStartDate ?? '').localeCompare(b.eventStartDate ?? ''))
+          .sort((a, b) => compareUpcomingStartDates(a.eventStartDate, b.eventStartDate))
           .map(buildRevenueRowView)
       : [];
 
@@ -640,6 +640,14 @@ function buildRevenueRowView(event: HealthMetricsEventsRevenueEvent): HealthMetr
 function resolveRevenueGoalStatus(event: HealthMetricsEventsRevenueEvent): HealthMetricsEventsRevenueRowView['goalStatus'] {
   if (!event.isPastEvent || event.goalMet === null) return null;
   return event.goalMet ? HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES.met : HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES.missed;
+}
+
+/** Soonest first, with an undated event last so it can't top the list. */
+function compareUpcomingStartDates(a: string | null, b: string | null): number {
+  if (a === b) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return a.localeCompare(b);
 }
 
 function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEventsPastRowView {

@@ -486,7 +486,8 @@ export class HealthMetricsEventsService {
         ${periodColumns}
       FROM ${REVENUE_VIEW}
       WHERE foundation_slug = ?
-      ORDER BY IFF(${listed}, 0, 1), event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, event_id ASC
+      -- Past events in a period fill the cap before upcoming ones, so history never gives way to upcoming events.
+      ORDER BY IFF(${listed}, 0, 1), IFF(is_past_event = FALSE, 1, 0), event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, event_id ASC
       LIMIT ${HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1}
     `;
 
@@ -828,7 +829,7 @@ export class HealthMetricsEventsService {
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
         AND (is_all_organizations = TRUE OR is_unaffiliated_organization = TRUE OR ${ranked})
-      -- One read serves every period, so each orders by its own sort_rank, the model's submitted DESC, account_name order.
+      -- One read serves every period, so SQL gives a stable order; each period then sorts by its own sort_rank.
       ORDER BY is_all_organizations DESC, is_unaffiliated_organization DESC, account_name ASC NULLS LAST, account_id ASC NULLS LAST
     `;
 
