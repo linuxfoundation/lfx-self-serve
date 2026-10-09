@@ -100,13 +100,6 @@ describe('SidebarComponent — link-active options (#3358)', () => {
   @Component({ selector: 'lfx-blank-page', template: '' })
   class BlankPageStubComponent {}
 
-  interface ActiveOptionsNode {
-    label: string;
-    activeMatchOptions: IsActiveMatchOptions;
-    items?: ActiveOptionsNode[];
-  }
-  type ActiveOptionsTree = ActiveOptionsNode[];
-
   const peopleLink = '/org/acme-inc/people';
   const easyclaLink = '/org/acme-inc/easycla';
   const items: SidebarMenuItem[] = [
@@ -115,7 +108,7 @@ describe('SidebarComponent — link-active options (#3358)', () => {
   ];
 
   let router: Router;
-  let decorated: ActiveOptionsTree;
+  let decorated: ReturnType<SidebarComponent['itemsWithTestIds']>;
 
   beforeEach(async () => {
     TestBed.resetTestingModule();
@@ -128,7 +121,7 @@ describe('SidebarComponent — link-active options (#3358)', () => {
     fixture.componentRef.setInput('items', items);
     await fixture.whenStable();
     router = TestBed.inject(Router);
-    decorated = (fixture.componentInstance as unknown as { itemsWithTestIds: () => ActiveOptionsTree }).itemsWithTestIds();
+    decorated = fixture.componentInstance['itemsWithTestIds']();
   });
 
   const peopleOptions = (): IsActiveMatchOptions => decorated[0].activeMatchOptions;
