@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, signal } from '@angular/core';
+import { Component, computed, Provider, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { DefaultUrlSerializer, Router } from '@angular/router';
-import { LensItem, User } from '@lfx-one/shared/interfaces';
+import { DefaultUrlSerializer, IsActiveMatchOptions, provideRouter, Router } from '@angular/router';
+import { LensItem, SidebarMenuItem, User } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -15,6 +15,29 @@ import { UserService } from '@services/user.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SidebarComponent } from './sidebar.component';
+
+/** Everything the sidebar injects apart from the Router, stubbed for a class-level test. */
+const sidebarServiceStubs = (setProject = vi.fn()): Provider[] => [
+  { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+  {
+    provide: LensService,
+    useValue: { activeLens: signal('project'), isHybridPersona: signal(false), availableLenses: signal([{ id: 'project' }]), setLens: vi.fn() },
+  },
+  {
+    provide: UserService,
+    useValue: { user: signal({ user_id: 'u1' } as unknown as User), userInitials: computed(() => 'AL'), effectiveAvatarUrl: computed(() => '') },
+  },
+  {
+    provide: ProjectContextService,
+    useValue: { activeContext: signal(null), activeRouteLensKind: signal('project'), setFoundation: vi.fn(), setProject },
+  },
+  {
+    provide: PersonaService,
+    useValue: { isRootWriter: signal(false), personaProjects: signal({}), allPersonas: signal([]), currentPersona: signal('contributor') },
+  },
+  { provide: NavigationService, useValue: { loaded: vi.fn(() => signal(true)) } },
+  { provide: AccountContextService, useValue: { hasOrgSelectorAccess: vi.fn(() => false) } },
+];
 
 /**
  * The Project lens landing page is decided per project by `formationOverviewRedirectGuard` (#2754):
@@ -37,25 +60,7 @@ describe('SidebarComponent — same-lens project switch re-enters the lens landi
       imports: [SidebarComponent],
       providers: [
         { provide: Router, useValue: { url, navigate, parseUrl: (value: string) => new DefaultUrlSerializer().parse(value) } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
-        {
-          provide: LensService,
-          useValue: { activeLens: signal('project'), isHybridPersona: signal(false), availableLenses: signal([{ id: 'project' }]), setLens: vi.fn() },
-        },
-        {
-          provide: UserService,
-          useValue: { user: signal({ user_id: 'u1' } as unknown as User), userInitials: computed(() => 'AL'), effectiveAvatarUrl: computed(() => '') },
-        },
-        {
-          provide: ProjectContextService,
-          useValue: { activeContext: signal(null), activeRouteLensKind: signal('project'), setFoundation: vi.fn(), setProject },
-        },
-        {
-          provide: PersonaService,
-          useValue: { isRootWriter: signal(false), personaProjects: signal({}), allPersonas: signal([]), currentPersona: signal('contributor') },
-        },
-        { provide: NavigationService, useValue: { loaded: vi.fn(() => signal(true)) } },
-        { provide: AccountContextService, useValue: { hasOrgSelectorAccess: vi.fn(() => false) } },
+        ...sidebarServiceStubs(setProject),
       ],
     });
     TestBed.overrideComponent(SidebarComponent, { set: { template: '', imports: [], providers: [] } });
@@ -89,5 +94,77 @@ describe('SidebarComponent — same-lens project switch re-enters the lens landi
 
     expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ slug: 'beta' }), true);
     expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Items are highlighted on an exact path match unless they opt in with `activeOnSubpaths` (#3358),
+ * which EasyCLA does so it stays highlighted on an agreement's detail page. The options are read
+ * off the decorated tree, then exercised against a real Router so the test proves what they match.
+ */
+describe('SidebarComponent — link-active options (#3358)', () => {
+  @Component({ selector: 'lfx-blank-page', template: '' })
+  class BlankPageStubComponent {}
+
+  interface ActiveOptionsNode {
+    label: string;
+    activeMatchOptions: IsActiveMatchOptions;
+    items?: ActiveOptionsNode[];
+  }
+  type ActiveOptionsTree = ActiveOptionsNode[];
+
+  const peopleLink = '/org/acme-inc/people';
+  const easyclaLink = '/org/acme-inc/easycla';
+  const items: SidebarMenuItem[] = [
+    { label: 'People', routerLink: peopleLink },
+    { label: 'EasyCLA Management', isSection: true, items: [{ label: 'EasyCLA', routerLink: easyclaLink, activeOnSubpaths: true }] },
+  ];
+
+  let router: Router;
+  let decorated: ActiveOptionsTree;
+
+  beforeEach(async () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [SidebarComponent],
+      providers: [provideRouter([{ path: '**', component: BlankPageStubComponent }]), ...sidebarServiceStubs()],
+    });
+    TestBed.overrideComponent(SidebarComponent, { set: { template: '', imports: [], providers: [] } });
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('items', items);
+    await fixture.whenStable();
+    router = TestBed.inject(Router);
+    decorated = (fixture.componentInstance as unknown as { itemsWithTestIds: () => ActiveOptionsTree }).itemsWithTestIds();
+  });
+
+  const peopleOptions = (): IsActiveMatchOptions => decorated[0].activeMatchOptions;
+  const easyclaOptions = (): IsActiveMatchOptions | undefined => decorated[1].items?.[0]?.activeMatchOptions;
+  const isActive = (link: string, options: IsActiveMatchOptions | undefined): boolean => !!options && router.isActive(link, options);
+
+  it('matches exact paths by default and subpaths only for an item that opts in, at any depth', () => {
+    expect(peopleOptions()).toEqual({ paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' });
+    expect(easyclaOptions()).toEqual({ paths: 'subset', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' });
+  });
+
+  it('highlights the opted-in item on its own page and on a detail page carrying a query string', async () => {
+    await router.navigateByUrl(easyclaLink);
+    expect(isActive(easyclaLink, easyclaOptions())).toBe(true);
+
+    await router.navigateByUrl(`${easyclaLink}/cla-group-1?signingEntity=entity-1`);
+    expect(isActive(easyclaLink, easyclaOptions())).toBe(true);
+  });
+
+  it('does not highlight the opted-in item on a sibling page that only shares a prefix', async () => {
+    await router.navigateByUrl(`${easyclaLink}-other`);
+
+    expect(isActive(easyclaLink, easyclaOptions())).toBe(false);
+  });
+
+  it('keeps an item that did not opt in unhighlighted below its own page', async () => {
+    await router.navigateByUrl(`${peopleLink}/person-1`);
+    expect(isActive(peopleLink, peopleOptions())).toBe(false);
+
+    await router.navigateByUrl(peopleLink);
+    expect(isActive(peopleLink, peopleOptions())).toBe(true);
   });
 });

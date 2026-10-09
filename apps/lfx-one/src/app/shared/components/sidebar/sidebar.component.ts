@@ -3,7 +3,7 @@
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { afterNextRender, Component, computed, inject, input, model, Signal, signal, viewChild } from '@angular/core';
-import { Router, RouterModule } from '@angular/router';
+import { IsActiveMatchOptions, Router, RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { LensTabsComponent } from '@components/lens-tabs/lens-tabs.component';
@@ -31,11 +31,15 @@ const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
   contributor: 'fa-light fa-code',
 };
 
-/** `SidebarMenuItem` as rendered: derived test id, external-link flag and `@for` track key filled in at every level. */
+const EXACT_PATH_MATCH: IsActiveMatchOptions = { paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' };
+const SUBPATH_MATCH: IsActiveMatchOptions = { ...EXACT_PATH_MATCH, paths: 'subset' };
+
+/** `SidebarMenuItem` as rendered: derived test id, external-link flag, `@for` track key and link-active options filled in at every level. */
 type DecoratedSidebarMenuItem = Omit<SidebarMenuItem, 'items'> & {
   testId: string;
   trackKey: string;
   external: boolean | undefined;
+  activeMatchOptions: IsActiveMatchOptions;
   items?: DecoratedSidebarMenuItem[];
 };
 
@@ -276,13 +280,14 @@ export class SidebarComponent {
     });
   }
 
-  /** Test id, external-link flag and `@for` track key for an item and, recursively, its children. */
+  /** Test id, external-link flag, `@for` track key and link-active options for an item and, recursively, its children. */
   private decorate(item: SidebarMenuItem): DecoratedSidebarMenuItem {
     return {
       ...item,
       testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
       trackKey: this.trackKey(item),
       external: item.url ? this.isExternalUrl(item.url) : undefined,
+      activeMatchOptions: item.activeOnSubpaths ? SUBPATH_MATCH : EXACT_PATH_MATCH,
       items: item.items?.map((childItem) => this.decorate(childItem)),
     };
   }

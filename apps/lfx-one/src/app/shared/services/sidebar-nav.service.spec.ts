@@ -429,6 +429,17 @@ describe('SidebarNavService', () => {
     ]);
   });
 
+  it('keeps EasyCLA highlighted on its detail pages and every other Org Lens item on exact matches only', () => {
+    activeLens.set('org');
+    orgEasyclaEnabled.set(true);
+    orgRoiEnabled.set(true);
+
+    const flatten = (items: SidebarMenuItem[]): SidebarMenuItem[] => items.flatMap((item) => [item, ...flatten(item.items ?? [])]);
+    const optedIn = flatten(TestBed.inject(SidebarNavService).sidebarItems()).filter((item) => item.activeOnSubpaths);
+
+    expect(labels(optedIn)).toEqual(['EasyCLA']);
+  });
+
   it('keeps ROI after Projects and the EasyCLA section above Organization Profile when both flags are on', () => {
     activeLens.set('org');
     orgEasyclaEnabled.set(true);

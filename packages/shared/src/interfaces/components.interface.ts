@@ -448,6 +448,8 @@ export interface SidebarMenuItem {
   icon?: string;
   /** Router link path */
   routerLink?: string;
+  /** Keep the item highlighted on paths below `routerLink` (e.g. a detail page), not only on an exact match. Defaults to false. */
+  activeOnSubpaths?: boolean;
   /** External URL */
   url?: string;
   /** Target for external links */

@@ -786,6 +786,8 @@ export class SidebarNavService {
     label: 'EasyCLA',
     icon: 'fa-light fa-file-signature',
     routerLink: this.orgLensNavigation.orgLensPath('easycla'),
+    // Stays highlighted on an agreement's detail page, `/org/{segment}/easycla/{claGroupId}`.
+    activeOnSubpaths: true,
     testId: 'sidebar-org-easycla',
   }));
 
