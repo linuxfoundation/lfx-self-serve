@@ -8,7 +8,7 @@ import {
   VALID_MEETUP_SORT_ORDERS,
   VALID_MEETUP_STATUS_VALUES,
 } from '@lfx-one/shared/constants';
-import { GetMyMeetupsOptions, MeetupSortField, MeetupSortOrder, MeetupStatusFilter } from '@lfx-one/shared/interfaces';
+import { GetMyMeetupsOptions, GetMeetupFiltersOptions, MeetupSortField, MeetupSortOrder, MeetupStatusFilter } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
@@ -57,7 +57,8 @@ export class MeetupsController {
 
   /**
    * GET /api/meetups/filters
-   * Get distinct global community and role filter options for the My Meetups UI
+   * Get view- and tab-scoped community options and global role options for My Meetups
+   * Query params: isPast (bool), registeredOnly (bool; ignored for Past)
    */
   public async getMeetupFilters(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_meetup_filters');
@@ -71,9 +72,17 @@ export class MeetupsController {
         });
       }
 
-      const response = await this.meetupsService.getMeetupFilters(req);
+      let isPast: boolean | undefined;
+      if (req.query['isPast'] === 'true') {
+        isPast = true;
+      } else if (req.query['isPast'] === 'false') {
+        isPast = false;
+      }
+      const options: GetMeetupFiltersOptions = { isPast, registeredOnly: !isPast && req.query['registeredOnly'] === 'true' };
+      const response = await this.meetupsService.getMeetupFilters(req, userEmail, options);
 
       logger.success(req, 'get_meetup_filters', startTime, {
+        scope: options,
         communities_count: response.communities.length,
         roles_count: response.roles.length,
       });

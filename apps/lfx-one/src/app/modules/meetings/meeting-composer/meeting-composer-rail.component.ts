@@ -3,7 +3,6 @@
 
 import { NgClass } from '@angular/common';
 import { afterRenderEffect, Component, computed, ElementRef, inject, input, type Signal } from '@angular/core';
-import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
 import type { MeetingComposerRailRow, MeetingComposerSection, MeetingComposerSectionId } from '@lfx-one/shared/interfaces';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
@@ -34,7 +33,8 @@ export class MeetingComposerRailComponent {
    */
   public readonly compact = input(false);
 
-  private readonly sections: readonly MeetingComposerSection[] = MEETING_COMPOSER_SECTIONS;
+  /** Narrower for a single-occurrence edit, which drops the series-only sections. */
+  private readonly sections: Signal<readonly MeetingComposerSection[]> = this.formService.visibleSections;
 
   /**
    * Single mode source for layout and the active marker.
@@ -91,7 +91,7 @@ export class MeetingComposerRailComponent {
       // FormGroup validity isn't reactive on its own — the revision signal is what makes it one.
       this.formService.revision();
 
-      const sections = this.sections;
+      const sections = this.sections();
       const activeSection = this.composer.activeSection();
       const visited = this.composer.visitedSections();
       const validById = new Map<MeetingComposerSectionId, boolean>(sections.map((section) => [section.id, this.formService.isSectionValid(section.id)]));

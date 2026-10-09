@@ -297,11 +297,15 @@ export interface Meeting {
   youtube_upload_enabled: boolean | null;
   /**
    * Share the guest list in calendar invites: when on, each guest's ICS lists the other
-   * attendees and their last known RSVP instead of the recipient alone. Board and restricted
-   * meetings can never opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF
-   * forces the field off on write. In LFX it also decides whether an invitee who is not an
-   * organizer can see the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]`
-   * to them when it is off, and the meeting card and meeting page hide their guest lists to match.
+   * attendees and their last known RSVP instead of the recipient alone. Board meetings can never
+   * opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF forces the field off on
+   * write. A restricted meeting keeps any explicit `true` the BFF receives from a caller allowed to
+   * edit it — in practice only the meeting v2 composer (`allowRestricted`) sends one, since the pre-v2
+   * wizard locks the control off — and any other write is forced off. In LFX it also decides whether an invitee who is not an organizer can see
+   * the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]` to them when it is
+   * off — and always for Board and restricted meetings, whose lists stay hidden in LFX even when a
+   * restricted meeting opted in (that opt-in reaches calendar invites only) — and the meeting card and
+   * meeting page hide their guest lists to match.
    * `GET /api/meetings/:uid/registrants` (tolerant listing) and `GET /api/meetings/:uid/rsvp`
    * apply the same rule. Past-meeting participants ignore it and go to organizers and the people on
    * them instead, so meetings already held keep their attendance (#2827).
@@ -819,6 +823,16 @@ export interface ComposerGuestRow {
    * the literal `guest` when a registrant arrives carrying neither.
    */
   removeLabel: string;
+  /**
+   * Single-occurrence edit only: which occurrences the guest is invited to — `All occurrences` or
+   * `This occurrence`. `null` everywhere else, where every guest shares the same scope.
+   */
+  scopeLabel: string | null;
+  /**
+   * Whether the row offers a remove button. While editing one occurrence, only guests invited to it alone
+   * can be removed: upstream cannot exclude a series guest from a single occurrence, so those are read-only.
+   */
+  removable: boolean;
 }
 
 /**
@@ -1432,6 +1446,31 @@ export type RecurringMeetingEditScope = 'occurrence' | 'series';
 export interface RecurringMeetingEditScopeResult {
   proceed: boolean;
   scope: RecurringMeetingEditScope;
+  /** The occurrence picked in the dialog — set whenever `scope` is `'occurrence'` and `proceed` is true. */
+  occurrenceId?: string;
+}
+
+/** Which part of a recurring meeting a delete applies to. */
+export type MeetingDeleteType = 'occurrence' | 'series';
+
+/** Result of the recurring meeting delete scope dialog. */
+export interface MeetingDeleteTypeResult {
+  deleteType: MeetingDeleteType;
+  /**
+   * The occurrence picked in the dialog's picker.
+   * @description Set for `'occurrence'` while `meeting-v2-enabled` is on. The pre-v2 dialog has no picker and
+   * omits it, so the caller cancels the occurrence it opened the dialog on — never assume it is populated.
+   */
+  occurrenceId?: string;
+}
+
+/**
+ * One row of the occurrence picker shared by the edit and delete scope dialogs.
+ * @description `value` is the occurrence id; `label` is its start in the series' own timezone.
+ */
+export interface MeetingOccurrenceOption {
+  label: string;
+  value: string;
 }
 
 /**
@@ -2104,6 +2143,33 @@ export interface MeetingComposerContext {
   variant?: MeetingComposerVariant;
   /** Meeting type the quick create dialog opens pre-selected with, so its template prefill runs immediately. */
   meetingType?: MeetingType;
+  /**
+   * Edit mode only: the single occurrence of a recurring meeting to edit, instead of the whole series.
+   * @description Narrows the drawer to what upstream's occurrence update accepts — title, date and time,
+   * duration and agenda — and saves through `PUT /meetings/:uid/occurrences/:occurrenceId`.
+   */
+  occurrenceId?: string;
+}
+
+/**
+ * Which part of a recurring meeting an open composer edit changes, as its header banner states it.
+ * @description `label` is the occurrence's saved start in the series timezone. Absent for a create and
+ * for a one-off meeting, which have no scope to state.
+ */
+export interface MeetingComposerEditScope {
+  kind: RecurringMeetingEditScope;
+  /** Set for `occurrence` only. */
+  label?: string;
+}
+
+/** Options for the show-attendees lock (`isShowMeetingAttendeesLocked` and its helpers). */
+export interface ShowMeetingAttendeesLockOptions {
+  /**
+   * Let restricted (invite-only) meetings opt in — only board meetings lock.
+   * @description Meeting v2 composer only (`meeting-v2-enabled`). Everything else — the pre-v2 wizard and
+   * every read of a stored meeting — keeps the default rule, so existing meetings are unaffected.
+   */
+  allowRestricted?: boolean;
 }
 
 /** Composer surface: the full sectioned drawer, or the condensed quick create dialog. */

@@ -57,7 +57,7 @@ Request → Controller → Service → Microservice/Data Layer
 | [Mentorship Admin BFF](./mentorship-admin.md)                         | Admin route map, sub-router, controller and services, shared mappers            |
 | [EasyCLA Org Lens role-bridge](./easycla-org-lens-role-bridge.md)     | Who sees Sign CLA vs who can mutate the approval list; ACS hop, not Help Center |
 | [Gatewaze Embed Proxy](./gw-proxy.md)                                 | Wildcard BFF proxy, authorization, header policy, body limits, 413 drain        |
-| [LFX Insights API Tokens](./insights-tokens.md)                       | PAT service proxy, M2M Key Contact check, fail-closed eligibility               |
+| [LFX Insights API Tokens](./insights-tokens.md)                       | PAT service proxy, M2M Key Contact check, server-side LaunchDarkly flag bypass  |
 | [Project Applications](./project-applications.md)                     | Propose-a-project BFF, M2M create, If-Match, accept creates the project         |
 
 ### Committee Management
@@ -168,6 +168,7 @@ Infrastructure services that don't map to a single HTTP boundary:
 - **`nats.service.ts`** — generic NATS request/reply client (consumed by `project.service.ts` and others for slug resolution, user lookup, etc.).
 - **`snowflake.service.ts`** — singleton Snowflake connection pool with query deduplication.
 - **`etag.service.ts`** — ETag-based optimistic concurrency control for CRUD resources.
+- **`launchdarkly-server.service.ts`** — lazy singleton LaunchDarkly Node SDK client for per-user flag evaluation on the server (needs `LD_SDK_KEY`; fails closed to the caller's default).
 - **`persona-detection.service.ts` / `persona-enrichment.service.ts`** — persona classification used by the lens system.
 - **`auth0.service.ts`, `supabase.service.ts`, `cdp.service.ts`, `credly.service.ts`, `ti.service.ts`** — third-party integrations (authentication, profile email, analytics, badging).
 

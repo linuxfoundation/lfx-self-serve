@@ -72,7 +72,7 @@ export const PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP = 150;
  * Empty-state fallback for the Foundation Projects page's grouped detail request —
  * mirrors {@link DEFAULT_FOUNDATION_PROJECTS_DETAIL}'s role for the flat drawer endpoint.
  */
-export const DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED: FoundationProjectsDetailGroupedResponse = { groups: [], totalCount: 0 };
+export const DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED: FoundationProjectsDetailGroupedResponse = { groups: [], totalCount: 0, complete: false };
 
 /**
  * All valid presence-filter pill IDs on the foundation projects page, in

@@ -169,3 +169,8 @@ export const TRAVEL_FUND_STEP_ORDER: TravelFundStep[] = ['select-event', 'terms'
 export const VIS_REQUEST_STEP_ORDER: VisaRequestStep[] = ['select-event', 'terms', 'apply'];
 
 export const EVENT_SELECTION_PAGE_SIZE = 12;
+
+// Per-event travel fund signals (Snowflake aggregates), shared by the picker list and the submit-time eligibility check.
+export const TRAVEL_FUND_OFFERED_AGG = 'BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED)';
+export const TRAVEL_FUND_OPEN_ENDED_AGG = 'BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED AND TRAVEL_FUND_END_TS IS NULL)';
+export const TRAVEL_FUND_LATEST_DEADLINE_AGG = 'MAX(IFF(IS_TRAVEL_FUND_ACCEPTED, TRAVEL_FUND_END_TS, NULL))';

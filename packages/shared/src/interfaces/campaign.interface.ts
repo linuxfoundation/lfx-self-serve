@@ -6,6 +6,9 @@ import type {
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
+  GOOGLE_BIDDING_STRATEGIES,
+  GOOGLE_CAMPAIGN_CHANNELS,
+  GOOGLE_CHANNELS_WITH_CREATIVE,
   MICROSOFT_KEYWORDS_WINDOWS,
 } from '../constants/campaign.constants';
 
@@ -41,7 +44,29 @@ export interface LinkedInTargetingProfileConfig {
 
 export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';
 
-export type CampaignType = 'search' | 'demand-gen' | 'sponsored' | 'social';
+/**
+ * The campaign shapes a brief can ask for.
+ *
+ * The first five are GOOGLE ADS channels and map one-to-one onto `googleAdsConfig.channel`
+ * upstream (`internal/dispatch/googleads.go`); `sponsored` and `social` name the LinkedIn and
+ * Meta/Reddit shapes and never reach that field. `performance-max`, `video` and `display` are
+ * servable only through campaign-service — the legacy in-process create path branches on
+ * `search` alone (`executeGoogleCampaignCreation` in `campaign-proxy.service.ts`) and would
+ * build a DEMAND GEN campaign for any other value rather than rejecting it.
+ */
+export type CampaignType = 'search' | 'demand-gen' | 'performance-max' | 'video' | 'display' | 'sponsored' | 'social';
+
+export type GoogleCampaignChannel = (typeof GOOGLE_CAMPAIGN_CHANNELS)[number];
+
+/**
+ * How a Google campaign bids, named in the Google Ads UI's own vocabulary.
+ *
+ * Which of these a given channel will actually accept is not uniform — see
+ * `GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL`, which reproduces campaign-service's five per-channel
+ * sets. Being a member of this union says only that the name exists, not that it is valid
+ * anywhere it can be typed.
+ */
+export type GoogleBiddingStrategy = (typeof GOOGLE_BIDDING_STRATEGIES)[number];
 
 export type DateRangeOption = 7 | 14 | 30;
 
@@ -504,6 +529,17 @@ export interface CampaignImplementationDraft {
   includeSearch: boolean;
   includeDemandGen: boolean;
   /**
+   * The three channels gated behind `googleChannelsEnabled`.
+   *
+   * Persisted like `includeDemandGen` and restored by the same rule: cleared only when the
+   * deployment has explicitly answered that it cannot create them, never on an unanswered `null`.
+   * REQUIRED rather than optional so "not selected" and "not yet saved" stay distinguishable at
+   * the restore site, which is what `includeDemandGen` already relies on.
+   */
+  includePerformanceMax: boolean;
+  includeVideo: boolean;
+  includeDisplay: boolean;
+  /**
    * The three LinkedIn controls the user picks rather than types (LFXV2-3230): the ad account,
    * the geo target list, and the targeting profile.
    *
@@ -643,6 +679,44 @@ export interface CampaignImplementationDraft {
   microsoftKeywords?: MicrosoftKeyword[];
   /** Empty string records "unset", which is the serve-capable default — see `cpcBid`. */
   microsoftCpcBid?: string;
+  /**
+   * The per-channel Google creative sections, as RAW form text rather than the wire shape: keyed
+   * by the creative's request key, then by field, with list fields still one entry per line.
+   *
+   * Raw deliberately. A draft's job is to give the operator back exactly the form they left,
+   * including the blank line they were about to type into and the entry order they chose;
+   * round-tripping through the split-and-trim that `submit` applies would quietly rewrite their
+   * text every time they switched tabs.
+   *
+   * Optional and restored only when present, on the same rule as the Meta and Microsoft fields
+   * above: a draft saved before these sections shipped has none of them, and absence must leave
+   * the form alone rather than clear it.
+   */
+  googleCreatives?: Record<string, Record<string, string>>;
+  /**
+   * Google's own geo targets, separate from {@link countryCode} rather than a widening of it.
+   *
+   * Empty means "use the event country", which is what this path did before the list existed — so
+   * an absent field and an empty list agree, and neither is a silent change of target.
+   */
+  googleGeoTargets?: string[];
+  /**
+   * The Google bidding section, as RAW form text — the same choice `googleCreatives` and
+   * {@link microsoftCpcBid} make, and for the same reason: a draft hands the operator back the
+   * form they left, and an empty string is "they have not filled this in", which is a different
+   * state from a zero they typed.
+   *
+   * `googleBiddingStrategy` empty means "the channel default", exactly as it does in the form;
+   * `googleConversionActions` is the textarea verbatim, one action per line, unsplit and untrimmed.
+   *
+   * Optional and restored only when present: a draft saved before this section shipped carries
+   * none of these, and absence must leave the form alone rather than clear it.
+   */
+  googleBiddingStrategy?: string;
+  googleTargetCpa?: string;
+  googleTargetRoas?: string;
+  googleCpcBid?: string;
+  googleConversionActions?: string;
 }
 
 /**
@@ -770,6 +844,12 @@ export interface CampaignAudience {
   briefId: string;
   platform: string;
   platformMasterListId?: string;
+  /**
+   * Every list the send includes, when the audience was attached from several existing lists
+   * rather than one composed master. Absent on a composed or single-list audience, where
+   * `platformMasterListId` alone is the send list.
+   */
+  includeListIds?: string[];
   suppressionListIds?: string[];
   inclusionSummary?: string;
   status: CampaignAudienceStatus;
@@ -1290,6 +1370,233 @@ export interface HubSpotCampaignCreateRequest {
   sponsors?: CampaignEventSponsor[];
 }
 
+/**
+ * One collectable field of one Google channel's creative.
+ *
+ * The three creative interfaces below say what MAY be sent; this says what a form should ask for,
+ * in what order, under what name, and inside what bounds — the same facts a server-side normalizer
+ * needs to decide which keys to copy off an unvalidated body and whether a value is a list or a
+ * scalar. Both sides read {@link GOOGLE_CREATIVE_FIELD_SPECS}, so a field added to a channel reaches
+ * the form and the wire together instead of being added to one and forgotten in the other.
+ *
+ * `control` is both the property name on the creative object and the form-control name under that
+ * channel's group; they are deliberately the same string so neither side needs a mapping table.
+ */
+export interface GoogleCreativeFieldSpec {
+  control: keyof GoogleDemandGenCreative | keyof GooglePerformanceMaxCreative | keyof GoogleDisplayCreative;
+  /** Field label as shown to an operator. */
+  label: string;
+  /**
+   * `list` is an array of strings on the wire and one entry per line in the form; `text` is a single
+   * string on both. The distinction is not cosmetic — `display.longHeadline` is a scalar while
+   * `performance-max.longHeadlines` is a list, and sending the wrong shape is refused upstream.
+   */
+  kind: 'list' | 'text';
+  /**
+   * Minimum non-empty entries upstream requires ONCE A CREATIVE IS SUPPLIED for this channel. A
+   * channel with no creative at all is accepted (see `GOOGLE_CREATIVE_REQUIRED_NOTICE` for what that
+   * costs), so this is a floor within a creative, never a reason to block a create outright.
+   *
+   * No control validator carries it, for that reason — a validator sees one control and cannot
+   * tell a half-filled creative from an empty one. The Implementation tab checks it at submit
+   * instead, over the whole assembled creative.
+   */
+  min?: number;
+  /** Maximum entries upstream accepts. Omitted where upstream sets no bound. */
+  max?: number;
+  /**
+   * Per-entry character bound. Google states these as display WIDTH, which counts a double-width
+   * character twice; this application measures LENGTH, which is the permissive direction — a form
+   * that refused what Google accepts is the costlier error, and the upstream preflight still
+   * measures width before anything is created.
+   */
+  width?: number;
+  /**
+   * A `text` field Google marks required ONCE A CREATIVE IS SUPPLIED for this channel — the scalar
+   * counterpart of {@link min}, and bounded by the same rule: a channel with no creative at all is
+   * accepted upstream, so this is a floor within a creative and never a reason to block a create.
+   *
+   * Machine-readable rather than stated only in {@link hint}, because the submit-time check reads
+   * it. Set where campaign-service refuses the creative without the field:
+   * `demandgen_creative.go`, `display_creative.go` and `pmax_creative.go` each require a business
+   * name, and a responsive display ad additionally requires its single long headline.
+   */
+  requiredOnce?: boolean;
+  /** Anything true of this field that its bounds do not say, shown beneath the control. */
+  hint?: string;
+}
+
+/**
+ * One "at least one of these" rule over a channel's list fields.
+ *
+ * Not expressible as a per-field {@link GoogleCreativeFieldSpec.min}: the requirement is on the
+ * PAIR, and putting `min: 1` on either member would refuse a creative that supplied only the other
+ * one — which upstream accepts. Demand Gen and Display both state it over the two marketing-image
+ * arrays (`demandgen_creative.go`, `display_creative.go`); Performance Max has no such rule because
+ * it requires both arrays independently, which its two `min: 1` entries already carry.
+ */
+export interface GoogleCreativeEitherOrRule {
+  /** The `control` names of the list fields, at least one of which must be non-empty. */
+  controls: readonly string[];
+  /** What is missing, as a clause that follows the channel's label in the submit-time message. */
+  message: string;
+}
+
+/**
+ * The Google channels that carry a creative object — the three `GOOGLE_CHANNELS_WITH_CREATIVE` names.
+ *
+ * Derived from the constant rather than spelled out, so the three creative catalogues keyed by it
+ * and anything that indexes them stay provably the same set. Narrower than `GoogleCampaignChannel`
+ * on purpose: Search composes its ad from the top-level copy arrays and Video cannot be created at
+ * all, so neither has an entry in `GOOGLE_CREATIVE_FIELD_SPECS` to index.
+ */
+export type GoogleCreativeChannel = (typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number];
+
+/**
+ * One channel's creative section, resolved for rendering.
+ *
+ * Everything a template needs to draw the section and bind it to the right nested form group,
+ * assembled once in a computed rather than by indexing constants from the template — Angular
+ * templates may only read signals, computed values and pipes, and a template that indexed
+ * `GOOGLE_CREATIVE_REQUEST_KEYS` by channel would also be a second place the group-name mapping
+ * lives.
+ */
+export interface GoogleCreativeSection {
+  channel: GoogleCreativeChannel;
+  /** The channel's own display label, as the channel checkboxes name it. */
+  label: string;
+  /** The nested `campaignForm` group holding this channel's controls. */
+  groupName: string;
+  fields: readonly GoogleCreativeSectionField[];
+}
+
+/**
+ * One field of a resolved creative section: its catalogue entry plus the sentence shown under it.
+ *
+ * The guidance line is assembled when the section is resolved rather than read from a template
+ * method call, because a method on the render path is re-run on every change-detection pass to
+ * produce a string that cannot change — the bounds it states come from the static catalogue.
+ */
+export interface GoogleCreativeSectionField extends GoogleCreativeFieldSpec {
+  /**
+   * The bounds sentence, followed by anything the catalogue entry's own `hint` adds.
+   *
+   * Named apart from `hint` because it SUBSUMES it: `hint` is the catalogue's extra clause, this is
+   * the whole line an operator reads.
+   */
+  guidance: string;
+}
+
+/**
+ * One entry in the bidding-strategy picker, already narrowed to the selected channel.
+ *
+ * The picker is a closed list rather than a free field precisely because the valid set is
+ * per-channel — see `GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL`. The empty-value "channel default"
+ * entry is not one of these; the template renders it separately, because it names no strategy.
+ */
+export interface GoogleBiddingOption {
+  value: GoogleBiddingStrategy;
+  label: string;
+}
+
+/**
+ * The Demand Gen ad's creative, typed to `googleAdsConfig.demandGenCreative`
+ * (`internal/dispatch/googleads.go`'s `googleAdsDemandGenCreativeConfig`).
+ *
+ * Images are URLs the caller already hosts, matching Reddit's and Meta's `imageUrl`. Google is the
+ * one platform that will not fetch a URL itself, so campaign-service downloads each one and uploads
+ * the bytes — which is why a URL that 404s fails the create rather than producing an ad with a
+ * missing image.
+ *
+ * Counts and widths are Demand Gen's own and are NOT the Search ad's. See
+ * `GOOGLE_CREATIVE_FIELD_SPECS['demand-gen']`.
+ */
+export interface GoogleDemandGenCreative {
+  /**
+   * The four marketing-image shapes, each with its own aspect ratio and minimum size enforced by
+   * the upstream preflight. At least one of `marketingImages` or `squareMarketingImages` is
+   * required; the four share a COMBINED cap.
+   */
+  marketingImages?: string[];
+  squareMarketingImages?: string[];
+  portraitImages?: string[];
+  tallPortraitImages?: string[];
+  /** REQUIRED upstream: 1-5 square images. A Demand Gen ad with no logo is refused. */
+  logoImages?: string[];
+  headlines?: string[];
+  descriptions?: string[];
+  /** REQUIRED by Google when a creative is supplied. */
+  businessName?: string;
+  callToActionText?: string;
+}
+
+/**
+ * The Performance Max ASSET GROUP, typed to `googleAdsConfig.performanceMaxCreative`.
+ *
+ * A Performance Max campaign has no ad groups and no ads — its creative lives in a named asset
+ * group, and Google assembles ads from the parts. The counts here are emphatically not Demand Gen's
+ * beside them: three headlines against one, a separate long-headline FIELD TYPE rather than a
+ * headline that happens to be long, and a two-description minimum with a short-description rule.
+ *
+ * This is also the channel where omitting creative is not merely weak but terminal: campaign-service
+ * accepts the create, flags the empty asset group, and then REFUSES the activation
+ * (`internal/platform/googleads/pmax.go`), so the campaign can never serve.
+ */
+export interface GooglePerformanceMaxCreative {
+  /**
+   * `marketingImages` (1.91:1) and `squareMarketingImages` (1:1) are BOTH required here — unlike
+   * Demand Gen, where either satisfies the other. `portraitImages` (4:5) is optional, and the three
+   * share a combined cap.
+   */
+  marketingImages?: string[];
+  squareMarketingImages?: string[];
+  portraitImages?: string[];
+  /** `logoImages` (1:1) is REQUIRED, 1-5. `landscapeLogoImages` (4:1) is optional. */
+  logoImages?: string[];
+  landscapeLogoImages?: string[];
+  headlines?: string[];
+  /** A DISTINCT asset field type (`LONG_HEADLINE`), not a long `headlines` entry. 1-5 required. */
+  longHeadlines?: string[];
+  /** 2-5, and at least one must fit the short slot Google renders on constrained surfaces. */
+  descriptions?: string[];
+  businessName?: string;
+  /** BARE YouTube video ids, never watch URLs — upstream refuses a URL rather than parsing it. */
+  youtubeVideoIds?: string[];
+  /** Defaults upstream to the event name plus " - Asset Group" when blank. */
+  assetGroupName?: string;
+  /** Optional display-path segments rendered after the domain; `path2` renders only after `path1`. */
+  path1?: string;
+  path2?: string;
+}
+
+/**
+ * The responsive display ad, typed to `googleAdsConfig.displayCreative`.
+ *
+ * One shape here departs from both siblings and is the single most likely thing to get wrong:
+ * `longHeadline` is a SINGLE STRING, not a list. Performance Max and Video both take a list of long
+ * headlines; a responsive display ad carries exactly one, and the field is spelled as a scalar
+ * upstream so the envelope cannot carry a second that Google would reject after the ad group exists.
+ */
+export interface GoogleDisplayCreative {
+  /**
+   * The two marketing arrays are reciprocally required — Google requires each when the other is
+   * absent — and share a combined cap. Both logo arrays are optional and capped separately. Their
+   * ratios and minimums are this channel's own, not the same-named Demand Gen or Performance Max
+   * slots'.
+   */
+  marketingImages?: string[];
+  squareMarketingImages?: string[];
+  logoImages?: string[];
+  squareLogoImages?: string[];
+  headlines?: string[];
+  /** Scalar. See the interface docblock. */
+  longHeadline?: string;
+  descriptions?: string[];
+  /** REQUIRED by Google when a creative is supplied. */
+  businessName?: string;
+  callToActionText?: string;
+}
+
 export interface CampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -1304,11 +1611,45 @@ export interface CampaignCreateRequest {
   keywords: CampaignKeyword[];
   headlines: string[];
   descriptions: string[];
-  displayHeadlines?: string[];
-  displayDescriptions?: string[];
-  displayBusinessName?: string;
-  displayCallToAction?: string;
+  /**
+   * The selected Google channel's creative, one key per channel exactly as `googleAdsConfig` names
+   * them upstream. At most one is populated per create, because the BFF emits one config carrying
+   * one `channel` and campaign-service refuses a multi-channel Google create outright.
+   *
+   * `videoCreative` is deliberately absent: {@link GOOGLE_VIDEO_CREATE_SUPPORTED} is `false`, so no
+   * Video campaign is created here for a creative to attach to.
+   *
+   * These replace a `displayHeadlines`/`displayDescriptions`/`displayBusinessName`/
+   * `displayCallToAction` quartet that was declared on this request and read by nothing — no
+   * producer, no consumer, and a 40-character headline bound that does not match Google's 30 for a
+   * responsive display ad. A half-shaped field that no code honours is worse than an absent one:
+   * the next person to need display copy finds it, fills it in, and it goes nowhere.
+   */
+  demandGenCreative?: GoogleDemandGenCreative;
+  performanceMaxCreative?: GooglePerformanceMaxCreative;
+  displayCreative?: GoogleDisplayCreative;
   geoTargets: string[];
+  /**
+   * How the Google campaign bids, and the numbers that go with the strategy it names.
+   *
+   * All five are optional and all five are OMITTED when unset rather than sent as zero. Absent
+   * `biddingStrategy` means the channel's own default (`GOOGLE_BIDDING_DEFAULT_BY_CHANNEL`), and
+   * campaign-service — not this request — is what applies it. The three numbers and the
+   * conversion list are refused upstream when they do not belong to the named strategy or
+   * channel, so sending a zero to mean "none" would be sending a value, not omitting one.
+   *
+   * `targetRoas` is a RATIO, not a percentage: 4 is 400% return on ad spend. `cpcBid` and
+   * `targetCpa` are in whole units of the ad ACCOUNT's currency.
+   *
+   * `conversionActions` entries are either a bare numeric id or a full
+   * `customers/<id>/conversionActions/<id>` resource name — see
+   * {@link GOOGLE_ADS_CONVERSION_ACTION_PATTERN}.
+   */
+  biddingStrategy?: GoogleBiddingStrategy;
+  targetCpa?: number;
+  targetRoas?: number;
+  cpcBid?: number;
+  conversionActions?: string[];
   project?: string;
   driveFolderUrl?: string;
   /**
@@ -1352,6 +1693,12 @@ export interface CampaignServiceCreateResult {
    * null. Never a raw upstream error — the caller renders this.
    */
   error: string | null;
+  /**
+   * The create MAY have started upstream although no job can be followed: accepted with no job id,
+   * or a failure after the request left that cannot be classified as a rejection. The caller must
+   * treat the outcome as unresolved -- a retry could create a duplicate -- rather than as a refusal.
+   */
+  indeterminate?: boolean;
 }
 
 export interface CampaignCreateResult {
@@ -1378,7 +1725,8 @@ export interface CampaignCreateResponse {
  * Deliberately NOT a `CampaignCreateResult`. That interface carries `type`, `campaignName`,
  * `adGroupCount`, `keywordCount`, `adCount`, `campaignUrl` and `steps`, and campaign-service's
  * `platform-result` carries none of them — it knows the platform, whether the create
- * succeeded, the upstream campaign id, and the failure reason. Widening this into a
+ * succeeded, the upstream campaign id, the failure reason, and for HubSpot a link to the draft
+ * when it could build one. Widening this into a
  * `CampaignCreateResult` with zeros and empty strings would make the implementation tab
  * render "0 ad groups · 0 keywords · 0 ads" and an empty link for a campaign that really has
  * them, which reports a successful create as an empty one. A separate, smaller type keeps the
@@ -1389,6 +1737,8 @@ export interface CampaignPlatformResult {
   ok: boolean;
   /** Upstream platform campaign id. Present when ok, and also when the create succeeded but recording it did not — so the orphaned id is not lost. */
   campaignId?: string;
+  /** HubSpot app link to the created draft. Absent when campaign-service could not build one (unknown portal id). */
+  hubspotUrl?: string;
   error?: string;
 }
 
@@ -2135,6 +2485,12 @@ export interface KeywordActionOutcome {
   success: boolean;
   message: string;
   state: 'done' | 'unconfirmed' | 'failed';
+  /**
+   * The action this outcome answers, recorded when the response lands — not looked up from what was
+   * last asked, which a re-read or a newer click can change while the request is out. The Optimize
+   * tab's removed-keyword set is derived from this field, so it is the one record of a confirmed REMOVE.
+   */
+  action?: KeywordActionType;
 }
 
 // ---------------------------------------------------------------------------
@@ -2310,6 +2666,208 @@ export interface CampaignRow {
    * `aria-describedby` takes a LIST and a row can hold both an error and an unavailable reason.
    */
   describedBy: string | null;
+  /**
+   * Whether the row offers the budget editor. False when the platform has no budget-write support
+   * in campaign-service or the campaign was never created on its platform (no
+   * `platform_campaign_id`), both of which upstream refuses whatever the amount.
+   *
+   * Independent of `action`: the budget route has no deployment flag and a paused campaign's
+   * budget can still be changed, so neither the toggle's status nor its cutover gate applies.
+   */
+  budgetAvailable: boolean;
+  /** Why the budget editor is disabled — set when `budgetAvailable` is false, empty otherwise. */
+  budgetUnavailableReason: string;
+  /**
+   * Why the budget editor cannot submit RIGHT NOW although the row supports it, or `''`.
+   *
+   * Transient, unlike `budgetUnavailableReason`: a pause/resume on the row is in flight (both
+   * writes need the same validator, so the second would 412), or a 412 has already proved the
+   * row's validator stale and only a refresh can replace it.
+   */
+  budgetBlockedReason: string;
+  /**
+   * Whether the row offers the bid editor: a platform campaign-service can write a manual max CPC
+   * bid on (`BID_WRITABLE_CAMPAIGN_PLATFORMS`) and a campaign that exists on it. Whether the
+   * campaign's bid STRATEGY takes a manual bid is only known upstream, which refuses with 409.
+   */
+  bidAvailable: boolean;
+  /** Why the bid editor is disabled — set when `bidAvailable` is false, empty otherwise. */
+  bidUnavailableReason: string;
+  /** Why an available bid editor cannot submit RIGHT NOW (stale validator, another write in flight), or `''`. */
+  bidBlockedReason: string;
+  /** Whether the row shows the negative-keyword control at all: Microsoft Advertising campaigns only. */
+  negativeKeywordsOffered: boolean;
+  /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
+  negativeKeywordsAvailable: boolean;
+  /** Why the negative-keyword control is disabled — set when offered but not available, empty otherwise. */
+  negativeKeywordsUnavailableReason: string;
+}
+
+/** The bid the Optimize tab's bid editor submits, or that a change confirmed. */
+export interface CampaignBidChange {
+  /** Manual max cost-per-click, in the AD ACCOUNT's own currency, exactly as entered. Never converted or rounded. */
+  bid: number;
+}
+
+/**
+ * How a bid change that did not succeed is reported. The budget change's three states, for the
+ * same reasons: `failed` (a refusal, shown verbatim — including upstream's neutral 409 about the
+ * bidding setup), `conflict` (a 412) and `unconfirmed` (may have applied; verify before retrying).
+ */
+export type CampaignBidOutcome = CampaignBudgetOutcome;
+
+/** One match-type choice offered by the negative-keyword editor. */
+export interface CampaignNegativeKeywordMatchTypeOption {
+  value: CampaignNegativeKeywordMatchType;
+  label: string;
+}
+
+/** One line of the negative-keyword editor that cannot be sent, and why. */
+export interface NegativeKeywordInputProblem {
+  /** 1-based line number in the editor, as the operator sees it. */
+  line: number;
+  text: string;
+  reason: string;
+}
+
+/**
+ * The negative-keyword editor's text parsed into what would be sent.
+ *
+ * Blank lines are dropped; every other line is one keyword, kept as typed (upstream trims and
+ * collapses whitespace itself). `keywords[i]` is what `results[i]` of the response will answer.
+ */
+export interface ParsedNegativeKeywordInput {
+  keywords: string[];
+  problems: NegativeKeywordInputProblem[];
+}
+
+/** One sent negative keyword joined, by POSITION, to the outcome the response gave it. */
+export interface CampaignNegativeKeywordOutcomeRow {
+  /** The index in the request, which is also the index in `results`. */
+  index: number;
+  text: string;
+  matchType: CampaignNegativeKeywordMatchType;
+  outcome: CampaignNegativeKeywordOutcome;
+  label: string;
+  /** What to tell the operator beyond the label: the error code, or the verify-first advice. */
+  detail: string;
+}
+
+/**
+ * A negative-keywords request that produced no per-keyword results at all.
+ *
+ * `unconfirmed` when the request may have reached the platform (the BFF could not read the
+ * confirmation, or nobody answered): every keyword sent may or may not have been added.
+ */
+export interface CampaignNegativeKeywordsBatchOutcome {
+  state: 'failed' | 'unconfirmed';
+  message: string;
+}
+
+/**
+ * One campaign's latest negative-keyword request, as the Optimize tab keeps it ACROSS the editor's
+ * lifetime. A tab switch or a campaign-list re-read destroys the editor while the request runs on;
+ * this is what the editor (and the row) read back when they are drawn again.
+ */
+export interface CampaignNegativeKeywordsRequestState {
+  pending: boolean;
+  /** Per-keyword outcomes, in the order the keywords were SENT: never filtered or re-sorted. */
+  outcomeRows: CampaignNegativeKeywordOutcomeRow[];
+  /** The request's outcome when it produced no per-keyword results at all. */
+  batchOutcome: CampaignNegativeKeywordsBatchOutcome | null;
+  /** The keywords the batch outcome is about, so an unconfirmed batch can name them. */
+  batchKeywords: string[];
+  /** Every keyword sent, in order, so a remounted editor can restore the ones not confirmed added. */
+  sent: string[];
+  /** The match type the request was sent with, restored with them. */
+  matchType: CampaignNegativeKeywordMatchType;
+}
+
+/** One negative-keyword request, as the editor hands it to `CampaignNegativeKeywordsService`. */
+export interface CampaignNegativeKeywordsSubmission {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  campaignName: string;
+  /** Parsed once by the editor and sent as-is: the outcomes are zipped onto this exact list. */
+  keywords: string[];
+  matchType: CampaignNegativeKeywordMatchType;
+}
+
+/** One reporting-window choice of the Microsoft keyword table. */
+export interface MicrosoftKeywordsWindowOption {
+  value: MicrosoftKeywordsWindow;
+  label: string;
+}
+
+/** A pause/remove asked for on one Microsoft keyword row. */
+export interface MicrosoftKeywordActionRequest {
+  keyword: MicrosoftKeywordMetrics;
+  action: KeywordActionType;
+}
+
+/** A Microsoft keyword row as the table renders it, with its action state already looked up. */
+export interface MicrosoftKeywordDisplayRow {
+  /** The action-state key: platform-qualified, so a Microsoft id can never collide with a Google one. */
+  key: string;
+  keyword: MicrosoftKeywordMetrics;
+  inProgress: boolean;
+  result: KeywordActionOutcome | null;
+  /**
+   * True once a REMOVE of this keyword was confirmed on this page: it no longer exists, so no action
+   * is offered on it — even when a finished report read afterwards still lists it.
+   */
+  removed: boolean;
+  /**
+   * False when this row's `0` conversions may not be a measurement: the report left some rows'
+   * conversions blank (`conversionsComplete: false`) and Microsoft reports a blank as `0`.
+   */
+  conversionsMeasured: boolean;
+}
+
+/** The amount and pacing the Optimize tab's budget editor submits, or that a change confirmed. */
+export interface CampaignBudgetChange {
+  /** In the AD ACCOUNT's own currency, exactly as entered. Never converted or rounded. */
+  budget: number;
+  budgetType: CampaignBudgetType;
+}
+
+/**
+ * How a budget change that did not succeed is reported.
+ *
+ * Three states, because the operator has to act differently on each:
+ * - `failed`: campaign-service (or the BFF) answered with a refusal. Its message is shown verbatim.
+ * - `conflict`: a 412. The row's validator is stale, so the list must be re-read before retrying.
+ * - `unconfirmed`: nobody can say whether the platform applied the change. The operator must check
+ *   the ad platform before retrying, and nothing retries on their behalf.
+ */
+export interface CampaignBudgetOutcome {
+  state: 'failed' | 'conflict' | 'unconfirmed';
+  message: string;
+}
+
+/**
+ * The per-lever wording `classifyCampaignWriteFailure` reports an Optimize-tab write failure with.
+ * The classification itself is shared, so the budget, bid and negative-keyword levers cannot drift.
+ */
+export interface CampaignWriteFailureMessages {
+  /** What a 412 says. Omitted for a write sent without a validator, where a 412 is a plain refusal. */
+  conflict?: string;
+  /** What an outcome nobody could confirm says when the response carried no usable message. */
+  unconfirmed: string;
+  /** What a refusal says when the response carried no readable message. */
+  failureFallback: string;
+  /**
+   * When set, a BFF-relayed 503 is `failed` only when its message contains this wording; every other
+   * 503 is unconfirmed (the bid lever, whose unconfirmed and definite 503s share a status).
+   */
+  definiteFailureMarker?: string;
+}
+
+/** One pacing choice offered by the budget editor. */
+export interface CampaignBudgetTypeOption {
+  value: CampaignBudgetType;
+  label: string;
 }
 
 /**
@@ -2387,6 +2945,35 @@ export interface CampaignListResult {
    * the capability is off.
    */
   demandGenEnabled: boolean;
+
+  /**
+   * Whether this deployment can create a Performance Max, Video or Display Google campaign.
+   *
+   * Read the same way as `demandGenEnabled` and modelled the same way on the client (`boolean |
+   * null`, `null` for unanswered), but derived by the opposite rule: these three channels exist
+   * only on the campaign-service create path, so this is `false` whenever the cutover is dark —
+   * where `demandGenEnabled` is `true`, because the legacy creator serves Demand Gen.
+   */
+  googleChannelsEnabled: boolean;
+
+  /**
+   * Whether a Google creative object supplied with the create will actually reach Google.
+   *
+   * The creative objects ride on `googleAdsConfig`, which only the campaign-service create path
+   * builds. The LEGACY creator composes a Demand Gen ad from `headlines`/`descriptions` alone and
+   * reads no creative key at all, so with the cutover dark everything an operator typed into the
+   * creative section — images, logos, business name, call to action — is discarded in silence and
+   * the create still reports success.
+   *
+   * This is therefore `cutoverOwnsCreate()` and nothing else. It is NOT a third way of saying
+   * `googleChannelsEnabled`: that one additionally requires the Google-channels flag, and the
+   * window where the cutover owns the create with that flag off is one where Demand Gen creative
+   * works perfectly well. Deriving this from that would withhold a working control.
+   *
+   * Read the same way as the two above and modelled the same way on the client (`boolean | null`,
+   * `null` for unanswered).
+   */
+  googleCreativeEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -2541,8 +3128,13 @@ export interface CampaignBudgetUpdateParams {
 }
 
 export interface CampaignBudgetUpdateResult {
-  /** The ROW's platform as campaign-service reports it. The request does not name one. */
-  platform: string;
+  /**
+   * The ROW's platform as campaign-service reports it, in the hyphenated paid-platform vocabulary
+   * (`google-ads`, …). The request does not name one, and upstream refuses unsupported platforms.
+   * `null` when the row carried a value outside `CampaignPlatform`: checked at runtime by the BFF,
+   * never cast, so an unknown value is not passed off as a known platform.
+   */
+  platform: CampaignPlatform | null;
   campaignId: string;
   /**
    * The amount requested, which the platform accepted; the platform may hold it rounded to its
@@ -2606,8 +3198,13 @@ export interface CampaignBidUpdateParams {
 }
 
 export interface CampaignBidUpdateResult {
-  /** The ROW's platform as campaign-service reports it. The request does not name one. */
-  platform: string;
+  /**
+   * The ROW's platform as campaign-service reports it, in the hyphenated paid-platform vocabulary
+   * (`google-ads`, …). The request does not name one, and upstream refuses unsupported platforms.
+   * `null` when the row carried a value outside `CampaignPlatform`: checked at runtime by the BFF,
+   * never cast, so an unknown value is not passed off as a known platform.
+   */
+  platform: CampaignPlatform | null;
   campaignId: string;
   /**
    * The bid requested, which the platform accepted. An echo of the request, like
@@ -2853,6 +3450,18 @@ export interface BriefMetricsRow {
 export type BriefMetricsActionPriority = 'HIGH' | 'MED';
 
 /**
+ * The stable rule tokens campaign-service's brief rule engine emits
+ * (`internal/service/rules/actions.go`, `Evaluate`).
+ *
+ * Closed here because the Optimize tab maps each one to the control that resolves it
+ * (`CAMPAIGN_ACTION_RULE_LEVERS`), and a `Record` over this union is what makes that mapping
+ * exhaustive at compile time. The WIRE is not closed: a token added upstream later still arrives,
+ * so every consumer that reads `rule` off a response must treat an unlisted value as unknown
+ * rather than trusting this union (see `campaignActionRuleLever`).
+ */
+export type BriefMetricsActionRule = 'zero_delivery' | 'underspending' | 'budget_constrained' | 'low_ctr' | 'no_conversions';
+
+/**
  * One thing an operator should look at, derived by campaign-service from the readable rows.
  *
  * `rule` is a STABLE TOKEN — group, filter or link on it. `issue` and `action` are for humans and
@@ -2863,13 +3472,50 @@ export type BriefMetricsActionPriority = 'HIGH' | 'MED';
  * impression floors and how paused campaigns are treated. This is the single-source version.
  */
 export interface BriefMetricsActionItem {
-  rule: 'zero_delivery' | 'underspending' | 'budget_constrained' | 'low_ctr' | 'no_conversions';
+  rule: BriefMetricsActionRule;
   priority: BriefMetricsActionPriority;
   campaign_id: string;
   /** `string` for the same reason as `BriefMetricsRow.platform` — `hubspot` is in scope. */
   platform: string;
   issue: string;
   action: string;
+}
+
+/**
+ * The Optimize tab control that resolves a monitor finding.
+ *
+ * - `budget`: the row's budget editor, opened and focused, never submitted on the operator's behalf.
+ * - `pause_resume`: the row's pause/resume toggle, through the same method and guards as the row.
+ * - `keywords`: the keyword actions (pause/remove per keyword) of the campaign's platform, Google Ads or Microsoft Advertising.
+ * - `none`: nothing in LFX One resolves it; the finding is shown with its advice only.
+ */
+export type CampaignOptimizeLever = 'budget' | 'pause_resume' | 'keywords' | 'none';
+
+/** A lever that maps to an actual control, i.e. every `CampaignOptimizeLever` except `none`. */
+export type CampaignOptimizeControlLever = Exclude<CampaignOptimizeLever, 'none'>;
+
+/**
+ * One monitor finding as the Optimize tab renders it: the rule engine's item joined to the brief
+ * campaign row it is about, with the one lever that resolves it already decided.
+ */
+export interface CampaignOptimizeFinding {
+  /** Unique within a read: a rule fires at most once per campaign. */
+  key: string;
+  item: BriefMetricsActionItem;
+  /** The row the item is about, or `null` when the campaign is not in the loaded list. */
+  row: CampaignRow | null;
+  /** The row's campaign name, or a neutral placeholder when the row is not in the list. */
+  campaignName: string;
+  /** The platform's display label, or the raw token when this UI does not know it. */
+  platformLabel: string;
+  /** `none` whenever the rule has no lever, the platform does not support it, or there is no row. */
+  lever: CampaignOptimizeLever;
+  /** Visible text of the lever's button, `''` when `lever` is `none`. */
+  leverLabel: string;
+  /** Accessible name of the lever's button: the visible text plus the campaign it acts on. */
+  leverAriaLabel: string;
+  /** Why the lever cannot be used right now (the row control's own reason), or `''`. */
+  leverBlockedReason: string;
 }
 
 /**
@@ -3277,12 +3923,29 @@ export interface AudienceComposeMasterPartial {
  * Nothing is created in HubSpot. Upstream reads every id back from the project's portal before
  * recording it, so a mistyped or foreign id is a 404 rather than a send that fails at dispatch.
  */
-export interface AudienceAttachExistingRequest {
+export type AudienceAttachExistingRequest = AudienceAttachExistingRequestBase &
+  (
+    | {
+        /** A single include list the send goes to. */
+        masterListId: string;
+        includeListIds?: never;
+      }
+    | {
+        /** Several existing include lists the send goes to directly — no master list is composed. */
+        includeListIds: string[];
+        masterListId?: never;
+      }
+  );
+
+/**
+ * The fields every attach carries. The BFF refuses a request with both include forms or neither,
+ * and one with no suppression list, so the type states the same contract: exactly one of
+ * `masterListId` / `includeListIds`, and `suppressionListIds` always present.
+ */
+export interface AudienceAttachExistingRequestBase {
   briefId: string;
-  /** The single include list the send goes to. */
-  masterListId: string;
-  /** Existing lists the send suppresses. */
-  suppressionListIds?: string[];
+  /** Existing lists the send suppresses. At least one: every send keeps a suppression list. */
+  suppressionListIds: string[];
   /** Human-readable note recorded on the audience row; upstream derives one when omitted. */
   inclusionSummary?: string;
 }
@@ -3292,6 +3955,24 @@ export interface AudienceAttachExistingResult {
   master: AudienceComposedList;
   suppressionListIds: string[];
   audience: CampaignAudience;
+}
+
+/**
+ * Where the email's saved plan (brief) stands, as far as attaching lists to it is concerned.
+ *
+ * The brief is saved automatically when the Audience tab opens, so an empty brief id is almost
+ * never "no plan yet": it is a save still running, a save that failed, or a plan that is saved but
+ * not approved. Each needs different copy, and only `failed` can be retried from the Audience tab.
+ * `unopened` is a save refused because this send already has a saved brief the page never loaded;
+ * retrying cannot help, only restoring that brief can. `none` is the exploratory path -- no email
+ * plan to attach to at all.
+ */
+export type AudienceBriefState = 'none' | 'resolving' | 'ready' | 'unapproved' | 'unopened' | 'failed';
+
+/** A list identified by id and display name, as the Audience tab's include/exclude actions carry it. */
+export interface AudienceListRef {
+  listId: string;
+  name: string;
 }
 
 // --- Audience QA -----------------------------------------------------------

@@ -18,6 +18,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   gwSupabaseUrl: '',
   gwSupabaseAnonKey: '',
   gwLfidStartUrl: '',
+  gwEmbedUrl: '',
 };
 
 /**

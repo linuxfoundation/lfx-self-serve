@@ -217,9 +217,14 @@ export const ORG_CLA_NOT_STARTED_COPY = {
 
 /**
  * Fallback filename on the BFF `Content-Disposition` for the watermarked review copy (#2317).
- * The unsigned overview saves `${claGroupName}-ccla-review.pdf` at the call site instead.
+ * The browser saves under `orgClaReviewCopyFilename`, which falls back to this when there is no group name.
  */
 export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agreement.pdf';
+
+export const ORG_CLA_REVIEW_COPY_FAILURE = {
+  summary: 'Download failed',
+  detail: 'Could not download a review copy of the CCLA. Please try again.',
+} as const;
 
 /**
  * The leftover EasyCLA address, `/org/easycla` (#1983). Still routed for three consumers:
@@ -874,8 +879,7 @@ export const ORG_CLA_INVALIDATE_RECEIPT_COPY = {
   removalFailedDetail: "The acknowledgment was invalidated, but its approval-list entries couldn't be removed. Remove them from the Approval List tab.",
 } as const;
 
-/** Why the CLA service refused an invalidate: it only invalidates an approved acknowledgment. */
-export const ORG_CLA_INVALIDATE_NOT_APPROVED_MESSAGE = "This acknowledgment is no longer approved, so it can't be invalidated yet.";
+export const ORG_CLA_INVALIDATE_CONFLICT_MESSAGE = 'This acknowledgment was already invalidated, or changed since the list loaded.';
 
 /** Label and accessible name for the per-row Invalidate control. */
 export const ORG_CLA_INVALIDATE_ACTION_COPY = {

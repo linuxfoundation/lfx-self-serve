@@ -9,6 +9,7 @@ import { blockDuringImpersonation } from '../middleware/impersonation-readonly.m
 import adminRouter from './mentorship-admin.route';
 import menteeRouter from './mentorship-mentee.route';
 import mentorRouter from './mentorship-mentor.route';
+import taskRouter from './mentorship-task.route';
 
 const router = Router();
 const mentorshipController = new MentorshipController();
@@ -17,6 +18,7 @@ router.get('/programs/name-available', (req, res, next) => mentorshipController.
 router.use('/admin', adminRouter);
 router.use('/mentor', mentorRouter);
 router.use('/mentee', menteeRouter);
+router.use('/tasks', taskRouter);
 // Approve/reject email links. Proxied to the mentorship service with the caller's token.
 router.get('/program-review/:programId', (req, res, next) => mentorshipController.getProgramReview(req, res, next));
 // The decision is refused while impersonating: upstream would attribute it to the impersonated
@@ -26,7 +28,6 @@ router.post('/program-review/:programId/decision', blockDuringImpersonation, (re
 // write to the caller's own profiles, so it is refused while impersonating.
 router.patch('/me/lfx-profile', blockDuringImpersonation, (req, res, next) => mentorshipController.syncLfxProfile(req, res, next));
 router.get('/lf-projects', (req, res, next) => mentorshipController.getLfProjects(req, res, next));
-router.get('/invitable-users', (req, res, next) => mentorshipController.getInvitableUsers(req, res, next));
 router.get('/cii/:projectId', (req, res, next) => mentorshipController.getCiiBadge(req, res, next));
 
 export default router;

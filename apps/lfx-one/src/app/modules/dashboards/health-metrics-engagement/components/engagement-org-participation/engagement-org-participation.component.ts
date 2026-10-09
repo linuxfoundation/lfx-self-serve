@@ -97,7 +97,10 @@ export class EngagementOrgParticipationComponent {
 
   /** Narrowing the table must land the reader on rows, so any change to the cut restarts paging. */
   protected readonly first = linkedSignal<string, number>({
-    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}`),
+    source: computed(
+      () =>
+        `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedProjectSlug() ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}`
+    ),
     computation: () => 0,
   });
 
@@ -167,7 +170,7 @@ export class EngagementOrgParticipationComponent {
   }
 
   private initQuery(): HealthMetricsEngagementOrgQuery {
-    return { foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '' };
+    return { foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '', projectSlug: this.chrome.selectedProjectSlug() };
   }
 
   private initResponse(): Signal<HealthMetricsEngagementOrgParticipation> {
@@ -182,7 +185,7 @@ export class EngagementOrgParticipationComponent {
 
     return toSignal(
       toObservable(this.query).pipe(
-        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug),
+        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug && a.projectSlug === b.projectSlug),
         tap((query) => {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -32,6 +32,7 @@ import {
   MENTORSHIP_ADMIN_WITHDRAW_CONFIRM_MESSAGE,
   MENTORSHIP_ALL_OPEN_TERMS_OPTION_LABEL,
   MENTORSHIP_ALL_STATUSES_OPTION_LABEL,
+  MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
   MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL,
   MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_STATUS_LABELS,
@@ -41,20 +42,21 @@ import {
   MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
   MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
-  MENTORSHIP_MENTEE_STATUS_LABELS,
-  MENTORSHIP_MENTEE_STATUSES,
+  MENTORSHIP_NOTE_DIALOG_HEADER,
 } from '@lfx-one/shared/constants';
 import {
   FilterOption,
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminTasksState,
   MentorshipAdminTermOption,
+  MentorshipApplicantDisplayStatus,
+  MentorshipApplicantTask,
   MentorshipCurrentMenteeAction,
   MentorshipAttendanceType,
-  MentorshipMenteeStatus,
-  MentorshipNoteRequest,
+  MentorshipTaskCreateRequest,
   MentorshipProgramApplicant,
   MentorshipRowAction,
+  MentorshipTaskFormValue,
 } from '@lfx-one/shared/interfaces';
 import {
   buildMentorshipGraduateTaskWarning,
@@ -67,6 +69,7 @@ import {
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
   mentorshipRowActions,
+  mentorshipTaskSubmittedCount,
 } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
@@ -76,9 +79,12 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, distinctUntilChanged, map, Observable, of, switchMap, take, tap } from 'rxjs';
 
+import { AdminNoteSaveService } from '../../../../services/admin-note-save.service';
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
+import { MentorshipTaskCreateService } from '../../../../services/mentorship-task-create.service';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 import { ApplicantTasksPanelComponent } from '../../../../components/applicant-tasks-panel/applicant-tasks-panel.component';
+import { MenteeNoteDialogComponent } from '../../../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { AcceptApplicationDialogComponent } from '../accept-application-dialog/accept-application-dialog.component';
 import { DeclineByTermDialogComponent } from '../decline-by-term-dialog/decline-by-term-dialog.component';
 import { PersonCellComponent } from '../../../../components/person-cell/person-cell.component';
@@ -92,8 +98,14 @@ import { RowActionsComponent } from '../../../../components/row-actions/row-acti
  * (with an attendance type), Decline, Withdraw, Graduate and Decline by Term write through the BFF; each
  * reloads the page and tells the parent to refresh the tab counts, and a 409 or 422 answers with its own
  * message. Graduate always confirms, warning from the row's task counts without reading any task. Create task
- * opens the task form first and the status export still stubs to coming soon. The reviewer note is the one
- * other action that takes effect; the parent owns its state, so it outlives a tab switch.
+ * opens the task form and then creates through the BFF like the other writes, reloading even on a failure, which may
+ * still have created the task; an expanded row stays expanded across the reload and re-reads its tasks once, a
+ * collapsed row reads none. The form stays shut while another write is in flight, or while a create is still running
+ * for the mentee, even one a tab switch outlived. Editing a task, or setting its status, saves through
+ * the BFF and writes the saved task into the cached list, so no task read follows. The status export still stubs to coming
+ * soon. The reviewer note saves through the BFF too and is written into its row, so the table shows it without a
+ * read; a later read brings the saved note back, and a read that was already in flight when the save landed keeps
+ * the saved note over its older answer.
  */
 @Component({
   selector: 'lfx-mentorship-current-mentees-tab',
@@ -121,14 +133,13 @@ export class CurrentMenteesTabComponent {
   private readonly dialogService = inject(DialogService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
+  private readonly noteSave = inject(AdminNoteSaveService);
+  private readonly taskCreate = inject(MentorshipTaskCreateService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly programId = input.required<string>();
   /** The program's terms; only the open ones feed the term filter. */
   public readonly terms = input<MentorshipAdminTermOption[]>([]);
-  /** Notes edited this session, keyed by person id; overrides the note a row arrived with. */
-  public readonly noteDrafts = input<Record<string, string>>({});
-  public readonly noteRequested = output<MentorshipNoteRequest>();
   /**
    * Called when a decision changed the program's application counts, so the parent reads the tab counts again. A
    * callback rather than an output: Angular drops an output emitted after destroy, and a tab switch destroys this tab
@@ -143,15 +154,15 @@ export class CurrentMenteesTabComponent {
   protected readonly menteesLoadErrorMessage = MENTORSHIP_ADMIN_MENTEES_LOAD_ERROR_MESSAGE;
   protected readonly tasksLoadErrorMessage = MENTORSHIP_ADMIN_TASKS_LOAD_ERROR_MESSAGE;
 
-  /** Every status an application can hold, sent as the wire `status`. */
-  protected readonly statusOptions: FilterOption<MentorshipMenteeStatus | null>[] = [
+  /** The statuses the table shows, so pending reads as Applied or Tasks Completed; the BFF maps each to the wire `status`. */
+  protected readonly statusOptions: FilterOption<MentorshipApplicantDisplayStatus | null>[] = [
     { label: MENTORSHIP_ALL_STATUSES_OPTION_LABEL, value: null },
-    ...MENTORSHIP_MENTEE_STATUSES.map((status) => ({ label: MENTORSHIP_MENTEE_STATUS_LABELS[status], value: status })),
+    ...MENTORSHIP_APPLICANT_DISPLAY_STATUSES.map((status) => ({ label: MENTORSHIP_APPLICANT_STATUS_LABELS[status], value: status })),
   ];
 
   protected readonly form = new FormGroup({
     search: new FormControl('', { nonNullable: true }),
-    status: new FormControl<MentorshipMenteeStatus | null>(null),
+    status: new FormControl<MentorshipApplicantDisplayStatus | null>(null),
     term: new FormControl<string | null>(null),
   });
 
@@ -168,13 +179,15 @@ export class CurrentMenteesTabComponent {
   protected readonly tasksByApplication = signal<ReadonlyMap<string, MentorshipAdminTasksState>>(new Map());
 
   private readonly search = signal('');
-  private readonly status = signal<MentorshipMenteeStatus | null>(null);
+  private readonly status = signal<MentorshipApplicantDisplayStatus | null>(null);
   private readonly termId = signal<string | null>(null);
   private readonly reloadCount = signal(0);
   /** True while a decision write is in flight; Decline by Term is disabled and a second decision is refused meanwhile. */
   protected readonly decisionInFlight = signal(false);
   /** Set when the tab is destroyed, so a decision that lands afterwards does not reload the gone table. */
   private destroyed = false;
+  /** The one row a settled Create task left expanded; its tasks are read again when the reloaded page lands. */
+  private rereadTasksForId: string | null = null;
 
   protected readonly termOptions = this.initTermOptions();
   protected readonly rows = this.initRows();
@@ -183,6 +196,7 @@ export class CurrentMenteesTabComponent {
     this.destroyRef.onDestroy(() => (this.destroyed = true));
     this.initFilters();
     this.initPageReads();
+    this.initSavedNotes();
   }
 
   protected onLazyLoad(event: { first?: number | null }): void {
@@ -193,8 +207,29 @@ export class CurrentMenteesTabComponent {
     this.reloadCount.update((count) => count + 1);
   }
 
+  /** Opens the note dialog on the row's note; an unchanged note, or a dismissed dialog, saves nothing. */
   protected onOpenNote(id: string, name: string, note?: string): void {
-    this.noteRequested.emit({ personId: id, personName: name, note });
+    if (this.noteSave.isSaving(id)) return;
+    const current = (note ?? '').trim();
+    // `open()` returns null when a dialog of the same component is still registered,
+    // which a quick second click on another row's note can do.
+    const dialogRef: DynamicDialogRef | null = this.dialogService.open(MenteeNoteDialogComponent, {
+      header: MENTORSHIP_NOTE_DIALOG_HEADER,
+      width: '34rem',
+      style: { maxWidth: '90vw' },
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { personName: name, note: current },
+    });
+    if (!dialogRef) return;
+
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((value: string | undefined) => {
+      // A dismissed dialog closes with `undefined`; an empty string is an explicit clear.
+      if (value === undefined || value.trim() === current) return;
+      // Not tied to the tab: the save, and its toast, finish even if the admin leaves first.
+      this.noteSave.save(id, value.trim()).subscribe();
+    });
   }
 
   protected onAction(summary: string): void {
@@ -275,6 +310,42 @@ export class CurrentMenteesTabComponent {
 
   protected onRetryTasks(menteeId: string): void {
     this.loadTasks(menteeId);
+  }
+
+  /**
+   * Writes a saved task into its row's cached list, so the row shows it without reading the list again (R4a). Passed to
+   * the panel as a callback, an arrow so it keeps this tab: the panel may be destroyed by a collapse before its save
+   * lands. A row whose tasks were cleared by a reload, or are being read again, has no loaded list to patch, and the
+   * read that fills it brings the saved task.
+   */
+  protected readonly patchSavedTask = (applicationId: string, task: MentorshipApplicantTask): void => {
+    const state = this.tasksByApplication().get(applicationId);
+    if (state?.status !== 'loaded') return;
+    const previous = state.tasks.find((current) => current.id === task.id);
+    this.setTasksState(applicationId, { status: 'loaded', tasks: state.tasks.map((current) => (current.id === task.id ? task : current)) });
+    if (previous) this.shiftSubmittedCount(applicationId, mentorshipTaskSubmittedCount(task.status) - mentorshipTaskSubmittedCount(previous.status));
+    this.reloadIfRowLeftStatusFilter(applicationId);
+  };
+
+  /**
+   * Applied and Tasks Completed filter on task progress, so a status change can move a row out of the results. Reads
+   * the page again when it does, so the row leaves and the total follows; the row stays expanded if upstream still lists it.
+   */
+  private reloadIfRowLeftStatusFilter(applicationId: string): void {
+    const status = this.status();
+    if (this.destroyed || (status !== 'applied' && status !== 'tasks-completed')) return;
+    const row = this.applications().find((application) => application.id === applicationId);
+    if (!row || mentorshipApplicantDisplayStatus(row) === status) return;
+    if (this.expandedTaskMenteeIds()[applicationId]) this.rereadTasksForId = applicationId;
+    this.reloadCount.update((count) => count + 1);
+  }
+
+  /** Keeps the row's submitted count, which Graduate's warning reads, in step with a status change, without reading the page again. */
+  private shiftSubmittedCount(applicationId: string, delta: number): void {
+    if (delta === 0) return;
+    this.applications.update((applications) =>
+      applications.map((row) => (row.id === applicationId ? { ...row, tasksSubmitted: Math.max((row.tasksSubmitted ?? 0) + delta, 0) } : row))
+    );
   }
 
   private loadTasks(applicationId: string): void {
@@ -370,7 +441,7 @@ export class CurrentMenteesTabComponent {
    */
   private runWrite<T>(write: Observable<T>, onDone: (result: T) => void, termClosedMessage?: string): void {
     if (this.decisionInFlight()) {
-      this.messageService.add({ severity: 'info', summary: 'Please wait', detail: MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE, life: 3000 });
+      this.showPleaseWait();
       return;
     }
     this.decisionInFlight.set(true);
@@ -418,13 +489,57 @@ export class CurrentMenteesTabComponent {
     this.messageService.add({ severity: 'error', summary: 'Error', detail, life: 5000 });
   }
 
+  private showPleaseWait(): void {
+    this.messageService.add({ severity: 'info', summary: 'Please wait', detail: MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE, life: 3000 });
+  }
+
+  /**
+   * Opens the task form, unless another write of this tab is in flight or a task is still being created for the mentee
+   * by a tab a tab switch destroyed: the form would only be dropped on submit.
+   */
   private onCreateTask(mentee: MentorshipProgramApplicant): void {
+    if (this.decisionInFlight() || this.taskCreate.isCreating(mentee.id)) {
+      this.showPleaseWait();
+      return;
+    }
     this.taskDialog
       .openCreate({ id: mentee.id, name: mentee.name, email: mentee.email, avatarUrl: mentee.avatarUrl })
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((value) => {
         if (!value) return;
-        this.comingSoon.notify(`Create task "${value.name}" for ${mentee.name}`);
+        this.createTask(mentee, value);
+      });
+  }
+
+  /**
+   * Creates the task, which toasts its own outcome. Like every write it is never cancelled by the tab going away. Once
+   * it settles the parent refreshes the counts and the page reloads, whatever the outcome: a failure may still have
+   * created the task, and its toast sends the admin to the mentee's row. A row whose tasks were expanded stays
+   * expanded and re-reads its tasks once after that reload (R4a), while a collapsed row's tasks are not read. While
+   * another write of this tab, or a create for the mentee that outlived an earlier tab, is in flight, nothing is sent.
+   */
+  private createTask(mentee: MentorshipProgramApplicant, value: MentorshipTaskFormValue): void {
+    if (this.decisionInFlight() || this.taskCreate.isCreating(mentee.id)) {
+      this.showPleaseWait();
+      return;
+    }
+    this.decisionInFlight.set(true);
+    const request: MentorshipTaskCreateRequest = {
+      applicationIds: [mentee.id],
+      name: value.name,
+      description: value.description,
+      dueDate: value.dueOn,
+      requiresFileSubmission: value.requiresFileSubmission,
+    };
+    this.taskCreate
+      .create(request)
+      .pipe(take(1))
+      .subscribe(() => {
+        this.decisionInFlight.set(false);
+        this.countsRefresh()();
+        if (this.destroyed) return;
+        if (this.expandedTaskMenteeIds()[mentee.id]) this.rereadTasksForId = mentee.id;
+        this.reloadCount.update((count) => count + 1);
       });
   }
 
@@ -461,8 +576,9 @@ export class CurrentMenteesTabComponent {
 
   /**
    * Reads the page whenever the program, a filter, the offset or the retry count changes; a read still in flight
-   * is dropped. Each read clears the tasks cache and collapses every row. A failed read keeps nothing on screen
-   * but the error, so Retry reads the same page again.
+   * is dropped. Each read clears the tasks cache and collapses every row, except the one row a successful Create
+   * task left expanded: it stays expanded and re-reads its tasks once the page lands. A failed read keeps nothing
+   * on screen but the error, so Retry reads the same page again.
    */
   private initPageReads(): void {
     const query = computed(() => ({
@@ -480,10 +596,12 @@ export class CurrentMenteesTabComponent {
           this.loading.set(true);
           this.loadFailed.set(false);
           this.tasksByApplication.set(new Map());
-          this.expandedTaskMenteeIds.set({});
+          this.expandedTaskMenteeIds.set(this.rereadTasksForId ? { [this.rereadTasksForId]: true } : {});
         }),
-        switchMap(({ programId, search, status, termId, offset }) =>
-          this.mentorshipAdminService
+        switchMap(({ programId, search, status, termId, offset }) => {
+          // A note saved while this read is in flight may be missing from its answer, so the read keeps it.
+          const notesVersion = this.noteSave.currentVersion();
+          return this.mentorshipAdminService
             .getProgramMentees(programId, {
               type: 'current',
               search: search || undefined,
@@ -493,14 +611,16 @@ export class CurrentMenteesTabComponent {
               limit: MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
             })
             .pipe(
-              map((page) => ({ page })),
+              map((page) => ({ page: { ...page, data: this.withNotesSavedSince(page.data, notesVersion) } })),
               catchError(() => of({ page: null }))
-            )
-        ),
+            );
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(({ page }) => {
         this.loading.set(false);
+        const rereadId = this.rereadTasksForId;
+        this.rereadTasksForId = null;
         if (!page) {
           this.applications.set([]);
           this.total.set(0);
@@ -509,7 +629,31 @@ export class CurrentMenteesTabComponent {
         }
         this.applications.set(page.data);
         this.total.set(page.total);
+        // A row re-expanded while this read was in flight has already started its own tasks read.
+        if (!rereadId || this.tasksByApplication().has(rereadId)) return;
+        if (this.expandedTaskMenteeIds()[rereadId] && page.data.some((row) => row.id === rereadId)) this.loadTasks(rereadId);
       });
+  }
+
+  /**
+   * Writes each saved note into its row, so the table shows it without a read. The saves come from the service, so a
+   * save started before a tab switch still lands in this tab; a failed save leaves the row as it was. A page read in
+   * flight when a save lands keeps that note too (see `withNotesSavedSince`).
+   */
+  private initSavedNotes(): void {
+    this.noteSave.saved$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ applicationId, note }) => {
+      this.applications.update((applications) => applications.map((row) => (row.id === applicationId ? { ...row, note } : row)));
+    });
+  }
+
+  /** Lays the notes saved since a read started over its rows, so an answer older than a save cannot undo it. */
+  private withNotesSavedSince(applications: MentorshipProgramApplicant[], notesVersion: number): MentorshipProgramApplicant[] {
+    const saved = this.noteSave.notesSavedSince(notesVersion);
+    if (!saved.size) return applications;
+    return applications.map((row) => {
+      const note = saved.get(row.id);
+      return note === undefined ? row : { ...row, note };
+    });
   }
 
   private toRow(person: MentorshipProgramApplicant) {
@@ -530,7 +674,7 @@ export class CurrentMenteesTabComponent {
           ...application,
           statusLabel: MENTORSHIP_APPLICANT_STATUS_LABELS[mentorshipApplicantDisplayStatus(application)],
         })),
-      ...mentorshipNoteDisplay(this.noteDrafts(), person, MENTORSHIP_ADD_NOTE_LABEL),
+      ...mentorshipNoteDisplay({}, person, MENTORSHIP_ADD_NOTE_LABEL),
       actions: mentorshipRowActions(
         MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[person.status],
         MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,

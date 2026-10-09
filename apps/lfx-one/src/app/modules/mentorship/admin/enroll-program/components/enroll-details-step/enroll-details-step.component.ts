@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, output, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, model, output, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -9,21 +9,21 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
-  formFromImportedMentorshipProgram,
-  isMentorshipProgramImportable,
+  createEmptyMentorshipEnrollForm,
   MENTORSHIP_CII_APPLY_URL,
   MENTORSHIP_CII_CHECKING,
   MENTORSHIP_CII_INTRO,
   MENTORSHIP_CII_INVALID_ID,
   MENTORSHIP_CII_UNAVAILABLE,
   MENTORSHIP_CODE_OF_CONDUCT_TEMPLATE_URL,
+  MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL,
   MENTORSHIP_ENROLL_COC_INTRO,
   MENTORSHIP_ENROLL_DETAILS_INTRO,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_ENROLL_IMPORT_FAILED,
+  MENTORSHIP_ENROLL_IMPORT_LIST_FAILED,
   MENTORSHIP_ENROLL_LOGO_ACCEPT,
   MENTORSHIP_ENROLL_LOGO_HELPER,
-  MENTORSHIP_ENROLL_LOGO_MAX_BYTES,
-  MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
   MENTORSHIP_ENROLL_NAME_CHECKING,
   MENTORSHIP_ENROLL_NAME_MAX,
   MENTORSHIP_ENROLL_NAME_MIN,
@@ -31,30 +31,55 @@ import {
   MENTORSHIP_ENROLL_NAME_UNAVAILABLE,
   MENTORSHIP_ENROLL_REPO_HELPER,
   MENTORSHIP_ENROLL_WEBSITE_HELPER,
+  MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE,
+  MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE,
+  MENTORSHIP_ENROLL_PROJECTS_UNAVAILABLE,
+  MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
+  MENTORSHIP_LF_PROJECT_REMOTE_FILTER_FIELD,
+  MENTORSHIP_MENTOR_PICKER_LIST_PADDING,
+  MENTORSHIP_MENTOR_PICKER_MAX_HEIGHT,
+  MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS,
   MENTORSHIP_PROGRAMS_MAX_LIMIT,
   MENTORSHIP_SKILL_OPTIONS,
-  MOCK_MENTORSHIP_LF_PROJECTS,
   mentorshipCiiBadgeImageUrl,
   mentorshipCiiProjectUrl,
 } from '@lfx-one/shared/constants';
-import { MentorshipCiiLookupStatus, MentorshipEnrollFieldErrors, MentorshipLfProject, MentorshipNameLookupStatus } from '@lfx-one/shared/interfaces';
-import { isMentorshipCiiProjectId, isMentorshipLogoFileName, isMentorshipRichTextOverRawMax, mentorshipDescriptionLength } from '@lfx-one/shared/utils';
+import {
+  MentorshipCiiLookupStatus,
+  MentorshipEnrollFieldErrors,
+  MentorshipEnrollImport,
+  MentorshipLfProject,
+  MentorshipNameLookupStatus,
+  MentorshipProgram,
+} from '@lfx-one/shared/interfaces';
+import {
+  formFromMentorshipEnrollImport,
+  getMentorshipEnrollLogoError,
+  isMentorshipCiiProjectId,
+  isMentorshipRichTextOverRawMax,
+  mentorshipDescriptionLength,
+} from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
+import { OverlayOptions } from 'primeng/api';
 import {
   catchError,
   debounceTime,
   distinctUntilChanged,
   EMPTY,
-  exhaustMap,
+  expand,
   map,
   merge,
+  mergeMap,
+  Observable,
   of,
+  reduce,
   share,
   startWith,
   Subject,
   switchMap,
+  take,
   takeUntil,
   tap,
   timer,
@@ -69,6 +94,14 @@ import {
 export class EnrollDetailsStepComponent {
   public readonly form = input.required<FormGroup>();
   public readonly errors = input<MentorshipEnrollFieldErrors>({});
+  /** The project chosen in the picker; the wizard needs its slug and name to create the program. */
+  public readonly project = model<MentorshipLfProject | null>(null);
+  /** The picked logo file; the form keeps only its name and preview, and the wizard uploads this after the create. */
+  public readonly logoFile = model<File | null>(null);
+  /** The program being edited, `''` when enrolling a new one. Editing hides import and checks the name without this program. */
+  public readonly programId = input('');
+  /** The edited program's logo, `''` when it has none. Clearing a picked file goes back to it. */
+  public readonly currentLogoUrl = input('');
   public readonly ciiLookupStatusChange = output<MentorshipCiiLookupStatus>();
   public readonly nameLookupStatusChange = output<MentorshipNameLookupStatus>();
 
@@ -76,19 +109,35 @@ export class EnrollDetailsStepComponent {
   private readonly mentorshipAdminService = inject(MentorshipAdminService);
   private readonly lfFilter$ = new Subject<string>();
   private readonly lfLoadMore$ = new Subject<void>();
+  private readonly lfFirstPageRetry$ = new Subject<void>();
+  /** The picked import program id; switchMap drops the read of a program the admin has already moved off. */
+  private readonly importSelection$ = new Subject<string>();
   protected readonly lfProjectItemSize = 40;
+  protected readonly lfRemoteFilterField = MENTORSHIP_LF_PROJECT_REMOTE_FILTER_FIELD;
+  protected readonly lfScrollerOptions = MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS;
+  /** On close the select clears its filter box (`resetFilterOnHide`); this clears the search behind it. */
+  protected readonly lfOverlayOptions: OverlayOptions = { onBeforeHide: () => this.onLfFilter({ filter: '' }) };
 
   protected readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
   protected readonly logoError = signal('');
   protected readonly importLoading = signal(true);
+  protected readonly importError = signal('');
   protected readonly importOptions = signal<{ value: string; label: string }[]>([{ value: '', label: 'None' }]);
   protected readonly lfProjects = signal<MentorshipLfProject[]>([]);
   protected readonly lfProjectsLoading = signal(false);
-  protected readonly lfProjectsTotal = signal(0);
-  private readonly selectedProject = signal<MentorshipLfProject | null>(null);
+  /** Cursor for the next lazy-load page; null once every project has been loaded. */
+  protected readonly lfNextPageToken = signal<string | null>(null);
+  /** A page read failed; Retry rereads whichever page failed. */
+  protected readonly lfProjectsFailed = signal(false);
   private readonly nameLookupRetry = signal(0);
   private readonly ciiLookupRetry = signal(0);
+  /** True from a keystroke that changes the search until its read starts, so the debounce never looks like "no results". */
+  private readonly lfSearchPending = signal(false);
   private lfSearch = '';
+  /** The program whose template read is in flight, `''` when none is. */
+  private pendingImportId = '';
+  /** Short-page cursors followed without a scroll since the current search's first page. */
+  private lfAutoFollows = 0;
 
   protected readonly draftTechForm = new FormGroup({
     technology: new FormControl('', { nonNullable: true }),
@@ -110,6 +159,7 @@ export class EnrollDetailsStepComponent {
   protected readonly nameChecking = MENTORSHIP_ENROLL_NAME_CHECKING;
   protected readonly nameTaken = MENTORSHIP_ENROLL_NAME_TAKEN;
   protected readonly nameUnavailable = MENTORSHIP_ENROLL_NAME_UNAVAILABLE;
+  protected readonly projectsUnavailable = MENTORSHIP_ENROLL_PROJECTS_UNAVAILABLE;
   protected readonly codeOfConductTemplateUrl = MENTORSHIP_CODE_OF_CONDUCT_TEMPLATE_URL;
 
   protected readonly draftTechnology = toSignal(this.draftTechForm.controls.technology.valueChanges, { initialValue: '' });
@@ -118,6 +168,7 @@ export class EnrollDetailsStepComponent {
     initialValue: {} as Record<string, unknown>,
   });
 
+  protected readonly editing = computed(() => this.programId() !== '');
   protected readonly nameLength = computed(() => String(this.formSnapshot()['name'] ?? this.form().controls['name']?.value ?? '').length);
   private readonly descriptionHtml = computed(() => String(this.formSnapshot()['description'] ?? this.form().controls['description']?.value ?? ''));
   protected readonly descriptionTooLarge = computed(() => isMentorshipRichTextOverRawMax(this.descriptionHtml()));
@@ -129,6 +180,14 @@ export class EnrollDetailsStepComponent {
   });
   protected readonly logoFileName = computed(() => String(this.formSnapshot()['logoFileName'] ?? this.form().controls['logoFileName']?.value ?? ''));
   protected readonly logoPreviewUrl = computed(() => String(this.formSnapshot()['logoPreviewUrl'] ?? this.form().controls['logoPreviewUrl']?.value ?? ''));
+  protected readonly lfEmptyMessage = computed(() =>
+    this.lfSearchPending() || this.lfProjectsLoading() ? MENTORSHIP_ENROLL_PROJECTS_SEARCHING_MESSAGE : MENTORSHIP_ENROLL_PROJECTS_EMPTY_MESSAGE
+  );
+  /** Sized from the rows so a short list does not scroll and a list that grew after an empty one is not left a few px tall. */
+  protected readonly lfScrollHeight = computed(() => {
+    const rows = Math.max(1, this.projectOptions().length) * this.lfProjectItemSize;
+    return `min(${MENTORSHIP_MENTOR_PICKER_MAX_HEIGHT}px, calc(${rows}px + ${MENTORSHIP_MENTOR_PICKER_LIST_PADDING}))`;
+  });
   protected readonly projectOptions = computed(() => {
     const selectedId = String(this.formSnapshot()['projectId'] ?? this.form().controls['projectId']?.value ?? '');
     const loaded = this.lfProjects();
@@ -136,7 +195,7 @@ export class EnrollDetailsStepComponent {
     if (selectedId && !options.some((option) => option.value === selectedId)) {
       const remembered = this.resolveSelectedProject(selectedId, loaded);
       const label = remembered?.name ?? selectedId;
-      options.unshift({ id: selectedId, name: label, value: selectedId, label, logoUrl: remembered?.logoUrl });
+      options.unshift({ id: selectedId, name: label, slug: remembered?.slug ?? '', value: selectedId, label, logoUrl: remembered?.logoUrl });
     }
     return options;
   });
@@ -170,7 +229,7 @@ export class EnrollDetailsStepComponent {
       switchMap(({ name }) => {
         if (name.length < MENTORSHIP_ENROLL_NAME_MIN) return of({ status: 'idle' as const });
         return timer(300).pipe(
-          switchMap(() => this.mentorshipService.isProgramNameAvailable(name)),
+          switchMap(() => this.mentorshipService.isProgramNameAvailable(name, this.programId())),
           map((result) => ({ status: result.available ? ('available' as const) : ('taken' as const) })),
           catchError(() => of({ status: 'unavailable' as const })),
           startWith({ status: 'loading' as const })
@@ -207,62 +266,101 @@ export class EnrollDetailsStepComponent {
       .subscribe((projects) => {
         const projectId = String(this.form().controls['projectId']?.value ?? '');
         const found = projects.find((project) => project.id === projectId);
-        if (found) this.selectedProject.set(found);
+        if (found) this.project.set(found);
       });
 
-    this.mentorshipAdminService
-      .getPrograms({ limit: MENTORSHIP_PROGRAMS_MAX_LIMIT })
-      .pipe(takeUntilDestroyed())
+    // Inputs are bound by the first emission, so an edit never reads the program list it has no picker for.
+    toObservable(this.programId)
+      .pipe(
+        take(1),
+        switchMap((programId) => (programId ? EMPTY : this.readImportPrograms())),
+        takeUntilDestroyed()
+      )
       .subscribe({
-        next: (response) => {
-          this.importOptions.set([
-            { value: '', label: 'None' },
-            ...response.data.filter((program) => isMentorshipProgramImportable(program.id)).map((program) => ({ value: program.id, label: program.name })),
-          ]);
+        next: (programs) => {
+          this.importOptions.set([{ value: '', label: 'None' }, ...programs.map((program) => ({ value: program.id, label: program.name }))]);
           this.importLoading.set(false);
         },
-        error: () => this.importLoading.set(false),
+        // Any failed page fails the whole list, since a partial list would hide programs with no sign that it is short.
+        error: () => {
+          this.importError.set(MENTORSHIP_ENROLL_IMPORT_LIST_FAILED);
+          this.importLoading.set(false);
+        },
       });
+
+    // Leaving the step cancels a template read still in flight, so put the picker back on None rather than leave it naming
+    // a program whose details never reached the form.
+    inject(DestroyRef).onDestroy(() => {
+      if (this.pendingImportId) this.form().controls['importProgramId']?.setValue('');
+    });
+
+    this.importSelection$
+      .pipe(
+        switchMap((programId) => (programId ? this.readImport(programId) : EMPTY)),
+        takeUntilDestroyed()
+      )
+      .subscribe(({ programId, data }) => this.applyImport(programId, data));
 
     const search$ = this.lfFilter$.pipe(debounceTime(300), startWith(''), distinctUntilChanged(), share());
 
-    const firstPage$ = search$.pipe(
+    // Retry rereads the current search; search$ alone would not, since distinctUntilChanged drops a repeat of it.
+    const firstPage$ = merge(search$, this.lfFirstPageRetry$.pipe(map(() => this.lfSearch))).pipe(
       tap((search) => {
         this.lfSearch = search;
+        this.lfSearchPending.set(false);
+        this.lfAutoFollows = 0;
         this.lfProjectsLoading.set(true);
+        this.lfProjectsFailed.set(false);
       }),
       switchMap((search) =>
-        this.mentorshipService.getLfProjects({ search, offset: 0, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
-          map((response) => ({ ...response, append: false as const })),
+        this.mentorshipService.getLfProjects({ search, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
+          map((response) => ({ ...response, append: false as const, requestedToken: null })),
           catchError(() => {
-            this.lfProjectsLoading.set(false);
+            // Empty the list so the picker does not keep the previous search's projects under the failure.
+            this.lfProjects.set([]);
+            this.lfNextPageToken.set(null);
+            this.failLfPage();
             return EMPTY;
           })
         )
       )
     );
 
+    // mergeMap, not exhaustMap: a short page asks for the next one while its own read is still finishing, and the
+    // lfProjectsLoading guard below already keeps two page reads from overlapping.
     const nextPage$ = this.lfLoadMore$.pipe(
-      exhaustMap(() => {
-        if (this.lfProjectsLoading() || this.lfProjects().length >= this.lfProjectsTotal()) return EMPTY;
+      mergeMap(() => {
+        const pageToken = this.lfNextPageToken();
+        if (this.lfProjectsLoading() || !pageToken) return EMPTY;
         this.lfProjectsLoading.set(true);
-        return this.mentorshipService.getLfProjects({ search: this.lfSearch, offset: this.lfProjects().length, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
+        this.lfProjectsFailed.set(false);
+        return this.mentorshipService.getLfProjects({ search: this.lfSearch, pageToken, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
           takeUntil(search$),
-          map((response) => ({ ...response, append: true as const })),
+          map((response) => ({ ...response, append: true as const, requestedToken: pageToken })),
+          // The cursor stays, so Retry asks for the same page again.
           catchError(() => {
-            this.lfProjectsLoading.set(false);
+            this.failLfPage();
             return EMPTY;
           })
         );
       })
     );
 
-    merge(firstPage$, nextPage$)
+    // nextPage$ subscribes first so lfLoadMore$ is already listened to when the first page asks to follow its cursor.
+    merge(nextPage$, firstPage$)
       .pipe(takeUntilDestroyed())
       .subscribe((page) => {
         this.lfProjects.set(page.append ? [...this.lfProjects(), ...page.data] : page.data);
-        this.lfProjectsTotal.set(page.total);
+        // A cursor that came back unchanged would only replay the same page, by scroll or by the follow below, so treat it as the end.
+        const nextPageToken = !page.page_token || page.page_token === page.requestedToken ? null : page.page_token;
+        this.lfNextPageToken.set(nextPageToken);
         this.lfProjectsLoading.set(false);
+        // Pages that access filtering left short may not fill the scroller enough to fire onLazyLoad, so follow the cursor here
+        // while less than a page is loaded, a bounded number of times so a sparse catalog is not walked to its end on open.
+        if (nextPageToken && this.lfProjects().length < MENTORSHIP_LF_PROJECT_PAGE_SIZE && this.lfAutoFollows < MENTORSHIP_LF_PROJECT_MAX_AUTO_FOLLOWS) {
+          this.lfAutoFollows++;
+          this.lfLoadMore$.next();
+        }
       });
   }
 
@@ -274,21 +372,40 @@ export class EnrollDetailsStepComponent {
     this.ciiLookupRetry.update((count) => count + 1);
   }
 
+  protected retryLfProjects(): void {
+    // A failed first page cleared the cursor; a failed later page kept it.
+    if (!this.lfNextPageToken()) {
+      this.lfFirstPageRetry$.next();
+      return;
+    }
+    this.lfLoadMore$.next();
+  }
+
   protected onImportProgram(): void {
     const importId = (this.form().controls['importProgramId']?.value as string) ?? '';
-    this.revokeLogoPreview();
-    const fileEl = this.fileInput()?.nativeElement;
-    if (fileEl) fileEl.value = '';
-    this.form().patchValue(formFromImportedMentorshipProgram(importId));
-    this.logoError.set('');
+    this.importError.set('');
+    this.pendingImportId = importId;
+    if (importId) {
+      this.importSelection$.next(importId);
+      return;
+    }
+    // "None" starts over; switchMap above must also drop a read that is still in flight.
+    this.importSelection$.next('');
+    this.resetLogo();
+    this.form().patchValue(createEmptyMentorshipEnrollForm());
+    this.project.set(null);
   }
 
   protected onLfFilter(event: { filter?: string }): void {
-    this.lfFilter$.next((event.filter ?? '').trim());
+    const search = (event.filter ?? '').trim();
+    this.lfSearchPending.set(search !== this.lfSearch);
+    this.lfFilter$.next(search);
   }
 
+  /** The virtual scroller's lazy-load: fetches the next page once the rendered window nears the end of what is loaded. */
   protected onLfLazyLoad(event?: { last?: number }): void {
-    if (this.lfProjectsLoading() || this.lfProjects().length >= this.lfProjectsTotal()) return;
+    // After a failure only Retry reads again, so scrolling cannot hammer a failing upstream.
+    if (this.lfProjectsLoading() || this.lfProjectsFailed() || !this.lfNextPageToken()) return;
     if (event?.last !== undefined && event.last < this.lfProjects().length - 1) return;
     this.lfLoadMore$.next();
   }
@@ -318,19 +435,15 @@ export class EnrollDetailsStepComponent {
       this.clearLogo();
       return;
     }
-    if (!isMentorshipLogoFileName(file.name)) {
-      this.logoError.set(MENTORSHIP_ENROLL_LOGO_TYPE_ERROR);
-      input.value = '';
-      this.clearLogo();
-      return;
-    }
-    if (file.size > MENTORSHIP_ENROLL_LOGO_MAX_BYTES) {
-      this.logoError.set('File must be 2 MB or smaller.');
+    const fileError = getMentorshipEnrollLogoError(file);
+    if (fileError) {
+      this.logoError.set(fileError);
       input.value = '';
       this.clearLogo();
       return;
     }
     this.revokeLogoPreview();
+    this.logoFile.set(file);
     this.form().patchValue({
       logoFileName: file.name,
       logoPreviewUrl: URL.createObjectURL(file),
@@ -343,24 +456,79 @@ export class EnrollDetailsStepComponent {
 
   private rememberSelectedProject(projectId: string): void {
     if (!projectId) {
-      this.selectedProject.set(null);
+      this.project.set(null);
       return;
     }
-    const remembered = this.resolveSelectedProject(projectId, this.lfProjects());
-    if (remembered) this.selectedProject.set(remembered);
+    // Unresolved ids clear the model rather than keep the previous project; the lfProjects watcher fills it once the id loads.
+    this.project.set(this.resolveSelectedProject(projectId, this.lfProjects()) ?? null);
   }
 
   private resolveSelectedProject(projectId: string, loaded: MentorshipLfProject[]): MentorshipLfProject | undefined {
     const fromLoaded = loaded.find((project) => project.id === projectId);
     if (fromLoaded) return fromLoaded;
-    const cached = this.selectedProject();
-    if (cached?.id === projectId) return cached;
-    return MOCK_MENTORSHIP_LF_PROJECTS.find((project) => project.id === projectId);
+    const cached = this.project();
+    return cached?.id === projectId ? cached : undefined;
   }
 
+  /** Every program the admin manages, read page by page since one read returns at most `MENTORSHIP_PROGRAMS_MAX_LIMIT`. */
+  private readImportPrograms(): Observable<MentorshipProgram[]> {
+    const readPage = (offset: number) =>
+      this.mentorshipAdminService.getPrograms({ offset, limit: MENTORSHIP_PROGRAMS_MAX_LIMIT }).pipe(map((response) => ({ offset, response })));
+    return readPage(0).pipe(
+      // An empty page ends the walk too, so a total that overstates the programs cannot loop.
+      expand(({ offset, response }) => {
+        const next = offset + response.data.length;
+        return response.data.length > 0 && next < response.total ? readPage(next) : EMPTY;
+      }),
+      reduce((programs, { response }) => [...programs, ...response.data], [] as MentorshipProgram[])
+    );
+  }
+
+  private readImport(programId: string): Observable<{ programId: string; data: MentorshipEnrollImport }> {
+    return this.mentorshipAdminService.getEnrollTemplate(programId).pipe(
+      map((data) => ({ programId, data })),
+      catchError(() => {
+        this.failImport();
+        return EMPTY;
+      })
+    );
+  }
+
+  private applyImport(programId: string, data: MentorshipEnrollImport): void {
+    this.pendingImportId = '';
+    this.resetLogo();
+    this.form().patchValue(formFromMentorshipEnrollImport(programId, data));
+    // Set before the projectId watcher runs: it keeps this project when the id matches, and would otherwise clear it
+    // because the imported project need not be in the page of projects the picker has loaded.
+    this.project.set(data.project);
+  }
+
+  /** The form is left as it was, so a failed import never costs the admin what they already typed (FR-011). */
+  private failImport(): void {
+    this.pendingImportId = '';
+    this.importError.set(MENTORSHIP_ENROLL_IMPORT_FAILED);
+    this.form().controls['importProgramId']?.setValue('');
+  }
+
+  private resetLogo(): void {
+    this.revokeLogoPreview();
+    const fileEl = this.fileInput()?.nativeElement;
+    if (fileEl) fileEl.value = '';
+    this.logoFile.set(null);
+    this.logoError.set('');
+  }
+
+  private failLfPage(): void {
+    this.lfProjectsLoading.set(false);
+    this.lfProjectsFailed.set(true);
+  }
+
+  /** Drops a picked file. An edit goes back to the program's current logo, which stays unless a new file is picked. */
   private clearLogo(): void {
     this.revokeLogoPreview();
-    this.form().patchValue({ logoFileName: '', logoPreviewUrl: '' });
+    this.logoFile.set(null);
+    const currentLogoUrl = this.currentLogoUrl();
+    this.form().patchValue({ logoFileName: currentLogoUrl ? MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL : '', logoPreviewUrl: currentLogoUrl });
   }
 
   private revokeLogoPreview(): void {

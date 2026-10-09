@@ -3,7 +3,7 @@ title: Manage Meetings
 description: How to edit, update, and cancel project meetings in LFX Self Serve.
 product_area: Meetings
 tags: [meetings, manage, edit, cancel]
-last_updated: 2026-10-02
+last_updated: 2026-10-06
 intercom_collection: Meetings
 ---
 
@@ -24,6 +24,8 @@ For a meeting that's part of a recurring series, selecting edit first asks what 
 
 - **Only this occurrence** — opens an **Edit Occurrence** dialog where you can change the date, start time, duration, title, and agenda for that one instance. The time is read in the series' own timezone, and the rest of the series keeps its schedule and details. An agenda that already has text can be changed but not cleared. The recurrence pattern and settings can't be changed per occurrence.
 - **The entire series** — opens the full editor, and your changes apply to every upcoming occurrence in the series.
+
+If you have the new meeting editor (currently in preview for some users), the choice is **A single occurrence** or **The entire series**. A single occurrence comes with a picker listing every upcoming occurrence, opened on the one you clicked. Both open the meeting editor drawer, and a note under its title says which you're editing. A single-occurrence edit shows what can change per occurrence — title, date, start time, duration, and agenda — plus its guests. Guests invited to every occurrence are labelled **All occurrences** and are read-only there; anyone you add is invited to that occurrence only (labelled **This occurrence**) and can be removed again. Changes there never affect the rest of the series. Documents, links, and series guests are managed by editing the entire series. Each section notes which series settings it leaves out, with a link to edit the entire series instead. **Save changes** stays disabled until you change something.
 
 ## Edit or cancel one occurrence from the join page
 
@@ -50,6 +52,7 @@ Select the delete (trash) icon on a meeting you organize.
 
 - For a one-time meeting, you'll confirm with **Delete Meeting** — the meeting is permanently deleted; this can't be undone.
 - For a meeting that's part of a recurring series, you'll be asked to choose between **Cancel This Occurrence** (only that instance is cancelled; the rest of the series continues) or **Delete Entire Series** (the whole recurring series is permanently deleted). When cancelling one occurrence, you can add an optional **Reason**; it's included in the cancellation email sent to guests.
+- With the new meeting editor (preview), the choice is **Cancel a single occurrence** (selected by default, with a picker for which upcoming occurrence) or **Delete the entire series**.
 
 ## Subscribe to a calendar feed
 

@@ -6,7 +6,10 @@ import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   MAX_BULK_KEYWORD_ACTIONS,
+  MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
+  MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
   MAX_HUBSPOT_BODY_HTML_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
@@ -660,6 +663,16 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(res.json).toHaveBeenCalledWith({ jobId: '', error: 'Campaign creation could not be started. Please try again.' });
   });
 
+  it('passes an INDETERMINATE create through, so the client holds it rather than reading a refusal', async () => {
+    // The service and component specs mock opposite sides of this hop; without this, dropping the
+    // field here would leave both green while production released the stage hold.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: null, error: 'Campaign creation could not be confirmed.', indeterminate: true });
+
+    await controller.createCampaign(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ jobId: '', error: 'Campaign creation could not be confirmed.', indeterminate: true });
+  });
+
   it('allows a create when the same platform IS configured', async () => {
     // The contrast: identical platform, but Search selected, so `buildGoogleAdsConfig` builds a
     // config. Without this, the test above would pass on a controller that refused everything.
@@ -773,11 +786,16 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(envelopeFor(createCampaigns)).not.toHaveProperty('redditConfig');
   });
 
+  // The flight window is on the base fixture, not only on the tests that assert it, because the
+  // form REQUIRES both dates — every real Google create carries them, and a fixture that omits
+  // them would let a regression that drops them again pass every assertion below.
   const googleBody = (overrides: Record<string, unknown> = {}) => ({
     platforms: ['google-ads'],
     campaignTypes: ['search'],
     budgetUsd: 1000,
     searchBudgetPct: 60,
+    startDate: '2026-04-01',
+    endDate: '2026-04-30',
     headlines: ['H1'],
     descriptions: ['D1'],
     keywords: [{ term: 'kubernetes', matchType: 'Exact', intentLevel: 'high', notes: 'n' }],
@@ -798,6 +816,11 @@ describe('CampaignController.createCampaign cutover', () => {
       budget: 1000,
       // Named explicitly since LFXV2-3257 — see buildGoogleAdsConfig.
       channel: 'search',
+      // The flight window the operator entered. Forwarded verbatim; campaign-service applies it
+      // via `applyCampaignConfig`, and without it Google defaults to a campaign that starts when
+      // enabled and never ends.
+      startDate: '2026-04-01',
+      endDate: '2026-04-30',
       headlines: ['H1'],
       descriptions: ['D1'],
       // `text`, not `term`, and an upper-case enum: the service's keyword shape.
@@ -867,6 +890,8 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
       budget: 1000,
       channel: 'demand-gen',
+      startDate: '2026-04-01',
+      endDate: '2026-04-30',
     });
   });
 
@@ -928,6 +953,8 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
       budget: 500,
       channel: 'demand-gen',
+      startDate: '2026-04-01',
+      endDate: '2026-04-30',
     });
   });
 
@@ -948,6 +975,455 @@ describe('CampaignController.createCampaign cutover', () => {
     const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
     expect(sent['channel']).toBe('search');
     expect(sent['budget']).toBe(350);
+  });
+
+  /**
+   * The three newer channels take the SAME shape as the demand-gen branch above, and the
+   * tests are pinned the same way — `toEqual`, not a field check.
+   *
+   * What the exact-shape assertion is actually guarding is upstream refusal, not tidiness:
+   * campaign-service REFUSES `keywords` and `audienceSegments` on every channel but Search rather
+   * than dropping them, so a builder that leaked the Implementation tab's keyword list onto one of
+   * these channels would turn a servable create into a refusal. `headlines`/`descriptions` are
+   * absent for the matching reason — these channels take their own creative objects, which this
+   * request has no source for yet.
+   */
+  it.each([['performance-max' as const], ['video' as const], ['display' as const]])(
+    'gives a %s-only create the whole budget and no search-shaped fields',
+    async (channel) => {
+      createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+      legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: [channel], budgetUsd: 500, searchBudgetPct: 70 }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(envelopeFor(createCampaigns)['googleAdsConfig']).toEqual({
+        budget: 500,
+        channel,
+        // The flight window reaches the NON-Search branch too. It is the same campaign-level
+        // `start_date_time`/`end_date_time` on every kind — the client's `validateFlightWindow`
+        // runs before the cascade picks one — so a fix applied to Search alone would leave these
+        // three silently unscheduled.
+        startDate: '2026-04-01',
+        endDate: '2026-04-30',
+      });
+    }
+  );
+
+  /**
+   * The flight window's absent case, pinned on BOTH branches.
+   *
+   * A blank date omits the key rather than sending `''`. The two are equivalent to the dispatcher
+   * today (`validateFlightWindow` tests `startDate != ""`), so this is a contract assertion, not a
+   * behaviour one — the same reason `geoTargets` reaches its default by the absent-key route.
+   */
+  it.each([
+    ['search' as const, 1000],
+    ['performance-max' as const, 1000],
+  ])('omits the flight window on a %s create when the dates are blank', async (channel, budget) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: [channel], startDate: '   ', endDate: undefined }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['budget']).toBe(budget);
+    expect(sent).not.toHaveProperty('startDate');
+    expect(sent).not.toHaveProperty('endDate');
+  });
+
+  /**
+   * A malformed or reversed window travels on to Go rather than being judged here, for the reason
+   * `isReversedFlightWindow` records: `validateFlightWindow` refuses it BEFORE the first mutate,
+   * names the offending value, and strands no budget. Judging it locally could only replace that
+   * named refusal with a vaguer one — or refuse a window Google accepts, since Google's test is
+   * `end.Before(start)` and a SAME-DAY flight is legal there while Meta and Reddit refuse it.
+   */
+  it.each([
+    ['a reversed window', '2026-04-30', '2026-04-01'],
+    ['a same-day window Google accepts', '2026-04-01', '2026-04-01'],
+    ['a shape this cannot read', '2026-4-1', 'next friday'],
+  ])('forwards %s to Go rather than refusing it here', async (_label, startDate, endDate) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ startDate, endDate }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['startDate']).toBe(startDate);
+    expect(sent['endDate']).toBe(endDate);
+  });
+
+  /**
+   * The creative, forwarded under the channel's OWN request key.
+   *
+   * Pinned per channel rather than once, because the key and the field list differ for each and a
+   * mapper that sent Demand Gen's shape for all three would be refused upstream on the two it does
+   * not fit — after the budget mutate on nothing, since the refusal is the client's own preflight.
+   */
+  it.each([
+    [
+      'demand-gen' as const,
+      'demandGenCreative',
+      { headlines: [' Join us '], descriptions: ['Register'], logoImages: [' https://cdn.example/logo.png '] },
+      'logoImages',
+      ['https://cdn.example/logo.png'],
+    ],
+    [
+      'performance-max' as const,
+      'performanceMaxCreative',
+      { headlines: ['H1', 'H2', 'H3'], descriptions: ['D1'], squareMarketingImages: [' https://cdn.example/square.png ', 'https://cdn.example/two.png'] },
+      'squareMarketingImages',
+      ['https://cdn.example/square.png', 'https://cdn.example/two.png'],
+    ],
+    [
+      'display' as const,
+      'displayCreative',
+      { headlines: ['H1'], longHeadline: 'A single long headline', descriptions: ['D1'], logoImages: ['https://cdn.example/logo.png'] },
+      'logoImages',
+      ['https://cdn.example/logo.png'],
+    ],
+  ])('forwards the %s creative under its own request key', async (channel, key, creative, imageField, expectedImages) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: [channel], [key]: creative }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent[key]).toBeDefined();
+    // Trimmed, never counted — every width and count rule is the upstream client's preflight.
+    expect((sent[key] as Record<string, unknown>)['headlines']).toEqual(channel === 'demand-gen' ? ['Join us'] : creative.headlines);
+    // The image lists travel under the SAME per-channel names the catalogue declares. Asserted
+    // because a field name the catalogue does not hold is dropped in silence: the two fixtures this
+    // replaces named `logoUrls` and `finalUrl`, neither of which exists, so the case passed on the
+    // headline alone and no test covered image forwarding at all.
+    expect((sent[key] as Record<string, unknown>)[imageField]).toEqual(expectedImages);
+  });
+
+  /** A creative keyed to a channel that was not selected is not the selected channel's creative. */
+  it('ignores a creative belonging to another channel', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['display'], demandGenCreative: { headlines: ['H1'] } }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('demandGenCreative');
+    expect(sent).not.toHaveProperty('displayCreative');
+  });
+
+  /**
+   * The empty cases, all three of which must OMIT rather than send an empty object or list.
+   *
+   * Upstream distinguishes "no creative asked for" (nil — the pre-existing shell behaviour) from
+   * "a creative with an empty headline list" (a validation failure), so sending `[]` would turn an
+   * operator who skipped the section into a refused create rather than the shell they had before.
+   */
+  it.each([
+    ['no creative key at all', {}],
+    ['a creative whose every entry is blank', { displayCreative: { headlines: ['', '   '], longHeadline: '  ' } }],
+    ['a creative of the wrong shape entirely', { displayCreative: ['not', 'an', 'object'] }],
+    ['a creative carrying non-string entries', { displayCreative: { headlines: [1, null, {}] } }],
+  ])('omits the creative key for %s', async (_label, overrides) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['display'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent).not.toHaveProperty('displayCreative');
+  });
+
+  /**
+   * The resource bounds, refused BEFORE `createConfigEnvelope` for the reason the HubSpot sibling
+   * is: the normalizer filters, trims and re-allocates every string it is handed, and nothing
+   * upstream of it bounds the count. Shape-only — the widths and counts the catalogue declares are
+   * the client's preflight, which is why these ceilings sit far above anything legitimate.
+   */
+  it.each([
+    ['a list above the entry cap', { displayCreative: { headlines: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `H${i}`) } }],
+    ['an oversized entry inside a list', { displayCreative: { headlines: ['x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1)] } }],
+    ['an oversized scalar field', { displayCreative: { longHeadline: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }],
+    ['an oversized conversion-action list', { conversionActions: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `a-${i}`) }],
+  ])('refuses %s before normalising or dispatching', async (_label, overrides) => {
+    const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['display'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(createConfigEnvelope).not.toHaveBeenCalled();
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A body that is not a JSON object is a named 400, not a 500.
+   *
+   * `express.json()` leaves `req.body` undefined for a request that is not `application/json`, and
+   * passes an array body through intact — so both shapes reach this handler in production. The
+   * resource bound walks the body's keys, which throws on undefined, and the sibling write handlers
+   * on this controller all guard with exactly this check.
+   */
+  it.each([
+    ['undefined', undefined],
+    ['an array', [{ platforms: ['google-ads'] }]],
+    ['a string', 'platforms=google-ads'],
+  ])('refuses a body that is %s with a validation error rather than throwing', async (_label, body) => {
+    await controller.createCampaign(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+  });
+
+  /** Exactly at each ceiling is accepted — the bound refuses what is above it, nothing else. */
+  it('accepts a creative exactly at both caps', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          campaignTypes: ['display'],
+          displayCreative: {
+            headlines: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES }, (_v, i) => `H${i}`),
+            longHeadline: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH),
+          },
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(((sent['displayCreative'] as Record<string, unknown>)['headlines'] as string[]).length).toBe(MAX_GOOGLE_CREATIVE_LIST_ENTRIES);
+  });
+
+  /**
+   * The bidding plan reaches BOTH branches of the builder.
+   *
+   * Search and the non-Search channels build their config in two separate return statements, and a
+   * plan spread into only one of them would silently drop every bid an operator set on the other.
+   */
+  it.each([['search' as const], ['display' as const]])('carries the bidding plan on a %s create', async (channel) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: [channel], biddingStrategy: 'target-cpa', targetCpa: 25.5, conversionActions: ['12345'] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['biddingStrategy']).toBe('target-cpa');
+    expect(sent['targetCpa']).toBe(25.5);
+    expect(sent['conversionActions']).toEqual(['12345']);
+  });
+
+  /**
+   * Shape only, and deliberately so.
+   *
+   * Every per-channel, per-strategy and bounds rule lives in `validateBiddingPlan`
+   * (`internal/platform/googleads/bidding.go`) as PURE preflight — no network, no clock — so an
+   * invalid plan is refused before the budget mutate, named, with nothing stranded. A second copy
+   * here could only diverge by refusing a create upstream would have accepted. These three are
+   * each invalid upstream for a different reason and all three must travel.
+   */
+  it.each([
+    ['a strategy the channel does not accept', { biddingStrategy: 'manual-cpc', campaignTypes: ['display'] }, 'biddingStrategy', 'manual-cpc'],
+    ['a target below the accepted minimum', { biddingStrategy: 'target-cpa', targetCpa: 0.001 }, 'targetCpa', 0.001],
+    ['a target above the accepted maximum', { biddingStrategy: 'target-roas', targetRoas: 5000 }, 'targetRoas', 5000],
+  ])('forwards %s rather than refusing it here', async (_label, overrides, field, expected) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)[field]).toBe(expected);
+  });
+
+  /**
+   * What the plan DOES drop: values that cannot be a value at all.
+   *
+   * Zero is "absent" rather than a bid — upstream reads `0` on all three numbers as "not
+   * supplied", so a typed zero and an omitted key are the same request and only omission stays
+   * true if that ever changes. `NaN` and the infinities are dropped because `JSON.stringify`
+   * renders all three as `null`, which upstream reads as a type error on a `float64` field: a
+   * create refused for a number the operator never typed.
+   */
+  it('omits a blank strategy, a zero or non-finite amount, and blank conversion entries', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          biddingStrategy: '   ',
+          cpcBid: 0,
+          targetCpa: Number.NaN,
+          targetRoas: Number.POSITIVE_INFINITY,
+          conversionActions: ['', '   ', 12345, null],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    for (const key of ['biddingStrategy', 'cpcBid', 'targetCpa', 'targetRoas', 'conversionActions']) {
+      expect(sent).not.toHaveProperty(key);
+    }
+  });
+
+  /** A conversion list is trimmed and the blanks dropped, but the surviving ids are not judged. */
+  it('trims the conversion actions it keeps without judging them', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ conversionActions: [' 12345 ', '', 'customers/999/conversionActions/678', 'not-an-id'] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['conversionActions']).toEqual(['12345', 'customers/999/conversionActions/678', 'not-an-id']);
+  });
+
+  /**
+   * The split arm, for a channel that is not demand-gen. The two demand-gen tests above cannot
+   * cover this: `normalizeBudgetSplit` has always known `demand-gen`, so a builder that special-cased
+   * that one type and treated the rest as single-channel would still pass them and would then
+   * overfund Search here by the newer channel's whole share.
+   */
+  it('funds Google with the SEARCH share when performance max is also selected', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['search', 'performance-max'], budgetUsd: 500, searchBudgetPct: 70 }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['channel']).toBe('search');
+    expect(sent['budget']).toBe(350);
+  });
+
+  /**
+   * The legacy fall-through refusal.
+   *
+   * With the cutover dark the legacy in-process path owns creation, and it does not reject an
+   * unknown campaign type — `executeGoogleCampaignCreation` sends everything that is not
+   * `search` to `createDemandGenCampaign`. So an unrefused Performance Max request does not
+   * fail; it creates a funded DEMAND GEN campaign and reports success. Refusing is the only
+   * outcome that tells the truth.
+   */
+  it.each([
+    ['performance-max' as const, 'Performance Max'],
+    ['display' as const, 'Display'],
+  ])('refuses a %s create outright while the cutover is dark', async (channel, label) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: [channel] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const body = vi.mocked(res.json).mock.calls[0][0] as { jobId: string; error: string };
+    expect(body.jobId).toBe('');
+    expect(body.error).toContain(label);
+    // The cutover IS the fix for these two, so the message is allowed to say so.
+    expect(body.error).toContain('cutover');
+  });
+
+  /**
+   * Video is refused by the same guard but must NOT be given the same reason.
+   *
+   * The other two are waiting on a deployment; Video is waiting on Google, and
+   * `CreateVideoCampaign` refuses unconditionally upstream whatever this deployment does. A
+   * message promising that a cutover will fix it sends an operator to enable a flag that changes
+   * nothing. The cutover road already refuses to say "ask an administrator" for Video — asserted
+   * one layer over in `campaign-service.service.spec.ts` — and this pins the legacy road to the
+   * same answer so the two cannot drift apart.
+   *
+   * Asserting the absence of 'cutover' as well as the presence of the reason is what makes this
+   * mutation-proof: a revert to the shared string still contains the word "Video", so a
+   * `toContain(label)` assertion alone would stay green.
+   */
+  it('refuses a video create with the API limit, not the cutover message, while the cutover is dark', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['video'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const body = vi.mocked(res.json).mock.calls[0][0] as { jobId: string; error: string };
+    expect(body.jobId).toBe('');
+    expect(body.error).toBe(GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON);
+    expect(body.error).not.toContain('cutover');
+    expect(body.error).not.toContain('administrator');
+  });
+
+  /**
+   * The other half of the refusal, and the half that keeps it from being over-broad: the legacy
+   * path serves Search and Demand Gen perfectly well, and refusing either would break creates that
+   * work in production today.
+   */
+  it.each([['search' as const], ['demand-gen' as const]])('still runs the legacy path for a %s create while the cutover is dark', async (channel) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_legacy_ok' });
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: [channel] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ jobId: 'job_legacy_ok' });
+  });
+
+  /**
+   * The refusal is keyed on the GOOGLE channel list, not on the request carrying the string
+   * anywhere. A LinkedIn-only create whose brief happens to name `video` must still reach the
+   * legacy path — `platforms` is what decides whether a Google channel is being asked for.
+   */
+  it('does not refuse a non-google create that happens to carry a flagged campaign type', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_li_1' });
+
+    const linkedInBody = {
+      platforms: ['linkedin-ads'],
+      campaignTypes: ['video'],
+      linkedInConfig: { budgetUsd: 100, targetingProfile: { id: 'cloud-native' } },
+    };
+    await controller.createCampaign(buildReq(linkedInBody, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ jobId: 'job_li_1' });
   });
 
   it('renames Meta budgetUsd to the budget key the dispatcher reads', async () => {
@@ -2578,6 +3054,73 @@ describe('CampaignController.refineBrief email refusal', () => {
 });
 
 /**
+ * The body-shape guard the three AI handlers were missing.
+ *
+ * Express leaves `req.body` as `undefined` when no JSON body parsed. Every sibling handler on this
+ * controller already opens with this check; these three destructured straight into the body.
+ *
+ * Two of the four shapes can arrive over HTTP and two cannot. `server.ts` mounts
+ * `express.json({ limit: '15mb' })` without disabling strict mode, and body-parser's `strict`
+ * defaults to true (`strict = opts.strict !== false`), so a payload that is not an object or array
+ * is refused by the PARSER — `null` and a bare string never reach a handler through the app. What
+ * does reach one is `undefined` (a request that was not `application/json`) and an array, which is
+ * an object to `typeof` and so needs `Array.isArray` as a separate clause.
+ *
+ * The other two rows are deliberate defence at the controller boundary, not a claim about the HTTP
+ * path. These handlers are plain functions: a unit caller, a future route mounted outside the
+ * parser, or a parser configured with `strict: false` all deliver them directly, and before the
+ * guard `null` threw a TypeError on the field read that the error middleware reported as a 500 —
+ * a caller's malformed request surfacing as a server fault.
+ *
+ * All four are asserted together because the contract the guard establishes is that every shape
+ * that reaches the handler ends at the SAME named 400, whichever door it came through.
+ */
+describe('CampaignController AI handler body shape', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  const handlers = ['generateBrief', 'refineBrief', 'executeKeywordActions'] as const;
+  // Only `undefined` and an array arrive through the app's own parser (see above); `null` and a
+  // bare string are controller-boundary defence. An array is an object to `typeof`, which is why
+  // `Array.isArray` is a separate clause in the guard and gets its own case here.
+  const bodies: [string, unknown][] = [
+    ['undefined', undefined],
+    ['null', null],
+    ['an array', []],
+    ['a string', 'nope'],
+  ];
+
+  it.each(handlers.flatMap((handler) => bodies.map(([label, body]): [string, string, unknown] => [handler, label, body])))(
+    '%s refuses %s with the named body-shape 400',
+    async (handler, _label, body) => {
+      await (controller as unknown as Record<string, (req: Request, res: Response, next: NextFunction) => Promise<void>>)[handler](buildReq(body), res, next);
+
+      expect(res.json).not.toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.statusCode).toBe(400);
+      expect(error.toResponse()['errors']).toEqual([{ field: 'body', message: 'request body must be a JSON object', code: 'FIELD_VALIDATION_ERROR' }]);
+    }
+  );
+
+  /** The contrast: a real object still reaches the handler's own field checks, not this guard. */
+  it('lets a JSON object through to the field checks', async () => {
+    await controller.refineBrief(buildReq({ feedback: 'punchier', currentCopy: null, currentKeywords: [] }), res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).not.toEqual([{ field: 'body', message: 'request body must be a JSON object', code: 'FIELD_VALIDATION_ERROR' }]);
+  });
+});
+
+/**
  * Which backend serves a status toggle is decided by the campaign id's SHAPE, not by the flag
  * alone. That is the whole safety argument for flipping this flag during a rolling deploy: the
  * two id spaces are disjoint, so a request cannot be claimed by both paths and a mixed-flag
@@ -2827,7 +3370,7 @@ describe('CampaignController.updateCampaignBudget', () => {
     controller = new CampaignController();
     res = buildRes();
     next = vi.fn();
-    updateCampaignBudget.mockResolvedValue({ id: UUID, platform: 'google_ads', status: 'active', version: 2, etag: '"2"' });
+    updateCampaignBudget.mockResolvedValue({ id: UUID, platform: 'google-ads', status: 'active', version: 2, etag: '"2"' });
   });
 
   it('sends the change to campaign-service and reports the row it answered with', async () => {
@@ -2843,7 +3386,7 @@ describe('CampaignController.updateCampaignBudget', () => {
       etag: '"1"',
     });
     expect(res.json).toHaveBeenCalledWith({
-      platform: 'google_ads',
+      platform: 'google-ads',
       campaignId: UUID,
       budget: 150.25,
       budgetType: 'daily',
@@ -2852,10 +3395,27 @@ describe('CampaignController.updateCampaignBudget', () => {
     });
   });
 
+  // The row's platform is checked against CAMPAIGN_PLATFORMS, never cast: an unknown value is
+  // logged and reported as null rather than passed off as a CampaignPlatform.
+  it.each([['google_ads'], ['hubspot'], [undefined]])('reports an unknown row platform %s as null, with a warning', async (platform) => {
+    updateCampaignBudget.mockResolvedValue({ id: UUID, platform, status: 'active', version: 2, etag: '"2"' });
+
+    await controller.updateCampaignBudget(budgetReq(UUID, validBody), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: null }));
+    expect(logger.warning).toHaveBeenCalledWith(
+      expect.anything(),
+      'campaign_budget_update',
+      expect.stringContaining('outside CampaignPlatform'),
+      expect.anything()
+    );
+  });
+
   // A budget change leaves the row's status as found, so a created_degraded campaign keeps its
   // reconciliation marker. Reporting anything else would hide that.
   it('reports the service status of a degraded campaign unchanged', async () => {
-    updateCampaignBudget.mockResolvedValue({ id: UUID, platform: 'meta', status: 'created_degraded', version: 5, etag: '"5"' });
+    updateCampaignBudget.mockResolvedValue({ id: UUID, platform: 'meta-ads', status: 'created_degraded', version: 5, etag: '"5"' });
 
     await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, budgetType: 'lifetime' }), res, next);
 
@@ -3001,6 +3561,19 @@ describe('CampaignController.updateCampaignBid', () => {
       bidType: 'cpc',
       etag: '"2"',
       serviceStatus: 'active',
+    });
+  });
+
+  it('reports an unknown row platform as null, with a warning, and never logs one for a known platform', async () => {
+    await controller.updateCampaignBid(bidReq(UUID, validBody), res, next);
+    expect(logger.warning).not.toHaveBeenCalled();
+
+    updateCampaignBid.mockResolvedValue({ id: UUID, platform: 'microsoft', status: 'active', version: 2, etag: '"2"' });
+    await controller.updateCampaignBid(bidReq(UUID, validBody), res, next);
+
+    expect(res.json).toHaveBeenLastCalledWith(expect.objectContaining({ platform: null }));
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'campaign_bid_update', expect.stringContaining('outside CampaignPlatform'), {
+      platform: 'microsoft',
     });
   });
 

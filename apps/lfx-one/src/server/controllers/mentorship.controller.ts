@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MENTORSHIP_ENROLL_NAME_MAX } from '@lfx-one/shared/constants';
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -14,7 +15,7 @@ import { getUsernameFromAuth } from '../utils/auth-helper';
 export class MentorshipController {
   private readonly mentorshipService = new MentorshipService();
 
-  // GET /api/mentorship/programs/name-available
+  // GET /api/mentorship/programs/name-available — `excludeProgramId` lets the edit wizard check a program's name without the program itself
   public async isProgramNameAvailable(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_name_available');
 
@@ -27,8 +28,18 @@ export class MentorshipController {
       if (!name) {
         throw ServiceValidationError.forField('name', 'Program name is required.', { operation: 'get_mentorship_name_available' });
       }
+      if (name.length > MENTORSHIP_ENROLL_NAME_MAX) {
+        throw ServiceValidationError.forField('name', `Program name must be at most ${MENTORSHIP_ENROLL_NAME_MAX} characters.`, {
+          operation: 'get_mentorship_name_available',
+        });
+      }
 
-      const result = await this.mentorshipService.isProgramNameAvailable(req, name);
+      const excludeProgramId = parseTrimmedString(req.query['excludeProgramId']);
+      if (excludeProgramId !== undefined && !isUuid(excludeProgramId)) {
+        throw ServiceValidationError.forField('excludeProgramId', 'excludeProgramId must be a UUID.', { operation: 'get_mentorship_name_available' });
+      }
+
+      const result = await this.mentorshipService.isProgramNameAvailable(req, name, excludeProgramId);
       logger.success(req, 'get_mentorship_name_available', startTime, { available: result.available });
       res.json(result);
     } catch (error) {
@@ -47,34 +58,12 @@ export class MentorshipController {
 
       const projects = await this.mentorshipService.getLfProjects(req, {
         search: parseTrimmedString(req.query['search']),
-        offset: parseIntQuery(req.query['offset']),
-        limit: parseIntQuery(req.query['limit']),
+        pageToken: parseTrimmedString(req.query['page_token']),
+        limit: parseIntQuery(req.query['page_size']),
       });
 
       logger.success(req, 'get_mentorship_lf_projects', startTime, { result_count: projects.data.length });
       res.json(projects);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // GET /api/mentorship/invitable-users
-  public async getInvitableUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_invitable_users');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_invitable_users' });
-      }
-
-      const users = await this.mentorshipService.getInvitableUsers(req, {
-        search: parseTrimmedString(req.query['search']),
-        offset: parseIntQuery(req.query['offset']),
-        limit: parseIntQuery(req.query['limit']),
-      });
-
-      logger.success(req, 'get_mentorship_invitable_users', startTime, { result_count: users.data.length });
-      res.json(users);
     } catch (error) {
       next(error);
     }

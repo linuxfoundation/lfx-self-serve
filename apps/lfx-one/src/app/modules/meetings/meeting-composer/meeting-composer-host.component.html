@@ -78,6 +78,36 @@
       @if (isEditMode() && formService.meeting(); as meeting) {
         <span class="truncate text-sm text-gray-500">{{ meeting.title }}</span>
       }
+
+      <!-- Says which part of a recurring meeting this save changes. A recurring series has two edit scopes
+           and the drawer looks much the same for both, so without it nothing on screen tells the organizer
+           whether moving the time moves one occurrence or every one of them. In the header so it stays in
+           view whichever section is open. -->
+      @if (editScope(); as scope) {
+        <lfx-message
+          severity="info"
+          size="small"
+          icon="fa-light fa-circle-info"
+          styleClass="mt-2 w-fit max-w-full"
+          [attr.data-testid]="scope.kind === 'occurrence' ? 'meeting-composer-scope-occurrence' : 'meeting-composer-scope-series'">
+          <ng-template #content>
+            <span class="text-xs">
+              @if (scope.kind === 'occurrence') {
+                You're editing a single occurrence: <span class="font-semibold">{{ scope.label }}</span> ·
+                <button
+                  type="button"
+                  class="font-medium underline hover:no-underline"
+                  data-testid="meeting-composer-scope-edit-series"
+                  (click)="onEditSeriesInstead()">
+                  Edit the entire series (discards changes here)
+                </button>
+              } @else {
+                You're editing the <span class="font-semibold">entire series</span> — changes apply to every upcoming occurrence.
+              }
+            </span>
+          </ng-template>
+        </lfx-message>
+      }
     </div>
   </ng-template>
 
@@ -160,7 +190,7 @@
             data-testid="meeting-composer-compact-progress">
             <div class="flex items-center gap-2">
               @if (!isEditMode()) {
-                <span class="text-xs font-medium text-gray-500">Step {{ activeIndex() + 1 }} of {{ sections.length }}</span>
+                <span class="text-xs font-medium text-gray-500">Step {{ activeIndex() + 1 }} of {{ sections().length }}</span>
               }
               <span class="truncate text-sm font-semibold text-gray-900">{{ activeSectionLabel() }}</span>
 
@@ -177,10 +207,14 @@
 
           @switch (composer.activeSection()) {
             @case ('details-access') {
-              <lfx-composer-details-access [form]="formService.form()" />
+              <lfx-composer-details-access
+                [form]="formService.form()"
+                [showTypeSelect]="!isOccurrenceEdit()"
+                [showOrganizer]="!isOccurrenceEdit()"
+                [showAccess]="!isOccurrenceEdit()" />
             }
             @case ('date-schedule') {
-              <lfx-composer-date-schedule [form]="formService.form()" />
+              <lfx-composer-date-schedule [form]="formService.form()" [showEarlyJoin]="!isOccurrenceEdit()" [showSeriesSchedule]="!isOccurrenceEdit()" />
             }
             @case ('platform-features') {
               <lfx-composer-platform-features [form]="formService.form()" (goToTitleSection)="onGoToTitleSection()" />
@@ -189,8 +223,40 @@
               <lfx-composer-guests [form]="formService.form()" />
             }
             @case ('agenda-resources') {
-              <lfx-composer-agenda-resources [form]="formService.form()" />
+              <lfx-composer-agenda-resources [form]="formService.form()" [showResources]="!isOccurrenceEdit()" />
             }
+          }
+
+          <!-- Names what the occurrence edit leaves out of this section, so a missing field reads as a series
+               setting rather than as something the composer lost. -->
+          @if (isOccurrenceEdit()) {
+            <p class="flex items-start gap-2 border-t border-gray-200 pt-4 text-xs text-gray-500" data-testid="meeting-composer-series-fields-note">
+              <i class="fa-light fa-circle-info mt-0.5 shrink-0" aria-hidden="true"></i>
+              <span>
+                @switch (composer.activeSection()) {
+                  @case ('details-access') {
+                    Meeting type, organizer, visibility and join restriction apply to every occurrence, so they're not shown here.
+                  }
+                  @case ('date-schedule') {
+                    Timezone, early join and how often the meeting repeats apply to every occurrence, so they're not shown here.
+                  }
+                  @case ('guests') {
+                    Guests invited to every occurrence, groups, and who can see the guest list belong to the series, so they can't be changed here.
+                  }
+                  @case ('agenda-resources') {
+                    Documents and links are shared by every occurrence, so they're not shown here.
+                  }
+                }
+                To change them,
+                <button
+                  type="button"
+                  class="font-medium text-blue-700 hover:underline"
+                  data-testid="meeting-composer-series-fields-edit-series"
+                  (click)="onEditSeriesInstead()">
+                  edit the entire series</button
+                >.
+              </span>
+            </p>
           }
         </div>
       }

@@ -8,8 +8,9 @@ import { FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS, FORMATION_ENABLED_FLAG } from '
 import { ProjectContext } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { ProjectContextService } from '@shared/services/project-context.service';
+import { ProjectRecoveryService } from '@shared/services/project-recovery.service';
 import { ProjectService } from '@shared/services/project.service';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { formationOverviewRedirectGuard } from './formation-overview-redirect.guard';
@@ -20,6 +21,7 @@ describe('formationOverviewRedirectGuard', () => {
   let waitForReady: ReturnType<typeof vi.fn>;
   let getBooleanFlag: ReturnType<typeof vi.fn>;
   let getProject: ReturnType<typeof vi.fn>;
+  let resolveProject: ReturnType<typeof vi.fn>;
   let createUrlTree: ReturnType<typeof vi.fn>;
   let selectedProject: ReturnType<typeof signal<ProjectContext | null>>;
   let setFormationOverviewAllowedSlug: ReturnType<typeof vi.fn>;
@@ -40,6 +42,7 @@ describe('formationOverviewRedirectGuard', () => {
     waitForReady = vi.fn().mockResolvedValue(true);
     getBooleanFlag = vi.fn().mockReturnValue(signal(true));
     getProject = vi.fn().mockReturnValue(of({ stage: 'Formation - Engaged' }));
+    resolveProject = vi.fn().mockImplementation(() => getProject());
     createUrlTree = vi.fn().mockImplementation((commands: string[], opts: unknown) => ({ redirect: commands[0], opts }) as unknown as UrlTree);
     selectedProject = signal<ProjectContext | null>(null);
     setFormationOverviewAllowedSlug = vi.fn();
@@ -51,6 +54,7 @@ describe('formationOverviewRedirectGuard', () => {
           useValue: { getFlagOverride, providerReady: providerReady.asReadonly(), waitForReady, getBooleanFlag },
         },
         { provide: ProjectService, useValue: { getProject } },
+        { provide: ProjectRecoveryService, useValue: { resolve: resolveProject } },
         { provide: ProjectContextService, useValue: { selectedProject, setFormationOverviewAllowedSlug } },
         { provide: Router, useValue: { createUrlTree } },
         { provide: PLATFORM_ID, useValue: 'browser' },
@@ -80,7 +84,7 @@ describe('formationOverviewRedirectGuard', () => {
   it('redirects a formation project to the checklist with the slug carried on the URL', async () => {
     const result = await runGuard({ project: 'my-project' });
 
-    expect(getProject).toHaveBeenCalledWith('my-project', false);
+    expect(resolveProject).toHaveBeenCalledWith('my-project');
     expect(result).toEqual({ redirect: '/project/formation', opts: { queryParams: { project: 'my-project' } } });
     expect(setFormationOverviewAllowedSlug).toHaveBeenLastCalledWith(null);
   });
@@ -121,7 +125,7 @@ describe('formationOverviewRedirectGuard', () => {
   });
 
   it('allows when the project cannot be resolved so the not-found handling downstream wins', async () => {
-    getProject.mockReturnValue(of(null));
+    resolveProject.mockReturnValue(throwError(() => new Error('Lookup failed')));
 
     const result = await runGuard({ project: 'missing-project' });
 

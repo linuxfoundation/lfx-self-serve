@@ -3,6 +3,7 @@
 
 import { Routes } from '@angular/router';
 
+import type { EnrollProgramComponent } from './admin/enroll-program/enroll-program.component';
 import { menteeApplyGuard } from '@shared/guards/mentee-apply.guard';
 import { menteeRegisterGuard } from '@shared/guards/mentee-profile.guard';
 import { mentorRegisterGuard } from '@shared/guards/mentor-profile.guard';
@@ -22,6 +23,8 @@ export const MENTORSHIP_ROUTES: Routes = [
     path: 'admin/enroll',
     title: 'Enroll Program',
     loadComponent: () => import('./admin/enroll-program/enroll-program.component').then((m) => m.EnrollProgramComponent),
+    // Asks before leaving with unsaved answers, or after a partial save that left the program without a logo.
+    canDeactivate: [(component: EnrollProgramComponent) => component.canLeave()],
   },
   {
     path: 'admin/:programId',

@@ -42,7 +42,6 @@ export const ADMIN_PROGRAM_PAGE: MentorshipAdminProgramPage = {
     slug: 'test-program-admin',
     name: 'Test Program Admin',
     projectName: 'Test Project',
-    term: ADMIN_OPEN_TERM_NAME,
     status: 'open',
     stats: { mentors: 0, mentees: 1, graduated: 1 },
     createdOn: '2026-06-01',
@@ -166,11 +165,20 @@ export async function stubAdminProgramPageError(page: Page, status: number): Pro
   await page.route(PROGRAM_ROUTE, (route) => fulfillJson(route, { error: 'stubbed' }, status));
 }
 
+/** Whether an application matches the mentees `status` filter. `applied` and `tasks-completed` split `pending` on its tasks, as upstream does. */
+function matchesStatusFilter(application: MentorshipProgramApplicant, status: string): boolean {
+  const tasksOutstanding = (application.tasksSubmitted ?? 0) < (application.tasksTotal ?? 0);
+  if (status === 'applied') return application.status === 'pending' && tasksOutstanding;
+  if (status === 'tasks-completed') return application.status === 'pending' && !tasksOutstanding;
+  return application.status === status;
+}
+
 /**
  * Answers the mentees read from the 37 synthetic applications, honoring `offset`, `limit`, `status` and `search`.
- * Pass `failWith` to answer every read with that error status instead.
+ * Pass `failWith` to answer every read with that error status instead. `notes`, keyed by application id, is read on
+ * every request, so a spec that records a saved note there gets it back on the next read.
  */
-export async function stubAdminMentees(page: Page, requests: AdminProgramRequests, failWith?: number): Promise<void> {
+export async function stubAdminMentees(page: Page, requests: AdminProgramRequests, failWith?: number, notes: Record<string, string> = {}): Promise<void> {
   await page.route(MENTEES_ROUTE, (route) => {
     const params = new URL(route.request().url()).searchParams;
     requests.mentees.push(params);
@@ -179,10 +187,15 @@ export async function stubAdminMentees(page: Page, requests: AdminProgramRequest
     const status = params.get('status');
     const search = params.get('search')?.toLowerCase();
     const source = params.get('type') === 'past' ? ADMIN_PAST_APPLICATIONS : ADMIN_APPLICATIONS;
-    const matching = source.filter((application) => (!status || application.status === status) && (!search || application.name.toLowerCase().includes(search)));
+    const matching = source.filter(
+      (application) => (!status || matchesStatusFilter(application, status)) && (!search || application.name.toLowerCase().includes(search))
+    );
     const offset = Number(params.get('offset') ?? 0);
     const limit = Number(params.get('limit') ?? ADMIN_MENTEES_PAGE_SIZE);
-    return fulfillJson(route, { data: matching.slice(offset, offset + limit), total: matching.length } satisfies MentorshipAdminMenteesResponse);
+    const data = matching
+      .slice(offset, offset + limit)
+      .map((application) => (application.id in notes ? { ...application, note: notes[application.id] } : application));
+    return fulfillJson(route, { data, total: matching.length } satisfies MentorshipAdminMenteesResponse);
   });
 }
 

@@ -245,6 +245,8 @@ export const NEWSLETTER_COMMITTEE_CATEGORY = 'Newsletter';
  * @description Subset of categories for restricted selection (e.g., forms, dashboards)
  */
 export const FILTERED_COMMITTEE_CATEGORIES = [
+  // Newsletter writers can be Maintainers, and a newsletter's audience must be a Newsletter group.
+  { label: 'Newsletter', value: 'Newsletter' },
   { label: 'Special Interest Group', value: 'Special Interest Group' },
   { label: 'Technical Advisory Committee', value: 'Technical Advisory Committee' },
   { label: 'Technical Oversight Committee', value: 'Technical Oversight Committee' },

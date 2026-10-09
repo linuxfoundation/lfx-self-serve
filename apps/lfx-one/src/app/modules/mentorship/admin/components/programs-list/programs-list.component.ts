@@ -45,6 +45,8 @@ export class ProgramsListComponent {
   public readonly programClick = output<string>();
   public readonly loadMore = output<void>();
   public readonly retry = output<void>();
+  /** Emits when a card changed its program (a logo was added), so the parent reloads the list. */
+  public readonly changed = output<void>();
 
   // ─── Form ──────────────────────────────────────────────────────────────────
   protected readonly form = new FormGroup({
@@ -98,5 +100,9 @@ export class ProgramsListComponent {
 
   protected onRetry(): void {
     this.retry.emit();
+  }
+
+  protected onProgramChanged(): void {
+    this.changed.emit();
   }
 }

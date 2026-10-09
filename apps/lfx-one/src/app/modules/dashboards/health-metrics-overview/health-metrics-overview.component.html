@@ -10,7 +10,16 @@
 
   <div class="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-stretch">
     <section class="min-w-0" data-testid="health-metrics-overview-findings-list">
-      @if (hasFindings()) {
+      @if (findingsLoading()) {
+        <div class="surface-card flex flex-col gap-4 rounded-xl bg-white px-[26px] py-5" data-testid="health-metrics-overview-findings-loading">
+          @for (row of [1, 2, 3]; track row) {
+            <div class="flex flex-col gap-2">
+              <p-skeleton width="6rem" height="0.75rem" />
+              <p-skeleton width="75%" height="1rem" />
+            </div>
+          }
+        </div>
+      } @else if (hasFindings()) {
         <div class="surface-card flex flex-col rounded-xl bg-white">
           @for (findingGroup of findingGroups(); track findingGroup.classification) {
             <div [attr.data-testid]="'health-metrics-overview-findings-group-' + findingGroup.classification">
@@ -29,7 +38,7 @@
           }
         </div>
       } @else {
-        <!-- Not an all-clear: with no findings feed yet, "nothing needs attention" would be a false claim. -->
+        <!-- Not an all-clear: an empty feed may mean signals aren't generated yet, so "nothing needs attention" would be a false claim. -->
         <div
           class="flex flex-col items-center gap-2 rounded-lg border border-gray-200 py-12 text-center"
           data-testid="health-metrics-overview-findings-unavailable">

@@ -5,8 +5,9 @@ import { Component, computed, inject, input } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CardSelectorComponent } from '@components/card-selector/card-selector.component';
 import { MessageComponent } from '@components/message/message.component';
-import { COMMITTEE_CATEGORIES, COMMITTEE_CATEGORY_CONFIGS, COMMITTEE_LABEL, FILTERED_COMMITTEE_CATEGORIES } from '@lfx-one/shared/constants';
+import { COMMITTEE_CATEGORY_CONFIGS, COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { CardSelectorOption } from '@lfx-one/shared/interfaces';
+import { getSelectableCommitteeCategories } from '@lfx-one/shared/utils';
 import { PersonaService } from '@services/persona.service';
 
 @Component({
@@ -24,13 +25,11 @@ export class CommitteeCategorySelectionComponent {
   public readonly committeeLabel = COMMITTEE_LABEL.singular;
 
   // Category options for card selector (computed based on persona)
-  public readonly categoryOptions = computed<CardSelectorOption<string>[]>(() => {
-    const categories = this.personaService.currentPersona() === 'maintainer' ? FILTERED_COMMITTEE_CATEGORIES : COMMITTEE_CATEGORIES;
-
-    return categories.map((category) => ({
+  public readonly categoryOptions = computed<CardSelectorOption<string>[]>(() =>
+    getSelectableCommitteeCategories(this.personaService.currentPersona()).map((category) => ({
       label: category.label,
       value: category.value,
       info: COMMITTEE_CATEGORY_CONFIGS[category.value],
-    }));
-  });
+    }))
+  );
 }

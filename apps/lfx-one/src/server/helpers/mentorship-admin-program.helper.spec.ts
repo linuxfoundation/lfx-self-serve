@@ -23,7 +23,6 @@ const upstream = (overrides: Partial<MentorshipUpstreamAdministeredProgram> = {}
   status: 'published',
   admin_status: 'open',
   project_name: 'Energy Project',
-  term: { id: 't-1', name: 'Spring', status: 'open' },
   stats: { mentors: 2, mentees: 3, graduated: 1 },
   created_on: '2026-01-01T00:00:00Z',
   updated_on: '2026-01-02T00:00:00Z',
@@ -51,19 +50,32 @@ describe('mapMentorshipAdminProgram', () => {
       slug: 'program-one',
       name: 'Program One',
       projectName: 'Energy Project',
-      term: 'Spring',
       status: 'open',
       stats: { mentors: 2, mentees: 3, graduated: 1 },
       logoUrl: 'https://logo.example/p.png',
+      logoMissing: false,
       createdOn: '2026-01-01T00:00:00Z',
       updatedOn: '2026-01-02T00:00:00Z',
     });
   });
 
-  it('falls back to empty text for a missing project and term, and to the id for a missing slug', () => {
-    const { program } = mapMentorshipAdminProgram(upstream({ slug: undefined, project_name: undefined, term: undefined }));
+  it.each([
+    ['pending', undefined, true],
+    ['published', undefined, true],
+    ['published', '', true],
+    ['pending', 'https://logo.example/p.png', false],
+    ['published', 'https://logo.example/p.png', false],
+    ['rejected', undefined, false],
+    ['submitted', undefined, false],
+    ['hidden', undefined, false],
+  ])('reads status %s with logo %s as logoMissing %s', (status, logoUrl, expected) => {
+    expect(mapMentorshipAdminProgram(upstream({ status, logo_url: logoUrl })).program.logoMissing).toBe(expected);
+  });
 
-    expect(program).toMatchObject({ slug: 'p-1', projectName: '', term: '' });
+  it('falls back to empty text for a missing project, and to the id for a missing slug', () => {
+    const { program } = mapMentorshipAdminProgram(upstream({ slug: undefined, project_name: undefined }));
+
+    expect(program).toMatchObject({ slug: 'p-1', projectName: '' });
     expect(program).not.toHaveProperty('logoUrl');
   });
 });
@@ -97,12 +109,9 @@ describe('mapMentorshipAdminHeaderProgram', () => {
   });
 
   it.each([
-    ['draft', 'pending-review'],
-    ['submitted', 'pending-review'],
     ['pending', 'pending-review'],
     ['rejected', 'rejected'],
     ['hidden', 'hidden'],
-    ['archived', 'hidden'],
   ])('reads the unpublished status %s as %s', (status, expected) => {
     expect(mapMentorshipAdminHeaderProgram(header(status), { has_open_term: true, has_closed_term: false })).toMatchObject({
       program: { status: expected },
@@ -110,22 +119,25 @@ describe('mapMentorshipAdminHeaderProgram', () => {
     });
   });
 
-  it.each(['mystery', 'constructor'])('reads the unknown status "%s" as pending-review and flags it', (status) => {
+  it.each(['mystery', 'constructor', 'submitted', 'archived'])('reads the unknown status "%s" as pending-review and flags it', (status) => {
     expect(mapMentorshipAdminHeaderProgram(header(status))).toMatchObject({ program: { status: 'pending-review' }, unknownStatus: true });
   });
 
-  it('maps the header fields, falling back to empty text and the id', () => {
-    expect(mapMentorshipAdminHeaderProgram(header('published', { active_term: undefined })).program).toEqual({
+  it('maps the header fields, leaving out the active term', () => {
+    expect(mapMentorshipAdminHeaderProgram(header('published')).program).toEqual({
       id: 'p-1',
       slug: 'program-one',
       name: 'Program One',
       projectName: 'Energy Project',
-      term: '',
       status: 'open',
       stats: { mentors: 2, mentees: 3, graduated: 1 },
       createdOn: '2026-01-01T00:00:00Z',
       updatedOn: '2026-01-02T00:00:00Z',
     });
+  });
+
+  it('leaves logoMissing to the list row, even for a pending program without a logo', () => {
+    expect(mapMentorshipAdminHeaderProgram(header('pending')).program).not.toHaveProperty('logoMissing');
   });
 });
 
@@ -194,7 +206,7 @@ const termRow = (overrides: Partial<MentorshipUpstreamTermManagementRow> = {}): 
   start_date_time: '2026-03-01T00:00:00Z',
   end_date_time: '2026-05-31T00:00:00Z',
   application_start_date: '2026-01-05T00:00:00Z',
-  application_end_date: '2026-02-15T00:00:00Z',
+  application_end_date: '2026-02-15T23:59:59Z',
   created_on: '2025-12-01T00:00:00Z',
   updated_on: '2025-12-02T00:00:00Z',
   pending: 1,

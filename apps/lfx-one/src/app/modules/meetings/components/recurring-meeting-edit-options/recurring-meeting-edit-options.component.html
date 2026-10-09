@@ -8,31 +8,76 @@
 
   <form [formGroup]="editForm" class="flex flex-col gap-4">
     <div class="flex items-start gap-3">
-      <lfx-radio-button [form]="editForm" control="scope" name="scope" value="occurrence" inputId="edit-scope-occurrence"> </lfx-radio-button>
-      <div class="flex-1">
-        <label for="edit-scope-occurrence" class="font-medium text-gray-900 cursor-pointer">Only this occurrence</label>
-        <div class="text-sm text-gray-600 mt-1">
-          @if (occurrence) {
-            Change the time, title, or agenda of {{ occurrence.start_time | meetingTime: occurrence.duration : 'date' : meeting.timezone }} without changing the
-            rest of the series.
+      <lfx-radio-button
+        [form]="editForm"
+        control="scope"
+        name="scope"
+        value="occurrence"
+        inputId="edit-scope-occurrence"
+        data-testid="recurring-edit-scope-occurrence-radio">
+      </lfx-radio-button>
+      <div class="flex min-w-0 flex-1 flex-col gap-2">
+        <div class="flex flex-col gap-1">
+          @if (meetingsV2Enabled()) {
+            <label for="edit-scope-occurrence" class="cursor-pointer font-medium text-gray-900">A single occurrence</label>
+            <span class="text-sm text-gray-600">
+              @if (occurrenceOptions.length > 0) {
+                Change the time, title, or agenda of one occurrence without changing the rest of the series.
+              } @else {
+                There are no upcoming occurrences left to edit on their own.
+              }
+            </span>
           } @else {
-            Change the time, title, or agenda of this occurrence without changing the rest of the series.
+            <label for="edit-scope-occurrence" class="cursor-pointer font-medium text-gray-900">Only this occurrence</label>
+            <span class="text-sm text-gray-600">
+              @if (occurrence) {
+                Change the time, title, or agenda of {{ occurrence.start_time | meetingTime: occurrence.duration : 'date' : meeting.timezone }} without changing
+                the rest of the series.
+              } @else {
+                Change the time, title, or agenda of this occurrence without changing the rest of the series.
+              }
+            </span>
           }
         </div>
+
+        <!-- The picker is meeting v2 only; flag off edits the occurrence the dialog was opened on. -->
+        @if (meetingsV2Enabled() && isOccurrenceScope() && occurrenceOptions.length > 0) {
+          <div class="flex flex-col gap-1.5">
+            <!-- p-select's inputId lands on a span[role=combobox], so this associates via aria-labelledby, not `for` -->
+            <span id="edit-scope-occurrence-picker-label" class="text-xs font-medium text-gray-700">Occurrence</span>
+            <lfx-select
+              [form]="editForm"
+              control="occurrenceId"
+              [options]="occurrenceOptions"
+              inputId="edit-scope-occurrence-picker"
+              ariaLabelledBy="edit-scope-occurrence-picker-label"
+              placeholder="Select an occurrence"
+              styleClass="w-full"
+              scrollHeight="240px"
+              dataTest="recurring-edit-scope-occurrence-select"
+              data-testid="recurring-edit-scope-occurrence-select" />
+          </div>
+        }
       </div>
     </div>
 
     <div class="flex items-start gap-3">
-      <lfx-radio-button [form]="editForm" control="scope" name="scope" value="series" inputId="edit-scope-series"> </lfx-radio-button>
+      <lfx-radio-button
+        [form]="editForm"
+        control="scope"
+        name="scope"
+        value="series"
+        inputId="edit-scope-series"
+        data-testid="recurring-edit-scope-series-radio"></lfx-radio-button>
       <div class="flex-1">
-        <label for="edit-scope-series" class="font-medium text-gray-900 cursor-pointer">The entire series</label>
-        <div class="text-sm text-gray-600 mt-1">Edit the title, schedule, guests, and settings for every upcoming occurrence.</div>
+        <label for="edit-scope-series" class="cursor-pointer font-medium text-gray-900">The entire series</label>
+        <div class="mt-1 text-sm text-gray-600">Edit the title, schedule, guests, and settings for every upcoming occurrence.</div>
       </div>
     </div>
   </form>
 
   <!-- Action Buttons -->
-  <div class="flex justify-end gap-3 mt-6">
+  <div class="mt-6 flex justify-end gap-3">
     <lfx-button
       label="Cancel"
       severity="secondary"
@@ -44,7 +89,8 @@
       label="Continue"
       severity="info"
       size="small"
-      icon="fa-light fa-arrow-right"
+      [icon]="meetingsV2Enabled() ? undefined : 'fa-light fa-arrow-right'"
+      [disabled]="!canContinue()"
       (click)="onConfirm()"
       data-testid="recurring-edit-scope-continue-button"></lfx-button>
   </div>

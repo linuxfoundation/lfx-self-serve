@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MENTORSHIP_PROGRAM_LOGO_HINT_STATUSES } from '@lfx-one/shared/constants';
 import {
   MentorshipProgram,
   MentorshipProgramMentor,
@@ -20,7 +21,8 @@ import { toIsoDate } from './date-format.helper';
 /**
  * Builds one admin list row from an upstream administered program. Upstream decides the status shown (`admin_status`);
  * a value this does not know reads as `pending-review` with `unknownStatus` set, so the caller can log it.
- * The term is the row's term name, or empty. The slug falls back to the id so `/mentorship/admin/:programId` always resolves.
+ * The slug falls back to the id so `/mentorship/admin/:programId` always resolves.
+ * `logoMissing` reads the raw `status`: a program awaiting review (`pending`) or published without a logo gets the card's hint.
  */
 export const mapMentorshipAdminProgram = (item: MentorshipUpstreamAdministeredProgram): { program: MentorshipProgram; unknownStatus: boolean } => {
   const status = Object.hasOwn(MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM, item.admin_status)
@@ -33,10 +35,10 @@ export const mapMentorshipAdminProgram = (item: MentorshipUpstreamAdministeredPr
       slug: item.slug || item.id,
       name: item.name,
       projectName: item.project_name ?? '',
-      term: item.term?.name ?? '',
       status: status ?? 'pending-review',
       stats: item.stats,
       ...(item.logo_url ? { logoUrl: item.logo_url } : {}),
+      logoMissing: (MENTORSHIP_PROGRAM_LOGO_HINT_STATUSES as readonly string[]).includes(item.status) && !item.logo_url,
       createdOn: item.created_on,
       updatedOn: item.updated_on,
     },
@@ -68,7 +70,6 @@ export const mapMentorshipAdminHeaderProgram = (
       slug: item.slug || item.id,
       name: item.name,
       projectName: item.project_name ?? '',
-      term: header.active_term?.name ?? '',
       status: status ?? 'pending-review',
       stats: header.stats,
       ...(item.logo_url ? { logoUrl: item.logo_url } : {}),

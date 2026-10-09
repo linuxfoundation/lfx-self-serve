@@ -5,6 +5,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
+import { signal } from '@angular/core';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { of, Subject } from 'rxjs';
@@ -32,6 +34,7 @@ describe('CancelOccurrenceConfirmationComponent', () => {
         { provide: DynamicDialogRef, useValue: { close } },
         { provide: DynamicDialogConfig, useValue: config },
         { provide: MeetingService, useValue: { cancelOccurrence } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
       ],
     });
     TestBed.overrideComponent(CancelOccurrenceConfirmationComponent, { set: { template: '', imports: [] } });

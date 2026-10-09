@@ -56,6 +56,49 @@ describe('proxyMentorshipRequest', () => {
     expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', path, 'PATCH', { limit: 5 }, body);
   });
 
+  it('sends the custom headers on the request and its retry, not on the PUT /me provisioning call', async () => {
+    proxyRequest.mockRejectedValueOnce(upstream401('local user is not provisioned')).mockResolvedValueOnce({}).mockResolvedValueOnce({ ok: true });
+    const bytes = Buffer.from('png');
+    const headers = { 'Content-Type': 'image/png' };
+
+    await expect(proxyMentorshipRequest(proxy, req, path, 'POST', undefined, bytes, path, headers)).resolves.toEqual({ ok: true });
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', path, 'POST', undefined, bytes, headers);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
+    expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', path, 'POST', undefined, bytes, headers);
+  });
+
+  it('applies the request options to the request and its retry, not to the PUT /me provisioning call', async () => {
+    proxyRequest.mockRejectedValueOnce(upstream401('local user is not provisioned')).mockResolvedValueOnce({}).mockResolvedValueOnce({ ok: true });
+    const form = { file: 'bytes' };
+    const options = { timeoutMs: 120_000 };
+
+    await expect(proxyMentorshipRequest(proxy, req, path, 'POST', undefined, form, undefined, undefined, options)).resolves.toEqual({ ok: true });
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', path, 'POST', undefined, form, undefined, options);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
+    expect(proxyRequest.mock.calls[1]).toHaveLength(6);
+    expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', path, 'POST', undefined, form, undefined, options);
+  });
+
+  it('sends both the custom headers and the request options when both are set', async () => {
+    proxyRequest.mockResolvedValueOnce({ ok: true });
+    const headers = { 'Content-Type': 'image/png' };
+    const options = { timeoutMs: 120_000 };
+
+    await proxyMentorshipRequest(proxy, req, path, 'POST', undefined, Buffer.from('png'), path, headers, options);
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'POST', undefined, Buffer.from('png'), headers, options);
+  });
+
+  it('calls the proxy with its original six arguments when neither headers nor options are set', async () => {
+    proxyRequest.mockResolvedValueOnce({ ok: true });
+
+    await proxyMentorshipRequest(proxy, req, path, 'DELETE');
+
+    expect(proxyRequest.mock.calls[0]).toHaveLength(6);
+  });
+
   it('does not provision an impersonated user, since impersonation is read-only', async () => {
     const error = upstream401('local user is not provisioned');
     proxyRequest.mockRejectedValueOnce(error);

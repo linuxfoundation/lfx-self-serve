@@ -3158,6 +3158,24 @@ describe('OrgClaService.getContributorAcknowledgments — Not Authorized', () =>
     expect(row?.removedCriteria).toBeUndefined();
   });
 
+  it('reads a Not Authorized row that a manager then invalidated as Invalidated, with the new stamps', async () => {
+    const row = await mapped({
+      signatureApproved: false,
+      invalidatedAt: '2026-10-06T12:00:00Z',
+      invalidatedBy: 'cla-manager',
+      note: 'Signature invalidated (approved set to false) by cla-manager for contributor ',
+    });
+
+    expect(row).toMatchObject({
+      approved: false,
+      removedFromApprovalList: false,
+      invalidatedAt: '2026-10-06T12:00:00Z',
+      invalidatedBy: 'cla-manager',
+    });
+    expect(row?.invalidationReason).toBeUndefined();
+    expect(row?.removedCriteria).toBeUndefined();
+  });
+
   it('never marks an approved row Not Authorized', async () => {
     const row = await mapped({ signatureApproved: true, invalidationReason: 'approved list removal (Email Domain Criteria)' });
 
@@ -3436,14 +3454,14 @@ describe('OrgClaService.invalidateAcknowledgment — the producer call', () => {
     );
   });
 
-  it('answers not-approved when the producer refuses an acknowledgment that is not approved', async () => {
+  it('answers conflict when the producer refuses an acknowledgment already invalidated or changed meanwhile', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ claManagers: [{ userID: 'u1', lfUsername: 'aporter' }] })));
     gatewayFetch.mockResolvedValueOnce(contributorPage({ list: [contributor({ signatureID: 'ecla-sig-1' })] }));
     gatewayFetch.mockRejectedValueOnce(
       new MicroserviceError('Failed to invalidate the acknowledgment: 409 Conflict', 409, 'UPSTREAM_ERROR', { service: 'cla_service' })
     );
 
-    expect(await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {})).toEqual({ outcome: 'not-approved' });
+    expect(await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {})).toEqual({ outcome: 'conflict' });
   });
 
   it('rethrows any other producer failure', async () => {

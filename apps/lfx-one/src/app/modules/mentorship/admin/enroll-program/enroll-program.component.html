@@ -6,7 +6,7 @@
   <div class="flex flex-col gap-6">
     <div class="flex flex-col gap-3 mt-3">
       <lfx-button
-        label="My Programs"
+        [label]="backToLabel"
         icon="fa-light fa-chevron-left"
         iconPos="left"
         [text]="true"
@@ -15,44 +15,108 @@
         (onClick)="onCancel()"
         data-testid="mentorship-enroll-back-to-programs" />
       <div class="flex flex-col gap-1">
-        <h1 class="font-display font-light text-2xl" data-testid="mentorship-enroll-title">Enroll a Program</h1>
-        <p class="text-sm text-gray-500">The LFX team reviews every enrollment before it opens for applications.</p>
+        <h1 class="font-display font-light text-2xl" data-testid="mentorship-enroll-title">{{ title }}</h1>
+        <p class="text-sm text-gray-500">{{ intro }}</p>
       </div>
     </div>
 
-    <lfx-mentorship-enroll-stepper [current]="step()" />
+    @if (editLoad() === 'loading') {
+      <lfx-route-loading data-testid="mentorship-enroll-loading" />
+    } @else if (editLoad() === 'failed') {
+      <div
+        class="flex flex-col items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        role="alert"
+        data-testid="mentorship-enroll-load-error">
+        <p>{{ editLoadFailed }}</p>
+        <lfx-button label="Retry" size="small" [text]="true" (onClick)="onRetryLoad()" data-testid="mentorship-enroll-load-retry" />
+      </div>
+    } @else {
+      <lfx-mentorship-enroll-stepper [current]="step()" />
 
-    @switch (step()) {
-      @case ('details') {
-        <lfx-mentorship-enroll-details-step
-          [form]="form"
-          [errors]="stepErrors()"
-          (ciiLookupStatusChange)="onCiiLookupStatusChange($event)"
-          (nameLookupStatusChange)="onNameLookupStatusChange($event)" />
+      @switch (step()) {
+        @case ('details') {
+          <lfx-mentorship-enroll-details-step
+            [form]="form"
+            [errors]="stepErrors()"
+            [(project)]="selectedProject"
+            [(logoFile)]="logoFile"
+            [programId]="editProgramId"
+            [currentLogoUrl]="currentLogoUrl()"
+            (ciiLookupStatusChange)="onCiiLookupStatusChange($event)"
+            (nameLookupStatusChange)="onNameLookupStatusChange($event)" />
+        }
+        @case ('setup') {
+          <lfx-mentorship-enroll-setup-step [form]="form" [errors]="stepErrors()" [closedTerms]="closedTerms()" />
+        }
+        @case ('prerequisites') {
+          <lfx-mentorship-enroll-prerequisites-step
+            [form]="form"
+            [errors]="stepErrors()"
+            [locked]="submitting() || programSaved()"
+            [showTermsAcknowledgement]="!editing" />
+        }
       }
-      @case ('setup') {
-        <lfx-mentorship-enroll-setup-step [form]="form" [errors]="stepErrors()" />
+
+      @if (hasStepErrors() || formIncompleteShown()) {
+        <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{{ formIncomplete }}</div>
       }
-      @case ('prerequisites') {
-        <lfx-mentorship-enroll-prerequisites-step [form]="form" [errors]="stepErrors()" />
+
+      @if (partialSave()) {
+        <div
+          class="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          role="alert"
+          data-testid="mentorship-enroll-partial-save">
+          <p>{{ submitFailure()?.message ?? logoNotUploaded }}</p>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium" for="mentorship-enroll-partial-save-logo-input">Choose a different logo</label>
+            <input
+              id="mentorship-enroll-partial-save-logo-input"
+              type="file"
+              class="text-xs"
+              [accept]="logoAccept"
+              [disabled]="submitting()"
+              (change)="onReplaceLogo($event)"
+              data-testid="mentorship-enroll-partial-save-logo-input" />
+            @if (logoFieldError()) {
+              <p class="text-xs text-red-600" data-testid="mentorship-enroll-partial-save-logo-error">{{ logoFieldError() }}</p>
+            }
+          </div>
+          <lfx-button
+            [label]="retryLabel"
+            severity="primary"
+            size="small"
+            styleClass="self-start"
+            [loading]="submitting()"
+            [disabled]="submitting()"
+            (onClick)="submitEnrollment()"
+            data-testid="mentorship-enroll-partial-save-retry" />
+        </div>
+      } @else if (submitFailure()) {
+        <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert" data-testid="mentorship-enroll-submit-error">
+          {{ submitFailure()?.message }}
+        </div>
       }
+
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2 pb-8">
+        <lfx-button
+          [label]="backLabel()"
+          [icon]="step() === 'details' ? undefined : 'fa-light fa-arrow-left'"
+          iconPos="left"
+          severity="secondary"
+          [text]="true"
+          size="small"
+          [disabled]="submitting() || programSaved()"
+          (onClick)="onBack()"
+          data-testid="mentorship-enroll-back" />
+        <lfx-button
+          [label]="nextLabel()"
+          severity="primary"
+          size="small"
+          [loading]="submitting()"
+          [disabled]="submitting()"
+          (onClick)="onNext()"
+          data-testid="mentorship-enroll-next" />
+      </div>
     }
-
-    @if (hasStepErrors()) {
-      <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{{ formIncomplete }}</div>
-    }
-
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2 pb-8">
-      <lfx-button
-        [label]="backLabel()"
-        [icon]="step() === 'details' ? undefined : 'fa-light fa-arrow-left'"
-        iconPos="left"
-        severity="secondary"
-        [text]="true"
-        size="small"
-        (onClick)="onBack()"
-        data-testid="mentorship-enroll-back" />
-      <lfx-button [label]="nextLabel()" severity="primary" size="small" (onClick)="onNext()" data-testid="mentorship-enroll-next" />
-    </div>
   </div>
 </div>

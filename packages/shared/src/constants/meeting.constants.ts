@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { ArtifactVisibility, MeetingType, MeetingVisibility, CancelOnCommitteeRemoval } from '../enums';
-import type { AttachmentCategory, CardSelectorOption, MeetingComposerPreviewFeature, MeetingStatusKind, MeetingTypeConfig } from '../interfaces';
+import type {
+  AttachmentCategory,
+  CardSelectorOption,
+  MeetingComposerPreviewFeature,
+  MeetingStatusKind,
+  MeetingTypeConfig,
+  ShowMeetingAttendeesLockOptions,
+} from '../interfaces';
 import { lfxColors } from './colors.constants';
 
 /**
@@ -366,6 +373,16 @@ export const MEETING_COMPOSER_SECTIONS = [
  * seen this yet", and the dialog is where they saw it.
  */
 export const MEETING_QUICK_CREATE_SECTIONS = ['details-access', 'date-schedule', 'guests', 'agenda-resources'] as const;
+
+/**
+ * Sections the composer shows when editing a single occurrence of a recurring meeting.
+ * @description Upstream's occurrence update takes only a title, start time, duration and agenda, so the
+ * section holding nothing but series-level settings — platform and features — is left out. Guests stay:
+ * series guests read-only, while a guest can be invited to, or removed from, this occurrence alone. The sections kept here hide their own series-level
+ * fields (access, recurrence, groups, and documents and links, which upstream cannot scope to an
+ * occurrence).
+ */
+export const MEETING_COMPOSER_OCCURRENCE_SECTIONS = ['details-access', 'date-schedule', 'guests', 'agenda-resources'] as const;
 
 /**
  * Feature rows the composer preview lists, in display order.
@@ -734,6 +751,12 @@ export const SHOW_MEETING_ATTENDEES_FEATURE = {
 
 /** Note shown when the attendees toggle is locked off for board or restricted meetings. */
 export const SHOW_MEETING_ATTENDEES_LOCKED_NOTE = 'Not available for board or restricted meetings';
+
+/** Note the meeting v2 composer shows, where only board meetings lock the toggle (`allowRestricted`). */
+export const SHOW_MEETING_ATTENDEES_BOARD_LOCKED_NOTE = 'Not available for board meetings';
+
+/** The meeting v2 composer's attendee-lock rule: board meetings only. */
+export const COMPOSER_ATTENDEE_LOCK: ShowMeetingAttendeesLockOptions = { allowRestricted: true };
 
 // ============================================================================
 // Meeting Duration Options

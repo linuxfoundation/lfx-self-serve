@@ -1,16 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_MENTEE_NOTE_MAX } from '@lfx-one/shared/constants';
 import { MentorshipMentorInviteDecision } from '@lfx-one/shared/interfaces';
 import { isMentorshipMentorInviteToken, isMentorshipMentorTaskReviewDecision, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { parseMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
 import { parseMentorshipMentorProfileUpdate } from '../helpers/mentorship-mentor-profile-update.helper';
 import { parseMentorshipMentorRegisterRequest } from '../helpers/mentorship-mentor-register.helper';
 import { parseMentorshipMentorOpenProgramsQuery } from '../helpers/mentorship-mentor-request.helper';
-import { parseMentorshipMentorTaskCreateRequest } from '../helpers/mentorship-mentor-task.helper';
 import { parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { logger } from '../services/logger.service';
 import { MentorshipMentorService } from '../services/mentorship-mentor.service';
@@ -215,45 +214,11 @@ export class MentorshipMentorController {
         });
       }
 
-      const raw: unknown = req.body?.note;
-      if (typeof raw !== 'string') {
-        throw ServiceValidationError.forField('note', 'note must be a string', { operation: 'update_mentorship_application_note' });
-      }
-      const note = raw.trim();
-      if (note.length > MENTORSHIP_MENTEE_NOTE_MAX) {
-        throw ServiceValidationError.forField('note', `note must be at most ${MENTORSHIP_MENTEE_NOTE_MAX} characters`, {
-          operation: 'update_mentorship_application_note',
-        });
-      }
+      const note = parseMentorshipApplicationNote(req.body, 'update_mentorship_application_note');
 
       await this.mentorService.updateApplicationNote(req, applicationId, { note });
       logger.success(req, 'update_mentorship_application_note', startTime, { applicationId, cleared: note === '' });
       res.status(204).send();
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // POST /api/mentorship/mentor/tasks  { applicationIds, name, description, dueDate?, requiresFileSubmission? } -> { created, failed }
-  // Auth: logged-in user required (401 otherwise). The body is validated with the task dialog's rules (400). With
-  // one application, upstream's status passes through; with several, the ones not created are listed in `failed`.
-  // Only ids and counts are logged, never the task's text.
-  public async createMenteeTasks(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'create_mentorship_mentor_tasks');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'create_mentorship_mentor_tasks' });
-      }
-
-      const request = parseMentorshipMentorTaskCreateRequest(req.body);
-      const result = await this.mentorService.createMenteeTasks(req, request);
-      logger.success(req, 'create_mentorship_mentor_tasks', startTime, {
-        application_count: request.applicationIds.length,
-        created_count: result.created.length,
-        failed_count: result.failed.length,
-      });
-      res.json(result);
     } catch (error) {
       next(error);
     }

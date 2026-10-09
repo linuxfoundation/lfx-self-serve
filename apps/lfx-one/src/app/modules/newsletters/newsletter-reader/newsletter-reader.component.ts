@@ -97,14 +97,10 @@ export class NewsletterReaderComponent {
     this.clipboardShare.copyLink(url, 'Newsletter link copied to clipboard.');
   }
 
-  // The feed is a Me-lens page: with a foundation/project lens active, a plain
-  // routerLink to /newsletters/my gets rewritten by lensRedirectGuard to the
-  // lens-prefixed mount, whose newsletterAccessGuard bounces non-writers to the
-  // overview. Switching to the always-allowed 'me' lens first keeps the
-  // permalink audience (any authenticated user) able to reach their feed.
+  // The personal route restores Me; eager selection updates this tab immediately,
+  // including when a modified click opens the feed in another tab.
   protected goToMyNewsletters(event: MouseEvent): void {
-    // Persist the lens before branching: setLens writes the lens cookie, so a
-    // browser-handled modified click (new tab/window) also lands on the feed.
+    // Persist the lens before branching for a new-tab/window click.
     this.lensService.setLens('me');
 
     // Let the browser honor the href for modified/non-primary clicks — same

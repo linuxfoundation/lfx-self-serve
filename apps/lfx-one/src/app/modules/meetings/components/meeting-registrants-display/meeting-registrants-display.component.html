@@ -92,84 +92,93 @@
     <!-- Registrant card template — shared between board and guest sections -->
     <ng-template #registrantCard let-registrant>
       <div
-        class="bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-3 shadow-md relative overflow-visible hover:border-blue-500 transition-colors"
+        class="bg-white border border-gray-200 rounded-lg p-4 flex items-center gap-3 shadow-md relative overflow-visible hover:border-blue-500 transition-colors"
         [attr.data-testid]="'registrant-' + registrant.uid">
-        <!-- Avatar + Name + LinkedIn + Voting Status -->
-        <div class="flex items-center gap-3">
-          <!-- Avatar with RSVP Badge -->
-          <div class="relative flex-shrink-0">
-            <lfx-avatar
-              [label]="registrant.first_name"
-              [image]="registrant.avatar_url!"
-              styleClass="bg-blue-50 border border-gray-200 w-12 h-12 object-cover"
-              shape="circle"></lfx-avatar>
+        <!-- Avatar with RSVP Badge -->
+        <div class="relative flex-shrink-0">
+          <lfx-avatar
+            [label]="registrant.first_name"
+            [image]="registrant.avatar_url!"
+            styleClass="bg-blue-50 border border-gray-200 w-12 h-12 object-cover"
+            shape="circle"></lfx-avatar>
 
-            <!-- RSVP Status Badge Overlay -->
-            @if (inviteResponsesEnabled()) {
-              <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center" data-testid="registrant-rsvp-status">
-                @switch (registrant.attendanceStatus) {
-                  @case ('accepted') {
-                    <i class="fa-solid fa-check-circle text-emerald-600 text-base" pTooltip="Accepted"></i>
-                  }
-                  @case ('maybe') {
-                    <i class="fa-solid fa-circle-question text-amber-600 text-base" pTooltip="Maybe"></i>
-                  }
-                  @case ('declined') {
-                    <i class="fa-solid fa-times-circle text-red-600 text-base" pTooltip="Declined"></i>
-                  }
-                  @default {
-                    <i class="fa-solid fa-clock text-gray-400 text-sm" pTooltip="Pending"></i>
-                  }
+          <!-- RSVP Status Badge Overlay -->
+          @if (inviteResponsesEnabled()) {
+            <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center" data-testid="registrant-rsvp-status">
+              @switch (registrant.attendanceStatus) {
+                @case ('accepted') {
+                  <i class="fa-solid fa-check-circle text-emerald-600 text-base" pTooltip="Accepted"></i>
                 }
-              </div>
-            }
-          </div>
-
-          <!-- Name + Company + Voting Status -->
-          <div class="flex flex-col min-w-0">
-            <div class="flex items-center gap-2">
-              <h3>{{ registrant.first_name }} {{ registrant.last_name }}</h3>
-              @if (registrant.host) {
-                <lfx-badge
-                  value="Organizer"
-                  severity="info"
-                  size="small"
-                  styleClass="inline-flex items-center flex-shrink-0"
-                  data-testid="registrant-organizer-badge">
-                </lfx-badge>
-              }
-              @if (registrant.linkedin_profile) {
-                <a
-                  [href]="registrant.linkedin_profile"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="flex-shrink-0 hover:opacity-70 transition-opacity"
-                  (click)="$event.stopPropagation()"
-                  pTooltip="View LinkedIn Profile"
-                  tooltipPosition="top">
-                  <i class="fa-brands fa-linkedin text-blue-500 text-base"></i>
-                </a>
+                @case ('maybe') {
+                  <i class="fa-solid fa-circle-question text-amber-600 text-base" pTooltip="Maybe"></i>
+                }
+                @case ('declined') {
+                  <i class="fa-solid fa-times-circle text-red-600 text-base" pTooltip="Declined"></i>
+                }
+                @default {
+                  <i class="fa-solid fa-clock text-gray-400 text-sm" pTooltip="Pending"></i>
+                }
               }
             </div>
-            @if (registrant.job_title || registrant.org_name) {
-              <p class="text-gray-500 text-sm leading-relaxed tracking-tight truncate">
-                @if (registrant.job_title && registrant.org_name) {
-                  {{ registrant.job_title }} at {{ registrant.org_name }}
-                } @else if (registrant.job_title) {
-                  {{ registrant.job_title }}
-                } @else {
-                  {{ registrant.org_name }}
-                }
-              </p>
+          }
+        </div>
+
+        <!-- Name + Company + Voting Status -->
+        <div class="flex flex-col min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <h3>{{ registrant.first_name }} {{ registrant.last_name }}</h3>
+            @if (registrant.host) {
+              <lfx-badge
+                value="Organizer"
+                severity="info"
+                size="small"
+                styleClass="inline-flex items-center flex-shrink-0"
+                data-testid="registrant-organizer-badge">
+              </lfx-badge>
             }
-            @if (registrant.committee_voting_status && registrant.committee_voting_status !== 'Observer' && registrant.committee_voting_status !== 'None') {
-              <div class="flex items-center gap-1">
-                <i class="fa-light fa-check-to-slot text-sm text-gray-400 flex-shrink-0"></i>
-                <span class="text-gray-400 text-xs leading-relaxed tracking-tight truncate">{{ registrant.committee_voting_status }}</span>
-              </div>
+            @if (registrant.linkedin_profile) {
+              <a
+                [href]="registrant.linkedin_profile"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex-shrink-0 hover:opacity-70 transition-opacity"
+                (click)="$event.stopPropagation()"
+                pTooltip="View LinkedIn Profile"
+                tooltipPosition="top">
+                <i class="fa-brands fa-linkedin text-blue-500 text-base"></i>
+              </a>
             }
           </div>
+          @if (registrant.job_title || registrant.org_name) {
+            <p class="text-gray-500 text-sm leading-relaxed tracking-tight truncate">
+              @if (registrant.job_title && registrant.org_name) {
+                {{ registrant.job_title }} at {{ registrant.org_name }}
+              } @else if (registrant.job_title) {
+                {{ registrant.job_title }}
+              } @else {
+                {{ registrant.org_name }}
+              }
+            </p>
+          }
+          @if (registrant.committee_voting_status && registrant.committee_voting_status !== 'Observer' && registrant.committee_voting_status !== 'None') {
+            <div class="flex items-center gap-1">
+              <i class="fa-light fa-check-to-slot text-sm text-gray-400 flex-shrink-0"></i>
+              <span class="text-gray-400 text-xs leading-relaxed tracking-tight truncate">{{ registrant.committee_voting_status }}</span>
+            </div>
+          }
         </div>
+
+        @if (!pastMeeting() && showAddRegistrant() && registrant.type !== 'committee') {
+          <button
+            type="button"
+            class="flex-shrink-0 rounded-md p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            [attr.aria-label]="'Remove ' + registrant.first_name + ' ' + registrant.last_name"
+            [attr.data-testid]="'registrant-display-remove-' + registrant.uid"
+            [disabled]="deleting()"
+            (click)="onRequestRemoveGuest(registrant)">
+            <i class="fa-light fa-trash-can" aria-hidden="true"></i>
+          </button>
+        }
       </div>
     </ng-template>
 
@@ -216,6 +225,45 @@
               }
               <lfx-registrant-form [form]="addRegistrantForm" (onUserSelected)="onUserSelectedFromSearch()" data-testid="inline-registrant-form">
               </lfx-registrant-form>
+
+              <!-- Persistent live region: must exist before content appears so screen readers announce the insertion. -->
+              <div aria-live="polite" class="flex flex-col gap-2">
+                @for (guest of stagedGuests(); track guest.id) {
+                  <!-- Staged guest preview — requires an explicit Add click to commit. -->
+                  <div
+                    class="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3"
+                    [attr.data-testid]="'registrant-display-staged-' + guest.id">
+                    <span
+                      class="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700"
+                      aria-hidden="true">
+                      {{ stagedGuestInitials(guest.data) }}
+                    </span>
+                    <div class="flex min-w-0 flex-1 flex-col">
+                      <span class="min-w-0 truncate text-sm font-medium text-gray-900">{{ stagedGuestDisplayName(guest.data) }}</span>
+                      <span class="truncate text-xs text-gray-500">{{ stagedGuestSecondaryLine(guest.data) }}</span>
+                    </div>
+                    <div class="flex flex-none items-center gap-2">
+                      <lfx-button
+                        label="Add Guest"
+                        size="small"
+                        icon="fa-light fa-user-plus"
+                        [loading]="isGuestSubmitting(guest.id)"
+                        [disabled]="isGuestSubmitting(guest.id)"
+                        data-testid="registrant-display-staged-confirm"
+                        (onClick)="onConfirmStagedGuest(guest.id)" />
+                      <button
+                        type="button"
+                        class="rounded-md p-2 text-gray-400 hover:bg-blue-100 hover:text-gray-600"
+                        aria-label="Dismiss selection"
+                        [disabled]="isGuestSubmitting(guest.id)"
+                        (click)="onDismissStagedGuest(guest.id)"
+                        data-testid="registrant-display-staged-dismiss">
+                        <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                      </button>
+                    </div>
+                  </div>
+                }
+              </div>
               <div class="flex items-center justify-end gap-2 pt-2 border-t border-blue-100">
                 <lfx-button
                   label="Add Guest"
@@ -317,3 +365,5 @@
     }
   </div>
 }
+
+<p-confirmDialog></p-confirmDialog>

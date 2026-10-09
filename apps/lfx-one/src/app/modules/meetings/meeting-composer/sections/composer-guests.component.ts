@@ -1,18 +1,26 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, type Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
-import { SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
+import { COMPOSER_ATTENDEE_LOCK, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import type { ComposerGuestRow, CommitteeMember, ManualGuestDialogResult, MeetingCommittee, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
-import { avatarInitials, getSavedAttendeeVisibility, getShowMeetingAttendeesLockedNote, isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
+import {
+  avatarInitials,
+  getSavedAttendeeVisibility,
+  getShowMeetingAttendeesLockedNote,
+  isMeetingInviteResponsesEnabled,
+  isShowMeetingAttendeesLocked,
+  isSameOccurrenceId,
+} from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { controlValueSignal } from '@shared/utils/form-control-signals.util';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { take } from 'rxjs';
@@ -29,7 +37,8 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
  */
 @Component({
   selector: 'lfx-composer-guests',
-  imports: [ButtonComponent, FeatureToggleComponent, UserSearchComponent, MeetingCommitteeManagerComponent, TooltipModule],
+  imports: [ButtonComponent, ConfirmDialogModule, FeatureToggleComponent, UserSearchComponent, MeetingCommitteeManagerComponent, TooltipModule],
+  providers: [ConfirmationService],
   templateUrl: './composer-guests.component.html',
 })
 export class ComposerGuestsComponent {
@@ -37,21 +46,57 @@ export class ComposerGuestsComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   protected readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
 
   protected readonly quickAddForm = this.meetingService.createRegistrantFormGroup();
 
+  /** User selected from search but not yet added; cleared on confirm or dismiss. */
+  protected readonly stagedGuest = signal<Record<string, unknown> | null>(null);
+
+  protected readonly stagedGuestDisplayName: Signal<string> = computed(() => {
+    const g = this.stagedGuest();
+    if (!g) return '';
+    return [g['first_name'], g['last_name']].filter(Boolean).join(' ') || String(g['email'] ?? '');
+  });
+
+  protected readonly stagedGuestInitials: Signal<string> = computed(() => {
+    const g = this.stagedGuest();
+    if (!g) return '';
+    return avatarInitials(g['first_name'] as string, g['last_name'] as string, g['email'] as string);
+  });
+
+  protected readonly stagedGuestSecondaryLine: Signal<string> = computed(() => {
+    const g = this.stagedGuest();
+    if (!g) return '';
+    return [g['email'], g['org_name']].filter(Boolean).join(' · ');
+  });
+
   protected readonly showMeetingAttendeesFeature = SHOW_MEETING_ATTENDEES_FEATURE;
 
   private readonly meetingTypeValue: Signal<string | null> = controlValueSignal<string>(this.form, 'meeting_type');
   private readonly restrictedValue: Signal<boolean | null> = controlValueSignal<boolean>(this.form, 'restricted');
   protected readonly showAttendeesToggleNote: Signal<string | null> = computed(() =>
-    getShowMeetingAttendeesLockedNote(this.meetingTypeValue(), this.restrictedValue())
+    getShowMeetingAttendeesLockedNote(this.meetingTypeValue(), this.restrictedValue(), COMPOSER_ATTENDEE_LOCK)
   );
   /** The organizer's saved sharing decision, for the group picker; `null` on a create. */
-  protected readonly savedAttendeeVisibility: Signal<boolean | null> = computed(() => getSavedAttendeeVisibility(this.formService.meeting()));
+  /**
+   * The loaded meeting's sharing decision for the group picker; `null` when there is none to report.
+   * @description Read through the default (pre-v2) lock, like hydration. A board meeting still reports no
+   * decision, as everywhere else. A restricted meeting — locked before the composer allowed sharing — reads
+   * as decided *off* instead, so a linked group's default can't switch sharing on for an existing meeting
+   * just because it was opened here.
+   */
+  protected readonly savedAttendeeVisibility: Signal<boolean | null> = computed(() => {
+    const meeting = this.formService.meeting();
+    const saved = getSavedAttendeeVisibility(meeting);
+    if (saved !== null || !meeting) {
+      return saved;
+    }
+    return isShowMeetingAttendeesLocked(meeting.meeting_type, meeting.restricted, COMPOSER_ATTENDEE_LOCK) ? null : false;
+  });
 
   /**
    * The committees currently on the form, for the group manager to render as selected.
@@ -62,7 +107,15 @@ export class ComposerGuestsComponent {
   private readonly committeesValue: Signal<MeetingCommittee[] | null> = controlValueSignal<MeetingCommittee[]>(this.form, 'committees');
   protected readonly selectedCommittees: Signal<MeetingCommittee[]> = computed(() => this.committeesValue() ?? []);
 
-  protected readonly visibleGuests = computed(() => this.formService.guests().filter((guest) => guest.state !== 'deleted'));
+  protected readonly isOccurrenceEdit: Signal<boolean> = this.formService.isOccurrenceEdit;
+  /**
+   * Guests on screen: every live guest, or — editing one occurrence — those invited to every occurrence
+   * plus those invited to this one. Guests scoped to other occurrences are left out but stay in
+   * `formService.guests()`, so nothing is queued against them.
+   */
+  protected readonly visibleGuests = computed(() =>
+    this.formService.guests().filter((guest) => guest.state !== 'deleted' && this.appliesToEditedOccurrence(guest))
+  );
   protected readonly guestCount = computed(() => this.visibleGuests().length);
   protected readonly groupGuestCount = computed(() => this.visibleGuests().filter((guest) => guest.type === 'committee').length);
   protected readonly directGuestCount = computed(() => this.visibleGuests().filter((guest) => guest.type === 'direct').length);
@@ -136,16 +189,30 @@ export class ComposerGuestsComponent {
    */
   protected readonly guestRows: Signal<ComposerGuestRow[]> = this.initGuestRows();
 
-  private readonly invitedEmails: Signal<Set<string>> = computed(() => new Set(this.visibleGuests().map((guest) => guest.email?.toLowerCase() ?? '')));
+  /**
+   * Emails already on the meeting, for the duplicate guard.
+   * @description Built from every live guest, not just the visible ones: editing one occurrence hides guests
+   * scoped to other occurrences, and adding one of them here again could be rejected upstream at save time.
+   */
+  private readonly invitedEmails: Signal<Set<string>> = computed(
+    () =>
+      new Set(
+        this.formService
+          .guests()
+          .filter((guest) => guest.state !== 'deleted')
+          .map((guest) => guest.email?.toLowerCase() ?? '')
+      )
+  );
 
   /**
-   * Adds the person picked from search, or falls back to the manual dialog.
+   * Stages the person picked from search rather than adding immediately.
    * @description The directory can return a person without a usable first/last name, which the add
    * payload requires. Handing those to the dialog prefilled beats dropping the pick silently.
+   * For valid picks we show a preview card and require an explicit "Add" click before committing.
    */
   protected onUserSelected(): void {
     if (this.quickAddForm.valid) {
-      this.addDirectGuest(this.quickAddForm.value);
+      this.stagedGuest.set(this.quickAddForm.value as Record<string, unknown>);
       this.quickAddForm.reset();
       return;
     }
@@ -155,8 +222,33 @@ export class ComposerGuestsComponent {
     this.openManualDialog(prefill);
   }
 
+  protected onConfirmStagedGuest(): void {
+    const guest = this.stagedGuest();
+    if (!guest) return;
+    this.stagedGuest.set(null);
+    this.addDirectGuest(guest);
+  }
+
+  protected onDismissStagedGuest(): void {
+    this.stagedGuest.set(null);
+  }
+
   protected onOpenManualDialog(): void {
     this.openManualDialog(null);
+  }
+
+  protected onRequestRemoveGuest(guest: MeetingRegistrantWithState, displayName: string): void {
+    const label = displayName || guest.email || 'this guest';
+    this.confirmationService.confirm({
+      header: 'Remove guest',
+      message: `Are you sure you want to remove ${label} from this meeting?`,
+      icon: 'fa-light fa-triangle-exclamation',
+      acceptLabel: 'Remove',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => this.onRemoveGuest(guest),
+    });
   }
 
   protected onRemoveGuest(guest: MeetingRegistrantWithState): void {
@@ -231,9 +323,29 @@ export class ComposerGuestsComponent {
           // user to count rows to find out which guest they are about to drop — the email is what
           // identifies the row on screen in that case, so it identifies the button too.
           removeLabel: `Remove ${displayName || guest.email || 'guest'}`,
+          scopeLabel: this.scopeLabel(guest),
+          // Editing one occurrence, only guests invited to it alone can go: upstream can't drop a series
+          // guest from a single occurrence, so those rows are read-only.
+          removable: !this.isOccurrenceEdit() || !!guest.occurrence_id,
         };
       })
     );
+  }
+
+  private appliesToEditedOccurrence(guest: MeetingRegistrantWithState): boolean {
+    if (!this.isOccurrenceEdit() || !guest.occurrence_id) {
+      return true;
+    }
+
+    return isSameOccurrenceId(guest.occurrence_id, this.formService.occurrence()?.occurrence_id ?? this.formService.occurrenceId());
+  }
+
+  private scopeLabel(guest: MeetingRegistrantWithState): string | null {
+    if (!this.isOccurrenceEdit()) {
+      return null;
+    }
+
+    return guest.occurrence_id ? 'This occurrence' : 'All occurrences';
   }
 
   private openManualDialog(prefill: Record<string, unknown> | null): void {
@@ -257,7 +369,9 @@ export class ComposerGuestsComponent {
     const email = (formValue['email'] as string | null) ?? '';
 
     if (email && this.invitedEmails().has(email.toLowerCase())) {
-      this.messageService.add({ severity: 'warn', summary: 'Already invited', detail: `${email} is already on the guest list.` });
+      const onScreen = this.visibleGuests().some((guest) => guest.email?.toLowerCase() === email.toLowerCase());
+      const detail = onScreen ? `${email} is already on the guest list.` : `${email} is already invited to another occurrence of this meeting.`;
+      this.messageService.add({ severity: 'warn', summary: 'Already invited', detail });
       return;
     }
 

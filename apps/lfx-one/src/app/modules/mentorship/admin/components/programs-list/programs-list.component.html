@@ -41,7 +41,7 @@
       <lfx-card
         styleClass="flex flex-col gap-3 [&_.p-card-body]:p-0 [&_.p-card-content]:p-0 overflow-hidden hover:!border-gray-200"
         data-testid="mentorship-programs-cards">
-        <lfx-mentorship-program-card [program]="program" (cardClick)="onCardClick($event)" />
+        <lfx-mentorship-program-card [program]="program" (cardClick)="onCardClick($event)" (changed)="onProgramChanged()" />
       </lfx-card>
     }
   } @else {

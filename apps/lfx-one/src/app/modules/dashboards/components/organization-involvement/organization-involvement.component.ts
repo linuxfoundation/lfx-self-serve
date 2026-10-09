@@ -4,6 +4,7 @@
 import { Component, computed, inject, signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { FilterPillOption } from '@lfx-one/shared/interfaces';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
@@ -14,6 +15,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
+import { classifySectionError, sectionEmptyState, worstSectionOutcome } from '@shared/utils/org-lens-empty-state.utils';
 import { catchError, combineLatest, map, of, switchMap, tap } from 'rxjs';
 
 import { OrgActiveContributorsDrawerComponent } from '../org-active-contributors-drawer/org-active-contributors-drawer.component';
@@ -30,6 +32,7 @@ import type {
   OrganizationContributorsResponse,
   OrganizationEventAttendanceMonthlyResponse,
   OrganizationMaintainersResponse,
+  OrgLensSectionErrorOutcome,
   TrainingEnrollmentsResponse,
 } from '@lfx-one/shared/interfaces';
 import type { ChartOptions, ChartType } from 'chart.js';
@@ -40,6 +43,7 @@ import type { ChartOptions, ChartType } from 'chart.js';
     FilterPillsComponent,
     MetricCardComponent,
     DataCopilotComponent,
+    OrgLensEmptyStateComponent,
     ScrollShadowDirective,
     OrgActiveContributorsDrawerComponent,
     OrgCertifiedEmployeesDrawerComponent,
@@ -66,9 +70,28 @@ export class OrganizationInvolvementComponent {
   private readonly certifiedEmployeesLoading = signal(true);
   private readonly trainingEnrollmentsLoading = signal(true);
   private readonly eventsLoading = signal(true);
+  private readonly maintainersOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly contributorsOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly membershipTierOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly certifiedEmployeesOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly trainingEnrollmentsOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly eventsOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly attempt = signal(0);
+  private readonly attempt$ = toObservable(this.attempt);
   private readonly selectedAccountId$ = toObservable(this.accountContextService.selectedAccount).pipe(map((account) => account.accountId));
   private readonly selectedFoundationSlug$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((foundation) => foundation?.slug || ''));
   public readonly hasFoundationSelected = computed<boolean>(() => !!this.projectContextService.selectedFoundation());
+  public readonly sectionOutcome = computed<OrgLensSectionErrorOutcome>(() =>
+    worstSectionOutcome([
+      this.maintainersOutcome(),
+      this.contributorsOutcome(),
+      this.membershipTierOutcome(),
+      this.certifiedEmployeesOutcome(),
+      this.trainingEnrollmentsOutcome(),
+      this.eventsOutcome(),
+    ])
+  );
+  public readonly emptyState = computed(() => (this.isLoading() ? null : sectionEmptyState(this.sectionOutcome())));
   private readonly maintainersData = this.initializeMaintainersData();
   private readonly contributorsData = this.initializeContributorsData();
   private readonly membershipTierData = this.initializeMembershipTierData();
@@ -108,6 +131,10 @@ export class OrganizationInvolvementComponent {
 
   public handleFilterChange(filter: string): void {
     this.selectedFilter.set(filter);
+  }
+
+  public retry(): void {
+    this.attempt.update((n) => n + 1);
   }
 
   protected handleCardClick(drawerType: DashboardDrawerType): void {
@@ -173,294 +200,234 @@ export class OrganizationInvolvementComponent {
   }
 
   private initializeMaintainersData() {
+    const defaultValue: OrganizationMaintainersResponse = {
+      maintainers: 0,
+      projects: 0,
+      accountId: '',
+      accountName: '',
+      monthlyData: [],
+      monthlyLabels: [],
+    };
+
     return toSignal(
-      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$]).pipe(
+      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$, this.attempt$]).pipe(
         switchMap(([accountId, foundationSlug]) => {
           this.maintainersLoading.set(true);
 
-          // Return empty data if no foundation is selected
-          if (!foundationSlug) {
+          // Return empty data if no account/foundation is selected
+          if (!accountId || !foundationSlug) {
             this.maintainersLoading.set(false);
-            return of({
-              maintainers: 0,
-              projects: 0,
-              accountId: '',
-              accountName: '',
-              monthlyData: [],
-              monthlyLabels: [],
-            } as OrganizationMaintainersResponse);
+            this.maintainersOutcome.set('records');
+            return of(defaultValue);
           }
 
           return this.analyticsService.getOrganizationMaintainers(accountId, foundationSlug).pipe(
-            tap(() => this.maintainersLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.maintainersLoading.set(false);
-              return of({
-                maintainers: 0,
-                projects: 0,
-                accountId: '',
-                accountName: '',
-                monthlyData: [],
-                monthlyLabels: [],
-              } as OrganizationMaintainersResponse);
+              this.maintainersOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.maintainersLoading.set(false);
+              this.maintainersOutcome.set(classifySectionError(error));
+              return of(defaultValue);
             })
           );
         })
       ),
-      {
-        initialValue: {
-          maintainers: 0,
-          projects: 0,
-          accountId: '',
-          accountName: '',
-          monthlyData: [],
-          monthlyLabels: [],
-        } as OrganizationMaintainersResponse,
-      }
+      { initialValue: defaultValue }
     );
   }
 
   private initializeContributorsData() {
+    const defaultValue: OrganizationContributorsResponse = {
+      contributors: 0,
+      accountId: '',
+      accountName: '',
+      monthlyData: [],
+      monthlyLabels: [],
+    };
+
     return toSignal(
-      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$]).pipe(
+      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$, this.attempt$]).pipe(
         switchMap(([accountId, foundationSlug]) => {
           this.contributorsLoading.set(true);
 
-          // Return empty data if no foundation is selected
-          if (!foundationSlug) {
+          // Return empty data if no account/foundation is selected
+          if (!accountId || !foundationSlug) {
             this.contributorsLoading.set(false);
-            return of({
-              contributors: 0,
-              accountId: '',
-              accountName: '',
-              monthlyData: [],
-              monthlyLabels: [],
-            } as OrganizationContributorsResponse);
+            this.contributorsOutcome.set('records');
+            return of(defaultValue);
           }
 
           return this.analyticsService.getOrganizationContributors(accountId, foundationSlug).pipe(
-            tap(() => this.contributorsLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.contributorsLoading.set(false);
-              return of({
-                contributors: 0,
-                accountId: '',
-                accountName: '',
-                monthlyData: [],
-                monthlyLabels: [],
-              } as OrganizationContributorsResponse);
+              this.contributorsOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.contributorsLoading.set(false);
+              this.contributorsOutcome.set(classifySectionError(error));
+              return of(defaultValue);
             })
           );
         })
       ),
-      {
-        initialValue: {
-          contributors: 0,
-          accountId: '',
-          accountName: '',
-          monthlyData: [],
-          monthlyLabels: [],
-        } as OrganizationContributorsResponse,
-      }
+      { initialValue: defaultValue }
     );
   }
 
   private initializeMembershipTierData() {
+    const defaultValue: MembershipTierResponse = {
+      projectId: '',
+      projectName: '',
+      projectSlug: '',
+      isProjectActive: false,
+      accountId: '',
+      accountName: '',
+      membershipTier: '',
+      membershipPrice: 0,
+      startDate: '',
+      endDate: '',
+      renewalPrice: 0,
+      membershipStatus: '',
+    };
+
     return toSignal(
-      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$]).pipe(
+      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$, this.attempt$]).pipe(
         switchMap(([accountId, foundationSlug]) => {
           this.membershipTierLoading.set(true);
 
-          // Return empty data if no foundation is selected
-          if (!foundationSlug) {
+          // Return empty data if no account/foundation is selected
+          if (!accountId || !foundationSlug) {
             this.membershipTierLoading.set(false);
-            return of({
-              projectId: '',
-              projectName: '',
-              projectSlug: '',
-              isProjectActive: false,
-              accountId: '',
-              accountName: '',
-              membershipTier: '',
-              membershipPrice: 0,
-              startDate: '',
-              endDate: '',
-              renewalPrice: 0,
-              membershipStatus: '',
-            } as MembershipTierResponse);
+            this.membershipTierOutcome.set('records');
+            return of(defaultValue);
           }
 
           return this.analyticsService.getMembershipTier(accountId, foundationSlug).pipe(
-            tap(() => this.membershipTierLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.membershipTierLoading.set(false);
-              return of({
-                projectId: '',
-                projectName: '',
-                projectSlug: '',
-                isProjectActive: false,
-                accountId: '',
-                accountName: '',
-                membershipTier: '',
-                membershipPrice: 0,
-                startDate: '',
-                endDate: '',
-                renewalPrice: 0,
-                membershipStatus: '',
-              } as MembershipTierResponse);
+              this.membershipTierOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.membershipTierLoading.set(false);
+              this.membershipTierOutcome.set(classifySectionError(error));
+              return of(defaultValue);
             })
           );
         })
       ),
-      {
-        initialValue: {
-          projectId: '',
-          projectName: '',
-          projectSlug: '',
-          isProjectActive: false,
-          accountId: '',
-          accountName: '',
-          membershipTier: '',
-          membershipPrice: 0,
-          startDate: '',
-          endDate: '',
-          renewalPrice: 0,
-          membershipStatus: '',
-        } as MembershipTierResponse,
-      }
+      { initialValue: defaultValue }
     );
   }
 
   private initializeCertifiedEmployeesData() {
+    const defaultValue: CertifiedEmployeesResponse = {
+      certifications: 0,
+      certifiedEmployees: 0,
+      accountId: '',
+      monthlyData: [],
+      monthlyLabels: [],
+    };
+
     return toSignal(
-      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$]).pipe(
+      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$, this.attempt$]).pipe(
         switchMap(([accountId, foundationSlug]) => {
           this.certifiedEmployeesLoading.set(true);
 
-          // Return empty data if no foundation is selected
-          if (!foundationSlug) {
+          // Return empty data if no account/foundation is selected
+          if (!accountId || !foundationSlug) {
             this.certifiedEmployeesLoading.set(false);
-            return of({
-              certifications: 0,
-              certifiedEmployees: 0,
-              accountId: '',
-              monthlyData: [],
-              monthlyLabels: [],
-            } as CertifiedEmployeesResponse);
+            this.certifiedEmployeesOutcome.set('records');
+            return of(defaultValue);
           }
 
           return this.analyticsService.getCertifiedEmployees(accountId, foundationSlug).pipe(
-            tap(() => this.certifiedEmployeesLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.certifiedEmployeesLoading.set(false);
-              return of({
-                certifications: 0,
-                certifiedEmployees: 0,
-                accountId: '',
-                monthlyData: [],
-                monthlyLabels: [],
-              } as CertifiedEmployeesResponse);
+              this.certifiedEmployeesOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.certifiedEmployeesLoading.set(false);
+              this.certifiedEmployeesOutcome.set(classifySectionError(error));
+              return of(defaultValue);
             })
           );
         })
       ),
-      {
-        initialValue: {
-          certifications: 0,
-          certifiedEmployees: 0,
-          accountId: '',
-          monthlyData: [],
-          monthlyLabels: [],
-        } as CertifiedEmployeesResponse,
-      }
+      { initialValue: defaultValue }
     );
   }
 
   private initializeTrainingEnrollmentsData() {
+    const defaultValue: TrainingEnrollmentsResponse = { totalEnrollments: 0, dailyData: [], accountId: '', projectSlug: '' };
+
     return toSignal(
-      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$]).pipe(
+      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$, this.attempt$]).pipe(
         switchMap(([accountId, foundationSlug]) => {
           this.trainingEnrollmentsLoading.set(true);
 
-          // Return empty data if no foundation is selected
-          if (!foundationSlug) {
+          // Return empty data if no account/foundation is selected
+          if (!accountId || !foundationSlug) {
             this.trainingEnrollmentsLoading.set(false);
-            return of({
-              totalEnrollments: 0,
-              dailyData: [],
-              accountId: '',
-              projectSlug: '',
-            } as TrainingEnrollmentsResponse);
+            this.trainingEnrollmentsOutcome.set('records');
+            return of(defaultValue);
           }
 
           return this.analyticsService.getTrainingEnrollments(accountId, foundationSlug).pipe(
-            tap(() => this.trainingEnrollmentsLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.trainingEnrollmentsLoading.set(false);
-              return of({ totalEnrollments: 0, dailyData: [], accountId: '', projectSlug: '' } as TrainingEnrollmentsResponse);
+              this.trainingEnrollmentsOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.trainingEnrollmentsLoading.set(false);
+              this.trainingEnrollmentsOutcome.set(classifySectionError(error));
+              return of(defaultValue);
             })
           );
         })
       ),
-      {
-        initialValue: {
-          totalEnrollments: 0,
-          dailyData: [],
-          accountId: '',
-          projectSlug: '',
-        } as TrainingEnrollmentsResponse,
-      }
+      { initialValue: defaultValue }
     );
   }
 
   private initializeEventAttendanceMonthlyData() {
+    const defaultValue: OrganizationEventAttendanceMonthlyResponse = {
+      totalAttended: 0,
+      totalSpeakers: 0,
+      accountId: '',
+      accountName: '',
+      attendeesMonthlyData: [],
+      speakersMonthlyData: [],
+      monthlyLabels: [],
+    };
+
     return toSignal(
-      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$]).pipe(
+      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$, this.attempt$]).pipe(
         switchMap(([accountId, foundationSlug]) => {
           this.eventsLoading.set(true);
 
-          // Return empty data if no foundation is selected
-          if (!foundationSlug) {
+          // Return empty data if no account/foundation is selected
+          if (!accountId || !foundationSlug) {
             this.eventsLoading.set(false);
-            return of({
-              totalAttended: 0,
-              totalSpeakers: 0,
-              accountId: '',
-              accountName: '',
-              attendeesMonthlyData: [],
-              speakersMonthlyData: [],
-              monthlyLabels: [],
-            } as OrganizationEventAttendanceMonthlyResponse);
+            this.eventsOutcome.set('records');
+            return of(defaultValue);
           }
 
           return this.analyticsService.getEventAttendanceMonthly(accountId, foundationSlug).pipe(
-            tap(() => this.eventsLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.eventsLoading.set(false);
-              return of({
-                totalAttended: 0,
-                totalSpeakers: 0,
-                accountId: '',
-                accountName: '',
-                attendeesMonthlyData: [],
-                speakersMonthlyData: [],
-                monthlyLabels: [],
-              } as OrganizationEventAttendanceMonthlyResponse);
+              this.eventsOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.eventsLoading.set(false);
+              this.eventsOutcome.set(classifySectionError(error));
+              return of(defaultValue);
             })
           );
         })
       ),
-      {
-        initialValue: {
-          totalAttended: 0,
-          totalSpeakers: 0,
-          accountId: '',
-          accountName: '',
-          attendeesMonthlyData: [],
-          speakersMonthlyData: [],
-          monthlyLabels: [],
-        } as OrganizationEventAttendanceMonthlyResponse,
-      }
+      { initialValue: defaultValue }
     );
   }
 

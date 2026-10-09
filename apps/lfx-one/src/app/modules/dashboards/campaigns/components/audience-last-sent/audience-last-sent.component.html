@@ -7,12 +7,14 @@
   <div class="flex items-start gap-2 rounded-md bg-blue-50 p-3 text-xs text-blue-900" data-testid="audience-last-sent-howto">
     <i class="fa-light fa-circle-info mt-0.5 text-blue-600" aria-hidden="true"></i>
     <div class="flex flex-col gap-1">
-      <span><span class="font-medium">Use for this email</span> attaches existing lists to this email as-is. No new list is created in HubSpot.</span>
-      <span><span class="font-medium">Copy selection</span> ticks the same lists in steps 2–3 so you can adjust them before composing.</span>
-      @if (!canAttach()) {
-        <span class="text-amber-800" data-testid="audience-last-sent-attach-unavailable">
-          Save the plan on the Plan tab first. Lists can only be attached to an email once a plan exists.
-        </span>
+      <span>
+        <span class="font-medium">Use for this email</span> attaches existing lists to this email as-is, together with the exclusions ticked in step 3. No
+        master list is built and nothing new is created in HubSpot.
+      </span>
+      <span><span class="font-medium">Copy selection</span> ticks the same lists in steps 2–3 so you can adjust them first.</span>
+      <span><span class="font-medium">Exclude</span> keeps a list's contacts off this send instead of including them.</span>
+      @if (attachUnavailableMessage()) {
+        <span class="text-amber-800" data-testid="audience-last-sent-attach-unavailable">{{ attachUnavailableMessage() }}</span>
       }
     </div>
   </div>
@@ -81,6 +83,19 @@
                 class="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 [attr.data-testid]="'audience-last-sent-master-add-' + list.listId">
                 {{ list.selected ? 'Added' : 'Add to selection' }}
+              </button>
+              <button
+                type="button"
+                (click)="onExcludeList(list)"
+                [disabled]="disabled()"
+                [attr.aria-pressed]="list.excluded"
+                [class]="
+                  list.excluded
+                    ? 'rounded-md border border-red-300 bg-red-100 px-2.5 py-1 text-xs font-medium text-red-700 disabled:opacity-50'
+                    : 'rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50'
+                "
+                [attr.data-testid]="'audience-last-sent-master-exclude-' + list.listId">
+                {{ list.excluded ? 'Excluded' : 'Exclude' }}
               </button>
               <a
                 [href]="list.hubspotUrl"
@@ -201,14 +216,29 @@
                           No longer resolvable
                         </span>
                       } @else {
-                        <button
-                          type="button"
-                          (click)="onAddList(list)"
-                          [disabled]="disabled() || list.selected"
-                          class="shrink-0 rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                          [attr.data-testid]="'audience-last-sent-add-' + list.listId">
-                          {{ list.selected ? 'Added' : 'Add' }}
-                        </button>
+                        <div class="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            (click)="onAddList(list)"
+                            [disabled]="disabled() || list.selected"
+                            class="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            [attr.data-testid]="'audience-last-sent-add-' + list.listId">
+                            {{ list.selected ? 'Added' : 'Add' }}
+                          </button>
+                          <button
+                            type="button"
+                            (click)="onExcludeList(list)"
+                            [disabled]="disabled()"
+                            [attr.aria-pressed]="list.excluded"
+                            [class]="
+                              list.excluded
+                                ? 'rounded border border-red-300 bg-red-100 px-2 py-1 text-xs font-medium text-red-700 disabled:opacity-50'
+                                : 'rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50'
+                            "
+                            [attr.data-testid]="'audience-last-sent-exclude-' + list.listId">
+                            {{ list.excluded ? 'Excluded' : 'Exclude' }}
+                          </button>
+                        </div>
                       }
                     </div>
                   }
@@ -256,7 +286,7 @@
                 <button
                   type="button"
                   (click)="onUseSendLists(email)"
-                  [disabled]="!canAttach() || attachingId() !== null || email.attachBlocked !== null || email.attached"
+                  [disabled]="!canUseExistingMaster() || attachingId() !== null || email.attachBlocked !== null || email.attached"
                   class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                   [attr.data-testid]="'audience-last-sent-use-' + email.emailId">
                   @if (attachingId() === email.emailId) {

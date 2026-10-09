@@ -33,6 +33,8 @@ import { EnrollTermDialogComponent } from '../enroll-term-dialog/enroll-term-dia
 export class EnrollSetupStepComponent {
   public readonly form = input.required<FormGroup>();
   public readonly errors = input<MentorshipEnrollFieldErrors>({});
+  /** An edited program's closed terms. They are listed for reference only; the program's Terms tab manages them. */
+  public readonly closedTerms = input<MentorshipProgramTerm[]>([]);
 
   private readonly dialogService = inject(DialogService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -58,6 +60,14 @@ export class EnrollSetupStepComponent {
 
   protected readonly termRows = computed(() =>
     this.terms().map((term) => ({
+      ...term,
+      startsLabel: formatMentorshipMonthYear(term.startDate),
+      endsLabel: formatMentorshipMonthYear(term.endDate),
+    }))
+  );
+
+  protected readonly closedTermRows = computed(() =>
+    this.closedTerms().map((term) => ({
       ...term,
       startsLabel: formatMentorshipMonthYear(term.startDate),
       endsLabel: formatMentorshipMonthYear(term.endDate),

@@ -21,6 +21,7 @@ export function menteeTestTask(overrides: Partial<MentorshipMenteeApplicationTas
     category: 'prerequisite',
     status: 'incomplete',
     submitFile: null,
+    hasFile: false,
     updatedOn: '2026-07-01T10:00:00Z',
     ...overrides,
   };
@@ -37,7 +38,7 @@ export function menteeTestApplication(overrides: Partial<MentorshipMenteeApplica
     upstreamStatus: 'pending',
     createdOn: '2026-06-01T10:00:00Z',
     updatedOn: '2026-06-02T10:00:00Z',
-    decisionExpectedDate: '2026-08-01T00:00:00Z',
+    decisionExpectedDate: '2026-08-01T23:59:59Z',
     tasks: [],
     ...overrides,
   };

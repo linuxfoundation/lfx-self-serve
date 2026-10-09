@@ -8,12 +8,21 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
  *
  * Applied globally in server.ts to all /api/* routes
  * so that every current and future route is automatically protected.
+ *
+ * A rejection answers 429 in this app's own `{ error, code }` envelope (`BaseApiError.toResponse`),
+ * not express-rate-limit's plain-text default. That is what lets a client tell it apart from a
+ * proxy's answer: the campaign write levers (`classifyCampaignWriteFailure`) read a 4xx WITHOUT the
+ * envelope as "may have applied — verify in the platform", whereas a throttled write never reached
+ * a handler, so it is a definite refusal and safe to retry.
  */
 export const apiRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute window
   max: 500, // limit each IP to 500 requests per window
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  statusCode: 429,
+  // An object is sent as JSON.
+  message: { error: 'Too many requests, please try again later.', code: 'RATE_LIMITED' },
 });
 
 /**

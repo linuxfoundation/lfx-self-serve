@@ -3,7 +3,11 @@
 
 import '@angular/compiler';
 
-import { MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE, MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE } from '@lfx-one/shared/constants';
+import {
+  MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
+  MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE,
+  MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+} from '@lfx-one/shared/constants';
 import type { MentorshipMenteeRegisterRequest, MentorshipUpstreamApplication, MentorshipUpstreamTask } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
@@ -101,6 +105,7 @@ describe('MentorshipMenteeService.registerMenteeProfile', () => {
     skillsHave: ['Java'],
     skillsWant: ['Python'],
     additionalNotes: 'Test notes',
+    country: 'KE',
     demographics: { age: '20-39', education: 'college' },
     ageEligible: true,
     workAuthorized: true,
@@ -139,6 +144,7 @@ describe('MentorshipMenteeService.registerMenteeProfile', () => {
       age_eligible: true,
       work_eligible: true,
       skill_set: { skills: ['Java'], improvementSkills: ['Python'], comments: 'Test notes' },
+      address: { country: 'KE' },
       demographics: { age: '20-39' },
       socioeconomics: { educationLevel: 'college' },
     });
@@ -664,6 +670,19 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
     });
   });
 
+  it('reads the stored row before a country change and keeps the legacy address keys', async () => {
+    const storedRow = { ...updatedRow, address: { country: 'US', city: 'Test City', zipCode: '00000' } };
+    proxyRequest.mockResolvedValueOnce(storedRow).mockResolvedValueOnce({ ...updatedRow, address: { country: 'KE', city: 'Test City', zipCode: '00000' } });
+
+    const result = await service.updateMenteeProfile(buildReq(), { country: 'KE' });
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'PATCH', undefined, {
+      address: { country: 'KE', city: 'Test City', zipCode: '00000' },
+    });
+    expect(result.profile.country).toBe('KE');
+  });
+
   it.each([
     ['a 500', 500, { error: 'boom' }],
     ["upstream's 409 for more than one mentee profile", 409, { error: 'multiple mentee profiles exist for user' }],
@@ -962,6 +981,211 @@ describe('MentorshipMenteeService.updateMenteeTaskStatus', () => {
     proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' })).mockRejectedValueOnce(error);
 
     await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('MentorshipMenteeService.uploadMenteeTaskFile', () => {
+  const taskId = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
+  const TASK_PATH = `/mentorship/v1/tasks/${taskId}`;
+  const UPLOAD_PATH = `${TASK_PATH}/file-upload`;
+  const fileName = 'private-report-name.pdf';
+  const file = Buffer.from('%PDF-1.7 private-file-bytes');
+  const stored = { filename: 'private-report-name.pdf', content_type: 'application/pdf', size: file.byteLength };
+  let service: InstanceType<typeof MentorshipMenteeService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  /** The multipart body sent upstream on the given call, as text, so its part headers can be read. */
+  const sentForm = (call: number): { headers: Record<string, string>; body: string } => {
+    const form = proxyRequest.mock.calls[call][5] as { getHeaders: () => Record<string, string>; getBuffer: () => Buffer };
+    return { headers: form.getHeaders(), body: form.getBuffer().toString('latin1') };
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(logger.debug).mockClear();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMenteeService();
+  });
+
+  it('reads the task, then posts the bytes as the multipart part `file` with the transfer timeout, and maps the stored file', async () => {
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' })).mockResolvedValueOnce(stored);
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).resolves.toEqual({
+      fileName: 'private-report-name.pdf',
+      contentType: 'application/pdf',
+      size: file.byteLength,
+    });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', TASK_PATH, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', UPLOAD_PATH, 'POST', undefined, expect.anything(), undefined, {
+      timeoutMs: 120_000,
+    });
+    const { headers, body } = sentForm(1);
+    expect(headers['content-type']).toMatch(/^multipart\/form-data; boundary=/);
+    expect(body).toContain(`Content-Disposition: form-data; name="file"; filename="${fileName}"`);
+    expect(body).toContain('Content-Type: application/octet-stream');
+    expect(body).toContain('%PDF-1.7 private-file-bytes');
+  });
+
+  it('returns empty values when upstream answers with no body', async () => {
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId })).mockResolvedValueOnce(undefined);
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).resolves.toEqual({ fileName: '', contentType: '', size: 0 });
+  });
+
+  it('uploads on the last day of the due date', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-30T23:59:59Z'));
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress', due_date: '2026-09-30' })).mockResolvedValueOnce(stored);
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).resolves.toMatchObject({ size: file.byteLength });
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses the upload once the due date has ended in UTC, without uploading', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress', due_date: '2026-09-30' }));
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).rejects.toMatchObject({
+      statusCode: 400,
+      code: MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+      message: MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest.mock.calls.map((call) => call[2])).not.toContain(UPLOAD_PATH);
+  });
+
+  it('refuses the upload on a prerequisite with no due date once its term application close has ended', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    routeProxy(proxyRequest, {
+      [TASK_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-1', status: 'in_progress' }),
+      [ME_APPLICATIONS_PATH]: () =>
+        listOf([upstreamApplication({ term: { id: 'term-1', name: 'Fall 2026', status: 'open', application_end_date: '2026-09-30' } })]),
+    });
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).rejects.toMatchObject({
+      statusCode: 400,
+      code: MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [403, 'forbidden'],
+    [404, 'not found'],
+  ])('propagates a failed task read (%i) without uploading', async (status, message) => {
+    const error = upstreamError(status, { error: message });
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [403, 'forbidden'],
+    [409, 'task is completed'],
+    [413, 'file exceeds 20 MB'],
+    [415, 'File must be PDF, DOC, DOCX or plain text'],
+    [503, 'storage is not configured'],
+  ])('propagates an upstream %i from the upload', async (status, message) => {
+    const error = upstreamError(status, { error: message });
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' })).mockRejectedValueOnce(error);
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('provisions the user and resends the same form with the timeout, with no timeout on the provisioning call', async () => {
+    proxyRequest
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' }))
+      .mockRejectedValueOnce(upstreamError(401, { error: 'local user is not provisioned' }))
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce(stored);
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).resolves.toMatchObject({ fileName });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(4);
+    expect(proxyRequest).toHaveBeenNthCalledWith(3, expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
+    expect(proxyRequest.mock.calls[3][5]).toBe(proxyRequest.mock.calls[1][5]);
+    expect(proxyRequest.mock.calls[3][7]).toEqual({ timeoutMs: 120_000 });
+    expect(sentForm(3).body).toContain(`filename="${fileName}"`);
+  });
+
+  it('URL-encodes the task id in both paths', async () => {
+    proxyRequest.mockResolvedValueOnce(upstreamTask()).mockResolvedValueOnce(stored);
+
+    await service.uploadMenteeTaskFile(buildReq(), 'a/b?c', fileName, file);
+
+    expect(proxyRequest.mock.calls.map((call) => call[2])).toEqual(['/mentorship/v1/tasks/a%2Fb%3Fc', '/mentorship/v1/tasks/a%2Fb%3Fc/file-upload']);
+  });
+
+  it('logs the task id and size, never the file name or the bytes', async () => {
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId })).mockResolvedValueOnce(stored);
+
+    await service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file);
+
+    const logged = JSON.stringify(vi.mocked(logger.debug).mock.calls.map((call) => call.slice(1)));
+    expect(logged).toContain(taskId);
+    expect(logged).toContain(`"sizeBytes":${file.byteLength}`);
+    expect(logged).not.toContain('private-report-name');
+    expect(logged).not.toContain('private-file-bytes');
+  });
+});
+
+describe('MentorshipMenteeService.deleteMenteeTaskFile', () => {
+  const taskId = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
+  const TASK_PATH = `/mentorship/v1/tasks/${taskId}`;
+  const FILE_PATH = `${TASK_PATH}/file`;
+  let service: InstanceType<typeof MentorshipMenteeService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMenteeService();
+  });
+
+  it('reads the task, then deletes its file', async () => {
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' })).mockResolvedValueOnce(undefined);
+
+    await expect(service.deleteMenteeTaskFile(buildReq(), taskId)).resolves.toBeUndefined();
+
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', TASK_PATH, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', FILE_PATH, 'DELETE', undefined, undefined);
+  });
+
+  it('refuses the delete once the due date has ended in UTC, without deleting', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress', due_date: '2026-09-30' }));
+
+    await expect(service.deleteMenteeTaskFile(buildReq(), taskId)).rejects.toMatchObject({
+      statusCode: 400,
+      code: MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+      message: MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest.mock.calls.map((call) => call[3])).not.toContain('DELETE');
+  });
+
+  it('propagates a failed task read without deleting', async () => {
+    const error = upstreamError(404, { error: 'not found' });
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.deleteMenteeTaskFile(buildReq(), taskId)).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [403, 'forbidden'],
+    [404, 'not found'],
+    [409, 'task is submitted'],
+  ])('propagates an upstream %i from the delete', async (status, message) => {
+    const error = upstreamError(status, { error: message });
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'submitted' })).mockRejectedValueOnce(error);
+
+    await expect(service.deleteMenteeTaskFile(buildReq(), taskId)).rejects.toBe(error);
     expect(proxyRequest).toHaveBeenCalledTimes(2);
   });
 });

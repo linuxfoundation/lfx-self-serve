@@ -4,8 +4,9 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, linkedSignal, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormArray, FormControl, FormGroup, Validators } from '@angular/forms';
+import { AbstractControl, FormArray, FormControl, FormGroup, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import {
+  COMPOSER_ATTENDEE_LOCK,
   DEFAULT_ARTIFACT_VISIBILITY,
   DEFAULT_DURATION,
   DEFAULT_EARLY_JOIN_TIME,
@@ -18,6 +19,7 @@ import {
   MAX_EMAIL_REMINDER_TIME,
   MEETING_AGENDA_MAX_LENGTH,
   MEETING_ATTACHMENT_WRITE_CONCURRENCY,
+  MEETING_COMPOSER_OCCURRENCE_SECTIONS,
   MEETING_COMPOSER_SECTIONS,
   MEETING_DURATION_CHIP_OPTIONS,
   MIN_CUSTOM_DURATION,
@@ -40,6 +42,7 @@ import {
   MeetingComposerMode,
   MeetingComposerSection,
   MeetingComposerSectionId,
+  MeetingOccurrence,
   MeetingOwnerInput,
   MeetingRecurrence,
   MeetingRegistrant,
@@ -48,6 +51,7 @@ import {
   MeetingUserInfo,
   PendingAttachment,
   RegistrantPendingChanges,
+  UpdateMeetingOccurrenceRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -55,14 +59,19 @@ import {
   formatTo12HourInTimezone,
   generateRecurrenceObject,
   generateTempId,
+  getActiveOccurrences,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
+  isSameOccurrenceId,
   mapRecurrenceToFormValue,
   markMeetingFormForValidation,
   normalizeMeetingApiVotingStatuses,
+  getSavedAttendeeVisibility,
   resolveMeetingOwner,
   sanitizeMeetingCommittees,
   syncShowMeetingAttendeesLock,
+  toZonedDateCarrier,
+  wallTimeExistsInTimezone,
 } from '@lfx-one/shared/utils';
 import { editModeDateTimeValidator, futureDateTimeValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
@@ -144,6 +153,35 @@ export class MeetingComposerFormService {
    * group's construction defaults.
    */
   public readonly isHydrated: Signal<boolean> = computed(() => !this.isEditMode() || this.meeting() !== null);
+  /**
+   * Id of the single occurrence being edited, or `null` when the edit covers the whole series.
+   * @description Written by {@link initialize} alone, from `context.occurrenceId` — and only in edit mode,
+   * since an occurrence has nothing to mean for a create.
+   */
+  public readonly occurrenceId = signal<string | null>(null);
+  /** Whether this open edits one occurrence of a recurring meeting rather than the meeting itself. */
+  public readonly isOccurrenceEdit: Signal<boolean> = computed(() => this.isEditMode() && this.occurrenceId() !== null);
+  /**
+   * The occurrence being edited, as the hydrating fetch read it.
+   * @description Its values are what the form opens on and what {@link occurrenceHasChanges} compares
+   * against; `null` until the meeting has loaded, and always `null` outside an occurrence edit.
+   */
+  public readonly occurrence = signal<MeetingOccurrence | null>(null);
+  /**
+   * The series edit's payload as hydrated, serialized — what {@link hasSeriesChanges} diffs against.
+   * @description `null` until the meeting has loaded, and outside a series edit.
+   */
+  private readonly savedSnapshot = signal<string | null>(null);
+  /**
+   * Sections this open puts in front of the organizer, in rail order.
+   * @description An occurrence edit drops the sections upstream's occurrence update has no field for, so
+   * the rail, the footer and the compact chip row all walk the same shorter list.
+   */
+  public readonly visibleSections: Signal<readonly MeetingComposerSection[]> = computed(() =>
+    this.isOccurrenceEdit()
+      ? MEETING_COMPOSER_SECTIONS.filter((section) => (MEETING_COMPOSER_OCCURRENCE_SECTIONS as readonly string[]).includes(section.id))
+      : MEETING_COMPOSER_SECTIONS
+  );
   public readonly submitting = signal<boolean>(false);
 
   public readonly attachments = signal<MeetingAttachment[]>([]);
@@ -359,6 +397,9 @@ export class MeetingComposerFormService {
 
     this.mode.set(context.mode);
     this.meetingId.set(context.meetingUid ?? null);
+    this.occurrenceId.set(context.mode === 'edit' ? (context.occurrenceId ?? null) : null);
+    this.occurrence.set(null);
+    this.savedSnapshot.set(null);
     this.meeting.set(null);
     this.originalStartTime.set(null);
     this.attachments.set([]);
@@ -392,6 +433,7 @@ export class MeetingComposerFormService {
 
     if (context.mode === 'edit' && context.meetingUid) {
       this.loadMeeting(context.meetingUid);
+      // Loaded for an occurrence edit too: it lists who attends that occurrence, and invites to it alone.
       this.loadGuests(context.meetingUid);
     }
 
@@ -413,7 +455,14 @@ export class MeetingComposerFormService {
     const meetingUid = this.meetingId() ?? '';
 
     this.registrantUpdates.set({
-      toAdd: next.filter((guest) => guest.state === 'new').map((guest) => this.meetingService.stripMetadata(meetingUid, guest)),
+      // `occurrence_id` is added here rather than by the shared mapper, which the pre-v2 guest screens use
+      // too: only the occurrence edit ever sets it on a new guest (see `newGuestDefaults`).
+      toAdd: next
+        .filter((guest) => guest.state === 'new')
+        .map((guest) => ({
+          ...this.meetingService.stripMetadata(meetingUid, guest),
+          ...(guest.occurrence_id ? { occurrence_id: guest.occurrence_id } : {}),
+        })),
       toUpdate: next.filter((guest) => guest.state === 'modified').map((guest) => ({ uid: guest.uid, changes: this.meetingService.getChangedFields(guest) })),
       toDelete: next.filter((guest) => guest.state === 'deleted').map((guest) => guest.uid),
     } satisfies RegistrantPendingChanges);
@@ -434,6 +483,10 @@ export class MeetingComposerFormService {
 
   public isSectionValid(section: MeetingComposerSectionId): boolean {
     const form = this.form();
+
+    if (this.isOccurrenceEdit()) {
+      return this.isOccurrenceSectionValid(section);
+    }
 
     switch (section) {
       case 'details-access':
@@ -532,9 +585,70 @@ export class MeetingComposerFormService {
    * dependency of its own.
    */
   public sectionAdvanceLimit(): number {
-    const blocking = MEETING_COMPOSER_SECTIONS.findIndex((section) => section.required && !this.isSectionValid(section.id));
+    const sections = this.visibleSections();
+    const blocking = sections.findIndex((section) => section.required && !this.isSectionValid(section.id));
 
-    return blocking === -1 ? MEETING_COMPOSER_SECTIONS.length : blocking;
+    return blocking === -1 ? sections.length : blocking;
+  }
+
+  /**
+   * Whether the form as it stands may be saved, before any touched-marking.
+   * @description Whole-form validity for a series edit or a create. An occurrence edit asks only its own
+   * sections: the hidden series-level controls are never sent, so a stored value they reject — a legacy
+   * `None` meeting type, an early-join window outside today's range — must not hold the occurrence's Save
+   * hostage behind a control the organizer cannot see. It also stays closed until something has changed —
+   * an occurrence field, or a pending occurrence-scoped guest change — because upstream stores every occurrence
+   * update as an override of the series, even an identical one.
+   * Callers must read `revision` themselves — this is a plain method.
+   */
+  public isSavable(): boolean {
+    if (this.isOccurrenceEdit()) {
+      return (
+        !!this.occurrence() &&
+        this.visibleSections().every((section) => this.isSectionValid(section.id)) &&
+        (this.occurrenceHasChanges() || this.hasRegistrantUpdates())
+      );
+    }
+
+    // A series edit stays closed until something differs from what was loaded — saving an untouched
+    // meeting still sends upstream a full update, and with it the update emails to every registrant.
+    return this.form().valid && (!this.isEditMode() || this.hasSeriesChanges());
+  }
+
+  /**
+   * Whether a series edit differs from the meeting it was opened on.
+   * @description Diffs the update payload rather than control dirtiness: hydration patches, the duration
+   * pair and the group picker all write controls without the organizer doing anything, while the payload
+   * is exactly what Save would send. `project_uid` is left out because it follows the ambient project
+   * context, which can settle after the snapshot. Pending guest, attachment and link work counts too —
+   * those live outside the payload and are saved alongside it.
+   */
+  public hasSeriesChanges(): boolean {
+    const snapshot = this.savedSnapshot();
+
+    if (!this.isEditMode() || this.isOccurrenceEdit() || snapshot === null) {
+      return false;
+    }
+
+    return this.hasPendingDependentWork() || this.serializeMeetingData() !== snapshot;
+  }
+
+  /** Whether the occurrence form differs from the occurrence it was opened on. Always false outside an occurrence edit. */
+  public occurrenceHasChanges(): boolean {
+    const occurrence = this.occurrence();
+
+    if (!this.isOccurrenceEdit() || !occurrence) {
+      return false;
+    }
+
+    const payload = this.prepareOccurrenceData(occurrence);
+
+    return (
+      payload.title !== undefined ||
+      payload.description !== undefined ||
+      payload.duration !== this.occurrenceBaselineDuration(occurrence) ||
+      new Date(payload.start_time).getTime() !== new Date(occurrence.start_time).getTime()
+    );
   }
 
   /**
@@ -631,7 +745,7 @@ export class MeetingComposerFormService {
     // to be explicit for anything reading control state through `revision`.
     this.revision.update((value) => value + 1);
 
-    return form.valid;
+    return this.isSavable();
   }
 
   /**
@@ -641,6 +755,10 @@ export class MeetingComposerFormService {
    * rely on that silence to skip their success toast and their close of a composer they no longer own.
    */
   public submit(): Observable<Meeting | null> {
+    if (this.isOccurrenceEdit()) {
+      return this.submitOccurrence();
+    }
+
     const generation = this.generation;
     const wasEditMode = this.isEditMode();
     const hadDependentWork = this.hasPendingDependentWork();
@@ -866,7 +984,8 @@ export class MeetingComposerFormService {
     return {
       uid: '',
       meeting_id: this.meetingId() ?? '',
-      occurrence_id: null,
+      // An occurrence edit invites to that occurrence alone; everywhere else a new guest covers every occurrence.
+      occurrence_id: this.isOccurrenceEdit() ? (this.occurrence()?.occurrence_id ?? this.occurrenceId()) : null,
       email: '',
       first_name: '',
       last_name: '',
@@ -1191,8 +1310,10 @@ export class MeetingComposerFormService {
     const restrictedControl = form.get('restricted');
     const attendeesTypeControl = form.get('meeting_type');
     if (restrictedControl && attendeesTypeControl) {
-      syncShowMeetingAttendeesLock(form);
-      this.formSubscriptions.add(merge(restrictedControl.valueChanges, attendeesTypeControl.valueChanges).subscribe(() => syncShowMeetingAttendeesLock(form)));
+      syncShowMeetingAttendeesLock(form, COMPOSER_ATTENDEE_LOCK);
+      this.formSubscriptions.add(
+        merge(restrictedControl.valueChanges, attendeesTypeControl.valueChanges).subscribe(() => syncShowMeetingAttendeesLock(form, COMPOSER_ATTENDEE_LOCK))
+      );
     }
   }
 
@@ -1239,8 +1360,25 @@ export class MeetingComposerFormService {
 
           // Attachments first — populateExistingLinks() reads them to seed the important_links array.
           this.attachments.set(attachments);
-          this.meeting.set(meeting);
           this.populateFormWithMeetingData(meeting);
+
+          const occurrenceId = this.occurrenceId();
+          if (occurrenceId && !this.populateFormWithOccurrenceData(meeting, occurrenceId)) {
+            this.composer.close();
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Occurrence changed',
+              detail: 'This occurrence was moved or cancelled. Reopen the meeting to pick another one.',
+            });
+            return;
+          }
+
+          // Set last, so `isHydrated` never reads true over a form still showing the series' values.
+          this.meeting.set(meeting);
+
+          if (!occurrenceId) {
+            this.savedSnapshot.set(this.serializeMeetingData());
+          }
         },
         error: (error: unknown) => {
           console.error('Error getting meeting:', error);
@@ -1332,7 +1470,7 @@ export class MeetingComposerFormService {
           return;
         }
 
-        this.setGuests(this.mergeLoadedGuests(loaded));
+        this.setGuests(this.mergeLoadedGuests(loaded.map((registrant) => this.withOccurrenceScope(registrant))));
 
         // Straight to `reconcileCommitteeMembers`, not back through `syncCommitteeMembers`: `take(1)`
         // hands the value to this subscriber before it completes, so `finalize` has not yet flipped
@@ -1345,6 +1483,23 @@ export class MeetingComposerFormService {
           this.reconcileCommitteeMembers(deferred);
         }
       });
+  }
+
+  /**
+   * Single-occurrence edit only: reads a listed guest's occurrence scope into `occurrence_id`.
+   * @description The registrant list comes from the query-service index, which stores the scope as
+   * `occurrence` (empty = every occurrence) and does not rename it, so a listed guest never carries
+   * `occurrence_id`. The occurrence edit needs it to tell series guests from this occurrence's own, so the
+   * rename happens here, for that mode alone, rather than on the shared list everyone else reads.
+   */
+  private withOccurrenceScope(registrant: MeetingRegistrant): MeetingRegistrant {
+    const occurrence = (registrant as MeetingRegistrant & { occurrence?: unknown }).occurrence;
+
+    if (!this.isOccurrenceEdit() || registrant.occurrence_id || typeof occurrence !== 'string' || !occurrence) {
+      return registrant;
+    }
+
+    return { ...registrant, occurrence_id: occurrence };
   }
 
   /**
@@ -1435,6 +1590,198 @@ export class MeetingComposerFormService {
   }
 
   // Other private helper methods
+
+  /**
+   * Saves an occurrence edit: its own fields through upstream's occurrence update, then its guests.
+   * @description Nothing here ever reaches the series. New guests carry the occurrence's id, so they are
+   * invited to it alone, and only guests scoped to this occurrence can be removed — series guests are
+   * read-only. Documents and links are not saved at all, since upstream cannot scope them to an
+   * occurrence, and series settings are never sent. Emits `null` on success, like a series edit, and follows
+   * {@link submit}'s contract otherwise — silent on a failure it has already toasted, or on a save that
+   * outlived its open.
+   */
+  private submitOccurrence(): Observable<Meeting | null> {
+    const generation = this.generation;
+    const meetingId = this.meetingId();
+    const occurrence = this.occurrence();
+
+    if (!meetingId || !occurrence) {
+      return EMPTY;
+    }
+
+    this.submitting.set(true);
+
+    // The occurrence itself is only written when one of its own fields changed: upstream stores every
+    // occurrence update as an override of the series, so a guests-only save must not create one.
+    const writesOccurrence = this.occurrenceHasChanges();
+    const update$: Observable<unknown> = writesOccurrence
+      ? this.meetingService.updateOccurrence(meetingId, occurrence.occurrence_id, this.prepareOccurrenceData(occurrence))
+      : of(null);
+
+    return update$.pipe(
+      switchMap(() => {
+        if (generation !== this.generation) {
+          return EMPTY;
+        }
+
+        // Guests only — never attachments, which upstream cannot scope to an occurrence. Every queued guest
+        // change here is occurrence-scoped: adds carry the occurrence id, and only guests invited to this
+        // occurrence alone can be removed.
+        return this.processRegistrantOperations(meetingId).pipe(
+          switchMap((registrants) => {
+            if (generation !== this.generation) {
+              this.reportStaleDependentResults(null, registrants, true);
+              return EMPTY;
+            }
+
+            // A guests-only save where every guest change failed saved nothing at all. Emitting would raise
+            // "Occurrence updated" and close the drawer over the organizer's lost changes, so it stays open.
+            if (!writesOccurrence && registrants.length > 0 && registrants.every((result) => result.success === 0)) {
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'The guest changes for this occurrence could not be saved. Please try again.',
+              });
+              return EMPTY;
+            }
+
+            this.reportDependentResults(null, registrants, true);
+            return of(null);
+          })
+        );
+      }),
+      catchError((error: unknown) => {
+        console.error('Error saving meeting occurrence:', error);
+        const isStale = generation !== this.generation;
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: isStale ? 'An earlier occurrence could not be updated. Your current draft is unaffected.' : 'Failed to update occurrence. Please try again.',
+        });
+        return EMPTY;
+      }),
+      finalize(() => {
+        if (generation === this.generation) {
+          this.submitting.set(false);
+        }
+      }),
+      take(1)
+    );
+  }
+
+  /**
+   * The occurrence update payload, built the way the reschedule dialog builds it.
+   * @description Start time and duration always go; title and agenda only when they differ from what
+   * the occurrence shows today, so an untouched field keeps following the series. Times are read in the
+   * series' timezone, which the occurrence endpoint takes implicitly — the timezone control is locked.
+   */
+  private prepareOccurrenceData(occurrence: MeetingOccurrence): UpdateMeetingOccurrenceRequest {
+    const formValue = this.form().getRawValue();
+    const meeting = this.meeting();
+    const timezone = meeting?.timezone || getUserTimezone();
+    const duration = formValue.duration === 'custom' ? Number(formValue.customDuration) : Number(formValue.duration);
+    const startTime = formValue.startDate && formValue.startTime ? combineDateTime(formValue.startDate, formValue.startTime, timezone) : occurrence.start_time;
+    const payload: UpdateMeetingOccurrenceRequest = { start_time: startTime, duration };
+
+    const title = ((formValue.title as string | null) ?? '').trim();
+    if (title !== (occurrence.title || meeting?.title || '').trim()) {
+      payload.title = title;
+    }
+
+    const description = ((formValue.description as string | null) ?? '').trim();
+    if (description !== (occurrence.description || meeting?.description || '').trim()) {
+      payload.description = description;
+    }
+
+    return payload;
+  }
+
+  /**
+   * Section validity for an occurrence edit: only the fields upstream's occurrence update carries.
+   * @description Mirrors the series checks for those fields and drops the rest — the type, organizer,
+   * early-join and reminder controls are hidden in this mode and are never sent.
+   */
+  private isOccurrenceSectionValid(section: MeetingComposerSectionId): boolean {
+    const form = this.form();
+
+    switch (section) {
+      case 'details-access':
+        return !!(form.get('title')?.value && form.get('title')?.valid);
+
+      case 'date-schedule':
+        return !!(
+          form.get('startDate')?.value &&
+          form.get('startTime')?.value &&
+          form.get('startDate')?.valid &&
+          form.get('startTime')?.valid &&
+          form.get('duration')?.valid &&
+          form.get('customDuration')?.valid &&
+          !form.errors?.['futureDateTime'] &&
+          !form.errors?.['nonexistentWallTime']
+        );
+
+      case 'agenda-resources':
+        return !(form.get('description')?.invalid ?? true);
+
+      // Same rule as a series edit: the group picker is hidden here, so this only ever trips on a guest
+      // list that failed to load.
+      case 'guests':
+        return !this.hasUnreconciledGroupSelection() && !this.committeeContextUnresolved();
+
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Finds the occurrence being edited in the freshly loaded meeting and lays its values over the form.
+   * @description Runs after {@link populateFormWithMeetingData}, which has already patched the series —
+   * so only the four fields an occurrence can override are rewritten here. Returns `false` when the
+   * occurrence is no longer active: another organizer moved or cancelled it after the scope dialog read
+   * it, and editing a stand-in would silently retarget the save.
+   */
+  private populateFormWithOccurrenceData(meeting: Meeting, occurrenceId: string): boolean {
+    const occurrence = getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences).find((candidate) =>
+      isSameOccurrenceId(candidate.occurrence_id, occurrenceId)
+    );
+
+    if (!occurrence) {
+      return false;
+    }
+
+    const form = this.form();
+    const timezone = meeting.timezone || getUserTimezone();
+    const start = new Date(occurrence.start_time);
+    const description = occurrence.description || meeting.description || '';
+
+    this.occurrence.set(occurrence);
+    this.originalStartTime.set(occurrence.start_time);
+
+    form.patchValue({
+      title: occurrence.title || meeting.title,
+      description,
+      // A carrier, not `toZonedTime`: the latter can normalize the wall time when it falls in the browser
+      // zone's own DST gap, reopening the untouched form on the wrong calendar day.
+      startDate: toZonedDateCarrier(start, timezone),
+      startTime: formatTo12HourInTimezone(start, timezone),
+    });
+    this.setDuration(this.occurrenceBaselineDuration(occurrence, meeting));
+
+    // Upstream drops an empty agenda on an occurrence update, so one that exists can be changed but not cleared.
+    if (description.trim()) {
+      form.get('description')?.addValidators([Validators.required, Validators.pattern(/\S/)]);
+      form.get('description')?.updateValueAndValidity();
+    }
+
+    this.updateFormValidator();
+
+    return true;
+  }
+
+  /** The update payload as {@link hasSeriesChanges} compares it — everything Save sends except the project. */
+  private serializeMeetingData(): string {
+    return JSON.stringify({ ...this.prepareMeetingData(), project_uid: undefined });
+  }
 
   private prepareMeetingData(): CreateMeetingRequest | UpdateMeetingRequest {
     // Use getRawValue() to include disabled controls (e.g., locked committees from group context)
@@ -1636,7 +1983,10 @@ export class MeetingComposerFormService {
       recording_enabled: meeting.recording_enabled || false,
       transcript_enabled: meeting.transcript_enabled || false,
       youtube_upload_enabled: meeting.youtube_upload_enabled || false,
-      show_meeting_attendees: meeting.show_meeting_attendees || false,
+      // Read through the default (pre-v2) lock, not the composer's: a restricted meeting saved before the
+      // composer existed opens with sharing off, so a stale stored `true` is never re-saved as a choice.
+      // A v2 opt-in on a restricted meeting reads the same way and has to be switched on again per edit.
+      show_meeting_attendees: getSavedAttendeeVisibility(meeting) ?? false,
       zoom_ai_enabled: meeting.ai_summary_enabled || false,
       require_ai_summary_approval: meeting.require_ai_summary_approval ?? false,
       artifact_visibility: meeting.artifact_visibility ?? DEFAULT_ARTIFACT_VISIBILITY,
@@ -1665,7 +2015,7 @@ export class MeetingComposerFormService {
 
     this.populateExistingLinks();
     this.updateFormValidator();
-    syncShowMeetingAttendeesLock(form);
+    syncShowMeetingAttendeesLock(form, COMPOSER_ATTENDEE_LOCK);
   }
 
   private populateRecurrenceGroup(meeting: Meeting, isCustomRecurrence: boolean): void {
@@ -1750,7 +2100,42 @@ export class MeetingComposerFormService {
       form.setValidators(futureDateTimeValidator());
     }
 
+    if (this.isOccurrenceEdit()) {
+      form.addValidators(this.occurrenceWallTimeValidator());
+    }
+
     form.updateValueAndValidity();
+  }
+
+  /**
+   * The duration an occurrence edit opens on: its own, else the series' it inherits.
+   * @description One source for hydration and {@link occurrenceHasChanges}, so an occurrence with no
+   * duration of its own does not read as changed the moment it opens — which would enable Save and store
+   * a needless override. `meeting` is passed during hydration, before {@link meeting} is set.
+   */
+  private occurrenceBaselineDuration(occurrence: MeetingOccurrence, meeting: Meeting | null = this.meeting()): number {
+    return occurrence.duration || meeting?.duration || DEFAULT_DURATION;
+  }
+
+  /**
+   * Rejects an occurrence start that falls in the series zone's spring-forward gap.
+   * @description `combineDateTime` silently normalizes such a time (2:30 AM on a spring-forward day becomes
+   * 3:30 AM), so it would pass the future check and move the occurrence to an instant the organizer never
+   * picked. The same guard the pre-v2 reschedule dialog applies; occurrence mode only, since the occurrence
+   * endpoint always reads the time in the series zone.
+   */
+  private occurrenceWallTimeValidator(): ValidatorFn {
+    return (group: AbstractControl): ValidationErrors | null => {
+      const startDate: Date | null = group.get('startDate')?.value;
+      const startTime: string | null = group.get('startTime')?.value;
+      const timezone = this.meeting()?.timezone || group.get('timezone')?.value || getUserTimezone();
+
+      if (!startDate || !startTime || group.get('startTime')?.invalid) {
+        return null;
+      }
+
+      return wallTimeExistsInTimezone(startDate, startTime, timezone) ? null : { nonexistentWallTime: true };
+    };
   }
 
   private processRegistrantOperations(meetingId: string): Observable<MeetingRegistrantOperationResult[]> {

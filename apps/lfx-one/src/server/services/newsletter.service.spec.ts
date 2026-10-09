@@ -1,17 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CommitteeNewsletter, CommitteeNewsletterListResponse } from '@lfx-one/shared/interfaces';
+import { ProjectFunding } from '@lfx-one/shared/enums';
+import type { CommitteeNewsletter, CommitteeNewsletterListResponse, Project } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// This app's vitest config resolves plain Node modules only — the `@lfx-one/shared/*` tsconfig
-// path alias isn't wired here, so the constructed collaborators must be mocked (mirrors
-// meeting.service.spec.ts). Only the my-newsletters composition is exercised; the client,
-// committee, and project services are stubbed at the module boundary.
-const { listCommitteeNewsletters, getMyCommitteeUids, enrichWithProjectData } = vi.hoisted(() => ({
+// Mirror meeting.service.spec.ts: isolate constructed collaborators at the module boundary.
+// The pure project classifier is real, resolved by the server Vitest alias.
+const { listCommitteeNewsletters, getMyCommitteeUids, getProjectsByIds } = vi.hoisted(() => ({
   listCommitteeNewsletters: vi.fn(),
   getMyCommitteeUids: vi.fn(),
-  enrichWithProjectData: vi.fn(),
+  getProjectsByIds: vi.fn(),
 }));
 
 vi.mock('./newsletter-service.client', () => ({
@@ -26,7 +25,7 @@ vi.mock('./committee.service', () => ({
 }));
 vi.mock('./project.service', () => ({
   ProjectService: class {
-    public enrichWithProjectData = enrichWithProjectData;
+    public getProjectsByIds = getProjectsByIds;
   },
 }));
 vi.mock('./logger.service', () => ({
@@ -35,6 +34,7 @@ vi.mock('./logger.service', () => ({
 
 import type { Request } from 'express';
 
+import { MicroserviceError } from '../errors';
 import { NewsletterService } from './newsletter.service';
 
 const req = {} as unknown as Request;
@@ -53,9 +53,7 @@ describe('NewsletterService.getMyNewsletters', () => {
   beforeEach(() => {
     listCommitteeNewsletters.mockReset();
     getMyCommitteeUids.mockReset();
-    enrichWithProjectData.mockReset();
-    // Default enrichment: passthrough — assertions on ordering/dedupe read the input.
-    enrichWithProjectData.mockImplementation(async (_req: Request, items: CommitteeNewsletter[]) => items);
+    getProjectsByIds.mockReset().mockResolvedValue(new Map());
     service = new NewsletterService();
   });
 
@@ -64,9 +62,10 @@ describe('NewsletterService.getMyNewsletters', () => {
 
     const result = await service.getMyNewsletters(req);
 
-    expect(result).toEqual([]);
+    expect(result).toEqual({ newsletters: [], complete: true });
+    expect(getMyCommitteeUids).toHaveBeenCalledWith(req, undefined, { failOnPartial: true });
     expect(listCommitteeNewsletters).not.toHaveBeenCalled();
-    expect(enrichWithProjectData).not.toHaveBeenCalled();
+    expect(getProjectsByIds).not.toHaveBeenCalled();
   });
 
   it('dedupes newsletters reachable via multiple committees and sorts by sent_at descending', async () => {
@@ -81,9 +80,10 @@ describe('NewsletterService.getMyNewsletters', () => {
 
     const result = await service.getMyNewsletters(req);
 
-    expect(result.map((n: CommitteeNewsletter) => n.id)).toEqual(['n3', 'n1', 'n2']);
+    expect(result.newsletters.map((n) => n.id)).toEqual(['n3', 'n1', 'n2']);
+    expect(result.complete).toBe(true);
     expect(listCommitteeNewsletters).toHaveBeenCalledTimes(2);
-    expect(enrichWithProjectData).toHaveBeenCalledTimes(1);
+    expect(getProjectsByIds).toHaveBeenCalledTimes(1);
   });
 
   it('follows next_page_token until the upstream list is exhausted', async () => {
@@ -94,7 +94,8 @@ describe('NewsletterService.getMyNewsletters', () => {
 
     const result = await service.getMyNewsletters(req);
 
-    expect(result.map((n: CommitteeNewsletter) => n.id)).toEqual(['n1', 'n2']);
+    expect(result.newsletters.map((n) => n.id)).toEqual(['n1', 'n2']);
+    expect(result.complete).toBe(true);
     expect(listCommitteeNewsletters).toHaveBeenCalledTimes(2);
     expect(listCommitteeNewsletters).toHaveBeenNthCalledWith(2, req, 'committee-a', 'token-2');
   });
@@ -108,7 +109,8 @@ describe('NewsletterService.getMyNewsletters', () => {
 
     const result = await service.getMyNewsletters(req);
 
-    expect(result.map((n: CommitteeNewsletter) => n.id)).toEqual(['n1']);
+    expect(result.newsletters.map((n) => n.id)).toEqual(['n1']);
+    expect(result.complete).toBe(false); // Message strings never establish a structured 403.
   });
 
   it('drops all pages for a committee when a later page fails (all-or-nothing)', async () => {
@@ -124,6 +126,115 @@ describe('NewsletterService.getMyNewsletters', () => {
     const result = await service.getMyNewsletters(req);
 
     // committee-a's page 1 must not leak through as a silently incomplete result.
-    expect(result.map((n: CommitteeNewsletter) => n.id)).toEqual(['n2']);
+    expect(result.newsletters.map((n) => n.id)).toEqual(['n2']);
+    expect(result.complete).toBe(false);
+  });
+
+  it('propagates discovery failure before issuing committee reads', async () => {
+    const error = new Error('membership page failed');
+    getMyCommitteeUids.mockRejectedValue(error);
+    await expect(service.getMyNewsletters(req)).rejects.toBe(error);
+    expect(listCommitteeNewsletters).not.toHaveBeenCalled();
+  });
+
+  it('reports successful empty committee reads as complete', async () => {
+    getMyCommitteeUids.mockResolvedValue(new Set(['a']));
+    listCommitteeNewsletters.mockResolvedValue(pageOf([]));
+    await expect(service.getMyNewsletters(req)).resolves.toEqual({ newsletters: [], complete: true });
+  });
+
+  it.each([403, 404, 429, 500, 503])('classifies structured %s and discards earlier pages while retaining healthy rows', async (status) => {
+    getMyCommitteeUids.mockResolvedValue(new Set(['a', 'b']));
+    listCommitteeNewsletters.mockImplementation(async (_req: Request, uid: string, token?: string) => {
+      if (uid === 'b') return pageOf([newsletter('healthy', '2026-07-01')]);
+      if (!token) return pageOf([newsletter('discarded', '2026-07-02')], 'next');
+      throw new MicroserviceError('upstream failure', status, 'UPSTREAM_ERROR');
+    });
+    const result = await service.getMyNewsletters(req);
+    expect(result.newsletters.map((row) => row.id)).toEqual(['healthy']);
+    expect(result.complete).toBe(status === 403 || status === 404);
+  });
+
+  it.each([new Error('transport failure'), new MicroserviceError('rate limit', 429, 'RATE_LIMITED')])(
+    'reports failed zero-row enumeration as incomplete',
+    async (error) => {
+      getMyCommitteeUids.mockResolvedValue(new Set(['a']));
+      listCommitteeNewsletters.mockRejectedValue(error);
+      await expect(service.getMyNewsletters(req)).resolves.toEqual({ newsletters: [], complete: false });
+    }
+  );
+
+  it('rethrows structured 401, including after a successful page', async () => {
+    const error = new MicroserviceError('expired', 401, 'UNAUTHORIZED');
+    getMyCommitteeUids.mockResolvedValue(new Set(['a']));
+    listCommitteeNewsletters.mockResolvedValueOnce(pageOf([newsletter('n1', '2026-07-01')], 'next')).mockRejectedValueOnce(error);
+    await expect(service.getMyNewsletters(req)).rejects.toBe(error);
+    expect(getProjectsByIds).not.toHaveBeenCalled();
+  });
+
+  it('preserves bounded rows and marks the 20-page cap incomplete only with an outstanding cursor', async () => {
+    getMyCommitteeUids.mockResolvedValue(new Set(['a']));
+    listCommitteeNewsletters.mockResolvedValue(pageOf([newsletter('n1', '2026-07-01')], 'more'));
+    const capped = await service.getMyNewsletters(req);
+    expect(capped.newsletters).toHaveLength(1);
+    expect(capped.complete).toBe(false);
+    expect(listCommitteeNewsletters).toHaveBeenCalledTimes(20);
+    listCommitteeNewsletters.mockReset().mockImplementation(async () => pageOf([], listCommitteeNewsletters.mock.calls.length < 20 ? 'more' : undefined));
+    expect((await service.getMyNewsletters(req)).complete).toBe(true);
+  });
+
+  it('batches unique owners then unresolved direct parents, reuses owners, and classifies real metadata', async () => {
+    const project = (uid: string, overrides: Partial<Project> = {}) => ({ uid, name: uid, slug: uid, ...overrides }) as Project;
+    const foundation = project('foundation', { stage: 'Active', funding: ProjectFunding.Funded, funding_model: ['Membership'] });
+    const owners = [
+      foundation,
+      project('child', { parent_uid: 'foundation' }),
+      project('other', { parent_uid: 'parent' }),
+      project('root-child', { parent_uid: 'root' }),
+    ];
+    getMyCommitteeUids.mockResolvedValue(new Set(['a']));
+    listCommitteeNewsletters.mockResolvedValue(
+      pageOf(['foundation', 'child', 'other', 'root-child', 'missing'].map((id) => ({ ...newsletter(id, '2026-07-01'), project_uid: id })))
+    );
+    getProjectsByIds
+      .mockResolvedValueOnce(new Map(owners.map((owner) => [owner.uid, owner])))
+      .mockResolvedValueOnce(new Map([['parent', project('parent', { parent_uid: 'ancestor' })]]));
+    const result = await service.getMyNewsletters(req);
+    expect(getProjectsByIds).toHaveBeenNthCalledWith(1, req, ['foundation', 'child', 'other', 'root-child', 'missing']);
+    expect(getProjectsByIds).toHaveBeenNthCalledWith(2, req, new Set(['parent', 'root']));
+    expect(getProjectsByIds).toHaveBeenCalledTimes(2);
+    expect(result.newsletters[0]).toMatchObject({ project_name: 'foundation', project_slug: 'foundation', is_foundation: true });
+    expect(result.newsletters[1]).toMatchObject({
+      parent_project_uid: 'foundation',
+      parent_project_name: 'foundation',
+      parent_is_foundation: true,
+      is_foundation: false,
+    });
+    expect(result.newsletters[2]).toMatchObject({ parent_project_name: 'parent', parent_is_foundation: false });
+    expect(result.newsletters[3]).not.toHaveProperty('parent_is_foundation'); // ROOT excluded by ProjectService.
+    expect(result.newsletters[4]).not.toHaveProperty('is_foundation');
+    expect(result.complete).toBe(true);
+  });
+
+  it('enriches a child-only feed from the parent batch and preserves rows when parent metadata is unavailable', async () => {
+    getMyCommitteeUids.mockResolvedValue(new Set(['a']));
+    listCommitteeNewsletters.mockResolvedValue(pageOf([newsletter('n1', '2026-07-01')]));
+    const owner = { uid: 'project-n1', name: 'Child', parent_uid: 'foundation' } as Project;
+    const parent = {
+      uid: 'foundation',
+      name: 'Synthetic Foundation',
+      stage: 'Active',
+      funding: ProjectFunding.Funded,
+      funding_model: ['Membership'],
+    } as Project;
+    getProjectsByIds.mockResolvedValueOnce(new Map([[owner.uid, owner]])).mockResolvedValueOnce(new Map([[parent.uid, parent]]));
+    const enriched = await service.getMyNewsletters(req);
+    expect(enriched.newsletters[0]).toMatchObject({ parent_project_name: parent.name, parent_is_foundation: true });
+    expect(enriched.newsletters[0].project_slug).toBeUndefined();
+    getProjectsByIds.mockResolvedValueOnce(new Map([[owner.uid, owner]])).mockResolvedValueOnce(new Map());
+    const unresolved = await service.getMyNewsletters(req);
+    expect(unresolved.newsletters[0]).toMatchObject({ id: 'n1', parent_project_uid: 'foundation' });
+    expect(unresolved.newsletters[0]).not.toHaveProperty('parent_is_foundation');
+    expect(unresolved.complete).toBe(true);
   });
 });

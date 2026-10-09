@@ -12,6 +12,9 @@ import type {
   MentorshipUpstreamProgramStatus,
 } from '../interfaces/mentorship.interface';
 import type {
+  MentorshipAdminMenteeStatusFilter,
+  MentorshipAdminMenteeTab,
+  MentorshipAdminMentorAction,
   MentorshipAdminMentorStatus,
   MentorshipAdminProgramTabCounts,
   MentorshipProgram,
@@ -134,6 +137,78 @@ export const MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES = {
 export const MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE = "The change couldn't be saved. Please try again.";
 export const MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE = 'Another change is still being saved. Try again in a moment.';
 
+/** Copy of the reviewer-note save toasts on Current Mentees. */
+export const MENTORSHIP_ADMIN_NOTE_SAVE_SUCCESS_SUMMARY = 'Note saved';
+export const MENTORSHIP_ADMIN_NOTE_CLEAR_SUCCESS_SUMMARY = 'Note cleared';
+export const MENTORSHIP_ADMIN_NOTE_SAVE_ERROR_SUMMARY = 'Could not save the note';
+export const MENTORSHIP_ADMIN_NOTE_SAVE_ERROR_FALLBACK = 'Something went wrong. Please try again.';
+export const MENTORSHIP_ADMIN_NOTE_TOAST_LIFE = 5000;
+
+/** Note save failures with their own copy, keyed by the BFF's status: a 403 is a lost admin role, a 404 an application that is gone. */
+export const MENTORSHIP_ADMIN_NOTE_SAVE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  403: 'You can no longer edit notes on this program. Refresh the page and try again.',
+  404: 'This application no longer exists. Refresh the page and try again.',
+};
+
+/** Task create toasts on the admin and mentor program details: their copy and how long they stay up (ms). */
+export const MENTORSHIP_TASK_CREATE_SUCCESS_SUMMARY = 'Task created';
+export const MENTORSHIP_TASK_CREATE_PARTIAL_SUMMARY = 'Some tasks were not created';
+export const MENTORSHIP_TASK_CREATE_ERROR_SUMMARY = 'Could not create the task';
+export const MENTORSHIP_TASK_CREATE_TOAST_LIFE = 5000;
+
+/**
+ * Shown when the create failed without a status of its own, such as a timeout or a 5xx. The task may still have
+ * been created upstream, whose create is not idempotent, so the copy sends the caller to the row, not to a retry.
+ */
+export const MENTORSHIP_TASK_CREATE_ERROR_FALLBACK = "The task may not have been created. Check the mentee's row before trying again.";
+
+/**
+ * Most applications one task create request takes, so one request cannot fan out without bound. The app sends a
+ * larger group in batches of this size.
+ */
+export const MENTORSHIP_TASK_CREATE_MAX_APPLICATIONS = 100;
+
+/**
+ * Single-mentee task create failures with their own copy, keyed by the BFF's status: a 400 is a mentee no longer
+ * accepted, a 403 a caller who no longer mentors or administers the program, a 404 an application that is gone.
+ */
+export const MENTORSHIP_TASK_CREATE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'This mentee can no longer be given tasks. Refresh the page and try again.',
+  403: 'You can no longer create tasks on this program. Refresh the page and try again.',
+  404: 'This application no longer exists. Refresh the page and try again.',
+};
+
+/** Task edit and status-change toasts on the admin and mentor program details: their copy and how long they stay up (ms). */
+export const MENTORSHIP_TASK_UPDATE_ERROR_SUMMARY = 'Could not update the task';
+export const MENTORSHIP_TASK_UPDATE_ERROR_FALLBACK = 'Something went wrong. The task was not changed. Please try again.';
+export const MENTORSHIP_TASK_UPDATE_SUCCESS_SUMMARY = 'Task updated';
+export const MENTORSHIP_TASK_UPDATE_TOAST_LIFE = 5000;
+
+/**
+ * Task update failures with their own copy, keyed by the BFF's status: a 400 is a submitted task that requires a file with none uploaded
+ * (upstream's guard; shown only for a change that can trip it), a 403 a caller who no longer mentors or administers the program (or the
+ * task's own assignee), a 404 a task that is gone.
+ */
+export const MENTORSHIP_TASK_UPDATE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'A task that requires a file can only be submitted once a file has been uploaded for it.',
+  403: 'You can no longer edit tasks on this program. Refresh the page and try again.',
+  404: 'This task no longer exists. Refresh the page and try again.',
+};
+
+/** Task file downloads, for the mentee and the task's reviewers (its mentors and program admins). */
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_SUMMARY = 'Could not download the file';
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_FALLBACK = 'We could not download this file right now. Please try again.';
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_TOAST_LIFE = 5000;
+/** Saved under this name when the response names no file; upstream always sends one. */
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_FALLBACK_NAME = 'submission';
+
+/** Download failures with their own copy, keyed by the BFF's status. A 503 means object storage is not configured upstream. */
+export const MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  403: 'You do not have access to this file.',
+  404: 'This file is no longer available. Refresh the page and try again.',
+  503: 'File downloads are unavailable right now. Please try again later.',
+};
+
 /**
  * Toast `summary` shown by every mentorship register form when submit is blocked by
  * client-side validation. Shared so a copy change lands on both mentor and mentee forms
@@ -167,6 +242,28 @@ export const MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE = 10;
 
 export const MENTORSHIP_ADMIN_MENTORS_LOAD_ERROR_MESSAGE = 'We could not load the mentors. Try again.';
 export const MENTORSHIP_ADMIN_TERMS_LOAD_ERROR_MESSAGE = 'We could not load the terms. Try again.';
+export const MENTORSHIP_ADMIN_TERM_CREATED_MESSAGE = 'Term created.';
+export const MENTORSHIP_ADMIN_TERM_UPDATED_MESSAGE = 'Term updated.';
+export const MENTORSHIP_ADMIN_TERM_CLOSED_MESSAGE = 'Term closed.';
+export const MENTORSHIP_ADMIN_TERM_REOPENED_MESSAGE = 'Term re-opened.';
+export const MENTORSHIP_ADMIN_TERM_DELETED_MESSAGE = 'Term deleted.';
+export const MENTORSHIP_ADMIN_TERM_WRITE_FAILED_MESSAGE = "The term couldn't be saved. Please try again.";
+export const MENTORSHIP_ADMIN_TERM_WRITE_IN_FLIGHT_MESSAGE = 'Another term change is still being saved.';
+
+/** Statuses a program admin may hide: both are upstream `published`. A `hidden` program may be unhidden. */
+export const MENTORSHIP_PROGRAM_HIDEABLE_STATUSES: readonly MentorshipProgramStatus[] = ['open', 'completed'];
+export const MENTORSHIP_PROGRAM_HIDE_DESCRIPTION = 'Hide this program from public view. Mentees can no longer find it or apply.';
+export const MENTORSHIP_PROGRAM_UNHIDE_DESCRIPTION = 'Make this program publicly visible again so mentees can find it and apply.';
+export const MENTORSHIP_PROGRAM_HIDE_CONFIRM =
+  'Are you sure you want to hide this program? It will no longer be publicly visible, and mentees will not be able to find it or apply. A program with active applications cannot be hidden.';
+export const MENTORSHIP_PROGRAM_UNHIDE_CONFIRM = 'Are you sure you want to unhide this program? It will be publicly visible again.';
+export const MENTORSHIP_PROGRAM_HIDDEN_MESSAGE = 'Program hidden.';
+export const MENTORSHIP_PROGRAM_UNHIDDEN_MESSAGE = 'Program unhidden.';
+/** Upstream answers a refused hide or unhide with one 409 for both causes, so each message names every cause it covers. */
+export const MENTORSHIP_PROGRAM_HIDE_BLOCKED_MESSAGE =
+  "This program can't be hidden: it has active applications, or its status has changed. The page has been refreshed.";
+export const MENTORSHIP_PROGRAM_UNHIDE_BLOCKED_MESSAGE = "This program can't be made visible: its status has changed. The page has been refreshed.";
+export const MENTORSHIP_PROGRAM_VISIBILITY_FAILED_MESSAGE = "The program's visibility couldn't be changed. Please try again.";
 
 /**
  * Underline tabs on `/mentorship/admin/:programId`. Order matches the admin screenshot;
@@ -187,9 +284,10 @@ export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
 export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn'] as const;
 
 /**
- * Mentee lifecycle statuses on the admin Current Mentees / Past Mentees tabs.
+ * Mentee lifecycle statuses an application holds on the wire.
  * Superset of mentor statuses; mentees additionally reach `graduated`.
- * Declaration order is the status filter's option order.
+ * Declaration order is the Past Mentees status filter's option order; Current Mentees
+ * filters on `MENTORSHIP_APPLICANT_DISPLAY_STATUSES` instead.
  */
 export const MENTORSHIP_MENTEE_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn', 'graduated'] as const;
 
@@ -222,6 +320,94 @@ export const MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipAdmi
   active: 'bg-emerald-100 text-emerald-700',
   declined: 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
+};
+
+/** Statuses an admin may set through `PATCH …/mentors/:memberId`. Upstream allows no move out of `declined` or `withdrawn`. */
+export const MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES = ['active', 'declined', 'withdrawn'] as const;
+
+/** Shortest trimmed search `POST .../mentor-candidates` accepts; upstream answers 400 below it. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH = 2;
+
+/** Longest trimmed search `POST .../mentor-candidates` accepts: the longest valid email address. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH = 254;
+
+/** Helper text under the Mentors tab invite search. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_HELP_TEXT = 'Search by name, LF username, or full email address.';
+
+/** Shown when a full-email search finds no one: that address has no LF account. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE =
+  'No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username.';
+
+/**
+ * Shown when any other search finds no one. It can be a name or an LF username, so it does not say the account is
+ * missing: name search only finds people already in Mentorship, and anyone else only by exact LF username or full email.
+ */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE =
+  'No one matches that search. Name search only finds people already in Mentorship; try their exact LF username or full email address.';
+
+/** Shown, without a request, when a pasted search is longer than `MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH`. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE = 'That search is too long. Use at most 254 characters.';
+
+/** Shown when the candidate search hits a 503: the account lookup is down for now. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE = "Couldn't look up accounts right now. Try again.";
+
+/** Shown when the candidate search or an invite hits a 400: upstream adds mentors only to a published program. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE = 'Mentors can only be invited to a published program.';
+
+/** Shown when the candidate search fails for any other reason. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE = "Couldn't search for people. Try again.";
+
+/** Shown once a mentor invite is sent; upstream emails it to the account's primary email. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITED_MESSAGE = 'Invitation sent.';
+
+/** Shown when an invite hits a 409: the person is already invited to, or a mentor of, the program. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE = 'This person is already on the program.';
+
+/** Shown when an invite fails for any reason without its own message. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE = "The invitation couldn't be sent. Please try again.";
+
+/** Longest LFID the BFF forwards on an invite; LF usernames are far shorter. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH = 100;
+
+/** Shown when a mentor change hits a 409: the mentor's status moved on, so the list reloads. */
+export const MENTORSHIP_ADMIN_MENTOR_CHANGED_MESSAGE = 'This mentor changed. The list has been refreshed.';
+
+/** Mentors tab row actions by the mentor's status, in display order. Upstream's DELETE only withdraws an active mentor, so Remove covers it. */
+export const MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS: Record<MentorshipAdminMentorStatus, readonly MentorshipAdminMentorAction[]> = {
+  requested: [
+    { key: 'accept', label: 'Accept', status: 'active' },
+    { key: 'decline', label: 'Decline', status: 'declined' },
+  ],
+  pending: [
+    { key: 'accept', label: 'Accept', status: 'active' },
+    { key: 'decline', label: 'Decline', status: 'declined' },
+  ],
+  invited: [{ key: 'revoke', label: 'Revoke invite', status: 'declined' }],
+  active: [{ key: 'remove', label: 'Remove', status: 'withdrawn' }],
+  declined: [],
+  withdrawn: [],
+};
+
+export const MENTORSHIP_ADMIN_MENTOR_ACTION_CONFIRM_MESSAGES: Record<MentorshipAdminMentorAction['key'], string> = {
+  accept: 'Accept this mentor into the program?',
+  decline: 'Decline this mentor for the program?',
+  revoke: 'Revoke this invite? The mentor can no longer accept it.',
+  remove: 'Remove this mentor from the program? They can request to join again later.',
+};
+
+export const MENTORSHIP_ADMIN_MENTOR_ACTION_SUCCESS_MESSAGES: Record<MentorshipAdminMentorAction['key'], string> = {
+  accept: 'Mentor accepted.',
+  decline: 'Mentor declined.',
+  revoke: 'Invite revoked.',
+  remove: 'Mentor removed.',
+};
+
+/** Icon and colour of each Mentors tab row action. */
+export const MENTORSHIP_ADMIN_MENTOR_ACTION_APPEARANCE: Record<MentorshipAdminMentorAction['key'], { icon: string; styleClass: string }> = {
+  accept: { icon: 'fa-light fa-circle-check', styleClass: 'text-emerald-600 hover:text-emerald-700' },
+  decline: { icon: 'fa-light fa-circle-xmark', styleClass: 'text-amber-600 hover:text-amber-700' },
+  revoke: { icon: 'fa-light fa-ban', styleClass: 'text-amber-600 hover:text-amber-700' },
+  remove: { icon: 'fa-light fa-user-minus', styleClass: 'text-red-600 hover:text-red-700' },
 };
 
 export const MENTORSHIP_MENTEE_STATUS_LABELS: Record<MentorshipMenteeStatus, string> = {
@@ -312,6 +498,15 @@ export const MENTORSHIP_APPLICANT_STATUS_LABELS: Record<MentorshipApplicantDispl
   declined: 'Declined',
   withdrawn: 'Withdrawn',
   graduated: 'Graduated',
+};
+
+/**
+ * The status filter values each admin mentee tab offers and the BFF accepts, in option order. Current Mentees
+ * filters on the statuses its table shows; Past Mentees on the wire status, as its table shows it.
+ */
+export const MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS: Record<MentorshipAdminMenteeTab, readonly MentorshipAdminMenteeStatusFilter[]> = {
+  current: MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
+  past: MENTORSHIP_MENTEE_STATUSES,
 };
 
 /** The shared statuses reuse the mentee classes so the two palettes can't drift apart. */
@@ -417,7 +612,6 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     slug: 'gridflow-time-series-ingestion-pipeline',
     name: 'GridFlow: Time-Series Ingestion Pipeline',
     projectName: 'LF Energy',
-    term: 'Fall 2026',
     status: 'open',
     stats: { mentors: 4, mentees: 2, graduated: 6 },
     logoUrl: mentorshipArtworkIconUrl('lf-energy', 'grid-exchange-fabric'),
@@ -429,7 +623,6 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     slug: 'apicurio-registry-prompt-template-playground',
     name: 'Apicurio Registry: Prompt Template Playground',
     projectName: 'CNCF',
-    term: 'Winter 2026',
     status: 'pending-review',
     stats: { mentors: 2, mentees: 0, graduated: 0 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'apicurio-registry'),
@@ -441,7 +634,6 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     slug: 'janusgraph-adjacency-cache-instrumentation',
     name: 'JanusGraph: Adjacency Cache Instrumentation',
     projectName: 'LF AI & Data',
-    term: 'Fall 2026',
     status: 'open',
     stats: { mentors: 1, mentees: 1, graduated: 2 },
     logoUrl: mentorshipArtworkIconUrl('lfai', 'janusgraph'),
@@ -453,7 +645,6 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     slug: 'thanos-fan-out-query-observability',
     name: 'Thanos: Fan-Out Query Observability',
     projectName: 'CNCF',
-    term: 'Summer 2026',
     status: 'completed',
     stats: { mentors: 2, mentees: 0, graduated: 3 },
     logoUrl: mentorshipArtworkIconUrl('cncf', 'thanos'),

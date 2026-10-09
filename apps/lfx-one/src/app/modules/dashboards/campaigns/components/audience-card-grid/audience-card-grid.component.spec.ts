@@ -92,6 +92,28 @@ describe('AudienceCardGridComponent', () => {
     expect(emitted, 'a disabled toggle still emitted').toEqual(['101']);
   });
 
+  it('emits the list id on Exclude, reads as on once excluded, and stays silent when disabled', () => {
+    const excluded: string[] = [];
+    render([bucket('event_registration', [list()])]);
+    fixture.componentInstance.toggleExclude.subscribe((id) => excluded.push(id));
+
+    const exclude = (): HTMLElement | null => host().querySelector<HTMLElement>('[data-testid="audience-card-grid-exclude-101"]');
+    expect(exclude()?.getAttribute('aria-pressed')).toBe('false');
+    exclude()?.click();
+    expect(excluded).toEqual(['101']);
+
+    // The container owns the excluded set; once it feeds the id back, the button must read as on.
+    fixture.componentRef.setInput('excludedIds', new Set<string>(['101']));
+    fixture.detectChanges();
+    expect(exclude()?.getAttribute('aria-pressed')).toBe('true');
+    expect(exclude()?.textContent?.trim()).toBe('Excluded');
+
+    fixture.componentRef.setInput('disabled', true);
+    fixture.detectChanges();
+    exclude()?.click();
+    expect(excluded, 'a disabled Exclude still emitted').toEqual(['101']);
+  });
+
   it('renders "size unknown" rather than "0 contacts" for a list with no reported size', () => {
     // HubSpot omits size on some search results. "0 contacts" reads as "this list is empty",
     // which is the opposite of what an absent size means.

@@ -53,6 +53,16 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('below 50%');
   });
 
+  it('renders the secondary key line under the keyLabel only when the finding carries one', async () => {
+    await render({ keySecondary: '$1.2M at stake' });
+
+    const secondary: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-key-secondary"]');
+    expect(secondary.textContent?.trim()).toBe('$1.2M at stake');
+    TestBed.resetTestingModule();
+    await render();
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-key-secondary"]')).toBeNull();
+  });
+
   it('caps rendered dots at 20 and clamps a non-zero filled count to at least one dot', async () => {
     await render({ visual: { kind: 'dots', groups: [{ label: 'Renewals', filled: 1, total: 60 }] } });
 

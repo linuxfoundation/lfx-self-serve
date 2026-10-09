@@ -7,7 +7,7 @@ import type { CommitteeMember, ComposerGuestRow, Meeting, MeetingRegistrantWithS
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -50,6 +50,7 @@ describe('ComposerGuestsComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         MeetingComposerFormService,
+        ConfirmationService,
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: CommitteeService, useValue: {} },
@@ -355,6 +356,10 @@ describe('ComposerGuestsComponent', () => {
       expect(resolve({ meeting_type: 'Board', show_meeting_attendees: true })).toBeNull();
     });
 
+    it('reports a restricted meeting as decided off, so a group default cannot switch sharing on', () => {
+      expect(resolve({ restricted: true, show_meeting_attendees: true })).toBe(false);
+    });
+
     it('reports an opt-out for a meeting whose flag the API omitted', () => {
       expect(resolve({ show_meeting_attendees: undefined })).toBe(false);
     });
@@ -362,5 +367,47 @@ describe('ComposerGuestsComponent', () => {
     it('reports the saved opt-in of an unlocked meeting', () => {
       expect(resolve({ show_meeting_attendees: true })).toBe(true);
     });
+  });
+
+  /**
+   * Editing one occurrence: the list shows who attends it, a guest invited to every occurrence can't be
+   * removed from just this one (upstream has no exclusion), and one invited to this occurrence alone can.
+   */
+  describe('single-occurrence edit', () => {
+    const THIS_OCCURRENCE = '1893456000';
+    const seriesGuest: MeetingRegistrantWithState = { ...savedGroupGuest, uid: 'series-1', email: 'series@example.com', type: 'direct' };
+    const thisOccurrenceGuest: MeetingRegistrantWithState = { ...seriesGuest, uid: 'occ-1', email: 'occ@example.com', occurrence_id: THIS_OCCURRENCE };
+    const otherOccurrenceGuest: MeetingRegistrantWithState = { ...seriesGuest, uid: 'other-1', email: 'other@example.com', occurrence_id: '1894060800' };
+
+    beforeEach(() => {
+      formService.mode.set('edit');
+      formService.occurrenceId.set(THIS_OCCURRENCE);
+      formService.setGuests([seriesGuest, thisOccurrenceGuest, otherOccurrenceGuest]);
+    });
+
+    it("lists series-wide guests and this occurrence's guests, not other occurrences'", () => {
+      expect(component['guestRows']().map((row) => row.guest.uid)).toEqual(['series-1', 'occ-1']);
+    });
+
+    it("labels the scope and only lets this occurrence's guests be removed", () => {
+      const rows = component['guestRows']();
+
+      expect(rows.map((row) => [row.scopeLabel, row.removable])).toEqual([
+        ['All occurrences', false],
+        ['This occurrence', true],
+      ]);
+    });
+
+    it('matches this occurrence across the seconds and milliseconds id forms', () => {
+      formService.setGuests([{ ...thisOccurrenceGuest, occurrence_id: `${THIS_OCCURRENCE}000` }]);
+
+      expect(component['guestRows']().map((row) => row.guest.uid)).toEqual(['occ-1']);
+    });
+  });
+
+  it('shows no scope labels and keeps every guest removable outside an occurrence edit', () => {
+    formService.setGuests([savedGroupGuest]);
+
+    expect(component['guestRows']().map((row) => [row.scopeLabel, row.removable])).toEqual([[null, true]]);
   });
 });

@@ -28,7 +28,13 @@ import {
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignBriefRefineRequest,
+  CampaignBidUpdateParams,
+  CampaignBidUpdateRequest,
+  CampaignBidUpdateResult,
   CampaignBriefRequest,
+  CampaignBudgetUpdateParams,
+  CampaignBudgetUpdateRequest,
+  CampaignBudgetUpdateResult,
   CampaignCreateRequest,
   CampaignCreateResponse,
   CampaignDeliveryType,
@@ -40,6 +46,9 @@ import {
   CampaignListResult,
   CampaignMetricsWindow,
   CampaignMonitorResponse,
+  CampaignNegativeKeywordInput,
+  CampaignNegativeKeywordsRequest,
+  CampaignNegativeKeywordsResult,
   CampaignSSEEventType,
   CampaignStatusToggleParams,
   CampaignStatusUpdateResult,
@@ -53,12 +62,14 @@ import {
   ListAudiencesResult,
   MetaAccountOption,
   MetaMonitorResponse,
+  MicrosoftKeywordMetricsResponse,
+  MicrosoftKeywordsWindow,
   RedditAccountOption,
   RedditMonitorResponse,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
-import { exhaustMap, last, map, Observable, of, take, takeWhile, timer } from 'rxjs';
+import { catchError, exhaustMap, last, map, Observable, of, take, takeWhile, throwError, timer } from 'rxjs';
 
 import { SseService } from './sse.service';
 
@@ -227,8 +238,8 @@ export class CampaignService {
     request: CampaignCreateRequest,
     projectSlug: string,
     briefId: string
-  ): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string }> {
-    return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string }>('/api/campaigns/create', request, {
+  ): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string; indeterminate?: boolean }> {
+    return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string; indeterminate?: boolean }>('/api/campaigns/create', request, {
       params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
     });
   }
@@ -310,6 +321,24 @@ export class CampaignService {
     return this.http.get<KeywordMetricsResponse>('/api/campaigns/keywords', { params: { project: projectSlug, days } });
   }
 
+  /**
+   * Microsoft Advertising keyword performance, from campaign-service's saved reports.
+   *
+   * Takes a reporting WINDOW rather than a day count: Microsoft has no 14-day window, so a day count
+   * would label one window's figures as another's. The rows come from the last FINISHED report, so
+   * the response's `metricsAsOf` / `metricsPending` say how fresh they are and must be shown.
+   */
+  public getMicrosoftKeywords(projectSlug: string, window: MicrosoftKeywordsWindow): Observable<MicrosoftKeywordMetricsResponse> {
+    // Logged and rethrown, never defaulted: an empty keyword list would read as "no keywords", and the
+    // table states a failed read (or a missing connection) as such (frontend-checklist §13).
+    return this.http.get<MicrosoftKeywordMetricsResponse>('/api/campaigns/microsoft/keywords', { params: { project: projectSlug, window } }).pipe(
+      catchError((error: unknown) => {
+        console.error('Failed to load Microsoft keyword metrics:', error);
+        return throwError(() => error);
+      })
+    );
+  }
+
   public getAudience(projectSlug: string, days: number = 30): Observable<AudienceDemographics> {
     return this.http.get<AudienceDemographics>('/api/campaigns/audience', { params: { project: projectSlug, days } });
   }
@@ -356,6 +385,65 @@ export class CampaignService {
       { platform, status, briefId, etag },
       { params: new HttpParams().set('project', projectSlug) }
     );
+  }
+
+  /**
+   * Change how much a campaign may spend on its ad platform.
+   *
+   * The same kind of write as `updateCampaignStatus`, against the same row: a money-affecting
+   * change on a third party, addressed per project, with the row's etag sent upstream as
+   * `If-Match`. The response carries the row's NEW etag, and the caller must use it for the next
+   * write on that row (a budget change or a toggle) — the one it sent is stale once this commits.
+   *
+   * `budget` is in the AD ACCOUNT's own currency and is sent exactly as given; nothing here
+   * converts or rounds it. `budgetType` must name the pacing the campaign already has upstream —
+   * the endpoint changes the amount only and answers a mismatch with 409.
+   *
+   * Errors propagate unhandled. The caller must tell a refusal from a 412 and from an outcome
+   * nobody could confirm, and a defaulted response here would erase exactly that difference.
+   */
+  public updateCampaignBudget(params: CampaignBudgetUpdateParams): Observable<CampaignBudgetUpdateResult> {
+    const { projectSlug, briefId, campaignId, budget, budgetType, etag } = params;
+    const body: CampaignBudgetUpdateRequest = { briefId, etag, budget, budgetType };
+    return this.http.patch<CampaignBudgetUpdateResult>(`/api/campaigns/${encodeURIComponent(campaignId)}/budget`, body, {
+      params: new HttpParams().set('project', projectSlug),
+    });
+  }
+
+  /**
+   * Change a campaign's manual max cost-per-click bid on its ad platform.
+   *
+   * The budget change's sibling, against the same row and validator: the row's etag goes upstream as
+   * `If-Match`, and the response carries the row's NEW etag, which the caller must use for the next
+   * write on that row. `bid` is in the AD ACCOUNT's own currency and is sent exactly as given.
+   *
+   * Errors propagate unhandled, for the budget change's reason: the caller must tell a refusal (a 409
+   * about the bidding setup included) from a 412 and from an outcome nobody could confirm.
+   */
+  public updateCampaignBid(params: CampaignBidUpdateParams): Observable<CampaignBidUpdateResult> {
+    const { projectSlug, briefId, campaignId, bid, bidType, etag } = params;
+    const body: CampaignBidUpdateRequest = { briefId, etag, bid, bidType };
+    return this.http.patch<CampaignBidUpdateResult>(`/api/campaigns/${encodeURIComponent(campaignId)}/bid`, body, {
+      params: new HttpParams().set('project', projectSlug),
+    });
+  }
+
+  /**
+   * Add campaign-level negative keywords to one campaign (Microsoft Advertising only).
+   *
+   * NOT atomic and POSITIONAL: `results[i]` answers `negativeKeywords[i]`, each with its own outcome,
+   * so the caller zips them onto the list it sent. No etag: nothing is persisted on the row.
+   */
+  public addNegativeKeywords(
+    projectSlug: string,
+    briefId: string,
+    campaignId: string,
+    negativeKeywords: CampaignNegativeKeywordInput[]
+  ): Observable<CampaignNegativeKeywordsResult> {
+    const body: CampaignNegativeKeywordsRequest = { briefId, negativeKeywords };
+    return this.http.post<CampaignNegativeKeywordsResult>(`/api/campaigns/${encodeURIComponent(campaignId)}/negative-keywords`, body, {
+      params: new HttpParams().set('project', projectSlug),
+    });
   }
 
   /**

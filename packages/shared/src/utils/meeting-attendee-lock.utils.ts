@@ -1,15 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SHOW_MEETING_ATTENDEES_LOCKED_NOTE } from '../constants/meeting.constants';
+import { SHOW_MEETING_ATTENDEES_BOARD_LOCKED_NOTE, SHOW_MEETING_ATTENDEES_LOCKED_NOTE } from '../constants/meeting.constants';
 import { MeetingType } from '../enums';
-import type { Meeting } from '../interfaces';
+import type { Meeting, ShowMeetingAttendeesLockOptions } from '../interfaces';
 
 /**
  * Whether the show-attendees-in-calendar-invites toggle is locked off.
  * @description Locked for `meeting_type === Board` or `restricted === true` (invite-only).
  * `visibility === private` is a separate axis and is not locked here — a private unrestricted
- * meeting can still share its guest list in invites if the organizer opts in. The lock tracks
+ * meeting can still share its guest list in invites if the organizer opts in. `allowRestricted`
+ * (meeting v2 composer only) lifts the restricted half, so only Board locks. The lock tracks
  * the meeting's current type and restricted flag on each write; changing `meeting_type` away
  * from Board lifts it. A Board meeting stays locked if the organizer only turns `restricted`
  * off.
@@ -30,9 +31,13 @@ import type { Meeting } from '../interfaces';
  * real predicate — in tests as well as at runtime — without pulling `@angular/common/http` in
  * through `meeting.utils`.
  */
-export function isShowMeetingAttendeesLocked(meetingType: string | null | undefined, restricted: boolean | string | null | undefined): boolean {
+export function isShowMeetingAttendeesLocked(
+  meetingType: string | null | undefined,
+  restricted: boolean | string | null | undefined,
+  options: ShowMeetingAttendeesLockOptions = {}
+): boolean {
   const restrictedValue = typeof restricted === 'string' ? restricted.trim().toLowerCase() === 'true' : !!restricted;
-  if (restrictedValue) {
+  if (restrictedValue && !options.allowRestricted) {
     return true;
   }
   if (typeof meetingType !== 'string') {
@@ -47,8 +52,15 @@ export function isShowMeetingAttendeesLocked(meetingType: string | null | undefi
  * manage page's registrants manager — show the same note under the same condition, so the
  * condition and the copy live together here rather than being restated in each component.
  */
-export function getShowMeetingAttendeesLockedNote(meetingType: string | null | undefined, restricted: boolean | string | null | undefined): string | null {
-  return isShowMeetingAttendeesLocked(meetingType, restricted) ? SHOW_MEETING_ATTENDEES_LOCKED_NOTE : null;
+export function getShowMeetingAttendeesLockedNote(
+  meetingType: string | null | undefined,
+  restricted: boolean | string | null | undefined,
+  options: ShowMeetingAttendeesLockOptions = {}
+): string | null {
+  if (!isShowMeetingAttendeesLocked(meetingType, restricted, options)) {
+    return null;
+  }
+  return options.allowRestricted ? SHOW_MEETING_ATTENDEES_BOARD_LOCKED_NOTE : SHOW_MEETING_ATTENDEES_LOCKED_NOTE;
 }
 
 /**

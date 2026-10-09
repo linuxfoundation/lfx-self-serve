@@ -4,14 +4,20 @@
 import type {
   AudienceSignal,
   AudienceSpeakerScope,
+  BriefMetricsActionRule,
   CampaignBidType,
   CampaignBudgetType,
+  CampaignBudgetTypeOption,
+  CampaignCreateRequest,
   CampaignDeliveryTypeOption,
   CampaignEmailSegment,
   CampaignEmailTypeOption,
   CampaignGoalOption,
+  CampaignOptimizeControlLever,
+  CampaignOptimizeLever,
   CampaignKeyword,
   CampaignNegativeKeywordMatchType,
+  CampaignNegativeKeywordMatchTypeOption,
   CampaignNegativeKeywordOutcome,
   CampaignPlatform,
   CampaignPlatformOption,
@@ -20,11 +26,16 @@ import type {
   CampaignTabOption,
   CampaignToggleAction,
   CampaignToggleStatus,
+  GoogleCreativeEitherOrRule,
+  GoogleCreativeFieldSpec,
+  KeywordActionOutcome,
   KeywordActionPlatform,
   LinkedInGeoTarget,
   MetaObjective,
   MetaObjectiveParams,
   MetaPlacement,
+  MicrosoftKeywordsWindow,
+  MicrosoftKeywordsWindowOption,
   ParsedCampaignName,
   RedditObjective,
   RedditObjectiveParams,
@@ -174,12 +185,20 @@ export const PLATFORM_BRAND_COLORS: Readonly<Record<CampaignPlatform, string>> =
 
 export const PLATFORM_DEFAULT_COLOR = '#6B7280';
 
+/**
+ * Character bounds for the SEARCH ad's copy and for sitelink extensions.
+ *
+ * The three Google DISPLAY entries this used to carry — `displayHeadline: 40`,
+ * `displayDescription`, `displayBusinessName` — are gone, and not merely because nothing read them.
+ * A responsive display ad's headline is bounded at **30** upstream
+ * (`internal/platform/googleads/display_creative.go`'s `maxDisplayHeadlineWeight`), so the 40 here
+ * was a figure no code enforced and no platform accepts. Google's display, Demand Gen and
+ * Performance Max bounds now live per channel in {@link GOOGLE_CREATIVE_FIELD_SPECS}, where the fact
+ * that they DIFFER between channels is visible instead of flattened into one shared name.
+ */
 export const CAMPAIGN_CHAR_LIMITS = {
   searchHeadline: 30,
   searchDescription: 90,
-  displayHeadline: 40,
-  displayDescription: 90,
-  displayBusinessName: 25,
   sitelinkHeadline: 25,
   sitelinkDescription: 35,
 } as const;
@@ -397,6 +416,17 @@ export const CAMPAIGN_TOGGLE_FAILURE_MESSAGES: Readonly<Record<Exclude<CampaignT
 };
 
 /**
+ * Why a toggle's outcome is UNKNOWN — worded per direction. Used when nothing the BFF wrote says the
+ * toggle was refused: no answer at all, a proxy's or gateway's own response, or campaign-service's
+ * "unconfirmed" wording. The change may have reached the ad platform, so this never says the
+ * campaign "is still" anything; the operator checks the platform before trying again.
+ */
+export const CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES: Readonly<Record<Exclude<CampaignToggleAction, 'unavailable'>, string>> = {
+  pause: 'The pause could not be confirmed. The campaign may already be paused — verify its status in the ad platform before trying again.',
+  resume: 'The resume could not be confirmed. The campaign may already be running and spending — verify its status in the ad platform before trying again.',
+};
+
+/**
  * The button's visible word per action. `unavailable` still names an action — the button is
  * disabled, not blank.
  *
@@ -409,6 +439,46 @@ export const CAMPAIGN_TOGGLE_LABELS: Readonly<Record<CampaignToggleAction, strin
   pause: 'Pause',
   resume: 'Resume',
   unavailable: 'Unavailable',
+};
+
+/**
+ * Why a `zero_delivery` finding offers no lever for a campaign that is already paused. The finding
+ * only ever offers Pause: resuming a campaign from a "not delivering" finding would restart spend.
+ */
+export const CAMPAIGN_FINDING_ALREADY_PAUSED_REASON = 'This campaign is already paused.';
+
+/**
+ * Shown beside a Microsoft keyword's actions when the previous one is UNCONFIRMED. The actions stay
+ * offered — pausing or removing a keyword only reduces spend — but the operator checks first.
+ */
+export const MICROSOFT_KEYWORD_PREVIOUS_UNCONFIRMED_NOTE = 'Previous attempt not confirmed — verify in Microsoft Advertising before retrying.';
+
+/**
+ * campaign-service's exact sentences (lower case) for a Microsoft keyword read that is unavailable
+ * rather than failed, by HTTP status. Compared whole, never by pattern; see `isNotConnectedError`
+ * in the Microsoft keyword table for where each comes from upstream.
+ */
+export const MICROSOFT_KEYWORDS_NOT_CONNECTED_MESSAGES: Readonly<Record<404 | 400, readonly string[]>> = {
+  404: ['no microsoft ads connection configured for this project'],
+  400: ['keyword and audience insights are not supported for this platform', 'keyword insights is not supported for this platform'],
+};
+
+/**
+ * Visible label of each keyword action outcome state, shared by the Google and Microsoft keyword
+ * tables. An UNCONFIRMED action may already have applied, and a retried REMOVE is irreversible, so
+ * it is never worded as a failure.
+ */
+export const KEYWORD_ACTION_OUTCOME_LABELS: Readonly<Record<KeywordActionOutcome['state'], string>> = {
+  done: 'Done',
+  unconfirmed: 'Unconfirmed',
+  failed: 'Failed',
+};
+
+/** Text colour of each keyword action outcome state, on the brand scales. */
+export const KEYWORD_ACTION_OUTCOME_CLASSES: Readonly<Record<KeywordActionOutcome['state'], string>> = {
+  done: 'text-emerald-600',
+  unconfirmed: 'text-amber-600',
+  failed: 'text-red-600',
 };
 
 /**
@@ -1097,6 +1167,204 @@ export const CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED =
  */
 export const MICROSOFT_KEYWORDS_WINDOWS = ['today', 'last_7_days', 'last_30_days', 'this_month', 'last_month'] as const;
 
+/**
+ * The platforms whose campaign budget campaign-service can change (`update-campaign-budget`).
+ *
+ * Hand-listed rather than derived from `CAMPAIGN_PLATFORMS`, because budget writing is wired per
+ * platform upstream and is a narrower capability than pause/resume: X has neither, and a platform
+ * can be toggleable long before its budget model is. Upstream refuses any other platform with 400,
+ * so the Optimize tab withholds the editor for them rather than offering a doomed form.
+ */
+export const BUDGET_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>([
+  'google-ads',
+  'linkedin-ads',
+  'meta-ads',
+  'microsoft-ads',
+  'reddit-ads',
+]);
+
+/** The pacing choices the budget editor offers, in display order. Mirrors `VALID_CAMPAIGN_BUDGET_TYPES`. */
+export const CAMPAIGN_BUDGET_TYPE_OPTIONS: readonly CampaignBudgetTypeOption[] = [
+  { value: 'daily', label: 'Daily' },
+  { value: 'lifetime', label: 'Lifetime' },
+] as const;
+
+/** Why the budget editor is disabled for a platform campaign-service cannot write budgets on. */
+export const CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON = 'Budget changes are not available for this platform in LFX One yet.';
+
+/**
+ * Why the budget editor is disabled for a campaign with no `platform_campaign_id`: it was never
+ * created on its ad platform, so there is no budget there to change. Upstream refuses it with 409.
+ */
+export const CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON = 'This campaign has not been created on its ad platform, so its budget cannot be changed.';
+
+/**
+ * What a budget change refused with 412 tells the operator: another write moved this campaign
+ * since the list was read, so the validator is dead and only a re-read can produce a live one.
+ * Nothing was changed. Retrying without a refresh earns the same 412.
+ */
+export const CAMPAIGN_BUDGET_CONFLICT_MESSAGE =
+  'Someone else changed this campaign while you were viewing it, so the budget was not changed. Refresh the campaign list, then make the change again.';
+
+/** Why the budget editor cannot submit while a 412 has proved the row's validator stale. */
+export const CAMPAIGN_BUDGET_BLOCKED_STALE_REASON = 'This campaign changed since the list was read. Refresh the campaign list before changing its budget.';
+
+/** Why the budget editor cannot submit while a pause or resume of the same row is in flight. */
+export const CAMPAIGN_BUDGET_BLOCKED_TOGGLE_REASON = 'A pause or resume of this campaign is still in progress. Change the budget once it finishes.';
+
+/** Why the budget editor cannot submit while a bid change of the same row is in flight (both need the row's validator). */
+export const CAMPAIGN_BUDGET_BLOCKED_BID_REASON = 'A bid change of this campaign is still in progress. Change the budget once it finishes.';
+
+/**
+ * HTTP statuses that, when the response carries no message, mean nobody answered for a budget
+ * write: the browser lost the connection (0), something timed out (408, 504), or a gateway in front
+ * of the BFF replied instead (502, 503). The request may already have reached the ad platform, so
+ * the Optimize tab reports these as unconfirmed rather than failed.
+ */
+export const CAMPAIGN_BUDGET_UNANSWERED_STATUSES: ReadonlySet<number> = new Set<number>([0, 408, 502, 503, 504]);
+
+/** Shown for a refusal whose response carried no readable message. */
+export const CAMPAIGN_BUDGET_FAILURE_FALLBACK = 'The budget could not be changed.';
+
+/**
+ * The Optimize-tab lever that resolves each monitor finding, keyed by the brief rule engine's
+ * stable `rule` token (`BriefMetricsActionItem.rule`).
+ *
+ * The ONE place this decision is made. A `Record` over `BriefMetricsActionRule`, so adding a rule
+ * to that union without deciding its lever is a compile error rather than a silent fall-through.
+ * An unknown token on the wire is not in this map and resolves to `none` (`campaignActionRuleLever`).
+ *
+ * - `zero_delivery` → pause/resume: an active campaign that is not delivering. No budget change
+ *   fixes it (the rule engine suppresses the pacing item for exactly that reason), so the lever is
+ *   the run state.
+ * - `underspending` / `budget_constrained` → budget: the pacing findings; the engine's own advice
+ *   for both is to raise or right-size the budget.
+ * - `low_ctr` / `no_conversions` → none: the remedy is creative, targeting, landing page or
+ *   tracking work in the ad platform, which LFX One has no control for. The engine emits these per
+ *   CAMPAIGN, not per keyword, so the keyword actions are not a resolution of them.
+ *
+ * Deliberately NOT mapped to the bid or negative-keyword levers. Neither is what the rule engine
+ * advises for any of these rules: a bid change does not fix a campaign that delivers nothing (that
+ * is the run state, or a bid strategy LFX One never changes), the pacing findings are resolved by
+ * the budget, and negatives for `low_ctr` / `no_conversions` would need search-term evidence the
+ * finding does not carry. Both levers stay reachable from the campaign row itself.
+ */
+export const CAMPAIGN_ACTION_RULE_LEVERS: Readonly<Record<BriefMetricsActionRule, CampaignOptimizeLever>> = {
+  zero_delivery: 'pause_resume',
+  underspending: 'budget',
+  budget_constrained: 'budget',
+  low_ctr: 'none',
+  no_conversions: 'none',
+};
+
+/**
+ * Platforms with per-keyword pause/remove in LFX One: Google Ads, and Microsoft Advertising through
+ * campaign-service's `apply-keyword-actions` (`KEYWORD_ACTION_PLATFORMS`). Kept as its own `string`
+ * set because the lever gate is asked about any row's platform, not only a keyword platform.
+ */
+export const KEYWORD_ACTION_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>([...KEYWORD_ACTION_PLATFORMS]);
+
+/**
+ * Which platforms each lever works on. The SAME sets the row controls are gated on, so a finding
+ * can never offer a lever whose control would refuse the platform: the budget editor's
+ * `BUDGET_WRITABLE_CAMPAIGN_PLATFORMS` (X has no budget write) and the toggle's
+ * `TOGGLEABLE_CAMPAIGN_PLATFORMS`.
+ */
+export const CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS: Readonly<Record<CampaignOptimizeControlLever, ReadonlySet<string>>> = {
+  budget: BUDGET_WRITABLE_CAMPAIGN_PLATFORMS,
+  pause_resume: TOGGLEABLE_CAMPAIGN_PLATFORMS,
+  keywords: KEYWORD_ACTION_CAMPAIGN_PLATFORMS,
+};
+
+/** Visible label of each lever's button on a finding. The toggle's is the row's own action word. */
+export const CAMPAIGN_OPTIMIZE_LEVER_LABELS: Readonly<Record<Exclude<CampaignOptimizeControlLever, 'pause_resume'>, string>> = {
+  budget: 'Change budget',
+  keywords: 'Review keywords',
+};
+
+/**
+ * The platforms whose manual max CPC bid campaign-service can change (`update-campaign-bid`):
+ * Microsoft Advertising, Reddit, Meta and X. Google Ads and LinkedIn are refused upstream with 400,
+ * so the Optimize tab withholds the bid editor for them rather than offering a doomed form.
+ *
+ * Hand-listed for the reason `BUDGET_WRITABLE_CAMPAIGN_PLATFORMS` is: bid writing is wired per
+ * platform upstream, and X has a bid write while it has no budget write or pause/resume here.
+ */
+export const BID_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['microsoft-ads', 'reddit-ads', 'meta-ads', 'twitter-ads']);
+
+/** Why the bid editor is disabled for a platform campaign-service cannot write bids on. */
+export const CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON = 'Bid changes are available for Microsoft Advertising, Reddit, Meta and X campaigns only.';
+
+/** Why the bid editor is disabled for a campaign never created on its ad platform (upstream 409). */
+export const CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON = 'This campaign has not been created on its ad platform, so its bid cannot be changed.';
+
+/**
+ * What the bid editor says about bidding strategies, always, before anything is sent. Upstream
+ * refuses an automated or non-per-click strategy with a neutral 409 rather than switching it.
+ */
+export const CAMPAIGN_BID_STRATEGY_NOTE =
+  'Applies only to campaigns on a manual per-click bid. Campaigns on automated bidding are refused, and LFX One never changes a bid strategy.';
+
+/** What a bid change refused with 412 tells the operator. Nothing was changed. */
+export const CAMPAIGN_BID_CONFLICT_MESSAGE =
+  'Someone else changed this campaign while you were viewing it, so the bid was not changed. Refresh the campaign list, then make the change again.';
+
+/** Why the bid editor cannot submit while a 412 has proved the row's validator stale. */
+export const CAMPAIGN_BID_BLOCKED_STALE_REASON = 'This campaign changed since the list was read. Refresh the campaign list before changing its bid.';
+
+/** Why the bid editor cannot submit while another change (pause/resume or budget) of the row is in flight. */
+export const CAMPAIGN_BID_BLOCKED_BUSY_REASON = 'Another change to this campaign is still in progress. Change the bid once it finishes.';
+
+/** Shown for a bid refusal whose response carried no readable message. */
+export const CAMPAIGN_BID_FAILURE_FALLBACK = 'The bid could not be changed.';
+
+/**
+ * campaign-service's wording for a DEFINITE 503 on a bid change ("... the campaign was not
+ * modified"). Every other 503 on the bid route is reported as unconfirmed, because a 503 is also
+ * how an unconfirmed outcome and an unanswered gateway arrive.
+ */
+export const CAMPAIGN_BID_DEFINITE_FAILURE_MARKER = 'was not modified';
+
+/** The platforms a campaign-level negative keyword can be added on (`add-negative-keywords`). */
+export const NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['microsoft-ads']);
+
+/** Why the negative-keyword editor is disabled for a campaign never created on its ad platform. */
+export const CAMPAIGN_NEGATIVE_KEYWORDS_UNAVAILABLE_UNPROVISIONED_REASON =
+  'This campaign has not been created on its ad platform, so negative keywords cannot be added to it.';
+
+/** The match types the negative-keyword editor offers, in display order. Mirrors `VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES`. */
+export const CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPE_OPTIONS: readonly CampaignNegativeKeywordMatchTypeOption[] = [
+  { value: 'Exact', label: 'Exact' },
+  { value: 'Phrase', label: 'Phrase' },
+] as const;
+
+/** Visible label of each per-keyword outcome. UNCONFIRMED is never worded as a failure. */
+export const CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS: Readonly<Record<CampaignNegativeKeywordOutcome, string>> = {
+  APPLIED: 'Added',
+  ALREADY_PRESENT: 'Already present',
+  FAILED: 'Not added',
+  UNCONFIRMED: 'Not confirmed',
+};
+
+/** What an UNCONFIRMED negative keyword tells the operator to do before trying it again. */
+export const CAMPAIGN_NEGATIVE_KEYWORD_UNCONFIRMED_ADVICE =
+  "This keyword may have been added. Check the campaign's negative keywords in Microsoft Advertising before retrying.";
+
+/** Shown for a negative-keywords refusal whose response carried no readable message. */
+export const CAMPAIGN_NEGATIVE_KEYWORDS_FAILURE_FALLBACK = 'The negative keywords could not be added.';
+
+/** The window selector of the Microsoft keyword table, in display order, over `MICROSOFT_KEYWORDS_WINDOWS`. */
+export const MICROSOFT_KEYWORDS_WINDOW_OPTIONS: readonly MicrosoftKeywordsWindowOption[] = [
+  { value: 'today', label: 'Today' },
+  { value: 'last_7_days', label: '7d' },
+  { value: 'last_30_days', label: '30d' },
+  { value: 'this_month', label: 'This month' },
+  { value: 'last_month', label: 'Last month' },
+] as const;
+
+/** The window the Microsoft keyword table opens on: upstream's own default. */
+export const DEFAULT_MICROSOFT_KEYWORDS_WINDOW: MicrosoftKeywordsWindow = 'last_30_days';
+
 // NOTE: LinkedIn ad accounts, default account/org IDs, employer exclusions, and
 // targeting profile URN lists are loaded at runtime from a mounted ConfigMap
 // (see apps/lfx-one/src/server/services/linkedin-ads.service.ts → loadLinkedInConfig).
@@ -1630,3 +1898,519 @@ export const MAX_SPONSOR_NAME_LENGTH = 100;
  * to spare.
  */
 export const MAX_HUBSPOT_BODY_HTML_LENGTH = 128 * 1024;
+
+/**
+ * The exact hosts whose hero image the email preview may LOAD in the operator's browser. Every
+ * other host is named, never loaded. Exact hosts, not the `linuxfoundation.org` zone: LFX One and
+ * the SSO host sit under that zone, so a zone-wide rule let a scraped page point the preview at a
+ * same-site, cookie-carrying GET such as the app's own `/logout`.
+ */
+export const EMAIL_HERO_PREVIEW_HOSTS: ReadonlySet<string> = new Set(['linuxfoundation.org', 'www.linuxfoundation.org', 'events.linuxfoundation.org']);
+
+/** The image file extensions the hero preview may load; matched on the URL path, case-insensitively. */
+export const EMAIL_HERO_PREVIEW_IMAGE_PATH = /\.(?:png|jpe?g|gif|webp|svg)$/i;
+
+/** HubSpot's app hosts (`app.hubspot.com`, regional `app-eu1.hubspot.com`): where a staged draft link may point. */
+export const HUBSPOT_APP_HOST_PATTERN = /^app(?:-[a-z0-9]+)?\.hubspot\.com$/;
+
+/**
+ * The most list ids one audience-builder request may carry per array (include, suppression,
+ * exclude). The BFF refuses more; the Audience tab checks the same bound before offering an action.
+ */
+export const AUDIENCE_ATTACH_MAX_LIST_IDS = 50;
+
+/** The longest `inclusionSummary` the BFF accepts on an attach; it is stored on the audience row. */
+export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
+
+/**
+ * Resource bounds on the Google creative and bidding strings the create route normalises.
+ *
+ * The same hazard `MAX_HUBSPOT_BODY_HTML_LENGTH` answers, reached through the other half of the same
+ * handler: the route has no body validator, so a 15 MB body of two hundred thousand headline strings
+ * is filtered, trimmed and re-allocated before any upstream or ownership check runs.
+ *
+ * Deliberately FAR above anything legitimate, because these are resource bounds and not content
+ * rules — every width and count in `GOOGLE_CREATIVE_FIELD_SPECS` is the upstream client's preflight
+ * to enforce, and this layer stays shape-only. The widest catalogue list holds 20 entries and the
+ * widest text field 256 characters (`assetGroupName`), so nothing a real operator can produce comes
+ * near either ceiling; refusing here can therefore never refuse a create upstream would have
+ * accepted.
+ */
+export const MAX_GOOGLE_CREATIVE_LIST_ENTRIES = 100;
+export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;
+
+/**
+ * The Google channels this application can ask campaign-service to create, in the order the
+ * Implementation tab offers them. Each maps one-to-one onto `googleAdsConfig.channel` upstream
+ * (`internal/dispatch/googleads.go`).
+ *
+ * Exactly ONE may be selected per create today. The BFF emits a single `googleAdsConfig`
+ * carrying a single `channel`, so a second selection would be dispatched as one campaign with
+ * the other silently dropped — along with its share of the budget. `createCampaigns` refuses the
+ * pair rather than letting that look like success.
+ */
+export const GOOGLE_CAMPAIGN_CHANNELS = ['search', 'demand-gen', 'performance-max', 'video', 'display'] as const;
+
+/**
+ * Display names for the Google channels, for error messages and form controls.
+ *
+ * Google's own product names, not the wire values: a user who reads "performance-max cannot be
+ * created together with video" has to work out that those are the two boxes they ticked. The
+ * refusal in `createCampaigns` and the Implementation tab's labels both read from here so the
+ * two never drift apart.
+ */
+export const GOOGLE_CAMPAIGN_CHANNEL_LABELS = {
+  search: 'Search',
+  'demand-gen': 'Demand Gen',
+  'performance-max': 'Performance Max',
+  video: 'Video',
+  display: 'Display',
+} as const;
+
+/**
+ * The `campaign.advertising_channel_type` enum value Google Ads reports for each of our channels.
+ *
+ * GAQL names the channel with Google's own enum, not our wire value, so a monitoring query cannot
+ * reuse {@link GOOGLE_CAMPAIGN_CHANNELS} directly. Every value here is mirrored from the
+ * `advertisingChannel*` constants in campaign-service's `internal/platform/googleads` package
+ * (`campaign.go`, `demandgen.go`, `pmax.go`, `video.go`, `display.go`) — the same literals it
+ * sends on create — so a campaign this application created is guaranteed to match the filter that
+ * reads it back.
+ *
+ * Keyed by channel rather than written inline so the create side and the read side cannot drift:
+ * a channel added to `GOOGLE_CAMPAIGN_CHANNELS` without an entry here fails to compile.
+ */
+export const GOOGLE_ADS_CHANNEL_TYPE_ENUMS = {
+  search: 'SEARCH',
+  'demand-gen': 'DEMAND_GEN',
+  'performance-max': 'PERFORMANCE_MAX',
+  video: 'VIDEO',
+  display: 'DISPLAY',
+} as const satisfies Record<(typeof GOOGLE_CAMPAIGN_CHANNELS)[number], string>;
+
+/**
+ * The Google channels gated behind `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS`.
+ *
+ * `search` needs no flag — it is the dispatcher's default. `demand-gen` has carried its own flag
+ * since LFXV2-3257 and keeps it, so enabling the three newer channels cannot silently enable
+ * Demand Gen on a deployment that was not ready for it.
+ */
+export const GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG = ['performance-max', 'video', 'display'] as const;
+
+/**
+ * Whether this application offers Video as a CREATABLE channel.
+ *
+ * `false` — and not because of a deployment flag or a gap on our side. The Google Ads API has no
+ * call that creates a Video campaign at all: campaign-service's `CreateVideoCampaign` returns the
+ * `ErrVideoCreateUnsupported` sentinel in its FIRST statement, before any request is sent, so a
+ * `video` create can only ever come back as a refusal. No flag anywhere can make it succeed.
+ *
+ * The rest of the channel exists upstream in campaign-service — fetching, adoption of a campaign
+ * built by hand in Google Ads, the activation gate — which is why `video` keeps its place in
+ * {@link GOOGLE_CAMPAIGN_CHANNELS}, its label, its name token and its form control. None of that
+ * is reachable from LFX One today: there is no adoption route or screen here, so a Video campaign
+ * built by hand cannot be brought under management from this product. The monitoring GAQL in
+ * `campaign-metrics.service.ts` does now ask for every channel type including VIDEO, so such a
+ * campaign is at least reported on — but being listed in Monitoring is not adoption, and a user
+ * must be told nothing about those upstream capabilities until this application exposes them.
+ *
+ * Flipping this to `true` is the whole change on the day Google ships the API.
+ */
+export const GOOGLE_VIDEO_CREATE_SUPPORTED = false;
+
+/**
+ * What the Implementation tab tells a user who finds the Video box greyed out.
+ *
+ * Named rather than hidden: the three capability-gated channels above DISAPPEAR when a deployment
+ * cannot serve them, because a disabled box there would advertise something the deployment might
+ * genuinely gain later and invites a support question nobody can answer. This one is the opposite
+ * case — the limitation is Google's, it is permanent until Google changes it, and a user who sees
+ * Search, Performance Max and Display but no Video has no way to learn why. Saying so costs one
+ * line and closes the question.
+ *
+ * It states the limitation and points at the system that can do the thing. It deliberately does
+ * NOT promise that a Video campaign built in Google Ads can then be adopted, reported on or
+ * optimized here — see {@link GOOGLE_VIDEO_CREATE_SUPPORTED} for why none of that is reachable
+ * from this application. A refusal message is a claim about what this product will do; extend it
+ * only when the code behind each clause exists at this surface.
+ */
+export const GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON = 'The Google Ads API cannot create Video campaigns. Build the campaign directly in Google Ads.';
+
+/**
+ * The channel token the generated campaign NAME carries, per Google channel.
+ *
+ * Deliberately not `GOOGLE_CAMPAIGN_CHANNEL_LABELS`. These strings go into the pipe-delimited
+ * campaign name the marketing team reads and filters on in Google Ads, where `demand-gen` has
+ * always appeared as `DG Display` — a convention that predates this map and must not drift just
+ * because a nicer product name exists. A name is also written once and then lives in reporting
+ * for the life of the campaign, so renaming a token later splits a campaign's history in two.
+ *
+ * A selection of two or more channels is named `Multi` by the caller and has no entry here.
+ */
+export const GOOGLE_CAMPAIGN_NAME_TOKENS = {
+  search: 'Search',
+  'demand-gen': 'DG Display',
+  'performance-max': 'PMax',
+  video: 'Video',
+  display: 'Display',
+} as const;
+
+/**
+ * The Google channels whose creative this application can COLLECT and send.
+ *
+ * `search` is absent because its creative is not a creative object at all — it is the
+ * `headlines`/`descriptions`/`keywords` the Implementation tab has always collected, which the BFF
+ * sends as top-level `googleAdsConfig` fields rather than under a creative key.
+ *
+ * `video` is absent for the harder reason: {@link GOOGLE_VIDEO_CREATE_SUPPORTED} is `false`, so no
+ * Video campaign is ever created here and there is nothing for a `videoCreative` to attach to.
+ * campaign-service declares `videoCreative` and maps it, which is why it is easy to assume the
+ * field is reachable — it is not, from this application, and collecting it would build a form whose
+ * only possible outcome is `ErrVideoCreateUnsupported`.
+ */
+export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', 'display'] as const;
+
+/**
+ * What each Google channel's creative is made of — one ordered catalogue, read by the form that
+ * collects a creative and by the BFF normalizer that puts one on the wire.
+ *
+ * Every field and every number has a named counterpart in `internal/platform/googleads/` —
+ * `demandgen_creative.go`, `pmax_creative.go` and `display_creative.go` — and the whole point of
+ * three separate channel entries is that they DO NOT travel together. The traps the upstream
+ * comments call out, repeated here because this is what a form reads:
+ *
+ * - Headline COUNTS differ sharply. Demand Gen and Display need one; Performance Max needs
+ *   **three**, and allows fifteen. Nothing about the shared field name says so.
+ * - Performance Max requires **two** descriptions, and at least one of them must fit a SHORT slot
+ *   the other channels do not have at all.
+ * - `longHeadline` is a LIST on Performance Max and a SINGLE STRING on Display. Same name, two
+ *   shapes — which is why {@link GoogleCreativeFieldSpec} carries `kind` rather than letting a
+ *   caller infer the shape from the name.
+ * - The marketing-image arrays are reciprocal on Demand Gen and on Display (either one satisfies
+ *   the requirement, so neither carries a `min`) and BOTH required on Performance Max (so both do).
+ * - `max` on a marketing-image field is that channel's COMBINED cap across its marketing arrays,
+ *   not a per-array allowance; logos are capped per array and never count toward the marketing
+ *   total. Stating the combined cap on each field is the permissive direction — the upstream
+ *   preflight still enforces the real sum.
+ *
+ * Ordering is the order a section renders in: the ad's words first, then its images, because the
+ * copy is what an operator writes and the images are what they paste links to.
+ *
+ * One catalogue rather than a table per consumer is deliberate. The same numbers previously existed
+ * as a limits object here and a field list in `campaign.controller.ts`, and a third copy was about
+ * to appear in the Implementation tab; three copies of a bound is three chances for the form to ask
+ * for something the wire will not carry.
+ */
+export const GOOGLE_CREATIVE_FIELD_SPECS = {
+  'demand-gen': [
+    { control: 'headlines', label: 'Headlines', kind: 'list', min: 1, max: 5, width: 30 },
+    { control: 'descriptions', label: 'Descriptions', kind: 'list', min: 1, max: 5, width: 90 },
+    { control: 'businessName', label: 'Business name', kind: 'text', width: 25, requiredOnce: true, hint: 'Required by Google once a creative is supplied.' },
+    { control: 'callToActionText', label: 'Call to action', kind: 'text', width: 30 },
+    {
+      control: 'marketingImages',
+      label: 'Marketing images (1.91:1)',
+      kind: 'list',
+      max: 20,
+      hint: 'One image URL per line. At least one marketing or square marketing image is required. The cap of 20 is shared across all four marketing shapes.',
+    },
+    { control: 'squareMarketingImages', label: 'Square marketing images (1:1)', kind: 'list', max: 20 },
+    { control: 'portraitImages', label: 'Portrait images (4:5)', kind: 'list', max: 20 },
+    { control: 'tallPortraitImages', label: 'Tall portrait images (9:16)', kind: 'list', max: 20 },
+    { control: 'logoImages', label: 'Logo images (1:1)', kind: 'list', min: 1, max: 5, hint: 'Required. A Demand Gen ad with no logo is refused.' },
+  ],
+  'performance-max': [
+    { control: 'headlines', label: 'Headlines', kind: 'list', min: 3, max: 15, width: 30 },
+    {
+      control: 'longHeadlines',
+      label: 'Long headlines',
+      kind: 'list',
+      min: 1,
+      max: 5,
+      width: 90,
+      hint: 'A separate Google asset type, not a headline that happens to be long.',
+    },
+    {
+      control: 'descriptions',
+      label: 'Descriptions',
+      kind: 'list',
+      min: 2,
+      max: 5,
+      width: 90,
+      hint: 'At least one must be 60 characters or fewer — Google renders it in a short slot the other channels do not have.',
+    },
+    {
+      control: 'businessName',
+      label: 'Business name',
+      kind: 'text',
+      width: 25,
+      requiredOnce: true,
+      hint: 'Required by Google once an asset group is supplied.',
+    },
+    {
+      control: 'assetGroupName',
+      label: 'Asset group name',
+      kind: 'text',
+      // 256 is campaign-service's `maxAssetGroupNameRunes`, which is `maxCampaignNameRunes`
+      // (`internal/platform/googleads/campaign.go`) — Google documents no separate asset-group
+      // limit. Counted in RUNES on the trimmed value there, which is why this entry could not be
+      // stated until the validators measured code points rather than UTF-16 units.
+      width: 256,
+      hint: 'Defaults to the event name plus " - Asset Group" when blank.',
+    },
+    { control: 'path1', label: 'Display path 1', kind: 'text', width: 15 },
+    { control: 'path2', label: 'Display path 2', kind: 'text', width: 15, hint: 'Renders only when display path 1 is also set.' },
+    {
+      control: 'marketingImages',
+      label: 'Marketing images (1.91:1)',
+      kind: 'list',
+      min: 1,
+      max: 20,
+      hint: 'One image URL per line. Required here, unlike on Demand Gen. The cap of 20 is shared across all three marketing shapes.',
+    },
+    { control: 'squareMarketingImages', label: 'Square marketing images (1:1)', kind: 'list', min: 1, max: 20, hint: 'Also required.' },
+    { control: 'portraitImages', label: 'Portrait images (4:5)', kind: 'list', max: 20 },
+    { control: 'logoImages', label: 'Logo images (1:1)', kind: 'list', min: 1, max: 5, hint: 'Required.' },
+    { control: 'landscapeLogoImages', label: 'Landscape logo images (4:1)', kind: 'list', max: 5 },
+    {
+      control: 'youtubeVideoIds',
+      label: 'YouTube video IDs',
+      kind: 'list',
+      max: 5,
+      hint: 'Bare video IDs, one per line — a watch URL is refused upstream rather than parsed.',
+    },
+  ],
+  display: [
+    { control: 'headlines', label: 'Headlines', kind: 'list', min: 1, max: 5, width: 30 },
+    {
+      control: 'longHeadline',
+      label: 'Long headline',
+      kind: 'text',
+      width: 90,
+      requiredOnce: true,
+      hint: 'Required. A responsive display ad carries exactly one.',
+    },
+    { control: 'descriptions', label: 'Descriptions', kind: 'list', min: 1, max: 5, width: 90 },
+    { control: 'businessName', label: 'Business name', kind: 'text', width: 25, requiredOnce: true, hint: 'Required by Google once a creative is supplied.' },
+    { control: 'callToActionText', label: 'Call to action', kind: 'text', width: 30 },
+    {
+      control: 'marketingImages',
+      label: 'Marketing images (1.91:1)',
+      kind: 'list',
+      max: 15,
+      hint: 'One image URL per line. Google requires each marketing array when the other is absent. The cap of 15 is shared across both.',
+    },
+    { control: 'squareMarketingImages', label: 'Square marketing images (1:1)', kind: 'list', max: 15 },
+    { control: 'logoImages', label: 'Logo images (4:1)', kind: 'list', max: 5 },
+    { control: 'squareLogoImages', label: 'Square logo images (1:1)', kind: 'list', max: 5 },
+  ],
+} as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeFieldSpec[]>;
+
+/**
+ * The "at least one of" rules a channel's creative carries, which no per-field bound can state.
+ *
+ * Demand Gen and Display each require a marketing image OR a square marketing image, refusing a
+ * creative that has neither and accepting one that has either (`demandgen_creative.go`,
+ * `display_creative.go`). Putting `min: 1` on both members would refuse the half upstream takes,
+ * and putting it on one would name the wrong field — so the rule lives here, over the pair.
+ *
+ * Performance Max is deliberately empty: it requires both marketing arrays SEPARATELY
+ * (`pmax_creative.go`), which its two `min: 1` catalogue entries already express. An empty list is
+ * the honest statement of that, and it keeps every creative-bearing channel indexable here.
+ *
+ * The messages are clauses, completed by the channel's section title at the point of use, so one
+ * sentence names both the channel and what it is missing.
+ */
+export const GOOGLE_CREATIVE_EITHER_OR_RULES = {
+  'demand-gen': [
+    {
+      controls: ['marketingImages', 'squareMarketingImages'],
+      message: 'needs at least one marketing image or one square marketing image.',
+    },
+  ],
+  'performance-max': [],
+  display: [
+    {
+      controls: ['marketingImages', 'squareMarketingImages'],
+      message: 'needs at least one marketing image or one square marketing image.',
+    },
+  ],
+} as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeEitherOrRule[]>;
+
+/**
+ * The `CampaignCreateRequest` key each channel's creative is sent under.
+ *
+ * Separate from {@link GOOGLE_CREATIVE_FIELD_SPECS} because it is about the envelope, not the
+ * fields: campaign-service names the three creative objects `demandGenCreative`,
+ * `performanceMaxCreative` and `displayCreative`, and that spelling has nothing to do with the
+ * channel's wire value. A missing entry is a compile error, so a fourth channel with a creative
+ * cannot be half-wired.
+ */
+export const GOOGLE_CREATIVE_REQUEST_KEYS = {
+  'demand-gen': 'demandGenCreative',
+  'performance-max': 'performanceMaxCreative',
+  display: 'displayCreative',
+} as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], keyof CampaignCreateRequest>;
+
+/**
+ * The heading each creative section carries in the Implementation tab.
+ *
+ * Deliberately NOT {@link GOOGLE_CAMPAIGN_CHANNEL_LABELS}, which is Google Ads' own reporting
+ * shorthand (`DG Display`, `PMax`) and belongs on a metrics row, not above a form an operator is
+ * filling in. These spell the channel the way its own checkbox does, so the section a user opens
+ * is named the same as the box they ticked to open it.
+ */
+export const GOOGLE_CREATIVE_SECTION_TITLES = {
+  'demand-gen': 'Demand Gen',
+  'performance-max': 'Performance Max',
+  display: 'Display',
+} as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
+
+/**
+ * Why a Google channel's creative is worth filling in, stated per channel.
+ *
+ * Not decoration. campaign-service ACCEPTS a create with no creative on all three of these
+ * channels — the campaign and its budget are made, and the call returns success — so nothing
+ * UPSTREAM tells an operator at create time that what they just made cannot serve. On all three
+ * the refusal arrives later and elsewhere, at activation: an empty creative leaves `AdID` blank
+ * (`demandgen.go:326`, `display.go:298`), the toggle finds no targets, and the activation gate
+ * returns `ErrCampaignNotProvisioned` (`internal/dispatch/googleads.go:2561`, `:2687`). Performance
+ * Max gets there by its own route, the asset-group check in `ToggleStatus`
+ * (`internal/platform/googleads/pmax.go`). Either way it is discovered at launch.
+ *
+ * This is the standing line, shown on a section before anything is typed. The form also says it
+ * about the current state, naming the channels that are actually empty, in the Implementation
+ * tab's `googleCreativeEmptyWarning` — which is a warning and not a refusal, precisely because
+ * upstream accepts this shape.
+ */
+export const GOOGLE_CREATIVE_REQUIRED_NOTICE =
+  'Without creative this campaign is created as an empty shell: it has no ad, it cannot serve, and activation is refused until the ad (or, on Performance Max, the asset group) exists.';
+
+/**
+ * The bidding strategies campaign-service accepts, in the caller vocabulary it accepts them in.
+ *
+ * These are the Google Ads UI's own labels, lower-cased and hyphenated — not Google's proto names
+ * — because that is the vocabulary `googleAdsConfig.biddingStrategy` is defined in
+ * (`internal/dispatch/googleads.go`) and the one an operator reading the Ads UI already has.
+ *
+ * `target-cpa` and `target-roas` are not separate strategies upstream: Google folded them into
+ * `maximize-conversions` and `maximize-conversion-value` with a target attached, and the client
+ * keeps both spellings because the target-bearing one REQUIRES its number while the maximize- one
+ * treats it as optional (`internal/platform/googleads/bidding.go`).
+ */
+export const GOOGLE_BIDDING_STRATEGIES = [
+  'manual-cpc',
+  'maximize-clicks',
+  'maximize-conversions',
+  'target-cpa',
+  'maximize-conversion-value',
+  'target-roas',
+] as const;
+
+/**
+ * How each strategy is named in the picker — the Google Ads UI's own capitalisation.
+ */
+export const GOOGLE_BIDDING_STRATEGY_LABELS = {
+  'manual-cpc': 'Manual CPC',
+  'maximize-clicks': 'Maximize Clicks',
+  'maximize-conversions': 'Maximize Conversions',
+  'target-cpa': 'Target CPA',
+  'maximize-conversion-value': 'Maximize Conversion Value',
+  'target-roas': 'Target ROAS',
+} as const satisfies Record<(typeof GOOGLE_BIDDING_STRATEGIES)[number], string>;
+
+/**
+ * Which strategies each channel will accept, copied set-for-set from campaign-service.
+ *
+ * Reproduced rather than widened, and the five sets genuinely disagree:
+ * `searchBiddingStrategies` is every name; `demandGenBiddingStrategies` is Maximize Clicks ALONE
+ * (a live `validateOnly` mutate returned `BIDDING_STRATEGY_TYPE_INCOMPATIBLE_WITH_SHARED_BUDGET`
+ * for the others); `performanceMaxBiddingStrategies` is the four conversion-oriented ones, since
+ * Performance Max has no manual bidding at all; `videoBiddingStrategies` is the two Google's
+ * VIDEO_ACTION documentation names; and `displayBiddingStrategies` is the five automated ones —
+ * manual CPC is omitted there because the client's Display ad-group payload carries no bid field,
+ * not because Google refuses it.
+ *
+ * This is a picker's option list, so it cannot over-refuse: every entry is a value the dispatcher
+ * accepts on that channel, and the refusals upstream still owns stay upstream's to make.
+ */
+export const GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL = {
+  search: GOOGLE_BIDDING_STRATEGIES,
+  'demand-gen': ['maximize-clicks'],
+  'performance-max': ['maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas'],
+  video: ['maximize-conversions', 'target-cpa'],
+  display: ['maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas'],
+} as const satisfies Record<(typeof GOOGLE_CAMPAIGN_CHANNELS)[number], readonly (typeof GOOGLE_BIDDING_STRATEGIES)[number][]>;
+
+/**
+ * The strategy a channel bids with when the request names none.
+ *
+ * Shown as guidance only — the request still omits `biddingStrategy`, so the DISPATCHER picks the
+ * default and these labels can never be the thing that chose it. They exist because "leave it to
+ * the channel default" is a real answer an operator should be able to give knowingly, and
+ * `defaultBiddingStrategy` (`internal/platform/googleads/bidding.go`) is where the answer lives.
+ */
+export const GOOGLE_BIDDING_DEFAULT_BY_CHANNEL = {
+  search: 'manual-cpc',
+  'demand-gen': 'maximize-clicks',
+  'performance-max': 'maximize-conversions',
+  video: 'maximize-conversions',
+  display: 'maximize-conversions',
+} as const satisfies Record<(typeof GOOGLE_CAMPAIGN_CHANNELS)[number], (typeof GOOGLE_BIDDING_STRATEGIES)[number]>;
+
+/**
+ * The strategies that carry a target CPA, and the ones that carry a target ROAS.
+ *
+ * Upstream REFUSES a target on a strategy that cannot carry it rather than dropping it, so these
+ * two sets decide which field is even offered: a target CPA typed under Manual CPC would fail the
+ * create, and one left behind after switching strategies would fail it just as surely.
+ */
+export const GOOGLE_BIDDING_CPA_STRATEGIES = ['maximize-conversions', 'target-cpa'] as const;
+export const GOOGLE_BIDDING_ROAS_STRATEGIES = ['maximize-conversion-value', 'target-roas'] as const;
+
+/**
+ * The two spellings whose target is REQUIRED rather than optional.
+ *
+ * `target-cpa` with no CPA is not the same request as `maximize-conversions` — the operator named
+ * the label whose whole content is the number — and upstream refuses it by name.
+ */
+export const GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES = ['target-cpa', 'target-roas'] as const;
+
+/**
+ * The channels that accept a conversion-action list at create time.
+ *
+ * Not a Search-versus-the-rest split: `campaign.selective_optimization` is defined for SEARCH,
+ * DISPLAY and VIDEO, and campaign-service admits all three. Demand Gen has no such field, and
+ * Performance Max selects conversions through a campaign-conversion-goal resource that cannot be
+ * addressed until the campaign exists — so both REFUSE the list rather than dropping it, and the
+ * section is withheld there rather than offered and discarded.
+ */
+export const GOOGLE_CONVERSION_ACTION_CHANNELS = ['search', 'video', 'display'] as const;
+
+/** `maxConversionActions` in `internal/platform/googleads/bidding.go`. */
+export const GOOGLE_ADS_MAX_CONVERSION_ACTIONS = 100;
+
+/**
+ * The two spellings a conversion action may be given in: a bare numeric id as read off the Google
+ * Ads UI, or the full `customers/<id>/conversionActions/<id>` resource name a GAQL read returns.
+ *
+ * Mirrors `conversionActionIDRE` and `conversionActionResourceRE`. The CUSTOMER in a resource name
+ * is deliberately not checked here — this application does not know the campaign's ad account, and
+ * upstream refuses a foreign one by name before any mutate.
+ */
+export const GOOGLE_ADS_CONVERSION_ACTION_PATTERN = /^(?:\d+|customers\/\d+\/conversionActions\/\d+)$/;
+
+/**
+ * The numeric bounds campaign-service applies to the three money/ratio fields, in whole units of
+ * the ad ACCOUNT's currency (no FX anywhere in this path) except `targetRoas`, which is a RATIO:
+ * 4 means four units of conversion value per unit spent, not 400%.
+ *
+ * Reproduced from `minCPCBid`/`maxCPCBid` (`adgroup_ad.go`) and `minTargetCPA`/`maxTargetCPA` /
+ * `minTargetROAS`/`maxTargetROAS` (`bidding.go`). Equal, never tighter: a bound narrower than
+ * upstream's would refuse a create Google would have accepted.
+ */
+export const GOOGLE_ADS_BIDDING_BOUNDS = {
+  cpcBid: { min: 0.01, max: 100_000 },
+  targetCpa: { min: 0.01, max: 1_000_000 },
+  targetRoas: { min: 0.01, max: 1000 },
+} as const;

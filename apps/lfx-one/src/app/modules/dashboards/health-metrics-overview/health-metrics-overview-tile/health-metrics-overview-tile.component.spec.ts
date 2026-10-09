@@ -83,6 +83,23 @@ describe('HealthMetricsOverviewTileComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('as of');
   });
 
+  it('renders the stat detail line in its tone colour when the tile carries one', async () => {
+    await render({ area: 'mem', statDetail: { text: '3 of 12 unsecured · $40K', tone: 'watch' } });
+
+    const detail: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-mem-detail"]');
+    expect(detail.textContent?.trim()).toBe('3 of 12 unsecured · $40K');
+    expect(detail.classList).toContain('text-amber-600');
+  });
+
+  it('renders the stat detail line neutral when it has no tone, and omits it when absent', async () => {
+    await render({ area: 'evt', statDetail: { text: '1,204 registrations · goal 1,500' } });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt-detail"]').classList).toContain('text-gray-500');
+    TestBed.resetTestingModule();
+    await render({ area: 'evt' });
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt-detail"]')).toBeNull();
+  });
+
   it('renders no "as of" label for a never-evaluated (empty evaluatedAt) tile', async () => {
     await render({ evaluatedAt: '' });
 

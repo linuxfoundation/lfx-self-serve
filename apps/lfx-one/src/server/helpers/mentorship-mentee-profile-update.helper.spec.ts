@@ -51,10 +51,26 @@ describe('parseMentorshipMenteeProfileUpdate', () => {
   });
 
   it('rejects null and undefined for every allowlisted key', () => {
-    for (const key of ['introduction', 'skillSet', 'demographics', 'socioeconomics']) {
+    for (const key of ['introduction', 'skillSet', 'demographics', 'socioeconomics', 'country']) {
       expectRejected({ [key]: null }, key);
       expectRejected({ [key]: undefined }, key);
     }
+  });
+
+  describe('country', () => {
+    it('accepts an assigned ISO code', () => {
+      expect(parseMentorshipMenteeProfileUpdate({ country: 'KE' }, OPERATION)).toEqual({ country: 'KE' });
+    });
+
+    it.each([
+      ['a number', 254],
+      ['a blank string', '  '],
+      ['a country name', 'Kenya'],
+      ['a lowercase code', 'ke'],
+      ['an unassigned code', 'ZZ'],
+    ])('rejects %s', (_label, country) => {
+      expectRejected({ country }, 'country');
+    });
   });
 
   describe('introduction', () => {
@@ -252,6 +268,15 @@ describe('buildMentorshipUpstreamMenteeProfileUpdate', () => {
 
     it('does not add a column the update leaves out', () => {
       expect(buildMentorshipUpstreamMenteeProfileUpdate({ introduction: '<p>Hi</p>' }, storedRow)).toEqual({ introduction: '<p>Hi</p>' });
+    });
+
+    it('writes the country into address over the stored legacy keys', () => {
+      expect(
+        buildMentorshipUpstreamMenteeProfileUpdate({ country: 'KE' }, { ...storedRow, address: { country: 'US', city: 'Test City', address1: '1 Test St' } })
+      ).toEqual({
+        address: { country: 'KE', city: 'Test City', address1: '1 Test St' },
+      });
+      expect(buildMentorshipUpstreamMenteeProfileUpdate({ country: 'KE' }, storedRow)).toEqual({ address: { country: 'KE' } });
     });
 
     it('ignores a stored column that is not an object', () => {

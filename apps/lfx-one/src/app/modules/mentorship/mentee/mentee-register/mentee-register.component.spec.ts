@@ -11,6 +11,7 @@ import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angul
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import {
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
+  MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE,
   MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
   MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
   MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
@@ -70,6 +71,7 @@ describe('MenteeRegisterComponent', () => {
       introduction: '<p>Backend engineer looking to break into distributed systems.</p>',
       skillsHave: ['Java'],
       skillsWant: ['Python'],
+      country: 'KE',
       ageEligible: true,
       workAuthorized: true,
       noDuplicateProfile: true,
@@ -137,7 +139,7 @@ describe('MenteeRegisterComponent', () => {
   it('renders every top-level section of the registration form', () => {
     // The sections' `data-testid`s are what the design and the E2E specs anchor to;
     // a rename here is a UX break, not a refactor.
-    for (const section of ['introduction', 'skills', 'demographics', 'eligibility', 'compliance']) {
+    for (const section of ['introduction', 'skills', 'country', 'demographics', 'eligibility', 'compliance']) {
       expect(byTestId(`mentorship-mentee-${section}`)).not.toBeNull();
     }
     expect(byTestId('mentorship-mentee-resume')).toBeNull();
@@ -187,6 +189,18 @@ describe('MenteeRegisterComponent', () => {
     fixture.detectChanges();
 
     expect(errorText('mentorship-mentee-want-skill-error')).toBe('Add at least one skill you would like to improve.');
+    expect(registerMenteeProfile).not.toHaveBeenCalled();
+  });
+
+  it('blocks submit until a country is picked, and shows the error under the dropdown', () => {
+    fillValidForm();
+    component['form'].controls.country.setValue('');
+
+    component['onSubmit']();
+    fixture.detectChanges();
+
+    expect(errorText('mentorship-mentee-country-error')).toBe(MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE);
+    expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'warn', detail: MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE });
     expect(registerMenteeProfile).not.toHaveBeenCalled();
   });
 
@@ -247,6 +261,7 @@ describe('MenteeRegisterComponent', () => {
       skillsHave: ['Java'],
       skillsWant: ['Python'],
       additionalNotes: 'Test notes',
+      country: 'KE',
       demographics: { age: '20-39' },
       ageEligible: true,
       workAuthorized: true,

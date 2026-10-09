@@ -271,6 +271,46 @@ describe('ApiClientService.streamRequest — same classification, separate code 
 });
 
 /**
+ * A large file can outlast the 30 s default, so a caller may pass a longer `timeoutMs`; every other caller keeps the
+ * client's configured timeout.
+ */
+describe('ApiClientService.streamRequest — timeout', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ['the configured timeout when no option is given', undefined, 30_000],
+    ['options.timeoutMs when given', { timeoutMs: 120_000 }, 120_000],
+  ])('aborts after %s', async (_label, options, expectedMs) => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('file-bytes', { status: 200 })))
+    );
+
+    await new ApiClientService({ retryAttempts: 1 }).streamRequest('GET', 'https://example.invalid/x', undefined, undefined, undefined, options);
+
+    expect(timeout).toHaveBeenCalledWith(expectedMs);
+  });
+
+  it('names the timeout it was given in a timeout error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(Object.assign(new Error('The operation timed out'), { name: 'TimeoutError' })))
+    );
+
+    const err = (await new ApiClientService({ retryAttempts: 1 })
+      .streamRequest('GET', 'https://example.invalid/x', undefined, undefined, undefined, { timeoutMs: 120_000 })
+      .catch((e: unknown) => e)) as MicroserviceError;
+
+    expect(err.statusCode).toBe(408);
+    expect(err.message).toBe('Request timeout after 120000ms');
+  });
+});
+
+/**
  * Which methods carry a request body.
  * @description DELETE used to drop its body like GET, which silently lost the note an organizer
  * attaches to a cancelled occurrence. Every other DELETE caller passes no data, so sending one only

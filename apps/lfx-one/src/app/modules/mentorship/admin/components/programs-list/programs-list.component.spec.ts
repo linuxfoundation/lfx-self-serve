@@ -36,6 +36,16 @@ describe('ProgramsListComponent', () => {
     expect(retried).toBe(1);
   });
 
+  it('passes a card change up as changed, so the parent reloads the list', () => {
+    const fixture = create();
+    let changed = 0;
+    fixture.componentInstance.changed.subscribe(() => changed++);
+
+    (fixture.componentInstance as unknown as { onProgramChanged: () => void }).onProgramChanged();
+
+    expect(changed).toBe(1);
+  });
+
   it('shows the empty state when there is no error', () => {
     const fixture = create();
     fixture.detectChanges();

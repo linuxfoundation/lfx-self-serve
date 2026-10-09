@@ -555,6 +555,78 @@ describe('MeetingComposerHostComponent', () => {
       expect(formService.form().get('startTime')?.value).toBe('10:00 AM');
     });
   });
+
+  describe('edit scope', () => {
+    const OCCURRENCE = { occurrence_id: '1894114800', start_time: '2030-01-09T15:00:00Z', duration: 60 };
+    const RECURRING = {
+      id: 'meeting-1',
+      title: 'Weekly sync',
+      organizer: true,
+      start_time: '2030-01-02T15:00:00Z',
+      timezone: 'America/New_York',
+      meeting_type: 'Technical',
+      recurrence: { type: 2, repeat_interval: 1 },
+      occurrences: [OCCURRENCE],
+    } as unknown as Meeting;
+
+    let updateOccurrence: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      const meetingService = TestBed.inject(MeetingService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      meetingService['getMeeting'].mockImplementation(() => of(RECURRING));
+      updateOccurrence = vi.fn(() => of(undefined));
+      meetingService['updateOccurrence'] = updateOccurrence;
+    });
+
+    it('states nothing for a create', async () => {
+      await openCreate();
+
+      expect(component['editScope']()).toBeNull();
+    });
+
+    it('says the whole series is being edited when a recurring meeting opens without an occurrence', async () => {
+      composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
+      await flush();
+
+      expect(component['editScope']()).toEqual({ kind: 'series' });
+      expect(component['sections']().length).toBe(MEETING_COMPOSER_SECTIONS.length);
+    });
+
+    it('names the occurrence and narrows the sections for an occurrence edit', async () => {
+      composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1', occurrenceId: OCCURRENCE.occurrence_id });
+      await flush();
+
+      expect(component['editScope']()).toEqual({ kind: 'occurrence', label: 'Wed, Jan 9, 2030 · 10:00 AM EST' });
+      expect(component['sections']().map((section) => section.id)).toEqual(['details-access', 'date-schedule', 'guests', 'agenda-resources']);
+    });
+
+    it('reopens on the whole series when the organizer switches scope', async () => {
+      composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1', occurrenceId: OCCURRENCE.occurrence_id });
+      await flush();
+
+      component['onEditSeriesInstead']();
+      await flush();
+
+      expect(composer.context()).toEqual({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
+      expect(component['editScope']()).toEqual({ kind: 'series' });
+    });
+
+    it('saves the occurrence and says only it changed', async () => {
+      composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1', occurrenceId: OCCURRENCE.occurrence_id });
+      await flush();
+      formService.form().get('title')?.setValue('Planning special');
+      await flush();
+
+      expect(component['canSubmit']()).toBe(true);
+
+      component['onSubmit']();
+      await flush();
+
+      expect(updateOccurrence).toHaveBeenCalledWith('meeting-1', OCCURRENCE.occurrence_id, expect.objectContaining({ title: 'Planning special' }));
+      expect(lastToast()).toEqual(expect.objectContaining({ severity: 'success', summary: 'Occurrence updated' }));
+      expect(composer.isOpen()).toBe(false);
+    });
+  });
 });
 
 /**

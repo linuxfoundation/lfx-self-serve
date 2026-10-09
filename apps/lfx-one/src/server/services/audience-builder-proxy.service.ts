@@ -157,6 +157,8 @@ interface WireRecordedAudience {
   status: string;
   version: number;
   platform_master_list_id: string;
+  /** Present only on an audience attached from several existing include lists. */
+  include_list_ids?: string[];
 }
 
 interface WireQaFinding {
@@ -368,6 +370,7 @@ function toRecordedAudience(wire: WireRecordedAudience, briefId: string): Campai
     briefId,
     platform: 'hubspot',
     platformMasterListId: required(wire.platform_master_list_id, 'audience.platform_master_list_id'),
+    ...(Array.isArray(wire.include_list_ids) && wire.include_list_ids.length ? { includeListIds: wire.include_list_ids } : {}),
     status: toAudienceStatus(required(wire.status, 'audience.status')),
     version: required(wire.version, 'audience.version'),
   };
@@ -676,7 +679,8 @@ export class AudienceBuilderProxyService {
   public async attachExisting(req: Request, projectSlug: string, request: AudienceAttachExistingRequest): Promise<AudienceAttachExistingResult> {
     const attach = {
       brief_id: request.briefId,
-      master_list_id: request.masterListId,
+      // Exactly one of the two: several include lists go to the send directly, with no master.
+      ...(request.includeListIds?.length ? { include_list_ids: request.includeListIds } : { master_list_id: request.masterListId }),
       ...(request.suppressionListIds?.length ? { suppression_list_ids: request.suppressionListIds } : {}),
       ...(request.inclusionSummary ? { inclusion_summary: request.inclusionSummary } : {}),
     };

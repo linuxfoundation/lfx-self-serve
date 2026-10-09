@@ -10,6 +10,7 @@ import {
   orgClaGroupForAddress,
   orgClaOpenLabel,
   orgClaPreviewGroup,
+  orgClaReviewCopyFilename,
   isOrgClaSendByEmailChoice,
 } from './org-cla-view.utils';
 
@@ -309,5 +310,17 @@ describe('orgClaGroupForAddress', () => {
 
     expect(orgClaGroupForAddress([unsigned, signed], GROUP)?.id).toBe('sig-signed');
     expect(orgClaGroupForAddress([signed, unsigned], GROUP)?.id).toBe('sig-signed');
+  });
+});
+
+describe('orgClaReviewCopyFilename', () => {
+  it('names the CLA Group, so copies for different groups can be told apart', () => {
+    expect(orgClaReviewCopyFilename('Nimbus Foundation CLA')).toBe('Nimbus Foundation CLA-ccla-review.pdf');
+  });
+
+  it('falls back to the filename the server names when the group has no name', () => {
+    expect(orgClaReviewCopyFilename(undefined)).toBe('Corporate_Contributor_License_Agreement.pdf');
+    expect(orgClaReviewCopyFilename('')).toBe('Corporate_Contributor_License_Agreement.pdf');
+    expect(orgClaReviewCopyFilename('   ')).toBe('Corporate_Contributor_License_Agreement.pdf');
   });
 });

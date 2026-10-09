@@ -4,7 +4,7 @@ description: How to view your donation history, stats, and recurring donations i
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, donations, view, history, recurring, one-time]
-last_updated: 2026-06-29
+last_updated: 2026-10-06
 intercom_collection: Crowdfunding
 ---
 
@@ -28,15 +28,20 @@ Select a recurring donation to open its detail page where you can review the ful
 
 A paginated table lists all your donations in chronological order, including both recurring and one-time contributions. Each row shows:
 
-- Initiative name and fund type
+- Initiative name, with a **Recurring** tag for recurring contributions
 - Donation date
-- Donation kind (Monthly or One-time)
 - Amount
+
+## Find an initiative to support
+
+Select **Explore Initiatives** in the page header to open the initiative catalog in the separate [LFX Crowdfunding product](https://crowdfunding.linuxfoundation.org) in a new tab. When your **Donation History** is empty, it also offers **Explore Initiatives**.
+
+You can browse the catalog without having made a previous donation. Choose an initiative there to learn more and donate; donations happen in LFX Crowdfunding, not in LFX Self Serve. Return to **My Donations** to review your giving history and manage recurring contributions.
 
 ## Before you begin
 
 - Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
-- You must have made at least one donation. If the page shows no history, you have not donated to any initiative yet. Donations are made on the public crowdfunding site at [crowdfunding.linuxfoundation.org](https://crowdfunding.linuxfoundation.org).
+- No previous donation is required to open this page or use **Explore Initiatives**. Your stats and history reflect your contributions once you have donated.
 
 ## Steps
 

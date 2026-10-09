@@ -61,7 +61,10 @@ export interface InsightsTokenEligibleOrg {
   name?: string;
 }
 
-/** Whether the caller may create Insights tokens: they must be a Key Contact of at least one org. */
+/**
+ * Whether the caller may create Insights tokens: they must be a Key Contact of at least one org, or be
+ * targeted by the `insights-public-api-token-access` flag (then `orgs` is empty).
+ */
 export interface InsightsTokenEligibility {
   canCreate: boolean;
   orgs: InsightsTokenEligibleOrg[];

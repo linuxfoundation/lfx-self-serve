@@ -18,6 +18,7 @@ import type {
   OrgClaIdentifyManagerResult,
   OrgClaManagerAnswer,
   OrgClaSignAttestations,
+  OrgClaSignHandoffDialogData,
   OrgClaSignSelection,
   OrgClaStatusDisplay,
   OrgClaAttestationClose,
@@ -31,7 +32,7 @@ import {
   ORG_CLA_HEADING_STATUS,
   ORG_CLA_LOCKED_TAB_COPY,
   ORG_CLA_NOT_STARTED_COPY,
-  ORG_CLA_REVIEW_COPY_FILENAME,
+  ORG_CLA_REVIEW_COPY_FAILURE,
   ORG_CLA_SIGN_SELECTION_STATE,
   ORG_CLA_STATUS_DISPLAY,
   ORG_EASYCLA_RETURN_ORG_PARAM,
@@ -50,6 +51,7 @@ import {
   orgClaGroupForAddress,
   orgClaPairProjectSfid,
   orgClaPreviewGroup,
+  orgClaReviewCopyFilename,
   isOrgClaSendByEmailChoice,
 } from '@lfx-one/shared/utils';
 import { ToggleComponent } from '@components/toggle/toggle.component';
@@ -927,16 +929,11 @@ export class OrgEasyclaDetailComponent {
       .subscribe({
         next: (blob) => {
           const url = URL.createObjectURL(blob);
-          const groupName = this.claGroup()?.claGroupName;
-          downloadFromUrl(url, groupName ? `${groupName}-ccla-review.pdf` : ORG_CLA_REVIEW_COPY_FILENAME);
+          downloadFromUrl(url, orgClaReviewCopyFilename(this.claGroup()?.claGroupName));
           setTimeout(() => URL.revokeObjectURL(url), 0);
         },
         error: () => {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Download failed',
-            detail: 'Could not download a review copy of the CCLA. Please try again.',
-          });
+          this.messageService.add({ severity: 'error', ...ORG_CLA_REVIEW_COPY_FAILURE });
         },
       });
   }
@@ -1205,7 +1202,13 @@ export class OrgEasyclaDetailComponent {
       closable: false,
       closeOnEscape: false,
       dismissableMask: false,
-      data: { orgUid, projectSfid: chosen.projectSfid, claGroupId: chosen.claGroupId, attestations },
+      data: {
+        orgUid,
+        projectSfid: chosen.projectSfid,
+        claGroupId: chosen.claGroupId,
+        attestations,
+        claGroupName: this.claGroup()?.claGroupName,
+      } satisfies OrgClaSignHandoffDialogData,
     }) as DynamicDialogRef;
 
     nameDynamicDialog(this.dialogService, handoffRef, OrgEasyclaSignHandoffComponent.headingId);

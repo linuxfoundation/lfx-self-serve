@@ -114,18 +114,53 @@ export const GW_EMBED_ENABLED_FEATURES = [
 export const GW_EMBED_ALLOWED_PROJECT_SLUGS = ['agentic-ai-foundation'] as const;
 
 /**
- * Where the embed's stylesheet is served from.
- *
- * The embed's Vite lib build runs with `cssCodeSplit: false`, so it emits its CSS as a single
- * `admin-embed.css` file *beside* the JS chunk rather than inlining it — its own build config notes
- * that "the host must load it alongside the JS chunk". The dynamic `import()` of the JS therefore
- * pulls in no styles at all, and the outlet injects a `<link>` to this path instead.
- *
- * Note the emitted file is `dist-embed/admin.css`, not `admin-embed.css` — `vite.embed.config.ts`
- * predicts the latter in a comment, but Vite names the lib stylesheet after the package rather than
- * the `fileName` given for the JS entry. Whatever ships it to `public/assets/gw/` renames it.
+ * Same-origin route that serves the embed's stylesheet scoped to the host chrome. The loader
+ * resolves the manifest's hashed stylesheet URL to `<route>/<file name>`; the server fetches that
+ * file from `GW_EMBED_URL`, runs the containment transform once and caches it by name (the name
+ * is content-hashed, so a cached copy never goes stale).
  */
-export const GW_EMBED_STYLESHEET_PATH = '/assets/gw/admin-embed.css';
+export const GW_EMBED_STYLESHEET_ROUTE = '/public/api/gw-embed-stylesheet';
+
+/** What a hashed embed stylesheet file name looks like; anything else is rejected by the route. */
+export const GW_EMBED_STYLESHEET_NAME_PATTERN = /^admin-embed-[A-Za-z0-9_-]{1,32}\.css$/;
+
+/** How long the upstream stylesheet fetch may take; the file is ~2MB from a CDN-fronted origin. */
+export const GW_EMBED_STYLESHEET_UPSTREAM_TIMEOUT_MS = 15_000;
+
+/** Largest upstream stylesheet accepted, in bytes; the real one is ~2.3MB, so this is headroom. */
+export const GW_EMBED_STYLESHEET_MAX_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Scoped stylesheets kept in memory per server process. Names are content-hashed, so a cached
+ * copy never goes stale on the upstream side; the cap only bounds memory across Gatewaze releases.
+ */
+export const GW_EMBED_STYLESHEET_CACHE_MAX_ENTRIES = 4;
+
+/**
+ * How long a failed upstream fetch is remembered per name. Without this every distinct valid name
+ * would cost a fresh upstream request, and the route is anonymous, so it needs a brake beyond
+ * the per-IP limiter.
+ */
+export const GW_EMBED_STYLESHEET_NEGATIVE_CACHE_MS = 60_000;
+
+/**
+ * Failed names remembered at once. The route is anonymous and any regex-valid name can be asked
+ * for, so without a cap the failure memory would grow with every distinct bad name for the life
+ * of the process. Oldest entries go first.
+ */
+export const GW_EMBED_STYLESHEET_FAILURE_CACHE_MAX_ENTRIES = 64;
+
+/** Upstream fetches allowed at once across all names; requests beyond this get a 503. */
+export const GW_EMBED_STYLESHEET_MAX_IN_FLIGHT = 2;
+
+/**
+ * Browser/CDN caching for the scoped stylesheet. The body is LFX output (containment transform
+ * plus theme layer) under an upstream-hashed name, so it is not immutable: a theme or transform
+ * fix must reach users without a URL change. Short max-age with stale-while-revalidate and an
+ * ETag keeps page loads fast while bounding staleness to minutes.
+ */
+export const GW_EMBED_STYLESHEET_MAX_AGE_S = 300;
+export const GW_EMBED_STYLESHEET_STALE_WHILE_REVALIDATE_S = 7 * 24 * 60 * 60;
 
 /**
  * What the embed resolves an empty `apiBaseUrl` to — the same-origin BFF proxy mount.

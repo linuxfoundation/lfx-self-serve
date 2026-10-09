@@ -5,14 +5,16 @@ import type { ProjectFunding } from '@lfx-one/shared/enums';
 import type { Project, QueryServiceResponse, ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MicroserviceError } from '../errors';
+
 // Mirrors meeting.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub. `ProjectService`'s
 // constructor also builds `NatsService`/`SnowflakeService`/`ETagService`; the Snowflake-backed
 // suites below use only the `execute` mock, while the others stay trivial.
 const {
   proxyRequest,
-  addAccessToResources,
-  addAccessToResource,
+  addProjectWriterToResources,
+  addProjectWriterToResource,
   checkAccess,
   checkSingleAccessStrict,
   execute,
@@ -25,8 +27,8 @@ const {
   natsRequest,
 } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
-  addAccessToResources: vi.fn(),
-  addAccessToResource: vi.fn(),
+  addProjectWriterToResources: vi.fn(),
+  addProjectWriterToResource: vi.fn(),
   checkAccess: vi.fn(),
   checkSingleAccessStrict: vi.fn(),
   execute: vi.fn(),
@@ -102,6 +104,12 @@ vi.mock('@lfx-one/shared/constants', async () => {
     HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: dashboardMetricsConstants.HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
     HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
     HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
+    HEALTH_METRICS_OVERVIEW_TILE_LINKS: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_TILE_LINKS,
+    // Real maps: getHealthOverviewSignals drops any row these don't cover, and the tests assert on that.
+    HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS: healthMetricsOverviewConstants.HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS,
+    HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS: healthMetricsOverviewConstants.HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS,
+    HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS: healthMetricsOverviewConstants.HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS,
+    HEALTH_OVERVIEW_SIGNAL_PERIOD_RANGES: healthMetricsOverviewConstants.HEALTH_OVERVIEW_SIGNAL_PERIOD_RANGES,
     // Real values (3 / 0.5): the Engagement tile read binds both, and the tests assert the binds.
     HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE: healthMetricsEngagementConstants.HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
     HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD: healthMetricsEngagementConstants.HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
@@ -209,8 +217,8 @@ vi.mock('./microservice-proxy.service', () => ({
 }));
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
-    public addAccessToResources = addAccessToResources;
-    public addAccessToResource = addAccessToResource;
+    public addProjectWriterToResources = addProjectWriterToResources;
+    public addProjectWriterToResource = addProjectWriterToResource;
     public checkAccess = checkAccess;
     public checkSingleAccessStrict = checkSingleAccessStrict;
   },
@@ -263,7 +271,7 @@ describe('ProjectService — create picker methods', () => {
 
   beforeEach(() => {
     proxyRequest.mockReset();
-    addAccessToResources.mockReset();
+    addProjectWriterToResources.mockReset();
     checkAccess.mockReset();
     service = new ProjectService();
   });
@@ -284,7 +292,7 @@ describe('ProjectService — create picker methods', () => {
       // page_size 100, not the query service's default 50: this read is on the My Formations
       // render path now, and pagination is sequential (PR #2799 review).
       expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', filter_grants: 'direct', page_size: 100 });
-      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(addProjectWriterToResources).not.toHaveBeenCalled();
       expect(checkAccess).not.toHaveBeenCalled();
     });
 
@@ -332,7 +340,7 @@ describe('ProjectService — create picker methods', () => {
           { uid: 'b', slug: 'b' },
         ])
       );
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
         Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'a' })))
       );
 
@@ -345,12 +353,14 @@ describe('ProjectService — create picker methods', () => {
 
     it('excludes the ROOT pseudo-project', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root', slug: 'root' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getDirectGrantProjects(req);
 
       expect(result).toEqual([]);
-      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(addProjectWriterToResources).not.toHaveBeenCalled();
     });
 
     it('OR-includes meeting_coordinator when requested, without re-checking existing writers', async () => {
@@ -360,7 +370,7 @@ describe('ProjectService — create picker methods', () => {
           { uid: 'b', slug: 'b' },
         ])
       );
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
         Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'a' })))
       );
       checkAccess.mockResolvedValueOnce(new Map([['b#meeting_coordinator', true]]));
@@ -386,7 +396,9 @@ describe('ProjectService — create picker methods', () => {
   describe('getWriterSummary', () => {
     it('returns {true, false} when the only direct-writer project is a foundation', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([foundation('fdn')]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getWriterSummary(req);
 
@@ -395,7 +407,9 @@ describe('ProjectService — create picker methods', () => {
 
     it('returns {false, true} when the only direct-writer project is non-foundation', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([nonFoundation('proj')]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getWriterSummary(req);
 
@@ -404,7 +418,9 @@ describe('ProjectService — create picker methods', () => {
 
     it('returns {true, true} when direct-writer grants span both a foundation and a non-foundation project', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([foundation('fdn'), nonFoundation('proj')]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getWriterSummary(req);
 
@@ -413,7 +429,9 @@ describe('ProjectService — create picker methods', () => {
 
     it('returns {false, false} when the caller holds no direct writer grants', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([foundation('visible-only')]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: false }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: false })))
+      );
 
       const result = await service.getWriterSummary(req);
 
@@ -430,7 +448,7 @@ describe('ProjectService — create picker methods', () => {
   describe('getProjects', () => {
     it('requests QUERY_SERVICE_PAGE_SIZE, overriding any caller-supplied page_size', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
 
       await service.getProjects(req, { page_size: 10 });
 
@@ -440,7 +458,7 @@ describe('ProjectService — create picker methods', () => {
     it('follows page_token across pages and returns the accumulated projects', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next-token'));
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'b', slug: 'b' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
 
       const result = await service.getProjects(req);
 
@@ -451,12 +469,12 @@ describe('ProjectService — create picker methods', () => {
 
     it('excludes the ROOT pseudo-project before the access check', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root', slug: 'root' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
 
       const result = await service.getProjects(req);
 
       expect(result).toEqual([]);
-      expect(addAccessToResources).toHaveBeenCalledWith(req, [], 'project');
+      expect(addProjectWriterToResources).toHaveBeenCalledWith(req, []);
     });
   });
 
@@ -474,13 +492,13 @@ describe('ProjectService — create picker methods', () => {
       expect(result.sort()).toEqual(['a', 'b']);
     });
 
-    it('excludes the ROOT pseudo-project without calling addAccessToResources', async () => {
+    it('excludes the ROOT pseudo-project without calling addProjectWriterToResources', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root', slug: 'root' }]));
 
       const result = await service.getProjectSlugs(req);
 
       expect(result).toEqual([]);
-      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(addProjectWriterToResources).not.toHaveBeenCalled();
     });
 
     it('follows page_token across pages and returns accumulated slugs', async () => {
@@ -495,12 +513,12 @@ describe('ProjectService — create picker methods', () => {
       expect(proxyRequest.mock.calls[1][4]).toMatchObject({ type: 'project', page_size: 500, page_token: 'next-token' });
     });
 
-    it('does not call addAccessToResources for a standard non-root project', async () => {
+    it('does not call addProjectWriterToResources for a standard non-root project', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'x', slug: 'x' }]));
 
       await service.getProjectSlugs(req);
 
-      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(addProjectWriterToResources).not.toHaveBeenCalled();
     });
 
     it('throws when a subsequent page fails (failOnPartial: true — partial slug set drops affiliations)', async () => {
@@ -516,7 +534,9 @@ describe('ProjectService — create picker methods', () => {
   describe('getChildProjects', () => {
     it('queries parent=project:<uid> and filters to writer-permitted children', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'child-1', slug: 'child-1' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getChildProjects(req, 'parent-uid');
 
@@ -555,7 +575,9 @@ describe('ProjectService — create picker methods', () => {
   describe('searchCreatableProjects', () => {
     it('queries name=<term> with a small page size and filters to writer-permitted matches', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'match-1', slug: 'match-1' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.searchCreatableProjects(req, 'kubernetes');
 
@@ -568,7 +590,7 @@ describe('ProjectService — create picker methods', () => {
       // silently fell back to the default name_asc would reorder results mid-scan (GH-2030).
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'visible-only', slug: 'visible-only' }], 'token-2'));
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'match-2', slug: 'match-2' }]));
-      addAccessToResources.mockImplementation((_req: Request, projects: Project[]) =>
+      addProjectWriterToResources.mockImplementation((_req: Request, projects: Project[]) =>
         Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'match-2' })))
       );
 
@@ -582,7 +604,7 @@ describe('ProjectService — create picker methods', () => {
       // A single-page search would return [] here even though a real target exists.
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'visible-only', slug: 'visible-only' }], 'token-2'));
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'inherited-writer', slug: 'inherited-writer' }]));
-      addAccessToResources.mockImplementation((_req: Request, projects: Project[]) =>
+      addProjectWriterToResources.mockImplementation((_req: Request, projects: Project[]) =>
         Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'inherited-writer' })))
       );
 
@@ -595,7 +617,7 @@ describe('ProjectService — create picker methods', () => {
 
     it('stops paging once the page cap is reached, even if pages remain', async () => {
       proxyRequest.mockResolvedValue(pageOf([{ uid: 'no-match', slug: 'no-match' }], 'more'));
-      addAccessToResources.mockImplementation((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: false }))));
+      addProjectWriterToResources.mockImplementation((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: false }))));
 
       const result = await service.searchCreatableProjects(req, 'kubernetes');
 
@@ -606,7 +628,7 @@ describe('ProjectService — create picker methods', () => {
 
   it('never issues a type=project query-service call without filter_grants, parent, or name', async () => {
     proxyRequest.mockResolvedValue(pageOf([]));
-    addAccessToResources.mockImplementation((_req: Request, projects: Project[]) => Promise.resolve(projects));
+    addProjectWriterToResources.mockImplementation((_req: Request, projects: Project[]) => Promise.resolve(projects));
 
     await service.getDirectGrantProjects(req);
     await service.getChildProjects(req, 'uid-1');
@@ -1545,6 +1567,7 @@ describe('ProjectService — getFoundationProjectsDetailGrouped', () => {
       expect.objectContaining({ foundationSlug: 'neonephos', foundationName: 'NeoNephos', projects: [expect.objectContaining({ projectSlug: 'nephio' })] }),
     ]);
     expect(result.totalCount).toBe(2);
+    expect(result.complete).toBe(true);
   });
 
   it('omits a sub-foundation whose detail fetch fails instead of failing the whole request', async () => {
@@ -1559,6 +1582,8 @@ describe('ProjectService — getFoundationProjectsDetailGrouped', () => {
 
     expect(result.groups).toEqual([expect.objectContaining({ foundationSlug: 'lfeurope' })]);
     expect(result.totalCount).toBe(1);
+    // A dropped branch marks the list partial so callers don't treat a missing project as unknown.
+    expect(result.complete).toBe(false);
   });
 
   it('excludes a discovered sub-foundation from its parent group instead of double-rendering it as a leaf row', async () => {
@@ -1703,8 +1728,10 @@ describe('ProjectService — discoverSubFoundations', () => {
     const n2 = foundation('n2-uid', 'n2-slug', 'N2');
     mockChildrenByParent({ 'root-uid': [n1], 'n1-uid': [n2] });
 
-    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+    const budget = { remaining: 40, incomplete: false };
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root', 0, budget);
 
+    expect(budget.incomplete).toBe(false);
     expect(result).toEqual([
       { uid: 'n1-uid', slug: 'n1-slug', name: 'N1', visible: true, groupSlug: 'n1-slug', groupName: 'N1' },
       { uid: 'n2-uid', slug: 'n2-slug', name: 'N2', visible: true, groupSlug: 'n2-slug', groupName: 'N2' },
@@ -1718,8 +1745,10 @@ describe('ProjectService — discoverSubFoundations', () => {
     const n4 = foundation('n4-uid', 'n4-slug', 'N4');
     mockChildrenByParent({ 'root-uid': [n1], 'n1-uid': [n2], 'n2-uid': [n3], 'n3-uid': [n4] });
 
-    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+    const budget = { remaining: 40, incomplete: false };
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root', 0, budget);
 
+    expect(budget.incomplete).toBe(true);
     // n4 is never discovered: reaching it would require fetching n3's children at depth 3,
     // which FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH (3) blocks.
     expect(result.map((r: { slug: string }) => r.slug)).toEqual(['n1-slug', 'n2-slug', 'n3-slug']);
@@ -1730,8 +1759,10 @@ describe('ProjectService — discoverSubFoundations', () => {
     const children = Array.from({ length: 41 }, (_, i) => foundation(`c${i + 1}-uid`, `c${i + 1}-slug`, `C${i + 1}`));
     mockChildrenByParent({ 'root-uid': children });
 
-    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+    const budget = { remaining: 40, incomplete: false };
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root', 0, budget);
 
+    expect(budget.incomplete).toBe(true);
     // FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES (40) caps the total regardless of the 41st sibling existing.
     expect(result).toHaveLength(40);
     expect(result[39].slug).toBe('c40-slug');
@@ -1789,9 +1820,11 @@ describe('ProjectService — discoverSubFoundations', () => {
       return Promise.resolve(pageOf([]));
     });
 
-    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+    const budget = { remaining: 40, incomplete: false };
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root', 0, budget);
 
     expect(result.map((r: { slug: string }) => r.slug)).toEqual(['n1-slug', 'n2-slug']);
+    expect(budget.incomplete).toBe(true);
   });
 });
 
@@ -2031,7 +2064,7 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
 
   beforeEach(() => {
     proxyRequest.mockReset();
-    addAccessToResource.mockReset();
+    addProjectWriterToResource.mockReset();
     checkSingleAccessStrict.mockReset();
     warning.mockReset();
     service = new ProjectService();
@@ -2039,7 +2072,7 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
 
   it('does not run the meeting_coordinator/auditor checks and returns neither field for a writer', async () => {
     proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' });
-    addAccessToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: true });
+    addProjectWriterToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: true });
 
     const result = await service.getProjectById(req, 'p1', true, true, true);
 
@@ -2050,11 +2083,12 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
 
   it('leaves auditor undefined and warns when the strict FGA check rejects, rather than reporting false', async () => {
     proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' });
-    addAccessToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: false });
+    addProjectWriterToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: false });
     checkSingleAccessStrict.mockRejectedValueOnce(new Error('fga unavailable'));
 
     const result = await service.getProjectById(req, 'p1', true, false, true);
 
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'p1', access: 'auditor_guard' });
     expect(result.auditor).toBeUndefined();
     expect(warning).toHaveBeenCalledWith(req, 'get_project_by_id', 'auditor check failed, skipping field', {
       project_uid: 'p1',
@@ -2064,11 +2098,52 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
 
   it('forwards includeAuditor from getProjectBySlug through to getProjectById', async () => {
     const spy = vi.spyOn(service, 'getProjectById').mockResolvedValueOnce({ uid: 'p1', slug: 'p1' } as Project);
-    vi.spyOn(service, 'getProjectIdBySlug').mockResolvedValueOnce({ exists: true, uid: 'p1', slug: 'p1' });
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1' });
 
     await service.getProjectBySlug(req, 'p1', false, true);
 
     expect(spy).toHaveBeenCalledWith(req, 'p1', true, false, true);
+  });
+
+  it('resolves the encoded slug via HTTP and retains the detail access and role checks', async () => {
+    const project = { uid: 'p1', slug: 'test-project' } as Project;
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1' });
+    const detail = vi.spyOn(service, 'getProjectById').mockResolvedValueOnce(project);
+    const legacyLookup = vi.spyOn(service, 'getProjectIdBySlug');
+
+    await expect(service.getProjectBySlug(req, 'test project', true, true)).resolves.toBe(project);
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/slug-to-uid/test%20project', 'GET');
+    expect(detail).toHaveBeenCalledWith(req, 'p1', true, true, true);
+    expect(legacyLookup).not.toHaveBeenCalled();
+  });
+
+  it.each([404, 403, 500, 503])('preserves a resolver HTTP %s without fetching project details', async (status) => {
+    const error = new MicroserviceError('lookup failed', status, 'LOOKUP_FAILED');
+    proxyRequest.mockRejectedValueOnce(error);
+    const detail = vi.spyOn(service, 'getProjectById');
+
+    await expect(service.getProjectBySlug(req, 'test-project')).rejects.toBe(error);
+
+    expect(detail).not.toHaveBeenCalled();
+  });
+
+  it('preserves resolver transport failures rather than reporting a missing project', async () => {
+    const error = new MicroserviceError('lookup unavailable', 503, 'SERVICE_UNAVAILABLE', { transportFailure: true });
+    proxyRequest.mockRejectedValueOnce(error);
+    const detail = vi.spyOn(service, 'getProjectById');
+
+    await expect(service.getProjectBySlug(req, 'test-project')).rejects.toBe(error);
+
+    expect(detail).not.toHaveBeenCalled();
+  });
+
+  it('preserves authorization failures from the resolved project detail lookup', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1' });
+    const error = new MicroserviceError('forbidden', 403, 'FORBIDDEN');
+    vi.spyOn(service, 'getProjectById').mockRejectedValueOnce(error);
+
+    await expect(service.getProjectBySlug(req, 'test-project')).rejects.toBe(error);
   });
 });
 
@@ -2131,8 +2206,8 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
   it('marks the response as available and orders streams by domain when rows are returned', async () => {
     execute.mockResolvedValueOnce({
       rows: [
-        buildRevenueWideRow({ REVENUE_DOMAIN: 'memberships', REVENUE_USD: 600_000, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 }),
-        buildRevenueWideRow({ REVENUE_DOMAIN: 'events', REVENUE_USD: 400_000, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 }),
+        buildRevenueWideRow({ REVENUE_DOMAIN: 'memberships', REVENUE_USD: 600_000, REVENUE_SHARE_PCT: 60, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 }),
+        buildRevenueWideRow({ REVENUE_DOMAIN: 'events', REVENUE_USD: 400_000, REVENUE_SHARE_PCT: 40, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 }),
       ],
     });
 
@@ -2142,8 +2217,8 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
       dataAvailable: true,
       total: 1_000_000,
       streams: [
-        { key: 'memberships', value: 600_000 },
-        { key: 'events', value: 400_000 },
+        { key: 'memberships', value: 600_000, share: 60 },
+        { key: 'events', value: 400_000, share: 40 },
       ],
     });
     expect(execute.mock.calls[0][0]).toContain('ORDER BY revenue_domain');
@@ -2178,7 +2253,7 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
 
     const result = await service.getHealthOverviewRevenue('cncf');
 
-    expect(result['YTD']).toEqual({ dataAvailable: true, total: 600_000, streams: [{ key: 'memberships', value: 600_000 }] });
+    expect(result['YTD']).toEqual({ dataAvailable: true, total: 600_000, streams: [{ key: 'memberships', value: 600_000, share: null }] });
     expect(result['COMPLETED_YEAR']).toEqual({ dataAvailable: false, total: 0, streams: [] });
   });
 
@@ -2193,8 +2268,8 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
     const result = await service.getHealthOverviewRevenue('cncf');
 
     expect(result['YTD']?.streams).toEqual([
-      { key: 'memberships', value: 600_000 },
-      { key: 'events', value: null },
+      { key: 'memberships', value: 600_000, share: null },
+      { key: 'events', value: null, share: null },
     ]);
   });
 
@@ -2202,12 +2277,14 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
     // Snowflake can serialize a high-precision NUMBER as a string; rejecting it instead of coercing
     // would report a funded foundation as having no revenue data for the period.
     execute.mockResolvedValueOnce({
-      rows: [{ REVENUE_DOMAIN: 'memberships', REVENUE_USD__YTD: '600000.00', FOUNDATION_TOTAL_REVENUE_USD__YTD: '1000000.00' }],
+      rows: [
+        { REVENUE_DOMAIN: 'memberships', REVENUE_USD__YTD: '600000.00', REVENUE_SHARE_PCT__YTD: '60.0000', FOUNDATION_TOTAL_REVENUE_USD__YTD: '1000000.00' },
+      ],
     });
 
     const result = await service.getHealthOverviewRevenue('cncf');
 
-    expect(result['YTD']).toEqual({ dataAvailable: true, total: 1_000_000, streams: [{ key: 'memberships', value: 600_000 }] });
+    expect(result['YTD']).toEqual({ dataAvailable: true, total: 1_000_000, streams: [{ key: 'memberships', value: 600_000, share: 60 }] });
   });
 
   it('reads every selectable period in a single one-bind query and never emits the 4th-year-back suffix this table lacks', async () => {
@@ -2221,7 +2298,7 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
     expect((query as string).match(/\?/g)).toHaveLength(1);
     // Pinned independently of the constant: the loop below derives its expectations from the same
     // list the service generates from, so only this assertion catches a column silently dropped there.
-    expect(HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS).toEqual(['REVENUE_USD', 'FOUNDATION_TOTAL_REVENUE_USD']);
+    expect(HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS).toEqual(['REVENUE_USD', 'REVENUE_SHARE_PCT', 'FOUNDATION_TOTAL_REVENUE_USD']);
     for (const suffix of ['_ytd', '_last_completed_year', '_prev_completed_year', '_3rd_last_completed_year']) {
       for (const column of HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS) {
         expect(query).toContain(`${column.toLowerCase()}${suffix}`);
@@ -2588,7 +2665,175 @@ describe('ProjectService — getHealthOverviewKpis', () => {
     }
     expect((query as string).match(/members_renewing_90d_value_usd/g)).toHaveLength(1);
     expect((query as string).match(/non_members_pipeline_value_usd/g)).toHaveLength(1);
+    expect(query).not.toContain('members_renewing_90d_unsecured_org_pct');
     expect(query).not.toContain('_4th_last_completed_year');
+  });
+
+  it('adds the registrations line to Events and the unsecured-renewals chip to Members', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        buildKpiWideRow({
+          EVENTS_REGISTRATIONS_COUNT: 1234,
+          EVENTS_REGISTRATIONS_GOAL: 1500,
+          MEMBERS_RENEWING_90D_ORG_COUNT: 7,
+          MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT: 3,
+          MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD: 185_000,
+        }),
+      ],
+    });
+
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
+
+    expect(result?.find((state) => state.area === 'evt')?.statDetail).toEqual({ text: '1,234 registrations · goal 1,500' });
+    expect(result?.find((state) => state.area === 'mem')?.statDetail).toEqual({ text: '3 of 7 unsecured · $185K', tone: 'watch' });
+  });
+
+  it('drops the goal when it is unset and keeps the members chip neutral when every renewal is secured', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        buildKpiWideRow({
+          EVENTS_REGISTRATIONS_COUNT: 1,
+          EVENTS_REGISTRATIONS_GOAL: null,
+          MEMBERS_RENEWING_90D_ORG_COUNT: 4,
+          MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT: 0,
+          MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD: null,
+        }),
+      ],
+    });
+
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
+
+    expect(result?.find((state) => state.area === 'evt')?.statDetail).toEqual({ text: '1 registration' });
+    expect(result?.find((state) => state.area === 'mem')?.statDetail).toEqual({ text: '0 of 4 unsecured', tone: 'none' });
+  });
+
+  it('hides the members line instead of claiming "0 of N unsecured" when the unsecured count is unmeasured', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [buildKpiWideRow({ MEMBERS_RENEWING_90D_ORG_COUNT: 7, MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT: null })],
+    });
+
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
+
+    expect(result?.find((state) => state.area === 'mem')?.statDetail).toBeUndefined();
+  });
+
+  it('hides both detail lines when their counts are unmeasured', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [buildKpiWideRow({ EVENTS_REGISTRATIONS_COUNT: null, EVENTS_REGISTRATIONS_GOAL: 1500, MEMBERS_RENEWING_90D_ORG_COUNT: null })],
+    });
+
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
+
+    expect(result?.find((state) => state.area === 'evt')?.statDetail).toBeUndefined();
+    expect(result?.find((state) => state.area === 'mem')?.statDetail).toBeUndefined();
+  });
+});
+
+describe('ProjectService — getHealthOverviewSignals', () => {
+  let service: ProjectService;
+
+  const signalRow = (overrides: Record<string, string | null> = {}): Record<string, string | null> => ({
+    PERIOD_SLUG: 'ytd',
+    SIGNAL_KEY: 'members_renewals_with_overdue',
+    SEVERITY_BAND: 'needs_action',
+    CATEGORY: 'MEMBERS',
+    HEADLINE: 'Renewals are overdue',
+    BODY: 'Two renewals are past due.',
+    METRIC_VALUE: '2',
+    METRIC_CAPTION: 'overdue renewals',
+    METRIC_SECONDARY: null,
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    execute.mockReset();
+    vi.mocked(SnowflakeService.isMissingObjectError).mockReturnValue(false);
+    service = new ProjectService();
+  });
+
+  it('reads every period in one ordered, one-bind query', async () => {
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    await service.getHealthOverviewSignals('cncf');
+
+    const [query, binds] = execute.mock.calls[0];
+    expect(binds).toEqual(['cncf']);
+    expect((query as string).match(/\?/g)).toHaveLength(1);
+    expect(query).toContain('HEALTH_OVERVIEW_SIGNALS');
+    expect(query).toContain('ORDER BY period_slug, severity_rank, sort_rank');
+  });
+
+  it('maps rows onto findings keyed by range, ranked in arrival order within each period', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        signalRow({ PERIOD_SLUG: 'last_completed_year' }),
+        signalRow(),
+        signalRow({ SIGNAL_KEY: 'members_board_reps_never_attended', SEVERITY_BAND: 'needs_attention', METRIC_SECONDARY: 'of 9 seats' }),
+      ],
+    });
+
+    const result = await service.getHealthOverviewSignals('cncf');
+
+    expect(result['COMPLETED_YEAR']).toHaveLength(1);
+    expect(result['YTD']).toEqual([
+      {
+        classification: 'act',
+        area: 'mem',
+        title: 'Renewals are overdue',
+        sentence: 'Two renewals are past due.',
+        keyValue: '2',
+        keyLabel: 'overdue renewals',
+        linkTarget: 'mem.renewals',
+        sortRank: 0,
+        evaluatedAt: '',
+      },
+      expect.objectContaining({ classification: 'watch', linkTarget: 'mem.board', keySecondary: 'of 9 seats', sortRank: 1 }),
+    ]);
+  });
+
+  it("falls back to the area's tile link for an unmapped signal key", async () => {
+    execute.mockResolvedValueOnce({ rows: [signalRow({ SIGNAL_KEY: 'engagement_new_signal', CATEGORY: 'ENGAGEMENT', SEVERITY_BAND: 'opportunity' })] });
+
+    const result = await service.getHealthOverviewSignals('cncf');
+
+    expect(result['YTD']).toEqual([expect.objectContaining({ area: 'eng', classification: 'opp', linkTarget: 'eng.groups' })]);
+  });
+
+  it('drops a headless row or one whose period, band or category has no mapping instead of misfiling it', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        signalRow({ PERIOD_SLUG: '4th_last_completed_year' }),
+        signalRow({ SEVERITY_BAND: 'unknown' }),
+        signalRow({ CATEGORY: 'CODE' }),
+        signalRow({ CATEGORY: 'constructor' }),
+        signalRow({ HEADLINE: null }),
+        signalRow({ HEADLINE: '' }),
+      ],
+    });
+    debug.mockClear();
+
+    const result = await service.getHealthOverviewSignals('cncf');
+
+    expect(result).toEqual({});
+    expect(debug).toHaveBeenCalledWith(
+      undefined,
+      'get_health_overview_signals',
+      expect.any(String),
+      expect.objectContaining({ row_count: 6, dropped_count: 6 })
+    );
+  });
+
+  it('returns no findings instead of a 5xx when the table is not deployed yet', async () => {
+    vi.mocked(SnowflakeService.isMissingObjectError).mockReturnValue(true);
+    execute.mockRejectedValueOnce(new Error('Object does not exist'));
+
+    await expect(service.getHealthOverviewSignals('cncf')).resolves.toEqual({});
+  });
+
+  it('rethrows any other read failure', async () => {
+    execute.mockRejectedValueOnce(new Error('warehouse suspended'));
+
+    await expect(service.getHealthOverviewSignals('cncf')).rejects.toThrow('warehouse suspended');
   });
 });
 
@@ -2603,33 +2848,40 @@ describe('ProjectService — getFoundationProfileSummary', () => {
 
   it('formats a fetched row into display strings, pinning to a single row', async () => {
     execute.mockResolvedValueOnce({
-      rows: [{ PROJECT_COUNT: 14, MEMBERSHIP_TIER_COUNT: 4, BOARD_SEAT_COUNT: 12, RENEWALS_NEXT_90D_COUNT: 5 }],
+      rows: [{ MEMBER_COUNT: 1725, PROJECT_COUNT: 14, MEMBERSHIP_TIER_COUNT: 4, BOARD_SEAT_COUNT: 12, RENEWALS_NEXT_90D_COUNT: 5 }],
     });
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+    expect(result).toEqual({
+      dataAvailable: true,
+      size: '1,725 members',
+      projects: '14',
+      tiers: '4 tiers',
+      board: '12 seats',
+      nextRenewals: '5 in the next 90 days',
+    });
     expect(execute.mock.calls[0][0]).toContain('LIMIT 1');
   });
 
   it('singularizes tier and seat labels when the count is exactly 1', async () => {
     execute.mockResolvedValueOnce({
-      rows: [{ PROJECT_COUNT: 1, MEMBERSHIP_TIER_COUNT: 1, BOARD_SEAT_COUNT: 1, RENEWALS_NEXT_90D_COUNT: 0 }],
+      rows: [{ MEMBER_COUNT: 1, PROJECT_COUNT: 1, MEMBERSHIP_TIER_COUNT: 1, BOARD_SEAT_COUNT: 1, RENEWALS_NEXT_90D_COUNT: 0 }],
     });
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ dataAvailable: true, projects: '1', tiers: '1 tier', board: '1 seat', nextRenewals: '0 in the next 90 days' });
+    expect(result).toEqual({ dataAvailable: true, size: '1 member', projects: '1', tiers: '1 tier', board: '1 seat', nextRenewals: '0 in the next 90 days' });
   });
 
   it('renders a null column as an em dash rather than a zero count', async () => {
     execute.mockResolvedValueOnce({
-      rows: [{ PROJECT_COUNT: 3, MEMBERSHIP_TIER_COUNT: null, BOARD_SEAT_COUNT: null, RENEWALS_NEXT_90D_COUNT: null }],
+      rows: [{ MEMBER_COUNT: null, PROJECT_COUNT: 3, MEMBERSHIP_TIER_COUNT: null, BOARD_SEAT_COUNT: null, RENEWALS_NEXT_90D_COUNT: null }],
     });
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ dataAvailable: true, projects: '3', tiers: '—', board: '—', nextRenewals: '—' });
+    expect(result).toEqual({ dataAvailable: true, size: '—', projects: '3', tiers: '—', board: '—', nextRenewals: '—' });
   });
 
   it('returns the unavailable default when no row is returned for the foundation', async () => {
@@ -2637,7 +2889,7 @@ describe('ProjectService — getFoundationProfileSummary', () => {
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ dataAvailable: false, projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
+    expect(result).toEqual({ dataAvailable: false, size: '—', projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
   });
 
   it('returns the unavailable default instead of a 5xx when the table is not deployed yet', async () => {
@@ -2646,7 +2898,7 @@ describe('ProjectService — getFoundationProfileSummary', () => {
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ dataAvailable: false, projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
+    expect(result).toEqual({ dataAvailable: false, size: '—', projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
   });
 });
 
@@ -2795,7 +3047,7 @@ describe('ProjectService.updateProjectPermissions', () => {
       code: 'AUTHORIZATION_REQUIRED',
     });
 
-    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer' });
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer_guard' });
     // Nothing may run before the gate: the directory lookup answers "is this address known?"
     // with a distinguishable 404, so reaching it would leak directory membership to a reader.
     expect(natsRequest).not.toHaveBeenCalled();
@@ -3035,7 +3287,7 @@ describe('ProjectService.updateProjectStaff', () => {
       code: 'AUTHORIZATION_REQUIRED',
     });
 
-    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer' });
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer_guard' });
     // Nothing may run before the gate. The directory lookup in particular distinguishes a
     // known email (reaches the write) from an unknown one (404), so letting an unauthorized
     // caller reach it would leak directory membership; the settings read is skipped too.

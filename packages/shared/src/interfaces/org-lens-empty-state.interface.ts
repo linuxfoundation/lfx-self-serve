@@ -36,6 +36,9 @@ export type OrgLensLookupBlocker = Extract<OrgLensEmptyStateName, 'could-not-loa
  */
 export type OrgLensSectionOutcome = 'records' | 'empty' | 'denied' | 'unverifiable' | 'failed';
 
+/** `OrgLensSectionOutcome` minus `empty` — what a section's error-classification reduces to (never `empty`, which only `sectionEmptyState` assigns from a 0-count response). */
+export type OrgLensSectionErrorOutcome = Exclude<OrgLensSectionOutcome, 'empty'>;
+
 /** What the primary / secondary control does when it is not a plain link. */
 export type OrgLensEmptyStateActionKind = 'retry' | 'org-list' | 'reset-filters' | 'contact-support';
 

@@ -8,6 +8,21 @@ import { OffsetPaginatedResponse } from './api.interface';
  */
 export type MeetupTabId = 'upcoming' | 'past';
 
+/** Registration view on the My Meetups Upcoming tab. */
+export type MyMeetupsUpcomingView = 'registered' | 'all';
+
+/** Client parameters for view- and tab-scoped community filter options. */
+export interface GetMeetupFiltersParams {
+  isPast?: boolean;
+  registeredOnly?: boolean;
+}
+
+/** Server options for scoping communities; role options always remain global. */
+export interface GetMeetupFiltersOptions {
+  isPast?: boolean;
+  registeredOnly?: boolean;
+}
+
 /**
  * The set of valid status filter values for My Meetups.
  * Upcoming meetups map these values to whether the authenticated user has a role on the meetup.
@@ -65,10 +80,10 @@ export interface MyMeetup {
 export type MyMeetupsResponse = OffsetPaginatedResponse<MyMeetup>;
 
 /**
- * Response for distinct global meetup filter options
+ * Response for distinct meetup filter options
  */
 export interface MeetupFilterOptionsResponse {
-  /** Community names available in the global meetup filter catalog */
+  /** Community names available in the requested view and tab */
   communities: string[];
   /** Meetup roles available in the global meetup filter catalog */
   roles: string[];
@@ -112,6 +127,8 @@ export interface MeetupRow {
   STARTS_AT: Date | string;
   EVENT_NAME: string;
   COMMUNITY: string;
+  /** Canonical OCG source community.name used for routing, distinct from display COMMUNITY */
+  COMMUNITY_SLUG: string;
   DATE: string;
   LOCATION: string;
   ROLES: string | null;

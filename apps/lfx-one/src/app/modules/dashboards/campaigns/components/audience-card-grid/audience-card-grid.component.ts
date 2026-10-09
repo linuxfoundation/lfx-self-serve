@@ -22,10 +22,14 @@ export class AudienceCardGridComponent {
   // === Inputs ===
   public readonly buckets = input<readonly AudienceCardBucket[]>([]);
   public readonly selectedIds = input<ReadonlySet<string>>(new Set<string>());
+  /** Lists marked as exclusions. Include and Exclude are mutually exclusive; the container enforces it. */
+  public readonly excludedIds = input<ReadonlySet<string>>(new Set<string>());
   public readonly disabled = input(false);
 
   // === Outputs ===
   public readonly toggleList = output<string>();
+  /** Marks or unmarks a list as an exclusion -- contacts on it are kept OFF the send. */
+  public readonly toggleExclude = output<string>();
 
   // === Computed Signals ===
   /**
@@ -43,11 +47,17 @@ export class AudienceCardGridComponent {
    */
   protected readonly populated = computed(() => {
     const selected = this.selectedIds();
+    const excluded = this.excludedIds();
     return this.buckets()
       .filter((bucket) => bucket.lists.length > 0)
       .map((bucket) => ({
         ...bucket,
-        lists: bucket.lists.map((list) => ({ ...list, selected: selected.has(list.listId), sizeText: this.sizeLabel(list) })),
+        lists: bucket.lists.map((list) => ({
+          ...list,
+          selected: selected.has(list.listId),
+          excluded: excluded.has(list.listId),
+          sizeText: this.sizeLabel(list),
+        })),
       }));
   });
 
@@ -61,6 +71,12 @@ export class AudienceCardGridComponent {
   protected onToggle(listId: string): void {
     if (!this.disabled()) {
       this.toggleList.emit(listId);
+    }
+  }
+
+  protected onToggleExclude(listId: string): void {
+    if (!this.disabled()) {
+      this.toggleExclude.emit(listId);
     }
   }
 
