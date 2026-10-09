@@ -655,6 +655,16 @@ export interface MeetingRegistrant {
 }
 
 /**
+ * Registrants matched by the signed-in user's other verified emails.
+ */
+export interface MeetingRegistrantsByVerifiedEmails {
+  /** Matches ordered by email priority (meeting-invite preference first). */
+  registrants: MeetingRegistrant[];
+  /** True when nothing matched and an email source was unavailable. */
+  lookupFailed: boolean;
+}
+
+/**
  * What a public self-registration (`POST /public/api/meetings/register`) actually returns.
  * @description Narrower than `MeetingRegistrant`. The route is mounted on the optional-auth `/public/api`
  * surface, but the handler itself requires a session and a bearer token, so the caller is an authenticated

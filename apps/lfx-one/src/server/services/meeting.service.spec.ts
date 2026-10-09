@@ -17,7 +17,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // path alias isn't wired here, so runtime shared subpaths and the constructed collaborators must be
 // mocked (mirrors session-store.service.spec.ts / meeting.helper.spec.ts). Only the
 // microservice-proxy call path is exercised; the query-service pagination helper runs for real.
-const { proxyRequest, proxyRequestWithResponse, committeeSvc, accessCheckSvc } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, committeeSvc, accessCheckSvc, getUserVerifiedEmails } = vi.hoisted(() => ({
+  getUserVerifiedEmails: vi.fn(),
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   committeeSvc: { getCommitteeById: vi.fn() },
@@ -75,6 +76,11 @@ vi.mock('./committee.service', () => ({
   }),
 }));
 vi.mock('./project.service', () => ({ ProjectService: class {} }));
+vi.mock('./user-verified-emails.service', () => ({
+  UserVerifiedEmailsService: vi.fn(function () {
+    return { getUserVerifiedEmails };
+  }),
+}));
 vi.mock('../utils/auth-helper', () => ({
   getEffectiveEmail: vi.fn(),
   getEffectiveUsername: vi.fn(),
@@ -439,6 +445,120 @@ describe('MeetingService.getMeetingRegistrantsByEmail', () => {
 
     const [, , , , query] = proxyRequest.mock.calls[0];
     expect(query.page_size).toBe(1000);
+  });
+
+  it('matches the stored casing or the lowercased copy', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+
+    await service.getMeetingRegistrantsByEmail(req, 'meeting-1', 'User@Example.com');
+
+    const [, , , , query] = proxyRequest.mock.calls[0];
+    expect(query.filters).toEqual(['meeting_id:meeting-1']);
+    expect(query.filters_or).toEqual(['email:user@example.com', 'case_insensitive_email:user@example.com']);
+  });
+});
+
+describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
+  let service: MeetingService;
+  const registrantPage = (rows: Partial<MeetingRegistrant>[]) => ({
+    resources: rows.map((row) => ({ id: `v1_meeting_registrant:${row.uid}`, data: row })),
+  });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getUserVerifiedEmails.mockReset();
+    getUserVerifiedEmails.mockResolvedValue({ emails: ['user+meetings@example.com'], preferenceEmail: null, incomplete: false });
+    service = new MeetingService();
+  });
+
+  it('matches the current user case-insensitively without resolving other emails', async () => {
+    proxyRequest.mockResolvedValueOnce(registrantPage([]));
+
+    const rows = await service.getMeetingRegistrantsForUser(req, 'm-1', 'User@Example.com', undefined, 'm2m');
+
+    expect(rows).toEqual([]);
+    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['email:user@example.com', 'case_insensitive_email:user@example.com']);
+    expect(getUserVerifiedEmails).not.toHaveBeenCalled();
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('queries the other verified emails in one call', async () => {
+    getUserVerifiedEmails.mockResolvedValue({
+      emails: ['user@example.com', 'user+meetings@example.com', 'alt@example.org'],
+      preferenceEmail: null,
+      incomplete: false,
+    });
+    proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-2', email: 'user+meetings@example.com' }]));
+
+    const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'User@Example.com');
+
+    expect(result.registrants.map((row) => row.uid)).toEqual(['reg-2']);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    const [, , , , params] = proxyRequest.mock.calls[0];
+    expect(params).toMatchObject({
+      filters: ['meeting_id:m-1'],
+      filters_or: [
+        'email:user+meetings@example.com',
+        'case_insensitive_email:user+meetings@example.com',
+        'email:alt@example.org',
+        'case_insensitive_email:alt@example.org',
+      ],
+    });
+  });
+
+  it('skips the query when there are no other verified emails', async () => {
+    getUserVerifiedEmails.mockResolvedValue({ emails: ['user@example.com'], preferenceEmail: null, incomplete: false });
+
+    const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'user@example.com');
+
+    expect(result).toEqual({ registrants: [], lookupFailed: false });
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('orders matches by email priority', async () => {
+    getUserVerifiedEmails.mockResolvedValue({ emails: ['pref@example.com', 'alt@example.org'], preferenceEmail: 'pref@example.com', incomplete: false });
+    proxyRequest.mockResolvedValueOnce(
+      registrantPage([
+        { uid: 'reg-alt', email: 'alt@example.org' },
+        { uid: 'reg-pref', email: 'Pref@Example.com' },
+      ])
+    );
+
+    const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', undefined);
+
+    expect(result.registrants.map((row) => row.uid)).toEqual(['reg-pref', 'reg-alt']);
+    expect(logger.info).toHaveBeenCalledWith(
+      req,
+      'get_meeting_registrants_by_verified_emails',
+      expect.any(String),
+      expect.objectContaining({ matched_source: 'meeting_invite_preference' })
+    );
+    expect(result.lookupFailed).toBe(false);
+  });
+
+  it('reports a failed lookup only when nothing matched', async () => {
+    getUserVerifiedEmails.mockResolvedValue({ emails: [], preferenceEmail: null, incomplete: true });
+
+    const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'user@example.com');
+
+    expect(result).toEqual({ registrants: [], lookupFailed: true });
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not report a failed lookup when a partial lookup still matched', async () => {
+    getUserVerifiedEmails.mockResolvedValue({ emails: ['user+meetings@example.com'], preferenceEmail: null, incomplete: true });
+    proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-2', email: 'user+meetings@example.com' }]));
+
+    const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'user@example.com');
+
+    expect(result.lookupFailed).toBe(false);
+    expect(result.registrants).toHaveLength(1);
+  });
+
+  it('propagates a query-service failure', async () => {
+    proxyRequest.mockRejectedValue(Object.assign(new Error('boom'), { statusCode: 400 }));
+
+    await expect(service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', undefined)).rejects.toThrow('boom');
   });
 });
 

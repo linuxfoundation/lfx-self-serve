@@ -48,6 +48,18 @@ export interface EmailManagementData {
 }
 
 /**
+ * A signed-in user's verified emails for matching their records.
+ */
+export interface UserVerifiedEmails {
+  /** Lowercased, deduped, in priority order: meeting-invite preference, primary, verified alternates. */
+  emails: string[];
+  /** The meeting-invite preference, when set; also `emails[0]`. */
+  preferenceEmail: string | null;
+  /** True when a source that should have been queried failed, so `emails` may be missing addresses. */
+  incomplete: boolean;
+}
+
+/**
  * Preferred meeting-invitation email from the meeting-service.
  * Both fields are null when the user has no explicit override (i.e. meeting invitations
  * fall back to the primary email).
