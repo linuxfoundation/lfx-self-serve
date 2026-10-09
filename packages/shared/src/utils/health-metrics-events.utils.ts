@@ -13,6 +13,7 @@ import {
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
+  HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_VIRTUAL_SHARE,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS,
   HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD,
@@ -309,7 +310,10 @@ export function buildHealthMetricsEventsAtAGlanceView(glance: HealthMetricsEvent
   };
 }
 
-/** One period's revenue section; the table lists only the events in that period, matching the headline. */
+/**
+ * One period's revenue section; the table lists only the past events in that period, matching the headline.
+ * Upcoming events fall in no period, so they list apart on the current-year view, soonest first.
+ */
 export function buildHealthMetricsEventsRevenueView(revenue: HealthMetricsEventsRevenue, range: HealthMetricsRange): HealthMetricsEventsRevenueView {
   const period = revenue.periods.find((candidate) => candidate.range === range) ?? null;
   const changes = period?.changes ?? null;
@@ -327,7 +331,14 @@ export function buildHealthMetricsEventsRevenueView(revenue: HealthMetricsEvents
     ...change,
     warn: false,
   });
-  const rows = revenue.events.filter((event) => event.ranges.some((candidate) => candidate === range)).map(buildRevenueRowView);
+  const rows = revenue.events.filter((event) => event.isPastEvent && event.ranges.some((candidate) => candidate === range)).map(buildRevenueRowView);
+  const upcomingRows =
+    range === 'YTD'
+      ? revenue.events
+          .filter((event) => !event.isPastEvent)
+          .sort((a, b) => compareUpcomingStartDates(a.eventStartDate, b.eventStartDate))
+          .map(buildRevenueRowView)
+      : [];
 
   return {
     foundationMeasured: revenue.periods.length > 0,
@@ -339,8 +350,9 @@ export function buildHealthMetricsEventsRevenueView(revenue: HealthMetricsEvents
       { key: 'split', label: 'Split', value: formatRevenueSplit(period?.registrationShare ?? null), delta: null, deltaDirection: 'neutral', warn: false },
     ],
     rows,
+    upcomingRows,
     eventsMeasured: revenue.eventsMeasured,
-    hasUnconverted: period?.hasUnconverted === true || rows.some((row) => row.event.hasUnconverted),
+    hasUnconverted: period?.hasUnconverted === true || [...rows, ...upcomingRows].some((row) => row.event.hasUnconverted),
     headlineUnconverted: period?.hasUnconverted === true,
   };
 }
@@ -620,7 +632,22 @@ function buildRevenueRowView(event: HealthMetricsEventsRevenueEvent): HealthMetr
     registrationGoalLabel: formatRevenueGoal(event.registrationGoal, event.registrationGoalWithheld),
     sponsorshipLabel: formatHealthMetricsEventsRevenue(event.sponsorshipUsd),
     sponsorshipGoalLabel: formatRevenueGoal(event.sponsorshipGoal, event.sponsorshipGoalWithheld),
+    goalStatus: resolveRevenueGoalStatus(event),
   };
+}
+
+/** Only a past event with a goal in USD carries a chip; the model leaves the flag unset otherwise. */
+function resolveRevenueGoalStatus(event: HealthMetricsEventsRevenueEvent): HealthMetricsEventsRevenueRowView['goalStatus'] {
+  if (!event.isPastEvent || event.goalMet === null) return null;
+  return event.goalMet ? HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES.met : HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES.missed;
+}
+
+/** Soonest first, with an undated event last so it can't top the list. */
+function compareUpcomingStartDates(a: string | null, b: string | null): number {
+  if (a === b) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return a.localeCompare(b);
 }
 
 function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEventsPastRowView {

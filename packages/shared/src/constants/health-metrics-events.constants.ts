@@ -242,6 +242,12 @@ export const HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_NOTE =
 /** Screen-reader text for the * marker on a figure that leaves out unconverted revenue. */
 export const HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_SCREEN_READER_TEXT = '(leaves out local-currency amounts not yet converted to USD)';
 
+/** Attainment chips for a past event against its combined goal; read off the past-events chips so the two can't drift. */
+export const HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES = {
+  met: { label: HEALTH_METRICS_EVENTS_PAST_STATUSES.hit.label, badgeClass: HEALTH_METRICS_EVENTS_PAST_STATUSES.hit.badgeClass },
+  missed: { label: HEALTH_METRICS_EVENTS_PAST_STATUSES.missed.label, badgeClass: HEALTH_METRICS_EVENTS_PAST_STATUSES.missed.badgeClass },
+} as const;
+
 /** Stands in for a goal set in a currency with no USD rate, so it never reads as no goal. */
 export const HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD = 'goal not in USD';
 
