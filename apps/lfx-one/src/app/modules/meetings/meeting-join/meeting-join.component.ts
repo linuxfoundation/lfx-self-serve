@@ -1455,7 +1455,7 @@ export class MeetingJoinComponent implements OnInit {
   private initializeCanRegisterForMeeting(): Signal<boolean> {
     return computed(() => {
       const meeting = this.meeting();
-      return !this.isInvited() && !this.optimisticInvited() && !meeting?.restricted && meeting?.visibility === 'public';
+      return !this.effectivelyInvited() && !meeting?.restricted && meeting?.visibility === 'public';
     });
   }
 

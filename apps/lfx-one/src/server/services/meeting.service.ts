@@ -1207,8 +1207,8 @@ export class MeetingService {
    * Removes the authenticated user as a registrant of a meeting using their own bearer token.
    * The caller's registrant records are resolved server-side (by email or username) so the client
    * never needs a registrant UID; upstream re-verifies ownership and returns 403 for anyone else's
-   * record. Registrants added through a committee cannot be removed individually — the user has to
-   * leave the committee instead — so they are rejected here rather than surfacing an upstream 400.
+   * record. Committee-sourced registrants are re-created by committee sync (and the ITX delete refuses them),
+   * so the user has to leave the committee instead; they are rejected here with a message that says so.
    * @returns the number of registrant records removed
    */
   public async removeMeetingRegistrantSelf(

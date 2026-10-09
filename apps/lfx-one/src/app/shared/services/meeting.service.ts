@@ -644,7 +644,7 @@ export class MeetingService {
   }
 
   public removeMyMeetingRegistration(meetingUid: string): Observable<void> {
-    return this.http.delete<void>(`/api/meetings/${meetingUid}/registrants/self`).pipe(
+    return this.http.delete<void>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self`).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to remove current user from meeting ${meetingUid}:`, error);

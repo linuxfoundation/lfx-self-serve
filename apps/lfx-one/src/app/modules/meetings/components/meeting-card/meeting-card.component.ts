@@ -171,6 +171,9 @@ export class MeetingCardComponent implements OnInit {
    */
   public drawerGuestCount: WritableSignal<number | null> = signal(null);
   private readonly optimisticInvited: WritableSignal<boolean> = signal(false);
+  // Set once the user removes themselves so the card does not offer "Remove" again while the refetched
+  // `invited` flag is still stale (query-service indexing lag). Cleared when the card is reused for another meeting.
+  private readonly optimisticLeft: WritableSignal<boolean> = signal(false);
   // Host-flagged people surfaced by the registrants drawer, fed to the organizer chip so it
   // resolves the same organizer set the drawer badges (see resolvedHostsChange).
   public drawerHosts: WritableSignal<MeetingHostCandidate[]> = signal<MeetingHostCandidate[]>([]);
@@ -178,6 +181,7 @@ export class MeetingCardComponent implements OnInit {
   public materialsDrawerVisible = signal(false);
   /** Set while the pre-open write-access probe is in flight, so the edit button cannot be double-fired. */
   public checkingEditAccess: WritableSignal<boolean> = signal(false);
+  public readonly leavingMeeting: WritableSignal<boolean> = signal(false);
 
   // Computed values for template
   public readonly summaryContent: Signal<string | null> = this.initSummaryContent();
@@ -226,13 +230,12 @@ export class MeetingCardComponent implements OnInit {
   public readonly isInvited: Signal<boolean> = computed(() => this.meeting().invited ?? false);
   // True when the user is invited OR has just registered in this session (optimistic, before the
   // meeting refetch settles invited:true). Used to show RSVP options immediately after registration.
-  public readonly effectivelyInvited: Signal<boolean> = computed(() => this.isInvited() || this.optimisticInvited());
+  public readonly effectivelyInvited: Signal<boolean> = computed(() => (this.isInvited() && !this.optimisticLeft()) || this.optimisticInvited());
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
   public readonly attendeeListShared: Signal<boolean> = computed(() => isMeetingAttendeeListShared(this.meeting()));
   public readonly canLeaveMeeting: Signal<boolean> = computed(
     () => this.authenticated() && this.effectivelyInvited() && !this.meeting().organizer && !this.pastMeeting()
   );
-  public readonly leavingMeeting: WritableSignal<boolean> = signal(false);
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
@@ -349,7 +352,10 @@ export class MeetingCardComponent implements OnInit {
         skip(1),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(() => this.optimisticInvited.set(false));
+      .subscribe(() => {
+        this.optimisticInvited.set(false);
+        this.optimisticLeft.set(false);
+      });
   }
 
   /**
@@ -496,6 +502,7 @@ export class MeetingCardComponent implements OnInit {
     dialogRef.onClose.pipe(take(1)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
         this.optimisticInvited.set(true);
+        this.optimisticLeft.set(false);
         this.additionalRegistrantsCount.set(this.additionalRegistrantsCount() + 1);
         this.refreshMeeting();
       }
@@ -837,6 +844,7 @@ export class MeetingCardComponent implements OnInit {
       .subscribe({
         next: () => {
           this.optimisticInvited.set(false);
+          this.optimisticLeft.set(true);
           this.meeting.update((meeting) => ({ ...meeting, invited: false, my_rsvp: null }));
           this.messageService.add({
             severity: 'success',

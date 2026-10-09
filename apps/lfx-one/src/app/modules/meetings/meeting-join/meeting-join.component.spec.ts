@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard } from '@angular/cdk/clipboard';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ApplicationRef, makeStateKey, PLATFORM_ID, signal, TransferState } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
@@ -14,7 +14,7 @@ import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { installMatchMediaShim } from '@shared/testing/header-test-providers';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -40,6 +40,8 @@ describe('MeetingJoinComponent', () => {
   let getPastMeetingParticipants: ReturnType<typeof vi.fn>;
   let getPastMeetingTranscript: ReturnType<typeof vi.fn>;
   let getPublicMeetingOccurrences: ReturnType<typeof vi.fn>;
+  let removeMyMeetingRegistration: ReturnType<typeof vi.fn>;
+  let toastAdd: ReturnType<typeof vi.fn>;
   let paramMap$: BehaviorSubject<ParamMap>;
   let queryParamMap$: BehaviorSubject<ParamMap>;
   let authenticated: ReturnType<typeof signal<boolean>>;
@@ -112,6 +114,8 @@ describe('MeetingJoinComponent', () => {
     getPastMeetingParticipants = vi.fn().mockReturnValue(of([]));
     getPastMeetingTranscript = vi.fn().mockReturnValue(of(null));
     getPublicMeetingOccurrences = vi.fn().mockReturnValue(of({ past: [], future: [] }));
+    removeMyMeetingRegistration = vi.fn().mockReturnValue(of(undefined));
+    toastAdd = vi.fn();
 
     TestBed.configureTestingModule({
       imports: [MeetingJoinComponent],
@@ -142,6 +146,7 @@ describe('MeetingJoinComponent', () => {
             getPublicMeetingOccurrences,
             getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: undefined })),
             getMyMeetingRegistrants,
+            removeMyMeetingRegistration,
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRsvpForCurrentUser: vi.fn().mockReturnValue(of(null)),
             getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
@@ -180,7 +185,7 @@ describe('MeetingJoinComponent', () => {
         { provide: ProjectContextService, useValue: { setFoundation: vi.fn() } },
         { provide: PlausibleService, useValue: { ready: signal(true), trackPage: vi.fn() } },
         { provide: Clipboard, useValue: { copy: vi.fn() } },
-        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MessageService, useValue: { add: toastAdd } },
       ],
     });
   });
@@ -1042,6 +1047,77 @@ describe('MeetingJoinComponent', () => {
 
       expect(toggle.textContent).toContain(`Host Key: ${HOST_KEY}`);
       expect(fixture.nativeElement.querySelector('[data-testid="host-key-copy"]')).not.toBeNull();
+    });
+  });
+
+  describe('removing yourself from the meeting', () => {
+    const REMOVE_BUTTON = '[data-testid="leave-meeting-button"]';
+    const REGISTER_BUTTON = '[data-testid="register-meeting-button"]';
+
+    const createFixture = async (meeting: Meeting) => {
+      getPublicMeeting.mockReturnValue(of({ meeting, project: buildProject() }));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+      return fixture;
+    };
+
+    /** Takes over the dialog the component's own `ConfirmationService` would open, and accepts it. */
+    const confirmAndAccept = async (fixture: Awaited<ReturnType<typeof createFixture>>) => {
+      const confirmation = fixture.debugElement.injector.get(ConfirmationService);
+      const confirm = vi.spyOn(confirmation, 'confirm').mockImplementation((options) => {
+        options.accept?.();
+        return confirmation;
+      });
+      fixture.componentInstance.confirmLeaveMeeting();
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+      return confirm;
+    };
+
+    it('offers the action to a signed-in invitee who is not an organizer', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+      expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).not.toBeNull();
+      expect(fixture.nativeElement.querySelector(REGISTER_BUTTON)).toBeNull();
+    });
+
+    it('does not offer it to someone who is not invited, who can register instead', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: false, invited: false }));
+
+      expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).toBeNull();
+      expect(fixture.nativeElement.querySelector(REGISTER_BUTTON)).not.toBeNull();
+    });
+
+    it('does not offer it to an organizer', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: true, invited: true }));
+
+      expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).toBeNull();
+    });
+
+    it('removes the viewer once confirmed and swaps the action for registering, even while the refetched flag is stale', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+      await confirmAndAccept(fixture);
+
+      expect(removeMyMeetingRegistration).toHaveBeenCalledWith(MEETING_ID);
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+      // `getPublicMeeting` keeps answering `invited: true`, which is the indexing lag the page must outlast.
+      expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).toBeNull();
+      expect(fixture.nativeElement.querySelector(REGISTER_BUTTON)).not.toBeNull();
+    });
+
+    it('keeps the action and shows the BFF message when it rejected the request itself', async () => {
+      removeMyMeetingRegistration.mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'Leave the committee instead.' } }))
+      );
+      const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+      await confirmAndAccept(fixture);
+
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: expect.stringContaining('Leave the committee instead.') }));
+      expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).not.toBeNull();
     });
   });
 });

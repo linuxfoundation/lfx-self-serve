@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, input, signal } from '@angular/core';
 import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
@@ -469,5 +470,125 @@ describe('MeetingCardComponent — invitee panels', () => {
 
     expect(card.querySelector('lfx-rsvp-button-group')).not.toBeNull();
     expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
+  });
+});
+
+/**
+ * Covers the "remove myself" action: when the card offers it, what the confirm leads to, and how it
+ * settles. The viewer's registrant id never reaches the client — the BFF resolves it — so the call
+ * takes the meeting id alone.
+ */
+describe('MeetingCardComponent — remove myself', () => {
+  const INVITEE = { id: 'meeting-1', project_uid: 'project-1', organizer: false, invited: true, title: 'TAC Sync' } as Meeting;
+
+  let toastAdd: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.fn>;
+  let removeMyMeetingRegistration: ReturnType<typeof vi.fn>;
+
+  async function mount(meeting: Meeting = INVITEE, options: { authenticated?: boolean; past?: boolean } = {}): Promise<MeetingCardComponent> {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: UserService, useValue: { user: signal(null), authenticated: signal(options.authenticated ?? true) } },
+        { provide: ProjectService, useValue: { project: signal(null) } },
+        { provide: MeetingComposerService, useValue: { open: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
+        { provide: MessageService, useValue: { add: toastAdd } },
+        { provide: Router, useValue: { navigate: vi.fn() } },
+        { provide: ConfirmationService, useValue: { confirm } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        {
+          provide: MeetingService,
+          useValue: {
+            removeMyMeetingRegistration,
+            getPastMeetingRecording: vi.fn().mockReturnValue(of(null)),
+            getPastMeetingSummary: vi.fn().mockReturnValue(of(null)),
+            getPastMeetingTranscript: vi.fn().mockReturnValue(of(null)),
+            getMeeting: vi.fn().mockReturnValue(of(meeting)),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: '' })),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingCardComponent, { set: { template: '', imports: [], providers: [] } });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingCardComponent);
+    fixture.componentRef.setInput('meetingInput', meeting);
+    fixture.componentRef.setInput('pastMeeting', options.past ?? false);
+    fixture.detectChanges();
+
+    return fixture.componentInstance;
+  }
+
+  beforeEach(() => {
+    toastAdd = vi.fn();
+    confirm = vi.fn();
+    removeMyMeetingRegistration = vi.fn().mockReturnValue(of(undefined));
+  });
+
+  it('offers the action to a signed-in invitee of an upcoming meeting', async () => {
+    const component = await mount();
+
+    expect(component.canLeaveMeeting()).toBe(true);
+  });
+
+  it.each([
+    ['an organizer', { ...INVITEE, organizer: true } as Meeting, {}],
+    ['someone who is not invited', { ...INVITEE, invited: false } as Meeting, {}],
+    ['a past meeting', INVITEE, { past: true }],
+    ['an anonymous viewer', INVITEE, { authenticated: false }],
+  ])('does not offer the action to %s', async (_label, meeting, options) => {
+    const component = await mount(meeting, options);
+
+    expect(component.canLeaveMeeting()).toBe(false);
+  });
+
+  it('asks for confirmation first and removes only once it is accepted', async () => {
+    const component = await mount();
+
+    component.confirmLeaveMeeting();
+
+    expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+    confirm.mock.calls[0][0].accept();
+    expect(removeMyMeetingRegistration).toHaveBeenCalledWith('meeting-1');
+  });
+
+  it('stops offering the action and tells the list to refresh once removed', async () => {
+    const component = await mount();
+    const deleted = vi.fn();
+    component.meetingDeleted.subscribe(deleted);
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+
+    expect(component.canLeaveMeeting()).toBe(false);
+    expect(deleted).toHaveBeenCalledTimes(1);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+  });
+
+  it('shows the BFF message when it rejected the request itself, such as a committee-added registrant', async () => {
+    removeMyMeetingRegistration.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'Leave the committee instead.' } }))
+    );
+    const component = await mount();
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: expect.stringContaining('Leave the committee instead.') }));
+  });
+
+  it('shows generic copy for any other failure and keeps the action available', async () => {
+    removeMyMeetingRegistration.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: 'boom' })));
+    const component = await mount();
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Unable to remove you from this meeting. Please try again.' }));
   });
 });
