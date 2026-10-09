@@ -28,6 +28,15 @@ export const MY_DOCUMENT_SOURCE_TAGS: Record<MyDocumentSource, { value: string; 
   project: { value: 'Project', severity: 'accent', icon: 'fa-light fa-folder', iconClass: 'text-gray-400' },
 };
 
+/** Sources that already say what the document is, for rows that don't carry an explicit `documentKind`. */
+export const DOCUMENT_KIND_BY_SOURCE: Partial<Record<MyDocumentSource, DocumentKind>> = {
+  file: 'file',
+  link: 'link',
+  recording: 'recording',
+  transcript: 'transcript',
+  summary: 'summary',
+};
+
 /** Label bubble shown next to a document's name, keyed by what the document is. */
 export const DOCUMENT_KIND_TAGS: Record<DocumentKind, { value: string; severity: TagSeverity }> = {
   file: { value: 'File', severity: 'info' },

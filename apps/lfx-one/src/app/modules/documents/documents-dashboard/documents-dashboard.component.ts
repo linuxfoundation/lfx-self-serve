@@ -16,7 +16,6 @@ import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
 import {
   DocumentFormMode,
-  DocumentKind,
   FilterPillOption,
   MyDocumentItem,
   MyDocumentSource,
@@ -24,6 +23,7 @@ import {
   ProjectDocument,
   ProjectDocumentSource,
 } from '@lfx-one/shared/interfaces';
+import { resolveProjectDocumentKind } from '@lfx-one/shared/utils';
 import { DocumentService } from '@services/document.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -429,15 +429,8 @@ export class DocumentsDashboardComponent {
       summaryUid: doc.summary_uid,
       summaryContent: doc.summary_content,
       projectDocumentSource: docSource,
-      documentKind: this.resolveDocumentKind(doc, docSource),
+      documentKind: resolveProjectDocumentKind(doc, docSource),
     };
-  }
-
-  /** Folders get no label; recordings/transcripts/summaries are named by their source; the rest are file or link. */
-  private resolveDocumentKind(doc: ProjectDocument, docSource: ProjectDocumentSource): DocumentKind | undefined {
-    if (doc.type === 'folder') return undefined;
-    if (docSource === 'recording' || docSource === 'transcript' || docSource === 'summary') return docSource;
-    return doc.document_kind ?? (doc.type === 'file' ? 'file' : 'link');
   }
 
   private initFolderOptions(): Signal<{ label: string; value: string }[]> {

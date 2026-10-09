@@ -7970,7 +7970,7 @@ export class ProjectService {
       created_at: a.created_at,
       updated_at: a.updated_at,
       document_source: 'meeting' as const,
-      document_kind: a.link ? ('link' as const) : ('file' as const),
+      document_kind: a.type === 'link' ? ('link' as const) : ('file' as const),
     }));
 
     const pastAttachmentDocs: ProjectDocument[] = (pastAttachments || []).map((a) => ({
@@ -7982,7 +7982,7 @@ export class ProjectService {
       created_at: a.created_at,
       updated_at: a.updated_at,
       document_source: 'meeting' as const,
-      document_kind: a.link ? ('link' as const) : ('file' as const),
+      document_kind: a.type === 'link' ? ('link' as const) : ('file' as const),
     }));
 
     const pastRecordingDocs: ProjectDocument[] = (pastRecordings || []).map((r) => ({
