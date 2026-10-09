@@ -1191,6 +1191,34 @@
                 are created paused.
               </p>
             </div>
+
+            <!-- Objective. Until now the field was declared on the request and never sent, so both
+                 creators fell back to their own default and every Reddit campaign was built as
+                 Conversions with nothing on screen saying so. The picker starts on that same
+                 default, so turning it on changes nobody's campaign. -->
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="reddit-objective">Objective</label>
+              <select
+                id="reddit-objective"
+                (change)="onRedditObjectiveChange($event)"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-reddit-objective">
+                @for (objective of redditObjectiveOptions; track objective) {
+                  <option [value]="objective" [selected]="objective === redditObjective()">{{ redditObjectiveLabels[objective] }}</option>
+                }
+                <!--
+                  The Meta select's restored-value case, for the same reason and with the same
+                  shape: `[selected]` per option rather than `[value]` on the select, because the
+                  select's value binding is applied while this option does not yet exist and falls
+                  back to index 0. Disabled so a withheld objective stays visible without becoming
+                  newly choosable. `redditObjectiveLabels` is total over `RedditObjective`, so this
+                  can never print `undefined`.
+                -->
+                @if (redditObjectiveIsUnavailable()) {
+                  <option [value]="redditObjective()" [selected]="true" disabled>{{ redditObjectiveLabels[redditObjective()] }} (no longer available)</option>
+                }
+              </select>
+            </div>
           </div>
 
           <!-- Targeting, all AI-recommended from the brief. Rendered read-only so the operator can

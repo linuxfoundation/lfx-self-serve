@@ -11,6 +11,7 @@ import type {
   GOOGLE_CHANNELS_WITH_CREATIVE,
   MICROSOFT_KEYWORDS_WINDOWS,
   REDDIT_CALL_TO_ACTIONS,
+  REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
 } from '../constants/campaign.constants';
 
@@ -80,6 +81,9 @@ export type CampaignProgramType = 'events' | 'education';
 export type CampaignDeliveryType = 'paid-marketing' | 'email';
 
 export type RedditObjective = 'awareness' | 'traffic' | 'conversions' | 'video_views';
+
+/** An objective the picker currently offers — a subset of `RedditObjective`, see that constant. */
+export type SelectableRedditObjective = (typeof REDDIT_SELECTABLE_OBJECTIVES)[number];
 
 /** One of the promoted-post CTA labels Reddit accepts — see `REDDIT_CALL_TO_ACTIONS`. */
 export type RedditCallToAction = (typeof REDDIT_CALL_TO_ACTIONS)[number];
@@ -651,6 +655,16 @@ export interface CampaignImplementationDraft {
    * new binding rather than one that writes the signal and calls `emitDraft` by hand.
    */
   redditBudgetUsd?: number;
+  /**
+   * The Reddit objective, carried for the reason the block above reserves: it is a real editor —
+   * the section's second editable control — so a tab switch would otherwise revert a chosen
+   * objective to the default and change the campaign that gets bought without saying so.
+   *
+   * Typed `RedditObjective`, not `SelectableRedditObjective`: a draft written while an objective
+   * was offered must still round-trip after it is withdrawn, which is the case
+   * `redditObjectiveIsUnavailable` exists to render.
+   */
+  redditObjective?: RedditObjective;
   /**
    * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
    * and the optional CPC bid.

@@ -67,7 +67,10 @@ import {
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
+  DEFAULT_REDDIT_OBJECTIVE,
   REDDIT_MAX_BUDGET_USD,
+  REDDIT_OBJECTIVE_LABELS,
+  REDDIT_SELECTABLE_OBJECTIVES,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -102,6 +105,7 @@ import type {
   MetaPlacement,
   MicrosoftKeyword,
   RedditAdVariant,
+  RedditObjective,
 } from '@lfx-one/shared/interfaces';
 import { codePointLength } from '@lfx-one/shared/utils';
 
@@ -334,6 +338,28 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly videoCreateUnsupportedReason = GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON;
   protected readonly googleCreativeNotice = GOOGLE_CREATIVE_REQUIRED_NOTICE;
   protected readonly redditMaxBudget = REDDIT_MAX_BUDGET_USD;
+  protected readonly redditObjectiveLabels = REDDIT_OBJECTIVE_LABELS;
+  /**
+   * Read from `REDDIT_SELECTABLE_OBJECTIVES`, not from the labels map's keys, for the reason
+   * `metaObjectiveOptions` is: the labels map stays total over `RedditObjective` so a withheld
+   * objective still renders a name, and `video_views` is hidden from the picker only.
+   */
+  protected readonly redditObjectiveOptions = REDDIT_SELECTABLE_OBJECTIVES;
+  /**
+   * True when the current objective is one the picker does not offer — today only `video_views`.
+   *
+   * Exactly the Meta case, and it fails the same way if left out: the template binds `[selected]`
+   * per `<option>` rather than `[value]` on the select, so with no matching option the browser
+   * falls back to index 0 and shows `awareness`, while the signal keeps the stored objective and
+   * still sends it. The screen and the payload then disagree, and the first touch of the control
+   * overwrites the stored value for good. A disabled option is what keeps the two in step.
+   *
+   * The widening cast is deliberate, as it is on the Meta computed: the constant is narrowed to
+   * `SelectableRedditObjective`, which would make `.includes()` reject the very value asked about.
+   */
+  protected readonly redditObjectiveIsUnavailable = computed(
+    () => !(REDDIT_SELECTABLE_OBJECTIVES as readonly RedditObjective[]).includes(this.redditObjective())
+  );
   protected readonly allKnownGeos: LinkedInGeoTarget[] = [...new Map(Object.values(LINKEDIN_GEO_RESOLVE_MAP).map((g) => [g.urn, g])).values()];
   protected readonly todayDate = new Date().toISOString().split('T')[0];
   protected readonly defaultEndDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0];
@@ -513,6 +539,13 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditKeywords = signal<string[]>([]);
   protected readonly redditGeoTargets = signal<string[]>([]);
   protected readonly redditBudgetUsd = signal(500);
+  /**
+   * Reddit campaign objective. Seeded from `DEFAULT_REDDIT_OBJECTIVE` for the reason the Meta
+   * objective is seeded from upstream's: nothing has ever sent this field, so both creators have
+   * been building every Reddit campaign from their own default, and starting the picker anywhere
+   * else would change what an operator who touches nothing receives.
+   */
+  protected readonly redditObjective = signal<RedditObjective>(DEFAULT_REDDIT_OBJECTIVE);
   /**
    * Microsoft's four editable inputs (LFXV2-3312). Signal-backed like the Meta and Reddit blocks,
    * so `campaignForm.valueChanges` never sees them and each handler must `emitDraft()` by hand.
@@ -1552,9 +1585,14 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onRedditBudgetInput(event: Event): void {
     this.redditBudgetUsd.set((event.target as HTMLInputElement).valueAsNumber || 0);
-    // The only Reddit control the template binds today, so this is the one door a Reddit edit
-    // comes through. Deliberately not enumerating the platform's other carried values — a count
-    // here is a claim the next editor added to the template falsifies.
+    // Every Reddit handler emits, because the section's values live in signals that
+    // `campaignForm.valueChanges` never sees. Deliberately not enumerating which controls exist —
+    // a count here is a claim the next editor added to the template falsifies.
+    this.emitDraft();
+  }
+
+  protected onRedditObjectiveChange(event: Event): void {
+    this.redditObjective.set((event.target as HTMLSelectElement).value as RedditObjective);
     this.emitDraft();
   }
 
@@ -1860,6 +1898,10 @@ export class ImplementationTabComponent implements OnInit {
               interests: this.redditInterests(),
               keywords: this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term),
               variants: this.redditVariants(),
+              // Always sent, never conditioned on differing from the default: both creators fall
+              // back to the same objective when it is absent, so an explicit value is the only
+              // thing that makes the payload say what the screen shows.
+              objective: this.redditObjective(),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
             },
           }
@@ -2181,6 +2223,12 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.redditBudgetUsd !== undefined) {
       this.redditBudgetUsd.set(draft.redditBudgetUsd);
     }
+    // Restored even when the picker no longer offers it: `redditObjectiveIsUnavailable` renders a
+    // withheld objective as a disabled option, so the stored value stays visible and stays on the
+    // wire rather than being silently replaced by whatever sits at index 0.
+    if (draft.redditObjective !== undefined) {
+      this.redditObjective.set(draft.redditObjective);
+    }
 
     // Microsoft (LFXV2-3312), on the same present-only rule. The arrays restore on `!== undefined`
     // rather than on truthiness, which is the whole point: an EMPTY list is a deliberate clear the
@@ -2329,6 +2377,7 @@ export class ImplementationTabComponent implements OnInit {
       linkedInBudgetUsd: this.linkedInBudgetUsd(),
       linkedInLifetimeBudget: this.linkedInLifetimeBudget(),
       redditBudgetUsd: this.redditBudgetUsd(),
+      redditObjective: this.redditObjective(),
     });
   }
 

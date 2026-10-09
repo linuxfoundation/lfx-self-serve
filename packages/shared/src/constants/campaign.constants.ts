@@ -1410,6 +1410,33 @@ export const REDDIT_OBJECTIVE_LABELS: Readonly<Record<RedditObjective, string>> 
 } as const;
 
 /**
+ * The objective both creators fall back to when a request omits one.
+ *
+ * Stated here because it has to be what the picker starts on. Nothing has ever sent `objective`,
+ * so every Reddit campaign created to date was built from this default on whichever arm served it
+ * — `defaultRedditObjective` upstream (`client.go:135`) and `config.objective ?? 'conversions'` in
+ * the legacy creator (`reddit-ads.service.ts`), which agree. Seeding the control with anything
+ * else would quietly change what an operator who touches nothing gets.
+ */
+export const DEFAULT_REDDIT_OBJECTIVE: RedditObjective = 'conversions';
+
+/**
+ * The objectives the picker offers, as distinct from the four `RedditObjective` admits.
+ *
+ * `video_views` is withheld because it cannot currently succeed. Reddit has no bare `VIDEO_VIEWS`
+ * optimization goal, so a video-view campaign must name a concrete one; upstream requires a
+ * `videoGoal` from `REDDIT_VIDEO_GOALS` for that objective and refuses the create without it, and
+ * no control collects one yet. (The legacy creator does not refuse — it sends its own
+ * `optimizationGoal: 'VIDEO_VIEWS'`, which is the value Reddit has no such goal for, so that arm
+ * fails at Reddit instead of locally.) Offer it once a goal control exists on both roads.
+ *
+ * `REDDIT_OBJECTIVE_LABELS` stays total over `RedditObjective` rather than being narrowed to this
+ * list, so a draft holding a withheld objective still renders a name instead of `undefined` — the
+ * same split, for the same reason, as `META_SELECTABLE_OBJECTIVES` and `META_OBJECTIVE_LABELS`.
+ */
+export const REDDIT_SELECTABLE_OBJECTIVES = ['awareness', 'traffic', 'conversions'] as const;
+
+/**
  * The call-to-action button labels Reddit accepts on a promoted post.
  *
  * Mirrors `redditCTAs` in lfx-v2-campaign-service `internal/platform/reddit/client.go:552`, which

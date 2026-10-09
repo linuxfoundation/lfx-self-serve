@@ -17,6 +17,7 @@ import {
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_SECTION_TITLES,
   META_OBJECTIVE_LABELS,
+  REDDIT_OBJECTIVE_LABELS,
 } from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
@@ -2143,6 +2144,144 @@ describe('ImplementationTabComponent reddit budget gate', () => {
 });
 
 /**
+ * The Reddit objective picker, which until now did not exist: `objective` was declared on the
+ * request interface and never serialized, so both creators fell back to their own default and
+ * every Reddit campaign was built as Conversions with nothing on screen saying so.
+ *
+ * Structured as Meta's objective suite is, because the same two defects are possible — a picker
+ * offering an objective the platform cannot run, and a restored draft silently displaying the
+ * first selectable value instead of the stored one.
+ */
+describe('ImplementationTabComponent reddit objective', () => {
+  /** Mount with a persisted draft naming `objective`, as a tab revisit would. */
+  async function restoredWithObjective(objective: string): Promise<ComponentFixture<ImplementationTabComponent>> {
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    // `headlines`, `descriptions` and `countryCode` are supplied because `applyDraft` consumes
+    // all three unguarded — it iterates the copy arrays and patches `countryCode` straight onto
+    // the form, which the Reddit geo preview then trims. Every draft `emitDraft` produces carries
+    // them, so this matches the real shape rather than working around anything.
+    restored.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      redditObjective: objective,
+      countryCode: 'US',
+      headlines: [''],
+      descriptions: [''],
+    });
+    // `redditCopy` carries every recommendation array because `populateFromBrief` assigns them
+    // straight through once the key exists, and the read-only chip previews map over the result.
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://events.example.com/k' },
+      selectedPlatforms: ['reddit-ads'],
+      redditCopy: {
+        variants: [{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }],
+        recommendedSubreddits: ['briefsub'],
+        recommendedInterests: ['brief-interest'],
+        recommendedKeywords: ['brief-keyword'],
+        recommendedGeos: ['US'],
+      },
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+    return restored;
+  }
+
+  function objectiveSelect(f: ComponentFixture<ImplementationTabComponent>): HTMLSelectElement {
+    const el = f.nativeElement.querySelector('[data-testid="implementation-reddit-objective"]') as HTMLSelectElement;
+    expect(el).not.toBeNull();
+    return el;
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CampaignService, useValue: { createCampaign: vi.fn(), getLinkedInAccounts: () => of([]) } },
+      ],
+    }).compileComponents();
+  });
+
+  /**
+   * A LITERAL list, for the reason the Meta equivalent is one: comparing against the constant the
+   * template renders from would agree with whatever that constant contained, and so could never
+   * catch an objective appearing or disappearing from the picker.
+   */
+  it('renders exactly the selectable objectives, in order', async () => {
+    const f = await restoredWithObjective('conversions');
+
+    expect(Array.from(objectiveSelect(f).options).map((o) => o.value)).toEqual(['awareness', 'traffic', 'conversions']);
+  });
+
+  /**
+   * `video_views` cannot succeed on either arm today. Reddit has no bare `VIDEO_VIEWS`
+   * optimization goal: campaign-service requires a companion `videoGoal` and refuses the request
+   * without one, and the legacy creator does not refuse — it sends `optimizationGoal:
+   * 'VIDEO_VIEWS'`, which Reddit itself rejects. Offering it would guarantee a failed create.
+   */
+  it('does not offer video_views', async () => {
+    const f = await restoredWithObjective('conversions');
+
+    expect(Array.from(objectiveSelect(f).options).map((o) => o.value)).not.toContain('video_views');
+  });
+
+  /** The label survives the option's removal — a restored draft must still render a name. */
+  it('keeps a label for the withheld video_views objective', () => {
+    expect(REDDIT_OBJECTIVE_LABELS['video_views']).toBe('Video Views');
+  });
+
+  /**
+   * Driven through the REAL draft input rather than by setting the signal: a signal-only test
+   * leaves `applyDraft` unexercised, and a coercion added there — mapping the unrenderable value
+   * onto the first option — would silently discard the stored objective while passing.
+   */
+  it('restores video_views from a persisted draft', async () => {
+    const f = await restoredWithObjective('video_views');
+
+    expect((f.componentInstance as unknown as Record<string, any>)['redditObjective']()).toBe('video_views');
+  });
+
+  /**
+   * The DOM half the signal assertion cannot cover, and the worse symptom: the template selects
+   * per-`<option>` via `[selected]`, so without the disabled legacy option Angular applies the
+   * binding while no matching option exists and the browser falls back to index 0 — the field
+   * would read `Awareness` while the signal held `video_views`, a wrong value the operator could
+   * submit without noticing.
+   */
+  it('shows the restored video_views objective rather than the first selectable one', async () => {
+    const select = objectiveSelect(await restoredWithObjective('video_views'));
+
+    expect(select.value).toBe('video_views');
+    expect(select.options[select.selectedIndex].text).toContain('Video Views');
+  });
+
+  /** Visible, but NOT newly choosable — the whole point of withholding it. */
+  it('renders the restored video_views objective as disabled', async () => {
+    const select = objectiveSelect(await restoredWithObjective('video_views'));
+
+    expect(Array.from(select.options).find((o) => o.value === 'video_views')?.disabled).toBe(true);
+  });
+
+  /** A restore affordance, not a permanent fourth option — absent for a normal draft. */
+  it('does not render the legacy option when the objective is selectable', async () => {
+    const select = objectiveSelect(await restoredWithObjective('traffic'));
+
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['awareness', 'traffic', 'conversions']);
+  });
+
+  /** And the selectable value still round-trips, so the assertion above cannot pass by ignoring the draft. */
+  it('restores a selectable objective from a persisted draft', async () => {
+    const f = await restoredWithObjective('traffic');
+
+    expect((f.componentInstance as unknown as Record<string, any>)['redditObjective']()).toBe('traffic');
+    expect(objectiveSelect(f).value).toBe('traffic');
+  });
+});
+
+/**
  * A brief saved BEFORE a platform was disabled must not restore that platform.
  *
  * The Plan picker gates `disabled` at the tile, but a stored brief reaches `selectedPlatforms`
@@ -2895,6 +3034,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     redditGeoTargets: () => string[];
     redditVariants: () => unknown[];
     redditBudgetUsd: () => number;
+    redditObjective: () => string;
     metaVariants: () => unknown[];
     submit(): void;
   }
@@ -2943,6 +3083,13 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     f.detectChanges();
   }
 
+  function pickRedditObjective(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const select = f.nativeElement.querySelector('[data-testid="implementation-reddit-objective"]') as HTMLSelectElement;
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
+    f.detectChanges();
+  }
+
   function typeLinkedInBudget(f: ComponentFixture<ImplementationTabComponent>, value: number): void {
     const input = f.nativeElement.querySelector('[data-testid="implementation-linkedin-budget"]') as HTMLInputElement;
     input.value = String(value);
@@ -2987,13 +3134,12 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     }).compileComponents();
   });
 
-  // === Reddit: the budget, the platform's one bound control ===
+  // === Reddit: the bound controls ===
 
   /**
-   * The budget is the one Reddit control the template binds, and so the only Reddit value the
-   * draft carries. Driven through the real `(input)` binding: a test calling `redditBudgetUsd.set`
-   * directly would stay green with the handler's `emitDraft()` removed, since it never exercises
-   * the emission path a live edit takes.
+   * Driven through the real `(input)` binding: a test calling `redditBudgetUsd.set` directly would
+   * stay green with the handler's `emitDraft()` removed, since it never exercises the emission
+   * path a live edit takes.
    *
    * 750 is neither the component's 500 default nor anything the brief carries, so the assertion
    * cannot be satisfied by a re-stamp.
@@ -3014,6 +3160,47 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
 
     expect(at(second.fixture).redditBudgetUsd()).toBe(750);
     expect(sentConfig('redditConfig')['budgetUsd']).toBe(750);
+  });
+
+  /**
+   * The untouched picker must dispatch what both creators already assumed. `conversions` is
+   * `defaultRedditObjective` upstream and `config.objective ?? 'conversions'` in the legacy
+   * creator, so sending it explicitly changes nobody's campaign — which is the only thing that
+   * makes turning this control on safe. Pinned as a LITERAL: asserting the constant back would
+   * agree with any value someone later seeded it with.
+   */
+  it('sends conversions as the default reddit objective', async () => {
+    const f = (await mount(null)).fixture;
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(f);
+    f.detectChanges();
+    at(f).submit();
+
+    expect(sentConfig('redditConfig')['objective']).toBe('conversions');
+  });
+
+  /**
+   * The picked objective through the full round trip. `awareness` is neither the component
+   * default nor anything the brief carries, so a restore that dropped the field would fail here
+   * rather than coincide with a re-stamp. Driven through the template's own `(change)` binding
+   * for the reason the budget is.
+   */
+  it('carries the reddit objective through a tab round-trip and into the request', async () => {
+    const first = await mount(null);
+    pickRedditObjective(first.fixture, 'awareness');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.redditObjective).toBe('awareness');
+
+    const second = await mount(draft);
+    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(second.fixture);
+    second.fixture.detectChanges();
+    at(second.fixture).submit();
+
+    expect(at(second.fixture).redditObjective()).toBe('awareness');
+    expect(sentConfig('redditConfig')['objective']).toBe('awareness');
   });
 
   // === LinkedIn: the budget pair ===
@@ -3053,7 +3240,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   // === Handler emission, which naming the field in `emitDraft` does not give you ===
 
   /**
-   * These three handlers mutate signals `campaignForm.valueChanges` cannot see, so without their
+   * These handlers mutate signals `campaignForm.valueChanges` cannot see, so without their
    * own `emitDraft()` call the parent never learns the edit — and the field is lost despite being
    * named in the emit.
    *
@@ -3072,6 +3259,13 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     typeRedditBudget(first.fixture, 640);
 
     expect(first.latest()?.redditBudgetUsd).toBe(640);
+  });
+
+  it('emits the draft when the reddit objective handler runs', async () => {
+    const first = await mount(null);
+    pickRedditObjective(first.fixture, 'traffic');
+
+    expect(first.latest()?.redditObjective).toBe('traffic');
   });
 
   it('emits the draft when the linkedin budget handler runs', async () => {
@@ -3107,12 +3301,13 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * carrying a non-default lifetime budget would be silently downgraded (LFXV2-3230 review).
    *
    * Reddit has no brief-seeded budget to beat, so its 500 is the component default by nature; it
-   * is asserted to pin that an omitted field is not turned into some OTHER value.
+   * is asserted to pin that an omitted field is not turned into some OTHER value — and the same
+   * for `redditObjective`, which every draft written before the picker shipped omits.
    */
   it('leaves the platform values seeded when an older draft omits them', async () => {
     const first = await mount(null);
     const legacy = { ...(first.latest() as CampaignImplementationDraft) } as Record<string, unknown>;
-    for (const key of ['redditBudgetUsd', 'linkedInBudgetUsd', 'linkedInLifetimeBudget']) {
+    for (const key of ['redditBudgetUsd', 'redditObjective', 'linkedInBudgetUsd', 'linkedInLifetimeBudget']) {
       delete legacy[key];
     }
     first.fixture.destroy();
@@ -3126,6 +3321,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const c = at(second.fixture);
 
     expect(c.redditBudgetUsd()).toBe(500);
+    expect(c.redditObjective()).toBe('conversions');
     expect(c.linkedInBudgetUsd()).toBe(7300);
     expect(c.linkedInLifetimeBudget()).toBe(true);
   });
