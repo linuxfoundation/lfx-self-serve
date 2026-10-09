@@ -32,7 +32,7 @@ import {
   UpdateAnnouncementInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of } from 'rxjs';
+import { catchError, Observable, of, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -51,13 +51,17 @@ export class CrowdfundingService {
     if (params?.offset != null) httpParams = httpParams.set('offset', String(params.offset));
 
     const request = this.http.get<InitiativesResponse>('/api/crowdfunding/initiatives', { params: httpParams });
-    return params?.scope ? request : request.pipe(catchError(this.handleCfError(EMPTY_INITIATIVES_RESPONSE, 'getMyInitiatives')));
+    return request.pipe(
+      catchError(params?.scope ? this.logAndRethrow('getMyInitiatives') : this.handleCfError(EMPTY_INITIATIVES_RESPONSE, 'getMyInitiatives'))
+    );
   }
 
   /** Stats for `getMyInitiatives`'s set; scoped calls surface their errors the same way. */
   public getMyInitiativesStats(scope?: InitiativesScope): Observable<CrowdfundingInitiativesStats> {
     const request = this.http.get<CrowdfundingInitiativesStats>('/api/crowdfunding/initiatives-stats', { params: this.scopeParams(scope) });
-    return scope ? request : request.pipe(catchError(this.handleCfError(EMPTY_CROWDFUNDING_STATS, 'getMyInitiativesStats')));
+    return request.pipe(
+      catchError(scope ? this.logAndRethrow('getMyInitiativesStats') : this.handleCfError(EMPTY_CROWDFUNDING_STATS, 'getMyInitiativesStats'))
+    );
   }
 
   public getInitiativeBySlug(slug: string): Observable<InitiativeDetail | null> {
@@ -173,6 +177,14 @@ export class CrowdfundingService {
     const params = new HttpParams();
     if (!scope) return params;
     return params.set(scope.kind === 'projects' ? 'projectUid' : 'orgUid', scope.uid);
+  }
+
+  /** Scoped lens calls: log, then rethrow so the page records its error state (frontend-checklist §13). */
+  private logAndRethrow(label: string) {
+    return (err: HttpErrorResponse): Observable<never> => {
+      console.error(`[CrowdfundingService] ${label} failed`, err);
+      return throwError(() => err);
+    };
   }
 
   private handleCfError<T>(fallback: T, label: string) {
