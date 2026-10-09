@@ -35,7 +35,7 @@ Each transaction is a row in the table with these columns:
 - **Name** — the item purchased, such as a training course or event registration
 - **Order ID**
 - **Date**
-- **Type** — the kind of purchase, matching the filter tabs above the table
+- **Type** — the kind of purchase, such as events, training, or certifications
 - **Transaction Value** — the amount charged
 
 ### Get a receipt or invoice
