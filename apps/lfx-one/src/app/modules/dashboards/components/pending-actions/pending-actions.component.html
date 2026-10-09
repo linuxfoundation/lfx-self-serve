@@ -66,10 +66,8 @@
     </div>
 
     <!--
-    Gate the list/drawer on totalVisible() (the unwindowed count) so the drawer's "View all (N)" stays reachable
-    even when displayLimit clamps decoratedActions() to zero. When it's 0 the section is either mid-fade (the outer
-    @if keeps it mounted to play the collapse) or already removed; nothing renders inside in that window. Within the
-    populated branch the inline list only renders when decoratedActions() actually has rows.
+    Gate the list on totalVisible() (the unwindowed count), independently of the display limit.
+    The drawer is mounted outside the section so an open panel survives the final action being resolved.
   -->
     @if (totalVisible() > 0) {
       @if (decoratedActions().length > 0) {
@@ -332,17 +330,16 @@
           }
         </div>
       }
-
-      <lfx-pending-actions-drawer
-        [pendingActions]="visibleActionsUnlimited()"
-        [(visible)]="drawerVisible"
-        [processingApplicationKey]="processingApplicationKey()"
-        (actionCompleted)="onDrawerActionCompleted()"
-        (castVoteRequested)="castVoteRequested.emit($event)"
-        (acceptInvitationRequested)="onAcceptInvitation($event)"
-        (declineInvitationRequested)="onDeclineInvitation($event)"
-        (approveApplicationRequested)="onApproveApplication($event)"
-        (rejectApplicationRequested)="onRejectApplication($event)" />
     }
   </section>
 }
+<lfx-pending-actions-drawer
+  [pendingActions]="visibleActionsUnlimited()"
+  [(visible)]="drawerVisible"
+  [processingApplicationKey]="processingApplicationKey()"
+  (actionCompleted)="onDrawerActionCompleted()"
+  (castVoteRequested)="castVoteRequested.emit($event)"
+  (acceptInvitationRequested)="onAcceptInvitation($event)"
+  (declineInvitationRequested)="onDeclineInvitation($event)"
+  (approveApplicationRequested)="onApproveApplication($event)"
+  (rejectApplicationRequested)="onRejectApplication($event)" />

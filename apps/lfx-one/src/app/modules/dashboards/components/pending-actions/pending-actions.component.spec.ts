@@ -286,6 +286,36 @@ describe('PendingActionsComponent — saved-only application review', () => {
     }
   );
 
+  it.each(decisions)('keeps the drawer open when the final %s saves, through empty refresh and explicit close', async (decision) => {
+    fixture = await render(applications().slice(0, 3));
+    await openDrawer();
+    for (let remaining = 3; remaining > 0; remaining--) {
+      save = new Subject<unknown>();
+      reviewClient.approveApplication.mockReturnValue(save);
+      reviewClient.rejectApplication.mockReturnValue(save);
+      control(`pending-actions-drawer-application-${decision}`).click();
+      await stabilize();
+      await finishOverlay(decision);
+      save.next({});
+      save.complete();
+      await stabilize();
+    }
+
+    // Leave the authoritative refresh pending beyond the section's empty grace and collapse timers.
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    await stabilize();
+    expect(document.body.querySelector('[data-testid="pending-actions-drawer-empty"]')?.textContent).toContain('All caught up!');
+    expect(document.body.querySelector('[data-testid="pending-actions-drawer-count"]')?.textContent).toContain('(0)');
+    expect(fixture.componentInstance['drawerVisible']()).toBe(true);
+
+    fixture.componentRef.setInput('pendingActions', []);
+    await stabilize();
+    expect(document.body.querySelector('[data-testid="pending-actions-drawer-empty"]')?.textContent).toContain('All caught up!');
+    document.body.querySelector<HTMLButtonElement>('[data-testid="pending-actions-drawer-close"]')!.click();
+    await stabilize();
+    expect(fixture.componentInstance['drawerVisible']()).toBe(false);
+  });
+
   it.each(cases)('keeps the request when $decision from $surface is cancelled or fails, and permits a retry', async ({ surface, decision }) => {
     fixture = await render(applications());
     const refresh = vi.fn();

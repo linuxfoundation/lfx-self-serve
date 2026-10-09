@@ -141,21 +141,21 @@ export class PendingActionsComponent {
   protected readonly decoratedActions: Signal<DecoratedPendingAction[]> = this.initDecoratedActions();
 
   public constructor() {
-    // When the last action is resolved, fade the section out then remove it from the DOM.
+    // Fade an empty section only after its drawer closes, so the final review can show the empty state through refresh.
     // sectionEverShown prevents the fade from triggering on initial load with zero actions.
-    toObservable(this.totalVisible)
+    toObservable(computed(() => this.totalVisible() > 0 || this.drawerVisible()))
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((count) => {
-        if (count > 0) {
+      .subscribe((hasActionsOrOpenDrawer) => {
+        if (hasActionsOrOpenDrawer) {
           this.sectionEverShown = true;
-          // Cancel any in-flight grace/fade so a repopulated section stays visible.
+          // Cancel any in-flight grace/fade when actions repopulate or the drawer opens.
           this.clearSectionFadeTimer();
           this.isSectionGracePending.set(false);
           this.isSectionHidden.set(false);
           this.isSectionFading.set(false);
         } else if (this.sectionEverShown && !this.isSectionHidden() && this.sectionFadeTimerId === null) {
           // Wait a grace period before fading: a context switch (org/project change) can briefly empty the
-          // list before new data arrives — if it repopulates within the grace, the count>0 branch cancels
+          // list before new data arrives — if it repopulates within the grace, the populated branch cancels
           // this timer and nothing fades. The sectionFadeTimerId guard also prevents overlapping timers on
           // repeated empty emissions (an orphan would survive clearSectionFadeTimer and hide a repopulated section).
           // isSectionGracePending keeps the section mounted (stable, not collapsing) during the grace.
@@ -164,8 +164,6 @@ export class PendingActionsComponent {
             // Still empty after the grace — commit to the fade.
             this.sectionFadeTimerId = null;
             this.isSectionGracePending.set(false);
-            // Close the drawer so a later repopulation can't reopen it with stale state.
-            this.drawerVisible.set(false);
             this.isSectionFading.set(true);
             this.sectionFadeTimerId = setTimeout(() => {
               this.sectionFadeTimerId = null;
