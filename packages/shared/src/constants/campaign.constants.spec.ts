@@ -10,6 +10,7 @@ import {
   CAMPAIGN_EMAIL_TYPES,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   DEFAULT_REDDIT_CALL_TO_ACTION,
+  DEFAULT_REDDIT_OBJECTIVE,
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
@@ -31,6 +32,8 @@ import {
   META_OBJECTIVE_PARAMS,
   META_SELECTABLE_OBJECTIVES,
   REDDIT_CALL_TO_ACTIONS,
+  REDDIT_OBJECTIVE_LABELS,
+  REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
   campaignToggleAction,
   canonicalMicrosoftMatchType,
@@ -812,5 +815,28 @@ describe('Reddit promoted-post contract', () => {
    */
   it('offers exactly the video goals upstream accepts', () => {
     expect([...REDDIT_VIDEO_GOALS]).toEqual(['VIDEO_VIEW_6S', 'VIDEO_VIEW_15S']);
+  });
+
+  /**
+   * The picker's set is a SUBSET of `RedditObjective`, never a value outside it.
+   *
+   * `REDDIT_OBJECTIVE_LABELS` is typed total over `RedditObjective`, so its keys are that type at
+   * runtime — an objective added to the picker without being added to the union would have no
+   * label here, and the control would render a blank row. The types catch that on the constant
+   * itself; this catches it after a cast, which is how the picker list is written.
+   */
+  it('offers only objectives the request type admits', () => {
+    for (const objective of REDDIT_SELECTABLE_OBJECTIVES) {
+      expect(Object.keys(REDDIT_OBJECTIVE_LABELS)).toContain(objective);
+    }
+  });
+
+  /**
+   * And the default is one of them. It seeds the control on a fresh campaign, so a default outside
+   * the picker's set would open every new Reddit campaign on a value shown as
+   * "(no longer available)" and disabled — unchangeable except by picking something else.
+   */
+  it('seeds the picker with an objective the picker offers', () => {
+    expect([...REDDIT_SELECTABLE_OBJECTIVES]).toContain(DEFAULT_REDDIT_OBJECTIVE);
   });
 });

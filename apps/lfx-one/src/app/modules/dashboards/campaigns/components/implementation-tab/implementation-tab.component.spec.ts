@@ -17,6 +17,7 @@ import {
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_SECTION_TITLES,
   META_OBJECTIVE_LABELS,
+  REDDIT_CALL_TO_ACTIONS,
   REDDIT_OBJECTIVE_LABELS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -2278,6 +2279,113 @@ describe('ImplementationTabComponent reddit objective', () => {
 
     expect((f.componentInstance as unknown as Record<string, any>)['redditObjective']()).toBe('traffic');
     expect(objectiveSelect(f).value).toBe('traffic');
+  });
+});
+
+/**
+ * The call-to-action picker's half of the same guard, kept beside the objective's on purpose.
+ *
+ * The exposure is identical — a restored value that matches no `<option>` makes the browser fall
+ * back to index 0, so the control reads "Default (Learn More)" while the signal still holds and
+ * still sends the stored label. It differs only in how it is reached: `REDDIT_SELECTABLE_OBJECTIVES`
+ * deliberately withholds `video_views`, so an unavailable objective is reachable by design, while
+ * `REDDIT_CALL_TO_ACTIONS` is the whole upstream set and a stale CTA only becomes possible once
+ * Reddit retires a label. Latent, then — and pinned anyway, so the two siblings cannot drift.
+ */
+describe('ImplementationTabComponent reddit call to action', () => {
+  /**
+   * Mount with a persisted draft naming `redditCallToAction`, as a tab revisit would.
+   *
+   * `redditCreativeEnabled: true` is the part the objective's equivalent does not need: the CTA
+   * control lives inside the authored-post block, which `redditCreativeAvailable()` withholds
+   * until the capability answers yes. Without it the select is simply absent and every assertion
+   * below would fail on a null element rather than on the behaviour it names.
+   */
+  async function restoredWithCallToAction(cta: string): Promise<ComponentFixture<ImplementationTabComponent>> {
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    // Same three unguarded `applyDraft` keys the objective suite supplies, for the same reason.
+    restored.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      redditCallToAction: cta,
+      countryCode: 'US',
+      headlines: [''],
+      descriptions: [''],
+    });
+    restored.componentRef.setInput('redditCreativeEnabled', true);
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://events.example.com/k' },
+      selectedPlatforms: ['reddit-ads'],
+      redditCopy: {
+        variants: [{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }],
+        recommendedSubreddits: ['briefsub'],
+        recommendedInterests: ['brief-interest'],
+        recommendedKeywords: ['brief-keyword'],
+        recommendedGeos: ['US'],
+      },
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+    return restored;
+  }
+
+  function ctaSelect(f: ComponentFixture<ImplementationTabComponent>): HTMLSelectElement {
+    const el = f.nativeElement.querySelector('[data-testid="implementation-reddit-call-to-action"]') as HTMLSelectElement;
+    expect(el).not.toBeNull();
+    return el;
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CampaignService, useValue: { createCampaign: vi.fn(), getLinkedInAccounts: () => of([]) } },
+      ],
+    }).compileComponents();
+  });
+
+  /**
+   * The symptom the guard exists to prevent: the screen and the payload disagreeing. Without the
+   * trailing option the select would read `Default (Learn More)` here while the signal still held
+   * — and still sent — `Get Showtimes Legacy`, which upstream then refuses.
+   */
+  it('shows a retired call to action rather than falling back to the default option', async () => {
+    const select = ctaSelect(await restoredWithCallToAction('Get Showtimes Legacy'));
+
+    expect(select.value).toBe('Get Showtimes Legacy');
+    expect(select.options[select.selectedIndex].text).toBe('Get Showtimes Legacy (no longer available)');
+  });
+
+  /** Visible so the operator can see what is stored, but not re-choosable. */
+  it('renders the retired call to action as disabled', async () => {
+    const select = ctaSelect(await restoredWithCallToAction('Get Showtimes Legacy'));
+
+    expect(Array.from(select.options).find((o) => o.value === 'Get Showtimes Legacy')?.disabled).toBe(true);
+  });
+
+  /** A restore affordance, not a permanent extra option — absent for a CTA still in the set. */
+  it('does not render the retired option when the call to action is current', async () => {
+    const select = ctaSelect(await restoredWithCallToAction('Sign Up'));
+
+    expect(select.value).toBe('Sign Up');
+    expect(Array.from(select.options).filter((o) => o.disabled)).toEqual([]);
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['', ...REDDIT_CALL_TO_ACTIONS]);
+  });
+
+  /**
+   * And the empty string is NOT unavailable: it is the real "let upstream default" selection the
+   * first option carries, so treating it as a stale value would render a duplicate disabled
+   * option reading " (no longer available)".
+   */
+  it('treats the empty selection as the default rather than as a retired value', async () => {
+    const select = ctaSelect(await restoredWithCallToAction(''));
+
+    expect(select.value).toBe('');
+    expect(Array.from(select.options).filter((o) => o.disabled)).toEqual([]);
   });
 });
 
@@ -5271,9 +5379,9 @@ describe('ImplementationTabComponent google creative minimums', () => {
     expect(live?.textContent?.trim()).toBe('');
     expect(live?.getAttribute('role')).toBe('status');
     expect(live?.getAttribute('aria-live')).toBe('polite');
-    // Pinned so the attribute cannot be dropped silently. Both regions, because the sibling
-    // brief-status one is the only other live region in this template and the pair is the
-    // whole of what this commit standardised.
+    // Pinned so the attribute cannot be dropped silently. This pair because both are in view
+    // here; the template's third live region, `implementation-reddit-no-ad-live`, is pinned the
+    // same way in the Reddit no-ad section rather than restated here.
     expect(live?.getAttribute('aria-atomic')).toBe('true');
     expect(find('implementation-brief-status-live')?.getAttribute('aria-atomic')).toBe('true');
 
@@ -5343,7 +5451,7 @@ describe('ImplementationTabComponent reddit results notice', () => {
    *
    * A Reddit campaign created with no ad can never be activated from LFX. The gate needs both
    * child ids (`internal/dispatch/reddit.go:484-485`) and takes them from `redditChildIDs`
-   * (`:820-832`), which reads only the persisted Result blob — nothing re-reads Reddit, so an ad
+   * (`:817-832`), which reads only the persisted Result blob — nothing re-reads Reddit, so an ad
    * attached by hand in Ads Manager is never discovered. The notice said to do exactly that
    * ("then attach it to this campaign") until #3432.
    *

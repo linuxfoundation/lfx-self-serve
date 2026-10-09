@@ -50,9 +50,11 @@
   The visible `<p>` carries no role of its own — the text would otherwise be announced twice,
   the same reason `briefPersistenceAnnouncement` stays empty in its `error` state.
 
-  `aria-atomic="true"` on both regions is not a fix: with a single interpolated text node there is
-  no partial update for a non-atomic region to clip, which is why #3402 adjudicated it Low. It is
-  added because the module is inconsistent and these two are the ones in hand — among the campaigns
+  `aria-atomic="true"` on every live region in this template is not a fix: with a single
+  interpolated text node there is no partial update for a non-atomic region to clip, which is why
+  #3402 adjudicated it Low. It is added because the module is inconsistent and this template's
+  regions are the ones in hand — all three of them, the brief-status one above, the Google
+  creative-empty one below and the Reddit no-ad one after it — while among the campaigns
   module's single-interpolation sr-only regions, `campaign-negative-keywords-form.component.html:11`
   and `optimization-tab.component.html:248` carry it while `campaigns.component.html:243` and
   `:256` and `planning-tab.component.html:36` and `:68` do not. Those four are untouched here
@@ -1295,6 +1297,17 @@
                     @for (cta of redditCallToActionOptions; track cta) {
                       <option [value]="cta" [selected]="cta === redditCallToAction()">{{ cta }}</option>
                     }
+                    <!--
+                      The objective select's restored-value case, same shape and same reason: a
+                      stored label Reddit has since retired matches no option above, so without
+                      this the control would silently read "Default" while the signal still sent
+                      the stale label and upstream refused it. The label prints as stored — unlike
+                      the objective there is no labels map to look it up in, the value IS the
+                      label.
+                    -->
+                    @if (redditCallToActionIsUnavailable()) {
+                      <option [value]="redditCallToAction()" [selected]="true" disabled>{{ redditCallToAction() }} (no longer available)</option>
+                    }
                   </select>
                   <p class="text-xs text-gray-500">Button on the composed post. Ignored when a post URL is set.</p>
                 </div>
@@ -1483,7 +1496,7 @@
                 <!--
                   This used to end "then attach it to this campaign", which is an instruction that cannot work.
                   Activation needs BOTH child ids (`internal/dispatch/reddit.go:484-485`), and they come from
-                  `redditChildIDs` (`:820-832`), which reads only the persisted Result blob. Nothing re-reads
+                  `redditChildIDs` (`:817-832`), which reads only the persisted Result blob. Nothing re-reads
                   Reddit, so an ad attached by hand upstream is never discovered and the refusal never lifts.
                   The gate's own message says as much, that this "leaves un-pausing to Reddit Ads Manager".
                 -->

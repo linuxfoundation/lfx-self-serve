@@ -387,6 +387,30 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditObjectiveIsUnavailable = computed(
     () => !(REDDIT_SELECTABLE_OBJECTIVES as readonly RedditObjective[]).includes(this.redditObjective())
   );
+  /**
+   * The same guard for the call to action, because the exposure is the same one.
+   *
+   * A restored CTA that is no longer in `REDDIT_CALL_TO_ACTIONS` matches no `<option>`, so the
+   * browser falls back to index 0 and the control reads "Default (Learn More)" while the signal
+   * still holds the stored label and still sends it — the screen and the payload disagreeing,
+   * which is exactly what {@link redditObjectiveIsUnavailable} exists to prevent next door. There
+   * it ends in a campaign built on the wrong objective; here it ends in an upstream refusal, since
+   * `redditCTAs` rejects any label outside the set.
+   *
+   * The two sets are not withheld the same way, which is why this one is latent rather than live:
+   * `REDDIT_SELECTABLE_OBJECTIVES` is deliberately a SUBSET of `RedditObjective` (`video_views` is
+   * held back — see {@link RedditCampaignCreateRequest.videoGoal}), so an unavailable objective is
+   * reachable by design, while `REDDIT_CALL_TO_ACTIONS` is the whole upstream set and a stale CTA
+   * only becomes possible once Reddit retires a label. Guarded anyway: the failure is identical in
+   * kind and the control is a sibling of the objective's, so the two should not drift.
+   *
+   * The empty string is NOT unavailable — it is the real "let upstream default" selection the
+   * first `<option>` carries.
+   */
+  protected readonly redditCallToActionIsUnavailable = computed(() => {
+    const cta = this.redditCallToAction();
+    return cta !== '' && !(REDDIT_CALL_TO_ACTIONS as readonly string[]).includes(cta);
+  });
   protected readonly allKnownGeos: LinkedInGeoTarget[] = [...new Map(Object.values(LINKEDIN_GEO_RESOLVE_MAP).map((g) => [g.urn, g])).values()];
   protected readonly todayDate = new Date().toISOString().split('T')[0];
   protected readonly defaultEndDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0];
@@ -1964,6 +1988,17 @@ export class ImplementationTabComponent implements OnInit {
               // Always sent, never conditioned on differing from the default: both creators fall
               // back to the same objective when it is absent, so an explicit value is the only
               // thing that makes the payload say what the screen shows.
+              //
+              // Sent even when `redditObjectiveIsUnavailable()`, and that is the deliberate half.
+              // The only withheld objective is `video_views`, which the campaign-service arm
+              // refuses outright unless a `videoGoal` accompanies it and nothing in this tier can
+              // set one. So such a create fails upstream rather than succeeding — where omitting
+              // the field would fall back to `conversions` and quietly build a campaign the
+              // operator never chose, against an objective the select is at that moment showing
+              // them as "(no longer available)". A refusal they can see and act on beats a
+              // substitution they cannot. Unreachable today: the signal seeds from
+              // DEFAULT_REDDIT_OBJECTIVE and the picker offers only the selectable three, so the
+              // sole route in is a draft written against a wider set.
               objective: this.redditObjective(),
               // Omitted when blank rather than sent empty: upstream treats an empty `postUrl` as
               // "author a post instead", and an empty `callToAction` as "use the default" — both

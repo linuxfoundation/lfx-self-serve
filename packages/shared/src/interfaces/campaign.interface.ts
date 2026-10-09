@@ -1097,11 +1097,21 @@ export interface RedditCampaignCreateRequest {
    * connection nor the campaign supplies one — for EVERY objective, not just conversions. Its own
    * comment argues the connection is the right source, since the pixel identifies the advertiser
    * and is one per ad account, so per-campaign entry turns an account-level constant into
-   * something an operator can get wrong once per campaign. This tier cannot read connections at
-   * all, so the field exists as an always-offered override, never as the primary way to set it.
+   * something an operator can get wrong once per campaign.
+   *
+   * Declared for the wire contract only — NO control populates it, so the implementation tab
+   * cannot resolve that refusal and a deploy whose connection carries no pixel cannot create a
+   * Reddit campaign from here at all. Offering it is a product decision nobody has taken; this
+   * field is the half that would be needed if they did.
    */
   conversionPixelId?: string;
-  /** Required by upstream for, and only for, the `video_views` objective. */
+  /**
+   * Required by upstream for, and only for, the `video_views` objective.
+   *
+   * Declared for the wire contract only — nothing populates it either, which is precisely why
+   * `REDDIT_SELECTABLE_OBJECTIVES` withholds `video_views`: offering that objective without this
+   * field would offer a create upstream always refuses.
+   */
   videoGoal?: RedditVideoGoal;
 }
 
