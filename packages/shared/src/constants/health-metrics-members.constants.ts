@@ -18,6 +18,7 @@ import type {
   HealthMetricsMembersChurn,
   HealthMetricsMembersChurnDepartures,
   HealthMetricsMembersChurnModeOption,
+  HealthMetricsMembersChurnRisk,
   HealthMetricsMembersDataSectionKey,
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryTierOption,
@@ -29,6 +30,8 @@ import type {
   HealthMetricsMembersNpsCategory,
   HealthMetricsMembersQueryParams,
   HealthMetricsMembersRenewals,
+  HealthMetricsMembersRenewalsWindow,
+  HealthMetricsMembersRenewalsWindowOption,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersModeOption,
 } from '../interfaces/health-metrics-members.interface';
@@ -224,6 +227,7 @@ export const HEALTH_METRICS_MEMBERS_QUERY_PARAMS = {
   directoryPage: 'memPage',
   atRiskBucket: 'riskBucket',
   atRiskPage: 'riskPage',
+  renewalsWindow: 'renewalsWindow',
   renewalsPage: 'renewalsPage',
   boardCohort: 'boardCohort',
   boardPage: 'boardPage',
@@ -315,6 +319,16 @@ export const HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS: readonly HealthMetri
   ...HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS.map((bucket) => ({ id: bucket, label: HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS[bucket] })),
 ];
 
+/** `MEMBERSHIP_AT_RISK`'s `churn_risk` bands, highest first. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISKS = ['High', 'Medium', 'Low'] as const;
+
+/** Each churn-risk chip's colours, applied via `[class]`. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISK_CLASSES: Record<HealthMetricsMembersChurnRisk, string> = {
+  High: 'bg-red-50 text-red-700',
+  Medium: 'bg-amber-50 text-amber-700',
+  Low: 'bg-gray-100 text-gray-500',
+};
+
 /** Read-failed / no-foundation value: no members, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED: HealthMetricsMembersAtRisk = {
   rows: [],
@@ -339,8 +353,22 @@ export const HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED: HealthMetricsMembersRen
   summary: { renewalCount: null, valueUsd: null, withoutDuesCount: null },
 };
 
-/** `MEMBERSHIP_RENEWALS` covers 0–93 days out; the section shows the next 90. */
-export const HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_DAYS = 90;
+/** `MEMBERSHIP_RENEWALS`' windows, one per `is_renewing_*` flag; the first is the default. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS = ['90_days', '180_days', 'this_year'] as const;
+
+/** The window pills over the hero. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_OPTIONS: readonly HealthMetricsMembersRenewalsWindowOption[] = [
+  { id: '90_days', label: 'Next 90 days' },
+  { id: '180_days', label: 'Next 180 days' },
+  { id: 'this_year', label: 'This year' },
+];
+
+/** Each window as the empty state phrases it, e.g. "No renewals in the next 90 days". */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_PHRASES: Record<HealthMetricsMembersRenewalsWindow, string> = {
+  '90_days': 'in the next 90 days',
+  '180_days': 'in the next 180 days',
+  this_year: 'this year',
+};
 
 /** Rows per page; the busiest foundation has around a hundred renewals in the window. */
 export const HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE = 10;
@@ -353,6 +381,13 @@ export const HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER = {
   label: 'Balance outstanding',
   icon: 'fa-light fa-circle-exclamation',
   textClass: 'text-red-600',
+} as const;
+
+/** The marker beside a member who already renewed; the model's window totals still count the renewal. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_RENEWED_MARKER = {
+  label: 'Renewed',
+  icon: 'fa-light fa-circle-check',
+  textClass: 'text-emerald-700',
 } as const;
 
 /** `MEMBERSHIP_BOARD_ATTENDANCE`'s cohorts; the first is the default. */

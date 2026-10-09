@@ -3,11 +3,13 @@
 
 import type {
   HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS,
+  HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISKS,
   HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
   HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
+  HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS,
   HEALTH_METRICS_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-members.constants';
 import type { FilterPillOption } from './dashboard-metric.interface';
@@ -38,6 +40,9 @@ export interface HealthMetricsMembersTierYear {
   memberCount: number | null;
   newMemberCount: number | null;
   revenueUsd: number | null;
+  /** The tier's share of its year's members and revenue, 0–100, as the model states them. */
+  memberSharePct: number | null;
+  revenueSharePct: number | null;
   isPartialYear: boolean;
 }
 
@@ -88,10 +93,11 @@ export interface HealthMetricsMembersTiersYearView {
 
 export interface HealthMetricsMembersTiersCellView {
   year: number;
-  count: number | null;
-  /** `—` for a measured zero or an unmeasured count. */
+  /** The tier's members or revenue for the year, following the mode. */
+  value: number | null;
+  /** `—` for a measured zero or an unmeasured value. */
   label: string;
-  /** Share of that year's members, 0–100; 0 when the year has none, `null` when the count is unmeasured. */
+  /** The model's share of that year's members or revenue, 0–100, following the mode; `null` when unmeasured. */
   sharePct: number | null;
 }
 
@@ -327,6 +333,7 @@ export interface HealthMetricsMembersQueryParams {
   memPage?: number | null;
   riskBucket?: HealthMetricsMembersAtRiskBucket | null;
   riskPage?: number | null;
+  renewalsWindow?: HealthMetricsMembersRenewalsWindow | null;
   renewalsPage?: number | null;
   boardCohort?: HealthMetricsMembersBoardCohort | null;
   boardPage?: number | null;
@@ -337,6 +344,9 @@ export interface HealthMetricsMembersQueryParams {
 
 /** A `MEMBERSHIP_AT_RISK` aging bucket past 60 days; the section leaves out balances under 60 days. */
 export type HealthMetricsMembersAtRiskBucket = (typeof HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS)[number];
+
+/** `MEMBERSHIP_AT_RISK`'s `churn_risk` bands. */
+export type HealthMetricsMembersChurnRisk = (typeof HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISKS)[number];
 
 /** The bucket pill: one aging bucket, or `all` for both. */
 export type HealthMetricsMembersAtRiskFilter = HealthMetricsMembersAtRiskBucket | 'all';
@@ -357,6 +367,9 @@ export interface HealthMetricsMembersAtRiskMember {
   outstandingBalanceUsd: number | null;
   daysOverdue: number | null;
   lastEngagedDate: string | null;
+  /** The model's own risk band for the member; `null` when unset. */
+  churnRisk: HealthMetricsMembersChurnRisk | null;
+  agingBucket: HealthMetricsMembersAtRiskBucket | null;
 }
 
 /**
@@ -413,22 +426,38 @@ export interface HealthMetricsMembersAtRiskRowView {
   tierLabel: string;
   overdueLabel: string;
   ageLabel: string;
+  agingLabel: string;
+  /** `null` renders no risk chip. */
+  churnRiskLabel: string | null;
+  churnRiskClass: string;
   lastEngagedLabel: string;
 }
 
-/** `GET /api/analytics/members-renewals` — a snapshot of now, so it takes no period. */
+/** A `MEMBERSHIP_RENEWALS` window, each backed by the model's own `is_renewing_*` flag and foundation totals. */
+export type HealthMetricsMembersRenewalsWindow = (typeof HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS)[number];
+
+/** A window pill. */
+export interface HealthMetricsMembersRenewalsWindowOption extends FilterPillOption {
+  id: HealthMetricsMembersRenewalsWindow;
+}
+
+/** `GET /api/analytics/members-renewals` — a snapshot of now, so it takes no period, only a window. */
 export interface HealthMetricsMembersRenewalsQuery {
   foundationSlug: string;
+  window: HealthMetricsMembersRenewalsWindow;
   offset: number;
   pageSize: number;
 }
 
-/** One renewal still to happen inside the next 90 days, soonest first. Dates are ISO `YYYY-MM-DD`; `null` dues is not recorded, never $0. */
+/** One renewal inside the window, soonest first. Dates are ISO `YYYY-MM-DD`; `null` dues is not recorded, never $0. */
 export interface HealthMetricsMembersRenewal {
   accountId: string;
   accountName: string;
   membershipTier: string | null;
   renewalDate: string | null;
+  daysUntilRenewal: number | null;
+  /** Already renewed; the model's window totals still count it. */
+  hasRenewed: boolean;
   duesUsd: number | null;
   /** The renewal plus a concurrent risk signal (MEM-02); every other row carries no status. */
   hasOutstandingBalance: boolean;
@@ -460,8 +489,11 @@ export interface HealthMetricsMembersRenewalRowView {
   accountName: string;
   tierLabel: string;
   renewalDateLabel: string;
+  /** "Today", "In 1 day", "In 23 days"; `—` when unset. */
+  daysUntilLabel: string;
   duesLabel: string;
   hasOutstandingBalance: boolean;
+  hasRenewed: boolean;
 }
 
 /** `MEMBERSHIP_BOARD_ATTENDANCE`'s `attendance_cohort` values. */
