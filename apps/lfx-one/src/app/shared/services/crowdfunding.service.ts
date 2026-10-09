@@ -39,19 +39,22 @@ import { catchError, Observable, of } from 'rxjs';
 export class CrowdfundingService {
   private readonly http = inject(HttpClient);
 
-  public getMyInitiatives(params?: { pageSize?: number; offset?: number }): Observable<InitiativesResponse> {
+  /** The caller's own initiatives, or — with `projectUid` — those attributed to that project (Project/Foundation lens). */
+  public getMyInitiatives(params?: { pageSize?: number; offset?: number; projectUid?: string }): Observable<InitiativesResponse> {
     let httpParams = new HttpParams();
     if (params?.pageSize != null) httpParams = httpParams.set('pageSize', String(params.pageSize));
     if (params?.offset != null) httpParams = httpParams.set('offset', String(params.offset));
+    if (params?.projectUid) httpParams = httpParams.set('projectUid', params.projectUid);
 
     return this.http
       .get<InitiativesResponse>('/api/crowdfunding/initiatives', { params: httpParams })
       .pipe(catchError(this.handleCfError(EMPTY_INITIATIVES_RESPONSE, 'getMyInitiatives')));
   }
 
-  public getMyInitiativesStats(): Observable<CrowdfundingInitiativesStats> {
+  public getMyInitiativesStats(projectUid?: string): Observable<CrowdfundingInitiativesStats> {
+    const params = projectUid ? new HttpParams().set('projectUid', projectUid) : undefined;
     return this.http
-      .get<CrowdfundingInitiativesStats>('/api/crowdfunding/initiatives-stats')
+      .get<CrowdfundingInitiativesStats>('/api/crowdfunding/initiatives-stats', { params })
       .pipe(catchError(this.handleCfError(EMPTY_CROWDFUNDING_STATS, 'getMyInitiativesStats')));
   }
 

@@ -7,7 +7,8 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { filter, firstValueFrom, map, switchMap, tap } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
-import { CrowdfundingInitiativeStatus, InitiativeDetail } from '@lfx-one/shared/interfaces';
+import { NAV_LENSES } from '@lfx-one/shared/constants';
+import { CrowdfundingInitiativeStatus, InitiativeDetail, NavLens } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 import { InitiativeDetailHeaderComponent } from './components/initiative-detail-header/initiative-detail-header.component';
 import { InitiativeOverviewComponent } from './components/initiative-overview/initiative-overview.component';
@@ -32,6 +33,13 @@ export class InitiativeDetailComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
   private readonly route = inject(ActivatedRoute);
   private readonly crowdfundingService = inject(CrowdfundingService);
+
+  // ─── Route Fields ──────────────────────────────────────────────────────────
+  // Opened from a Project/Foundation lens Initiatives page (#347): go back there, keeping ?project=.
+  private readonly lens = this.route.snapshot.data['lens'] as NavLens | undefined;
+  protected readonly isLensPage = !!this.lens && NAV_LENSES.includes(this.lens);
+  protected readonly backLink = this.isLensPage ? `/${this.lens}/initiatives` : '/crowdfunding/initiatives';
+  protected readonly backQueryParams: Record<string, string> = this.isLensPage ? this.route.snapshot.queryParams : {};
 
   // ─── WritableSignals ───────────────────────────────────────────────────────
   protected readonly isLoading = signal(true);

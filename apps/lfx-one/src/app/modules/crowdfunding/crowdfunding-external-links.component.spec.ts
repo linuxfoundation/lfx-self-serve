@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter, Router } from '@angular/router';
+import { signal } from '@angular/core';
+import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import {
   EMPTY_CROWDFUNDING_STATS,
@@ -14,6 +15,7 @@ import {
 import { FundType } from '@lfx-one/shared/enums';
 import { InitiativeBase } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -114,20 +116,33 @@ describe('InitiativesListComponent external empty-state handoff', () => {
 describe('MyInitiativesComponent external creation links', () => {
   let fixture: ComponentFixture<MyInitiativesComponent>;
   let items: InitiativeBase[];
+  let service: { getMyInitiatives: ReturnType<typeof vi.fn>; getMyInitiativesStats: ReturnType<typeof vi.fn> };
+  const projectContext = { activeContextUid: signal(''), activeContext: signal<{ name: string } | null>(null) };
+
+  const configure = async (routeData: Record<string, string> = {}): Promise<void> => {
+    await TestBed.configureTestingModule({
+      imports: [MyInitiativesComponent],
+      providers: [
+        provideRouter([]),
+        { provide: CrowdfundingService, useValue: service },
+        { provide: ProjectContextService, useValue: projectContext },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: routeData } } },
+      ],
+    }).compileComponents();
+  };
 
   beforeEach(async () => {
     items = [];
-    const service: Pick<CrowdfundingService, 'getMyInitiatives' | 'getMyInitiativesStats'> = {
-      getMyInitiatives: () => of({ ...EMPTY_INITIATIVES_RESPONSE, data: items, total: items.length }),
-      getMyInitiativesStats: () => of(EMPTY_CROWDFUNDING_STATS),
+    projectContext.activeContextUid.set('');
+    projectContext.activeContext.set(null);
+    service = {
+      getMyInitiatives: vi.fn(() => of({ ...EMPTY_INITIATIVES_RESPONSE, data: items, total: items.length })),
+      getMyInitiativesStats: vi.fn(() => of(EMPTY_CROWDFUNDING_STATS)),
     };
-    await TestBed.configureTestingModule({
-      imports: [MyInitiativesComponent],
-      providers: [provideRouter([]), { provide: CrowdfundingService, useValue: service }],
-    }).compileComponents();
   });
 
   it('uses the environment creation destination for both the header and globally empty list', async () => {
+    await configure();
     fixture = TestBed.createComponent(MyInitiativesComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
@@ -138,6 +153,7 @@ describe('MyInitiativesComponent external creation links', () => {
 
   it('keeps the header creation link on empty filters and routes matching card clicks internally', async () => {
     items = [initiative()];
+    await configure();
     fixture = TestBed.createComponent(MyInitiativesComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
@@ -152,7 +168,24 @@ describe('MyInitiativesComponent external creation links', () => {
     await fixture.whenStable();
     root.querySelector<HTMLElement>('[data-testid="initiative-card-synthetic-initiative-1"]')!.click();
     await fixture.whenStable();
-    expect(navigate).toHaveBeenCalledWith(['/crowdfunding/initiatives', 'synthetic-initiative']);
+    expect(navigate).toHaveBeenCalledWith(['synthetic-initiative'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+    expect(service.getMyInitiatives).toHaveBeenCalledWith(expect.objectContaining({ projectUid: undefined }));
+  });
+
+  it('scopes a project lens page to the lens project once it resolves (#347)', async () => {
+    const projectUid = '00000000-0000-4000-8000-000000000001';
+    await configure({ lens: 'project' });
+    fixture = TestBed.createComponent(MyInitiativesComponent);
+    await fixture.whenStable();
+    // Waits for the lens context instead of listing the caller's own initiatives.
+    expect(service.getMyInitiatives).not.toHaveBeenCalled();
+
+    projectContext.activeContextUid.set(projectUid);
+    projectContext.activeContext.set({ name: 'Synthetic Project' });
+    await fixture.whenStable();
+    expect(service.getMyInitiatives).toHaveBeenCalledWith(expect.objectContaining({ projectUid, offset: 0 }));
+    expect(service.getMyInitiativesStats).toHaveBeenCalledWith(projectUid);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Synthetic Project');
   });
 });
 

@@ -169,25 +169,30 @@ async function cfFetchNullable<T>(req: Request, operation: string, path: string)
 }
 
 export class CrowdfundingService {
-  public async getMyInitiatives(req: Request, pageSize?: number, offset?: number): Promise<InitiativesResponse> {
-    const startTime = logger.startOperation(req, 'cf_get_my_initiatives', { pageSize, offset });
+  /**
+   * The caller's own initiatives, or — with `projectUid` — every initiative attributed to that project (any
+   * status; CF's gateway rule requires `writer_guard` on the project and returns 403 otherwise).
+   */
+  public async getMyInitiatives(req: Request, pageSize?: number, offset?: number, projectUid?: string): Promise<InitiativesResponse> {
+    const startTime = logger.startOperation(req, 'cf_get_my_initiatives', { pageSize, offset, project_uid: projectUid });
 
     const limit = pageSize ?? DEFAULT_CROWDFUNDING_PAGE_SIZE;
     const off = offset ?? 0;
-    const raw = await cfFetch<BackendCrowdfundingResponse>(req, 'getMyInitiatives', `/crowdfunding/me/initiatives?limit=${limit}&offset=${off}`);
+    const base = projectUid ? `/crowdfunding/projects/${encodeURIComponent(projectUid)}/initiatives` : '/crowdfunding/me/initiatives';
+    const raw = await cfFetch<BackendCrowdfundingResponse>(req, 'getMyInitiatives', `${base}?limit=${limit}&offset=${off}`);
     const data = raw.data.map(mapToInitiativeBase);
 
     logger.success(req, 'cf_get_my_initiatives', startTime, { count: data.length });
     return { data, total: raw.meta.total, pageSize: raw.meta.limit, offset: raw.meta.offset };
   }
 
-  public async getInitiativesStats(req: Request): Promise<CrowdfundingInitiativesStats> {
+  public async getInitiativesStats(req: Request, projectUid?: string): Promise<CrowdfundingInitiativesStats> {
     // Page through all initiatives so stats reflect the user's complete set, not just the first page.
     const PAGE_SIZE = 100;
     const allInitiatives: Awaited<ReturnType<typeof this.getMyInitiatives>>['data'] = [];
     let offset = 0;
     while (true) {
-      const page = await this.getMyInitiatives(req, PAGE_SIZE, offset);
+      const page = await this.getMyInitiatives(req, PAGE_SIZE, offset, projectUid);
       allInitiatives.push(...page.data);
       if (allInitiatives.length >= page.total || page.data.length === 0) break;
       offset += PAGE_SIZE;

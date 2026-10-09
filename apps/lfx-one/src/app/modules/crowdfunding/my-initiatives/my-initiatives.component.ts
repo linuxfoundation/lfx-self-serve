@@ -1,18 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, linkedSignal, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { ButtonComponent } from '@components/button/button.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
-import { CrowdfundingInitiativesStats, InitiativesResponse, StatCardItem } from '@lfx-one/shared/interfaces';
-import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_INITIATIVES_RESPONSE } from '@lfx-one/shared/constants';
+import { CrowdfundingInitiativesStats, InitiativesResponse, NavLens, StatCardItem } from '@lfx-one/shared/interfaces';
+import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_INITIATIVES_RESPONSE, NAV_LENSES } from '@lfx-one/shared/constants';
 import { formatCurrency } from '@lfx-one/shared/utils';
 import { CrowdfundingService } from '@services/crowdfunding.service';
-import { finalize, scan, switchMap, tap } from 'rxjs/operators';
+import { ProjectContextService } from '@services/project-context.service';
+import { filter, finalize, scan, startWith, switchMap, tap } from 'rxjs/operators';
 import { InitiativesListComponent } from './components/initiatives-list/initiatives-list.component';
 
 @Component({
@@ -24,19 +25,26 @@ import { InitiativesListComponent } from './components/initiatives-list/initiati
 export class MyInitiativesComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly crowdfundingService = inject(CrowdfundingService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   // ─── Public Fields ─────────────────────────────────────────────────────────
   protected readonly crowdfundingUrl = `${environment.urls.crowdfunding}?fundraise=true`;
+  // The Project/Foundation lens routes reuse this page scoped to the lens's project (#347); elsewhere it lists
+  // the caller's own initiatives.
+  protected readonly isLensPage = NAV_LENSES.includes(this.route.snapshot.data['lens'] as NavLens);
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
   protected readonly isLoading = signal(true);
   protected readonly loadingMore = signal(false);
 
-  // ─── Pagination Driver ────────────────────────────────────────────────────
-  private readonly initiativesOffset = signal(0);
-
   // ─── Computed Signals ─────────────────────────────────────────────────────
+  // '' = the caller's own initiatives; otherwise the lens project's uid.
+  private readonly projectUid = computed(() => (this.isLensPage ? this.projectContextService.activeContextUid() : ''));
+  protected readonly projectName = computed(() => this.projectContextService.activeContext()?.name ?? '');
+  // Pagination driver — back to the first page whenever the lens project changes.
+  private readonly page = linkedSignal({ source: this.projectUid, computation: (uid) => ({ uid, offset: 0 }) });
   private readonly initiativesState: Signal<InitiativesResponse> = this.initInitiatives();
   protected readonly initiatives = computed(() => this.initiativesState().data);
   protected readonly initiativesHasMore = computed(() => this.initiativesState().data.length < this.initiativesState().total);
@@ -45,21 +53,28 @@ export class MyInitiativesComponent {
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
   protected onInitiativeClick(slug: string): void {
-    void this.router.navigate(['/crowdfunding/initiatives', slug]);
+    // Relative, keeping ?project=, so a lens page opens its own lens's detail route rather than the Me one.
+    void this.router.navigate([slug], { relativeTo: this.route, queryParamsHandling: 'preserve' });
   }
 
   protected onLoadMoreInitiatives(): void {
     if (this.loadingMore() || !this.initiativesHasMore()) return;
     this.loadingMore.set(true);
-    this.initiativesOffset.update((curr) => curr + DEFAULT_CROWDFUNDING_PAGE_SIZE);
+    this.page.update((curr) => ({ ...curr, offset: curr.offset + DEFAULT_CROWDFUNDING_PAGE_SIZE }));
   }
 
   // ─── Private Initializers ──────────────────────────────────────────────────
   private initInitiatives(): Signal<InitiativesResponse> {
     return toSignal(
-      toObservable(this.initiativesOffset).pipe(
-        switchMap((offset) =>
-          this.crowdfundingService.getMyInitiatives({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset }).pipe(finalize(() => this.loadingMore.set(false)))
+      toObservable(this.page).pipe(
+        // On a lens route, wait for the lens context to resolve a project rather than listing the caller's own.
+        filter(({ uid }) => !this.isLensPage || !!uid),
+        // A first page (initial load or a project switch) shows the loader, not the previous project's rows.
+        tap(({ offset }) => offset === 0 && this.isLoading.set(true)),
+        switchMap(({ uid, offset }) =>
+          this.crowdfundingService
+            .getMyInitiatives({ pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE, offset, projectUid: uid || undefined })
+            .pipe(finalize(() => this.loadingMore.set(false)))
         ),
         scan((acc, curr) => (curr.offset === 0 ? curr : { ...curr, data: [...acc.data, ...curr.data] }), EMPTY_INITIATIVES_RESPONSE),
         tap(() => this.isLoading.set(false))
@@ -69,7 +84,13 @@ export class MyInitiativesComponent {
   }
 
   private initStats(): Signal<CrowdfundingInitiativesStats | undefined> {
-    return toSignal(this.crowdfundingService.getMyInitiativesStats());
+    return toSignal(
+      toObservable(this.projectUid).pipe(
+        filter((uid) => !this.isLensPage || !!uid),
+        // startWith(undefined): the cards show their loading state, not the previous project's numbers.
+        switchMap((uid) => this.crowdfundingService.getMyInitiativesStats(uid || undefined).pipe(startWith(undefined)))
+      )
+    );
   }
 
   private initStatCards(): Signal<StatCardItem[]> {
