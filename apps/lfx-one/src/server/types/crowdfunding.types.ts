@@ -172,7 +172,7 @@ export interface BackendSponsorshipTierInput {
   benefits: string[];
 }
 
-/** Snake_case PATCH body sent to PATCH /crowdfunding/me/initiatives/{id} on the upstream crowdfunding service. */
+/** Snake_case PATCH body sent to PATCH /crowdfunding/initiatives/{id} on the upstream crowdfunding service. */
 export interface BackendUpdateInitiativeInput {
   name?: string;
   description?: string;
