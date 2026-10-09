@@ -1871,6 +1871,21 @@ export interface MeetingJoinPageState {
 }
 
 /**
+ * The public meeting page's `MeetingJoinPageState`, captured by the meeting details gate for V2
+ * @description V1 removes the `meetingJoinState` TransferState key in its constructor, and the
+ * browser always mounts V1 before the gate can swap to V2, so V2 cannot read the key itself. The
+ * gate snapshots it first and hands it over once. `routeId` is the `/meetings/:id` param the
+ * snapshot was taken under, so V2 only seeds from it for that same meeting.
+ */
+export interface MeetingDetailsSeed {
+  routeId: string | null;
+  state: MeetingJoinPageState;
+}
+
+/** Which of the three top-level branches the meeting details V2 page renders. */
+export type MeetingDetailsLoadStatus = 'loading' | 'ready' | 'error';
+
+/**
  * Parsed section from an AI-generated meeting summary
  * @description Represents a structured section extracted from markdown `##` headings
  * in meeting summaries, with visual styling metadata for display

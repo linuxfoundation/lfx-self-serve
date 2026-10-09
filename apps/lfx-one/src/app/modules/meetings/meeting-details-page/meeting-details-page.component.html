@@ -1,0 +1,95 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-impersonation-banner />
+
+<div [ngClass]="{ 'pt-12': userService.impersonating() }">
+  <!-- The token layer's scope class sits on a wrapper inside this template; see the tokens file. -->
+  <div class="meeting-details-v2 min-h-screen bg-[var(--md-surface-page)] text-[var(--md-text-body)]">
+    <!-- Replaces the app header on this page (E1-02). -->
+    <lfx-meeting-identity-bar #identityBar [condensed]="headerOutOfView()" />
+
+    <!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities): 1120px
+         max width, 40px gutters (16px at 640px and below), 56px above the header, 96px below. -->
+    <main class="mx-auto max-w-[1120px] px-[16px] pb-[96px] pt-[56px] min-[641px]:px-[40px]" data-testid="meeting-page-shell">
+      @switch (state.status()) {
+        @case ('error') {
+          <!-- A 5xx or network failure. 400 / 403 / 404 never get here: the state service sends them to
+               /meetings/not-found. A later background refresh failing on a working page does not either. -->
+          <div class="flex flex-col items-center gap-3 py-24 text-center" role="alert" data-testid="meeting-error-state">
+            <i class="fa-light fa-triangle-exclamation text-4xl text-[var(--md-text-muted)]" aria-hidden="true"></i>
+            <!-- The copy changes after a failed retry, so the alert is announced again rather than
+                 staying silent when nothing new appears to happen. -->
+            @if (state.failureCount() > 1) {
+              <p class="text-lg text-[var(--md-text-heading)]">We still couldn't load this meeting.</p>
+            } @else {
+              <p class="text-lg text-[var(--md-text-heading)]">Something went wrong loading this meeting.</p>
+            }
+            <p class="text-sm text-[var(--md-text-muted)]">Check your connection and try again.</p>
+            <lfx-button
+              label="Try again"
+              icon="fa-light fa-arrows-rotate"
+              [outlined]="true"
+              size="small"
+              [loading]="state.retrying()"
+              (onClick)="state.refresh()"
+              data-testid="meeting-error-retry-button" />
+          </div>
+        }
+        @case ('ready') {
+          @if (state.meeting()) {
+            <!-- Observed by the identity bar's fade (see the constructor), so it stays the page's own element. -->
+            <section #header data-testid="meeting-header-section">
+              <lfx-meeting-header />
+            </section>
+            <ng-container [ngTemplateOutlet]="columns" />
+          }
+        }
+        @default {
+          <div role="status" aria-live="polite" data-testid="meeting-skeleton">
+            <span class="sr-only">Loading meeting details…</span>
+            <div class="flex flex-col gap-3" aria-hidden="true">
+              <p-skeleton height="16px" width="160px" />
+              <p-skeleton height="39px" width="60%" />
+              <p-skeleton height="26px" width="320px" styleClass="max-w-full" />
+            </div>
+            <ng-container [ngTemplateOutlet]="columns" />
+          </div>
+        }
+      }
+    </main>
+  </div>
+</div>
+
+<!-- The two columns. Each placeholder stands in for a section a later Phase 1 issue builds; the
+     section replaces its placeholder, keeping this order and these gaps. Stacked at 920px and below
+     (32px apart); side by side above that (44px apart), the rail 344px wide and sticky 32px below the
+     identity bar: 115px (an 83px bar), or 157px under the 42px impersonation banner. -->
+<ng-template #columns>
+  <div class="mt-[56px] flex flex-col gap-[32px] min-[921px]:flex-row min-[921px]:items-start min-[921px]:gap-[44px]">
+    <div class="flex min-w-0 flex-col gap-[64px] min-[921px]:flex-[1.7_1_0%]" data-testid="meeting-content-column">
+      <p-skeleton height="109px" aria-hidden="true" data-testid="meeting-section-placeholder-occurrences" />
+      <p-skeleton height="220px" aria-hidden="true" data-testid="meeting-section-placeholder-agenda" />
+      <p-skeleton height="280px" aria-hidden="true" data-testid="meeting-section-placeholder-materials" />
+      <p-skeleton height="280px" aria-hidden="true" data-testid="meeting-section-placeholder-discover" />
+    </div>
+    <aside
+      class="flex w-full flex-col gap-[20px] min-[921px]:sticky min-[921px]:w-[344px] min-[921px]:flex-none"
+      [ngClass]="railTopClass()"
+      aria-label="Meeting actions"
+      data-testid="meeting-rail">
+      @if (state.status() === 'ready') {
+        <!-- The rail card: the time banner (E1-06) and the action slot (E2-01) on top, then "Organized
+             by" under a divider, as in the prototype. -->
+        <div
+          class="flex flex-col overflow-hidden rounded-[var(--md-radius-lg)] border border-[var(--md-border)] bg-[var(--md-surface-card)] shadow-[0_1px_2px_var(--md-shadow-color)]">
+          <div class="flex flex-col gap-[16px] p-[20px]">
+            <lfx-meeting-time-banner />
+            <lfx-meeting-action-slot />
+          </div>
+          <lfx-meeting-organizer class="block border-t border-[var(--md-divider)] px-[20px] py-[18px] empty:hidden" />
+        </div>
+      }
+    </aside>
+  </div>
+</ng-template>

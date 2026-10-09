@@ -1,0 +1,170 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities): 18px between the
+     context link, the title and the badge row. -->
+@if (meeting(); as meeting) {
+  <div class="flex items-start justify-between gap-[20px]">
+    <div class="flex min-w-0 flex-col gap-[18px]">
+      @if (project(); as project) {
+        @if (foundation()) {
+          <button
+            type="button"
+            (click)="openFoundation()"
+            class="inline-flex w-fit items-center gap-[10px] rounded-[var(--md-radius-md)] text-left focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+            data-testid="meeting-header-project">
+            <ng-container [ngTemplateOutlet]="projectIdentity" [ngTemplateOutletContext]="{ $implicit: project }" />
+            <span class="sr-only">(opens in a new tab)</span>
+          </button>
+        } @else {
+          <!-- The project's parent could not be resolved, so there is no foundation to open. -->
+          <div class="inline-flex w-fit items-center gap-[10px]" data-testid="meeting-header-project">
+            <ng-container [ngTemplateOutlet]="projectIdentity" [ngTemplateOutletContext]="{ $implicit: project }" />
+          </div>
+        }
+      }
+
+      <h1 class="m-0 max-w-[760px] text-[34px] font-bold leading-[1.15] tracking-[-0.022em] text-[var(--md-text-heading)] [text-wrap:pretty]">
+        {{ meeting.title }}
+      </h1>
+
+      <!-- The status pill (E1-05) leads the row, then the privacy chip (E1-04). The prototype keeps
+         the row on one line; it wraps here, so a narrow screen never scrolls sideways. -->
+      <div class="flex flex-wrap items-center gap-[8px]" data-testid="meeting-header-badges">
+        @if (status(); as status) {
+          <!-- A span rather than lfx-tag: lfx-tag's dot is always the text colour (bg-current), but the
+             prototype's dot differs from its text (Upcoming: accent dot, accent-ink text; Ended: faint dot,
+             body text). Prototype geometry in exact px (the app's 14px root would shrink rem utilities). -->
+          <span
+            class="inline-flex flex-none items-center gap-[7px] whitespace-nowrap rounded-full px-[12px] py-[5px] text-[12.5px] font-semibold leading-[15px]"
+            [class]="statusClasses[status].pill"
+            data-testid="meeting-status-pill"
+            [attr.data-state]="timeState()"
+            [attr.data-status]="status"
+            [attr.data-my-rsvp]="myRsvpAttr()">
+            @if (statusClasses[status].glyph; as glyph) {
+              <i class="text-[12px]" [class]="glyph" aria-hidden="true"></i>
+            } @else {
+              <span class="inline-block h-[7px] w-[7px] rounded-full" [class]="statusClasses[status].dot" aria-hidden="true"></span>
+            }
+            {{ statusLabel() }}
+          </span>
+        }
+        @if (privacy(); as privacy) {
+          <!-- One chip, four values (FR-010): state goes in data-* attributes, not separate elements. -->
+          <lfx-tag
+            [value]="privacy.label"
+            [icon]="privacyIcon()"
+            [outlined]="true"
+            [rounded]="true"
+            [styleClass]="chipClass"
+            data-testid="meeting-privacy-chip"
+            [attr.data-visibility]="privacy.visibility"
+            [attr.data-restricted]="privacy.restricted" />
+        }
+        @if (recurring()) {
+          <lfx-tag
+            value="Recurring"
+            icon="fa-light fa-arrows-repeat"
+            [outlined]="true"
+            [rounded]="true"
+            [styleClass]="chipClass"
+            data-testid="meeting-header-badge-recurring" />
+        }
+        @if (meetingType(); as type) {
+          <lfx-tag
+            [value]="type.label"
+            [icon]="type.icon"
+            [outlined]="true"
+            [rounded]="true"
+            [styleClass]="chipClass"
+            data-testid="meeting-header-badge-type" />
+        }
+        @for (committee of committees(); track committee.uid) {
+          <!-- Bounded to the row so a long name truncates instead of overflowing; the title keeps it whole. -->
+          <a
+            [href]="committee.href"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="min-w-0 max-w-full rounded-full no-underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+            [attr.title]="committee.name"
+            [attr.data-testid]="'meeting-header-badge-committee-' + committee.uid">
+            <lfx-tag
+              [value]="committee.name"
+              icon="fa-light fa-users"
+              [outlined]="true"
+              [rounded]="true"
+              [styleClass]="chipClass + ' max-w-full overflow-hidden text-ellipsis'" />
+            <span class="sr-only">(opens in a new tab)</span>
+          </a>
+        }
+        @if (meeting.recording_enabled) {
+          <lfx-tag
+            value="Recording"
+            icon="fa-light fa-video text-[var(--md-status-live)]"
+            [outlined]="true"
+            [rounded]="true"
+            [styleClass]="chipClass"
+            data-testid="meeting-header-badge-recording" />
+        }
+        @if (meeting.transcript_enabled) {
+          <lfx-tag
+            value="Transcripts"
+            icon="fa-light fa-file-lines text-[var(--md-accent)]"
+            [outlined]="true"
+            [rounded]="true"
+            [styleClass]="chipClass"
+            data-testid="meeting-header-badge-transcripts" />
+        }
+        @if (meeting.youtube_upload_enabled) {
+          <lfx-tag
+            value="YouTube Upload"
+            icon="fa-light fa-upload text-[var(--md-status-warn)]"
+            [outlined]="true"
+            [rounded]="true"
+            [styleClass]="chipClass"
+            data-testid="meeting-header-badge-youtube" />
+        }
+        @if (meeting.ai_summary_enabled) {
+          <lfx-tag
+            value="AI Summary"
+            icon="fa-light fa-sparkles text-[var(--md-feature-ai)]"
+            [outlined]="true"
+            [rounded]="true"
+            [styleClass]="chipClass"
+            data-testid="meeting-header-badge-ai-summary" />
+        }
+      </div>
+    </div>
+
+    <!-- The prototype's Add to calendar is not built: V2 excludes add-to-calendar and .ics (FR-050). -->
+    <lfx-button
+      icon="fa-light fa-copy"
+      [rounded]="true"
+      [outlined]="true"
+      severity="secondary"
+      size="small"
+      ariaLabel="Copy meeting link"
+      styleClass="flex-none !border-[var(--md-border-strong)] !bg-[var(--md-surface-card)] !text-[var(--md-text-body)] hover:!bg-[var(--md-surface-hover)] hover:!text-[var(--md-text-heading)]"
+      (onClick)="copyLink()"
+      data-testid="meeting-header-copy-link" />
+  </div>
+}
+
+<ng-template #projectIdentity let-project>
+  @if (project.logo_url) {
+    <img [src]="project.logo_url" alt="" class="block h-[34px] w-[34px] rounded-[var(--md-radius-md)] bg-[var(--md-surface-hover)] object-contain p-[4px]" />
+  } @else {
+    <span
+      class="flex h-[34px] w-[34px] items-center justify-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-hover)] text-[var(--md-text-muted)]"
+      aria-hidden="true">
+      <i class="fa-light fa-cube"></i>
+    </span>
+  }
+  <span class="flex flex-col leading-[1.25]">
+    <span class="text-[14.5px] font-semibold text-[var(--md-text-heading)]">{{ project.name }}</span>
+    @if (project.parent?.name; as foundation) {
+      <span class="text-[12.5px] text-[var(--md-text-muted)]" data-testid="meeting-header-foundation">{{ foundation }}</span>
+    }
+  </span>
+</ng-template>

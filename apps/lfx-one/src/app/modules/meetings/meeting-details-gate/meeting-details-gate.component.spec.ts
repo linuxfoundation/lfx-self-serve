@@ -1,0 +1,178 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Component, inject, makeStateKey, Signal, signal, TransferState, WritableSignal } from '@angular/core';
+import { ComponentFixture, DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { MEETING_JOIN_STATE_KEY } from '@lfx-one/shared/constants';
+import { MeetingJoinPageState } from '@lfx-one/shared/interfaces';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { UserService } from '@services/user.service';
+import { describe, expect, it } from 'vitest';
+
+import { MeetingDetailsGateComponent } from './meeting-details-gate.component';
+import { MeetingDetailsSeedService } from './meeting-details-seed.service';
+
+// Stand-ins for the two real trees, matched by selector — this spec is about which branch renders,
+// and pulling in the real pages would drag their whole dependency graphs in with them. They record
+// their construction order because a zoneless `detectChanges()` flushes `afterNextRender` inside the
+// same call, so the pre-latch DOM is never observable from the outside — the order in which the two
+// branches mounted is what shows that v1 rendered first and v2 replaced it.
+const mountOrder: string[] = [];
+const stateKey = makeStateKey<MeetingJoinPageState>(MEETING_JOIN_STATE_KEY);
+// What the v2 stub got from the gate's seed holder when it mounted.
+let v2Seed: MeetingJoinPageState | null | undefined;
+
+// Consumes the SSR seed exactly as the real v1 constructor does.
+@Component({ selector: 'lfx-meeting-join', template: '<div data-testid="v1-stub"></div>' })
+class MeetingJoinStubComponent {
+  public constructor() {
+    mountOrder.push('v1');
+    inject(TransferState).remove(stateKey);
+  }
+}
+
+@Component({ selector: 'lfx-meeting-details-page', template: '<div data-testid="v2-stub"></div>' })
+class MeetingDetailsPageStubComponent {
+  public constructor() {
+    mountOrder.push('v2');
+    v2Seed = inject(MeetingDetailsSeedService).take('meeting-1');
+  }
+}
+
+describe('MeetingDetailsGateComponent', () => {
+  let fixture: ComponentFixture<MeetingDetailsGateComponent>;
+
+  // `Playthrough` (the default) resolves the v2 `@defer` block on its own; `Manual` leaves it in its
+  // placeholder state so a test can drive it to `Error` and exercise the v1 fallback.
+  async function create(
+    authenticated: WritableSignal<boolean>,
+    getBooleanFlag: (key: string, defaultValue: boolean) => Signal<boolean>,
+    deferBlockBehavior: DeferBlockBehavior = DeferBlockBehavior.Playthrough,
+    seed: MeetingJoinPageState | null = null
+  ): Promise<void> {
+    mountOrder.length = 0;
+    v2Seed = undefined;
+
+    await TestBed.configureTestingModule({
+      deferBlockBehavior,
+      imports: [MeetingDetailsGateComponent],
+      providers: [
+        { provide: FeatureFlagService, useValue: { getBooleanFlag } },
+        { provide: UserService, useValue: { authenticated } },
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'meeting-1' }) } } },
+      ],
+    })
+      .overrideComponent(MeetingDetailsGateComponent, {
+        set: { imports: [MeetingJoinStubComponent, MeetingDetailsPageStubComponent] },
+      })
+      .compileComponents();
+
+    if (seed) {
+      TestBed.inject(TransferState).set(stateKey, seed);
+    }
+    fixture = TestBed.createComponent(MeetingDetailsGateComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  // What LaunchDarkly hands back once it has a value for the flag.
+  function flagReadsAs(value: WritableSignal<boolean>): () => Signal<boolean> {
+    return () => value;
+  }
+
+  // What `FeatureFlagService.getBooleanFlag` does while the provider has not initialized: it hands
+  // back whatever default the caller passed, so this stub proves which default the gate asks for.
+  function flagProviderNeverReady(_key: string, defaultValue: boolean): Signal<boolean> {
+    return signal(defaultValue);
+  }
+
+  function rendered(): { v1: boolean; v2: boolean } {
+    return {
+      v1: fixture.nativeElement.querySelector('[data-testid="meeting-details-gate-v1"]') !== null,
+      v2: fixture.nativeElement.querySelector('[data-testid="meeting-details-gate-v2"]') !== null,
+    };
+  }
+
+  it('renders v1 when the flag is off for an authenticated viewer', async () => {
+    await create(signal(true), flagReadsAs(signal(false)));
+
+    expect(rendered()).toEqual({ v1: true, v2: false });
+    expect(fixture.nativeElement.querySelector('[data-testid="v1-stub"]')).not.toBeNull();
+  });
+
+  it('fails closed to v1 when the flag provider never becomes ready', async () => {
+    await create(signal(true), flagProviderNeverReady);
+
+    expect(rendered()).toEqual({ v1: true, v2: false });
+    expect(mountOrder).toEqual(['v1']);
+  });
+
+  it('mounts v1 first and swaps to v2 only after the hydration latch', async () => {
+    await create(signal(true), flagReadsAs(signal(true)));
+
+    // v1 is what the first render pass — the one SSR serializes and the browser hydrates — put in
+    // the DOM; v2 constructing second is the post-latch swap, not a tree Angular had to reconcile.
+    expect(mountOrder).toEqual(['v1', 'v2']);
+    expect(rendered()).toEqual({ v1: false, v2: true });
+    expect(fixture.nativeElement.querySelector('[data-testid="v2-stub"]')).not.toBeNull();
+  });
+
+  it('keeps an anonymous viewer on v1 even with the flag on', async () => {
+    await create(signal(false), flagReadsAs(signal(true)));
+
+    expect(rendered()).toEqual({ v1: true, v2: false });
+    expect(mountOrder).toEqual(['v1']);
+  });
+
+  // `authenticated()` starts false and flips once the session resolves on the client, so the gate
+  // has to react rather than decide once — otherwise a targeted viewer would be pinned to v1.
+  it('swaps to v2 when the viewer authenticates after the first render', async () => {
+    const authenticated = signal(false);
+    await create(authenticated, flagReadsAs(signal(true)));
+
+    expect(rendered()).toEqual({ v1: true, v2: false });
+
+    authenticated.set(true);
+    fixture.detectChanges();
+
+    expect(rendered()).toEqual({ v1: false, v2: true });
+  });
+
+  it('falls back to v1 when the flag flips off after v2 has rendered', async () => {
+    const v2Flag = signal(true);
+    await create(signal(true), flagReadsAs(v2Flag));
+
+    expect(rendered()).toEqual({ v1: false, v2: true });
+
+    v2Flag.set(false);
+    fixture.detectChanges();
+
+    expect(rendered()).toEqual({ v1: true, v2: false });
+  });
+
+  // The v2 chunk can fail to load — a deploy mid-session invalidates its hash, or the connection
+  // drops. The `@error` branch renders v1 rather than leaving a targeted viewer on an empty page.
+  it('falls back to v1 when the v2 chunk fails to load', async () => {
+    await create(signal(true), flagReadsAs(signal(true)), DeferBlockBehavior.Manual);
+
+    const [v2Block] = await fixture.getDeferBlocks();
+    await v2Block.render(DeferBlockState.Error);
+
+    const v2Wrapper: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="meeting-details-gate-v2"]');
+    expect(v2Wrapper?.querySelector('[data-testid="v1-stub"]')).not.toBeNull();
+    expect(v2Wrapper?.querySelector('[data-testid="v2-stub"]')).toBeNull();
+  });
+
+  // v1 removes the seed key in its constructor and always mounts first, so v2 can only seed from it
+  // through the snapshot the gate took before v1 existed (E1-01).
+  it('hands v2 the SSR seed that v1 has already consumed', async () => {
+    const seed: MeetingJoinPageState = { meeting: null, loadedViaPastMeetingId: false, pastMeetingFullAccess: false, meetingLoadFailed: true };
+    await create(signal(true), flagReadsAs(signal(true)), DeferBlockBehavior.Playthrough, seed);
+
+    expect(mountOrder).toEqual(['v1', 'v2']);
+    expect(TestBed.inject(TransferState).hasKey(stateKey)).toBe(false);
+    expect(v2Seed).toEqual(seed);
+  });
+});

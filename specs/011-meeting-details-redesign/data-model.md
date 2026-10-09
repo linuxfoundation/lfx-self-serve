@@ -1,0 +1,129 @@
+# Meeting details V2 — data model
+
+Plan ID **E0-01** · issue [#1766](https://github.com/linuxfoundation/lfx-self-serve/issues/1766) · epic [#1765](https://github.com/linuxfoundation/lfx-self-serve/issues/1765)
+
+Which payload fields feed which state axis, and what the derived view model holds. The runtime half
+of this document is `packages/shared/src/interfaces/meeting-view-model.interface.ts` and
+`packages/shared/src/utils/meeting-view-model.utils.ts` (E0-02, #2876); this
+file describes what they encode rather than restating their code. Field references are to `main`
+@ `1ee353054`.
+
+## Payloads
+
+The page reads one of two public payloads, never both for the same render:
+
+| Payload                                                                   | When                                                          | Carries                                                                                     |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `GET /public/api/meetings/:id` → `{ meeting, project }`                   | upcoming or live, and the series id of a recurring meeting    | the full `Meeting`, per-viewer `invited` / `organizer`, `host_key` when the viewer holds it |
+| `GET /public/api/meetings/past/:id` → `{ meeting, project, full_access }` | a composite `{meetingId}-{13-digit ms}` id, or a 404 fallback | the past meeting; trimmed to 19 fields when `full_access` is false                          |
+
+Anonymous responses have `created_by`, `owner` and `organizers` removed. `host_key` is stripped
+from every past payload. Neither upcoming detail endpoint populates registrant counts any more
+(GH-1731) — see [Counts](#counts).
+
+## Field → axis
+
+| Axis                  | Derived from                                                                                                                                                                                                                                                                                                                                      | Resolver                          |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| A. Time               | `start_time`, `duration`, `early_join_time_minutes` (default 10), end buffer `MEETING_END_BUFFER_MS` (40 min), for the occurrence the page is showing. A composite id puts the **page** in past mode before any resolver runs                                                                                                                     | `resolveTimeState`                |
+| B. Viewer             | session (`authenticated`), `meeting.invited`, `meeting.organizer` — organizer wins over invited; anonymous is always `visitor`. **`invited` is set only by the upcoming endpoint**: the past endpoint folds registrant status into `full_access`, so a past registrant resolves as `outsider` and past sections key on `fullAccess`, not the role | `resolveViewerRole`               |
+| C. Privacy            | `visibility` (nullable, **null reads as private**) × `restricted` (`true` only when strictly true)                                                                                                                                                                                                                                                | `resolvePrivacy`                  |
+| D. Past access        | `full_access` on the past payload; organizers always count as having it                                                                                                                                                                                                                                                                           | shared rule inside the resolvers  |
+| E. Cadence            | upcoming: `!!meeting.recurrence` (truthy, not `!== null`: an omitted field is not a series). Past: the past payload can omit `recurrence`, so derive cadence from the series, as V1 does (`getMeetingSeriesUid(meeting) !== meeting.id`, TS:1047) or from the resolved occurrence timeline                                                        | section input `recurring`         |
+| F. RSVP tracking      | `Meeting.is_invite_responses_enabled`, normalized by `normalizeIndexedMeetingInviteResponses` from the indexed alias `use_new_invite_email_address`. **Read the normalized field only.**                                                                                                                                                          | `isMeetingInviteResponsesEnabled` |
+| G. Arrival credential | `?password=` in the URL, or the password handed over in router state by the composer                                                                                                                                                                                                                                                              | not in the view model — see below |
+
+Axis G never reaches the view model. It decides whether the page loads at all (see the state
+matrix's reachability section), so by the time a resolver runs, G has already done its work: a
+loaded non-open page implies the viewer holds the password. That is why joining keys on
+`restricted`, not on `openToPublic`.
+
+## Derived view model
+
+What `meeting-view-model.interface.ts` defines, and the rule behind each piece:
+
+- **`MeetingTimeState`** — `before | live | ended`.
+- **`MeetingStatusKind`** — what the status pill and identity bar say (`resolveMeetingStatus`, E1-05):
+  `ended` and `live` for everyone, with the join window before the scheduled start reading as
+  `starting-soon` (`data-state` stays `live`); before the meeting, a viewer on the invite list with RSVP tracking
+  on sees their own answer (`awaiting-rsvp | going | maybe | cant-attend`), and everyone else sees
+  `upcoming`. An RSVP that has not loaded, or a pre-2024 meeting, reads as `upcoming`, never as
+  `awaiting-rsvp`.
+- **`MeetingViewerRole`** — `visitor | outsider | registrant | organizer`. There is no `host` role.
+  Host-key access is orthogonal to the role: the BFF returns `host_key` (with `can_view_host_key`)
+  to whoever holds the FGA `host` relation, including co-hosts who are not organizers, inside the
+  host-key window. V2 reads those two fields directly rather than inferring them from the role.
+- **`MeetingPrivacyState`** — the header chip's `label` and `icon` (from the shared helpers),
+  `visibility`, `restricted`, and `openToPublic` (public **and** unrestricted). `openToPublic` gates
+  self-registration only.
+- **`ActionSlotKind`** — nine kinds; the state matrix gives the kind for every legal cell.
+- **`MeetingSectionVisibility`** — one boolean per region: agenda, materials, join details,
+  occurrences, people, tools, and the three RSVP surfaces (summary, roster filter, avatar badges).
+
+Two invariants tie the resolvers together:
+
+1. **The rail and the sections agree.** When the slot resolves to `tools`, the tools section is
+   visible; both read one shared artifact-access rule (organizer or `full_access`).
+2. **RSVP tracking removes, it does not vary.** When F is off, every RSVP surface is false and no
+   RSVP slot kind is returned.
+
+## View-scoped state
+
+Two pieces of state are not axes and not part of the detail payload, but the page cannot render
+without them:
+
+| State                 | Source                                                                                                                                                                                                                                                                                                                                 | Notes                                                                                                                                                                                             |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Selected occurrence   | `?occurrence=<start-ms>` on the URL: a Unix-**millisecond start timestamp**, not an occurrence ID, matched against `new Date(occurrence.start_time).getTime()` (V1 `meeting-join.component.ts:1022-1027` on current `main`), else the current or next active occurrence; a composite `{id}-{13-digit ms}` id selects a past occurrence | cancelled occurrences are never selected; a cancelled `?occurrence=` falls back to the current or next one. Feeds `resolveTimeState`                                                              |
+| The viewer's own RSVP | `GET /api/meetings/:uid/rsvp/me?occurrenceId=<selected occurrence's occurrence_id>` (the canonical ID, Unix seconds — never the URL's millisecond value) (authenticated; registrants)                                                                                                                                                  | the public detail payload does **not** populate `my_rsvp`. Scope the request to the selected occurrence, or a per-occurrence RSVP is lost. Only fetched when RSVP tracking is on (FR-023, FR-024) |
+
+## Counts
+
+| Count                                                     | Where it comes from now                                                                                                                                                                                                                                             | Who can have it                                                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Invitees / accepted / declined / pending (upcoming)       | the roster, via `/api/meetings/:uid/my-meeting-registrants`                                                                                                                                                                                                         | registrants and organizers only                                                                                    |
+| `individual_registrants_count`, `committee_members_count` | **not populated** on either upcoming detail endpoint (GH-1731)                                                                                                                                                                                                      | nobody — still optional on the interface, so TypeScript will not flag a read                                       |
+| Invitee / participant / attended counts (past)            | the public page derives them from the participants list, `GET /api/past-meetings/:uid/participants` (V1 `pastMeetingParticipants`). `GET /api/past-meetings/:uid` (route `past-meetings.route.ts:65`) also fills count fields, but the public page does not call it | signed-in viewers with access only; V1 fetches participants only when authenticated, so anonymous viewers get none |
+
+On an **upcoming** meeting, anonymous and outsider viewers have no count source, and V2 MUST NOT
+design one in. On a **past** meeting, any signed-in viewer with access (outsider included) does have
+one, through the participants list; only anonymous viewers have none (FR-032).
+
+## RSVP
+
+- `RsvpResponse`: `accepted | maybe | declined`. "Pending" is the absence of a response.
+- `RsvpScope`: `single | all | this_and_following`; asked only on a series.
+- `RegistrantAttendanceStatus` (`rsvp-calculator.util.ts`): `accepted | declined | maybe | pending`.
+  Callers of `getRegistrantAttendanceStatus` / `countRegistrantAttendance` MUST pass
+  `{ inviteResponsesEnabled }`, or calendar-invite acceptance is counted as an RSVP on pre-2024
+  meetings.
+
+## Identifiers
+
+| Identifier                                 | Format                                  | Trap                                                                                                                                             |
+| ------------------------------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Composite past-occurrence id               | `/^\d+-\d{13}$/` — numeric id + **ms**  | forces past mode; the base id must be numeric                                                                                                    |
+| `cancelled_occurrences[]`                  | Unix **seconds** (10 digits)            | compared directly against `occurrence_id`, not re-derived from time                                                                              |
+| `?occurrence=` and the composite-id suffix | Unix **ms** start timestamp (13 digits) | a start time, not an `occurrence_id`: convert via the matched occurrence before calling RSVP or occurrence APIs, which take the seconds-based ID |
+
+## Past participants
+
+`PastMeetingParticipant` carries `is_verified`, `is_unknown`, `is_auto_matched`,
+`is_ai_reconciled`, `zoom_user_name` and `mapped_invitee_name`, all optional. Nothing renders them
+today; N-02 decides how much of each tier the public surface shows (FR-033).
+
+## Not in the model yet
+
+Each needs an upstream change first (implementation plan §8). Each is filed here as a tracker, to
+be copied into the owning service repo:
+
+| Blocker      | Missing field                                    | Blocks         |
+| ------------ | ------------------------------------------------ | -------------- |
+| U-01 (#2927) | attendance counts on `v1_past_meeting`           | E6-06          |
+| U-02 (#2928) | per-occurrence RSVP-accepted counts              | E6-04 (soft)   |
+| U-03 (#2929) | recording-exists flag per past occurrence        | E6-03 (marker) |
+| U-04 (#2930) | Zoom meeting id + passcode on the detail payload | E7-01, E7-03   |
+| U-05 (#2931) | dial-in numbers                                  | E7-01          |
+| U-06 (#2932) | committee `logo_url`                             | E8-04 (soft)   |
+| U-07 (#2933) | structured `agenda_items`                        | E9-01 – E9-03  |
+| U-08 (#2934) | magic-link tokens                                | M-01           |

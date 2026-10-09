@@ -260,6 +260,23 @@ export function formatTo12HourInTimezone(date: Date, timezone: string): string {
 }
 
 /**
+ * Formats a time for display ("9:00 AM", not "09:00 AM") in a specific timezone.
+ * @description For read surfaces. `formatTo12HourInTimezone` zero-pads the hour because it feeds
+ * time-picker form controls; this matches the `meetingTime` pipe's display form instead.
+ * @param date The instant to format
+ * @param timezone The IANA timezone identifier (e.g., "America/Chicago")
+ * @returns Time string such as "9:00 AM"; the instant's local time when the zone is invalid
+ */
+export function formatDisplayTimeInTimezone(date: Date, timezone: string): string {
+  const options: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit', hour12: true };
+  try {
+    return new Intl.DateTimeFormat('en-US', { ...options, timeZone: timezone }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat('en-US', options).format(date);
+  }
+}
+
+/**
  * Builds a local `Date` carrier whose host-local calendar fields read the target zone's wall-clock
  * date for the given instant, pinned to local NOON. Consumers (the date picker, `combineDateTime`,
  * `buildTimezoneOptions`) only read the carrier's year/month/day fields, and noon never falls inside

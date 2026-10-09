@@ -4,7 +4,7 @@
 
 The public meeting join page (`/meetings/:id`) is a public SSR route that allows both anonymous and authenticated users to view meeting details and join a meeting. It is the primary entry point for invite-link recipients who may not have an LFX account.
 
-**Location:** `apps/lfx-one/src/app/modules/meetings/meeting-join/`
+**Location:** `apps/lfx-one/src/app/modules/meetings/meeting-join-v1/`
 
 Key files:
 
@@ -12,6 +12,8 @@ Key files:
 - `meeting-join.component.html` — template: badge row, content, join section, signed-out branch
 
 **Backend contracts:** See [Public Meetings](../backend/public-meetings.md) for the server-side M2M auth, controller, and route allowlist details.
+
+**Admin counterpart:** past meetings also have an authenticated admin page, `/meetings/:id/details`. Which capability belongs on which page is decided in [Meeting Surface Boundary](./meeting-surface-boundary.md).
 
 ---
 
@@ -132,7 +134,9 @@ The attendance stats (attended, absent, rate) come from the participant rows whe
 
 ## 🧱 Component Structure
 
-**Location:** `apps/lfx-one/src/app/modules/meetings/meeting-join/meeting-join.component.ts`
+**Location:** `apps/lfx-one/src/app/modules/meetings/meeting-join-v1/meeting-join.component.ts`
+
+This component is no longer the `/meetings/:id` route target itself: the route loads `meeting-details-gate/`, which renders this page by default and the v2 tree only behind `MEETING_V2_ENABLED_FLAG`. Everything below still describes the page an anonymous visitor — and anyone the flag is off for — gets, and SSR renders it either way.
 
 Key signals and their gating:
 

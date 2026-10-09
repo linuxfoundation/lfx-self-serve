@@ -2008,3 +2008,46 @@ describe('MeetingService.createMeeting attendee visibility lock', () => {
     expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(false);
   });
 });
+
+// E2-04: "could not load" must reach the caller as an error, never as "has not answered" (`null`).
+describe('MeetingService.getMeetingRsvpForCurrentUser', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    vi.mocked(getEffectiveEmail).mockReturnValue('dana.reyes@acme-motors.example');
+    service = new MeetingService();
+  });
+
+  it('propagates a failed registrant lookup', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockRejectedValue(new Error('query service down'));
+
+    await expect(service.getMeetingRsvpForCurrentUser(req, 'meeting-1')).rejects.toThrow('query service down');
+  });
+
+  // Through the strict raw page walk: `getMeetingRsvps` would read the same failure as no RSVPs.
+  it('propagates a failed RSVP lookup', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'reg-1' }] as never);
+    const getMeetingRsvps = vi.spyOn(service, 'getMeetingRsvps');
+    const getRawMeetingRsvps = vi.spyOn(service, 'getRawMeetingRsvps').mockRejectedValue(new Error('query service down'));
+
+    await expect(service.getMeetingRsvpForCurrentUser(req, 'meeting-1')).rejects.toThrow('query service down');
+    expect(getRawMeetingRsvps).toHaveBeenCalledWith(req, 'meeting-1', undefined, true);
+    expect(getMeetingRsvps).not.toHaveBeenCalled();
+  });
+
+  it("answers with the viewer's own RSVP from that walk", async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'reg-1' }] as never);
+    vi.spyOn(service, 'getRawMeetingRsvps').mockResolvedValue([
+      { id: 'rsvp-other', registrant_id: 'reg-2', response_type: 'declined' },
+      { id: 'rsvp-own', registrant_id: 'reg-1', response_type: 'accepted' },
+    ] as never);
+
+    await expect(service.getMeetingRsvpForCurrentUser(req, 'meeting-1')).resolves.toMatchObject({ id: 'rsvp-own' });
+  });
+
+  it('still answers null for a viewer with no registrant row', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([]);
+
+    await expect(service.getMeetingRsvpForCurrentUser(req, 'meeting-1')).resolves.toBeNull();
+  });
+});
