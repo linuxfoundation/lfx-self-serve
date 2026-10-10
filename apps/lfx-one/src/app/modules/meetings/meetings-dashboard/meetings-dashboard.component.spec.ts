@@ -34,6 +34,7 @@ describe('MeetingsDashboardComponent', () => {
   let composer: MeetingComposerService;
   let getUserMeetings: ReturnType<typeof vi.fn>;
   let clearPastMeetingRecordingCache: ReturnType<typeof vi.fn>;
+  let removedMeetingIds: ReturnType<typeof signal<ReadonlySet<string>>>;
 
   const meeting = { uid: 'meeting-1', title: 'Weekly sync', start_time: '2099-01-01T10:00:00Z', duration: 60 } as unknown as Meeting;
 
@@ -45,6 +46,7 @@ describe('MeetingsDashboardComponent', () => {
   beforeEach(() => {
     getUserMeetings = vi.fn(() => of([meeting]));
     clearPastMeetingRecordingCache = vi.fn();
+    removedMeetingIds = signal<ReadonlySet<string>>(new Set());
 
     TestBed.configureTestingModule({
       providers: [
@@ -53,6 +55,7 @@ describe('MeetingsDashboardComponent', () => {
           provide: MeetingService,
           useValue: {
             clearPastMeetingRecordingCache,
+            removedRegistrationMeetingIds: removedMeetingIds,
             getPastMeetingRecording: vi.fn(() => of(null)),
             getMeetingsByProjectPaginated: vi.fn(() => of({ meetings: [], pagination: {} })),
             getPastMeetingsByProjectPaginated: vi.fn(() => of({ meetings: [], pagination: {} })),
@@ -200,6 +203,29 @@ describe('MeetingsDashboardComponent', () => {
       expect(component['organizerCount']()).toBe(1);
     });
 
+    it('drops a meeting the viewer removed themselves from, and its counts, even if the refetch still returns it', () => {
+      const component = createComponent();
+      flush();
+      expect(ids(component)).toEqual(['declined-one', 'pending', 'later']);
+      expect(component['pendingRsvpCount']()).toBe(1);
+
+      removedMeetingIds.set(new Set(['pending']));
+      flush();
+
+      expect(ids(component)).toEqual(['declined-one', 'later']);
+      expect(component['pendingRsvpCount']()).toBe(0);
+    });
+
+    it('keeps a removed meeting the viewer organizes', () => {
+      const organized = { ...pending, id: 'organized', organizer: true };
+      getUserMeetings.mockReturnValue(of([organized, later] as unknown as Meeting[]));
+      removedMeetingIds.set(new Set(['organized']));
+      const component = createComponent();
+      flush();
+
+      expect(ids(component)).toEqual(['organized', 'later']);
+    });
+
     it('counts dates in the stats window and RSVPs still needed, excluding declined-for-all meetings', () => {
       const component = createComponent();
       flush();
@@ -274,6 +300,7 @@ describe('MeetingsDashboardComponent — create button per flag', () => {
           provide: MeetingService,
           useValue: {
             clearPastMeetingRecordingCache: vi.fn(),
+            removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
             getPastMeetingRecording: vi.fn(() => of(null)),
             getMeetingsByProjectPaginated: vi.fn(() => of({ meetings: [], pagination: {} })),
             getPastMeetingsByProjectPaginated: vi.fn(() => of({ meetings: [], pagination: {} })),

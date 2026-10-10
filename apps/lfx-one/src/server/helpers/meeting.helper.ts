@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibility } from '@lfx-one/shared/enums';
-import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingRegistrant, PastMeeting } from '@lfx-one/shared/interfaces';
 import { isWithinHostKeyWindow, resolveMeetingOrganizer, resolveMeetingOwner } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -27,19 +27,22 @@ const committeeService = new CommitteeService();
  * @returns True if the user is invited to the meeting
  */
 export async function isUserInvitedToMeeting(req: Request, meetingUid: string, email: string, m2mToken?: string): Promise<boolean> {
+  return (await getUserMeetingRegistrants(req, meetingUid, email, m2mToken)).length > 0;
+}
+
+async function getUserMeetingRegistrants(req: Request, meetingUid: string, email: string, m2mToken?: string): Promise<MeetingRegistrant[]> {
   if (!meetingUid) {
-    return false;
+    return [];
   }
 
   const username = (await getUsernameFromAuth(req)) ?? undefined;
 
   if (!email && !username) {
-    return false;
+    return [];
   }
 
   const token = m2mToken || (await generateM2MToken(req));
-  const registrants = await meetingService.getMeetingRegistrantsForUser(req, meetingUid, email || undefined, username, token);
-  return registrants.length > 0;
+  return meetingService.getMeetingRegistrantsForUser(req, meetingUid, email || undefined, username, token);
 }
 
 /**
@@ -52,11 +55,12 @@ export async function isUserInvitedToMeeting(req: Request, meetingUid: string, e
  */
 export async function addInvitedStatusToMeeting(req: Request, meeting: Meeting, email: string, m2mToken?: string): Promise<Meeting> {
   // Check invitation status for all users, including organizers (who may also be invited)
-  const invited = await isUserInvitedToMeeting(req, meeting.id, email, m2mToken);
+  const registrants = await getUserMeetingRegistrants(req, meeting.id, email, m2mToken);
 
   return {
     ...meeting,
-    invited,
+    invited: registrants.length > 0,
+    invited_via_committee: registrants.some((registrant) => registrant.type === 'committee'),
   };
 }
 

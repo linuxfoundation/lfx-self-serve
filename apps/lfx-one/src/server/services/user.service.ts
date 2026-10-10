@@ -535,6 +535,7 @@ export class UserService {
     // Wrapped in try/catch so an RSVP-lookup failure degrades gracefully: meetings still return,
     // `my_rsvp` stays undefined per row, the dashboard doesn't 500, and the Pending RSVP filter
     // chip just shows the unfiltered list.
+    const committeeMeetingIds = new Set<string>();
     if (!options?.basic) {
       const rawUsername = await getUsernameFromAuth(req);
       const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
@@ -543,6 +544,7 @@ export class UserService {
       if ((email || username) && normalizedMeetings.length > 0) {
         try {
           const { userRsvps, activeRegistrants } = await this.fetchUserRsvpsAndRegistrants(req, email, username);
+          activeRegistrants.committeeMeetingIds.forEach((id) => committeeMeetingIds.add(id));
 
           // Group all RSVPs per meeting so recurring series can be resolved against the
           // occurrence the card is actually representing. Drop RSVPs whose `registrant_id` isn't
@@ -634,7 +636,9 @@ export class UserService {
     // `invited: true` — every row has a direct host/participant FGA tuple by virtue of
     // `filter_grants=direct`, so the user is invited by definition. Data-shape marker, not an
     // access decision (the subsequent `addAccessToResources` is the actual access layer).
-    const invited = enriched.map((m) => ({ ...m, invited: true }));
+    // `invited_via_committee` comes from the same registrant lookup as `my_rsvp`; it stays false when that lookup
+    // failed, which only means the Remove action may be offered and then refused by the server.
+    const invited = enriched.map((m) => ({ ...m, invited: true, invited_via_committee: committeeMeetingIds.has(m.id) }));
 
     return this.accessCheckService.addAccessToResources(req, invited, 'v1_meeting', 'organizer');
   }
@@ -959,6 +963,17 @@ export class UserService {
    * @returns Set of meeting IDs the user is registered for
    */
   public async getUserRegisteredMeetingIds(req: Request, email?: string): Promise<Set<string>> {
+    return new Set((await this.getUserMeetingRegistrations(req, email)).keys());
+  }
+
+  /**
+   * Gets the meetings the user is registered for, with whether any of their registrations came from a committee.
+   * Same lookup and failure behavior as {@link getUserRegisteredMeetingIds}, which this backs.
+   * @param req - Express request object
+   * @param email - Optional user email address; if omitted, only username lookup is performed
+   * @returns Map of meeting ID to whether the user is registered for it through a committee
+   */
+  public async getUserMeetingRegistrations(req: Request, email?: string): Promise<Map<string, boolean>> {
     const normalizedEmail = email?.toLowerCase() ?? '';
     const username = await getUsernameFromAuth(req);
 
@@ -967,7 +982,7 @@ export class UserService {
     if (username) filtersOr.push(`username:${stripAuthPrefix(username)}`);
 
     if (filtersOr.length === 0) {
-      return new Set();
+      return new Map();
     }
 
     // Match on data.email OR data.username in a single round trip. Using `filters_or` (field-level)
@@ -994,14 +1009,16 @@ export class UserService {
       return [] as MeetingRegistrant[];
     });
 
-    const meetingIds = new Set<string>();
-    for (const r of registrants) meetingIds.add(r.meeting_id);
+    const registrations = new Map<string, boolean>();
+    for (const r of registrants) {
+      registrations.set(r.meeting_id, registrations.get(r.meeting_id) === true || r.type === 'committee');
+    }
 
     logger.debug(req, 'get_user_registered_meeting_ids', 'Collected unique meeting IDs', {
-      total_unique_meeting_ids: meetingIds.size,
+      total_unique_meeting_ids: registrations.size,
     });
 
-    return meetingIds;
+    return registrations;
   }
 
   /**
@@ -1565,7 +1582,7 @@ export class UserService {
     req: Request,
     email: string | null,
     username: string | null
-  ): Promise<{ userRsvps: MeetingRsvp[]; activeRegistrants: { uids: Set<string>; meetingIds: Set<string> } }> {
+  ): Promise<{ userRsvps: MeetingRsvp[]; activeRegistrants: { uids: Set<string>; meetingIds: Set<string>; committeeMeetingIds: Set<string> } }> {
     const [identityRsvps, activeRegistrants] = await Promise.all([
       this.fetchAllUserRsvps(req, email, username),
       this.fetchUserActiveRegistrantIdentities(req, email, username),
@@ -1654,16 +1671,18 @@ export class UserService {
    *    having a v1_meeting_registrant row, in which case `createMeetingRsvp` returns 404
    *    ("Only invited users are allowed to RSVP"). Filtering here keeps the dashboard from
    *    surfacing rows the user can't action.
+   *  - `committeeMeetingIds`: the subset of `meetingIds` where any of the user's registrations came from a
+   *    committee. Those follow committee membership, so the user cannot remove themselves from them.
    */
   private async fetchUserActiveRegistrantIdentities(
     req: Request,
     email: string | null,
     username: string | null
-  ): Promise<{ uids: Set<string>; meetingIds: Set<string> }> {
+  ): Promise<{ uids: Set<string>; meetingIds: Set<string>; committeeMeetingIds: Set<string> }> {
     const orClauses: string[] = [];
     if (email) orClauses.push(`email:${email.toLowerCase()}`);
     if (username) orClauses.push(`username:${username}`);
-    if (orClauses.length === 0) return { uids: new Set(), meetingIds: new Set() };
+    if (orClauses.length === 0) return { uids: new Set(), meetingIds: new Set(), committeeMeetingIds: new Set() };
 
     // failOnPartial: a missing registrant UID here means an RSVP-guard lookup would wrongly
     // reject a still-active registrant's RSVP, which then fires a duplicate Set RSVP nag.
@@ -1680,11 +1699,13 @@ export class UserService {
 
     const uids = new Set<string>();
     const meetingIds = new Set<string>();
+    const committeeMeetingIds = new Set<string>();
     for (const r of registrants) {
       if (r.uid) uids.add(r.uid);
       if (r.meeting_id) meetingIds.add(r.meeting_id);
+      if (r.meeting_id && r.type === 'committee') committeeMeetingIds.add(r.meeting_id);
     }
-    return { uids, meetingIds };
+    return { uids, meetingIds, committeeMeetingIds };
   }
 
   /**
