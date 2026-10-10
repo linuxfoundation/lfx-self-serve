@@ -24,6 +24,7 @@ import {
   buildAttendeePreviewFromRsvps,
   isMeetingInviteResponsesEnabled,
   resolveRsvpOccurrenceId,
+  selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -54,6 +55,8 @@ export class MeetingRsvpDetailsComponent {
   // avoiding a duplicate full-roster request. Null means "self-managed" (legacy behavior).
   public readonly initialRegistrants: InputSignal<MeetingRegistrant[] | null> = input<MeetingRegistrant[] | null>(null);
   public readonly initialRegistrantsLoading: InputSignal<boolean> = input<boolean>(false);
+  /** Successful local writes, retained while the roster's query index catches up. */
+  public readonly confirmedRsvps = input<MeetingRsvp[]>([]);
   public readonly addClicked = output<void>();
   public readonly viewAllClicked = output<void>();
   // Emits whether the current user has any RSVP on this meeting, derived from the already-fetched
@@ -74,16 +77,14 @@ export class MeetingRsvpDetailsComponent {
   public readonly pastParticipants: Signal<PastMeetingParticipant[]> = this.initializePastParticipants();
   // Prefer the parent-supplied roster (when present and not viewing past-meeting data, which
   // always self-fetches participants) so a stale in-flight internal fetch can't win.
-  public readonly registrants: Signal<MeetingRegistrant[]> = computed(() =>
-    this.externallyManaged() && !this.pastMeeting() ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants
-  );
+  public readonly registrants: Signal<MeetingRegistrant[]> = this.initializeRegistrants();
   public readonly rsvps: Signal<MeetingRsvp[]> = computed(() => {
     if (this.externallyManaged() && !this.pastMeeting()) {
       return this.registrants()
         .map((r) => r.rsvp)
         .filter((r): r is MeetingRsvp => r != null);
     }
-    return this.upcomingData().rsvps;
+    return [...this.applicableConfirmedRsvps(), ...this.upcomingData().rsvps];
   });
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
   // Registrants when the roster was fetched (Me lens); otherwise the RSVP rows the project and
@@ -120,6 +121,29 @@ export class MeetingRsvpDetailsComponent {
     toObservable(this.currentUserHasRsvp)
       .pipe(distinctUntilChanged(), takeUntilDestroyed())
       .subscribe((v) => this.currentUserHasRsvpChanged.emit(v));
+  }
+
+  private initializeRegistrants(): Signal<MeetingRegistrant[]> {
+    return computed(() => {
+      const registrants = this.externallyManaged() && !this.pastMeeting() ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants;
+      const confirmed = this.applicableConfirmedRsvps();
+      if (confirmed.length === 0) return registrants;
+      const occurrenceId = resolveRsvpOccurrenceId(this.meeting(), { occurrence: this.currentOccurrence() });
+      return registrants.map((registrant) => {
+        const responses = confirmed.filter((rsvp) => rsvp.registrant_id === registrant.uid);
+        if (responses.length === 0) return registrant;
+        if (registrant.rsvp) responses.push(registrant.rsvp);
+        const rsvp = selectApplicableRsvp(occurrenceId, responses);
+        return rsvp && rsvp !== registrant.rsvp ? { ...registrant, rsvp } : registrant;
+      });
+    });
+  }
+
+  private applicableConfirmedRsvps(): MeetingRsvp[] {
+    if (this.pastMeeting()) return [];
+    const meeting = this.meeting();
+    const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.currentOccurrence() });
+    return this.confirmedRsvps().filter((rsvp) => rsvp.meeting_id === meeting.id && !!selectApplicableRsvp(occurrenceId, [rsvp]));
   }
 
   private initializeUpcomingData(): Signal<{ rsvps: MeetingRsvp[]; registrants: MeetingRegistrant[] }> {

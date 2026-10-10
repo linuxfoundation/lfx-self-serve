@@ -1936,8 +1936,11 @@ export interface MeetingTypeBadge {
  */
 export type PastMeetingSort = (typeof PAST_MEETING_SORT)[keyof typeof PAST_MEETING_SORT];
 
-/** Mutually exclusive meeting dashboard views; personal views use upcoming meetings only. */
-export type MeetingDashboardView = 'upcoming' | 'past' | 'pending' | 'organizer';
+/** Time period shown by the meeting dashboard. */
+export type MeetingDashboardView = 'upcoming' | 'past';
+
+/** Personal response filter, independent of time and organizer selection. */
+export type MeetingResponseFilter = 'all' | 'pending' | 'accepted' | 'maybe' | 'declined';
 
 /**
  * Client-side filter criteria applied to the Me lens meeting lists (My Meetings), which are
@@ -1952,14 +1955,14 @@ export interface MeLensMeetingFilters {
   foundation: string | null;
   /** Project UID; takes precedence over `foundation` when both are set. */
   project: string | null;
-  /** Primary view; Pending RSVP and Organized by me are upcoming-only. */
+  /** Time period; response filters apply only to upcoming meetings. */
   view: MeetingDashboardView;
-  /** Keep only upcoming meetings the viewer accepted. */
-  acceptedOnly?: boolean;
+  responseFilter: MeetingResponseFilter;
+  organizedByMe: boolean;
   /** Canonical viewer username/LFID for owner-first organizer matching; null never matches. */
   viewerUsername: string | null;
-  /** Keep meetings the viewer declined for every occurrence; when false they are hidden. */
-  showDeclined: boolean;
+  /** Explicitly hide all-date declines, except meetings organized by the viewer. */
+  hideDeclined: boolean;
 }
 
 /**

@@ -57,6 +57,7 @@ import {
   MeetingCancelOccurrenceResult,
   MeetingDeleteTypeResult,
   MeetingOccurrence,
+  MeetingRsvp,
   MeetingRecurrence,
   MeetingRescheduleOccurrenceResult,
   RecurringMeetingEditScopeResult,
@@ -149,16 +150,13 @@ export class MeetingCardComponent implements OnInit {
   public showRegistrants: WritableSignal<boolean> = signal(false);
   /** Set when the drawer is opened from "Invite people", so it opens on the Add Guest form. */
   public openRegistrantsOnAddForm: WritableSignal<boolean> = signal(false);
-  public showMyRsvp: WritableSignal<boolean> = signal(false);
-  // Set by <lfx-meeting-rsvp-details> after it resolves its registrants/rsvps data.
-  // Drives the "Set My RSVP" / "Update My RSVP" label on the toggle button.
-  public userHasRsvp: WritableSignal<boolean> = signal(false);
   public meeting: WritableSignal<Meeting | PastMeeting> = signal({} as Meeting | PastMeeting);
   public occurrence: WritableSignal<MeetingOccurrence | null> = signal(null);
   public recording: WritableSignal<PastMeetingRecording | null> = signal(null);
   public summary: WritableSignal<PastMeetingSummary | null> = signal(null);
   public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
+  public readonly confirmedRsvps = signal<MeetingRsvp[]>([]);
   /**
    * What the registrants drawer counted, or `null` while it has not counted yet.
    * @description `null` and `0` are different answers here, which is why this is not a plain `signal(0)`.
@@ -200,8 +198,12 @@ export class MeetingCardComponent implements OnInit {
     text: string;
   } | null> = this.initMeetingTypeBadge();
   public readonly containerClass: Signal<string> = this.initContainerClass();
-  public readonly rsvpToggleLabel: Signal<string> = this.initRsvpToggleLabel();
   public readonly currentOccurrence: Signal<MeetingOccurrence | null> = this.initCurrentOccurrence();
+  public readonly rsvpMeeting: Signal<Meeting> = computed(() => {
+    const meeting = this.meeting();
+    const myRsvp = this.meetingInput().my_rsvp;
+    return meeting.my_rsvp === myRsvp ? meeting : { ...meeting, my_rsvp: myRsvp };
+  });
   // Recurrence rule that drives the cadence badge: the displayed occurrence's own override
   // when present (cadence changed at/after it — LFXV2-2112), otherwise the series rule.
   public readonly displayRecurrence: Signal<MeetingRecurrence | null> = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
@@ -241,9 +243,8 @@ export class MeetingCardComponent implements OnInit {
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
-  // Computed signal to check if user can toggle between RSVP Details and RSVP Button Group
-  // True when user is both an organizer AND invited, and this meeting collects LFX RSVPs.
-  public readonly canToggleRsvpView: Signal<boolean> = computed(
+  // Invited organizers see their response controls alongside the guest overview.
+  public readonly canRespondAsOrganizer: Signal<boolean> = computed(
     () => !!this.meeting().organizer && this.isInvited() && !this.pastMeeting() && this.inviteResponsesEnabled()
   );
   public readonly guestCount: Signal<number> = this.initGuestCount();
@@ -291,6 +292,7 @@ export class MeetingCardComponent implements OnInit {
   );
 
   public readonly meetingDeleted = output<void>();
+  public readonly rsvpChanged = output<MeetingRsvp>();
   public readonly project = this.projectService.project;
   public readonly committeeLabel = COMMITTEE_LABEL;
 
@@ -356,7 +358,13 @@ export class MeetingCardComponent implements OnInit {
       )
       .subscribe(() => {
         this.optimisticInvited.set(false);
+        this.confirmedRsvps.set([]);
       });
+  }
+
+  public onRsvpChanged(rsvp: MeetingRsvp): void {
+    this.confirmedRsvps.update((responses) => [rsvp, ...responses.filter((saved) => saved.id !== rsvp.id)]);
+    this.rsvpChanged.emit(rsvp);
   }
 
   /**
@@ -439,10 +447,6 @@ export class MeetingCardComponent implements OnInit {
   public onRegistrantsDrawerHide(): void {
     this.drawerGuestCount.set(null);
     this.openRegistrantsOnAddForm.set(false);
-  }
-
-  public onRsvpViewToggle(): void {
-    this.showMyRsvp.set(!this.showMyRsvp());
   }
 
   public openMaterialsDrawer(): void {
@@ -978,14 +982,6 @@ export class MeetingCardComponent implements OnInit {
       }
 
       return 'bg-white rounded-xl border-0 shadow-md';
-    });
-  }
-
-  private initRsvpToggleLabel(): Signal<string> {
-    return computed(() => {
-      if (this.showMyRsvp()) return 'Hide My RSVP';
-      if (this.userHasRsvp()) return 'Update My RSVP';
-      return 'Set My RSVP';
     });
   }
 
