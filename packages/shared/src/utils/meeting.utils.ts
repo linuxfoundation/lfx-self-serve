@@ -1151,7 +1151,7 @@ export function isMeetingInviteResponsesEnabled(meeting: Pick<Meeting, 'is_invit
  * @description Reads the BFF-resolved `my_rsvp`, which already prefers the RSVP that applies to the
  * current/next occurrence. A `single` or `this_and_following` decline leaves other dates open, so
  * it does not count. Declining does not remove the viewer's access grant, so the meeting keeps
- * coming back from the query service; My Meetings uses this to hide it by default.
+ * coming back from the query service; My Meetings can hide it with the explicit hide-declined filter.
  */
 export function isMeetingDeclinedForAllOccurrences(meeting: Pick<Meeting, 'my_rsvp'> | null | undefined): boolean {
   const rsvp = meeting?.my_rsvp;
@@ -1453,10 +1453,10 @@ export function isMeetingOrganizedByViewer(
 }
 
 /**
- * Whether My Meetings hides this meeting by default as declined.
+ * Whether the explicit hide-declined filter excludes this meeting.
  * @description A decline covering every date ({@link isMeetingDeclinedForAllOccurrences}) hides the
- * meeting, except when the viewer organizes it: they still run the series and must be able to find
- * it, and the "Organized by me" filter and count would otherwise silently drop it.
+ * meeting only when the user requests it, except when the viewer organizes it: they still run
+ * the series and must be able to find it.
  */
 export function isMeetingHiddenAsDeclined(
   meeting: Pick<Meeting, 'my_rsvp' | 'created_by' | 'owner'> | null | undefined,

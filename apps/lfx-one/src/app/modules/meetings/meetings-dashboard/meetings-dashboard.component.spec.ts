@@ -10,7 +10,7 @@ import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angul
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MeetingCreateMenuComponent } from '@app/modules/meetings/meeting-composer/meeting-create-menu.component';
 import { ButtonComponent } from '@components/button/button.component';
-import type { Lens, Meeting, MeetingDashboardView, PastMeeting, ProjectContext, User } from '@lfx-one/shared/interfaces';
+import type { Lens, Meeting, MeetingDashboardView, MeetingResponseFilter, PastMeeting, ProjectContext, User } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
@@ -49,7 +49,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
       my_rsvp: null,
       ...extra,
     }) as Meeting;
-  const response = (responseType: 'accepted' | 'declined', scope: 'all' | 'single' = 'all'): NonNullable<Meeting['my_rsvp']> => ({
+  const response = (responseType: 'accepted' | 'declined' | 'maybe', scope: 'all' | 'single' = 'all'): NonNullable<Meeting['my_rsvp']> => ({
     id: `r-${responseType}`,
     meeting_id: 'synthetic-series',
     registrant_id: 'synthetic-registrant',
@@ -65,6 +65,14 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
   const past = row('past-other', { start_time: '2098-01-01T10:00:00Z' }) as PastMeeting;
   const select = (component: MeetingsDashboardComponent, view: MeetingDashboardView): void => {
     component.onMeetingViewChange(view);
+    flush();
+  };
+  const respond = (component: MeetingsDashboardComponent, filter: MeetingResponseFilter): void => {
+    component.responseFilter.set(filter);
+    flush();
+  };
+  const organize = (component: MeetingsDashboardComponent): void => {
+    component.organizedByMe.set(true);
     flush();
   };
   const mount = (rows: Meeting[] = [owned, pending, legacy]): MeetingsDashboardComponent => {
@@ -139,99 +147,84 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     }
   });
 
-  it('replaces every view without intersections, including Past to special and repeated summary selection', () => {
-    const component = mount();
+  it('combines response and organizer criteria without changing the time period or fetching again', () => {
+    const component = mount([owned, pending, legacy, row('owned-pending', { owner: { username: 'viewer' } }), row('maybe', { my_rsvp: response('maybe') })]);
+    organize(component);
+    expect(ids(component)).toEqual(['owned', 'owned-pending']);
+    respond(component, 'pending');
+    expect(ids(component)).toEqual(['owned-pending']);
     expect(component.meetingView()).toBe('upcoming');
-    expect(ids(component)).toEqual(['owned', 'pending', 'legacy']);
-    select(component, 'organizer');
+    respond(component, 'accepted');
     expect(ids(component)).toEqual(['owned']);
+    component.organizedByMe.set(false);
+    respond(component, 'maybe');
+    expect(ids(component)).toEqual(['maybe']);
+    respond(component, 'all');
+    expect(ids(component)).toEqual(['owned', 'pending', 'legacy', 'owned-pending', 'maybe']);
+    http.expectNone('/api/user/meetings');
+    organize(component);
     component.onPendingRsvpStatClick();
     flush();
-    expect(ids(component)).toEqual(['pending']);
-    component.onPendingRsvpStatClick();
-    flush();
-    expect(component.meetingView()).toBe('pending');
-    expect(ids(component)).toEqual(['pending']);
-    for (const view of ['organizer', 'pending'] as const) {
-      select(component, 'past');
-      for (const request of http.match('/api/user/past-meetings')) request.flush([past, { ...past, id: 'past-owned', owner: { username: 'viewer' } }]);
-      flush();
-      expect(ids(component)).toEqual(['past-other', 'past-owned']);
-      select(component, view);
-      expect(component.timeFilter()).toBe('upcoming');
-      expect(ids(component)).toEqual(view === 'pending' ? ['pending'] : ['owned']);
-      select(component, view);
-      http.expectNone('/api/user/meetings');
-      select(component, 'upcoming');
-      expect(ids(component)).toEqual(['owned', 'pending', 'legacy']);
-    }
-    expect(TestBed.inject(Router).navigate).toHaveBeenLastCalledWith(
-      [],
-      expect.objectContaining({ queryParams: { time: null }, queryParamsHandling: 'merge' })
-    );
+    expect(component.organizedByMe()).toBe(false);
+    expect(ids(component)).toEqual(['pending', 'owned-pending']);
   });
 
-  it.each(['pending', 'organizer'] as const)('uses the upcoming HTTP source when opening %s from a Past deep link', (view) => {
+  it('opens the response queue from Past using upcoming data, not historical responses', () => {
     route.snapshot.queryParamMap = convertToParamMap({ time: 'past', keep: 'yes' });
     const component = TestBed.runInInjectionContext(() => new MeetingsDashboardComponent());
     flush();
     http.expectNone('/api/user/meetings');
     http.expectOne('/api/user/past-meetings').flush([past]);
     flush();
-    expect(component.meetingView()).toBe('past');
-    expect(ids(component)).toEqual(['past-other']);
-    select(component, view);
+    component.onPendingRsvpStatClick();
+    flush();
     http.expectOne('/api/user/meetings').flush([owned, pending]);
     flush();
-    expect(ids(component)).toEqual(view === 'pending' ? ['pending'] : ['owned']);
+    expect(component.meetingView()).toBe('upcoming');
+    expect(ids(component)).toEqual(['pending']);
   });
 
-  it('keeps counts before secondary criteria, preserves search/type, clears only time-bound criteria and resets empty views', () => {
+  it('keeps counts before secondary criteria and clears upcoming-only filters when switching to history', () => {
     const component = mount([owned, pending, row('other', { project_uid: 'elsewhere', parent_project_uid: 'elsewhere' }), legacy]);
     component.searchQuery.set('pending');
     component.onMeetingTypeChange('Technical');
     component.onFoundationFilterChange('foundation');
     component.onProjectFilterChange('child');
-    component.showDeclined.set(true);
+    component.hideDeclined.set(true);
     flush();
     vi.advanceTimersByTime(300);
-    flush();
-    select(component, 'pending');
+    respond(component, 'pending');
     expect(ids(component)).toEqual(['pending']);
     expect(component['pendingRsvpCount']()).toBe(2);
     expect(component['organizerCount']()).toBe(1);
-    select(component, 'organizer');
+    organize(component);
     expect(ids(component)).toEqual([]);
     expect(component['isFiltered']()).toBe(true);
-    expect([component.foundationFilter(), component.projectFilter(), component.showDeclined()]).toEqual(['foundation', 'child', true]);
     select(component, 'past');
     http.expectOne('/api/user/past-meetings').flush([past]);
     flush();
     expect([component.searchQuery(), component.meetingTypeFilter()]).toEqual(['pending', 'Technical']);
-    expect([component.foundationFilter(), component.projectFilter(), component.showDeclined()]).toEqual([null, null, false]);
+    expect([component.foundationFilter(), component.projectFilter(), component.hideDeclined(), component.responseFilter(), component.organizedByMe()]).toEqual([
+      null,
+      null,
+      false,
+      'all',
+      false,
+    ]);
     component.resetFilters();
     flush();
     vi.advanceTimersByTime(300);
     flush();
     expect(component.meetingView()).toBe('past');
     expect(ids(component)).toEqual(['past-other']);
-    for (const view of ['pending', 'organizer'] as const) {
-      select(component, view);
-      component.onProjectFilterChange('missing');
-      flush();
-      expect(ids(component)).toEqual([]);
-      component.resetFilters();
-      flush();
-      expect(component.meetingView()).toBe('upcoming');
-      expect([
-        component.searchQuery(),
-        component.meetingTypeFilter(),
-        component.foundationFilter(),
-        component.projectFilter(),
-        component.showDeclined(),
-      ]).toEqual(['', null, null, null, false]);
-      expect(ids(component)).toEqual(['owned', 'pending', 'other', 'legacy']);
-    }
+    select(component, 'upcoming');
+    organize(component);
+    respond(component, 'pending');
+    component.resetFilters();
+    flush();
+    expect(ids(component)).toEqual(['owned', 'pending', 'other', 'legacy']);
+    expect(component.responseFilter()).toBe('all');
+    expect(component.organizedByMe()).toBe(false);
   });
 
   it('resolves late canonical identity, not a conflicting alias or inherited management, and follows ownership transfer', () => {
@@ -243,7 +236,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
       legacy,
       row('creator', { created_by: { username: 'auth0|VIEWER', email: 'synthetic@example.com' } }),
     ]);
-    select(component, 'organizer');
+    organize(component);
     expect(ids(component)).toEqual(['alias-owned']);
     users.user.set({ username: 'alias', 'https://sso.linuxfoundation.org/claims/username': ' Viewer ' } as User);
     flush();
@@ -266,7 +259,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     users.user.set(null);
     flush();
     const component = mount();
-    select(component, 'organizer');
+    organize(component);
     expect(ids(component)).toEqual([]);
     expect(component['organizerCount']()).toBe(0);
     users.user.set({ 'https://sso.linuxfoundation.org/claims/username': 'viewer' } as User);
@@ -285,41 +278,74 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     ]);
     component.onFoundationFilterChange('foundation');
     flush();
-    select(component, 'pending');
+    respond(component, 'pending');
     expect(ids(component)).toEqual(['pending', 'foundation']);
     component.onProjectFilterChange('other');
     flush();
     expect(ids(component)).toEqual(['other']);
   });
 
-  it('preserves series RSVP fallback, cancelled dates, all-date decline exclusion and organizer/single-date exceptions', () => {
+  it('keeps declines findable, excludes only all-date declines on request, and preserves single-date series', () => {
     const occurrence = (id: string, status?: string) => ({ occurrence_id: id, start_time: '2099-01-01T12:00:00Z', duration: 30, status });
     const component = mount([
       row('declined', { my_rsvp: response('declined') }),
       row('single', { my_rsvp: response('declined', 'single') }),
       row('organized-declined', { owner: { username: 'viewer' }, my_rsvp: response('declined') }),
-      row('series-answered', { occurrences: [occurrence('answered')], my_rsvp: response('accepted', 'single') }),
       row('cancelled', { occurrences: [occurrence('cancelled', 'cancel')] }),
       row('series-pending', { occurrences: [occurrence('cancelled', 'cancel'), occurrence('active')] }),
-      row('later', { start_time: '2099-03-01T10:00:00Z', my_rsvp: response('accepted') }),
     ]);
-    expect(ids(component)).toEqual(['single', 'organized-declined', 'series-answered', 'series-pending', 'later']);
-    expect(component['declinedCount']()).toBe(1);
-    expect(component['nextWindowCount']()).toBe(4);
-    expect(component['nextMeetingLabel']()).toContain('single');
-    expect(component['pendingRsvpCount']()).toBe(1);
-    expect(component['organizerCount']()).toBe(1);
-    select(component, 'pending');
-    expect(ids(component)).toEqual(['series-pending']);
-    select(component, 'organizer');
-    expect(ids(component)).toEqual(['organized-declined']);
-    select(component, 'upcoming');
-    component.showDeclined.set(true);
+    expect(ids(component)).toEqual(['declined', 'single', 'organized-declined', 'series-pending']);
+    component.hideDeclined.set(true);
     flush();
-    expect(ids(component)).toContain('declined');
+    expect(ids(component)).toEqual(['single', 'organized-declined', 'series-pending']);
+    respond(component, 'declined');
+    expect(ids(component)).toEqual(['declined', 'single', 'organized-declined']);
     component.resetFilters();
     flush();
-    expect(ids(component)).not.toContain('declined');
+    expect(ids(component)).toContain('declined');
+  });
+
+  it('does not treat a response for a different recurring date as the next date response', () => {
+    const nextId = String(Date.parse('2099-01-01T12:00:00Z') / 1000);
+    const component = mount([
+      row('series', {
+        recurrence: { type: 1, repeat_interval: 1 },
+        occurrences: [{ occurrence_id: nextId, start_time: '2099-01-01T12:00:00Z', duration: 30 }],
+        my_rsvp: { ...response('declined', 'single'), occurrence_id: String(Number(nextId) - 86400) },
+      }),
+    ]);
+    respond(component, 'pending');
+    expect(ids(component)).toEqual(['series']);
+    respond(component, 'declined');
+    expect(ids(component)).toEqual([]);
+    component.onRsvpChanged({ ...response('declined', 'single'), meeting_id: 'series', occurrence_id: nextId });
+    flush();
+    expect(ids(component)).toEqual(['series']);
+    respond(component, 'pending');
+    expect(ids(component)).toEqual([]);
+  });
+
+  it('keeps a successful No response out of the response queue while a stale index is refreshing', () => {
+    const component = mount([pending]);
+    respond(component, 'pending');
+    component.onRsvpChanged({ ...response('declined'), meeting_id: pending.id });
+    flush();
+    expect(ids(component)).toEqual([]);
+    users.refreshUserMeetings();
+    http.expectOne('/api/user/meetings').flush([pending]);
+    flush();
+    expect(ids(component)).toEqual([]);
+    respond(component, 'all');
+    expect(ids(component)).toEqual(['pending']);
+    respond(component, 'declined');
+    expect(ids(component)).toEqual(['pending']);
+    const newer = { ...response('accepted'), meeting_id: pending.id, modified_at: '2099-01-01T00:00:00Z' };
+    users.refreshUserMeetings();
+    http.expectOne('/api/user/meetings').flush([{ ...pending, my_rsvp: newer }]);
+    flush();
+    expect(ids(component)).toEqual([]);
+    respond(component, 'accepted');
+    expect(ids(component)).toEqual(['pending']);
   });
 
   it.each(['collection', 'cancellation', 'failure'] as const)('refreshes shared HTTP consumers only after a successful composer %s', (change) => {
@@ -334,7 +360,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     const latest = users.getUserLatestPastMeetings().subscribe();
     http.expectOne('/api/user/past-meetings').flush([past]);
     http.expectOne('/api/user/latest-past-meetings').flush([past]);
-    select(component, 'pending');
+    respond(component, 'pending');
     expect(ids(component)).toEqual(['editable']);
     const failed = vi.fn();
     meetings
@@ -375,7 +401,8 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
       expect(ids(component)).toEqual([]);
       expect(component['pendingRsvpCount']()).toBe(0);
       expect(component['organizerCount']()).toBe(change === 'collection' ? 1 : 0);
-      select(component, 'organizer');
+      component.responseFilter.set('all');
+      organize(component);
       expect(ids(component)).toEqual(change === 'collection' ? ['editable'] : []);
       http.expectNone('/api/user/meetings');
     }
@@ -410,7 +437,8 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     ['organizer', 'project'],
   ] as const)('normalizes %s into %s without losing scoped paging, calendar or Subscribe', (view, nextLens) => {
     const component = mount();
-    select(component, view);
+    if (view === 'pending') respond(component, 'pending');
+    else organize(component);
     const scoped = [row('scoped-first'), row('scoped-second')];
     vi.mocked(meetings.getMeetingsByProjectPaginated).mockImplementation((_uid, _sort, token) =>
       of(token ? { data: [scoped[1]] } : { data: [scoped[0]], page_token: 'next' })

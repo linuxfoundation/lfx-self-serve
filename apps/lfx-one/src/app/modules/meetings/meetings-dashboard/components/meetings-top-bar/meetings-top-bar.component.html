@@ -1,14 +1,38 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex min-w-0 flex-col gap-3">
-  <div class="flex min-w-0 flex-wrap items-center gap-2" role="group" aria-label="Meeting views" data-testid="meeting-view-pills">
-    <lfx-filter-pills
-      class="min-w-0 max-w-full"
-      [options]="meetingViewOptions()"
-      [selectedFilter]="meetingView()"
-      (filterChange)="onMeetingViewChange($event)" />
-  </div>
+<div role="group" aria-label="Meeting time" data-testid="meeting-view-pills">
+  <lfx-card-tabs-bar [options]="meetingViewOptions" [selectedFilter]="meetingView()" (filterChange)="onMeetingViewChange($event)" />
+</div>
+
+<div class="flex min-w-0 flex-col gap-4 px-5 py-4">
+  @if (showPersonalFilters()) {
+    <div class="flex min-w-0 flex-col gap-4" data-testid="personal-meeting-filters">
+      <div class="flex min-w-0 flex-wrap items-center gap-3" role="group" aria-label="Meeting response filters" data-testid="meeting-response-pills">
+        <lfx-filter-pills
+          class="min-w-0 max-w-full"
+          [options]="responseFilterOptions()"
+          [selectedFilter]="responseFilter()"
+          (filterChange)="onResponseFilterChange($event)" />
+      </div>
+      <div class="flex flex-wrap items-center gap-x-6 gap-y-3" role="group" aria-label="Additional meeting filters">
+        <lfx-checkbox
+          [form]="personalFiltersForm"
+          control="organizedByMe"
+          inputId="meetings-organized-by-me"
+          [label]="organizerLabel()"
+          data-testid="organized-by-me-checkbox" />
+        @if (responseFilter() !== 'declined') {
+          <lfx-checkbox
+            [form]="personalFiltersForm"
+            control="hideDeclined"
+            inputId="meetings-hide-declined"
+            label="Hide declined meetings"
+            data-testid="hide-declined-checkbox" />
+        }
+      </div>
+    </div>
+  }
 
   <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
     <div class="min-w-0 w-full sm:w-auto sm:flex-1 sm:basis-48">
@@ -60,24 +84,5 @@
         (onChange)="onMeetingTypeChange($event.value)"
         data-testid="meeting-type-filter"></lfx-select>
     </div>
-
-    @if (showDeclinedFilter()) {
-      <div class="min-w-0 max-w-full" data-testid="declined-filter-pills">
-        <button
-          type="button"
-          class="inline-flex max-w-full items-center gap-1.5 px-3 py-1 rounded-full text-sm border transition-colors"
-          [class]="showDeclined() ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'"
-          [attr.aria-pressed]="showDeclined()"
-          [attr.aria-label]="'Show declined, ' + declinedCount()"
-          data-testid="filter-pill-declined"
-          (click)="onShowDeclinedChange()">
-          <i class="fa-light text-xs" [class]="showDeclined() ? 'fa-square-check' : 'fa-square'" aria-hidden="true"></i>
-          <span>Show declined</span>
-          <span class="text-xs" [class]="showDeclined() ? 'text-blue-600' : 'text-gray-500'" data-testid="filter-pill-count-declined">
-            {{ declinedCount() }}
-          </span>
-        </button>
-      </div>
-    }
   </div>
 </div>

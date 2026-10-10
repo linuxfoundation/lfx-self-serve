@@ -531,8 +531,8 @@ export class UserService {
     // Enrich each meeting with the current user's RSVP (null when no response). Reuses the same
     // query-service pattern that powers `getUserPendingActions` → `transformMissingRsvpsToActions`.
     // Wrapped in try/catch so an RSVP-lookup failure degrades gracefully: meetings still return,
-    // `my_rsvp` stays undefined per row, the dashboard doesn't 500, and the Pending RSVP filter
-    // chip just shows the unfiltered list.
+    // `my_rsvp` stays undefined per row and the dashboard doesn't 500. Meetings that collect
+    // RSVPs appear under Needs response until response data is available.
     if (!options?.basic) {
       const rawUsername = await getUsernameFromAuth(req);
       const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
@@ -563,12 +563,9 @@ export class UserService {
           // used on the detail page. Non-recurring meetings resolve identically to before (no
           // occurrence_id → single `all`-scoped row wins).
           //
-          // Fall back to the newest RSVP for the series when the per-occurrence resolver returns
-          // null (e.g. the user's only RSVP is a `single`-scope row for a non-current/next
-          // occurrence). Keeps `!m.my_rsvp` a reliable "no RSVP recorded for the series at all"
-          // signal for the dashboard's Pending RSVP filter (meetings-dashboard.component.ts) and
-          // aligns it with `transformMissingRsvpsToActions`, which suppresses the Set RSVP action
-          // whenever *any* active-registrant RSVP exists.
+          // Keep the newest series response when none applies to the current/next date.
+          // The dashboard checks scope before assigning a response filter; the pending-actions
+          // aggregation separately suppresses Set RSVP when any active-registrant response exists.
           for (const meeting of normalizedMeetings) {
             if (!meeting.id) continue;
             const meetingRsvps = rsvpsByMeeting.get(meeting.id);

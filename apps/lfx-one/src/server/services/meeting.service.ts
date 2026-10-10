@@ -1669,6 +1669,9 @@ export class MeetingService {
     );
 
     const rsvp = mapITXResponseToMeetingRsvp(result);
+    // A successful ITX acknowledgement can omit the answer. Preserve the accepted request
+    // value at this boundary so polling, response filters, and confirmation use the same RSVP.
+    rsvp.response_type ||= rsvpData.response;
 
     // Poll query service until the RSVP is propagated so the UI can fetch it immediately
     await pollEndpoint({

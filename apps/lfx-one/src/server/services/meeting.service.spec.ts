@@ -11,6 +11,7 @@ import type {
   QueryServiceResponse,
   UpdateMeetingRegistrantRequest,
 } from '@lfx-one/shared/interfaces';
+import type * as RsvpCalculator from '@lfx-one/shared/utils/rsvp-calculator.util';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // This app's vitest config resolves plain Node modules only — the `@lfx-one/shared/*` tsconfig
@@ -43,7 +44,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
     const meaningful = tokens.filter((token) => token && token !== 'unknown' && token !== '[unknown]');
     return meaningful.length === 0;
   }),
-  mapITXResponseToMeetingRsvp: vi.fn(),
+  mapITXResponseToMeetingRsvp: (await vi.importActual<typeof RsvpCalculator>('@lfx-one/shared/utils/rsvp-calculator.util')).mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary: vi.fn((meeting) => meeting),
   normalizeIndexedMeetingInviteResponses: vi.fn((meeting) => meeting),
   selectPrimaryPastMeetingSummary: vi.fn(),
@@ -1988,5 +1989,36 @@ describe('MeetingService.createMeeting attendee visibility lock', () => {
     await service.createMeeting(req, { ...baseCreate, meeting_type: 'Technical', restricted: true });
 
     expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(false);
+  });
+});
+
+describe('MeetingService.createMeetingRsvp — acknowledged response', () => {
+  it.each(['accepted', 'declined', 'maybe'] as const)('returns the successful %s answer when ITX omits its response value', async (answer) => {
+    vi.clearAllMocks();
+    const service = new MeetingService();
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'synthetic-registrant' } as MeetingRegistrant]);
+    vi.spyOn(service, 'getMeetingRsvps').mockResolvedValue([]);
+    proxyRequest.mockResolvedValueOnce({
+      id: 'synthetic-rsvp',
+      meeting_id: 'synthetic-meeting',
+      registrant_id: 'synthetic-registrant',
+      response: '',
+      scope: 'single',
+      occurrence_id: '1791930600',
+    });
+    const saved = await service.createMeetingRsvp(req, 'synthetic-meeting', { response: answer, scope: 'single', occurrence_id: '1791930600' });
+    expect(saved.response_type).toBe(answer);
+    expect(saved.scope).toBe('single');
+    expect(saved.occurrence_id).toBe('1791930600');
+  });
+
+  it('keeps a nonempty response supplied by ITX authoritative', async () => {
+    vi.clearAllMocks();
+    const service = new MeetingService();
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'synthetic-registrant' } as MeetingRegistrant]);
+    vi.spyOn(service, 'getMeetingRsvps').mockResolvedValue([]);
+    proxyRequest.mockResolvedValueOnce({ id: 'synthetic-rsvp', meeting_id: 'synthetic-meeting', response: 'declined', scope: 'all' });
+    const saved = await service.createMeetingRsvp(req, 'synthetic-meeting', { response: 'accepted', scope: 'all' });
+    expect(saved.response_type).toBe('declined');
   });
 });

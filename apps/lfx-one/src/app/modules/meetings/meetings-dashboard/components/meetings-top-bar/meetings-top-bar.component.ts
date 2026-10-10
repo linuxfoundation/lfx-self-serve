@@ -4,14 +4,16 @@
 import { Component, computed, effect, input, output, Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
+import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { FilterPillOption, MeetingDashboardView } from '@lfx-one/shared/interfaces';
+import { FilterPillOption, MeetingDashboardView, MeetingResponseFilter } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-meetings-top-bar',
-  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, FilterPillsComponent],
+  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, FilterPillsComponent, CardTabsBarComponent, CheckboxComponent],
   templateUrl: './meetings-top-bar.component.html',
 })
 export class MeetingsTopBarComponent {
@@ -21,22 +23,24 @@ export class MeetingsTopBarComponent {
   public showFoundationFilter = input<boolean>(false);
   public showProjectFilter = input<boolean>(false);
   public readonly meetingView = input<MeetingDashboardView>('upcoming');
-  public readonly showPersonalViews = input<boolean>(false);
+  public readonly showPersonalFilters = input<boolean>(false);
+  public readonly responseFilter = input<MeetingResponseFilter>('all');
+  public readonly organizedByMe = input<boolean>(false);
+  public readonly hideDeclined = input<boolean>(false);
   public readonly pendingRsvpCount = input<number | null>(null);
   public readonly organizerCount = input<number | null>(null);
   public readonly meetingTypeFilter = input<string | null>(null);
   public readonly foundationFilter = input<string | null>(null);
   public readonly projectFilter = input<string | null>(null);
-  public readonly showDeclined = input<boolean>(false);
-  public readonly showDeclinedFilter = input<boolean>(false);
-  public readonly declinedCount = input<number>(0);
   public readonly meetingTypeChange = output<string | null>();
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();
   public readonly searchQuery = input<string>('');
   public readonly searchQueryChange = output<string>();
   public readonly meetingViewChange = output<MeetingDashboardView>();
-  public readonly showDeclinedChange = output<boolean>();
+  public readonly responseFilterChange = output<MeetingResponseFilter>();
+  public readonly organizedByMeChange = output<boolean>();
+  public readonly hideDeclinedChange = output<boolean>();
 
   public searchForm: FormGroup = new FormGroup({
     search: new FormControl(''),
@@ -45,7 +49,21 @@ export class MeetingsTopBarComponent {
     projectFilter: new FormControl<string | null>(null),
   });
 
-  public readonly meetingViewOptions = this.initMeetingViewOptions();
+  public readonly personalFiltersForm = new FormGroup({
+    organizedByMe: new FormControl(false, { nonNullable: true }),
+    hideDeclined: new FormControl(false, { nonNullable: true }),
+  });
+
+  public readonly organizerLabel = computed(() => {
+    const count = this.organizerCount();
+    return count === null ? 'Organized by me' : `Organized by me (${count})`;
+  });
+
+  public readonly meetingViewOptions: FilterPillOption[] = [
+    { id: 'upcoming', label: 'Upcoming' },
+    { id: 'past', label: 'Past' },
+  ];
+  public readonly responseFilterOptions = this.initResponseFilterOptions();
 
   public constructor() {
     this.searchForm
@@ -54,6 +72,13 @@ export class MeetingsTopBarComponent {
       .subscribe((value) => {
         this.searchQueryChange.emit(value || '');
       });
+
+    this.personalFiltersForm.controls.organizedByMe.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.organizedByMeChange.emit(value));
+    this.personalFiltersForm.controls.hideDeclined.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.hideDeclinedChange.emit(value));
+
+    effect(() => {
+      this.personalFiltersForm.setValue({ organizedByMe: this.organizedByMe(), hideDeclined: this.hideDeclined() }, { emitEvent: false });
+    });
 
     effect(() => {
       const selections = {
@@ -89,25 +114,20 @@ export class MeetingsTopBarComponent {
     this.meetingViewChange.emit(value as MeetingDashboardView);
   }
 
-  public onShowDeclinedChange(): void {
-    this.showDeclinedChange.emit(!this.showDeclined());
+  public onResponseFilterChange(value: string): void {
+    this.responseFilterChange.emit(value as MeetingResponseFilter);
   }
 
-  private initMeetingViewOptions(): Signal<FilterPillOption[]> {
+  private initResponseFilterOptions(): Signal<FilterPillOption[]> {
     return computed<FilterPillOption[]>(() => {
-      const options: FilterPillOption[] = [
-        { id: 'upcoming', label: 'Upcoming' },
-        { id: 'past', label: 'Past' },
+      const pendingCount = this.pendingRsvpCount();
+      return [
+        { id: 'all', label: 'All meetings' },
+        { id: 'pending', label: pendingCount === null ? 'Needs response' : `Needs response (${pendingCount})` },
+        { id: 'accepted', label: 'Going' },
+        { id: 'maybe', label: 'Maybe' },
+        { id: 'declined', label: 'Not going' },
       ];
-      if (this.showPersonalViews()) {
-        const pendingCount = this.pendingRsvpCount();
-        const organizerCount = this.organizerCount();
-        options.push(
-          { id: 'pending', label: pendingCount === null ? 'Pending RSVP' : `Pending RSVP (${pendingCount})` },
-          { id: 'organizer', label: organizerCount === null ? 'Organized by me' : `Organized by me (${organizerCount})` }
-        );
-      }
-      return options;
     });
   }
 }

@@ -3,7 +3,7 @@
 
 import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Meeting, MeetingRegistrant, PastMeeting, User } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingRegistrant, MeetingRsvp, PastMeeting, User } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { of } from 'rxjs';
@@ -200,5 +200,65 @@ describe('MeetingRsvpDetailsComponent', () => {
     fixture.componentInstance.viewAllClicked.subscribe(() => viewAll++);
     (fixture.nativeElement.querySelector('[data-testid="attendee-preview-view-all"]') as HTMLButtonElement).click();
     expect(viewAll).toBe(1);
+  });
+
+  it.each(['roster', 'rsvps'] as const)('reconciles confirmed responses by date without losing other guests or newer %s data', async (source) => {
+    const firstDate = { occurrence_id: '4071031200', start_time: '2099-01-02T10:00:00Z', duration: 30 };
+    const secondDate = { occurrence_id: '4071636000', start_time: '2099-01-09T10:00:00Z', duration: 30 };
+    const accepted: MeetingRsvp = {
+      id: 'synthetic-all',
+      meeting_id: MEETING_ID,
+      registrant_id: 'synthetic-viewer',
+      username: 'synthetic-viewer',
+      email: 'viewer@example.com',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-10-10T10:00:00Z',
+    };
+    const declined: MeetingRsvp = {
+      ...accepted,
+      id: 'synthetic-single',
+      response_type: 'declined',
+      scope: 'single',
+      occurrence_id: firstDate.occurrence_id,
+      modified_at: '2026-10-10T11:00:00Z',
+    };
+    const other: MeetingRsvp = { ...accepted, id: 'synthetic-other', registrant_id: 'synthetic-other', email: 'other@example.com', response_type: 'maybe' };
+    getMeetingRegistrants.mockReturnValue(
+      of([
+        buildRegistrant({ uid: accepted.registrant_id, email: accepted.email, rsvp: accepted }),
+        buildRegistrant({ uid: other.registrant_id, email: other.email, rsvp: other }),
+      ])
+    );
+    getMeetingRsvps.mockReturnValue(of([accepted, other]));
+    const meeting = buildMeeting({
+      is_invite_responses_enabled: true,
+      recurrence: { type: 2, repeat_interval: 1 },
+      occurrences: [firstDate, secondDate],
+      ...(source === 'rsvps' ? { individual_registrants_count: 2 } : {}),
+    });
+    const fixture = createComponent();
+    fixture.componentRef.setInput('meeting', meeting);
+    fixture.componentRef.setInput('currentOccurrence', firstDate);
+    await TestBed.inject(ApplicationRef).whenStable();
+    fixture.componentRef.setInput('confirmedRsvps', [declined, accepted]);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.rsvpCounts()).toEqual({ accepted: 0, declined: 1, maybe: 1, total: 2 });
+
+    fixture.componentRef.setInput('currentOccurrence', secondDate);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.rsvpCounts()).toEqual({ accepted: 1, declined: 0, maybe: 1, total: 2 });
+
+    const newer = { ...accepted, response_type: 'declined' as const, modified_at: '2026-10-10T12:00:00Z' };
+    getMeetingRegistrants.mockReturnValue(
+      of([
+        buildRegistrant({ uid: newer.registrant_id, email: newer.email, rsvp: newer }),
+        buildRegistrant({ uid: other.registrant_id, email: other.email, rsvp: other }),
+      ])
+    );
+    getMeetingRsvps.mockReturnValue(of([newer, other]));
+    fixture.componentRef.setInput('meeting', { ...meeting });
+    await fixture.whenStable();
+    expect(fixture.componentInstance.rsvpCounts()).toEqual({ accepted: 0, declined: 1, maybe: 1, total: 2 });
   });
 });

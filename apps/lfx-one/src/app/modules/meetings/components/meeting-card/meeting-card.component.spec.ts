@@ -7,8 +7,9 @@ import { ApplicationRef, Component, input, output, signal } from '@angular/core'
 import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
-import { Meeting, MeetingOccurrence, MeetingRsvp, User } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingOccurrence, MeetingRegistrant, MeetingRsvp, User } from '@lfx-one/shared/interfaces';
 import { MeetingInviteeAttendeesComponent } from '@app/modules/meetings/components/meeting-invitee-attendees/meeting-invitee-attendees.component';
+import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -509,6 +510,18 @@ describe('MeetingCardComponent — RSVP cache freshness', () => {
     await TestBed.compileComponents();
     const meetingService = TestBed.inject(MeetingService);
     vi.spyOn(meetingService, 'getMeetingAttachments').mockReturnValue(of([]));
+    vi.spyOn(meetingService, 'getMeetingRegistrants').mockReturnValue(
+      of([
+        {
+          uid: 'synthetic-registrant',
+          meeting_id: 'synthetic-rsvp',
+          email: 'synthetic@example.com',
+          first_name: 'Synthetic',
+          last_name: 'Guest',
+          rsvp: null,
+        } as MeetingRegistrant,
+      ])
+    );
     const userService = TestBed.inject(UserService);
     userService.user.set({ username: 'viewer', email: 'synthetic@example.com' } as User);
     userService.authenticated.set(true);
@@ -540,7 +553,8 @@ describe('MeetingCardComponent — RSVP cache freshness', () => {
 
     const fixture = TestBed.createComponent(MeetingCardComponent);
     fixture.componentRef.setInput('meetingInput', meeting);
-    fixture.componentInstance.showMyRsvp.set(organizer);
+    const emittedRsvps = vi.fn();
+    fixture.componentInstance.rsvpChanged.subscribe(emittedRsvps);
     fixture.detectChanges();
     for (const block of await fixture.getDeferBlocks()) {
       await block.render(DeferBlockState.Complete);
@@ -566,15 +580,24 @@ describe('MeetingCardComponent — RSVP cache freshness', () => {
       write.flush(rsvp);
       http.expectOne('/api/user/meetings').flush([{ ...meeting, my_rsvp: rsvp }]);
       expect(pendingIds).toEqual([]);
+      expect(emittedRsvps).toHaveBeenCalledWith(expect.objectContaining({ response_type: 'accepted', scope: 'all' }));
+      expect(buttons.selectedResponse()).toBe('accepted');
     } else {
       write.flush({ error: 'Synthetic write rejected' }, { status: 403, statusText: 'Forbidden' });
       http.expectNone('/api/user/meetings');
       expect(pendingIds).toEqual(['synthetic-rsvp']);
       expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'RSVP Failed' }));
+      expect(emittedRsvps).not.toHaveBeenCalled();
+      expect(buttons.selectedResponse()).toBeNull();
     }
     fixture.detectChanges();
     for (const request of http.match('/api/meetings/synthetic-rsvp/rsvp/me')) {
       request.flush(success ? rsvp : null);
+    }
+    if (organizer) {
+      const overview = fixture.debugElement.query(By.directive(MeetingRsvpDetailsComponent)).componentInstance as MeetingRsvpDetailsComponent;
+      expect(overview.acceptedCount()).toBe(success ? 1 : 0);
+      expect(overview.registrants()[0].rsvp?.response_type ?? null).toBe(success ? 'accepted' : null);
     }
     for (const request of http.match('/api/profile')) {
       request.flush({ profile: {} });
