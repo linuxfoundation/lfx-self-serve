@@ -24,6 +24,8 @@ The committee detail view (route: `/groups/:id`) shows:
 - Committee name and description
 - Current members and their roles
 
+To link directly to a tab, append `?tab=members` to the group URL for the Members roster, or use `tab=votes`, `tab=meetings`, or `tab=documents` for those tabs. Missing or invalid tab values open Overview. A recognized tab that is not visible to you also falls back to Overview; deep links do not change your access to the group.
+
 ## Edit a committee
 
 1. Open a committee from the committees dashboard.

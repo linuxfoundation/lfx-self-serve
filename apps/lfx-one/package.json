@@ -18,6 +18,8 @@
     "logs:server": "pm2 logs --raw",
     "lint": "eslint \"src/**/*.{ts,html}\" --fix",
     "lint:check": "eslint \"src/**/*.{ts,html}\"",
+    "check-types": "tsc --noEmit -p tsconfig.app.json",
+    "check-types:e2e": "tsc --noEmit -p tsconfig.e2e.json --moduleResolution node",
     "format": "prettier --write \"src/**/*.{ts,html,scss,css,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,html,scss,css,json}\"",
     "e2e": "playwright test",
