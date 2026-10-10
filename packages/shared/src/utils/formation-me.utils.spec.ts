@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { FORMATION_SUB_STAGE_SEVERITY } from '../constants/formation.constants';
+import { FORMATION_BLOCKING_CLASS, FORMATION_SUB_STAGE_SEVERITY } from '../constants/formation.constants';
 import type { PendingActionItem } from '../interfaces/components.interface';
 import type { FormationItemStatus, MyFormationItemRow, MyFormationSummary } from '../interfaces/formation.interface';
 import {
@@ -264,5 +264,10 @@ describe('decorateMyFormation', () => {
     const summary = formationSummary({ formation_uid: 'keep-me', blocking_item_title: 'Charter signed' });
 
     expect(decorateMyFormation(summary)).toEqual(expect.objectContaining(summary));
+  });
+
+  it('derives the Blocking cell colour from FORMATION_BLOCKING_CLASS (#3070)', () => {
+    expect(decorateMyFormation(formationSummary({ blocking_item_blocked: true })).blockingClass).toBe(FORMATION_BLOCKING_CLASS.blocked);
+    expect(decorateMyFormation(formationSummary({ blocking_item_blocked: false })).blockingClass).toBe(FORMATION_BLOCKING_CLASS.pending);
   });
 });

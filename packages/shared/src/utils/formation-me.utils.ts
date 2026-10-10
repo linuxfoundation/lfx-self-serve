@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  FORMATION_BLOCKING_CLASS,
   FORMATION_CHECKLIST_PATH,
   FORMATION_ITEM_QUERY_PARAM,
   FORMATION_ITEM_STATUS_LABELS,
@@ -181,5 +182,6 @@ export function decorateMyFormation(formation: MyFormationSummary): DecoratedMyF
     announcementLabel: formatFormationAnnouncementLabel(formation.announcement_date),
     stageLabel: stageDisplay.label,
     stageSeverity: stageDisplay.severity,
+    blockingClass: formation.blocking_item_blocked ? FORMATION_BLOCKING_CLASS.blocked : FORMATION_BLOCKING_CLASS.pending,
   };
 }

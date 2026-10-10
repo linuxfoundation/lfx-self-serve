@@ -14,6 +14,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   FORMATION_ANNOUNCEMENT_NEEDED_LABEL,
   FORMATION_ANNOUNCEMENT_TIMING_CLASS,
+  FORMATION_BLOCKING_CLASS,
   FORMATION_EMPTY_QUEUE_TILES,
   FORMATION_ENTITY_TYPE_LABELS,
   FORMATION_QUEUE_PAGE_SIZE,
@@ -246,7 +247,7 @@ export class FormationsTableComponent {
       progressSummary: formatFormationProgressSummary(row.progress),
       blockingTitle: blocking?.title ?? null,
       blockingIsBlocked: blocking?.blocked === true,
-      blockingClass: blocking?.blocked ? 'text-red-600' : 'text-amber-600',
+      blockingClass: blocking?.blocked ? FORMATION_BLOCKING_CLASS.blocked : FORMATION_BLOCKING_CLASS.pending,
     };
   }
 
