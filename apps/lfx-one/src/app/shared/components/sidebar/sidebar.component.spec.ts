@@ -1,10 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, signal } from '@angular/core';
+import { Component, computed, signal } from '@angular/core';
+import type { Provider } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { DefaultUrlSerializer, Router } from '@angular/router';
+import { DefaultUrlSerializer, provideRouter, Router } from '@angular/router';
+import type { IsActiveMatchOptions } from '@angular/router';
 import { LensItem, User } from '@lfx-one/shared/interfaces';
+import type { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -12,9 +15,32 @@ import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
+import { EMPTY } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SidebarComponent } from './sidebar.component';
+
+const sidebarServiceStubs = (setProject = vi.fn()): Provider[] => [
+  { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+  {
+    provide: LensService,
+    useValue: { activeLens: signal('project'), isHybridPersona: signal(false), availableLenses: signal([{ id: 'project' }]), setLens: vi.fn() },
+  },
+  {
+    provide: UserService,
+    useValue: { user: signal({ user_id: 'u1' } as unknown as User), userInitials: computed(() => 'AL'), effectiveAvatarUrl: computed(() => '') },
+  },
+  {
+    provide: ProjectContextService,
+    useValue: { activeContext: signal(null), activeRouteLensKind: signal('project'), setFoundation: vi.fn(), setProject },
+  },
+  {
+    provide: PersonaService,
+    useValue: { isRootWriter: signal(false), personaProjects: signal({}), allPersonas: signal([]), currentPersona: signal('contributor') },
+  },
+  { provide: NavigationService, useValue: { loaded: vi.fn(() => signal(true)) } },
+  { provide: AccountContextService, useValue: { hasOrgSelectorAccess: vi.fn(() => false) } },
+];
 
 /**
  * The Project lens landing page is decided per project by `formationOverviewRedirectGuard` (#2754):
@@ -36,26 +62,8 @@ describe('SidebarComponent — same-lens project switch re-enters the lens landi
     TestBed.configureTestingModule({
       imports: [SidebarComponent],
       providers: [
-        { provide: Router, useValue: { url, navigate, parseUrl: (value: string) => new DefaultUrlSerializer().parse(value) } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
-        {
-          provide: LensService,
-          useValue: { activeLens: signal('project'), isHybridPersona: signal(false), availableLenses: signal([{ id: 'project' }]), setLens: vi.fn() },
-        },
-        {
-          provide: UserService,
-          useValue: { user: signal({ user_id: 'u1' } as unknown as User), userInitials: computed(() => 'AL'), effectiveAvatarUrl: computed(() => '') },
-        },
-        {
-          provide: ProjectContextService,
-          useValue: { activeContext: signal(null), activeRouteLensKind: signal('project'), setFoundation: vi.fn(), setProject },
-        },
-        {
-          provide: PersonaService,
-          useValue: { isRootWriter: signal(false), personaProjects: signal({}), allPersonas: signal([]), currentPersona: signal('contributor') },
-        },
-        { provide: NavigationService, useValue: { loaded: vi.fn(() => signal(true)) } },
-        { provide: AccountContextService, useValue: { hasOrgSelectorAccess: vi.fn(() => false) } },
+        { provide: Router, useValue: { url, events: EMPTY, navigate, parseUrl: (value: string) => new DefaultUrlSerializer().parse(value) } },
+        ...sidebarServiceStubs(setProject),
       ],
     });
     TestBed.overrideComponent(SidebarComponent, { set: { template: '', imports: [], providers: [] } });
@@ -89,5 +97,101 @@ describe('SidebarComponent — same-lens project switch re-enters the lens landi
 
     expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ slug: 'beta' }), true);
     expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('SidebarComponent — link-active options (#3358)', () => {
+  @Component({ selector: 'lfx-blank-page', template: '' })
+  class BlankPageStubComponent {}
+
+  const peopleLink = '/org/acme-inc/people';
+  const easyclaLink = '/org/acme-inc/easycla';
+  const legacyEasyclaLink = '/org/easycla';
+  const items: SidebarMenuItem[] = [
+    { label: 'People', routerLink: peopleLink },
+    {
+      label: 'EasyCLA Management',
+      isSection: true,
+      items: [{ label: 'EasyCLA', routerLink: easyclaLink, activeOnSubpaths: true, activeAliases: [legacyEasyclaLink] }],
+    },
+  ];
+
+  let router: Router;
+  let component: SidebarComponent;
+  let decorated: ReturnType<SidebarComponent['itemsWithTestIds']>;
+
+  beforeEach(async () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [SidebarComponent],
+      providers: [provideRouter([{ path: '**', component: BlankPageStubComponent }]), ...sidebarServiceStubs()],
+    });
+    TestBed.overrideComponent(SidebarComponent, { set: { template: '', imports: [], providers: [] } });
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.componentRef.setInput('items', items);
+    await fixture.whenStable();
+    router = TestBed.inject(Router);
+    component = fixture.componentInstance;
+    decorated = component['itemsWithTestIds']();
+  });
+
+  const peopleOptions = (): IsActiveMatchOptions => decorated[0].activeMatchOptions;
+  const easyclaOptions = (): IsActiveMatchOptions | undefined => decorated[1].items?.[0]?.activeMatchOptions;
+  const isActive = (link: string, options: IsActiveMatchOptions | undefined): boolean => !!options && router.isActive(link, options);
+  const highlightedByAlias = (item: { trackKey: string } | undefined): boolean => !!item && component['aliasHighlightedKeys']().has(item.trackKey);
+
+  it('matches exact paths by default and subpaths only for an item that opts in, at any depth', () => {
+    expect(peopleOptions()).toEqual({ paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' });
+    expect(easyclaOptions()).toEqual({ paths: 'subset', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' });
+  });
+
+  it('highlights the opted-in item on its own page and on a detail page carrying a query string', async () => {
+    await router.navigateByUrl(easyclaLink);
+    expect(isActive(easyclaLink, easyclaOptions())).toBe(true);
+
+    await router.navigateByUrl(`${easyclaLink}/cla-group-1?signingEntity=entity-1`);
+    expect(isActive(easyclaLink, easyclaOptions())).toBe(true);
+  });
+
+  it('does not highlight the opted-in item on a sibling page that only shares a prefix', async () => {
+    await router.navigateByUrl(`${easyclaLink}-other`);
+
+    expect(isActive(easyclaLink, easyclaOptions())).toBe(false);
+  });
+
+  it('keeps an item that did not opt in unhighlighted below its own page', async () => {
+    await router.navigateByUrl(`${peopleLink}/person-1`);
+    expect(isActive(peopleLink, peopleOptions())).toBe(false);
+
+    await router.navigateByUrl(peopleLink);
+    expect(isActive(peopleLink, peopleOptions())).toBe(true);
+  });
+
+  it('highlights an aliased item on a detail page under its alias, as a leftover signing return leaves it', async () => {
+    await router.navigateByUrl(`${legacyEasyclaLink}/cla-group-1?org=org-1`);
+
+    expect(highlightedByAlias(decorated[1].items?.[0])).toBe(true);
+  });
+
+  it('still highlights an aliased item under its own link', async () => {
+    await router.navigateByUrl(`${easyclaLink}/cla-group-1`);
+
+    expect(highlightedByAlias(decorated[1].items?.[0])).toBe(true);
+  });
+
+  it('does not highlight an aliased item on a sibling page that only shares the alias prefix', async () => {
+    await router.navigateByUrl(`${legacyEasyclaLink}-other`);
+
+    expect(highlightedByAlias(decorated[1].items?.[0])).toBe(false);
+  });
+
+  it('leaves an item without aliases to exact routerLinkActive matching', async () => {
+    await router.navigateByUrl(peopleLink);
+    expect(highlightedByAlias(decorated[0])).toBe(false);
+    expect(isActive(peopleLink, peopleOptions())).toBe(true);
+
+    await router.navigateByUrl(`${peopleLink}/person-1`);
+    expect(highlightedByAlias(decorated[0])).toBe(false);
+    expect(isActive(peopleLink, peopleOptions())).toBe(false);
   });
 });

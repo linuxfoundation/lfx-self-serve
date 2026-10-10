@@ -3,7 +3,9 @@
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { afterNextRender, Component, computed, inject, input, model, Signal, signal, viewChild } from '@angular/core';
-import { Router, RouterModule } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterModule } from '@angular/router';
+import type { IsActiveMatchOptions } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { LensTabsComponent } from '@components/lens-tabs/lens-tabs.component';
@@ -23,6 +25,7 @@ import { UserService } from '@services/user.service';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
+import { filter, map } from 'rxjs';
 
 const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
   'executive-director': 'fa-light fa-briefcase',
@@ -36,6 +39,7 @@ type DecoratedSidebarMenuItem = Omit<SidebarMenuItem, 'items'> & {
   testId: string;
   trackKey: string;
   external: boolean | undefined;
+  activeMatchOptions: IsActiveMatchOptions;
   items?: DecoratedSidebarMenuItem[];
 };
 
@@ -66,6 +70,9 @@ export class SidebarComponent {
   private readonly userService = inject(UserService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly featureFlagService = inject(FeatureFlagService);
+
+  private static readonly exactPathMatch: IsActiveMatchOptions = { paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' };
+  private static readonly subpathMatch: IsActiveMatchOptions = { ...SidebarComponent.exactPathMatch, paths: 'subset' };
 
   public readonly items = input.required<SidebarMenuItem[]>();
   public readonly footerItems = input<SidebarMenuItem[]>([]);
@@ -123,6 +130,34 @@ export class SidebarComponent {
   protected readonly itemsWithTestIds = computed(() => this.items().map((item) => this.decorate(item)));
 
   protected readonly footerItemsWithTestIds = computed(() => this.footerItems().map((item) => this.decorate(item)));
+
+  private readonly navigatedUrl = toSignal(
+    this.router.events.pipe(
+      filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+      map((event) => event.urlAfterRedirects)
+    ),
+    { initialValue: this.router.url }
+  );
+
+  /**
+   * Track keys of the items with `activeAliases` that the current address highlights. Those items
+   * are highlighted here rather than by `routerLinkActive`, which only knows the item's own link:
+   * left to both, `routerLinkActive` would strip the classes this adds on every navigation.
+   */
+  protected readonly aliasHighlightedKeys: Signal<ReadonlySet<string>> = computed(() => {
+    this.navigatedUrl();
+    const keys = new Set<string>();
+    const scan = (items: DecoratedSidebarMenuItem[]): void => {
+      for (const item of items) {
+        const links = item.routerLink && item.activeAliases?.length ? [item.routerLink, ...item.activeAliases] : [];
+        if (links.some((link) => this.router.isActive(link, item.activeMatchOptions))) keys.add(item.trackKey);
+        if (item.items) scan(item.items);
+      }
+    };
+    scan(this.itemsWithTestIds());
+    scan(this.footerItemsWithTestIds());
+    return keys;
+  });
 
   // Paired with items ref so lens switches auto-reset group expansion without needing an effect().
   private readonly expandedGroupOverrides = signal<{ itemsRef: SidebarMenuItem[]; overrides: Record<string, boolean> }>({
@@ -283,6 +318,7 @@ export class SidebarComponent {
       testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
       trackKey: this.trackKey(item),
       external: item.url ? this.isExternalUrl(item.url) : undefined,
+      activeMatchOptions: item.activeOnSubpaths ? SidebarComponent.subpathMatch : SidebarComponent.exactPathMatch,
       items: item.items?.map((childItem) => this.decorate(childItem)),
     };
   }
