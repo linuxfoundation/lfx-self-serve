@@ -97,9 +97,13 @@ export class CampaignService {
   /**
    * Store the approved brief in campaign-service.
    *
-   * Storage only — nothing reads it back yet, so a reload still loses the brief from the page.
-   * The read path is LFXV2-3108. Saying "survives a reload" here would describe a round trip only
-   * half of which exists.
+   * The read half exists: `loadBrief` below is called from `planning-tab.component.ts` once a URL
+   * is entered, and a restore writes the id and ETag back through `rememberBriefId`, which is what
+   * makes a later save owned rather than refused.
+   *
+   * What a reload does NOT do is rehydrate on its own — the page starts empty and `loadBrief` runs
+   * only once a URL is entered (`campaigns.component.ts`), so the brief is offered for restore
+   * rather than simply still being there. Saying "survives a reload" here would still overstate it.
    *
    * Fire-and-forget from the caller's point of view — the Planning → Implementation handoff must
    * not wait on it, because campaign creation still runs entirely client-side and a slow or

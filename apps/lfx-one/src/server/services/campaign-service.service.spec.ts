@@ -748,9 +748,11 @@ describe('CampaignServiceClient.saveBrief', () => {
     // version means the row carries edits this POST never made, so adopting it would hand the
     // caller ownership of someone else's work and let the next save replace it.
     //
-    // This is the load-bearing guard on THIS branch: `CampaignServiceBrief` here declares only
-    // the columns the write path reads, so the payload comparison can check program and slug but
-    // not url or platforms. LFXV2-3108 widens the type and strengthens that half.
+    // It is one of the two conditions `reconcileLostCreate` ANDs together, and the only one that
+    // speaks to the row's HISTORY rather than its current contents: a row can hold exactly the
+    // payload this POST sent and still have been written more than once. The sibling test below
+    // covers the other condition — `storedBriefMatches` comparing the whole brief, url and
+    // platforms included.
     proxyRequestWithResponse
       .mockRejectedValueOnce(NOT_FOUND)
       .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))

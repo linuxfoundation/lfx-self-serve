@@ -695,25 +695,30 @@ export class CampaignServiceClient {
     //
     // This is the guard for LFXV2-3200. Without it the update branch below is reachable by a
     // caller that never saw the stored brief, and it overwrites content the user was never
-    // shown. Two routes lead there and only one involves a slug mismatch:
+    // shown.
     //
     // `knownBriefId` defaults to null, and there are two ways a caller comes to hold one.
     //
-    // In THIS phase: by having created the brief itself. `CampaignsComponent` records the id a
+    // By having created the brief itself. `CampaignsComponent` records the id a
     // successful save returns, so the second Proceed of a session sends it and takes the ordinary
     // replace path. Note this parameter is NOT reliably null here: recording the created id
     // populates it, so any logic must read the value rather than assume its absence.
     //
-    // What is still missing is the RELOAD path: a fresh session, a second tab, or a reload cannot
-    // learn the id of a brief it did not write, so those callers arrive with null and are refused.
-    // LFXV2-3108 adds the read that closes that half.
+    // After a RELOAD: by restoring. `loadBrief` finds the stored brief, the user accepts the
+    // Restore offer, and `onRestoreSavedBrief` records the id and ETag — so a fresh session or a
+    // second tab CAN come to own a brief it did not write, which is how the refusal below is
+    // escapable at all, exactly as its user-facing message says.
+    //
+    // A caller still arrives with null whenever that offer never ran. Two routes lead there and
+    // only one involves a slug mismatch:
     //
     //   1. The lookup's slug (last path segment of the pasted URL) and the save's slug
     //      (`brief.eventDetails.slug`, from the scrape) diverge, so the Restore offer never
     //      appears, the user regenerates, and THIS find hits the row the offer missed.
-    //   2. No divergence at all — a reload, or a second tab. The page holds no brief id
-    //      because nothing loaded one, the slugs match perfectly, and the save still replaces
-    //      a brief whose contents the caller never read.
+    //   2. No divergence at all — a reload, or a second tab, where the offer never ran because
+    //      the page starts empty and `loadBrief` fires only once the event URL is re-entered.
+    //      The page holds no brief id, the slugs match perfectly, and the save would still
+    //      replace a brief whose contents the caller never read.
     //
     // Route 2 is why normalizing the two slug derivations is not the fix: it would close route
     // 1 and leave route 2 wide open. Ownership is the property that actually distinguishes
