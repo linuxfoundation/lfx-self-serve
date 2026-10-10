@@ -69,7 +69,10 @@
   <div class="mt-[56px] flex flex-col gap-[32px] min-[921px]:flex-row min-[921px]:items-start min-[921px]:gap-[44px]">
     <div class="flex min-w-0 flex-col gap-[64px] min-[921px]:flex-[1.7_1_0%]" data-testid="meeting-content-column">
       <p-skeleton height="109px" aria-hidden="true" data-testid="meeting-section-placeholder-occurrences" />
-      <p-skeleton height="220px" aria-hidden="true" data-testid="meeting-section-placeholder-agenda" />
+      <!-- E3-01: hidden only for an ended meeting without artifact access (resolveVisibleSections), as V1 hides it. -->
+      @if (state.visibleSections()?.agenda) {
+        <lfx-meeting-agenda />
+      }
       <p-skeleton height="280px" aria-hidden="true" data-testid="meeting-section-placeholder-materials" />
       <p-skeleton height="280px" aria-hidden="true" data-testid="meeting-section-placeholder-discover" />
     </div>

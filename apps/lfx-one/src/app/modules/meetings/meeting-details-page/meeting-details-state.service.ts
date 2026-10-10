@@ -15,6 +15,7 @@ import {
   MeetingOccurrence,
   MeetingPrivacyState,
   MeetingRsvp,
+  MeetingSectionVisibility,
   MeetingStatusKind,
   MeetingTimeState,
   MeetingViewerRole,
@@ -33,6 +34,7 @@ import {
   resolveRsvpOccurrenceId,
   resolveTimeState,
   resolveViewerRole,
+  resolveVisibleSections,
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -208,6 +210,11 @@ export class MeetingDetailsStateService {
    */
   public readonly actionSlot: Signal<ActionSlotKind | null> = this.initActionSlot();
   /**
+   * Which content sections render for this viewer (E0-02 `resolveVisibleSections`); `null` until the
+   * meeting has loaded. Each section reads its flag here, so a missing section traces to one decision.
+   */
+  public readonly visibleSections: Signal<MeetingSectionVisibility | null> = this.initVisibleSections();
+  /**
    * Whether this viewer will be offered a way in once the join window opens (`join` or
    * `guest-join`), so the slot can state the early-join rule before then.
    */
@@ -349,6 +356,24 @@ export class MeetingDetailsStateService {
     return computed(() => {
       const timeState = this.timeState();
       return timeState ? this.resolveSlotAt(timeState) : null;
+    });
+  }
+
+  private initVisibleSections(): Signal<MeetingSectionVisibility | null> {
+    return computed(() => {
+      const meeting = this.meeting();
+      const timeState = this.timeState();
+      const viewerRole = this.viewerRole();
+      if (!meeting || !timeState || !viewerRole) {
+        return null;
+      }
+      return resolveVisibleSections({
+        fullAccess: this.pastMeetingFullAccess(),
+        inviteResponsesEnabled: isMeetingInviteResponsesEnabled(meeting),
+        recurring: !!meeting.recurrence,
+        timeState,
+        viewerRole,
+      });
     });
   }
 

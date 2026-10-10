@@ -5,7 +5,7 @@ import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { Component, input, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ButtonComponent } from '@components/button/button.component';
-import { Meeting, MeetingDetailsLoadStatus, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingDetailsLoadStatus, MeetingSectionVisibility, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -34,9 +34,13 @@ class ActionSlotStubComponent {}
 @Component({ selector: 'lfx-meeting-organizer', template: '' })
 class OrganizerStubComponent {}
 
+@Component({ selector: 'lfx-meeting-agenda', template: '<span data-testid="agenda-stub"></span>' })
+class AgendaStubComponent {}
+
 describe('MeetingDetailsPageComponent', () => {
   let fixture: ComponentFixture<MeetingDetailsPageComponent>;
   let status: WritableSignal<MeetingDetailsLoadStatus>;
+  let visibleSections: WritableSignal<Partial<MeetingSectionVisibility> | null>;
   let refresh: ReturnType<typeof vi.fn>;
   let retrying: WritableSignal<boolean>;
   let failureCount: WritableSignal<number>;
@@ -45,6 +49,7 @@ describe('MeetingDetailsPageComponent', () => {
 
   beforeEach(async () => {
     status = signal<MeetingDetailsLoadStatus>('loading');
+    visibleSections = signal<Partial<MeetingSectionVisibility> | null>({ agenda: true });
     refresh = vi.fn();
     retrying = signal(false);
     failureCount = signal(1);
@@ -60,6 +65,7 @@ describe('MeetingDetailsPageComponent', () => {
             NgTemplateOutlet,
             ButtonComponent,
             ActionSlotStubComponent,
+            AgendaStubComponent,
             HeaderStubComponent,
             IdentityBarStubComponent,
             ImpersonationBannerStubComponent,
@@ -67,7 +73,9 @@ describe('MeetingDetailsPageComponent', () => {
             TimeBannerStubComponent,
             SkeletonModule,
           ],
-          providers: [{ provide: MeetingDetailsStateService, useValue: { status, meeting: signal(meeting), refresh, retrying, failureCount } }],
+          providers: [
+            { provide: MeetingDetailsStateService, useValue: { status, meeting: signal(meeting), refresh, retrying, failureCount, visibleSections } },
+          ],
         },
       })
       .compileComponents();
@@ -101,6 +109,16 @@ describe('MeetingDetailsPageComponent', () => {
     expect(query('meeting-header-section')?.querySelector('lfx-meeting-header')).not.toBeNull();
     expect(query('meeting-content-column')).not.toBeNull();
     expect(query('meeting-rail')?.getAttribute('aria-label')).toBe('Meeting actions');
+  });
+
+  // E3-01: the agenda follows the page's section visibility (hidden for an ended meeting without access).
+  it('renders the agenda only where the section visibility allows it', () => {
+    show('ready');
+    expect(query('agenda-stub')).not.toBeNull();
+
+    visibleSections.set({ agenda: false });
+    fixture.detectChanges();
+    expect(query('agenda-stub')).toBeNull();
   });
 
   // Placeholder testids are temporary (testid-contract.md), so this asserts on whatever skeleton

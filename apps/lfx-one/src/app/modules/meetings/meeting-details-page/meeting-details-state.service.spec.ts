@@ -927,6 +927,36 @@ describe('MeetingDetailsStateService', () => {
     });
   });
 
+  // E3-01: the page's sections read their visibility from one decision (E0-02).
+  describe('visible sections', () => {
+    it('shows the agenda of an upcoming meeting', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: { ...buildMeeting(), start_time: new Date(Date.now() + 86_400_000).toISOString(), duration: 60 }, project })
+      );
+      const state = create();
+      await settle();
+
+      expect(state.visibleSections()?.agenda).toBe(true);
+    });
+
+    it('hides the agenda of an ended meeting the viewer has no access to', async () => {
+      paramMap$.next(convertToParamMap({ id: '99152950841-1700000000000' }));
+      getPublicPastMeeting.mockReturnValue(
+        of({ meeting: { ...buildMeeting(), start_time: '2023-11-14T22:13:20Z', duration: 60 }, project, full_access: false })
+      );
+      const state = create();
+      await settle();
+
+      expect(state.visibleSections()?.agenda).toBe(false);
+    });
+
+    it('has no sections before the meeting loads', () => {
+      getPublicMeeting.mockReturnValue(new Subject());
+
+      expect(create().visibleSections()).toBeNull();
+    });
+  });
+
   describe('sign-in link', () => {
     it('signs in back to this meeting', () => {
       getPublicMeeting.mockReturnValue(new Subject());
