@@ -33,8 +33,8 @@ import { isTransientHttpError } from '../utils/http-error.utils';
  *   2. The URL's `?project=<slug>` query param, then the active context's
  *      slug — the legacy chain, used by the list/create routes and as the
  *      fallback only when the uid lookup confirms the project is gone
- *      (400/404); a transient lookup failure fails closed instead of
- *      re-checking the writer bit against a possibly-stale context.
+ *      (400/404); a transient lookup failure fails closed with an error notice
+ *      instead of re-checking writer access against a possibly-stale context.
  *
  * Redirects to the lens-appropriate overview on denial to preserve
  * the active project context without triggering a lens switch.
@@ -170,9 +170,12 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
           // than deny outright.
           return contextSlug ? checkWriterAccess(contextSlug) : of(router.parseUrl(overviewPath));
         }
-        // Transient/unknown failure — fail closed rather than authorize against a
-        // stale context. Plain overview redirect without `_notice: 'access'`: a blip
-        // is not a denial, and the user can retry the navigation.
+        if (isTransientHttpError(error)) {
+          // Mirror writerGuard's outage notice without serializing a stale project.
+          return of(router.createUrlTree([overviewPath], { queryParams: { _notice: 'error' } }));
+        }
+        // Other non-transient/unknown failures keep the plain, fail-closed redirect
+        // rather than authorize against a stale context or mislabel an outage.
         return of(router.parseUrl(overviewPath));
       })
     );
