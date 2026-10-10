@@ -5,6 +5,7 @@ import type {
   CampaignStatusUpdateResult,
   RedditActionItem,
   RedditAccountTotals,
+  RedditCallToAction,
   RedditCampaignCreateRequest,
   RedditCampaignCreateResult,
   RedditCampaignMetrics,
@@ -13,7 +14,14 @@ import type {
   RedditPacingLabel,
 } from '@lfx-one/shared/interfaces';
 
-import { CAMPAIGN_ALERT_THRESHOLDS, REDDIT_OBJECTIVE_LABELS, REDDIT_OBJECTIVE_PARAMS } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_ALERT_THRESHOLDS,
+  DEFAULT_REDDIT_CALL_TO_ACTION,
+  MAX_REDDIT_HEADLINE_LENGTH,
+  REDDIT_CALL_TO_ACTIONS,
+  REDDIT_OBJECTIVE_LABELS,
+  REDDIT_OBJECTIVE_PARAMS,
+} from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { REDDIT_ACCOUNTS, REDDIT_REQUEST_TIMEOUT_MS, REDDIT_TOKEN_EXPIRY_BUFFER_SECONDS } from '../constants';
@@ -93,6 +101,52 @@ interface RedditApiResponse {
   [key: string]: unknown;
 }
 
+/**
+ * A non-2xx from the Reddit Ads API, carrying the status separately from the message.
+ *
+ * The message keeps the response body, because that is what makes a 400 diagnosable in the server
+ * log. The STATUS is split out because the body cannot go everywhere the message can: `steps` is an
+ * operator-facing narrative that is returned to the browser and persisted with the campaign, and an
+ * upstream error body is up to 400 characters of whatever Reddit chose to return — including the
+ * request fields its reflective validation errors echo back. None of that is actionable by the
+ * operator reading `steps`, so those arms report `HTTP <status>` and nothing else.
+ *
+ * This is not a claim that the tagged click URL is a secret from the operator: the no-ad branch
+ * deliberately prints that URL, `utm_campaign` and all, because they need it to build the ad by
+ * hand. It is a claim about what belongs in a persisted narrative versus in a log line.
+ *
+ * Message shape is unchanged from the plain `Error` this replaces, so existing callers that only
+ * read `err.message` behave exactly as before.
+ */
+export class RedditApiError extends Error {
+  public readonly status: number;
+
+  public constructor(status: number, method: string, path: string, body: string) {
+    super(`Reddit API ${method} ${path} → ${status}: ${body.slice(0, 400)}`);
+    this.name = 'RedditApiError';
+    this.status = status;
+  }
+}
+
+/**
+ * Whether a failed mutating call may nonetheless have created something upstream.
+ *
+ * Only a 4xx proves it did not: Reddit received the request and rejected it. A 5xx may have been
+ * raised after the write, and a `fetch` rejection (timeout, abort, DNS) cannot say whether the
+ * request was ever sent — so both are ambiguous. The asymmetry is deliberate and matches
+ * `createOutcomeAmbiguous` upstream: calling an ambiguous outcome definite tells the operator to
+ * author the post again and is how a duplicate PAID post gets made, while calling a definite one
+ * ambiguous costs a check in Reddit Ads Manager that finds nothing.
+ */
+export function redditOutcomeAmbiguous(err: unknown): boolean {
+  return !(err instanceof RedditApiError) || err.status >= 500;
+}
+
+/** `HTTP <status>` when Reddit answered, or a no-status phrase when it may never have been asked. */
+function describeRedditFailure(err: unknown): string {
+  return err instanceof RedditApiError ? `HTTP ${err.status}` : 'no response from Reddit';
+}
+
 async function redditRequest(method: 'GET' | 'POST' | 'PATCH', path: string, body?: Record<string, unknown>): Promise<RedditApiResponse> {
   const segments = path.split('/').map((s) => {
     try {
@@ -118,7 +172,7 @@ async function redditRequest(method: 'GET' | 'POST' | 'PATCH', path: string, bod
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
-    throw new Error(`Reddit API ${method} ${path} → ${resp.status}: ${text.slice(0, 400)}`);
+    throw new RedditApiError(resp.status, method, path, text);
   }
 
   return (await resp.json()) as RedditApiResponse;
@@ -420,6 +474,133 @@ export function buildRedditUtmUrl(config: RedditCampaignCreateRequest, variantIn
   return `${base}${sep}${params.toString()}`;
 }
 
+/**
+ * The inputs for a post this service authors itself, or `null` when none is to be authored.
+ *
+ * `postUrl` always wins: an operator who named an existing post gets that post promoted, and
+ * `imageUrl`/`callToAction` are ignored rather than used to author a second one. That is upstream's
+ * rule (`client.go:1620-1676`), and both arms must agree on it or the same request creates
+ * different things depending on which one serves.
+ */
+interface RedditAuthoredPostInput {
+  imageUrl: string;
+  headline: string;
+  callToAction: RedditCallToAction;
+}
+
+/**
+ * Reject an image URL Reddit could not fetch, before anything upstream is created.
+ *
+ * Mirrors `validateImageURL` (`client.go:2787-2808`). Reddit ingests and re-hosts `media_url` at
+ * create time — there is no separate upload step — so the URL has to be publicly reachable http(s)
+ * with a host. Embedded credentials are refused outright rather than forwarded to Reddit.
+ *
+ * The raw value never appears in the thrown message: it reaches the browser and the campaign's
+ * persisted `steps`, and a URL an operator pasted can carry a signed-asset query string.
+ */
+function validateRedditImageUrl(imageUrl: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(imageUrl);
+  } catch {
+    throw new Error('Invalid Reddit image URL: must be an absolute http(s) URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`Invalid Reddit image URL: scheme ${parsed.protocol.replace(':', '')} is not supported — must be http or https`);
+  }
+  // No host check here, deliberately, where upstream's Go `url.Parse` needs one: WHATWG `URL`
+  // already refuses a hostless http(s) URL at the `new URL` above (`https://` and `https://:8080/x`
+  // both throw, and `https:///a` normalizes to host `a`). A `!parsed.hostname` guard after the
+  // scheme check is unreachable, and an unreachable guard reads as a check that is doing work.
+  if (parsed.username || parsed.password) {
+    throw new Error('Invalid Reddit image URL: must not embed credentials');
+  }
+}
+
+/**
+ * Resolve the three author-a-post inputs, or `null` when no post is to be authored.
+ *
+ * Every refusal here happens BEFORE the first upstream call, so a bad input costs nothing: no
+ * campaign, no ad group, no post. That ordering is upstream's and is stated as its reason at
+ * `client.go:1629-1668` — validate "before any mutating call, so a bad image URL / CTA / headline
+ * fails fast rather than after paid resources exist".
+ */
+export function resolveRedditAuthoredPost(config: RedditCampaignCreateRequest, validatedPostId: string | undefined): RedditAuthoredPostInput | null {
+  const imageUrl = config.imageUrl?.trim() ?? '';
+  if (validatedPostId || imageUrl === '') return null;
+
+  validateRedditImageUrl(imageUrl);
+
+  const requestedCta = config.callToAction?.trim() ?? '';
+  let callToAction: RedditCallToAction = DEFAULT_REDDIT_CALL_TO_ACTION;
+  if (requestedCta !== '') {
+    // Matched case-insensitively against the catalogue and sent back in the catalogue's own
+    // casing, because that casing is what Reddit accepts. Upstream matches the same way
+    // (`client.go:1620-1676`), so a value either arm accepts is accepted by both.
+    const canonical = REDDIT_CALL_TO_ACTIONS.find((known) => known.toLowerCase() === requestedCta.toLowerCase());
+    if (!canonical) {
+      throw new Error(`Invalid Reddit call to action "${requestedCta}": must be one of ${REDDIT_CALL_TO_ACTIONS.join(', ')}`);
+    }
+    callToAction = canonical;
+  }
+
+  // The first variant's headline is the post's, falling back to the event name — the same
+  // precedence upstream uses. Only variant 0 is consulted because one post carries one headline;
+  // the remaining variants stay in `steps` for Reddit Ads Manager, exactly as they do when no post
+  // is authored at all.
+  const firstHeadline = config.variants[0]?.headline?.trim() ?? '';
+  const headline = firstHeadline !== '' ? firstHeadline : config.eventName;
+  const headlineLength = [...headline].length;
+  if (headlineLength > MAX_REDDIT_HEADLINE_LENGTH) {
+    throw new Error(`Promoted-post headline is too long: ${headlineLength} characters (max ${MAX_REDDIT_HEADLINE_LENGTH})`);
+  }
+
+  return { imageUrl, headline, callToAction };
+}
+
+/**
+ * Author a promoted image post on the ad account's own profile and return its id.
+ *
+ * Mirrors `createPromotedPost` (`client.go:2480-2507`). Three details are upstream's, not
+ * invented here:
+ *
+ * - the profile id IS the ad-account id (`t2_...`), so there is no separate profile to look up;
+ * - `media_url` is ingested and re-hosted by Reddit at create time, which is why a public absolute
+ *   URL is required and why there is no upload call before this one;
+ * - `destination_url` is the SAME UTM'd click URL the ad's `click_url` carries for variant 0 —
+ *   they must match, or the post and the ad promoting it send traffic to differently-tagged URLs.
+ *
+ * `allow_comments: false` is upstream's too. It is NOT a visibility control: whether an ads-API
+ * post appears in feeds is undocumented, which is why a post left unattached to an ad is treated
+ * as a stray for the operator to delete rather than a harmless orphan.
+ */
+async function createRedditPromotedPost(accountId: string, config: RedditCampaignCreateRequest, post: RedditAuthoredPostInput): Promise<string> {
+  const body = {
+    data: {
+      type: 'IMAGE',
+      headline: post.headline,
+      allow_comments: false,
+      content: [
+        {
+          media_url: post.imageUrl,
+          call_to_action: post.callToAction,
+          destination_url: buildRedditUtmUrl(config, 0),
+        },
+      ],
+    },
+  };
+
+  const resp = await redditRequest('POST', `/profiles/${accountId}/posts`, body);
+  const postId = String(((resp.data as RedditCampaignData) ?? {}).id ?? '');
+  if (!postId) {
+    // A 2xx with no id is not a success with a missing field — there is no id to attach an ad to,
+    // and treating it as one would attach the ad to `undefined`. Thrown so it lands on the
+    // ambiguous arm: a post may well exist.
+    throw new Error('Reddit post creation returned no id');
+  }
+  return postId;
+}
+
 function extractRedditPostId(urlOrId: string): string {
   const trimmed = urlOrId.trim();
   const fullMatch = trimmed.match(/reddit\.com\/(?:r\/\w+\/)?comments\/([a-z0-9]+)/i);
@@ -482,6 +663,10 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
     validatedPostId = extractRedditPostId(config.postUrl);
   }
 
+  // Resolved here, with the budget and date checks, so every author-a-post refusal happens before
+  // the first upstream call — see `resolveRedditAuthoredPost`.
+  const authoredPost = resolveRedditAuthoredPost(config, validatedPostId);
+
   const account = REDDIT_ACCOUNTS[0];
   const accountId = account.accountId;
 
@@ -490,7 +675,13 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
     await redditRequest('GET', `/ad_accounts/${accountId}`);
     steps.push(`Account verified: ${account.label} (${accountId})`);
   } catch (err) {
-    steps.push(`Account verification warning: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    // Same rule as the two arms below — see `RedditApiError`: no arm in this function puts a raw
+    // upstream body into `steps`, which is an operator-facing narrative, not a diagnostic. The body
+    // stays in the log line, which is where a failed call gets diagnosed.
+    logger.warning(req, 'reddit_account_verify', `Account verification failed: ${err instanceof Error ? err.message : 'Unknown error'}`, {
+      account_id: accountId,
+    });
+    steps.push(`Account verification warning (${describeRedditFailure(err)})`);
   }
 
   // Step 2: Create campaign (PAUSED, lifetime budget, objective-aware params)
@@ -596,13 +787,40 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
     steps.push(`Targeting: ${config.keywords.length} keywords, ${geos.length} geos (communities skipped — add manually in Reddit Ads Manager)`);
   }
 
-  // Step 4: Create ads from post URL if provided, otherwise log manual instructions
+  // Step 4: Attach an ad — promoting the post the operator named, or one authored here from
+  // `imageUrl` — otherwise log manual instructions
   let adCount = 0;
   let adId: string | undefined;
+  let postId = validatedPostId;
+  // Tracked separately from `postId` so the ad-failure arm can say whether a post this service
+  // authored is now sitting unattached, which is a stray to clean up rather than a pre-existing
+  // post of the operator's that nothing happened to.
+  let authoredPostId: string | undefined;
 
-  if (config.postUrl && validatedPostId) {
-    const postId = validatedPostId;
-    steps.push(`Extracted post ID: ${postId} from ${config.postUrl}`);
+  if (!postId && authoredPost) {
+    try {
+      authoredPostId = await createRedditPromotedPost(accountId, config, authoredPost);
+      postId = authoredPostId;
+      steps.push(`Promoted post authored: ${authoredPostId} (CTA: ${authoredPost.callToAction})`);
+    } catch (err) {
+      logger.warning(req, 'reddit_post_create', `Promoted post creation failed: ${err instanceof Error ? err.message : 'Unknown error'}`, {
+        campaign_id: campaignId,
+        ad_group_id: adGroupId,
+      });
+      // Status only, never the body — see `RedditApiError`. The two arms differ in exactly one
+      // instruction, and it is the one that matters: whether authoring again risks a duplicate.
+      steps.push(
+        redditOutcomeAmbiguous(err)
+          ? `Promoted post authoring UNCONFIRMED (${describeRedditFailure(err)}) — continuing without an ad. Check this ad account's posts in Reddit Ads Manager BEFORE authoring the post again, to avoid creating a duplicate, and delete any post that is not attached to an ad.`
+          : `Promoted post authoring failed: Reddit rejected the post (${describeRedditFailure(err)}) — continuing without an ad. No post was created; author the post and add the ad to this campaign in Reddit Ads Manager.`
+      );
+    }
+  }
+
+  if (postId) {
+    if (validatedPostId) {
+      steps.push(`Extracted post ID: ${postId} from ${config.postUrl}`);
+    }
 
     const utmUrl = buildRedditUtmUrl(config, 0);
     const adBody = {
@@ -615,6 +833,13 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
       },
     };
 
+    // Appended to EVERY arm that ends with no ad, because a post this service authored is then
+    // sitting unattached and only this result tells the operator it exists. Empty when the post was
+    // the operator's own: nothing happened to it, and calling it a stray would be wrong.
+    const strayNote = authoredPostId
+      ? ` A promoted post was authored for this campaign (${authoredPostId}) and is now unattached — attach it to an ad here, or delete it in Reddit Ads Manager.`
+      : '';
+
     try {
       const adResp = await redditRequest('POST', `/ad_accounts/${accountId}/ads`, adBody);
       const adData = (adResp.data as RedditCampaignData) ?? {};
@@ -622,15 +847,30 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
       if (adId) {
         adCount = 1;
         steps.push(`Ad created: ${adId} (post: ${postId}, click URL: ${utmUrl})`);
+      } else {
+        // A 2xx carrying no id is still an ad that cannot be reported, toggled, or found — and
+        // before this branch existed it produced NO step at all, so an authored post could be left
+        // unattached with the result saying nothing about it. Reported like a failure, but worded
+        // for what actually happened: Reddit accepted the call, so "no response" would be false and
+        // an ad may well exist.
+        logger.warning(req, 'reddit_ad_create', 'Ad creation returned no ad id', {
+          campaign_id: campaignId,
+          ad_group_id: adGroupId,
+          post_id: postId,
+        });
+        steps.push(
+          `Ad creation UNCONFIRMED (Reddit accepted the request but returned no ad id) — check this campaign in Reddit Ads Manager before adding an ad, to avoid creating a duplicate.${strayNote}`
+        );
       }
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      logger.warning(req, 'reddit_ad_create', `Ad creation failed: ${errMsg}`, {
+      logger.warning(req, 'reddit_ad_create', `Ad creation failed: ${err instanceof Error ? err.message : 'Unknown error'}`, {
         campaign_id: campaignId,
         ad_group_id: adGroupId,
         post_id: postId,
       });
-      steps.push(`Ad creation failed: ${errMsg} — add ad manually in Reddit Ads Manager`);
+      // Status only, never the body — see `RedditApiError`. The full message is in the log line
+      // above, which is where a 400 gets diagnosed.
+      steps.push(`Ad creation failed (${describeRedditFailure(err)}) — add the ad to this campaign in Reddit Ads Manager.${strayNote}`);
     }
   } else {
     const variantCount = config.variants.length;
@@ -641,7 +881,15 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
         steps.push(`  Variant ${i + 1}: "${config.variants[i].headline}" → ${utmUrl}`);
       }
     } else {
-      steps.push('No ad variants or post URL provided — add ads manually in Reddit Ads Manager');
+      // Two ways to reach here with no variants, and they are not the same thing: nothing was
+      // supplied at all, or an image URL was supplied and the authoring above failed. The second
+      // already pushed its own step saying so, and repeating "no image URL provided" after it would
+      // contradict it.
+      steps.push(
+        authoredPost
+          ? 'No ad variants, and no ad was attached — add ads manually in Reddit Ads Manager'
+          : 'No ad variants, post URL or image URL provided — add ads manually in Reddit Ads Manager'
+      );
     }
   }
 

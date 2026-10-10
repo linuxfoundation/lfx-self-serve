@@ -1489,6 +1489,17 @@ export const REDDIT_CALL_TO_ACTIONS = [
 export const DEFAULT_REDDIT_CALL_TO_ACTION = 'Learn More';
 
 /**
+ * The longest headline Reddit accepts on a promoted post — `maxRedditHeadlineRunes` in the same
+ * upstream file (`client.go:110`).
+ *
+ * Counted in CODE POINTS, not UTF-16 units: upstream measures with `utf8.RuneCountInString`, so an
+ * emoji or an astral character is one unit there and two in a JavaScript `.length`. Measuring the
+ * JS way would refuse headlines Reddit accepts, and over-refusal is the one failure mode a guard
+ * mirroring upstream must not have. Use `[...headline].length`.
+ */
+export const MAX_REDDIT_HEADLINE_LENGTH = 300;
+
+/**
  * The concrete video optimization goals Reddit accepts — `validVideoGoals` in the same upstream
  * file (`client.go:539`).
  *

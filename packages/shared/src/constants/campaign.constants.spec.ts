@@ -28,6 +28,7 @@ import {
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_SECTION_TITLES,
+  MAX_REDDIT_HEADLINE_LENGTH,
   META_OBJECTIVE_LABELS,
   META_OBJECTIVE_PARAMS,
   META_SELECTABLE_OBJECTIVES,
@@ -807,6 +808,15 @@ describe('Reddit promoted-post contract', () => {
       expect(cta).toBe(cta.trim());
       expect(cta.length).toBeGreaterThan(0);
     }
+  });
+
+  /**
+   * The headline cap is `maxRedditHeadlineRunes` upstream, and the only failure mode that matters
+   * is refusing a headline Reddit would have accepted — so an accidental edit DOWNWARD is the one
+   * to catch. Pinned by value because the value is copied, not derived.
+   */
+  it('keeps the headline cap at the length upstream enforces', () => {
+    expect(MAX_REDDIT_HEADLINE_LENGTH).toBe(300);
   });
 
   /**

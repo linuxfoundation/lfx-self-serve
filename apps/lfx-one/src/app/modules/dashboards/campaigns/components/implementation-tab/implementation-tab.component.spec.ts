@@ -3516,6 +3516,12 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * ad group, return success, and leave nothing that can serve — so the button must stay live. The
    * `canSubmit` assertion is the half that matters most: turning this into a refusal would block a
    * create the platform makes, which is the one thing this section's controls are forbidden to do.
+   *
+   * The activation clause says "will not change that" rather than "stays refused permanently", for
+   * the reason the post-submit sibling was corrected to the same wording in #3451: the clause has
+   * to hold on BOTH arms, and only campaign-service refuses (`internal/dispatch/reddit.go:484-485`).
+   * The legacy toggle has no ad-existence guard at all and goes through — to a campaign with
+   * nothing to serve. Claiming a refusal there would be a sentence the running code never delivers.
    */
   it('warns before submit when a reddit create would make no ad, without blocking it', async () => {
     const f = (await mount(null, true)).fixture;
@@ -3523,7 +3529,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
 
     expect(c.redditNoAdWarning()).toBe(
       'No post URL and no image URL, so this campaign is created with no ad: the campaign and its ad group are made and the create reports success, ' +
-        'but nothing serves. Activating it from LFX then stays refused permanently, so either supply a post above or build and launch the campaign in Reddit Ads Manager.'
+        'but nothing serves. Activating it from LFX will not change that, so either supply a post above or build and launch the campaign in Reddit Ads Manager.'
     );
     expect(warningText(f)).toBe(c.redditNoAdWarning());
     expect(c.canSubmit()).toBe(true);
