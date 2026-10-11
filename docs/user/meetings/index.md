@@ -4,7 +4,7 @@ description: Schedule, manage, and join project meetings with calendar integrati
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, calendar, join, zoom, virtual]
-last_updated: 2026-10-09
+last_updated: 2026-10-11
 intercom_collection: Meetings
 ---
 
@@ -70,7 +70,7 @@ Empty states differ by lens:
 - **People Invited** (organizers) shows the RSVP summary and up to five faces, attending people first, plus a "+N" for everyone else. An invited organizer's saved response immediately updates this summary and face ordering, even while response data is being indexed. **View all** opens the full guest list, which you can search and filter. **Invite people** opens the same list with the Add Guest form already open. Adding a guest still invites them to every occurrence.
 - Invitees see the same faces and **View all** on the meeting card, but only when the organizer turned on **Show attendees to guests** for the meeting. This doesn't depend on RSVPs: the faces appear even when the meeting doesn't collect them. The same setting controls **Show Members** on the meeting's page: without it, invitees see how many people are invited, but not who. Board and restricted meetings never share their guest list. In the new meeting editor (preview), an organizer can turn **Show attendees to guests** on for a Restricted meeting; that lists the attendees in guests' calendar invites, while LFX pages still keep a Restricted meeting's guest list hidden.
 - For a past meeting, the participant list goes to organizers and to the people who were invited or attended, whatever that setting says. Anyone else signed in who can open the meeting sees the attendance numbers, but not who.
-- When a meeting collects RSVPs, invited people—including invited organizers—see **Yes**, **Maybe**, and **No** controls with their current **Going**, **Maybe**, or **Not going** response. **Change response** makes the controls available again. A successful save confirms your submitted answer and its date scope, even while response data is being indexed; a failed save leaves the previous response unchanged.
+- When a meeting collects RSVPs, invited people—including invited organizers—see **Yes**, **Maybe**, and **No** controls with their current **Going**, **Maybe**, or **Not going** response. **Change response** moves focus to the response controls. A successful save confirms your submitted answer and its date scope, even while response data is being indexed; a failed save leaves the previous response unchanged.
 - For a recurring meeting, **This date or all dates?** asks you to choose **This date only**, **All dates**, or **This date and all following dates**. The current response names its date or scope so a single-date decline is not mistaken for declining the entire series.
 
 ## Key concepts

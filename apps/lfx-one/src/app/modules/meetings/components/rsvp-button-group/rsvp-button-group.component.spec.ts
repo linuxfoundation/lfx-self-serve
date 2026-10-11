@@ -3,15 +3,15 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Meeting, MeetingRsvp, RsvpResponse, RsvpScope, User } from '@lfx-one/shared/interfaces';
-import { MeetingService } from '@services/meeting.service';
+import { LensService } from '@services/lens.service';
 import { UserService } from '@services/user.service';
 
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { of, Subject, throwError } from 'rxjs';
+import { Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RsvpButtonGroupComponent } from './rsvp-button-group.component';
@@ -52,6 +52,7 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
   let toastAdd: ReturnType<typeof vi.fn>;
   let dialogOpen: ReturnType<typeof vi.fn>;
   let dialogClose: Subject<{ confirmed: boolean; scope?: RsvpScope }>;
+  let user: ReturnType<typeof signal<User>>;
 
   beforeEach(async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -59,6 +60,11 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
     toastAdd = vi.fn();
     dialogClose = new Subject();
     dialogOpen = vi.fn(() => ({ onClose: dialogClose }));
+    user = signal({
+      username: 'synthetic-viewer',
+      email: 'synthetic@example.com',
+      'https://sso.linuxfoundation.org/claims/username': 'canonical-viewer',
+    } as User);
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(),
@@ -66,13 +72,15 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
         {
           provide: UserService,
           useValue: {
-            user: signal({ username: 'synthetic-viewer', email: 'synthetic@example.com' } as User),
+            user,
+            viewerUsername: computed(() => user()['https://sso.linuxfoundation.org/claims/username'] || user().username || null),
             authenticated: signal(true),
             refreshUserMeetings: vi.fn(),
           },
         },
         { provide: MessageService, useValue: { add: toastAdd } },
         { provide: DialogService, useValue: { open: dialogOpen } },
+        { provide: LensService, useValue: { activeLens: signal('me') } },
       ],
     });
     TestBed.overrideComponent(RsvpButtonGroupComponent, { set: { providers: [] } });
@@ -283,6 +291,73 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
     http.expectNone(`/api/meetings/${MEETING.id}/rsvp`);
   });
 
+  it('keeps the dialog and confirmed response attached to the canonical viewer when the display alias changes', async () => {
+    const fixture = await mount();
+    flushRead(null);
+    fixture.componentInstance.handleRsvpClick('accepted');
+    user.update((current) => ({ ...current, username: 'new-display-alias' }));
+    fixture.detectChanges();
+    TestBed.tick();
+    flushRead(null);
+    dialogClose.next({ confirmed: true, scope: 'single' });
+    http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush(response('accepted', 'single', FIRST_DATE));
+    user.update((current) => ({ ...current, username: 'another-display-alias' }));
+    fixture.detectChanges();
+    TestBed.tick();
+    flushRead(null);
+    expect(fixture.componentInstance.selectedResponse()).toBe('accepted');
+    expect(fixture.componentInstance.responseSaved()).toBe(true);
+  });
+
+  it('submits a dialog response when the same date changes from seconds to milliseconds', async () => {
+    const fixture = await mount();
+    flushRead(null);
+    fixture.componentInstance.handleRsvpClick('declined');
+    fixture.componentRef.setInput('occurrenceId', `${FIRST_DATE}000`);
+    fixture.detectChanges();
+    TestBed.tick();
+    flushRead(null, `${FIRST_DATE}000`);
+    dialogClose.next({ confirmed: true, scope: 'single' });
+    const write = http.expectOne(`/api/meetings/${MEETING.id}/rsvp`);
+    expect(write.request.body.occurrence_id).toBe(FIRST_DATE);
+    write.flush(response('declined', 'single', FIRST_DATE));
+    expect(fixture.componentInstance.selectedResponse()).toBe('declined');
+  });
+
+  it('keeps the fetched response visible while refetching an equivalent millisecond date', async () => {
+    const fixture = await mount();
+    flushRead(response('accepted', 'single', FIRST_DATE));
+    fixture.componentRef.setInput('occurrenceId', `${FIRST_DATE}000`);
+    fixture.detectChanges();
+    TestBed.tick();
+    expect(fixture.componentInstance.selectedResponse()).toBe('accepted');
+    flushRead(response('accepted', 'single', FIRST_DATE), `${FIRST_DATE}000`);
+  });
+
+  it('does not submit a dialog response after the card is destroyed', async () => {
+    const fixture = await mount();
+    flushRead(null);
+    fixture.componentInstance.handleRsvpClick('accepted');
+    fixture.destroy();
+    dialogClose.next({ confirmed: true, scope: 'all' });
+    http.expectNone(`/api/meetings/${MEETING.id}/rsvp`);
+  });
+
+  it('keeps a hidden-header compact status available through a saved response', async () => {
+    const fixture = await mount(MEETING, { compact: true, showHeader: false });
+    flushRead(null);
+    const host = fixture.nativeElement as HTMLElement;
+    const status = host.querySelector<HTMLElement>('[role="status"]')!;
+    expect(status.textContent).toContain('Will you attend?');
+    fixture.componentInstance.handleRsvpClick('accepted');
+    dialogClose.next({ confirmed: true, scope: 'all' });
+    http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush(response('accepted', 'all'));
+    fixture.detectChanges();
+    expect(host.querySelector('[role="status"]')).toBe(status);
+    expect(status.textContent).toContain('Response saved: Going');
+    expect(status.textContent).toContain('All dates');
+  });
+
   it('does not send an undefined occurrence ID for a scoped save when no upcoming date can be resolved', async () => {
     const fixture = await mount({ ...MEETING, occurrences: [] });
     http.expectOne((request) => request.url === `/api/meetings/${MEETING.id}/rsvp/me` && !request.params.has('occurrenceId')).flush(null);
@@ -292,52 +367,5 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
     http.expectNone(`/api/meetings/${MEETING.id}/rsvp`);
     expect(fixture.componentInstance.isLoading()).toBe(false);
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
-  });
-});
-
-// My Meetings reads `my_rsvp` from the cached user-meetings list, so a saved RSVP has to push a
-// refetch of that list or its Accepted / Pending RSVP filters and counts keep the pre-RSVP state.
-describe('RsvpButtonGroupComponent — user meetings refresh', () => {
-  const MEETING = { id: 'meeting-1', uid: 'meeting-1', is_invite_responses_enabled: true } as unknown as Meeting;
-  const RSVP = { id: 'rsvp-1', meeting_id: 'meeting-1', response_type: 'accepted', scope: 'all' } as MeetingRsvp;
-
-  let refreshUserMeetings: ReturnType<typeof vi.fn>;
-  let createMeetingRsvp: ReturnType<typeof vi.fn>;
-
-  function mount(): RsvpButtonGroupComponent {
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: UserService, useValue: { user: signal(null), authenticated: signal(false), refreshUserMeetings } },
-        { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: MeetingService, useValue: { createMeetingRsvp, getMeetingRsvpForCurrentUser: vi.fn().mockReturnValue(of(null)) } },
-        { provide: DialogService, useValue: { open: vi.fn() } },
-      ],
-    });
-    // The component re-declares DialogService in its own providers; override so the stub is used.
-    TestBed.overrideComponent(RsvpButtonGroupComponent, { set: { providers: [], template: '' } });
-    const fixture = TestBed.createComponent(RsvpButtonGroupComponent);
-    fixture.componentRef.setInput('meeting', MEETING);
-    fixture.detectChanges();
-    return fixture.componentInstance;
-  }
-
-  beforeEach(() => {
-    refreshUserMeetings = vi.fn();
-    createMeetingRsvp = vi.fn().mockReturnValue(of(RSVP));
-  });
-
-  it('refetches the user meetings after an RSVP is saved', () => {
-    mount().handleRsvpClick('accepted');
-
-    expect(createMeetingRsvp).toHaveBeenCalledWith('meeting-1', expect.objectContaining({ response: 'accepted', scope: 'all' }));
-    expect(refreshUserMeetings).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not refetch when the RSVP fails to save', () => {
-    createMeetingRsvp.mockReturnValue(throwError(() => ({ status: 500, error: {} })));
-
-    mount().handleRsvpClick('accepted');
-
-    expect(refreshUserMeetings).not.toHaveBeenCalled();
   });
 });

@@ -3,7 +3,7 @@
 
 import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, InputSignal, output, signal, Signal, WritableSignal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetingAttendeePreviewComponent } from '@app/modules/meetings/components/meeting-attendee-preview/meeting-attendee-preview.component';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -27,8 +27,7 @@ import {
   selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
-import { UserService } from '@services/user.service';
-import { catchError, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
+import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting-rsvp-details',
@@ -37,7 +36,6 @@ import { catchError, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs'
 })
 export class MeetingRsvpDetailsComponent {
   private readonly meetingService = inject(MeetingService);
-  private readonly userService = inject(UserService);
 
   public readonly meeting: InputSignal<Meeting | PastMeeting> = input.required<Meeting | PastMeeting>();
   public readonly project: InputSignal<Partial<Project> | null> = input<Partial<Project> | null>(null);
@@ -59,9 +57,6 @@ export class MeetingRsvpDetailsComponent {
   public readonly confirmedRsvps = input<MeetingRsvp[]>([]);
   public readonly addClicked = output<void>();
   public readonly viewAllClicked = output<void>();
-  // Emits whether the current user has any RSVP on this meeting, derived from the already-fetched
-  // registrants/rsvps data. Parent card uses this to flip "Set My RSVP" → "Update My RSVP".
-  public readonly currentUserHasRsvpChanged = output<boolean>();
   public readonly disabled: InputSignal<boolean> = input<boolean>(false);
   public readonly disabledMessage: InputSignal<string> = input<string>('RSVP not available for this meeting');
 
@@ -96,13 +91,6 @@ export class MeetingRsvpDetailsComponent {
     }
     return buildAttendeePreviewFromRsvps(this.rsvps(), this.currentOccurrence()?.occurrence_id);
   });
-  // Tracks across both rsvps data AND user identity; re-emits whenever either changes so the
-  // parent card's "Set My RSVP" / "Update My RSVP" label stays in sync with login/impersonation.
-  public readonly currentUserHasRsvp: Signal<boolean> = computed(() => {
-    const email = this.userService.user()?.email?.toLowerCase();
-    if (!email) return false;
-    return this.rsvps().some((r) => r.email?.toLowerCase() === email);
-  });
   public readonly rsvpCounts: Signal<RsvpCounts> = this.initializeRsvpCounts();
   public readonly acceptedCount: Signal<number> = computed(() => this.rsvpCounts().accepted);
   public readonly maybeCount: Signal<number> = computed(() => this.rsvpCounts().maybe);
@@ -115,13 +103,6 @@ export class MeetingRsvpDetailsComponent {
   public readonly borderClasses: Signal<string> = this.initializeBorderClasses();
   public readonly headerTextClasses: Signal<string> = computed(() => (this.showPoorAttendanceWarning() ? 'text-amber-600' : 'text-gray-600'));
   public readonly summaryTextClasses: Signal<string> = computed(() => (this.showPoorAttendanceWarning() ? 'text-amber-900' : 'text-gray-900'));
-
-  public constructor() {
-    // Forward currentUserHasRsvp to the output whenever either rsvps data or user identity changes.
-    toObservable(this.currentUserHasRsvp)
-      .pipe(distinctUntilChanged(), takeUntilDestroyed())
-      .subscribe((v) => this.currentUserHasRsvpChanged.emit(v));
-  }
 
   private initializeRegistrants(): Signal<MeetingRegistrant[]> {
     return computed(() => {

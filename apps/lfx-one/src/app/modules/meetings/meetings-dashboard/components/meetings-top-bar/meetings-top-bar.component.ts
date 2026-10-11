@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, effect, input, output, Signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, computed, input, output, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
@@ -10,6 +10,7 @@ import { FilterPillsComponent } from '@components/filter-pills/filter-pills.comp
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { FilterPillOption, MeetingDashboardView, MeetingResponseFilter } from '@lfx-one/shared/interfaces';
+import { combineLatest } from 'rxjs';
 
 @Component({
   selector: 'lfx-meetings-top-bar',
@@ -78,24 +79,26 @@ export class MeetingsTopBarComponent {
     this.personalFiltersForm.controls.organizedByMe.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.organizedByMeChange.emit(value));
     this.personalFiltersForm.controls.hideDeclined.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.hideDeclinedChange.emit(value));
 
-    effect(() => {
-      this.personalFiltersForm.setValue({ organizedByMe: this.organizedByMe(), hideDeclined: this.hideDeclined() }, { emitEvent: false });
-    });
-
-    effect(() => {
-      const selections = {
-        search: this.searchQuery(),
-        meetingType: this.meetingTypeFilter(),
-        foundationFilter: this.foundationFilter(),
-        projectFilter: this.projectFilter(),
-      };
-      for (const [name, value] of Object.entries(selections)) {
-        const control = this.searchForm.get(name);
-        if (control?.value !== value) {
-          control?.setValue(value, { emitEvent: false });
+    toObservable(computed(() => ({ organizedByMe: this.organizedByMe(), hideDeclined: this.hideDeclined() })))
+      .pipe(takeUntilDestroyed())
+      .subscribe((selections) => {
+        const controls = this.personalFiltersForm.controls;
+        if (controls.organizedByMe.value !== selections.organizedByMe || controls.hideDeclined.value !== selections.hideDeclined) {
+          this.personalFiltersForm.setValue(selections, { emitEvent: false });
         }
-      }
-    });
+      });
+
+    combineLatest([toObservable(this.searchQuery), toObservable(this.meetingTypeFilter), toObservable(this.foundationFilter), toObservable(this.projectFilter)])
+      .pipe(takeUntilDestroyed())
+      .subscribe(([search, meetingType, foundationFilter, projectFilter]) => {
+        const selections = { search, meetingType, foundationFilter, projectFilter };
+        for (const [name, value] of Object.entries(selections)) {
+          const control = this.searchForm.get(name);
+          if (control?.value !== value) {
+            control?.setValue(value, { emitEvent: false });
+          }
+        }
+      });
   }
 
   public onMeetingTypeChange(value: string | null): void {

@@ -91,7 +91,7 @@ function fulfillJson(route: Route, body: unknown): Promise<void> {
 
 // Gated on env vars rather than on URL sniffing so genuine auth-flow regressions (expired
 // storageState, broken Auth0 login helper) still fail loudly when creds ARE configured.
-const AUTH_CREDS_PRESENT = !!process.env.TEST_USERNAME && !!process.env.TEST_PASSWORD;
+const AUTH_CREDS_PRESENT = !!process.env['TEST_USERNAME'] && !!process.env['TEST_PASSWORD'];
 
 function skipWhenAuthMissing(): void {
   if (!AUTH_CREDS_PRESENT) {
@@ -186,9 +186,9 @@ async function gotoMyMeetings(page: Page, buildUpcoming: (viewerLfid: string) =>
       const html = await response.text();
       const body = html.replace(/(<script[^>]*id="ng-state"[^>]*>)([\s\S]*?)(<\/script>)/, (_match, open, raw, close) => {
         const state = JSON.parse(raw) as Record<string, { user?: Record<string, string> }>;
-        if (!state.auth?.user?.['https://sso.linuxfoundation.org/claims/username'])
+        if (!state['auth']?.user?.['https://sso.linuxfoundation.org/claims/username'])
           throw new Error('Canonical LFID is required for conflicting-claim coverage');
-        state.auth.user.username = 'display-alias-e2e';
+        state['auth'].user['username'] = 'display-alias-e2e';
         return open + JSON.stringify(state).replace(/</g, '\\u003c') + close;
       });
       await route.fulfill({ response, body });
@@ -202,7 +202,7 @@ async function gotoMyMeetings(page: Page, buildUpcoming: (viewerLfid: string) =>
   }
 }
 
-const organizerPill = (page: Page) => page.getByTestId('meeting-view-pills').getByTestId('filter-pill-organizer');
+const organizerCheckbox = (page: Page) => page.getByTestId('organized-by-me-checkbox').getByRole('checkbox');
 const card = (page: Page, id: string) => page.locator(`#meeting-${id}`);
 
 test.describe('Meeting cards — owner shown as the organizer (GH-1673)', () => {
@@ -235,7 +235,7 @@ test.describe('Meeting cards — owner shown as the organizer (GH-1673)', () => 
     await expect(card(page, 'owned-by-viewer')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(card(page, 'transferred-away')).toBeVisible();
 
-    await organizerPill(page).click();
+    await organizerCheckbox(page).check();
 
     // Ownership drives the filter: owned-but-not-created stays, created-but-transferred drops.
     await expect(card(page, 'owned-by-viewer')).toBeVisible();

@@ -300,22 +300,26 @@ export class DashboardComponent {
 
 ## 🔧 Advanced Patterns
 
-### Signal Effects
+### Signal-to-RxJS State Bridges
+
+Use `toObservable()` with lifecycle-managed RxJS subscriptions for state-changing work. Reserve `effect()` for simple logging/debugging, as required by the [frontend review checklist](../../reviews/frontend-checklist.md#5-no-effect-should-fix).
 
 ```typescript
-export class ComponentWithEffects {
+import { inject, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { filter } from 'rxjs';
+
+export class ComponentWithFilterSync {
   private readonly filterSignal = signal<string>('');
   private readonly projectService = inject(ProjectService);
 
-  constructor() {
-    // React to filter changes
-    effect(() => {
-      const filter = this.filterSignal();
-      if (filter) {
-        // Side effect when filter changes
-        this.projectService.filterProjects(filter);
-      }
-    });
+  public constructor() {
+    toObservable(this.filterSignal)
+      .pipe(
+        filter((value) => !!value),
+        takeUntilDestroyed()
+      )
+      .subscribe((value) => this.projectService.filterProjects(value));
   }
 }
 ```

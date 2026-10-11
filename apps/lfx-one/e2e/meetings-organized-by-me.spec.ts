@@ -167,9 +167,9 @@ async function seedConflictingAlias(page: Page): Promise<void> {
       const html = await response.text();
       const body = html.replace(/(<script[^>]*id="ng-state"[^>]*>)([\s\S]*?)(<\/script>)/, (_match, open, raw, close) => {
         const state = JSON.parse(raw) as Record<string, { user?: Record<string, string> }>;
-        if (!state.auth?.user?.['https://sso.linuxfoundation.org/claims/username'])
+        if (!state['auth']?.user?.['https://sso.linuxfoundation.org/claims/username'])
           throw new Error('Canonical LFID is required for conflicting-claim coverage');
-        state.auth.user.username = 'display-alias-e2e';
+        state['auth'].user['username'] = 'display-alias-e2e';
         return open + JSON.stringify(state).replace(/</g, '\\u003c') + close;
       });
       await route.fulfill({ response, body });
@@ -202,6 +202,8 @@ async function gotoMyMeetings(page: Page, failWrite = false): Promise<void> {
 }
 
 const viewPill = (page: Page, view: string) => page.getByTestId('meeting-view-pills').getByTestId(`filter-pill-${view}`);
+const responsePill = (page: Page, response: string) => page.getByTestId('meeting-response-pills').getByTestId(`filter-pill-${response}`);
+const organizerCheckbox = (page: Page) => page.getByTestId('organized-by-me-checkbox').getByRole('checkbox');
 const card = (page: Page, id: string) => page.locator(`#meeting-${id}`);
 
 /** Scroll normally so Angular's viewport-deferred cards mount before membership assertions. */
@@ -219,51 +221,58 @@ async function revealMeeting(page: Page, id: string): Promise<void> {
   await card(page, id).waitFor({ state: 'attached' });
 }
 
-test.describe('My Meetings — exclusive views', () => {
-  test('replaces special views with ordinary history and follows canonical ownership rather than aliases or grants', async ({ page }) => {
+test.describe('My Meetings — separate response and organizer filters', () => {
+  test('combines personal filters and clears them on time changes while using canonical ownership', async ({ page }) => {
     await gotoMyMeetings(page);
     await expect(card(page, 'up-mine')).toBeVisible();
     await revealMeeting(page, 'up-theirs');
     await expect(card(page, 'up-theirs')).toBeVisible();
-    for (const view of ['organizer', 'pending']) {
-      await viewPill(page, view).click();
-      await expect(card(page, view === 'organizer' ? 'up-mine' : 'up-theirs')).toBeVisible();
-      await expect(card(page, view === 'organizer' ? 'up-theirs' : 'up-mine')).toHaveCount(0);
-      await expect(card(page, 'up-granted')).toHaveCount(0);
-      await expect(card(page, 'up-alias')).toHaveCount(0);
-      await expect(page.getByTestId('meeting-view-pills').locator('button[aria-pressed="true"]')).toHaveCount(1);
-      await viewPill(page, 'past').click();
-      for (const id of ['past-mine', 'past-theirs', 'past-granted']) {
-        await revealMeeting(page, id);
-        await expect(card(page, id)).toBeVisible();
-      }
-      await viewPill(page, view).click();
-      await revealMeeting(page, 'up-organizer-pending');
-      await expect(card(page, 'up-organizer-pending')).toBeVisible();
-      await expect(card(page, 'past-mine')).toHaveCount(0);
-      await viewPill(page, 'upcoming').click();
-      await revealMeeting(page, 'up-granted');
-      await expect(card(page, 'up-granted')).toBeVisible();
+    await organizerCheckbox(page).check();
+    await expect(card(page, 'up-mine')).toBeVisible();
+    await expect(card(page, 'up-theirs')).toHaveCount(0);
+    await expect(card(page, 'up-granted')).toHaveCount(0);
+    await expect(card(page, 'up-alias')).toHaveCount(0);
+    await responsePill(page, 'pending').click();
+    await revealMeeting(page, 'up-organizer-pending');
+    await expect(card(page, 'up-organizer-pending')).toBeVisible();
+    await expect(card(page, 'up-mine')).toHaveCount(0);
+    await expect(card(page, 'up-theirs')).toHaveCount(0);
+    await expect(organizerCheckbox(page)).toBeChecked();
+    await expect(page.getByTestId('meeting-response-pills').locator('button[aria-pressed="true"]')).toHaveCount(1);
+    await viewPill(page, 'past').click();
+    await expect(page.getByTestId('personal-meeting-filters')).toHaveCount(0);
+    for (const id of ['past-mine', 'past-theirs', 'past-granted']) {
+      await revealMeeting(page, id);
+      await expect(card(page, id)).toBeVisible();
+    }
+    await viewPill(page, 'upcoming').click();
+    await expect(responsePill(page, 'all')).toHaveAttribute('aria-pressed', 'true');
+    await expect(organizerCheckbox(page)).not.toBeChecked();
+    for (const id of ['up-mine', 'up-theirs', 'up-granted', 'up-alias']) {
+      await revealMeeting(page, id);
+      await expect(card(page, id)).toBeVisible();
     }
   });
 
-  test('Need Your RSVP selects pending idempotently, with counts before secondary search and a working reset', async ({ page }) => {
+  test('Need Your RSVP selects Needs response idempotently and reset restores all meetings', async ({ page }) => {
     await gotoMyMeetings(page);
-    await viewPill(page, 'organizer').click();
+    await organizerCheckbox(page).check();
     const summary = page.getByTestId('meetings-me-stat-pending-rsvp');
     await summary.click();
     await summary.click();
-    await expect(viewPill(page, 'pending')).toHaveAttribute('aria-pressed', 'true');
+    await expect(organizerCheckbox(page)).not.toBeChecked();
+    await expect(responsePill(page, 'pending')).toHaveAttribute('aria-pressed', 'true');
     await expect(card(page, 'up-theirs')).toBeVisible();
-    await expect(viewPill(page, 'pending')).toHaveText('Pending RSVP (2)');
+    await expect(responsePill(page, 'pending')).toHaveText('Needs response (2)');
     await page.getByTestId('meeting-type-filter').getByRole('combobox').click();
     await page.getByRole('option', { name: 'Board', exact: true }).click();
     await page.getByTestId('meetings-search-input').getByRole('textbox').fill('zzz-no-such-meeting');
     const empty = page.getByTestId('meetings-empty-state-filtered');
     await expect(empty).toBeVisible();
-    await expect(viewPill(page, 'pending')).toHaveText('Pending RSVP (2)');
+    await expect(responsePill(page, 'pending')).toHaveText('Needs response (2)');
     await empty.getByRole('button', { name: 'Reset filters' }).click();
     await expect(viewPill(page, 'upcoming')).toHaveAttribute('aria-pressed', 'true');
+    await expect(responsePill(page, 'all')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId('meetings-search-input').getByRole('textbox')).toHaveValue('');
     await expect(page.getByTestId('meeting-type-filter')).toContainText('All Types');
     // Recovery crosses the debounced search boundary before lower cards can enter the viewport.
@@ -279,29 +288,27 @@ test.describe('My Meetings — exclusive views', () => {
     for (const answer of ['Yes', 'Maybe', 'No'] as const) {
       test(`${organizer ? 'invited organizer' : 'invitee'} ${answer} refreshes pending membership and totals without navigation`, async ({ page }) => {
         await gotoMyMeetings(page);
-        await viewPill(page, 'pending').click();
+        await responsePill(page, 'pending').click();
         const meeting = card(page, id);
         await revealMeeting(page, id);
         await expect(meeting).toBeVisible();
-        if (organizer) await meeting.getByRole('button', { name: 'Set My RSVP', exact: true }).click();
         await meeting.getByRole('button', { name: answer, exact: true }).click();
         await expect(meeting).toHaveCount(0);
-        await expect(viewPill(page, 'pending')).toHaveText('Pending RSVP (1)');
-        await expect(viewPill(page, 'pending')).toHaveAttribute('aria-pressed', 'true');
+        await expect(responsePill(page, 'pending')).toHaveText('Needs response (1)');
+        await expect(responsePill(page, 'pending')).toHaveAttribute('aria-pressed', 'true');
         await expect(page).toHaveURL(/\/meetings$/);
       });
     }
     test(`${organizer ? 'invited organizer' : 'invitee'} failed RSVP retains pending rows and count`, async ({ page }) => {
       await gotoMyMeetings(page, true);
-      await viewPill(page, 'pending').click();
+      await responsePill(page, 'pending').click();
       const meeting = card(page, id);
       await revealMeeting(page, id);
       await expect(meeting).toBeVisible();
-      if (organizer) await meeting.getByRole('button', { name: 'Set My RSVP', exact: true }).click();
       await meeting.getByRole('button', { name: 'Yes', exact: true }).click();
       await expect(page.getByText('Synthetic write rejected', { exact: true })).toBeVisible();
       await expect(meeting).toBeVisible();
-      await expect(viewPill(page, 'pending')).toHaveText('Pending RSVP (2)');
+      await expect(responsePill(page, 'pending')).toHaveText('Needs response (2)');
     });
   }
 });

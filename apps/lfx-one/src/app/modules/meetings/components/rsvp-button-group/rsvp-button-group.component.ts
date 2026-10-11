@@ -3,8 +3,8 @@
 
 import { NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, input, InputSignal, output, OutputEmitterRef, Signal, signal, WritableSignal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, InputSignal, output, OutputEmitterRef, Signal, signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RsvpScopeModalComponent } from '@app/modules/meetings/components/rsvp-scope-modal/rsvp-scope-modal.component';
 import { CreateMeetingRsvpRequest, Meeting, MeetingRsvp, RsvpResponse, RsvpScope, User } from '@lfx-one/shared';
 import {
@@ -16,6 +16,7 @@ import {
   resolveRsvpOccurrenceId,
   selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
+import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -34,6 +35,8 @@ export class RsvpButtonGroupComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly userService = inject(UserService);
+  private readonly lensService = inject(LensService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // User data
   public user: Signal<User | null> = this.userService.user;
@@ -118,13 +121,14 @@ export class RsvpButtonGroupComponent {
       },
     }) as DynamicDialogRef | null;
 
-    dialogRef?.onClose.pipe(take(1)).subscribe((result: { confirmed: boolean; scope?: RsvpScope }) => {
+    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: { confirmed: boolean; scope?: RsvpScope }) => {
+      const currentOccurrenceId = this.resolvedOccurrenceId();
       if (
         result?.confirmed &&
         result.scope &&
         this.rsvpContext() === context &&
         this.meeting().id === meeting.id &&
-        this.resolvedOccurrenceId() === occurrenceId
+        ((!currentOccurrenceId && !occurrenceId) || isSameOccurrenceId(currentOccurrenceId, occurrenceId))
       ) {
         this.submitRsvp(response, result.scope, occurrenceId);
       }
@@ -179,8 +183,10 @@ export class RsvpButtonGroupComponent {
           }
           // Show the global confirmation before the parent removes a Needs response card.
           this.rsvpChanged.emit(savedRsvp);
-          // Refresh cached personal meeting lists once after a successful write.
-          this.userService.refreshUserMeetings();
+          // Refresh personal meeting caches only while their lens is active.
+          if (this.lensService.activeLens() === 'me') {
+            this.userService.refreshUserMeetings();
+          }
         }),
         catchError((error: HttpErrorResponse) => {
           let errorMessage = 'Failed to update RSVP. Please try again.';
@@ -228,6 +234,7 @@ export class RsvpButtonGroupComponent {
         toObservable(this.authenticated),
         toObservable(this.disabled),
         toObservable(this.user),
+        toObservable(this.userService.viewerUsername),
       ]).pipe(
         switchMap(([meeting, occurrenceId, authenticated, disabled]) => {
           if (disabled || !authenticated || !meeting?.id || !isMeetingInviteResponsesEnabled(meeting)) {
@@ -269,8 +276,11 @@ export class RsvpButtonGroupComponent {
       const confirmed = this.confirmedRsvp();
       const supplied = this.applicableRsvp(this.meeting().my_rsvp);
       const fetched = this.fetchedRsvp();
+      const occurrenceId = this.resolvedOccurrenceId();
       const fetchedRsvp =
-        fetched?.context === this.rsvpContext() && fetched.occurrenceId === this.resolvedOccurrenceId() ? this.applicableRsvp(fetched.rsvp) : null;
+        fetched?.context === this.rsvpContext() && ((!fetched.occurrenceId && !occurrenceId) || isSameOccurrenceId(fetched.occurrenceId, occurrenceId))
+          ? this.applicableRsvp(fetched.rsvp)
+          : null;
       const candidates = [confirmed, supplied, fetchedRsvp].filter((rsvp): rsvp is MeetingRsvp => !!rsvp);
       return selectApplicableRsvp(this.resolvedOccurrenceId(), candidates);
     });
@@ -288,8 +298,7 @@ export class RsvpButtonGroupComponent {
   }
 
   private rsvpContext(): string {
-    const user = this.user();
-    return `${this.meetingUid()}|${user?.username ?? user?.email ?? ''}`;
+    return `${this.meetingUid()}|${this.userService.viewerUsername() ?? this.user()?.email ?? ''}`;
   }
 
   private formatOccurrenceLabel(occurrenceId: string | undefined): string | null {

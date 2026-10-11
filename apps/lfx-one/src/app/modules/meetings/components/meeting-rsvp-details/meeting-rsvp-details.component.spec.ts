@@ -1,11 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ApplicationRef, signal } from '@angular/core';
+import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Meeting, MeetingRegistrant, MeetingRsvp, PastMeeting, User } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingRegistrant, MeetingRsvp, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
-import { UserService } from '@services/user.service';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -20,7 +19,6 @@ describe('MeetingRsvpDetailsComponent', () => {
   let getMeetingRegistrants: ReturnType<typeof vi.fn>;
   let getMeetingRsvps: ReturnType<typeof vi.fn>;
   let getPastMeetingParticipants: ReturnType<typeof vi.fn>;
-  let userSignal: ReturnType<typeof signal<User | null>>;
 
   const buildMeeting = (overrides: Partial<Meeting> = {}) =>
     ({
@@ -56,7 +54,6 @@ describe('MeetingRsvpDetailsComponent', () => {
     getMeetingRegistrants = vi.fn().mockReturnValue(of([]));
     getMeetingRsvps = vi.fn().mockReturnValue(of([]));
     getPastMeetingParticipants = vi.fn().mockReturnValue(of([]));
-    userSignal = signal<User | null>(null);
 
     TestBed.configureTestingModule({
       providers: [
@@ -64,7 +61,6 @@ describe('MeetingRsvpDetailsComponent', () => {
           provide: MeetingService,
           useValue: { getMeetingRegistrants, getMeetingRsvps, getPastMeetingParticipants },
         },
-        { provide: UserService, useValue: { user: userSignal } },
       ],
     });
   });
@@ -112,27 +108,20 @@ describe('MeetingRsvpDetailsComponent', () => {
     expect(fixture.componentInstance.meetingRegistrantCount()).toBe(11);
   });
 
-  it('derives RSVP counts and currentUserHasRsvpChanged from the supplied registrants, keyed on the current user', async () => {
+  it('derives response counts from the supplied registrants', async () => {
     const currentUserEmail = 'me@example.com';
     const registrants = [
       buildRegistrant({ email: currentUserEmail, rsvp: { response_type: 'accepted', email: currentUserEmail } as never }),
       buildRegistrant({ rsvp: { response_type: 'declined', email: 'other@example.com' } as never }),
     ];
-    const emitted: boolean[] = [];
 
     const fixture = createComponent();
-    fixture.componentInstance.currentUserHasRsvpChanged.subscribe((v: boolean) => emitted.push(v));
     fixture.componentRef.setInput('meeting', buildMeeting());
     fixture.componentRef.setInput('initialRegistrants', registrants);
     await TestBed.inject(ApplicationRef).whenStable();
 
     expect(fixture.componentInstance.acceptedCount()).toBe(1);
     expect(fixture.componentInstance.declinedCount()).toBe(1);
-
-    userSignal.set({ email: currentUserEmail } as unknown as User);
-    await TestBed.inject(ApplicationRef).whenStable();
-
-    expect(emitted).toContain(true);
   });
 
   it('drives loading() from initialRegistrantsLoading with no HTTP call', async () => {

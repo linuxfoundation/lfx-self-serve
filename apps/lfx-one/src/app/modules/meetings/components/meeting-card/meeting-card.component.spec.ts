@@ -13,6 +13,7 @@ import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/me
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -653,6 +654,7 @@ describe('MeetingCardComponent — RSVP cache freshness', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
+        { provide: LensService, useValue: { activeLens: signal('me') } },
         { provide: ProjectService, useValue: { project: signal(null) } },
         { provide: MeetingComposerService, useValue: { open: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },

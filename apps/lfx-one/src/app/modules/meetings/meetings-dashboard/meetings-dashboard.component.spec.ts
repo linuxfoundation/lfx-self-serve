@@ -517,6 +517,26 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     expect(meetings.clearPastMeetingRecordingCache).toHaveBeenCalledOnce();
   });
 
+  it.each(['foundation', 'project'] as const)('refreshes the %s list without refetching retained personal caches', (nextLens) => {
+    const component = mount();
+    const history = users.getUserPastMeetings().subscribe();
+    const latest = users.getUserLatestPastMeetings().subscribe();
+    http.expectOne('/api/user/past-meetings').flush([past]);
+    http.expectOne('/api/user/latest-past-meetings').flush([past]);
+    context.set({ uid: 'scope', name: 'Synthetic scope' } as ProjectContext);
+    lens.set(nextLens);
+    flush();
+    vi.mocked(meetings.getMeetingsByProjectPaginated).mockReturnValue(of({ data: [row('updated-scoped')] }));
+    component.refreshMeetings();
+    flush();
+    expect(ids(component)).toEqual(['updated-scoped']);
+    http.expectNone('/api/user/meetings');
+    http.expectNone('/api/user/past-meetings');
+    http.expectNone('/api/user/latest-past-meetings');
+    history.unsubscribe();
+    latest.unsubscribe();
+  });
+
   it.each([
     ['pending', 'foundation'],
     ['organizer', 'foundation'],

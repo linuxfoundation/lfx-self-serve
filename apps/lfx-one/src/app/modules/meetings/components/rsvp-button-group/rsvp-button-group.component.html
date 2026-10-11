@@ -2,8 +2,8 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (inviteResponsesEnabled()) {
-  @if (compact() && showHeader()) {
-    <p class="text-xs text-gray-700" aria-live="polite" data-testid="meeting-rsvp-response">
+  @if (compact()) {
+    <div [class.sr-only]="!showHeader()" class="text-xs text-gray-700" role="status" aria-live="polite" aria-atomic="true" data-testid="meeting-rsvp-response">
       @if (responseLabel()) {
         <span class="font-semibold">{{ responseSaved() ? 'Response saved: ' : 'Your response: ' }}{{ responseLabel() }}</span>
         @if (responseScopeLabel()) {
@@ -12,7 +12,7 @@
       } @else {
         <span>Will you attend?</span>
       }
-    </p>
+    </div>
   }
   @if (compact()) {
     <!-- Compact mode: bare outlined CTA buttons with colored icon + label per response (no surrounding container). -->
@@ -106,7 +106,7 @@
           }
         </div>
       }
-      <div class="flex flex-col gap-1 text-xs text-gray-700" aria-live="polite" data-testid="meeting-rsvp-response">
+      <div class="flex flex-col gap-1 text-xs text-gray-700" role="status" aria-live="polite" aria-atomic="true" data-testid="meeting-rsvp-response">
         @if (responseLabel()) {
           <span class="font-semibold">{{ responseSaved() ? 'Response saved: ' : 'Your response: ' }}{{ responseLabel() }}</span>
           @if (responseScopeLabel()) {

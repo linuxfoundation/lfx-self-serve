@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, effect, inject, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { IcalSubscribeDialogComponent } from '@app/modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
@@ -311,13 +311,15 @@ export class MeetingsDashboardComponent {
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.refreshMeetings(false));
 
-    effect(() => {
-      if (this.activeLens() !== 'me') {
-        this.responseFilter.set('all');
-        this.organizedByMe.set(false);
-        this.hideDeclined.set(false);
-      }
-    });
+    toObservable(this.activeLens)
+      .pipe(takeUntilDestroyed())
+      .subscribe((lens) => {
+        if (lens !== 'me') {
+          this.responseFilter.set('all');
+          this.organizedByMe.set(false);
+          this.hideDeclined.set(false);
+        }
+      });
   }
 
   /**
@@ -332,8 +334,10 @@ export class MeetingsDashboardComponent {
     if (clearRecordingCache) {
       this.meetingService.clearPastMeetingRecordingCache();
     }
-    this.userService.refreshUserMeetings();
-    this.userService.refreshUserPastMeetings();
+    if (this.activeLens() === 'me') {
+      this.userService.refreshUserMeetings();
+      this.userService.refreshUserPastMeetings();
+    }
     this.refresh$.next();
   }
   /** Keep a confirmed write visible while the query index catches up. */
