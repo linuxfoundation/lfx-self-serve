@@ -47,6 +47,12 @@ export interface GetLensItemsParams {
   name?: string;
   /** Ensure this project UID is included in the first-page response even if it would otherwise fall outside it. */
   selectedUid?: string;
+  /**
+   * Ensure these favorited UIDs are included in the first-page response even if they'd otherwise
+   * fall outside it — nav lens items are paginated, so a favorite outside the natural first page
+   * would never float to the top of the browse list client-side (GH-3453).
+   */
+  favoritedUids?: string[];
 }
 
 /** Upstream query-service params for lens-item lookups. */
