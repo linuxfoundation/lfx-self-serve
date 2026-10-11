@@ -49,6 +49,8 @@ In My Meetings, response filters sit below the Upcoming/Past tabs:
 - **Needs response** — meetings that collect RSVPs and have no response for the current or next date. A response for a different recurring date does not answer this date.
 - **Going**, **Maybe**, and **Not going** — meetings with your corresponding response for the current or next date.
 
+If a recurring meeting's current or next date is unavailable, only an **All dates** response counts as an answer. A date-specific response stays out of Going, Maybe, and Not going and leaves the meeting in Needs response.
+
 The **Organized by me** checkbox combines with any response filter. It matches meetings you own; when no owner is recorded, the original creator is used. Inherited management access alone does not count as organizing.
 
 Declining does not remove a meeting from **All meetings**. To hide meetings you declined for every date, enable **Hide declined meetings**. A single-date decline does not hide the series, and meetings you organize remain visible. **Not going** always shows declined responses, regardless of the hide option.
@@ -73,7 +75,7 @@ Empty states differ by lens:
 - Invitees see the same faces and **View all** on the meeting card, but only when the organizer turned on **Show attendees to guests** for the meeting. This doesn't depend on RSVPs: the faces appear even when the meeting doesn't collect them. The same setting controls **Show Members** on the meeting's page: without it, invitees see how many people are invited, but not who. Board and restricted meetings never share their guest list. In the new meeting editor (preview), an organizer can turn **Show attendees to guests** on for a Restricted meeting; that lists the attendees in guests' calendar invites, while LFX pages still keep a Restricted meeting's guest list hidden.
 - For a past meeting, the participant list goes to organizers and to the people who were invited or attended, whatever that setting says. Anyone else signed in who can open the meeting sees the attendance numbers, but not who.
 - When a meeting collects RSVPs, invited people—including invited organizers—see **Yes**, **Maybe**, and **No** controls with their current **Going**, **Maybe**, or **Not going** response. **Change response** moves focus to the response controls. A successful save confirms your submitted answer and its date scope, even while response data is being indexed; a failed save leaves the previous response unchanged.
-- For a recurring meeting, **This date or all dates?** asks you to choose **This date only**, **All dates**, or **This date and all following dates**. The current response names its date or scope so a single-date decline is not mistaken for declining the entire series.
+- For a recurring meeting, **This date or all dates?** asks you to choose **This date only**, **All dates**, or **This date and all following dates**. The current response names its date or scope so a single-date decline is not mistaken for declining the entire series. **All dates** can still be saved if the displayed date refreshes while the dialog is open; date-specific choices remain tied to the date you originally selected.
 
 ## Key concepts
 

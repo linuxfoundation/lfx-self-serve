@@ -36,6 +36,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   countMeetingDatesBefore,
+  getApplicableMeetingRsvp,
   getCurrentOrNextOccurrence,
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
@@ -818,7 +819,7 @@ export class MeetingsDashboardComponent {
       // as Going/Maybe/Not going unless that response actually applies to it.
       filtered = filtered.filter((m) => {
         if (!isMeetingInviteResponsesEnabled(m) || !m.my_rsvp) return false;
-        return selectApplicableRsvp(resolveRsvpOccurrenceId(m), [m.my_rsvp])?.response_type === responseFilter;
+        return getApplicableMeetingRsvp(m)?.response_type === responseFilter;
       });
     }
     if (view === 'upcoming' && organizedByMe) {
@@ -880,7 +881,7 @@ export class MeetingsDashboardComponent {
   }
 
   private isPendingRsvp(meeting: Meeting): boolean {
-    return isMeetingInviteResponsesEnabled(meeting) && (!meeting.my_rsvp || !selectApplicableRsvp(resolveRsvpOccurrenceId(meeting), [meeting.my_rsvp]));
+    return isMeetingInviteResponsesEnabled(meeting) && !getApplicableMeetingRsvp(meeting);
   }
 
   private meetingStartLabel(meeting: Meeting, options: Intl.DateTimeFormatOptions): string {

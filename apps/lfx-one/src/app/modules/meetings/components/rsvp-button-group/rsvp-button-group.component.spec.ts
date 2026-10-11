@@ -250,6 +250,34 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
     expect(fixture.componentInstance.responseSaved()).toBe(false);
   });
 
+  it('retains a changed answer when the acknowledgement only carries its original creation time', async () => {
+    const indexed = { ...response('accepted', 'all'), modified_at: '2026-10-10T11:00:00Z' };
+    vi.setSystemTime(new Date('2026-10-10T12:00:00Z'));
+    const fixture = await mount({ ...MEETING, my_rsvp: indexed });
+    flushRead(indexed);
+    expect(fixture.componentInstance.selectedResponse()).toBe('accepted');
+
+    fixture.componentInstance.handleRsvpClick('declined');
+    dialogClose.next({ confirmed: true, scope: 'all' });
+    http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush(response('declined', 'all'));
+    expect(fixture.componentInstance.selectedResponse()).toBe('declined');
+    expect(fixture.componentInstance.responseSaved()).toBe(true);
+
+    fixture.componentRef.setInput('meeting', { ...MEETING, my_rsvp: indexed });
+    fixture.detectChanges();
+    TestBed.tick();
+    flushRead(indexed);
+    expect(fixture.componentInstance.selectedResponse()).toBe('declined');
+
+    const newer = { ...indexed, modified_at: '2026-10-10T13:00:00Z' };
+    fixture.componentRef.setInput('meeting', { ...MEETING, my_rsvp: newer });
+    fixture.detectChanges();
+    TestBed.tick();
+    flushRead(newer);
+    expect(fixture.componentInstance.selectedResponse()).toBe('accepted');
+    expect(fixture.componentInstance.responseSaved()).toBe(false);
+  });
+
   it('applies a confirmed all-dates response to another date without sending an occurrence ID', async () => {
     const fixture = await mount();
     flushRead(null);
@@ -297,7 +325,7 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
     expect(fixture.componentInstance.selectedResponse()).toBe('maybe');
   });
 
-  it('does not submit a modal response after the displayed date changed', async () => {
+  it.each(['single', 'this_and_following'] as const)('does not submit a %s modal response after the displayed date changed', async (scope) => {
     const fixture = await mount();
     flushRead(null);
     fixture.componentInstance.handleRsvpClick('declined');
@@ -305,8 +333,24 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
     fixture.detectChanges();
     TestBed.tick();
     flushRead(null, SECOND_DATE);
-    dialogClose.next({ confirmed: true, scope: 'single' });
+    dialogClose.next({ confirmed: true, scope });
     http.expectNone(`/api/meetings/${MEETING.id}/rsvp`);
+  });
+
+  it('submits an all-dates modal response after the displayed date changes', async () => {
+    const fixture = await mount();
+    flushRead(null);
+    fixture.componentInstance.handleRsvpClick('declined');
+    fixture.componentRef.setInput('occurrenceId', SECOND_DATE);
+    fixture.detectChanges();
+    TestBed.tick();
+    flushRead(null, SECOND_DATE);
+    dialogClose.next({ confirmed: true, scope: 'all' });
+    const write = http.expectOne(`/api/meetings/${MEETING.id}/rsvp`);
+    expect(write.request.body).toEqual({ response: 'declined', scope: 'all', email: 'synthetic@example.com' });
+    write.flush(response('declined', 'all'));
+    expect(fixture.componentInstance.selectedResponse()).toBe('declined');
+    expect(fixture.componentInstance.responseScopeLabel()).toBe('All dates');
   });
 
   it('keeps the dialog and confirmed response attached to the canonical viewer when the display alias changes', async () => {

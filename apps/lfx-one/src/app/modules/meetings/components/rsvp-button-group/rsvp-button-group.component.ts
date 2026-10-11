@@ -121,7 +121,7 @@ export class RsvpButtonGroupComponent {
         result.scope &&
         this.rsvpContext() === context &&
         this.meeting().id === meeting.id &&
-        ((!currentOccurrenceId && !occurrenceId) || isSameOccurrenceId(currentOccurrenceId, occurrenceId))
+        (result.scope === 'all' || (!currentOccurrenceId && !occurrenceId) || isSameOccurrenceId(currentOccurrenceId, occurrenceId))
       ) {
         this.submitRsvp(response, result.scope, occurrenceId);
       }
@@ -161,8 +161,8 @@ export class RsvpButtonGroupComponent {
           const savedRsvp = {
             ...rsvp,
             occurrence_id: rsvp.occurrence_id || scopedOccurrenceId,
-            // Undated acknowledgements still need a confirmation time for newer indexed writes to win.
-            updated_at: rsvp.updated_at || rsvp.modified_at || rsvp.created_at || new Date().toISOString(),
+            // Creation time may predate a changed answer; use confirmation time without a modification timestamp.
+            updated_at: rsvp.updated_at || rsvp.modified_at || new Date().toISOString(),
           };
           // The successful POST is authoritative. Never replace it with a stale/null
           // query-service refetch while the new response is still being indexed.

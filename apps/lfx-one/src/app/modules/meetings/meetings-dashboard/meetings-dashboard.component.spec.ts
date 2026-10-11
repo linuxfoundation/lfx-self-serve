@@ -324,6 +324,22 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     http.expectNone('/api/user/meetings');
   });
 
+  it.each(['accepted', 'maybe', 'declined'] as const)('only applies all-date %s responses when a recurring date is unresolved', (answer) => {
+    const recurring = { recurrence: { type: 1, repeat_interval: 1 }, occurrences: [] };
+    const component = mount([
+      row('single-date', { ...recurring, my_rsvp: { ...response(answer, 'single'), occurrence_id: '4070952000' } }),
+      row('following-dates', { ...recurring, my_rsvp: { ...response(answer), scope: 'this_and_following', occurrence_id: '4070952000' } }),
+      row('all-dates', { ...recurring, my_rsvp: response(answer) }),
+    ]);
+
+    expect(component['pendingRsvpCount']()).toBe(2);
+    expect(component['acceptedCount']()).toBe(answer === 'accepted' ? 1 : 0);
+    respond(component, answer);
+    expect(ids(component)).toEqual(['all-dates']);
+    respond(component, 'pending');
+    expect(ids(component)).toEqual(['single-date', 'following-dates']);
+  });
+
   it('clears the Accepted filter when switching time tabs', () => {
     const component = mount();
     respond(component, 'accepted');
