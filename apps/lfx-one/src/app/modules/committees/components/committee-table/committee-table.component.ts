@@ -155,6 +155,10 @@ export class CommitteeTableComponent {
   }
 
   protected resetFilters(): void {
+    if (this.isMeLens()) {
+      this.resetRequested.emit();
+      return;
+    }
     this.searchForm().patchValue({ search: '', votingStatus: null, joinModeFilter: null, foundationFilter: null, projectFilter: null });
     this.foundationFilterChange.emit(null);
     this.projectFilterChange.emit(null);

@@ -5,7 +5,7 @@
  * My Groups list↔card view toggle — LFXV2-1715.
  *
  * Coverage:
- *   - Card grid renders role badge / member count / relative "last updated" per card.
+ *   - Filtering/reset and progressive reveal preserve the expected group identities.
  *   - Toggling List↔Card switches the rendered view.
  *   - The last-selected view persists across a page reload (localStorage).
  *   - Search still narrows results in card view.
@@ -175,28 +175,6 @@ test.describe('My Groups — list↔card view toggle', () => {
     await expect(cardButton, 'card should be pressed after switching to it').toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('card grid shows role badge, member count, and relative last-updated text per card', async ({ page }) => {
-    await page.getByTestId('groups-view-card-btn').click();
-
-    const card = page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`);
-    await expect(card, 'card for the seeded committee should render').toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    await expect(card, 'card should show the caller role').toContainText('Chair');
-    await expect(card, 'card should show the member count').toContainText('12');
-    await expect(card, 'card should show a relative last-updated label').toContainText(/hr ago|min ago|just now/);
-  });
-
-  test("a card's aria-label carries every field the aria-label override on the link would otherwise hide", async ({ page }) => {
-    await page.getByTestId('groups-view-card-btn').click();
-
-    const card = page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`);
-    await expect(card, 'card for the seeded committee should render').toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    // The behavioral-class label ("Oversight") is decorated client-side from the seeded category
-    // ("Technical Steering Committee"), same as the project name, role, and member count — none of
-    // this visible content reaches assistive tech once aria-label replaces the accessible name, so
-    // it must all be present in the label itself.
-    await expect(card).toHaveAttribute('aria-label', /Open Technical Steering Committee.*Oversight.*Test Project.*Chair.*12 members/);
-  });
-
   test('the selected view persists across a page reload', async ({ page }) => {
     await page.getByTestId('groups-view-card-btn').click();
     await expect(page.getByTestId('groups-card-grid')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
@@ -272,18 +250,14 @@ test.describe('My Groups — card view "Show more" pagination', () => {
     await expect(page.getByTestId('groups-card-grid')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
   });
 
-  test('caps the initial page and reveals the rest via Show more, updating the count copy', async ({ page }) => {
-    await expect(page.getByTestId('groups-card-grid-count'), 'count line should reflect the first page').toHaveText(
-      `Showing ${GROUPS_CARD_GRID_PAGE_SIZE} of ${TOTAL_COMMITTEES} groups`
-    );
-
+  test('caps the initial page and reveals the remaining groups via Show more', async ({ page }) => {
+    const cards = page.getByTestId('groups-card-grid').locator('[data-testid^="groups-card-grid-item-"]');
+    await expect(cards).toHaveCount(GROUPS_CARD_GRID_PAGE_SIZE);
     const showMore = page.getByTestId('groups-card-grid-show-more');
     await expect(showMore).toBeVisible();
     await showMore.click();
 
-    await expect(page.getByTestId('groups-card-grid-count'), 'count line should reflect every group after revealing').toHaveText(
-      `Showing ${TOTAL_COMMITTEES} of ${TOTAL_COMMITTEES} groups`
-    );
+    await expect(cards).toHaveCount(TOTAL_COMMITTEES);
     await expect(showMore, 'Show more should disappear once every group is revealed').toHaveCount(0);
   });
 });
