@@ -53,7 +53,7 @@ If a recurring meeting's current or next date is unavailable, only an **All date
 
 The **Organized by me** checkbox combines with any response filter. It matches meetings you own; when no owner is recorded, the original creator is used. Inherited management access alone does not count as organizing.
 
-Declining does not remove a meeting from **All meetings**. To hide meetings you declined for every date, enable **Hides meetings declined for all dates.** A single-date decline does not hide the series. Hover over or focus the adjacent info icon for the reminder: "Meetings you organize remain visible." **Not going** always shows declined responses, regardless of the hide option.
+Declining does not remove a meeting from **All meetings**. To hide meetings you declined for every date, enable **Hides meetings declined for all dates.** A single-date decline does not hide the series. Meetings you organize remain visible. **Not going** always shows declined responses, regardless of the hide option.
 
 All response filters and **Organized by me** show their upcoming-meeting count in parentheses only when it is greater than zero. Counts are hidden while loading and describe upcoming meetings before search, foundation, project, meeting-type, response, organizer, or hide-declined filters. **Hides meetings declined for all dates.** is a separate checkbox without a count. Search and meeting type stay selected when changing the time tab. Foundation/project and personal response/organizer/hide selections reset when switching between Upcoming and Past. **Reset filters** clears every secondary selection without changing the time tab.
 

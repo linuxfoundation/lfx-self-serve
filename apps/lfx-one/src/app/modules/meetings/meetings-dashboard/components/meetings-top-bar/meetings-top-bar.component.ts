@@ -10,12 +10,11 @@ import { FilterPillsComponent } from '@components/filter-pills/filter-pills.comp
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { FilterPillOption, MeetingDashboardView, MeetingResponseFilter } from '@lfx-one/shared/interfaces';
-import { TooltipModule } from 'primeng/tooltip';
 import { combineLatest } from 'rxjs';
 
 @Component({
   selector: 'lfx-meetings-top-bar',
-  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, FilterPillsComponent, CardTabsBarComponent, CheckboxComponent, TooltipModule],
+  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, FilterPillsComponent, CardTabsBarComponent, CheckboxComponent],
   templateUrl: './meetings-top-bar.component.html',
 })
 export class MeetingsTopBarComponent {
@@ -35,7 +34,6 @@ export class MeetingsTopBarComponent {
   public readonly maybeCount = input<number | null>(null);
   public readonly declinedCount = input<number | null>(null);
   public readonly organizerCount = input<number | null>(null);
-  public readonly hideDeclinedTooltip = 'Meetings you organize remain visible.';
   public readonly meetingTypeFilter = input<string | null>(null);
   public readonly foundationFilter = input<string | null>(null);
   public readonly projectFilter = input<string | null>(null);
