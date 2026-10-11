@@ -150,6 +150,35 @@ test.describe('My Groups — list↔card view toggle', () => {
     await gotoMyGroups(page);
   });
 
+  test('Cards contain long informational chat identifiers without creating links or mobile overflow', async ({ page }) => {
+    const identifier = '#' + 'synthetic-channel'.repeat(40);
+    const committees = buildMyCommittees();
+    committees[0].chat_channel = identifier;
+    await stubMyCommittees(page, committees);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.setViewportSize({ width: 375, height: 850 });
+    await page.getByTestId('groups-view-card-btn').click();
+    const channels = page.getByTestId(`groups-card-grid-channels-${MOCK_COMMITTEE_UID_A}`);
+    await expect(channels).toContainText(identifier);
+    await expect(channels.getByRole('link')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const bounds = await channels.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(375);
+  });
+
+  test('Board Members can open My Groups through keyboard title navigation', async ({ page }) => {
+    await setPersonaCookie(page, ['board-member']);
+    await stubPersona(page, ['board-member']);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByTestId('groups-view-list-btn').click();
+    const title = page.getByTestId('committees-me-table').getByRole('link', { name: 'Technical Steering Committee', exact: true });
+    await expect(title).toBeVisible();
+    await title.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`/groups/${MOCK_COMMITTEE_UID_A}(?:[?#]|$)`));
+  });
+
   test('List stacks readable labeled cells on mobile without overflow and retains desktop table rows', async ({ page }) => {
     await page.getByTestId('groups-view-list-btn').click();
     const table = page.getByTestId('committees-me-table');

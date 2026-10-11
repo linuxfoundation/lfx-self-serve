@@ -213,7 +213,7 @@ export class CommitteeDashboardComponent {
     // Me lens statistics (derived from myCommittees)
     this.myTotalGroups = computed(() => this.myCommittees().length);
     this.myPublicGroups = computed(() => this.myCommittees().filter((c) => c.public).length);
-    this.myActiveVoting = computed(() => this.myCommittees().filter((c) => c.enable_voting).length);
+    this.myActiveVoting = computed(() => this.myCommittees().filter((c) => c.enable_voting === true).length);
 
     // Engagement rollup — fetched once the flag first turns on; failures degrade to null and never
     // block the group-count cards or the groups list below (independent HTTP call).

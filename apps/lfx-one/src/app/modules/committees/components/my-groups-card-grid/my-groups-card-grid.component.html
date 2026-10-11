@@ -107,7 +107,9 @@
               <i class="fa-light fa-comments" aria-hidden="true"></i> Chat
             </a>
           } @else if (item.committee.chat_channel) {
-            <span class="text-gray-500"> <i class="fa-light fa-comments" aria-hidden="true"></i> {{ item.committee.chat_channel }} </span>
+            <span class="min-w-0 max-w-full [overflow-wrap:anywhere] text-gray-500">
+              <i class="fa-light fa-comments" aria-hidden="true"></i> {{ item.committee.chat_channel }}
+            </span>
           }
           @if (!item.committee.mailing_list && !item.committee.has_mailing_list && !item.committee.chat_channel) {
             <span class="text-gray-400">No channels</span>

@@ -125,6 +125,7 @@ describe('MyGroupsCardGridComponent', () => {
     { channel: 'https://slack.com/synthetic', destination: 'https://slack.com/synthetic' },
     { channel: 'http://example.com/chat', destination: 'http://example.com/chat' },
     { channel: 'example.com/chat', destination: 'https://example.com/chat' },
+    { channel: 'HTTPS://example.com/chat', destination: 'HTTPS://example.com/chat' },
   ])('opens normalized chat destination $destination without opening group detail', async ({ channel, destination }) => {
     await render([group({ chat_channel: channel })]);
     const link = element('groups-card-grid-channels-group-1').querySelector<HTMLAnchorElement>('a');

@@ -147,6 +147,21 @@ describe('My Groups effective filters', () => {
     expect(ids()).toEqual(['a-enabled']);
   });
 
+  it('counts only literal enabled capability while keeping malformed groups in the inventory', async () => {
+    const malformed = group('malformed');
+    Reflect.set(malformed, 'enable_voting', 'true');
+    vi.spyOn(TestBed.inject(CommitteeService), 'getMyCommittees').mockReturnValue(
+      of([group('enabled'), group('disabled', { enable_voting: false }), malformed])
+    );
+    fixture.componentInstance.refresh.update((value) => value + 1);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.myTotalGroups()).toBe(3);
+    expect(fixture.componentInstance.myStatCards().find((card) => card.label === 'Voting Enabled Groups')?.value).toBe(1);
+    fixture.componentInstance.searchForm.get('votingStatus')!.setValue('enabled');
+    await fixture.whenStable();
+    expect(ids()).toEqual(['enabled']);
+  });
+
   it.each<MyGroupsFilterKey>(['search', 'category', 'voting'])('removes only the %s constraint', async (key) => {
     const component = fixture.componentInstance;
     selectScopes();

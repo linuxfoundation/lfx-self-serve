@@ -1,14 +1,14 @@
 ---
 title: Groups
 description: View, create, and manage project committees (groups) in LFX Self Serve.
-audience: [maintainer, board-member, executive-director]
+audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, governance, membership, management]
 last_updated: 2026-10-11
 intercom_collection: Committees
 ---
 
-This page applies to users with **maintainer**, **board-member**, or **executive-director** personas. Contributors can view committee information but cannot create or manage committees.
+This page applies to users with **contributor**, **maintainer**, **board-member**, or **executive-director** personas. Contributors can view committee information but cannot create or manage committees.
 
 In LFX Self Serve, committees are displayed as **Groups**. Navigate to **My Groups** at `/groups` to see your committee memberships. Committees are formal groups that govern project decisions, including Technical Steering Committees (TSCs), boards, and other working groups.
 
@@ -22,7 +22,7 @@ My Groups is your personal membership inventory across foundations and projects.
 - Choose **List** or **Cards**. Your view choice is restored after reload. List rows stack on narrow screens; Cards reveal additional groups through **Show more**. Result-count updates remain available to screen readers, including the final reveal when the partial count is no longer visible. Filters are not newly preserved when returning from group details.
 - Group names are primary, with your role and owning-project context nearby when available. **Public**/**Private** describes visibility. Public groups offer a separate copy-link control.
 - Voting **Enabled** or **Disabled** describes the group's capability, not your eligibility to vote or the presence of an active ballot. **Unavailable** means capability data is missing or unusable.
-- Mailing-list and chat controls open only real destinations. Chat identifiers such as `#general` appear as informational text rather than links. **Mailing list associated** without an address is also informational. **No channels** means no chat value, mailing-list address, or mailing-list association was returned.
+- Mailing-list and chat controls open only real destinations, including HTTP(S) URLs with uppercase or mixed-case schemes. Chat identifiers such as `#general` appear as informational text rather than links; long identifiers wrap within Cards. **Mailing list associated** without an address is also informational. **No channels** means no chat value, mailing-list address, or mailing-list association was returned.
 
 If your inventory is empty, there is no filter panel or reset action; invitations and pending applications can still appear. Existing loading errors are not distinguished from an empty inventory on this page.
 

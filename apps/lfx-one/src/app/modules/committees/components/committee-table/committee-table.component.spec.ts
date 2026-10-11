@@ -5,7 +5,7 @@ import { Component, computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Committee } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
@@ -90,7 +90,7 @@ describe('CommitteeTableComponent consumer behavior', () => {
     await TestBed.configureTestingModule({
       imports: [TableHostComponent],
       providers: [
-        provideRouter([]),
+        provideRouter([{ path: 'foundation/groups/:uid', component: TableHostComponent }]),
         provideNoopAnimations(),
         ConfirmationService,
         MessageService,
@@ -161,6 +161,16 @@ describe('CommitteeTableComponent consumer behavior', () => {
     expect(element('[data-testid="committee-voting-malformed"]').textContent?.trim()).toBe('Unavailable');
   });
 
+  it('lets Board Members activate the canonical My Groups title link', async () => {
+    TestBed.inject(PersonaService).currentPersona.set('board-member');
+    await showRows([group({ is_foundation: true, project_slug: 'synthetic-owner' })]);
+    const title = element('[data-testid="committee-row-synthetic-alpha"] td[data-label="Group"] a') as HTMLAnchorElement;
+    expect(title.getAttribute('href')).toBe('/foundation/groups/synthetic-alpha?project=synthetic-owner');
+    title.click();
+    await fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/foundation/groups/synthetic-alpha?project=synthetic-owner');
+  });
+
   it('offers only real channel destinations and keeps association-only metadata noninteractive', async () => {
     await showRows([
       group({ uid: 'linked', mailing_list: 'synthetic@example.test', chat_channel: 'https://slack.com/synthetic' }),
@@ -191,6 +201,7 @@ describe('CommitteeTableComponent consumer behavior', () => {
     { channel: 'https://slack.com/synthetic', destination: 'https://slack.com/synthetic' },
     { channel: 'http://example.com/chat', destination: 'http://example.com/chat' },
     { channel: 'example.com/chat', destination: 'https://example.com/chat' },
+    { channel: 'HTTPS://example.com/chat', destination: 'HTTPS://example.com/chat' },
   ])('opens normalized chat destination $destination without selecting its group', async ({ channel, destination }) => {
     await showRows([group({ chat_channel: channel })]);
     const link = element('[data-testid="committee-row-synthetic-alpha"] td[data-label="Channels"] a') as HTMLAnchorElement;
