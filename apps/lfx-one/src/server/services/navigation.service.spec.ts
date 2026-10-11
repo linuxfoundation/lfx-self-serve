@@ -90,10 +90,10 @@ describe('NavigationService — PROJECT_LENS_ALLOWED_STAGES', () => {
     expect(lastQuerySent().filters_or).not.toContain('stage:Formation - Confidential');
   });
 
-  it('re-injects a Confidential-stage selection via fetchSelectedItem despite being hidden from the general listing', async () => {
+  it('re-injects a Confidential-stage selection via fetchItemsByUids despite being hidden from the general listing', async () => {
     // First page: normal query returns nothing — Confidential is excluded from the listing filter.
     proxyRequest.mockResolvedValueOnce(pageOf([]));
-    // Second call: fetchSelectedItem's uid-scoped lookup returns the Confidential project.
+    // Second call: fetchItemsByUids' uid-scoped lookup returns the Confidential project.
     proxyRequest.mockResolvedValueOnce(
       pageOf([{ uid: 'confidential-1', slug: 'confidential-1', name: 'Secret', stage: 'Formation - Confidential' as Project['stage'] }])
     );
@@ -102,5 +102,36 @@ describe('NavigationService — PROJECT_LENS_ALLOWED_STAGES', () => {
 
     expect(response.items).toHaveLength(1);
     expect(response.items[0].uid).toBe('confidential-1');
+  });
+});
+
+describe('NavigationService — favoritedUids (GH-3453)', () => {
+  it('injects a favorited item missing from the first browse page', async () => {
+    proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'p1', slug: 'p1', name: 'Project 1', stage: 'Active' as Project['stage'] }]));
+    proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'fav-1', slug: 'fav-1', name: 'Favorite', stage: 'Active' as Project['stage'] }]));
+
+    const response = await new NavigationService().getLensItems(req, { lens: 'project', favoritedUids: ['fav-1'] });
+
+    expect(response.items.map((i) => i.uid)).toEqual(['p1', 'fav-1']);
+  });
+
+  it('does not re-fetch a favorite already present on the first page', async () => {
+    proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'fav-1', slug: 'fav-1', name: 'Favorite', stage: 'Active' as Project['stage'] }]));
+
+    const response = await new NavigationService().getLensItems(req, { lens: 'project', favoritedUids: ['fav-1'] });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(response.items.map((i) => i.uid)).toEqual(['fav-1']);
+  });
+
+  it('skips favorite injection while searching or paginating', async () => {
+    proxyRequest.mockResolvedValueOnce(pageOf([]));
+    await new NavigationService().getLensItems(req, { lens: 'project', favoritedUids: ['fav-1'], name: 'search term' });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+
+    proxyRequest.mockReset();
+    proxyRequest.mockResolvedValueOnce(pageOf([]));
+    await new NavigationService().getLensItems(req, { lens: 'project', favoritedUids: ['fav-1'], pageToken: 'tok' });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
   });
 });
