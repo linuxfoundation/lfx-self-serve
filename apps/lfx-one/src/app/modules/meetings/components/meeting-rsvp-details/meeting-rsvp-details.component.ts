@@ -156,7 +156,8 @@ export class MeetingRsvpDetailsComponent {
             // future date doesn't overwrite the current occurrence's per-registrant
             // chip (LFXV2-2864). Skip attaching RSVPs when tracking is disabled (GH-1951).
             const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.currentOccurrence() });
-            return this.meetingService.getMeetingRegistrants(meeting.id, inviteResponsesEnabled, occurrenceId).pipe(
+            const allDatesOnly = inviteResponsesEnabled && !!meeting.recurrence && !occurrenceId;
+            return this.meetingService.getMeetingRegistrants(meeting.id, inviteResponsesEnabled, occurrenceId, false, undefined, false, allDatesOnly).pipe(
               map((registrants) => ({
                 registrants,
                 rsvps: inviteResponsesEnabled ? registrants.map((r) => r.rsvp).filter((r): r is MeetingRsvp => r != null) : [],

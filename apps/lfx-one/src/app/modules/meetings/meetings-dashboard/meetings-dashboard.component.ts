@@ -78,6 +78,7 @@ import {
   of,
   scan,
   skip,
+  startWith,
   Subject,
   switchMap,
   take,
@@ -504,9 +505,11 @@ export class MeetingsDashboardComponent {
       organizedByMe$,
       hideDeclined$,
     ]).pipe(
+      // Reset once on a lens transition, not when inactive personal rows, identity or filters change.
+      distinctUntilChanged((previous, current) => current[0] !== 'me' && previous[0] === current[0]),
       switchMap(([lens, view, searchQuery, meetingType, rawMeetings, foundation, project, viewerUsername, responseFilter, organizedByMe, hideDeclined]) => {
         if (lens !== 'me') {
-          return EMPTY;
+          return of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true });
         }
         if (view === 'past') {
           return of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true });
@@ -608,9 +611,11 @@ export class MeetingsDashboardComponent {
       pastProjectFilter$,
       pastViewerUsername$,
     ]).pipe(
+      // Inactive personal emissions must not clear a scoped page that has already arrived.
+      distinctUntilChanged((previous, current) => current[0] !== 'me' && previous[0] === current[0]),
       switchMap(([lens, view, searchQuery, meetingType, rawPastMeetings, foundation, project, viewerUsername]) => {
         if (lens !== 'me') {
-          return EMPTY;
+          return of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: true });
         }
         if (view !== 'past') {
           return of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: true });
@@ -697,23 +702,29 @@ export class MeetingsDashboardComponent {
   private initializeRawUserMeetings(): Signal<Meeting[]> {
     const lens$ = toObservable(this.activeLens);
     const timeFilter$ = toObservable(this.timeFilter);
+    const viewerUsername$ = toObservable(this.userService.viewerUsername);
+    let previousViewerUsername = this.userService.viewerUsername();
 
     // Explicit refresh reconnects the cached source if a previous read completed through catchError.
     const rows = toSignal(
-      combineLatest([lens$, timeFilter$, this.refresh$]).pipe(
-        switchMap(([lens, timeFilter]) => {
+      combineLatest([lens$, timeFilter$, this.refresh$, viewerUsername$]).pipe(
+        switchMap(([lens, timeFilter, , viewerUsername]) => {
+          const identityChanged = viewerUsername !== previousViewerUsername;
+          previousViewerUsername = viewerUsername;
           // Skip when not on Me lens, not viewing upcoming, or during SSR.
           if (lens !== 'me' || timeFilter !== 'upcoming' || !isPlatformBrowser(this.platformId)) {
             return of([] as Meeting[]);
           }
           this.meetingsLoading.set(true);
-          return this.userService.getUserMeetings().pipe(
+          const request$ = this.userService.getUserMeetings().pipe(
             tap(() => this.meetingsLoading.set(false)),
             catchError(() => {
               this.meetingsLoading.set(false);
               return of([] as Meeting[]);
             })
           );
+          // Never keep the previous viewer's rows visible while their replacement request is pending.
+          return identityChanged ? request$.pipe(startWith([] as Meeting[])) : request$;
         })
       ),
       { initialValue: [] as Meeting[] }
@@ -738,16 +749,20 @@ export class MeetingsDashboardComponent {
   private initializeRawUserPastMeetings(): Signal<PastMeeting[]> {
     const lens$ = toObservable(this.activeLens);
     const timeFilter$ = toObservable(this.timeFilter);
+    const viewerUsername$ = toObservable(this.userService.viewerUsername);
+    let previousViewerUsername = this.userService.viewerUsername();
 
     return toSignal(
-      combineLatest([lens$, timeFilter$, this.refresh$]).pipe(
-        switchMap(([lens, timeFilter]) => {
+      combineLatest([lens$, timeFilter$, this.refresh$, viewerUsername$]).pipe(
+        switchMap(([lens, timeFilter, , viewerUsername]) => {
+          const identityChanged = viewerUsername !== previousViewerUsername;
+          previousViewerUsername = viewerUsername;
           // Skip when not on Me lens, not viewing past, or during SSR.
           if (lens !== 'me' || timeFilter !== 'past' || !isPlatformBrowser(this.platformId)) {
             return of([] as PastMeeting[]);
           }
           this.pastMeetingsLoading.set(true);
-          return this.userService.getUserPastMeetings().pipe(
+          const request$ = this.userService.getUserPastMeetings().pipe(
             tap((meetings) => {
               this.pastMeetingsLoading.set(false);
               const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -759,6 +774,7 @@ export class MeetingsDashboardComponent {
               return of([] as PastMeeting[]);
             })
           );
+          return identityChanged ? request$.pipe(startWith([] as PastMeeting[])) : request$;
         })
       ),
       { initialValue: [] as PastMeeting[] }

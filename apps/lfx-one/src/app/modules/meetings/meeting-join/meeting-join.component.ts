@@ -1754,7 +1754,8 @@ export class MeetingJoinComponent implements OnInit {
           }
           this.registrantsLoading.set(true);
           const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
-          return this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId).pipe(
+          const allDatesOnly = isMeetingInviteResponsesEnabled(meeting) && !!meeting.recurrence && !occurrenceId;
+          return this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId, false, allDatesOnly).pipe(
             tap((list) => {
               // Only the rows the refetch has actually absorbed come off the pad — a partial
               // catch-up must not zero out rows the query-service index hasn't reflected yet.

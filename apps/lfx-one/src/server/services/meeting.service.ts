@@ -746,6 +746,7 @@ export class MeetingService {
    *   registrants — bounds upstream calls for callers that only need to know "is this over N"
    *   (e.g. enforcing a size cap) rather than the true total. The returned array's length is a
    *   lower bound, not an exact count, once it exceeds `maxResults`.
+   * @param allDatesOnly - Without a resolved occurrence, select only series-wide (`all`) RSVPs before choosing the newest
    */
   public async getMeetingRegistrants(
     req: Request,
@@ -754,7 +755,8 @@ export class MeetingService {
     occurrenceId?: string,
     failOnPartial: boolean = false,
     maxResults?: number,
-    options?: ApiRequestOptions
+    options?: ApiRequestOptions,
+    allDatesOnly: boolean = false
   ): Promise<MeetingRegistrant[]> {
     // Registrant records carry `parent_refs: ['meeting:<uid>']` but no indexed tags — use `parent`
     // to query parent_refs, matching the working pattern in getMeetingRsvps.
@@ -819,7 +821,7 @@ export class MeetingService {
     }
 
     const activeRsvps = filterRsvpsToActiveRegistrants(rsvps, registrants);
-    return attachRsvpsToRegistrants(registrants, activeRsvps, occurrenceId);
+    return attachRsvpsToRegistrants(registrants, activeRsvps, occurrenceId, allDatesOnly);
   }
 
   /**
@@ -899,7 +901,8 @@ export class MeetingService {
     req: Request,
     meetingUid: string,
     includeRsvp: boolean = false,
-    occurrenceId?: string
+    occurrenceId?: string,
+    allDatesOnly: boolean = false
   ): Promise<MeetingRegistrant[]> {
     // `v1_meeting`, not `meeting`: the organizer tuples the platform writes hang off the v1 type,
     // which is what every other organizer probe in this codebase asks about (see
@@ -919,7 +922,7 @@ export class MeetingService {
       });
     }
 
-    return this.getMeetingRegistrants(req, meetingUid, includeRsvp, occurrenceId, true);
+    return this.getMeetingRegistrants(req, meetingUid, includeRsvp, occurrenceId, true, undefined, undefined, allDatesOnly);
   }
 
   /**

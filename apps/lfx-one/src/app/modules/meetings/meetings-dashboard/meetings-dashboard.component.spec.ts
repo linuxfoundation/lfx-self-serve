@@ -240,6 +240,16 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     expect(ids(component)).toEqual(['alias-owned']);
     users.user.set({ username: 'alias', 'https://sso.linuxfoundation.org/claims/username': ' Viewer ' } as User);
     flush();
+    expect(ids(component)).toEqual([]);
+    http
+      .expectOne('/api/user/meetings')
+      .flush([
+        owned,
+        row('alias-owned', { owner: { username: 'alias' } }),
+        legacy,
+        row('creator', { created_by: { username: 'auth0|VIEWER', email: 'synthetic@example.com' } }),
+      ]);
+    flush();
     expect(ids(component)).toEqual(['owned', 'creator']);
     expect(component['organizerCount']()).toBe(2);
     http.expectNone('/api/user/meetings');
@@ -264,9 +274,39 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     expect(component['organizerCount']()).toBe(0);
     users.user.set({ 'https://sso.linuxfoundation.org/claims/username': 'viewer' } as User);
     flush();
+    expect(ids(component)).toEqual([]);
+    http.expectOne('/api/user/meetings').flush([owned, pending, legacy]);
+    flush();
     expect(ids(component)).toEqual(['owned']);
     expect(component['organizerCount']()).toBe(1);
     http.expectNone('/api/user/meetings');
+  });
+
+  it.each(['upcoming', 'past'] as const)('isolates %s rows when the canonical LFID changes but the alias does not', (view) => {
+    route.snapshot.queryParamMap = convertToParamMap(view === 'past' ? { time: 'past' } : {});
+    const endpoint = view === 'past' ? '/api/user/past-meetings' : '/api/user/meetings';
+    const initialRow = view === 'past' ? past : pending;
+    const component = TestBed.runInInjectionContext(() => new MeetingsDashboardComponent());
+    flush();
+    http.expectOne(endpoint).flush([initialRow]);
+    flush();
+    expect(ids(component)).toEqual([initialRow.id]);
+
+    users.user.set({ username: 'alias', 'https://sso.linuxfoundation.org/claims/username': 'next-viewer' } as User);
+    flush();
+    const replacement = http.expectOne(endpoint);
+    expect(ids(component)).toEqual([]);
+    expect(view === 'past' ? component.pastMeetingsLoading() : component.meetingsLoading()).toBe(true);
+    const nextRow = { ...initialRow, id: 'next-viewer-row' };
+    replacement.flush([nextRow]);
+    flush();
+    expect(ids(component)).toEqual(['next-viewer-row']);
+    expect(view === 'past' ? component.pastMeetingsLoading() : component.meetingsLoading()).toBe(false);
+
+    users.user.set({ username: 'changed-alias', 'https://sso.linuxfoundation.org/claims/username': 'next-viewer' } as User);
+    flush();
+    http.expectNone(endpoint);
+    expect(ids(component)).toEqual(['next-viewer-row']);
   });
 
   it('matches the foundation and its children, but not sub-foundations or unrelated projects', () => {
@@ -554,6 +594,96 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     http.expectNone('/api/user/latest-past-meetings');
     history.unsubscribe();
     latest.unsubscribe();
+  });
+
+  it.each([
+    ['upcoming', 'foundation'],
+    ['upcoming', 'project'],
+    ['past', 'foundation'],
+    ['past', 'project'],
+  ] as const)('clears personal %s rows while %s loads without letting inactive emissions erase scoped pages', (view, nextLens) => {
+    vi.mocked(meetings.getMeetingsByProjectPaginated).mockRestore();
+    vi.mocked(meetings.getPastMeetingsByProjectPaginated).mockRestore();
+    route.snapshot.queryParamMap = convertToParamMap(view === 'past' ? { time: 'past' } : {});
+    const personalEndpoint = view === 'past' ? '/api/user/past-meetings' : '/api/user/meetings';
+    const scopedEndpoint = view === 'past' ? '/api/past-meetings' : '/api/meetings';
+    const personalRow = view === 'past' ? past : pending;
+    const scopedRows = ['scoped-first', 'scoped-second'].map((id) => row(id, { start_time: personalRow.start_time }));
+    const component = TestBed.runInInjectionContext(() => new MeetingsDashboardComponent());
+    flush();
+    http.expectOne(personalEndpoint).flush([personalRow]);
+    flush();
+    expect(ids(component)).toEqual([personalRow.id]);
+
+    // Keep a real personal-cache consumer alive so it can refresh after this dashboard leaves Me.
+    const personalRows: (Meeting | PastMeeting)[][] = [];
+    const personalSubscription = (view === 'past' ? users.getUserPastMeetings() : users.getUserMeetings()).subscribe((rows) => personalRows.push(rows));
+    context.set({ uid: 'scope', name: 'Synthetic scope' } as ProjectContext);
+    lens.set(nextLens);
+    flush();
+    const firstPages = http.match((request) => request.url === scopedEndpoint && !request.params.has('page_token'));
+    expect(firstPages).toHaveLength(2); // List and full calendar/stat source.
+    expect(view === 'past' ? component.pastMeetingsLoading() : component.meetingsLoading()).toBe(true);
+    expect(ids(component)).toEqual([]);
+    expect(component.hasMore()).toBe(false);
+    for (const request of firstPages) request.flush({ data: [scopedRows[0]], page_token: 'next' });
+    http.expectOne((request) => request.url === scopedEndpoint && request.params.get('page_token') === 'next').flush({ data: [scopedRows[1]] });
+    flush();
+    expect(ids(component)).toEqual(['scoped-first']);
+    expect(view === 'past' ? component.pastMeetingsLoading() : component.meetingsLoading()).toBe(false);
+    expect(component.hasMore()).toBe(true);
+
+    // Later personal-cache replies and personal-only filter changes cannot reset scoped rows/cursors.
+    if (view === 'past') users.refreshUserPastMeetings();
+    else users.refreshUserMeetings();
+    const refreshedPersonal = { ...personalRow, id: 'refreshed-personal' };
+    http.expectOne(personalEndpoint).flush([refreshedPersonal]);
+    flush();
+    expect(personalRows.at(-1)?.map((meeting) => meeting.id)).toEqual(['refreshed-personal']);
+    expect(ids(component)).toEqual(['scoped-first']);
+    meetings.markRegistrationRemoved(personalRow.id);
+    flush();
+    expect(ids(component)).toEqual(['scoped-first']);
+    component.onFoundationFilterChange('unrelated-foundation');
+    flush();
+    expect(ids(component)).toEqual(['scoped-first']);
+    component.onProjectFilterChange('unrelated-project');
+    flush();
+    expect(ids(component)).toEqual(['scoped-first']);
+    respond(component, 'accepted');
+    organize(component);
+    component.hideDeclined.set(true);
+    flush();
+    expect(ids(component)).toEqual(['scoped-first']);
+    users.user.set({ 'https://sso.linuxfoundation.org/claims/username': 'next-viewer' } as User);
+    flush();
+    expect(ids(component)).toEqual(['scoped-first']);
+    expect(component.hasMore()).toBe(true);
+    http.expectNone((request) => request.url === scopedEndpoint);
+
+    component.loadMore();
+    expect(component.loadingMore()).toBe(true);
+    expect(ids(component)).toEqual(['scoped-first']);
+    http.expectOne((request) => request.url === scopedEndpoint && request.params.get('page_token') === 'next').flush({ data: [scopedRows[1]] });
+    flush();
+    expect(ids(component)).toEqual(['scoped-first', 'scoped-second']);
+    expect(component.hasMore()).toBe(false);
+    component.viewMode.set('calendar');
+    flush();
+    expect(component.isCalendarView()).toBe(true);
+    expect(component.calendarLoading()).toBe(false);
+    expect(component.calendarEvents().map((event) => event.title)).toEqual(['scoped-first', 'scoped-second']);
+
+    component.resetFilters();
+    lens.set('me');
+    flush();
+    expect(ids(component)).toEqual([]);
+    http.expectOne(personalEndpoint).flush([refreshedPersonal]);
+    flush();
+    expect(ids(component)).toEqual(['refreshed-personal']);
+    expect(component.meetingView()).toBe(view);
+    expect(component.isCalendarView()).toBe(false);
+    personalSubscription.unsubscribe();
   });
 
   it.each([

@@ -8,6 +8,7 @@ import { MeetingService } from '@services/meeting.service';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { attachRsvpsToRegistrants } from '../../../../../server/helpers/meeting-rsvp.helper';
 import { MeetingRsvpDetailsComponent } from './meeting-rsvp-details.component';
 
 // Regression coverage for GH-1731: the parent join page already fetches the registrant roster via
@@ -151,6 +152,36 @@ describe('MeetingRsvpDetailsComponent', () => {
     expect(getMeetingRegistrants).toHaveBeenCalledTimes(1);
     expect(fixture.componentInstance.meetingRegistrantCount()).toBe(3);
   });
+
+  it.each(['single', 'this_and_following'] as const)(
+    'keeps older all counts and preview from the real BFF selection without a confirmed %s overlay',
+    async (scope) => {
+      const all = { id: 'all', registrant_id: 'all-guest', response_type: 'accepted', scope: 'all', modified_at: '2026-01-01T00:00:00Z' } as MeetingRsvp;
+      const scoped = {
+        ...all,
+        id: 'scoped',
+        scope,
+        response_type: 'declined',
+        occurrence_id: '4071031200000',
+        modified_at: '2026-02-01T00:00:00Z',
+      } as MeetingRsvp;
+      const scopedOnly = { ...scoped, registrant_id: 'scoped-guest' };
+      const roster = [buildRegistrant({ uid: 'scoped-guest' }), buildRegistrant({ uid: 'all-guest' })];
+      getMeetingRegistrants.mockImplementation((_id, _includeRsvp, occurrenceId, _partial, _committee, _enrich, allDatesOnly) =>
+        of(attachRsvpsToRegistrants(roster, [all, scoped, scopedOnly], occurrenceId, allDatesOnly))
+      );
+      const fixture = createComponent();
+      fixture.componentRef.setInput(
+        'meeting',
+        buildMeeting({ is_invite_responses_enabled: true, recurrence: { type: 2, repeat_interval: 1 }, occurrences: [] })
+      );
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance.rsvpCounts()).toEqual({ accepted: 1, declined: 0, maybe: 0, total: 2 });
+      expect(fixture.componentInstance.previewPeople().map((person) => person.key)).toEqual(['all-guest', 'scoped-guest']);
+      expect(getMeetingRegistrants).toHaveBeenCalledWith(MEETING_ID, true, undefined, false, undefined, false, true);
+    }
+  );
 
   it('still uses past participants for a past meeting even when initialRegistrants is supplied', async () => {
     getPastMeetingParticipants.mockReturnValue(of([{ is_attended: true }, { is_attended: false }]));

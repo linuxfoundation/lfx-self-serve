@@ -449,6 +449,7 @@ export class MeetingService {
    *   `committee_uid` from the upstream v1 SFID to the v2 UID. It costs the BFF a per-committee
    *   fan-out to the committee service, so it stays opt-in for the callers that actually need group
    *   attribution: the composer's Guests list, and the registrants display's group filter.
+   * @param allDatesOnly - Without a resolved occurrence, attach only series-wide (`all`) RSVPs
    */
   public getMeetingRegistrants(
     meetingUid: string,
@@ -456,7 +457,8 @@ export class MeetingService {
     occurrenceId?: string,
     failOnPartial: boolean = false,
     committeeUid?: string,
-    includeCommittee: boolean = false
+    includeCommittee: boolean = false,
+    allDatesOnly: boolean = false
   ): Observable<MeetingRegistrant[]> {
     let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
     if (occurrenceId) {
@@ -471,6 +473,9 @@ export class MeetingService {
     if (includeCommittee) {
       params = params.set('include_committee', 'true');
     }
+    if (allDatesOnly) {
+      params = params.set('rsvp_scope', 'all');
+    }
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`, { params });
   }
 
@@ -480,7 +485,8 @@ export class MeetingService {
     meetingUid: string,
     includeRsvp: boolean = false,
     occurrenceId?: string,
-    preview: boolean = false
+    preview: boolean = false,
+    allDatesOnly: boolean = false
   ): Observable<MeetingRegistrant[]> {
     let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
     if (occurrenceId) {
@@ -488,6 +494,9 @@ export class MeetingService {
     }
     if (preview) {
       params = params.set('preview', 'true');
+    }
+    if (allDatesOnly) {
+      params = params.set('rsvp_scope', 'all');
     }
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/my-meeting-registrants`, { params });
   }

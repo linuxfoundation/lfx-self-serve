@@ -34,7 +34,7 @@ import {
   WorkExperienceCreateUpdateBody,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { catchError, distinctUntilChanged, EMPTY, map, Observable, of, shareReplay, skip, startWith, Subject, switchMap, take, takeUntil } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, Observable, of, shareReplay, skip, startWith, Subject, switchMap, take, takeUntil } from 'rxjs';
 
 import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
 
@@ -92,16 +92,11 @@ export class UserService {
   public constructor() {
     // Invalidate cached user-scoped observables when the authenticated user or
     // impersonation changes, so existing subscribers don't see stale data from
-    // the previous user. Keyed on username (covers both login/logout and
-    // impersonation start/stop). Skip the initial emission since the caches
-    // are lazy-initialized and haven't been populated yet.
-    toObservable(this.user)
-      .pipe(
-        map((u) => u?.username ?? null),
-        distinctUntilChanged(),
-        skip(1),
-        takeUntilDestroyed()
-      )
+    // the previous user. Keyed on the canonical-first meeting identity for both
+    // login/logout and impersonation start/stop. Skip the initial emission since
+    // the caches are lazy-initialized and haven't been populated yet.
+    toObservable(this.viewerUsername)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
       .subscribe(() => {
         // Drop the previous user's uploaded avatar — impersonation start/stop swaps `user` without
         // a page reload, and without this reset the new user's sidebar/header would briefly (or
@@ -118,6 +113,7 @@ export class UserService {
         this.userLatestPastMeetingsDestroy$.next();
         this.userLatestPastMeetingsDestroy$ = new Subject<void>();
         this.userMeetings$ = null;
+        this.userMeetingsDirty = false;
         this.userPastMeetings$ = null;
         this.userLatestPastMeetings$ = null;
       });

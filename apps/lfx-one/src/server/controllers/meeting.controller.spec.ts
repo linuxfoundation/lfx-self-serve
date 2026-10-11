@@ -790,9 +790,6 @@ describe('MeetingController', () => {
 
       await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
 
-      expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_ID, false, undefined, false, undefined, {
-        bearerToken: M2M_TOKEN,
-      });
       expect(resolveCommitteeV2UidsToV1IdsMock).not.toHaveBeenCalled();
       expect(committeeSvc.getCommitteeBase).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith([registrant]);

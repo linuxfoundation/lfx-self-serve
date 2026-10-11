@@ -95,6 +95,8 @@ export class UserService {
 }
 ```
 
+Personal meeting caches use `UserService.viewerUsername`, the canonical-first LFID with an alias-only fallback, as their identity key. Login/logout and impersonation changes tear down upcoming, past, and latest-past replay chains before a new consumer fetches data. The meeting dashboard also reconnects on this identity and clears the previous subject's rows while the replacement request is pending. Lens transitions clear personal rows once when leaving Me, without allowing later inactive personal emissions to erase Foundation/Project results.
+
 ## 🧩 Component Integration
 
 ### Signal Consumption

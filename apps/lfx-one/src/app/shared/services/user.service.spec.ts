@@ -4,9 +4,9 @@
 import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
-import { Meeting, User } from '@lfx-one/shared/interfaces';
+import { Meeting, PastMeeting, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserService } from './user.service';
@@ -52,6 +52,36 @@ describe('UserService', () => {
 
     service.user.set({ username: 'display-alias', 'https://sso.linuxfoundation.org/claims/username': 'canonical' } as User);
     expect(service.viewerUsername()).toBe('canonical');
+  });
+
+  it.each([undefined, 'unchanged-alias'])('isolates all personal meeting feeds when canonical identity changes with alias %s', async (username) => {
+    const feeds = [
+      ['/api/user/meetings', () => service.getUserMeetings()],
+      ['/api/user/past-meetings', () => service.getUserPastMeetings()],
+      ['/api/user/latest-past-meetings', () => service.getUserLatestPastMeetings()],
+    ] as const;
+    service.user.set({ username, 'https://sso.linuxfoundation.org/claims/username': 'synthetic-a' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    const previousRequests = new Map<string, Subject<PastMeeting[]>>(feeds.map(([url]) => [url, new Subject<PastMeeting[]>()]));
+    httpGet.mockImplementation((url: string) => previousRequests.get(url) ?? of({ profile: {} }));
+    const priorRows = feeds.map(() => [] as string[]);
+    const previousSubscriptions = feeds.map(([, getFeed], index) => getFeed().subscribe((rows) => priorRows[index].push(...rows.map((row) => row.id))));
+    for (const request of previousRequests.values()) request.next([{ id: 'synthetic-a-meeting' } as PastMeeting]);
+
+    service.user.set({ username, 'https://sso.linuxfoundation.org/claims/username': 'synthetic-b' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+    for (const request of previousRequests.values()) request.next([{ id: 'synthetic-late-a-meeting' } as PastMeeting]);
+    expect(priorRows).toEqual(feeds.map(() => ['synthetic-a-meeting']));
+
+    httpGet.mockImplementation((url: string) => of(url.startsWith('/api/user/') ? [{ id: 'synthetic-b-meeting' }] : { profile: {} }));
+    for (const [, getFeed] of feeds) {
+      let rows: string[] = [];
+      const subscription = getFeed().subscribe((meetings) => (rows = meetings.map((meeting) => meeting.id)));
+      expect(rows).toEqual(['synthetic-b-meeting']);
+      subscription.unsubscribe();
+    }
+    previousSubscriptions.forEach((subscription) => subscription.unsubscribe());
   });
 
   it('refetches a primed personal feed on return after an inactive-lens response without fetching while inactive', () => {

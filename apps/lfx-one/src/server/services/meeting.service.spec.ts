@@ -48,10 +48,8 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   normalizeIndexedMeetingAiSummary: vi.fn((meeting) => meeting),
   normalizeIndexedMeetingInviteResponses: vi.fn((meeting) => meeting),
   selectPrimaryPastMeetingSummary: vi.fn(),
-  // getMeetingRsvps / getMeetingRegistrants(includeRsvp) delegate occurrence selection to the real
-  // resolver — stubbed here to the "most recent rsvp" since these tests cover roster/page-walk
-  // dedup, not the LFXV2-2864 occurrence-scoping logic (covered in meeting-rsvp.helper.spec.ts).
-  selectApplicableRsvp: vi.fn((_occurrenceId: string | undefined, rsvps: unknown[]) => rsvps[rsvps.length - 1] ?? null),
+  // Exercise the actual occurrence resolver with the real roster/page-walk path.
+  selectApplicableRsvp: (await vi.importActual<typeof RsvpCalculator>('@lfx-one/shared/utils/rsvp-calculator.util')).selectApplicableRsvp,
 }));
 vi.mock('../helpers/poll-endpoint.helper', () => ({
   pollEndpoint: vi.fn(async ({ pollFn }: { pollFn: () => Promise<boolean> }) => {
@@ -597,6 +595,43 @@ describe('MeetingService.getMeetingRegistrants', () => {
     expect(options).toEqual({ bearerToken: 'm2m-token' });
   });
 
+  it.each(['single', 'this_and_following'] as const)(
+    'retains older all attendance and preview ahead of newer %s responses in an unresolved roster',
+    async (scope) => {
+      const { countRegistrantAttendance, buildAttendeePreviewFromRegistrants } = await import('@lfx-one/shared/utils/rsvp-calculator.util');
+      const all = { id: 'all-a', registrant_id: 'a', response_type: 'accepted', scope: 'all', modified_at: '2026-01-01T00:00:00Z' } as MeetingRsvp;
+      const scoped = {
+        ...all,
+        id: 'scoped-a',
+        scope,
+        response_type: 'declined',
+        occurrence_id: '4071031200000',
+        modified_at: '2026-02-01T00:00:00Z',
+      } as MeetingRsvp;
+      const scopedOnly = { ...scoped, id: 'scoped-b', registrant_id: 'b' };
+      proxyRequest.mockImplementation(async (_req, _service, _path, _method, params) => ({
+        resources:
+          params.type === 'v1_meeting_registrant'
+            ? [registrantRecord('b'), registrantRecord('a')]
+            : [all, scoped, scopedOnly].map((row) => ({ id: `v1_meeting_rsvp:${row.id}`, data: row })),
+      }));
+
+      const roster = await service.getMeetingRegistrants(req, 'meeting-1', true, undefined, false, undefined, { bearerToken: 'm2m-token' }, true);
+      expect(roster.map((row) => row.rsvp)).toEqual([null, all]);
+      expect(countRegistrantAttendance(roster, { inviteResponsesEnabled: true })).toEqual({ accepted: 1, declined: 0, maybe: 0, total: 2 });
+      expect(buildAttendeePreviewFromRegistrants(roster).map((person) => person.key)).toEqual(['a', 'b']);
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest.mock.calls.every((call) => call[7]?.bearerToken === 'm2m-token')).toBe(true);
+
+      const resolved = await service.getMeetingRegistrants(req, 'meeting-1', true, '4071031200');
+      expect(resolved.map((row) => row.rsvp)).toEqual([scopedOnly, scoped]);
+      const unrelated = await service.getMeetingRegistrants(req, 'meeting-1', true, '4070944800');
+      expect(unrelated.map((row) => row.rsvp)).toEqual([null, all]);
+      const aggregate = await service.getMeetingRegistrants(req, 'meeting-1', true);
+      expect(aggregate.map((row) => row.rsvp)).toEqual([scopedOnly, scoped]);
+    }
+  );
+
   it('fetches the registrant roster exactly once when includeRsvp is true, not twice via getMeetingRsvps', async () => {
     const rsvpRecord = (registrantId: string) => ({
       id: `v1_meeting_rsvp:${registrantId}`,
@@ -874,6 +909,18 @@ describe('MeetingService.getAuthorizedCompleteRegistrants', () => {
     const result = await service.getAuthorizedCompleteRegistrants(req, MEETING_UID);
 
     expect(result).toEqual([{ uid: 'a', email: 'a@example.com' }]);
+  });
+
+  it('preserves an older all response through the authorized complete-roster path', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
+    const all = { id: 'all-a', registrant_id: 'a', scope: 'all', response_type: 'accepted', modified_at: '2026-01-01T00:00:00Z' } as MeetingRsvp;
+    const single = { ...all, id: 'single-a', scope: 'single', response_type: 'declined', modified_at: '2026-02-01T00:00:00Z' } as MeetingRsvp;
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [registrantRecord('a')] })
+      .mockResolvedValueOnce({ resources: [all, single].map((row) => ({ id: row.id, data: row })) });
+    const [result] = await service.getAuthorizedCompleteRegistrants(req, MEETING_UID, true, undefined, true);
+    expect(result.rsvp).toEqual(all);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
   });
 
   // The authorizer gets asked strictly for the same reason the roster is fetched strictly: the
