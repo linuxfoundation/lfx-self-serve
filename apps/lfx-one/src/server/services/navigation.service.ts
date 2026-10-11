@@ -73,7 +73,7 @@ export class NavigationService {
     if (selectedUid && !pageToken) {
       const alreadyIncluded = items.some((item) => item.uid === selectedUid);
       if (!alreadyIncluded) {
-        const [selectedItem] = await this.fetchItemsByUids(req, lens, [selectedUid]);
+        const [selectedItem] = await this.fetchItemsByUids(req, lens, [selectedUid], { allowConfidential: true });
         if (selectedItem) {
           items.unshift(selectedItem);
         }
@@ -86,7 +86,9 @@ export class NavigationService {
     if (favoritedUids?.length && !pageToken && !name?.trim()) {
       const missingUids = favoritedUids.filter((uid) => uid !== selectedUid && !items.some((item) => item.uid === uid));
       if (missingUids.length) {
-        const favoriteItems = await this.fetchItemsByUids(req, lens, missingUids);
+        // allowConfidential: false — unlike an explicit selectedUid pin, a favorite shouldn't
+        // resurrect a confidential-stage project into the general browse list (GH-3456 review).
+        const favoriteItems = await this.fetchItemsByUids(req, lens, missingUids, { allowConfidential: false });
         items.push(...favoriteItems);
       }
     }
@@ -126,8 +128,13 @@ export class NavigationService {
    * current page). Chunks at `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE` and follows pagination within
    * each batch via `fetchAllQueryResources` — mirrors `ProjectService.getProjectsByIds` — so a
    * caller passing more than query-service's default page size (50) isn't silently truncated.
+   *
+   * `allowConfidential` keeps the FormationConfidential exception scoped to an explicit
+   * `selectedUid` pin: the listing hides that stage, but a caller's own current selection must
+   * survive it. A favorite must not get the same pass — otherwise a stored favorite uid can
+   * resurrect a confidential-stage project into the general browse list (GH-3456 review).
    */
-  private async fetchItemsByUids(req: Request, lens: NavLens, uids: string[]): Promise<LensItem[]> {
+  private async fetchItemsByUids(req: Request, lens: NavLens, uids: string[], options: { allowConfidential: boolean }): Promise<LensItem[]> {
     const batches: string[][] = [];
     for (let i = 0; i < uids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
       batches.push(uids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
@@ -136,13 +143,12 @@ export class NavigationService {
     const batchResults = await Promise.all(batches.map((batch) => this.fetchItemsByUidsBatch(req, lens, batch)));
     const projects = batchResults.flat();
 
-    // Mirror the main-pipeline contract so an archived item doesn't get re-injected —
-    // except FormationConfidential, which the listing hides but a prior pin must survive.
+    // Mirror the main-pipeline contract so an archived item doesn't get re-injected.
     return projects
       .filter((project) =>
         lens === 'foundation'
           ? computeIsFoundation(project)
-          : PROJECT_LENS_ALLOWED_STAGES.has(project.stage) || project.stage === ProjectStage.FormationConfidential
+          : PROJECT_LENS_ALLOWED_STAGES.has(project.stage) || (options.allowConfidential && project.stage === ProjectStage.FormationConfidential)
       )
       .map((project) => this.toLensItem(project));
   }

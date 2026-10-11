@@ -153,6 +153,17 @@ describe('NavigationService — favoritedUids (GH-3453)', () => {
     expect(response.items.map((i) => i.uid)).toEqual(missingUids);
   });
 
+  it('does not inject a FormationConfidential favorite into the general browse list', async () => {
+    proxyRequest.mockResolvedValueOnce(pageOf([])); // initial browse page
+    proxyRequest.mockResolvedValueOnce(
+      pageOf([{ uid: 'confidential-1', slug: 'confidential-1', name: 'Secret', stage: 'Formation - Confidential' as Project['stage'] }])
+    );
+
+    const response = await new NavigationService().getLensItems(req, { lens: 'project', favoritedUids: ['confidential-1'] });
+
+    expect(response.items).toHaveLength(0);
+  });
+
   it('follows page_token pagination within a single batch of missing favorites', async () => {
     proxyRequest.mockResolvedValueOnce(pageOf([])); // initial browse page
     proxyRequest.mockResolvedValueOnce({

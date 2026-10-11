@@ -205,14 +205,22 @@ export class NavigationController {
     return undefined;
   }
 
-  /** Comma-separated favorited uids (GH-3453) — same allowlist as `selected_uid`, capped at the favorites limit. Unsafe entries are dropped, not the whole list. */
+  /**
+   * Comma-separated favorited uids (GH-3453) — same allowlist as `selected_uid`, capped at the
+   * favorites limit. Unsafe entries are dropped, not the whole list. De-duplicated before the cap
+   * so repeats of one uid can't both waste the cap and reach `fetchItemsByUids` twice across
+   * separate batches, which would otherwise push duplicate rows into the response (GH-3456 review).
+   */
   private sanitizeFavoritedUids(req: Request, raw: string | undefined, operation: string): string[] | undefined {
     if (!raw) return undefined;
-    const candidates = raw
-      .split(',')
-      .map((uid) => uid.trim())
-      .filter((uid) => uid.length > 0)
-      .slice(0, FAVORITE_PROJECTS_MAX_VALUES);
+    const candidates = [
+      ...new Set(
+        raw
+          .split(',')
+          .map((uid) => uid.trim())
+          .filter((uid) => uid.length > 0)
+      ),
+    ].slice(0, FAVORITE_PROJECTS_MAX_VALUES);
     const safe = candidates.filter((uid) => isFilterSafeIdentifier(uid));
     if (safe.length < candidates.length) {
       logger.warning(req, operation, 'Dropped favorited_uids entries outside filter-safe allowlist', {
