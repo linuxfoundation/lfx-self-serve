@@ -250,4 +250,82 @@ describe('MeetingRsvpDetailsComponent', () => {
     await fixture.whenStable();
     expect(fixture.componentInstance.rsvpCounts()).toEqual({ accepted: 0, declined: 1, maybe: 1, total: 2 });
   });
+
+  describe.each(['roster', 'supplied', 'rsvps'] as const)('unresolved recurring dates with %s data', (source) => {
+    it.each([
+      ['confirmed', 'single'],
+      ['confirmed', 'this_and_following'],
+      ['indexed', 'single'],
+      ['indexed', 'this_and_following'],
+    ] as const)('ignores %s %s responses until the date resolves', async (origin, scope) => {
+      const occurrence = { occurrence_id: '4071031200', start_time: '2099-01-02T10:00:00Z', duration: 30 };
+      const accepted: MeetingRsvp = {
+        id: 'synthetic-all',
+        meeting_id: MEETING_ID,
+        registrant_id: 'synthetic-viewer',
+        username: 'synthetic-viewer',
+        email: 'viewer@example.com',
+        response_type: 'accepted',
+        scope: 'all',
+        created_at: '2026-10-10T10:00:00Z',
+      };
+      const scoped: MeetingRsvp = {
+        ...accepted,
+        id: 'synthetic-scoped',
+        response_type: 'declined',
+        scope,
+        occurrence_id: occurrence.occurrence_id,
+        modified_at: '2026-10-10T11:00:00Z',
+      };
+      const scopedOnly: MeetingRsvp = {
+        ...scoped,
+        id: 'synthetic-scoped-only',
+        registrant_id: 'synthetic-scoped-only',
+        email: 'scoped@example.com',
+        response_type: 'accepted',
+      };
+      const other: MeetingRsvp = {
+        ...accepted,
+        id: 'synthetic-other',
+        registrant_id: 'synthetic-other',
+        email: 'other@example.com',
+        response_type: 'maybe',
+      };
+      const indexed = origin === 'indexed' ? [scoped, scopedOnly, other] : [accepted, other];
+      const registrants = [
+        buildRegistrant({ uid: accepted.registrant_id, email: accepted.email, rsvp: indexed[0] }),
+        buildRegistrant({ uid: other.registrant_id, email: other.email, rsvp: other }),
+        buildRegistrant({ uid: scopedOnly.registrant_id, email: scopedOnly.email, rsvp: origin === 'indexed' ? scopedOnly : null }),
+      ];
+      getMeetingRegistrants.mockReturnValue(of(registrants));
+      getMeetingRsvps.mockReturnValue(of(indexed));
+      const fixture = createComponent();
+      fixture.componentRef.setInput(
+        'meeting',
+        buildMeeting({
+          is_invite_responses_enabled: true,
+          recurrence: { type: 2, repeat_interval: 1 },
+          occurrences: [],
+          ...(source === 'rsvps' ? { individual_registrants_count: 3 } : {}),
+        })
+      );
+      if (source === 'supplied') fixture.componentRef.setInput('initialRegistrants', registrants);
+      fixture.componentRef.setInput('confirmedRsvps', origin === 'confirmed' ? [scoped, scopedOnly] : [accepted]);
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance.rsvpCounts()).toEqual({ accepted: 1, declined: 0, maybe: 1, total: source === 'rsvps' ? 2 : 3 });
+      expect(fixture.componentInstance.previewPeople().map((person) => person.key)).toEqual(
+        source === 'rsvps' ? [accepted.registrant_id, other.registrant_id] : [accepted.registrant_id, other.registrant_id, scopedOnly.registrant_id]
+      );
+
+      fixture.componentRef.setInput('currentOccurrence', occurrence);
+      await fixture.whenStable();
+      expect(fixture.componentInstance.rsvpCounts()).toEqual({ accepted: 1, declined: 1, maybe: 1, total: 3 });
+      expect(fixture.componentInstance.previewPeople().map((person) => person.key)).toEqual([
+        scopedOnly.registrant_id,
+        other.registrant_id,
+        accepted.registrant_id,
+      ]);
+    });
+  });
 });

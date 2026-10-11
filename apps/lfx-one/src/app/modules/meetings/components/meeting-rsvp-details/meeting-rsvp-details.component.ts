@@ -22,6 +22,7 @@ import {
 import {
   buildAttendeePreviewFromRegistrants,
   buildAttendeePreviewFromRsvps,
+  getCurrentOrNextOccurrence,
   isMeetingInviteResponsesEnabled,
   resolveRsvpOccurrenceId,
   selectApplicableRsvp,
@@ -65,6 +66,9 @@ export class MeetingRsvpDetailsComponent {
   public readonly loading: Signal<boolean> = computed(() =>
     this.externallyManaged() && !this.pastMeeting() ? this.initialRegistrantsLoading() : this.internalLoading()
   );
+  private readonly resolvedOccurrenceId: Signal<string | undefined> = computed(() =>
+    resolveRsvpOccurrenceId(this.meeting(), { occurrence: this.currentOccurrence() })
+  );
   // Private source: one observable, two derived signals. Consolidates registrants + RSVPs
   // into a single HTTP call for the Me lens (where the backend doesn't populate counts),
   // and falls back to a direct RSVP fetch for the non-Me lens where counts are already populated.
@@ -79,7 +83,7 @@ export class MeetingRsvpDetailsComponent {
         .map((r) => r.rsvp)
         .filter((r): r is MeetingRsvp => r != null);
     }
-    return [...this.applicableConfirmedRsvps(), ...this.upcomingData().rsvps];
+    return [...this.applicableConfirmedRsvps(), ...this.upcomingData().rsvps.filter((rsvp) => this.isApplicableRsvp(rsvp))];
   });
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
   // Registrants when the roster was fetched (Me lens); otherwise the RSVP rows the project and
@@ -89,7 +93,7 @@ export class MeetingRsvpDetailsComponent {
     if (registrants.length > 0) {
       return buildAttendeePreviewFromRegistrants(registrants, { inviteResponsesEnabled: this.inviteResponsesEnabled() });
     }
-    return buildAttendeePreviewFromRsvps(this.rsvps(), this.currentOccurrence()?.occurrence_id);
+    return buildAttendeePreviewFromRsvps(this.rsvps(), this.resolvedOccurrenceId());
   });
   public readonly rsvpCounts: Signal<RsvpCounts> = this.initializeRsvpCounts();
   public readonly acceptedCount: Signal<number> = computed(() => this.rsvpCounts().accepted);
@@ -108,14 +112,12 @@ export class MeetingRsvpDetailsComponent {
     return computed(() => {
       const registrants = this.externallyManaged() && !this.pastMeeting() ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants;
       const confirmed = this.applicableConfirmedRsvps();
-      if (confirmed.length === 0) return registrants;
-      const occurrenceId = resolveRsvpOccurrenceId(this.meeting(), { occurrence: this.currentOccurrence() });
+      if (confirmed.length === 0 && !this.meeting().recurrence) return registrants;
       return registrants.map((registrant) => {
         const responses = confirmed.filter((rsvp) => rsvp.registrant_id === registrant.uid);
-        if (responses.length === 0) return registrant;
-        if (registrant.rsvp) responses.push(registrant.rsvp);
-        const rsvp = selectApplicableRsvp(occurrenceId, responses);
-        return rsvp && rsvp !== registrant.rsvp ? { ...registrant, rsvp } : registrant;
+        if (registrant.rsvp && this.isApplicableRsvp(registrant.rsvp)) responses.push(registrant.rsvp);
+        const rsvp = selectApplicableRsvp(this.resolvedOccurrenceId(), responses);
+        return rsvp !== (registrant.rsvp ?? null) ? { ...registrant, rsvp } : registrant;
       });
     });
   }
@@ -123,8 +125,13 @@ export class MeetingRsvpDetailsComponent {
   private applicableConfirmedRsvps(): MeetingRsvp[] {
     if (this.pastMeeting()) return [];
     const meeting = this.meeting();
-    const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.currentOccurrence() });
-    return this.confirmedRsvps().filter((rsvp) => rsvp.meeting_id === meeting.id && !!selectApplicableRsvp(occurrenceId, [rsvp]));
+    return this.confirmedRsvps().filter((rsvp) => rsvp.meeting_id === meeting.id && this.isApplicableRsvp(rsvp));
+  }
+
+  private isApplicableRsvp(rsvp: MeetingRsvp): boolean {
+    const occurrenceId = this.resolvedOccurrenceId();
+    if (this.meeting().recurrence && !occurrenceId) return rsvp.scope === 'all';
+    return !!selectApplicableRsvp(occurrenceId, [rsvp]);
   }
 
   private initializeUpcomingData(): Signal<{ rsvps: MeetingRsvp[]; registrants: MeetingRegistrant[] }> {
@@ -225,7 +232,7 @@ export class MeetingRsvpDetailsComponent {
       // `invite_accepted` fallback is unreachable without registrants but the
       // typical detail-page case has explicit RSVPs anyway.
       const rsvps = this.rsvps();
-      const occurrence = this.currentOccurrence();
+      const occurrence = this.currentOccurrence() ?? getCurrentOrNextOccurrence(this.meeting());
       return calculateRsvpCounts(occurrence, rsvps);
     });
   }
