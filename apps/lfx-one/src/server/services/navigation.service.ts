@@ -1,10 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { QUERY_SERVICE_FILTERS_OR_BATCH_SIZE } from '@lfx-one/shared/constants';
 import { ProjectFunding, ProjectStage } from '@lfx-one/shared/enums';
 import { GetLensItemsParams, LensItem, LensItemsQuery, LensItemsResponse, NavLens, Project, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation, getFormationSubStageLabel } from '@lfx-one/shared/utils';
 import { Request } from 'express';
+
+import { fetchAllQueryResources } from '../helpers/query-service.helper';
 
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -118,26 +121,49 @@ export class NavigationService {
     }
   }
 
-  /** Fetches specific projects by uid (a prior selection, or favorites not yet loaded into the current page) via a single batched OR query. */
+  /**
+   * Fetches specific projects by uid (a prior selection, or favorites not yet loaded into the
+   * current page). Chunks at `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE` and follows pagination within
+   * each batch via `fetchAllQueryResources` — mirrors `ProjectService.getProjectsByIds` — so a
+   * caller passing more than query-service's default page size (50) isn't silently truncated.
+   */
   private async fetchItemsByUids(req: Request, lens: NavLens, uids: string[]): Promise<LensItem[]> {
+    const batches: string[][] = [];
+    for (let i = 0; i < uids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(uids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
+
+    const batchResults = await Promise.all(batches.map((batch) => this.fetchItemsByUidsBatch(req, lens, batch)));
+    const projects = batchResults.flat();
+
+    // Mirror the main-pipeline contract so an archived item doesn't get re-injected —
+    // except FormationConfidential, which the listing hides but a prior pin must survive.
+    return projects
+      .filter((project) =>
+        lens === 'foundation'
+          ? computeIsFoundation(project)
+          : PROJECT_LENS_ALLOWED_STAGES.has(project.stage) || project.stage === ProjectStage.FormationConfidential
+      )
+      .map((project) => this.toLensItem(project));
+  }
+
+  private async fetchItemsByUidsBatch(req: Request, lens: NavLens, batch: string[]): Promise<Project[]> {
     try {
-      const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'project',
-        filters: [],
-        filters_or: uids.map((uid) => `uid:${uid}`),
-      });
-      const projects = (response?.resources ?? []).map((r) => r.data);
-      // Mirror the main-pipeline contract so an archived item doesn't get re-injected —
-      // except FormationConfidential, which the listing hides but a prior pin must survive.
-      return projects
-        .filter((project) =>
-          lens === 'foundation'
-            ? computeIsFoundation(project)
-            : PROJECT_LENS_ALLOWED_STAGES.has(project.stage) || project.stage === ProjectStage.FormationConfidential
-        )
-        .map((project) => this.toLensItem(project));
+      return await fetchAllQueryResources<Project>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project',
+            filters: [],
+            filters_or: batch.map((uid) => `uid:${uid}`),
+            // One call per batch — see ProjectService.fetchProjectBatchByIds for why page_size must exceed the batch size.
+            page_size: String(batch.length + 1),
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: false }
+      );
     } catch (error) {
-      logger.warning(req, 'fetch_items_by_uids', 'Failed to fetch pinned lens items', { err: error, uids, lens });
+      logger.warning(req, 'fetch_items_by_uids', 'Failed to fetch a batch of pinned lens items', { err: error, batch_size: batch.length, lens });
       return [];
     }
   }

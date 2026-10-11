@@ -285,11 +285,20 @@ export class NavigationService {
     reload$: Subject<void>
   ): Signal<LensItem[]> {
     // skip(1) drops toObservable's initial replay so fetches only fire on user search input.
+    // Clearing the search box (term becomes blank) is itself a transition back to browsing, so
+    // favorites must be re-injected then too — not just on an explicit reload$ (GH-3453).
     const searchTriggered$ = toObservable(searchTerm).pipe(
       skip(1),
       debounceTime(NAV_SEARCH_DEBOUNCE_MS),
       distinctUntilChanged(),
-      map((term) => ({ term, selectedUid: null as string | null, favoritedUids: null as string[] | null }))
+      map((term) => {
+        const browsing = !term.trim();
+        return {
+          term,
+          selectedUid: null as string | null,
+          favoritedUids: browsing ? [...this.favoriteProjectsService.state().data] : (null as string[] | null),
+        };
+      })
     );
 
     // Only inject the selected uid/favorites when no search is active — during search the user's
@@ -307,7 +316,23 @@ export class NavigationService {
       })
     );
 
-    const firstPage$ = merge(searchTriggered$, reloadTriggered$).pipe(
+    // Favorites load asynchronously (a preference GET) and can resolve after the initial browse
+    // fetch already ran with an empty set — re-fire once loading finishes so a favorite marked
+    // before that resolves isn't silently skipped (GH-3453). Gated on `loaded()` so this never
+    // fires an extra fetch before the lens has been browsed at all.
+    const favoritesLoaded$ = toObservable(this.favoriteProjectsService.state).pipe(
+      map((state) => state.loading),
+      distinctUntilChanged(),
+      skip(1),
+      filter((isLoading) => !isLoading && loaded() && !searchTerm().trim()),
+      map(() => ({
+        term: searchTerm(),
+        selectedUid: this.getSelectedUidForLens(lens),
+        favoritedUids: [...this.favoriteProjectsService.state().data],
+      }))
+    );
+
+    const firstPage$ = merge(searchTriggered$, reloadTriggered$, favoritesLoaded$).pipe(
       switchMap(({ term, selectedUid, favoritedUids }) => {
         generation.update((g) => g + 1);
         return this.fetchSinglePage(lens, term, null, loading, true, generation(), generation, selectedUid, favoritedUids);
