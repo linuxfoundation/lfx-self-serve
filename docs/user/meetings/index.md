@@ -53,9 +53,9 @@ If a recurring meeting's current or next date is unavailable, only an **All date
 
 The **Organized by me** checkbox combines with any response filter. It matches meetings you own; when no owner is recorded, the original creator is used. Inherited management access alone does not count as organizing.
 
-Declining does not remove a meeting from **All meetings**. To hide meetings you declined for every date, enable **Hide declined meetings**. A single-date decline does not hide the series, and meetings you organize remain visible. **Not going** always shows declined responses, regardless of the hide option.
+Declining does not remove a meeting from **All meetings**. To hide meetings you declined for every date, enable **Hides meetings declined for all dates.** A single-date decline does not hide the series. Hover over or focus the adjacent info icon for the reminder: "Meetings you organize remain visible." **Not going** always shows declined responses, regardless of the hide option.
 
-Needs response, Going, and organizer counts describe upcoming meetings before search, foundation, project, or meeting-type filters. Hide declined meetings is a separate checkbox without a count. Search and meeting type stay selected when changing the time tab. Foundation/project and personal response/organizer/hide selections reset when switching between Upcoming and Past. **Reset filters** clears every secondary selection without changing the time tab.
+Needs response, Going, and organizer counts describe upcoming meetings before search, foundation, project, or meeting-type filters. **Hides meetings declined for all dates.** is a separate checkbox without a count. Search and meeting type stay selected when changing the time tab. Foundation/project and personal response/organizer/hide selections reset when switching between Upcoming and Past. **Reset filters** clears every secondary selection without changing the time tab.
 
 At the top of My Meetings, **Meetings in the Next 7 Days** counts each upcoming date, including dates you declined. **Needs response** opens the response queue and clears other filters so they cannot hide meetings needing your answer. A successful response removes the meeting from that queue but keeps it findable under All meetings. Confirmed responses stay visible while the query index catches up.
 
