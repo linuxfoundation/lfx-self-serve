@@ -1,6 +1,15 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<div role="status" aria-live="polite" aria-atomic="true">
+  @if (hasItems() && committees().length > 0) {
+    <p class="text-sm text-gray-500 mb-3" [class.sr-only]="!hasMore()" data-testid="groups-card-grid-count">
+      Showing {{ visibleCards().length }} of {{ cards().length }}
+      {{ cards().length === 1 ? committeeLabel.singular.toLowerCase() : committeeLabel.plural.toLowerCase() }}
+    </p>
+  }
+</div>
+
 @if (!hasItems()) {
   <lfx-empty-state
     [withCard]="false"
@@ -21,12 +30,6 @@
     data-testid="groups-card-grid-no-results">
   </lfx-empty-state>
 } @else {
-  @if (hasMore()) {
-    <p class="text-sm text-gray-500 mb-3" data-testid="groups-card-grid-count" aria-live="polite">
-      Showing {{ visibleCards().length }} of {{ cards().length }}
-      {{ cards().length === 1 ? committeeLabel.singular.toLowerCase() : committeeLabel.plural.toLowerCase() }}
-    </p>
-  }
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" data-testid="groups-card-grid">
     @for (item of visibleCards(); track item.committee.uid) {
       <article
@@ -93,9 +96,9 @@
           } @else if (item.committee.has_mailing_list) {
             <span class="text-gray-500">Mailing list associated</span>
           }
-          @if (item.committee.chat_channel) {
+          @if (item.committee.chat_channel | validExternalUrl; as chatUrl) {
             <a
-              [href]="item.committee.chat_channel"
+              [href]="chatUrl"
               target="_blank"
               rel="noopener"
               class="text-blue-600 rounded focus-visible:outline-2 focus-visible:outline-blue-500"
@@ -103,6 +106,8 @@
               (click)="$event.stopPropagation()">
               <i class="fa-light fa-comments" aria-hidden="true"></i> Chat
             </a>
+          } @else if (item.committee.chat_channel) {
+            <span class="text-gray-500"> <i class="fa-light fa-comments" aria-hidden="true"></i> {{ item.committee.chat_channel }} </span>
           }
           @if (!item.committee.mailing_list && !item.committee.has_mailing_list && !item.committee.chat_channel) {
             <span class="text-gray-400">No channels</span>

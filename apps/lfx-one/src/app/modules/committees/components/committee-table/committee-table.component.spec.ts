@@ -176,6 +176,33 @@ describe('CommitteeTableComponent consumer behavior', () => {
     expect(element('[data-testid="committee-row-none"]').textContent).toContain('No channels');
   });
 
+  it.each(['#general', 'team-chat', 'javascript:alert(1)', 'data:text/html,chat', 'vbscript:msgbox(1)', 'file:///chat', 'ftp://example.com/chat'])(
+    'shows chat channel %s as informational text without a destination',
+    async (chatChannel) => {
+      await showRows([group({ chat_channel: chatChannel })]);
+      const channels = element('[data-testid="committee-row-synthetic-alpha"] td[data-label="Channels"]');
+      expect(channels.textContent).toContain(chatChannel);
+      expect(channels.querySelector('a, button, [tabindex]')).toBeNull();
+      expect(channels.textContent).not.toContain('No channels');
+    }
+  );
+
+  it.each([
+    { channel: 'https://slack.com/synthetic', destination: 'https://slack.com/synthetic' },
+    { channel: 'http://example.com/chat', destination: 'http://example.com/chat' },
+    { channel: 'example.com/chat', destination: 'https://example.com/chat' },
+  ])('opens normalized chat destination $destination without selecting its group', async ({ channel, destination }) => {
+    await showRows([group({ chat_channel: channel })]);
+    const link = element('[data-testid="committee-row-synthetic-alpha"] td[data-label="Channels"] a') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe(destination);
+    expect(link.target).toBe('_blank');
+    expect(link.rel).toContain('noopener');
+    link.addEventListener('click', (event) => event.preventDefault(), { once: true });
+    link.click();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.selected()).toBeNull();
+  });
+
   it('does not select a group from channels or copy, but does select from a noninteractive row cell', async () => {
     await showRows([group({ mailing_list: 'synthetic@example.test', chat_channel: 'https://slack.com/synthetic' })]);
     for (const selector of ['a[href^="mailto:"]', 'a[target="_blank"]', '[data-testid="public-group-copy-link-synthetic-alpha"]']) {

@@ -144,11 +144,11 @@
               <div class="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3" aria-label="Active filters" data-testid="groups-active-filters">
                 @for (chip of activeMyGroupFilters(); track chip.key) {
                   <span
-                    class="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full pl-3 pr-1 py-1 text-xs font-medium">
-                    {{ chip.label }}
+                    class="inline-flex min-w-0 max-w-full items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full pl-3 pr-1 py-1 text-xs font-medium">
+                    <span class="min-w-0 [overflow-wrap:anywhere]">{{ chip.label }}</span>
                     <button
                       type="button"
-                      class="inline-flex items-center justify-center w-7 h-7 rounded-full hover:bg-blue-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                      class="inline-flex shrink-0 items-center justify-center w-7 h-7 rounded-full hover:bg-blue-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
                       [attr.aria-label]="'Remove ' + chip.label + ' filter'"
                       [attr.data-testid]="'groups-remove-filter-' + chip.key"
                       (click)="removeMyGroupFilter(chip.key)">
@@ -168,11 +168,13 @@
           </section>
         }
 
-        @if (!myCommitteesLoading() && myCommittees().length > 0) {
-          <p class="text-sm text-gray-500" aria-live="polite" data-testid="groups-filtered-count">
-            {{ filteredMyCommittees().length }} {{ filteredMyCommittees().length === 1 ? 'group' : 'groups' }} matching your filters
-          </p>
-        }
+        <div role="status" aria-live="polite" aria-atomic="true">
+          @if (!myCommitteesLoading() && myCommittees().length > 0) {
+            <p class="text-sm text-gray-500" data-testid="groups-filtered-count">
+              {{ filteredMyCommittees().length }} {{ filteredMyCommittees().length === 1 ? 'group' : 'groups' }} matching your filters
+            </p>
+          }
+        </div>
         @if (myCommitteesLoading()) {
           <lfx-card styleClass="[&_.p-card-body]:!px-5">
             <div class="flex flex-col gap-4 py-2">

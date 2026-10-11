@@ -110,6 +110,34 @@ describe('MyGroupsCardGridComponent', () => {
     expect(router.url).toBe('/');
   });
 
+  it.each(['#general', 'team-chat', 'javascript:alert(1)', 'data:text/html,chat', 'vbscript:msgbox(1)', 'file:///chat', 'ftp://example.com/chat'])(
+    'shows chat channel %s as informational text without a destination',
+    async (chatChannel) => {
+      await render([group({ chat_channel: chatChannel })]);
+      const channels = element('groups-card-grid-channels-group-1');
+      expect(channels.textContent).toContain(chatChannel);
+      expect(channels.querySelector('a, button, [tabindex]')).toBeNull();
+      expect(channels.textContent).not.toContain('No channels');
+    }
+  );
+
+  it.each([
+    { channel: 'https://slack.com/synthetic', destination: 'https://slack.com/synthetic' },
+    { channel: 'http://example.com/chat', destination: 'http://example.com/chat' },
+    { channel: 'example.com/chat', destination: 'https://example.com/chat' },
+  ])('opens normalized chat destination $destination without opening group detail', async ({ channel, destination }) => {
+    await render([group({ chat_channel: channel })]);
+    const link = element('groups-card-grid-channels-group-1').querySelector<HTMLAnchorElement>('a');
+    expect(link).not.toBeNull();
+    expect(link!.getAttribute('href')).toBe(destination);
+    expect(link!.target).toBe('_blank');
+    expect(link!.rel).toContain('noopener');
+    link!.addEventListener('click', (event) => event.preventDefault(), { once: true });
+    link!.click();
+    await fixture.whenStable();
+    expect(router.url).toBe('/');
+  });
+
   it('reports clipboard failure without navigating and falls back to the UID', async () => {
     writeText.mockRejectedValueOnce(new Error('denied'));
     element<HTMLButtonElement>('public-group-copy-link-group-1').click();
@@ -147,6 +175,22 @@ describe('MyGroupsCardGridComponent', () => {
     expect(element('groups-card-grid-item-group-1').textContent).toContain('Synthetic owner');
     expect(element('groups-card-grid-item-group-1').textContent).not.toContain('Fallback foundation');
     expect(element('groups-card-grid-item-group-2').textContent).toContain('Known fallback');
+  });
+
+  it('keeps reveal announcements available through the final page and empty-filter transitions', async () => {
+    const committees = Array.from({ length: GROUPS_CARD_GRID_PAGE_SIZE + 1 }, (_, index) => group({ uid: `group-${index}` }));
+    await render(committees);
+    const status = fixture.nativeElement.querySelector('[role="status"]') as HTMLElement;
+    expect(status.textContent).toMatch(new RegExp(`Showing\\s+${GROUPS_CARD_GRID_PAGE_SIZE}\\s+of\\s+${committees.length}`));
+    element('groups-card-grid-show-more').querySelector('button')!.click();
+    await fixture.whenStable();
+    expect(status.isConnected).toBe(true);
+    expect(status.textContent).toMatch(new RegExp(`Showing\\s+${committees.length}\\s+of\\s+${committees.length}`));
+    await render([]);
+    expect(status.isConnected).toBe(true);
+    expect(status.textContent?.trim()).toBe('');
+    await render(committees);
+    expect(status.textContent).toMatch(new RegExp(`Showing\\s+${committees.length}\\s+of\\s+${committees.length}`));
   });
 
   it('preserves revealed pages when filters narrow and then widen the inventory', async () => {

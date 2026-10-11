@@ -18,6 +18,7 @@
 import type { MyCommittee, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
 import { GROUPS_CARD_GRID_PAGE_SIZE, GROUPS_VIEW_MODE_STORAGE_KEY, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 
 test.setTimeout(60_000);
 
@@ -129,6 +130,7 @@ function skipWhenAuthMissing(): void {
 }
 
 async function gotoMyGroups(page: Page): Promise<void> {
+  await suppressCookieBanner(page);
   skipWhenAuthMissing();
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
@@ -146,6 +148,49 @@ test.describe('My Groups — list↔card view toggle', () => {
     await stubPendingInvitations(page);
     await stubMyCommittees(page, buildMyCommittees());
     await gotoMyGroups(page);
+  });
+
+  test('List stacks readable labeled cells on mobile without overflow and retains desktop table rows', async ({ page }) => {
+    await page.getByTestId('groups-view-list-btn').click();
+    const table = page.getByTestId('committees-me-table');
+    const row = table.locator('tbody > tr').first();
+    await page.setViewportSize({ width: 375, height: 850 });
+    await expect(row).toHaveCSS('display', 'flex');
+    await expect(row).toHaveCSS('flex-direction', 'column');
+    for (const label of ['Group', 'My Role', 'Type', 'Members', 'Channels', 'Voting', 'Updated', 'Actions']) {
+      const cell = row.locator(`td[data-label="${label}"]`);
+      await expect(cell).toBeVisible();
+      const style = await cell.evaluate((element) => {
+        const before = getComputedStyle(element, '::before');
+        return { content: before.content, visibility: before.visibility, display: before.display };
+      });
+      expect(style.content).toBe(`"${label}"`);
+      expect(style.visibility).toBe('visible');
+      expect(style.display).not.toBe('none');
+    }
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.setViewportSize({ width: 1280, height: 850 });
+    await expect(row).toHaveCSS('display', 'table-row');
+    await expect(table.locator('thead')).toBeVisible();
+    await expect(table.locator('table')).toHaveCSS('display', 'table');
+  });
+
+  test('long search chips keep their remove action in the mobile viewport and retain the full query', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 850 });
+    const query = 'unbroken-search-'.repeat(40);
+    const search = page.getByTestId('committee-search-input').getByRole('textbox');
+    await search.fill(query);
+    const remove = page.getByRole('button', { name: `Remove Search: ${query} filter`, exact: true });
+    await expect(remove).toBeVisible();
+    await expect(search).toHaveValue(query);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const bounds = await remove.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(375);
+    await remove.click();
+    await expect(search).toHaveValue('');
+    await expect(page.getByText('Technical Steering Committee', { exact: true })).toBeVisible();
   });
 
   test('defaults to list view, and Card switches to the card grid', async ({ page }) => {

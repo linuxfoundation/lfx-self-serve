@@ -12,12 +12,13 @@ import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE, JOIN_MODE_TOOLTIPS } from 
 import { MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity, resolveJoinModeSeverity, resolveTypeDisplay } from '@lfx-one/shared/utils';
 import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
+import { ValidExternalUrlPipe } from '@app/shared/pipes/valid-external-url.pipe';
 import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-my-groups-card-grid',
-  imports: [BadgeComponent, ButtonComponent, EmptyStateComponent, RouterLink, TagComponent, JoinModeLabelPipe, TooltipModule],
+  imports: [BadgeComponent, ButtonComponent, EmptyStateComponent, RouterLink, TagComponent, JoinModeLabelPipe, ValidExternalUrlPipe, TooltipModule],
   templateUrl: './my-groups-card-grid.component.html',
 })
 export class MyGroupsCardGridComponent {
