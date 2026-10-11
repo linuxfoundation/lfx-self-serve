@@ -139,7 +139,7 @@ export class MeetingsDashboardComponent {
   public refresh$: BehaviorSubject<void>;
   public searchQuery: WritableSignal<string>;
   public debouncedSearchQuery: Signal<string>;
-  public meetingView: WritableSignal<MeetingDashboardView>;
+  public meetingView = signal<MeetingDashboardView>(this.route.snapshot.queryParamMap.get('time') === 'past' ? 'past' : 'upcoming');
   public timeFilter: Signal<'upcoming' | 'past'>;
   public meetingTypeFilter: WritableSignal<string | null>;
   public meetingTypeOptions: Signal<{ label: string; value: string | null }[]>;
@@ -225,8 +225,6 @@ export class MeetingsDashboardComponent {
     this.refresh$ = new BehaviorSubject<void>(undefined);
     this.searchQuery = signal<string>('');
     this.debouncedSearchQuery = toSignal(toObservable(this.searchQuery).pipe(debounceTime(300), distinctUntilChanged()), { initialValue: '' });
-    const initialView = this.route.snapshot.queryParamMap.get('time') === 'past' ? 'past' : 'upcoming';
-    this.meetingView = signal<MeetingDashboardView>(initialView);
     this.timeFilter = computed(() => (this.meetingView() === 'past' ? 'past' : 'upcoming'));
     this.meetingTypeFilter = signal<string | null>(null);
     this.foundationFilter = signal<string | null>(null);

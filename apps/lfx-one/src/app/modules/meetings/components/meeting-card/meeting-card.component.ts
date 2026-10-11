@@ -199,11 +199,8 @@ export class MeetingCardComponent implements OnInit {
   } | null> = this.initMeetingTypeBadge();
   public readonly containerClass: Signal<string> = this.initContainerClass();
   public readonly currentOccurrence: Signal<MeetingOccurrence | null> = this.initCurrentOccurrence();
-  public readonly rsvpMeeting: Signal<Meeting> = computed(() => {
-    const meeting = this.meeting();
-    const myRsvp = this.meetingInput().my_rsvp;
-    return meeting.my_rsvp === myRsvp ? meeting : { ...meeting, my_rsvp: myRsvp };
-  });
+  public readonly rsvpMeeting: Signal<Meeting> = this.initRsvpMeeting();
+  public readonly overviewConfirmedRsvps: Signal<MeetingRsvp[]> = this.initOverviewConfirmedRsvps();
   // Recurrence rule that drives the cadence badge: the displayed occurrence's own override
   // when present (cadence changed at/after it — LFXV2-2112), otherwise the series rule.
   public readonly displayRecurrence: Signal<MeetingRecurrence | null> = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
@@ -982,6 +979,22 @@ export class MeetingCardComponent implements OnInit {
       }
 
       return 'bg-white rounded-xl border-0 shadow-md';
+    });
+  }
+
+  private initRsvpMeeting(): Signal<Meeting> {
+    return computed(() => {
+      const meeting = this.meeting();
+      const myRsvp = this.meetingInput().my_rsvp;
+      return meeting.my_rsvp === myRsvp ? meeting : { ...meeting, my_rsvp: myRsvp };
+    });
+  }
+
+  private initOverviewConfirmedRsvps(): Signal<MeetingRsvp[]> {
+    return computed(() => {
+      const supplied = this.meetingInput().my_rsvp;
+      const confirmed = this.confirmedRsvps();
+      return supplied ? [...confirmed, supplied] : confirmed;
     });
   }
 

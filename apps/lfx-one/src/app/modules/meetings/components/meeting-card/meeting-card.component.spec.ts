@@ -757,6 +757,23 @@ describe('MeetingCardComponent — RSVP cache freshness', () => {
       expect(overview.acceptedCount()).toBe(success ? 1 : 0);
       expect(overview.registrants()[0].rsvp?.response_type ?? null).toBe(success ? 'accepted' : null);
     }
+    if (organizer && success) {
+      fixture.destroy();
+      const recreated = TestBed.createComponent(MeetingCardComponent);
+      recreated.componentRef.setInput('meetingInput', { ...meeting, my_rsvp: rsvp });
+      recreated.detectChanges();
+      for (const block of await recreated.getDeferBlocks()) {
+        await block.render(DeferBlockState.Complete);
+      }
+      recreated.detectChanges();
+      for (const request of http.match('/api/meetings/synthetic-rsvp/rsvp/me')) {
+        request.flush(null);
+      }
+      const overview = recreated.debugElement.query(By.directive(MeetingRsvpDetailsComponent)).componentInstance as MeetingRsvpDetailsComponent;
+      expect(overview.acceptedCount()).toBe(1);
+      expect(overview.registrants()[0].rsvp?.response_type).toBe('accepted');
+      recreated.destroy();
+    }
     for (const request of http.match('/api/profile')) {
       request.flush({ profile: {} });
     }

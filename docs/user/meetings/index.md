@@ -59,6 +59,8 @@ At the top of My Meetings, **Meetings in the Next 7 Days** counts each upcoming 
 
 Foundation and Project dashboards keep their Upcoming/Past choices and existing calendar, paging, and Subscribe controls. Personal response and organizer selections never narrow a scoped list.
 
+Responses saved in a Foundation or Project view invalidate your personal meeting list without loading it in the background. Returning to My Meetings or your personal dashboard fetches that list again.
+
 Empty states differ by lens:
 
 - Me lens, no upcoming meetings: "No upcoming meetings — Meetings from your committees and projects will appear here."

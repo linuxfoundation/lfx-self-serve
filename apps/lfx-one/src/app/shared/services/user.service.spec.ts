@@ -4,7 +4,7 @@
 import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
-import { User } from '@lfx-one/shared/interfaces';
+import { Meeting, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -52,6 +52,26 @@ describe('UserService', () => {
 
     service.user.set({ username: 'display-alias', 'https://sso.linuxfoundation.org/claims/username': 'canonical' } as User);
     expect(service.viewerUsername()).toBe('canonical');
+  });
+
+  it('refetches a primed personal feed on return after an inactive-lens response without fetching while inactive', () => {
+    const pending = { id: 'synthetic-meeting', is_invite_responses_enabled: true, my_rsvp: null } as Meeting;
+    const accepted = { ...pending, my_rsvp: { response_type: 'accepted', scope: 'all' } } as Meeting;
+    let currentRows = [pending];
+    httpGet.mockImplementation((url: string) => of(url === '/api/user/meetings' ? currentRows : { profile: {} }));
+    const first = service.getUserMeetings().subscribe();
+    first.unsubscribe();
+    currentRows = [accepted];
+    httpGet.mockClear();
+
+    service.refreshUserMeetings(false);
+    expect(httpGet).not.toHaveBeenCalled();
+
+    let returnedRows: Meeting[] = [];
+    const returning = service.getUserMeetings().subscribe((rows) => (returnedRows = rows));
+    expect(returnedRows.find((meeting) => meeting.id === pending.id)?.my_rsvp?.response_type).toBe('accepted');
+    expect(returnedRows.filter((meeting) => meeting.is_invite_responses_enabled && !meeting.my_rsvp)).toEqual([]);
+    returning.unsubscribe();
   });
 
   it('falls back to the Auth0 picture claim when no avatar has been uploaded', () => {

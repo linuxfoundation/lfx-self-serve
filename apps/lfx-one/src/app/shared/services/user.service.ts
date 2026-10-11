@@ -85,6 +85,7 @@ export class UserService {
   private userPastMeetingsDestroy$ = new Subject<void>();
   private userLatestPastMeetingsDestroy$ = new Subject<void>();
   private userMeetings$: Observable<Meeting[]> | null = null;
+  private userMeetingsDirty = false;
   private userPastMeetings$: Observable<PastMeeting[]> | null = null;
   private userLatestPastMeetings$: Observable<PastMeeting[]> | null = null;
 
@@ -282,10 +283,16 @@ export class UserService {
   /**
    * Gets all meetings for the current authenticated user.
    * Returns a shared, cached observable. Call refreshUserMeetings() after
-   * any mutation that could change the list (e.g. new registration) to
-   * push fresh data to all subscribers.
+   * mutations to push fresh data to subscribers, or pass false outside the Me
+   * lens to invalidate the replay and fetch when a personal consumer returns.
    */
   public getUserMeetings(): Observable<Meeting[]> {
+    if (this.userMeetingsDirty) {
+      this.userMeetingsDestroy$.next();
+      this.userMeetingsDestroy$ = new Subject<void>();
+      this.userMeetings$ = null;
+      this.userMeetingsDirty = false;
+    }
     if (!this.userMeetings$) {
       // Capture the current destroy$ at build time — when the user changes, we swap the field
       // to a new Subject after firing .next() on this one, so the old chain completes cleanly.
@@ -341,9 +348,14 @@ export class UserService {
   }
 
   /**
-   * Re-fetch the user's upcoming meetings. All current subscribers receive the new data.
+   * Re-fetch the user's upcoming meetings, or invalidate them for the next personal consumer.
    */
-  public refreshUserMeetings(): void {
+  public refreshUserMeetings(fetchImmediately = true): void {
+    if (!fetchImmediately) {
+      this.userMeetingsDirty = true;
+      return;
+    }
+    this.userMeetingsDirty = false;
     this.userMeetingsRefresh$.next();
   }
 

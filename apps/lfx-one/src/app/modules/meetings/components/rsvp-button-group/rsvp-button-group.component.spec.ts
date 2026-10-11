@@ -232,6 +232,24 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
     expect(fixture.componentInstance.responseSaved()).toBe(false);
   });
 
+  it('reconciles an undated successful acknowledgement with a later indexed response', async () => {
+    const fixture = await mount();
+    flushRead(null);
+    fixture.componentInstance.handleRsvpClick('accepted');
+    dialogClose.next({ confirmed: true, scope: 'all' });
+    const undated = { ...response('accepted', 'all'), created_at: undefined };
+    http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush(undated);
+    expect(fixture.componentInstance.selectedResponse()).toBe('accepted');
+
+    const newer = { ...response('declined', 'all'), modified_at: '2026-10-10T11:00:00Z' };
+    fixture.componentRef.setInput('meeting', { ...MEETING, my_rsvp: newer });
+    fixture.detectChanges();
+    TestBed.tick();
+    flushRead(newer);
+    expect(fixture.componentInstance.selectedResponse()).toBe('declined');
+    expect(fixture.componentInstance.responseSaved()).toBe(false);
+  });
+
   it('applies a confirmed all-dates response to another date without sending an occurrence ID', async () => {
     const fixture = await mount();
     flushRead(null);

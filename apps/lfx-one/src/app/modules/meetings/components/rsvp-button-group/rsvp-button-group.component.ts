@@ -81,14 +81,7 @@ export class RsvpButtonGroupComponent {
     return response ? this.formatResponse(response) : null;
   });
   public readonly responseSaved: Signal<boolean> = computed(() => !!this.confirmedRsvp() && this.currentRsvp() === this.confirmedRsvp());
-  public readonly responseScopeLabel: Signal<string | null> = computed(() => {
-    const rsvp = this.currentRsvp();
-    if (!rsvp || !this.isRecurring()) {
-      return null;
-    }
-    const compositeOccurrenceId = rsvp.meeting_and_occurrence_id?.split('-').pop();
-    return this.formatScope(rsvp.scope, rsvp.occurrence_id || compositeOccurrenceId);
-  });
+  public readonly responseScopeLabel: Signal<string | null> = this.initializeResponseScopeLabel();
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
 
   public handleRsvpClick(response: RsvpResponse): void {
@@ -165,7 +158,12 @@ export class RsvpButtonGroupComponent {
       .createMeetingRsvp(meetingUid, request)
       .pipe(
         tap((rsvp: MeetingRsvp) => {
-          const savedRsvp = { ...rsvp, occurrence_id: rsvp.occurrence_id || scopedOccurrenceId };
+          const savedRsvp = {
+            ...rsvp,
+            occurrence_id: rsvp.occurrence_id || scopedOccurrenceId,
+            // Undated acknowledgements still need a confirmation time for newer indexed writes to win.
+            updated_at: rsvp.updated_at || rsvp.modified_at || rsvp.created_at || new Date().toISOString(),
+          };
           // The successful POST is authoritative. Never replace it with a stale/null
           // query-service refetch while the new response is still being indexed.
           if (this.confirmedContext() !== context) {
@@ -183,10 +181,8 @@ export class RsvpButtonGroupComponent {
           }
           // Show the global confirmation before the parent removes a Needs response card.
           this.rsvpChanged.emit(savedRsvp);
-          // Refresh personal meeting caches only while their lens is active.
-          if (this.lensService.activeLens() === 'me') {
-            this.userService.refreshUserMeetings();
-          }
+          // Defer personal refetches outside Me without keeping a stale replay on return.
+          this.userService.refreshUserMeetings(this.lensService.activeLens() === 'me');
         }),
         catchError((error: HttpErrorResponse) => {
           let errorMessage = 'Failed to update RSVP. Please try again.';
@@ -224,6 +220,17 @@ export class RsvpButtonGroupComponent {
 
   private initializeIsRecurring(): Signal<boolean> {
     return computed(() => !!this.meeting().recurrence);
+  }
+
+  private initializeResponseScopeLabel(): Signal<string | null> {
+    return computed(() => {
+      const rsvp = this.currentRsvp();
+      if (!rsvp || !this.isRecurring()) {
+        return null;
+      }
+      const compositeOccurrenceId = rsvp.meeting_and_occurrence_id?.split('-').pop();
+      return this.formatScope(rsvp.scope, rsvp.occurrence_id || compositeOccurrenceId);
+    });
   }
 
   private initializeFetchedRsvp(): Signal<{ context: string; occurrenceId?: string; rsvp: MeetingRsvp | null } | null> {
