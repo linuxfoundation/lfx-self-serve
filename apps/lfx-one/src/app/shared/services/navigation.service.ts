@@ -317,14 +317,17 @@ export class NavigationService {
     );
 
     // Favorites load asynchronously (a preference GET) and can resolve after the initial browse
-    // fetch already ran with an empty set — re-fire once loading finishes so a favorite marked
-    // before that resolves isn't silently skipped (GH-3453). Gated on `loaded()` so this never
-    // fires an extra fetch before the lens has been browsed at all.
+    // fetch already ran with an empty set — or while that fetch is still in flight — so re-fire
+    // once loading finishes (GH-3453). Gated on `generation() > 0` rather than `loaded()`: a browse
+    // request increments `generation` the moment it starts (see firstPage$ below), so this also
+    // catches favorites resolving mid-flight, where `switchMap` cancels the stale in-flight request
+    // and restarts it with favorites included. `generation() === 0` only before any browse has
+    // started at all, so this still never fires a spurious fetch pre-browse.
     const favoritesLoaded$ = toObservable(this.favoriteProjectsService.state).pipe(
       map((state) => state.loading),
       distinctUntilChanged(),
       skip(1),
-      filter((isLoading) => !isLoading && loaded() && !searchTerm().trim()),
+      filter((isLoading) => !isLoading && generation() > 0 && !searchTerm().trim()),
       map(() => ({
         term: searchTerm(),
         selectedUid: this.getSelectedUidForLens(lens),

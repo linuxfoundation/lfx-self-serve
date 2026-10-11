@@ -7,7 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { NAV_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { LensItemsResponse } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FavoriteProjectsService } from './favorite-projects.service';
@@ -104,6 +104,51 @@ describe('NavigationService — favoritedUids threading (GH-3453)', () => {
     await Promise.resolve();
 
     expect(http.get).toHaveBeenCalled();
+    expect(lastParams().get('favorited_uids')).toBe('fav-1');
+  });
+
+  it('cancels and restarts an in-flight browse fetch once favorites finish loading mid-flight', async () => {
+    const inFlight = new Subject<LensItemsResponse>();
+    http.get.mockReturnValueOnce(inFlight).mockReturnValue(of(emptyPage()));
+    favoriteState.set({ data: new Set<string>(), loading: true, error: false });
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: HttpClient, useValue: http },
+        {
+          provide: LensService,
+          useValue: { activeLens: signal('project'), availableLenses: signal([]), isHybridPersona: signal(false), setLens: vi.fn() },
+        },
+        {
+          provide: ProjectContextService,
+          useValue: {
+            selectedFoundation: signal(null),
+            selectedProject: signal(null),
+            clearFoundation: vi.fn(),
+            clearProject: vi.fn(),
+            setFoundation: vi.fn(),
+            setProject: vi.fn(),
+          },
+        },
+        { provide: PersonaService, useValue: { personaProjects: signal({}) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: FavoriteProjectsService, useValue: { state: favoriteState } },
+      ],
+    });
+    http.get.mockClear();
+    TestBed.inject(NavigationService);
+    TestBed.inject(ApplicationRef).tick();
+
+    // The initial browse request is still in flight (never resolved via `inFlight`) when favorites finish loading.
+    expect(http.get).toHaveBeenCalledTimes(1);
+    expect(lastParams().has('favorited_uids')).toBe(false);
+
+    favoriteState.set({ data: new Set(['fav-1']), loading: false, error: false });
+    TestBed.inject(ApplicationRef).tick();
+    await Promise.resolve();
+
+    expect(http.get).toHaveBeenCalledTimes(2);
     expect(lastParams().get('favorited_uids')).toBe('fav-1');
   });
 });
