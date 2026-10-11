@@ -195,8 +195,11 @@ export class MeetingsDashboardComponent {
   protected readonly meLensStatsLoading: Signal<boolean>;
   protected readonly nextWindowCount: Signal<number>;
   protected readonly nextMeetingLabel: Signal<string>;
+  protected readonly allMeetingsCount: Signal<number>;
   protected readonly pendingRsvpCount: Signal<number>;
   protected readonly acceptedCount: Signal<number>;
+  protected readonly maybeCount: Signal<number>;
+  protected readonly declinedCount: Signal<number>;
   protected readonly earliestPendingRsvpLabel: Signal<string>;
   protected readonly organizerCount: Signal<number>;
   protected readonly pastThisMonthCount: Signal<number>;
@@ -261,8 +264,11 @@ export class MeetingsDashboardComponent {
     this.meLensStatsLoading = computed(() => (this.timeFilter() === 'past' ? this.pastMeetingsLoading() : this.meetingsLoading()));
     this.nextWindowCount = this.initNextWindowCount();
     this.nextMeetingLabel = this.initNextMeetingLabel();
+    this.allMeetingsCount = computed(() => this.sortedUpcomingUserMeetings().length);
     this.pendingRsvpCount = computed(() => this.sortedUpcomingUserMeetings().filter((m) => this.isPendingRsvp(m)).length);
     this.acceptedCount = computed(() => this.sortedUpcomingUserMeetings().filter((m) => isMeetingInviteResponsesEnabled(m) && isMeetingAccepted(m)).length);
+    this.maybeCount = this.initResponseCount('maybe');
+    this.declinedCount = this.initResponseCount('declined');
     this.earliestPendingRsvpLabel = this.initEarliestPendingRsvpLabel();
     this.organizerCount = this.initOrganizerCount();
     this.pastThisMonthCount = this.initPastThisMonthCount();
@@ -792,6 +798,18 @@ export class MeetingsDashboardComponent {
   private initializeFilteredMeetings(): Signal<(Meeting | PastMeeting)[]> {
     return computed(() => {
       return this.timeFilter() === 'past' ? this.pastMeetings() : this.upcomingMeetings();
+    });
+  }
+
+  private initResponseCount(response: MeetingRsvp['response_type']): Signal<number> {
+    return computed(() => {
+      let count = 0;
+      for (const meeting of this.sortedUpcomingUserMeetings()) {
+        if (isMeetingInviteResponsesEnabled(meeting) && getApplicableMeetingRsvp(meeting)?.response_type === response) {
+          count++;
+        }
+      }
+      return count;
     });
   }
 

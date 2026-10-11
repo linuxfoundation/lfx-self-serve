@@ -334,6 +334,9 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
 
     expect(component['pendingRsvpCount']()).toBe(2);
     expect(component['acceptedCount']()).toBe(answer === 'accepted' ? 1 : 0);
+    expect(component['allMeetingsCount']()).toBe(3);
+    expect(component['maybeCount']()).toBe(answer === 'maybe' ? 1 : 0);
+    expect(component['declinedCount']()).toBe(answer === 'declined' ? 1 : 0);
     respond(component, answer);
     expect(ids(component)).toEqual(['all-dates']);
     respond(component, 'pending');

@@ -29,8 +29,11 @@ export class MeetingsTopBarComponent {
   public readonly responseFilter = input<MeetingResponseFilter>('all');
   public readonly organizedByMe = input<boolean>(false);
   public readonly hideDeclined = input<boolean>(false);
+  public readonly allMeetingsCount = input<number | null>(null);
   public readonly pendingRsvpCount = input<number | null>(null);
   public readonly acceptedCount = input<number | null>(null);
+  public readonly maybeCount = input<number | null>(null);
+  public readonly declinedCount = input<number | null>(null);
   public readonly organizerCount = input<number | null>(null);
   public readonly hideDeclinedTooltip = 'Meetings you organize remain visible.';
   public readonly meetingTypeFilter = input<string | null>(null);
@@ -59,10 +62,7 @@ export class MeetingsTopBarComponent {
     hideDeclined: new FormControl(false, { nonNullable: true }),
   });
 
-  public readonly organizerLabel = computed(() => {
-    const count = this.organizerCount();
-    return count === null ? 'Organized by me' : `Organized by me (${count})`;
-  });
+  public readonly organizerLabel = computed(() => this.formatCountLabel('Organized by me', this.organizerCount()));
 
   public readonly meetingViewOptions: FilterPillOption[] = [
     { id: 'upcoming', label: 'Upcoming' },
@@ -127,15 +127,17 @@ export class MeetingsTopBarComponent {
 
   private initResponseFilterOptions(): Signal<FilterPillOption[]> {
     return computed<FilterPillOption[]>(() => {
-      const pendingCount = this.pendingRsvpCount();
-      const acceptedCount = this.acceptedCount();
       return [
-        { id: 'all', label: 'All meetings' },
-        { id: 'pending', label: pendingCount === null ? 'Needs response' : `Needs response (${pendingCount})` },
-        { id: 'accepted', label: acceptedCount === null ? 'Going' : `Going (${acceptedCount})` },
-        { id: 'maybe', label: 'Maybe' },
-        { id: 'declined', label: 'Not going' },
+        { id: 'all', label: this.formatCountLabel('All meetings', this.allMeetingsCount()) },
+        { id: 'pending', label: this.formatCountLabel('Needs response', this.pendingRsvpCount()) },
+        { id: 'accepted', label: this.formatCountLabel('Going', this.acceptedCount()) },
+        { id: 'maybe', label: this.formatCountLabel('Maybe', this.maybeCount()) },
+        { id: 'declined', label: this.formatCountLabel('Not going', this.declinedCount()) },
       ];
     });
+  }
+
+  private formatCountLabel(label: string, count: number | null): string {
+    return count !== null && count > 0 ? `${label} (${count})` : label;
   }
 }

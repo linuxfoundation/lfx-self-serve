@@ -24,20 +24,33 @@ describe('MeetingsTopBarComponent', () => {
     return result as T;
   }
 
-  it('shows the Accepted response count and pressed state, including zero and unknown counts', async () => {
-    fixture.componentRef.setInput('responseFilter', 'accepted');
-    fixture.componentRef.setInput('acceptedCount', 3);
-    await fixture.whenStable();
-    expect(element<HTMLButtonElement>('filter-pill-accepted').getAttribute('aria-pressed')).toBe('true');
-    expect(element<HTMLButtonElement>('filter-pill-accepted').textContent?.trim()).toBe('Going (3)');
+  it.each([
+    ['all', 'allMeetingsCount'],
+    ['pending', 'pendingRsvpCount'],
+    ['accepted', 'acceptedCount'],
+    ['maybe', 'maybeCount'],
+    ['declined', 'declinedCount'],
+    ['organizer', 'organizerCount'],
+  ])('hides the %s count when it reaches zero or becomes unknown without losing selection', async (filter, input) => {
+    const organizer = filter === 'organizer';
+    fixture.componentRef.setInput(organizer ? 'organizedByMe' : 'responseFilter', organizer ? true : filter);
+    const selector = organizer ? '[data-testid="organized-by-me-checkbox"] label' : `[data-testid="filter-pill-${filter}"]`;
+    const label = fixture.nativeElement.querySelector(selector).textContent.trim();
 
-    fixture.componentRef.setInput('acceptedCount', 0);
+    fixture.componentRef.setInput(input, 3);
     await fixture.whenStable();
-    expect(element<HTMLButtonElement>('filter-pill-accepted').textContent?.trim()).toBe('Going (0)');
+    expect(fixture.nativeElement.querySelector(selector).textContent.trim()).toBe(`${label} (3)`);
 
-    fixture.componentRef.setInput('acceptedCount', null);
-    await fixture.whenStable();
-    expect(element<HTMLButtonElement>('filter-pill-accepted').textContent?.trim()).toBe('Going');
+    for (const count of [0, null]) {
+      fixture.componentRef.setInput(input, count);
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelector(selector).textContent.trim()).toBe(label);
+      if (organizer) {
+        expect(element<HTMLInputElement>('organized-by-me-checkbox').checked).toBe(true);
+      } else {
+        expect(element<HTMLButtonElement>(`filter-pill-${filter}`).getAttribute('aria-pressed')).toBe('true');
+      }
+    }
   });
 
   it('emits Accepted and All response choices independently of the time selection', async () => {
