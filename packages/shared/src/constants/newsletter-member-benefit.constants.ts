@@ -131,3 +131,10 @@ export const NEWSLETTER_INVITE_INVITER_NAME_MAX_LENGTH = 64;
  * `to` sent to the email service and the `email:` roster filter can only name one ordinary mailbox.
  */
 export const NEWSLETTER_INVITE_EMAIL_PATTERN = /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/;
+
+/**
+ * `res.locals` key the invite controller sets when a failed invite must still spend the sender's
+ * rate-limit budget (anything past input-shape checks, e.g. a non-member domain) — so the member
+ * domain check cannot be probed for free.
+ */
+export const NEWSLETTER_INVITE_COUNTED_LOCALS_KEY = 'newsletterInviteCounted';

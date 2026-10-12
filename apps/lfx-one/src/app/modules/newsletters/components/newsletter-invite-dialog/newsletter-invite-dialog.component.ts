@@ -76,8 +76,9 @@ export class NewsletterInviteDialogComponent {
     const email = this.emailValue();
     this.sending.set(true);
     this.newsletterService
+      // A write: no takeUntilDestroyed — closing the dialog mid-request must not abort the POST
+      // (the service's take(1) completes it).
       .sendNewsletterInvite(this.foundation.uid, email)
-      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
           this.sending.set(false);

@@ -240,8 +240,11 @@ export class NewsletterService {
       if (!owner) return row;
       const isFoundation = computeIsFoundation(owner);
       const parent = !isFoundation && owner.parent_uid ? (owners.get(owner.parent_uid) ?? parents.get(owner.parent_uid)) : undefined;
-      // Same roll-up as the invite service: the owner when it is a foundation (or has no parent), else its parent.
-      const foundation = isFoundation || !owner.parent_uid ? owner : parent;
+      // Same roll-up as the invite service: the owner when it is a foundation (or has no parent), else
+      // its parent only when that parent is a confirmed foundation. Otherwise untagged — the row then
+      // groups under its own project.
+      const confirmedParent = parent && computeIsFoundation(parent) ? parent : undefined;
+      const foundation = isFoundation || !owner.parent_uid ? owner : confirmedParent;
       return {
         ...row,
         project_name: owner.name,

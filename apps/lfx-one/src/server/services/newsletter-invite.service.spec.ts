@@ -5,6 +5,7 @@
 // compiler must be present in this plain-Node runtime.
 import '@angular/compiler';
 
+import { ProjectFunding } from '@lfx-one/shared/enums';
 import type { MyNewsletter, Project } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -41,8 +42,12 @@ const FOUNDATION: Partial<Project> = {
   slug: 'acme-foundation',
   name: 'Acme Foundation',
   logo_url: 'https://logos.example/acme.png',
-  stage: 'Formation',
+  stage: 'Active',
+  funding: ProjectFunding.Funded,
+  funding_model: ['Membership'],
 };
+const PLAIN_PARENT: Partial<Project> = { uid: 'pp-1', slug: 'plain-parent', name: 'Plain Parent', parent_uid: 'f-1' };
+const GRANDCHILD: Partial<Project> = { uid: 'gc-1', slug: 'grandchild', name: 'Grandchild', parent_uid: 'pp-1' };
 const CHILD: Partial<Project> = { uid: 'p-1', slug: 'acme-child', name: 'Acme Child', parent_uid: 'f-1' };
 const OTHER_FOUNDATION: Partial<Project> = { uid: 'f-2', slug: 'beta-foundation', name: 'Beta Foundation', logo_url: '', stage: 'Formation' };
 
@@ -97,7 +102,7 @@ describe('NewsletterInviteService', () => {
     deps.committeeService.getMyCommitteeUids.mockResolvedValue(new Set(['c-news', 'c-board']));
     deps.newsletterService.getMyNewsletters.mockResolvedValue({ newsletters: [], complete: true });
     deps.projectService.getProjectsByIds.mockImplementation(async (_req: Request, uids: Set<string>) => {
-      const all = [FOUNDATION, CHILD, OTHER_FOUNDATION];
+      const all = [FOUNDATION, CHILD, OTHER_FOUNDATION, PLAIN_PARENT, GRANDCHILD];
       return new Map(all.filter((project) => uids.has(project.uid as string)).map((project) => [project.uid, project]));
     });
     // Every query-service committee read: return the committees whose uid tag was asked for.
@@ -140,6 +145,22 @@ describe('NewsletterInviteService', () => {
 
       expect(result.foundations).toHaveLength(1);
       expect(result.foundations[0]).toMatchObject({ uid: 'f-1', slug: 'acme-foundation', newsletter_group: { uid: 'c-news', name: 'Acme Weekly' } });
+    });
+
+    it('never treats a parent that is not a confirmed foundation as the foundation', async () => {
+      committees = [{ ...NEWSLETTER_GROUP, project_uid: 'gc-1' }];
+
+      const result = await service.getMyNewsletterFoundations(req);
+
+      expect(result.foundations[0]).toMatchObject({ uid: 'gc-1', slug: 'grandchild' });
+    });
+
+    it('stays fail-soft when project data is unavailable for the card grid', async () => {
+      deps.projectService.getProjectsByIds.mockResolvedValue(new Map());
+
+      const result = await service.getMyNewsletterFoundations(req);
+
+      expect(result.foundations).toEqual([]);
     });
 
     it('hides invites (but still renders cards) when the inviter is not at a member company', async () => {
@@ -242,6 +263,41 @@ describe('NewsletterInviteService', () => {
       expect(deps.emailService.sendEmail).toHaveBeenCalledTimes(1);
     });
 
+    it('sends once when the same invite is submitted twice concurrently', async () => {
+      await Promise.all([service.sendInvite(req, 'f-1', 'coworker@acme-motors.example'), service.sendInvite(req, 'f-1', 'coworker@acme-motors.example')]);
+
+      expect(deps.emailService.sendEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('releases the cooldown when the send fails, so the sender can retry', async () => {
+      deps.emailService.sendEmail.mockRejectedValueOnce(new Error('email-service down'));
+
+      await expect(service.sendInvite(req, 'f-1', 'coworker@acme-motors.example')).rejects.toThrow('email-service down');
+      await service.sendInvite(req, 'f-1', 'coworker@acme-motors.example');
+
+      expect(deps.emailService.sendEmail).toHaveBeenCalledTimes(2);
+    });
+
+    it('strips bare-domain lures from the inviter name and falls back when nothing is left', async () => {
+      getEffectiveName.mockReturnValue('Jane Pay now at lfx-secure.example/login');
+      await service.sendInvite(req, 'f-1', 'coworker@acme-motors.example');
+      expect(deps.emailService.sendEmail.mock.calls[0][1].text).not.toContain('lfx-secure.example');
+      expect(deps.emailService.sendEmail.mock.calls[0][1].text).toContain('Jane Pay now at has invited you');
+
+      getEffectiveName.mockReturnValue('lfx-secure.example');
+      await service.sendInvite(req, 'f-1', 'other@acme-motors.example');
+      expect(deps.emailService.sendEmail.mock.calls[1][1].text).toContain('A colleague has invited you');
+    });
+
+    it('answers a retryable 503, not a membership refusal, when project data is unavailable', async () => {
+      deps.projectService.getProjectsByIds.mockResolvedValue(new Map());
+
+      await expect(service.sendInvite(req, 'f-1', 'coworker@acme-motors.example')).rejects.toMatchObject({
+        statusCode: 503,
+        code: 'NEWSLETTER_FOUNDATION_UNAVAILABLE',
+      });
+    });
+
     it('rejects addresses with characters outside the plain address shape', async () => {
       await expect(service.sendInvite(req, 'f-1', 'a,b@acme-motors.example')).rejects.toBeInstanceOf(ServiceValidationError);
       await expect(service.sendInvite(req, 'f-1', '"x"@acme-motors.example')).rejects.toBeInstanceOf(ServiceValidationError);
@@ -258,6 +314,12 @@ describe('NewsletterInviteService', () => {
   describe('getJoinStatus / joinGroup', () => {
     beforeEach(() => {
       deps.memberBenefitService.isGroupMember.mockResolvedValue(false);
+    });
+
+    it("answers a retryable 503, not 'invalid invite', when the group's project cannot be loaded", async () => {
+      deps.projectService.getProjectsByIds.mockResolvedValue(new Map());
+
+      await expect(service.getJoinStatus(req, 'c-news')).rejects.toMatchObject({ statusCode: 503 });
     });
 
     it('treats a committee that is not a Newsletter group as an invalid invite', async () => {

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NEWSLETTER_INVITE_RATE_LIMIT_MAX, NEWSLETTER_INVITE_RATE_LIMIT_WINDOW_MS } from '@lfx-one/shared/constants';
+import { NEWSLETTER_INVITE_COUNTED_LOCALS_KEY, NEWSLETTER_INVITE_RATE_LIMIT_MAX, NEWSLETTER_INVITE_RATE_LIMIT_WINDOW_MS } from '@lfx-one/shared/constants';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 /**
@@ -107,8 +107,11 @@ export const newsletterInviteRateLimiter = rateLimit({
   legacyHeaders: false,
   statusCode: 429,
   message: { error: "You've sent the maximum number of invites for today. Try again tomorrow.", code: 'RATE_LIMITED' },
-  // Only sent invites spend the budget — a typo or a non-member domain (4xx) does not.
+  // Typos and personal mailboxes are free; sent invites and every other refusal (a non-member domain,
+  // a foundation the sender is not on) spend the budget, so the member-domain check is not an
+  // unmetered oracle. The controller marks those refusals on `res.locals`.
   skipFailedRequests: true,
+  requestWasSuccessful: (_req, res) => res.statusCode < 400 || res.locals[NEWSLETTER_INVITE_COUNTED_LOCALS_KEY] === true,
   keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
 });
 

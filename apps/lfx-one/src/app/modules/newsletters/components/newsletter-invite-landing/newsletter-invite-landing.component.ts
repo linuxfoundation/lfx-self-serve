@@ -93,8 +93,9 @@ export class NewsletterInviteLandingComponent {
 
     this.state.set({ status: 'joining', join });
     this.newsletterService
+      // A write: no takeUntilDestroyed — leaving the page mid-request must not abort the join
+      // (the service's take(1) completes it).
       .joinNewsletterGroupByInvite(this.committeeUid())
-      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
           this.state.set({ status: result.status, join, result });

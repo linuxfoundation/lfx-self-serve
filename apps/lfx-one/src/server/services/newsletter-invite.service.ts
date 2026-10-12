@@ -33,7 +33,7 @@ import {
 import { computeIsFoundation, emailDomain, isFilterSafeIdentifier, isPersonalEmailDomain } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { buildNewsletterInviteAcceptUrl, renderNewsletterInviteEmail } from '../helpers/newsletter-invite-email.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
@@ -65,6 +65,7 @@ export class NewsletterInviteService {
    * it bounds how often one address is emailed about one list, not an exact cluster-wide quota.
    */
   private static readonly recentInvites = new Map<string, number>();
+  private static lastCooldownSweepAt = 0;
 
   private readonly memberBenefitService: NewsletterMemberBenefitService;
   private readonly newsletterService: NewsletterService;
@@ -97,6 +98,7 @@ export class NewsletterInviteService {
   /** Test seam: forget recent invites. */
   public static resetRecentInvites(): void {
     NewsletterInviteService.recentInvites.clear();
+    NewsletterInviteService.lastCooldownSweepAt = 0;
   }
 
   /** GET /api/newsletters/my-foundations — the card grid and every drill-down's rows in one fan-out. */
@@ -129,7 +131,7 @@ export class NewsletterInviteService {
     const email = this.normalizeInviteEmail(rawEmail, operation);
 
     const committeeUids = await this.committeeService.getMyCommitteeUids(req, undefined, { failOnPartial: true });
-    const groups = await this.getMyNewsletterGroups(req, committeeUids);
+    const groups = await this.getMyNewsletterGroups(req, committeeUids, { strict: true });
     const entry = groups.get(foundationUid);
     if (!entry) {
       throw new AuthorizationError("Join this foundation's newsletter group to invite others", {
@@ -171,6 +173,9 @@ export class NewsletterInviteService {
       logger.info(req, operation, 'Invitee was already emailed about this list recently — not emailed again', { committee_uid: entry.group.uid });
       return result;
     }
+    // Claim the cooldown before any await so a double-click or retry cannot send twice; released
+    // again if the send fails, so the sender can retry.
+    NewsletterInviteService.recentInvites.set(cooldownKey, Date.now());
     if (await this.memberBenefitService.isEmailInGroup(req, m2mToken, entry.group.uid, email)) {
       logger.info(req, operation, 'Invitee is already on the newsletter list — not emailed', { committee_uid: entry.group.uid });
       return result;
@@ -182,8 +187,12 @@ export class NewsletterInviteService {
       foundation_name: this.singleLine(entry.foundation.name),
       accept_url: buildNewsletterInviteAcceptUrl(this.appBaseUrl(), entry.foundation.slug, entry.group.uid),
     });
-    await this.emailService.sendEmail(req, { to: email, ...rendered });
-    NewsletterInviteService.recentInvites.set(cooldownKey, Date.now());
+    try {
+      await this.emailService.sendEmail(req, { to: email, ...rendered });
+    } catch (error) {
+      NewsletterInviteService.recentInvites.delete(cooldownKey);
+      throw error;
+    }
 
     logger.info(req, operation, 'Newsletter invite sent', {
       foundation_uid: foundationUid,
@@ -309,7 +318,7 @@ export class NewsletterInviteService {
 
   private async getMyNewsletterGroupsSafe(req: Request, committeeUids: Set<string>): Promise<Map<string, FoundationNewsletterGroup>> {
     try {
-      return await this.getMyNewsletterGroups(req, committeeUids);
+      return await this.getMyNewsletterGroups(req, committeeUids, { strict: false });
     } catch (error) {
       logger.warning(req, 'get_my_newsletter_foundations', 'Newsletter group lookup failed — invites hidden', { err: error });
       return new Map();
@@ -321,7 +330,7 @@ export class NewsletterInviteService {
    * these are committees the user is a member of. When a foundation has several, the
    * alphabetically first is used.
    */
-  private async getMyNewsletterGroups(req: Request, committeeUids: Set<string>): Promise<Map<string, FoundationNewsletterGroup>> {
+  private async getMyNewsletterGroups(req: Request, committeeUids: Set<string>, options: { strict: boolean }): Promise<Map<string, FoundationNewsletterGroup>> {
     const uids = [...committeeUids].filter(isFilterSafeIdentifier);
     const batches: string[][] = [];
     for (let i = 0; i < uids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) batches.push(uids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
@@ -349,7 +358,8 @@ export class NewsletterInviteService {
 
     const foundations = await this.resolveFoundations(
       req,
-      newsletterGroups.map((committee) => committee.project_uid)
+      newsletterGroups.map((committee) => committee.project_uid),
+      options
     );
     const byFoundation = new Map<string, FoundationNewsletterGroup>();
     for (const committee of newsletterGroups) {
@@ -380,11 +390,19 @@ export class NewsletterInviteService {
 
   private async resolveFoundation(req: Request, projectUid: string | undefined): Promise<NewsletterFoundationSummary | null> {
     if (!projectUid) return null;
-    return (await this.resolveFoundations(req, [projectUid])).get(projectUid) ?? null;
+    return (await this.resolveFoundations(req, [projectUid], { strict: true })).get(projectUid) ?? null;
   }
 
-  /** project uid → owning foundation (the project itself when it is one, else its parent). */
-  private async resolveFoundations(req: Request, projectUids: string[]): Promise<Map<string, NewsletterFoundationSummary>> {
+  /**
+   * project uid → owning foundation: the project itself when it is a foundation or has no parent,
+   * else its parent when that parent is a confirmed foundation, else the project itself — the same
+   * roll-up as the feed's `foundation_*` tags.
+   *
+   * `getProjectsByIds` is fail-soft (an outage reads as "no such project"). Invite decisions pass
+   * `strict` so an unresolved project or parent is a retryable 503, never a false "invalid invite"
+   * or "not on this list"; the card grid stays fail-soft.
+   */
+  private async resolveFoundations(req: Request, projectUids: string[], options: { strict: boolean }): Promise<Map<string, NewsletterFoundationSummary>> {
     const owners = await this.projectService.getProjectsByIds(req, new Set(projectUids));
     const parentUids = new Set<string>();
     for (const owner of owners.values()) {
@@ -395,13 +413,28 @@ export class NewsletterInviteService {
     const result = new Map<string, NewsletterFoundationSummary>();
     for (const projectUid of projectUids) {
       const owner = owners.get(projectUid);
-      if (!owner) continue;
-      const foundation = computeIsFoundation(owner) || !owner.parent_uid ? owner : (owners.get(owner.parent_uid) ?? parents.get(owner.parent_uid));
-      if (foundation) {
-        result.set(projectUid, { uid: foundation.uid, slug: foundation.slug, name: foundation.name, logo_url: foundation.logo_url || null });
+      if (!owner) {
+        if (options.strict) this.throwFoundationUnavailable(projectUid);
+        continue;
       }
+      let foundation: Project = owner;
+      if (!computeIsFoundation(owner) && owner.parent_uid) {
+        const parent = owners.get(owner.parent_uid) ?? parents.get(owner.parent_uid);
+        if (!parent && options.strict) this.throwFoundationUnavailable(owner.parent_uid);
+        if (parent && computeIsFoundation(parent)) foundation = parent;
+      }
+      result.set(projectUid, { uid: foundation.uid, slug: foundation.slug, name: foundation.name, logo_url: foundation.logo_url || null });
     }
     return result;
+  }
+
+  private throwFoundationUnavailable(projectUid: string): never {
+    throw new MicroserviceError('Project data is temporarily unavailable', 503, 'NEWSLETTER_FOUNDATION_UNAVAILABLE', {
+      operation: 'resolve_newsletter_foundation',
+      service: 'newsletter_invite',
+      path: `project:${projectUid}`,
+      clientMessage: 'Newsletter details could not be loaded. Please try again.',
+    });
   }
 
   private normalizeInviteEmail(rawEmail: unknown, operation: string): string {
@@ -423,7 +456,9 @@ export class NewsletterInviteService {
 
   private invitedRecently(key: string): boolean {
     const now = Date.now();
-    if (NewsletterInviteService.recentInvites.size > 5000) {
+    // Expired entries are dropped at most once a minute, not on every call.
+    if (now - NewsletterInviteService.lastCooldownSweepAt >= 60_000) {
+      NewsletterInviteService.lastCooldownSweepAt = now;
       for (const [entry, at] of NewsletterInviteService.recentInvites) {
         if (now - at >= NEWSLETTER_INVITE_RECIPIENT_COOLDOWN_MS) NewsletterInviteService.recentInvites.delete(entry);
       }
@@ -437,7 +472,13 @@ export class NewsletterInviteService {
    * and the email goes out in LFX branding, so it must not carry a URL or a long pitch.
    */
   private inviterName(raw: string): string {
-    const cleaned = this.singleLine(raw.replace(/\b(?:https?:\/\/|www\.)\S+/gi, '').replace(/\s{2,}/g, ' '));
+    const cleaned = this.singleLine(
+      raw
+        .replace(/\b(?:https?:\/\/|www\.)\S+/gi, '')
+        // Bare domains too (`lfx-secure.example/login`) — mail clients auto-link them.
+        .replace(/\S+\.[a-z]{2,}(?:\/\S*)?/gi, '')
+        .replace(/\s{2,}/g, ' ')
+    );
     if (!cleaned) return 'A colleague';
     return cleaned.length > NEWSLETTER_INVITE_INVITER_NAME_MAX_LENGTH
       ? `${cleaned.slice(0, NEWSLETTER_INVITE_INVITER_NAME_MAX_LENGTH - 1).trimEnd()}…`

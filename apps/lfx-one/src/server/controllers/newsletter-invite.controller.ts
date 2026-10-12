@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NEWSLETTER_INVITE_COUNTED_LOCALS_KEY, NEWSLETTER_INVITE_PERSONAL_EMAIL_ERROR_CODE } from '@lfx-one/shared/constants';
 import { NewsletterInviteRequest } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { ServiceValidationError } from '../errors';
+import { isServiceValidationError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { NewsletterInviteService } from '../services/newsletter-invite.service';
 
@@ -51,6 +52,7 @@ export class NewsletterInviteController {
       logger.success(req, 'send_newsletter_invite', startTime, { foundation_uid: foundationUid });
       res.status(201).json(result);
     } catch (error) {
+      if (!this.isInviteInputError(error)) res.locals[NEWSLETTER_INVITE_COUNTED_LOCALS_KEY] = true;
       next(error);
     }
   }
@@ -88,6 +90,13 @@ export class NewsletterInviteController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** A malformed address or a personal mailbox — the only refusals that do not spend the invite budget. */
+  private isInviteInputError(error: unknown): boolean {
+    if (!isServiceValidationError(error)) return false;
+    const code = error.validationErrors[0]?.code;
+    return code === 'FIELD_VALIDATION_ERROR' || code === NEWSLETTER_INVITE_PERSONAL_EMAIL_ERROR_CODE;
   }
 
   private requireUuid(req: Request, param: string, operation: string): string {
