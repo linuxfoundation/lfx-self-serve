@@ -976,7 +976,7 @@ export function getUrlHostname(url: string | null | undefined): string | null {
 
 /**
  * A user-entered link made safe to put in an `href`: an absolute http(s) URL as it is, or a bare
- * `host/path` (no scheme, as organizers often paste) given `https://`. Anything else (another
+ * `host/path` or `host:port/path` (no scheme, as organizers often paste) given `https://`. Anything else (another
  * scheme, or no recognisable host) is `null`, and is rendered as text rather than a link.
  */
 export function toSafeExternalHref(link: string | null | undefined): string | null {
@@ -984,7 +984,9 @@ export function toSafeExternalHref(link: string | null | undefined): string | nu
   if (!trimmed) {
     return null;
   }
-  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed);
+  // `host:port/path` looks like a scheme to the pattern, but is a bare host with a port.
+  const bareHostWithPort = /^[^/:]+:\d+(\/|$)/.test(trimmed);
+  const hasScheme = !bareHostWithPort && /^[a-z][a-z0-9+.-]*:/i.test(trimmed);
   const candidate = hasScheme ? trimmed : `https://${trimmed}`;
   try {
     const parsed = new URL(candidate);

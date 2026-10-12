@@ -777,6 +777,7 @@ describe('toSafeExternalHref', () => {
 
   it('gives a bare host/path https://', () => {
     expect(toSafeExternalHref('docs.vendor-corp.example/document/d/abc')).toBe('https://docs.vendor-corp.example/document/d/abc');
+    expect(toSafeExternalHref('staging.vendor-corp.example:8080/docs')).toBe('https://staging.vendor-corp.example:8080/docs');
   });
 
   it('refuses other schemes and anything without a host', () => {
