@@ -362,6 +362,22 @@ describe('UserService', () => {
       subscription.unsubscribe();
     });
 
+    it('retires a retained answer that a newer indexed answer covers, so an enrichment outage cannot resurface it', () => {
+      service.recordConfirmedMeetingRsvp(response());
+      let rows: Meeting[] = [];
+      const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      const indexedResponse = response({ id: 'synthetic-newer-all', response_type: 'declined', created_at: '2026-10-12T11:00:00Z' });
+      indexed = { ...indexed, my_rsvp: indexedResponse };
+      service.refreshUserMeetings();
+      expect(rows[0].my_rsvp).toEqual(indexedResponse);
+      expect(service.confirmedMeetingRsvps(indexed.id)).toEqual([]);
+
+      indexed = { ...indexed, my_rsvp: undefined, my_registrant_ids: undefined };
+      service.refreshUserMeetings();
+      expect(rows[0].my_rsvp).toBeUndefined();
+      subscription.unsubscribe();
+    });
+
     it('applies late registration removal only to its dispatch subject, even when aliases and registration UIDs match', async () => {
       service.user.set({ sub: 'synthetic-a', username: 'unchanged-alias' } as User);
       await TestBed.inject(ApplicationRef).whenStable();

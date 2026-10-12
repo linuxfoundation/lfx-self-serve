@@ -1465,14 +1465,16 @@ export class MeetingJoinComponent implements OnInit {
     const occurrence$ = toObservable(this.currentOccurrence);
     const authenticated$ = toObservable(this.authenticated);
     const canRespond$ = toObservable(this.canRespondAsOrganizer);
+    const identity$ = toObservable(this.userService.meetingFeedIdentity);
 
-    // Fetch trigger: meeting/occurrence/auth/canRespond changes. Deduped on a stable key so that
-    // derived signals settling in the same microtask don't cause redundant emissions.
-    const fetchTrigger$ = combineLatest([meeting$, occurrence$, authenticated$, canRespond$]).pipe(
-      distinctUntilChanged(([m1, o1, a1, c1], [m2, o2, a2, c2]) => {
+    // Fetch trigger: meeting/occurrence/auth/canRespond/viewer-identity changes. Deduped on a stable key
+    // so that derived signals settling in the same microtask don't cause redundant emissions. An in-place
+    // subject swap (impersonation) refetches and clears the previous viewer's answer while pending.
+    const fetchTrigger$ = combineLatest([meeting$, occurrence$, authenticated$, canRespond$, identity$]).pipe(
+      distinctUntilChanged(([m1, o1, a1, c1, i1], [m2, o2, a2, c2, i2]) => {
         const occ1 = m1?.recurrence ? o1?.occurrence_id : undefined;
         const occ2 = m2?.recurrence ? o2?.occurrence_id : undefined;
-        return m1?.id === m2?.id && occ1 === occ2 && a1 === a2 && c1 === c2;
+        return m1?.id === m2?.id && occ1 === occ2 && a1 === a2 && c1 === c2 && i1 === i2;
       })
     );
 
@@ -1519,11 +1521,17 @@ export class MeetingJoinComponent implements OnInit {
     );
   }
 
-  // Hands the confirmed organizer response to the overview so its counts update before the roster re-indexes.
+  // Hands the confirmed organizer responses to the overview so its counts update before the roster re-indexes.
+  // Retained answers outlive an occurrence switch or remount (whose lookup restarts at `null`); the overview
+  // applies each one by date, matching the meeting card.
   private initializeOverviewConfirmedRsvps(): Signal<MeetingRsvp[]> {
     return computed(() => {
+      const meeting = this.meeting();
       const rsvp = this.currentUserRsvp();
-      return rsvp ? [rsvp] : [];
+      const retained = meeting?.id
+        ? this.userService.confirmedMeetingRsvps(meeting.id).filter((saved) => this.userService.isMeetingRsvpCurrent(saved, meeting))
+        : [];
+      return rsvp ? [...retained, rsvp] : retained;
     });
   }
 
@@ -1762,9 +1770,11 @@ export class MeetingJoinComponent implements OnInit {
     const meetingId = this.meeting().id;
     const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
     const meeting = this.meeting();
+    // Name every registration this page knows; `clearConfirmedMeetingRsvps` adds the retained ones.
     const registrantIds = [...(meeting.my_registrant_ids ?? [])];
-    const rsvp = this.currentUserRsvp() ?? this.rsvpControls()?.currentRsvp() ?? meeting.my_rsvp;
-    if (rsvp) registrantIds.push(rsvp.registrant_id);
+    for (const rsvp of [this.currentUserRsvp(), this.rsvpControls()?.currentRsvp(), meeting.my_rsvp]) {
+      if (rsvp) registrantIds.push(rsvp.registrant_id);
+    }
     this.leavingMeeting.set(true);
 
     this.meetingService

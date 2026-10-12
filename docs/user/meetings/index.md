@@ -46,7 +46,7 @@ Me, Foundation, and Project lenses share the same dashboard, scoped differently.
 In My Meetings, response filters sit below the Upcoming/Past tabs:
 
 - **All meetings** — every upcoming meeting in your list, including declined meetings and meetings without RSVP tracking.
-- **Needs response** — meetings that collect RSVPs and have no response for the current or next date. A response for a different recurring date does not answer this date.
+- **Needs response** — meetings that collect RSVPs and have no response for the current or next date. A response for a different recurring date does not answer this date. A meeting where you have no active registration is left out, because a response can't be submitted until you're registered.
 - **Going**, **Maybe**, and **Not going** — meetings with your corresponding response for the current or next date.
 
 If response data is temporarily unavailable, the meeting remains in **All meetings** but is excluded from response filters and their counts until its response is known. An unavailable response is not treated as an unanswered invitation.

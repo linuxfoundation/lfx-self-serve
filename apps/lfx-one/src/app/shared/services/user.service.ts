@@ -35,7 +35,7 @@ import {
   WorkExperienceCreateUpdateBody,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { resolveRsvpOccurrenceId, retainConfirmedRsvp, selectApplicableRsvp } from '@lfx-one/shared/utils';
+import { isRsvpSupersededBy, resolveRsvpOccurrenceId, retainConfirmedRsvp, selectApplicableRsvp } from '@lfx-one/shared/utils';
 import {
   BehaviorSubject,
   catchError,
@@ -628,14 +628,15 @@ export class UserService {
       const confirmed = current.get(key) ?? [];
       const candidates = meeting.my_rsvp ? [...confirmed, meeting.my_rsvp] : confirmed;
       const endedIds = candidates.filter((rsvp) => !this.isMeetingRsvpCurrent(rsvp, meeting, subject)).map((rsvp) => rsvp.registrant_id);
-      if (endedIds.length === 0) continue;
-      this.endMeetingRegistrants(key, endedIds);
-      if (confirmed.length > 0) {
-        next ??= new Map(current);
-        const retained = confirmed.filter((rsvp) => !endedIds.includes(rsvp.registrant_id));
-        if (retained.length > 0) next.set(key, retained);
-        else next.delete(key);
-      }
+      if (endedIds.length > 0) this.endMeetingRegistrants(key, endedIds);
+      // A newer indexed answer from an indexed registration retires the retained answers it covers,
+      // so a later enrichment outage (`my_rsvp: undefined`) cannot resurface them.
+      const indexed = meeting.my_rsvp && registrantIds.includes(meeting.my_rsvp.registrant_id) ? meeting.my_rsvp : null;
+      const retained = confirmed.filter((rsvp) => !endedIds.includes(rsvp.registrant_id) && !(indexed && isRsvpSupersededBy(rsvp, indexed)));
+      if (retained.length === confirmed.length) continue;
+      next ??= new Map(current);
+      if (retained.length > 0) next.set(key, retained);
+      else next.delete(key);
     }
     if (next) this.confirmedMeetingRsvps$.next(next);
   }

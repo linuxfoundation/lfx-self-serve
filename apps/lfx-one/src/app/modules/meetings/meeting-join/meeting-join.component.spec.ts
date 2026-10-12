@@ -189,6 +189,7 @@ describe('MeetingJoinComponent', () => {
             impersonating: signal(false),
             impersonator: signal(null),
             viewerUsername: signal<string | null>('me'),
+            meetingFeedIdentity: signal('synthetic-subject\0me'),
             effectiveAvatarUrl: signal(''),
             getCurrentUserProfile: vi.fn().mockReturnValue(of(null)),
             meetingRegistrationGeneration: vi.fn(() => 0),
@@ -1136,6 +1137,55 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.debugElement.query(By.directive(RsvpButtonGroupComponent))).not.toBeNull();
       expect(fixture.debugElement.query(By.directive(MeetingRsvpDetailsComponent))).not.toBeNull();
       expect(fixture.nativeElement.querySelector('[data-testid="toggle-rsvp-view-button"]')).toBeNull();
+    });
+
+    const organizerAnswer = (overrides: Partial<MeetingRsvp> = {}) =>
+      ({
+        id: 'synthetic-organizer-response',
+        meeting_id: MEETING_ID,
+        registrant_id: 'synthetic-organizer-registration',
+        response_type: 'accepted',
+        scope: 'all',
+        created_at: '2026-10-12T10:00:00Z',
+        ...overrides,
+      }) as MeetingRsvp;
+
+    it('keeps a retained organizer answer in the guest overview while the date lookup is stale', async () => {
+      const retained = organizerAnswer();
+      vi.mocked(TestBed.inject(UserService).confirmedMeetingRsvps).mockReturnValue([retained]);
+      const fixture = await createFixture(buildMeeting({ organizer: true, invited: true, is_invite_responses_enabled: true }));
+
+      expect(fixture.componentInstance.currentUserRsvp()).toBeNull();
+      expect(fixture.componentInstance.overviewConfirmedRsvps()).toEqual([retained]);
+      const overview = fixture.debugElement.query(By.directive(MeetingRsvpDetailsComponent)).componentInstance as MeetingRsvpDetailsComponent;
+      expect(overview.confirmedRsvps()).toEqual([retained]);
+    });
+
+    it('names every registration the page knows when leaving, not only the first answer found', async () => {
+      const indexedAnswer = organizerAnswer({ id: 'synthetic-indexed-response', registrant_id: 'synthetic-indexed-registration' });
+      const fixture = await createFixture(buildMeeting({ organizer: false, invited: true, my_rsvp: indexedAnswer }));
+      fixture.componentInstance.onRsvpChanged(organizerAnswer({ registrant_id: 'synthetic-confirmed-registration' }));
+
+      await confirmAndAccept(fixture);
+
+      expect(TestBed.inject(UserService).clearConfirmedMeetingRsvps).toHaveBeenCalledWith(
+        MEETING_ID,
+        expect.any(String),
+        expect.arrayContaining(['synthetic-confirmed-registration', 'synthetic-indexed-registration'])
+      );
+    });
+
+    it('refetches the organizer answer when the viewer identity changes in place', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: true, invited: true, is_invite_responses_enabled: true }));
+      const callsBefore = getMeetingRsvpForCurrentUser.mock.calls.length;
+      const swapped = organizerAnswer({ id: 'synthetic-other-viewer-response', response_type: 'maybe' });
+      getMeetingRsvpForCurrentUser.mockReturnValue(of(swapped));
+
+      (TestBed.inject(UserService).meetingFeedIdentity as ReturnType<typeof signal<string>>).set('synthetic-other\0me');
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(getMeetingRsvpForCurrentUser.mock.calls.length).toBe(callsBefore + 1);
+      expect(fixture.componentInstance.currentUserRsvp()).toEqual(swapped);
     });
 
     it('removes the viewer once confirmed and swaps the action for registering, even while the refetched flag is stale', async () => {

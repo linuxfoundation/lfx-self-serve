@@ -110,16 +110,56 @@ export class MeetingRsvpDetailsComponent {
 
   private initializeRegistrants(): Signal<MeetingRegistrant[]> {
     return computed(() => {
-      const registrants = this.externallyManaged() && !this.pastMeeting() ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants;
+      const parentRoster = this.externallyManaged() && !this.pastMeeting();
+      const registrants = parentRoster ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants;
       const confirmed = this.applicableConfirmedRsvps();
       if (confirmed.length === 0 && !this.meeting().recurrence) return registrants;
-      return registrants.map((registrant) => {
+      const occurrenceId = this.resolvedOccurrenceId();
+      const rows = registrants.map((registrant) => {
         const responses = confirmed.filter((rsvp) => rsvp.registrant_id === registrant.uid);
         if (registrant.rsvp && this.isApplicableRsvp(registrant.rsvp)) responses.push(registrant.rsvp);
-        const rsvp = selectApplicableRsvp(this.resolvedOccurrenceId(), responses);
+        const rsvp = selectApplicableRsvp(occurrenceId, responses);
         return rsvp !== (registrant.rsvp ?? null) ? { ...registrant, rsvp } : registrant;
       });
+      // Without a roster (Foundation/Project cards) the RSVP-only path already counts confirmed answers.
+      if (!parentRoster && registrants.length === 0) return rows;
+      // A confirmed answer can precede its registration's first roster row; count and preview that guest too.
+      const known = new Set(registrants.map((registrant) => registrant.uid));
+      const unindexed = new Map<string, MeetingRsvp[]>();
+      for (const rsvp of confirmed) {
+        if (!known.has(rsvp.registrant_id)) unindexed.set(rsvp.registrant_id, [...(unindexed.get(rsvp.registrant_id) ?? []), rsvp]);
+      }
+      for (const responses of unindexed.values()) {
+        const rsvp = selectApplicableRsvp(occurrenceId, responses);
+        if (rsvp) rows.push(this.toUnindexedRegistrant(rsvp));
+      }
+      return rows;
     });
+  }
+
+  private toUnindexedRegistrant(rsvp: MeetingRsvp): MeetingRegistrant {
+    return {
+      uid: rsvp.registrant_id,
+      meeting_id: rsvp.meeting_id,
+      email: rsvp.email,
+      first_name: rsvp.name?.trim() ?? '',
+      last_name: '',
+      host: false,
+      job_title: null,
+      org_name: null,
+      occurrence_id: null,
+      org_is_member: false,
+      org_is_project_member: false,
+      avatar_url: null,
+      username: rsvp.username || null,
+      linkedin_profile: null,
+      created_at: rsvp.created_at,
+      updated_at: rsvp.updated_at ?? rsvp.created_at,
+      type: 'direct',
+      invite_accepted: null,
+      attended: null,
+      rsvp,
+    };
   }
 
   private applicableConfirmedRsvps(): MeetingRsvp[] {

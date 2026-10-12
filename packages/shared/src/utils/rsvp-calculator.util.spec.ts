@@ -25,6 +25,7 @@ import {
   buildAttendeePreviewFromRsvps,
   countRegistrantAttendance,
   getRegistrantAttendanceStatus,
+  isRsvpSupersededBy,
   isSameOccurrenceId,
   occurrenceIdToMs,
   occurrenceIdToSeconds,
@@ -653,5 +654,28 @@ describe('retainConfirmedRsvp', () => {
   it('ignores unparseable retained timestamps when ordering a scoped answer', () => {
     const malformed = rsvp({ id: 'rsvp-all', scope: 'all', modified_at: 'not-a-date' });
     expect(retainConfirmedRsvp([malformed], single)).toEqual([single, malformed]);
+  });
+});
+
+describe('isRsvpSupersededBy', () => {
+  const single = rsvp({ id: 'rsvp-single', scope: 'single', occurrence_id: OCC_AUG_11_SECONDS, modified_at: '2026-07-11T00:00:00Z' });
+  const later = (overrides: Partial<MeetingRsvp>) => rsvp({ id: 'rsvp-later', modified_at: '2026-07-12T00:00:00Z', ...overrides });
+
+  it('treats a newer all-dates answer or a newer rewrite of the same row as covering', () => {
+    expect(isRsvpSupersededBy(single, later({ scope: 'all', registrant_id: 'reg-2' }))).toBe(true);
+    expect(isRsvpSupersededBy(single, later({ id: 'rsvp-single', scope: 'this_and_following', occurrence_id: OCC_JUL_28_SECONDS }))).toBe(true);
+  });
+
+  it('matches the same scope and date across second and millisecond ids', () => {
+    expect(isRsvpSupersededBy(single, later({ scope: 'single', occurrence_id: `${OCC_AUG_11_SECONDS}000` }))).toBe(true);
+    expect(isRsvpSupersededBy(single, later({ scope: 'single', occurrence_id: OCC_AUG_18_SECONDS }))).toBe(false);
+  });
+
+  it('keeps an answer that a newer one only partly covers, or that is not strictly older', () => {
+    const allDates = rsvp({ id: 'rsvp-all', scope: 'all', modified_at: '2026-07-11T00:00:00Z' });
+    expect(isRsvpSupersededBy(allDates, later({ scope: 'single', occurrence_id: OCC_AUG_11_SECONDS }))).toBe(false);
+    expect(isRsvpSupersededBy(single, later({ scope: 'this_and_following', occurrence_id: OCC_JUL_28_SECONDS }))).toBe(false);
+    expect(isRsvpSupersededBy(single, { ...single, id: 'rsvp-same-time', scope: 'all' })).toBe(false);
+    expect(isRsvpSupersededBy(single, later({ scope: 'all', modified_at: 'not-a-date' }))).toBe(false);
   });
 });

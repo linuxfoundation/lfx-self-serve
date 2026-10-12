@@ -125,6 +125,58 @@ describe('MeetingRsvpDetailsComponent', () => {
     expect(fixture.componentInstance.declinedCount()).toBe(1);
   });
 
+  it.each([
+    { label: 'a populated', roster: () => [buildRegistrant({ rsvp: { response_type: 'maybe', email: 'other@example.com' } as never })] },
+    { label: 'an empty', roster: () => [] },
+  ])('counts and previews a confirmed guest whose registration is missing from $label supplied roster', async ({ roster }) => {
+    const confirmed = {
+      id: 'synthetic-confirmed',
+      meeting_id: MEETING_ID,
+      registrant_id: 'synthetic-unindexed-registration',
+      username: 'synthetic-viewer',
+      name: 'Synthetic Viewer',
+      email: 'viewer@example.com',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-10-12T10:00:00Z',
+    } as MeetingRsvp;
+    const registrants = roster();
+
+    const fixture = createComponent();
+    fixture.componentRef.setInput('meeting', buildMeeting({ is_invite_responses_enabled: true }));
+    fixture.componentRef.setInput('initialRegistrants', registrants);
+    fixture.componentRef.setInput('confirmedRsvps', [confirmed]);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    const component = fixture.componentInstance;
+    expect(component.acceptedCount()).toBe(1);
+    expect(component.rsvpCounts().total).toBe(registrants.length + 1);
+    expect(component.meetingRegistrantCount()).toBe(registrants.length + 1);
+    expect(component.previewPeople().map((person) => person.name)).toContain('Synthetic Viewer');
+  });
+
+  it('does not add rows for confirmed answers when no roster exists and RSVP rows drive the counts', async () => {
+    const confirmed = {
+      id: 'synthetic-confirmed',
+      meeting_id: MEETING_ID,
+      registrant_id: 'synthetic-unindexed-registration',
+      email: 'viewer@example.com',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-10-12T10:00:00Z',
+    } as MeetingRsvp;
+    const other = { ...confirmed, id: 'synthetic-other', registrant_id: 'synthetic-other', email: 'other@example.com', response_type: 'maybe' } as MeetingRsvp;
+    getMeetingRsvps.mockReturnValue(of([other]));
+
+    const fixture = createComponent();
+    fixture.componentRef.setInput('meeting', buildMeeting({ is_invite_responses_enabled: true, individual_registrants_count: 2 }));
+    fixture.componentRef.setInput('confirmedRsvps', [confirmed]);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(fixture.componentInstance.registrants()).toEqual([]);
+    expect(fixture.componentInstance.rsvpCounts()).toEqual({ accepted: 1, declined: 0, maybe: 1, total: 2 });
+  });
+
   it('drives loading() from initialRegistrantsLoading with no HTTP call', async () => {
     const fixture = createComponent();
     fixture.componentRef.setInput('meeting', buildMeeting());
