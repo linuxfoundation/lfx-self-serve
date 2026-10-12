@@ -29,8 +29,11 @@ export class MeetingAgendaComponent {
   private readonly state = inject(MeetingDetailsStateService);
 
   protected readonly collapsedHeight = MEETING_AGENDA_COLLAPSED_HEIGHT_PX;
-  /** The selected occurrence's own agenda first, else the series', as V1 reads it. */
-  protected readonly description = computed(() => (this.state.selectedOccurrence()?.description || this.state.meeting()?.description)?.trim() ?? '');
+  /**
+   * The selected occurrence's own agenda first, else the series', as V1 reads it. Each is trimmed
+   * before the choice, so a blank occurrence description never hides the series' agenda.
+   */
+  protected readonly description = computed(() => this.state.selectedOccurrence()?.description?.trim() || this.state.meeting()?.description?.trim() || '');
   /**
    * Edit agenda: organizers only, and not once the meeting has ended (as V1 hides organizer edits on a
    * past meeting): a past record's id is not the series the edit page edits.

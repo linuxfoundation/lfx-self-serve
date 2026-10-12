@@ -21,13 +21,15 @@
     }
   </div>
 
-  @if (description(); as description) {
+  @if (description(); as agendaText) {
     <div class="max-w-[660px] text-[15px] leading-[1.65] text-[var(--md-text-body)]" data-testid="agenda-section-description">
-      <lfx-expandable-text [maxHeight]="collapsedHeight">
-        <div
-          class="text-[15px] leading-[1.65] text-[var(--md-text-body)] [&_a]:text-[var(--md-accent-ink)] [&_a]:underline"
-          [innerHTML]="description | linkify"></div>
-      </lfx-expandable-text>
+      <!-- lfx-expandable-text measures its content once, on first render: tracking by the text remounts
+           it whenever the description changes (e.g. another occurrence), so See more is never stale. -->
+      @for (text of [agendaText]; track text) {
+        <lfx-expandable-text [maxHeight]="collapsedHeight">
+          <div class="[&_a]:text-[var(--md-accent-ink)] [&_a]:underline" [innerHTML]="text | linkify"></div>
+        </lfx-expandable-text>
+      }
     </div>
   } @else {
     <p class="m-0 text-[14px] text-[var(--md-text-muted)]" data-testid="agenda-section-empty">No agenda has been added for this meeting yet.</p>

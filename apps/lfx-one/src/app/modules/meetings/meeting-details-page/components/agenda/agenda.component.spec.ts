@@ -67,6 +67,25 @@ describe('MeetingAgendaComponent', () => {
     expect(query('agenda-section-description')?.textContent).not.toContain('Review the roadmap.');
   });
 
+  it("falls back to the series' description when the occurrence's is blank", () => {
+    selectedOccurrence.set({ occurrence_id: 'occ-1', description: '   ' } as MeetingOccurrence);
+    fixture.detectChanges();
+
+    expect(query('agenda-section-description')?.textContent).toContain('Review the roadmap.');
+  });
+
+  it('remounts the expandable text when the description changes, so it is measured afresh', () => {
+    const before = fixture.nativeElement.querySelector('lfx-expandable-text');
+
+    selectedOccurrence.set({ occurrence_id: 'occ-2', description: 'A short agenda' } as MeetingOccurrence);
+    fixture.detectChanges();
+
+    const after = fixture.nativeElement.querySelector('lfx-expandable-text');
+    expect(after).not.toBeNull();
+    expect(after).not.toBe(before);
+    expect(after.textContent).toContain('A short agenda');
+  });
+
   it('says so when there is no description', () => {
     meeting.set(build({ description: '   ' }));
     fixture.detectChanges();
