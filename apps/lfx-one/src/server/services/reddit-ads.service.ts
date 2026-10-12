@@ -5,6 +5,7 @@ import type {
   CampaignStatusUpdateResult,
   RedditActionItem,
   RedditAccountTotals,
+  RedditAuthoredPostInput,
   RedditCallToAction,
   RedditCampaignCreateRequest,
   RedditCampaignCreateResult,
@@ -131,15 +132,35 @@ export class RedditApiError extends Error {
 /**
  * Whether a failed mutating call may nonetheless have created something upstream.
  *
- * Only a 4xx proves it did not: Reddit received the request and rejected it. A 5xx may have been
- * raised after the write, and a `fetch` rejection (timeout, abort, DNS) cannot say whether the
- * request was ever sent — so both are ambiguous. The asymmetry is deliberate and matches
- * `createOutcomeAmbiguous` upstream: calling an ambiguous outcome definite tells the operator to
- * author the post again and is how a duplicate PAID post gets made, while calling a definite one
- * ambiguous costs a check in Reddit Ads Manager that finds nothing.
+ * Only a 4xx OTHER THAN 429 proves it did not: Reddit received the request and rejected it on the
+ * merits. A 5xx may have been raised after the write, and a `fetch` rejection (timeout, abort, DNS)
+ * cannot say whether the request was ever sent — so both are ambiguous. The asymmetry is deliberate
+ * and matches `createOutcomeAmbiguous` upstream: calling an ambiguous outcome definite tells the
+ * operator to author the post again and is how a duplicate PAID post gets made, while calling a
+ * definite one ambiguous costs a check in Reddit Ads Manager that finds nothing.
+ *
+ * 429 is the one 4xx that is NOT a semantic rejection, and upstream says so in as many words:
+ * Reddit received the request and SHED it, which says nothing about whether the mutation committed
+ * first. This client sends creates with no retry at all, so a 429 arrives on the first attempt —
+ * but the classification does not depend on that, because a shed request is unconfirmed either way.
+ *
+ * Anything below 400 is ambiguous for the same reason upstream gives for a 3xx on a mutating
+ * method: receiving it proves the request REACHED a responder but not that nothing was committed
+ * before the redirect. `fetch` here follows redirects, so a 3xx should never surface as a
+ * `RedditApiError` at all — the branch is a floor, not a live path, and it costs only a check that
+ * finds nothing if it is ever reached.
+ *
+ * Two branches deliberately do NOT mirror `createOutcomeAmbiguous`, and both err toward ambiguous.
+ * Upstream separates a transport error from any OTHER non-`apiError` and calls that second group
+ * definite; `fetch` makes the split impossible here, because a network rejection and an error thrown
+ * locally arrive as the same shape — so everything that is not a `RedditApiError` is ambiguous, and
+ * a failure raised before the request leaves (token acquisition, say) costs one check that finds
+ * nothing. Upstream also gates its 3xx branch on a mutating method, which this one does not: both
+ * call sites are creates, so the gate could never change an answer.
  */
 export function redditOutcomeAmbiguous(err: unknown): boolean {
-  return !(err instanceof RedditApiError) || err.status >= 500;
+  if (!(err instanceof RedditApiError)) return true;
+  return err.status >= 500 || err.status === 429 || err.status < 400;
 }
 
 /**
@@ -487,23 +508,9 @@ export function buildRedditUtmUrl(config: RedditCampaignCreateRequest, variantIn
 }
 
 /**
- * The inputs for a post this service authors itself, or `null` when none is to be authored.
- *
- * `postUrl` always wins: an operator who named an existing post gets that post promoted, and
- * `imageUrl`/`callToAction` are ignored rather than used to author a second one. That is upstream's
- * rule (`client.go:1620-1676`), and both arms must agree on it or the same request creates
- * different things depending on which one serves.
- */
-interface RedditAuthoredPostInput {
-  imageUrl: string;
-  headline: string;
-  callToAction: RedditCallToAction;
-}
-
-/**
  * Reject an image URL Reddit could not fetch, before anything upstream is created.
  *
- * Mirrors `validateImageURL` (`client.go:2787-2808`). Reddit ingests and re-hosts `media_url` at
+ * Mirrors `validateImageURL` in `internal/platform/reddit/client.go`. Reddit ingests and re-hosts `media_url` at
  * create time — there is no separate upload step — so the URL has to be publicly reachable http(s)
  * with a host. Embedded credentials are refused outright rather than forwarded to Reddit.
  *
@@ -532,9 +539,14 @@ function validateRedditImageUrl(imageUrl: string): void {
 /**
  * Resolve the three author-a-post inputs, or `null` when no post is to be authored.
  *
+ * `postUrl` always wins: an operator who named an existing post gets that post promoted, and
+ * `imageUrl`/`callToAction` are ignored rather than used to author a second one. That is upstream's
+ * rule in `CreateCampaign`, and both arms must agree on it or the same request creates different
+ * things depending on which one serves.
+ *
  * Every refusal here happens BEFORE the first upstream call, so a bad input costs nothing: no
- * campaign, no ad group, no post. That ordering is upstream's and is stated as its reason at
- * `client.go:1629-1668` — validate "before any mutating call, so a bad image URL / CTA / headline
+ * campaign, no ad group, no post. That ordering is upstream's and is stated as its reason in
+ * `CreateCampaign` — validate "before any mutating call, so a bad image URL / CTA / headline
  * fails fast rather than after paid resources exist".
  */
 export function resolveRedditAuthoredPost(config: RedditCampaignCreateRequest, validatedPostId: string | undefined): RedditAuthoredPostInput | null {
@@ -548,7 +560,7 @@ export function resolveRedditAuthoredPost(config: RedditCampaignCreateRequest, v
   if (requestedCta !== '') {
     // Matched case-insensitively against the catalogue and sent back in the catalogue's own
     // casing, because that casing is what Reddit accepts. Upstream matches the same way
-    // (`client.go:1620-1676`), so a value either arm accepts is accepted by both.
+    // (`CreateCampaign`), so a value either arm accepts is accepted by both.
     const canonical = REDDIT_CALL_TO_ACTIONS.find((known) => known.toLowerCase() === requestedCta.toLowerCase());
     if (!canonical) {
       throw new Error(`Invalid Reddit call to action "${requestedCta}": must be one of ${REDDIT_CALL_TO_ACTIONS.join(', ')}`);
@@ -573,7 +585,7 @@ export function resolveRedditAuthoredPost(config: RedditCampaignCreateRequest, v
 /**
  * Author a promoted image post on the ad account's own profile and return its id.
  *
- * Mirrors `createPromotedPost` (`client.go:2480-2507`). Three details are upstream's, not
+ * Mirrors `createPromotedPost` in `internal/platform/reddit/client.go`. Three details are upstream's, not
  * invented here:
  *
  * - the profile id IS the ad-account id (`t2_...`), so there is no separate profile to look up;

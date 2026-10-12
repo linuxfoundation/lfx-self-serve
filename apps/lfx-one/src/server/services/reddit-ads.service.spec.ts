@@ -183,7 +183,7 @@ describe('redditOutcomeAmbiguous', () => {
   // The asymmetry is the whole point: calling an ambiguous outcome definite tells the operator to
   // author the post again, which is how a duplicate PAID post gets made. Calling a definite one
   // ambiguous costs a look in Ads Manager that finds nothing.
-  it('is definite ONLY for a 4xx — Reddit received the request and rejected it', () => {
+  it('is definite for a 4xx OTHER THAN 429 — Reddit rejected the request on the merits', () => {
     expect(redditOutcomeAmbiguous(new RedditApiError(400, 'POST', '/profiles/t2_x/posts', 'bad request'))).toBe(false);
     expect(redditOutcomeAmbiguous(new RedditApiError(422, 'POST', '/profiles/t2_x/posts', 'unprocessable'))).toBe(false);
   });
@@ -191,6 +191,20 @@ describe('redditOutcomeAmbiguous', () => {
   it('is ambiguous for a 5xx — the error may have been raised after the write', () => {
     expect(redditOutcomeAmbiguous(new RedditApiError(500, 'POST', '/profiles/t2_x/posts', 'boom'))).toBe(true);
     expect(redditOutcomeAmbiguous(new RedditApiError(502, 'POST', '/profiles/t2_x/posts', 'gateway'))).toBe(true);
+  });
+
+  it('is ambiguous for a 429 — a shed request says nothing about whether the write committed', () => {
+    // The one 4xx that is NOT a semantic rejection, and the reason this is not folded into the
+    // `< 500` test above: Reddit throttles the ads API, so classifying a 429 as "nothing was
+    // created" is a live path to a duplicate PAID post or ad, not a theoretical one.
+    expect(redditOutcomeAmbiguous(new RedditApiError(429, 'POST', '/profiles/t2_x/posts', 'rate limited'))).toBe(true);
+  });
+
+  it('is ambiguous for anything below 400 — reaching a responder is not proof nothing committed', () => {
+    // `fetch` follows redirects, so this should never arrive; it is pinned so a later switch to
+    // `redirect: 'manual'` cannot silently start reporting a 3xx on a POST as a definite failure.
+    expect(redditOutcomeAmbiguous(new RedditApiError(302, 'POST', '/profiles/t2_x/posts', 'found'))).toBe(true);
+    expect(redditOutcomeAmbiguous(new RedditApiError(307, 'POST', '/profiles/t2_x/posts', 'temporary redirect'))).toBe(true);
   });
 
   it('is ambiguous when there is no status at all', () => {
@@ -383,6 +397,20 @@ describe('executeRedditCampaignCreation — the authored post', () => {
       expect(result.steps.some((s) => s.includes('UNCONFIRMED'))).toBe(false);
     });
 
+    it('does not tell the operator to author the post again when Reddit throttled the create', async () => {
+      // A 429 is Reddit shedding the request, not rejecting it — the post may already exist. The
+      // "create it again" wording here is what authors a second PAID post.
+      stubFetch('/posts', 429, 'rate limited');
+
+      const result = await executeRedditCampaignCreation(undefined, config());
+      const step = result.steps.find((s) => s.includes('Promoted post authoring UNCONFIRMED'));
+
+      expect(step).toContain('HTTP 429');
+      expect(step).toContain('BEFORE authoring the post again');
+      expect(result.steps.some((s) => s.startsWith('Promoted post authoring failed'))).toBe(false);
+      expect(result.adCount).toBe(0);
+    });
+
     it('does not say "no response from Reddit" when Reddit answered 2xx with no post id', async () => {
       // The outcome is genuinely ambiguous — a post may exist — so the UNCONFIRMED arm is right.
       // What would be false is the parenthetical: Reddit responded, and with a success status.
@@ -440,6 +468,20 @@ describe('executeRedditCampaignCreation — the authored post', () => {
 
     expect(step).toContain('HTTP 500');
     expect(step).toContain('BEFORE adding an ad, to avoid creating a duplicate');
+    expect(result.adCount).toBe(0);
+  });
+
+  it('does not tell the operator to add the ad by hand when Reddit throttled the ad create', async () => {
+    // Same classification one level down, and the worse consequence: two ads in one paused ad
+    // group both go live the moment the campaign is activated.
+    stubFetch('/ads', 429, 'rate limited');
+
+    const result = await executeRedditCampaignCreation(undefined, config());
+    const step = result.steps.find((s) => s.startsWith('Ad creation UNCONFIRMED'));
+
+    expect(step).toContain('HTTP 429');
+    expect(step).toContain('BEFORE adding an ad, to avoid creating a duplicate');
+    expect(result.steps.some((s) => s.startsWith('Ad creation failed'))).toBe(false);
     expect(result.adCount).toBe(0);
   });
 

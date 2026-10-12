@@ -422,7 +422,7 @@ function canCreateDemandGen(): boolean {
  * Whether this deployment can create a Reddit campaign from an image rather than an existing post.
  *
  * Constant `true`, and the constant is the point: BOTH creators author the promoted post from
- * `imageUrl` + `callToAction` now. campaign-service always did (`client.go:1620-1706`); the legacy
+ * `imageUrl` + `callToAction` now. campaign-service always did (`CreateCampaign`); the legacy
  * vendor-direct creator gained it in #3432 (`reddit-ads.service.ts`, `createRedditPromotedPost`),
  * which is what makes the answer independent of the cutover.
  *

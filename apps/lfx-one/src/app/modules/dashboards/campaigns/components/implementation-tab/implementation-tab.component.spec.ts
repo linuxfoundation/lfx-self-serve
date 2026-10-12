@@ -3519,7 +3519,8 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    *
    * The activation clause says "will not change that" rather than "stays refused permanently", for
    * the reason the post-submit sibling was corrected to the same wording in #3451: the clause has
-   * to hold on BOTH arms, and only campaign-service refuses (`internal/dispatch/reddit.go:484-485`).
+   * to hold on BOTH arms, and only campaign-service refuses
+   * (`RedditDispatcher.ToggleStatus` in `internal/dispatch/reddit.go`).
    * The legacy toggle has no ad-existence guard at all and goes through — to a campaign with
    * nothing to serve. Claiming a refusal there would be a sentence the running code never delivers.
    */
@@ -5477,11 +5478,11 @@ describe('ImplementationTabComponent reddit results notice', () => {
    * The Reddit no-ad notice carries TWO claims that pull against each other, and the notice has
    * been wrong in both directions. Each assertion below pins one of them.
    *
-   * (Line numbers are a hint; the named symbol beside each is the real reference.)
+   * (Each reference below names the symbol to look up, not a line number — those drift.)
    *
    * 1. LFX activation never recovers. On the campaign-service arm the both-child-ids guard
-   *    (`internal/dispatch/reddit.go:484-485`) takes them from `redditChildIDs` (`:817-832`),
-   *    which reads only the persisted Result blob — nothing re-reads Reddit, so an ad attached by
+   *    (`RedditDispatcher.ToggleStatus` in `internal/dispatch/reddit.go`) takes them from
+   *    `redditChildIDs` in the same file, which reads only the persisted Result blob — nothing re-reads Reddit, so an ad attached by
    *    hand in Ads Manager is never discovered. The claim is pinned as "will not change that"
    *    rather than "stays refused" because this notice also renders for legacy-created campaigns:
    *    `results()` is set from the `createCampaign` subscribe (`implementation-tab.component.ts:2087`)

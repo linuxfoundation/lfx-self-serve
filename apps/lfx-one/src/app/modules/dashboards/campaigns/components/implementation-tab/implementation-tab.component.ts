@@ -3250,7 +3250,7 @@ export class ImplementationTabComponent implements OnInit {
    *
    * Judged on the two gates the payload itself uses, so the warning can never disagree with what is
    * sent. `postUrl` goes on both arms and creates the ad on either (`reddit-ads.service.ts`,
-   * `internal/platform/reddit/client.go:1622`). `imageUrl` authors a post on either too since
+   * `CreateCampaign` in `internal/platform/reddit/client.go`). `imageUrl` authors a post on either too since
    * #3432, and on both only when no post URL is set — so a typed image now averts this warning,
    * where before it was withheld and withheld meant no ad. It is still read through
    * `redditCreativeAvailable()` rather than on its own: with the capability UNANSWERED the payload
@@ -3268,7 +3268,8 @@ export class ImplementationTabComponent implements OnInit {
       // "Will not change that" rather than "stays refused", for the reason the post-submit sibling
       // was corrected to the same wording in #3451: the clause has to hold on BOTH arms and the
       // refusal is campaign-service's alone. There activation needs both child ids
-      // (`internal/dispatch/reddit.go:484-485`), taken from `redditChildIDs` (`:817-832`), which
+      // (`RedditDispatcher.ToggleStatus` in `internal/dispatch/reddit.go`), taken from
+      // `redditChildIDs` in the same file, which
       // reads only the persisted Result blob — nothing re-reads Reddit, so an ad attached by hand
       // is never discovered and the refusal never lifts. The legacy toggle has no ad-existence
       // guard at all (`campaign-proxy.service.ts`) and goes through to a campaign with nothing to

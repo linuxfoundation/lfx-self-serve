@@ -91,6 +91,13 @@ export type RedditCallToAction = (typeof REDDIT_CALL_TO_ACTIONS)[number];
 /** One of the concrete video optimization goals Reddit accepts — see `REDDIT_VIDEO_GOALS`. */
 export type RedditVideoGoal = (typeof REDDIT_VIDEO_GOALS)[number];
 
+/** The three inputs needed to author a promoted post, once a creator has decided to author one. */
+export interface RedditAuthoredPostInput {
+  imageUrl: string;
+  headline: string;
+  callToAction: RedditCallToAction;
+}
+
 export interface RedditObjectiveParams {
   readonly redditObjective: string;
   readonly bidType: 'CPM' | 'CPC';
