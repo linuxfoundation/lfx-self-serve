@@ -12,12 +12,13 @@ import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE, JOIN_MODE_TOOLTIPS } from 
 import { MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity, resolveJoinModeSeverity, resolveTypeDisplay } from '@lfx-one/shared/utils';
 import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
+import { ValidExternalUrlPipe } from '@app/shared/pipes/valid-external-url.pipe';
 import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-my-groups-card-grid',
-  imports: [BadgeComponent, ButtonComponent, EmptyStateComponent, RouterLink, TagComponent, JoinModeLabelPipe, TooltipModule],
+  imports: [BadgeComponent, ButtonComponent, EmptyStateComponent, RouterLink, TagComponent, JoinModeLabelPipe, ValidExternalUrlPipe, TooltipModule],
   templateUrl: './my-groups-card-grid.component.html',
 })
 export class MyGroupsCardGridComponent {
@@ -63,30 +64,11 @@ export class MyGroupsCardGridComponent {
     }
   }
 
-  /**
-   * `ariaLabel` folds every piece of metadata the card visually shows (behavioral-class label,
-   * project/foundation name, role, member count, last-updated, privacy) into the link's accessible
-   * name. `[attr.aria-label]` on the card `<a>` replaces its computed accessible name outright, so
-   * none of that visible content is otherwise reachable by assistive tech — this is the single
-   * source of truth for what gets announced, not the DOM content underneath it. Keep this in sync
-   * with the template whenever a new field is added to the card.
-   */
   private initCards(): Signal<MyGroupsCardVm[]> {
     return computed(() =>
       this.committees().map((committee) => {
-        const memberCount = committee.total_members;
         const lastActivityLabel = formatRelativeTime(new Date(committee.updated_at));
-        const scopeLabel = committee.project_name || committee.foundation_name;
         const typeDisplay = resolveTypeDisplay(committee);
-        const parts = [
-          `Open ${committee.name || 'group'}`,
-          typeDisplay,
-          ...(scopeLabel ? [scopeLabel] : []),
-          committee.my_role || 'Member',
-          `${memberCount} ${memberCount === 1 ? 'member' : 'members'}`,
-          `updated ${lastActivityLabel}`,
-        ];
-        if (!committee.public) parts.push('private');
         const effectiveJoinMode = committee.join_mode ?? 'invite_only';
         return {
           committee,
@@ -96,7 +78,6 @@ export class MyGroupsCardGridComponent {
           // /foundation vs /project; rows without tier data keep the flat /groups/:uid fallback.
           viewCommands: getGroupCommands(committee) ?? ['/groups', committee.uid],
           viewQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
-          ariaLabel: parts.join(', '),
           typeDisplay,
           joinModeSeverity: resolveJoinModeSeverity(effectiveJoinMode),
           joinModeTooltip: JOIN_MODE_TOOLTIPS[effectiveJoinMode],

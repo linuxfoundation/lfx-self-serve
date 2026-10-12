@@ -560,6 +560,14 @@ export interface MyCommittee extends Committee {
 /** My Groups list↔card view toggle. Deliberately separate from the meetings-only `ViewMode` ('list'|'calendar') — different valid states. */
 export type GroupsViewMode = 'list' | 'card';
 
+/** Effective local filters on the personal My Groups inventory. */
+export type MyGroupsFilterKey = 'search' | 'category' | 'foundation' | 'project' | 'voting';
+
+export interface MyGroupsActiveFilter {
+  key: MyGroupsFilterKey;
+  label: string;
+}
+
 /**
  * One foundation/project bucket in the All Groups foundation-grouped view.
  * Built entirely client-side from the already-filtered committees list — no new upstream shape.
@@ -600,13 +608,6 @@ export interface MyGroupsCardVm {
   viewCommands: string[];
   /** `?project=` for the view link — present only when the committee carries a `project_slug`. */
   viewQueryParams: { project: string } | null;
-  /**
-   * Full accessible name for the card `<a>`. `[attr.aria-label]` replaces the link's computed
-   * accessible name outright, so every visible field (class label, project/foundation name, role,
-   * member count, last-updated, privacy) must be folded in here — none of it is otherwise reachable
-   * by assistive tech. See `MyGroupsCardGridComponent.initCards()`.
-   */
-  ariaLabel: string;
   /**
    * Merged type label for the single "Type" chip (replaces the former separate "Type" and "Class"
    * columns). SIGs show `"SIG | {raw category}"` to expose the sub-type; every other class shows

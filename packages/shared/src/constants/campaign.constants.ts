@@ -1414,7 +1414,7 @@ export const REDDIT_OBJECTIVE_LABELS: Readonly<Record<RedditObjective, string>> 
  *
  * Stated here because it has to be what the picker starts on. Nothing has ever sent `objective`,
  * so every Reddit campaign created to date was built from this default on whichever arm served it
- * — `defaultRedditObjective` upstream (`client.go:135`) and `config.objective ?? 'conversions'` in
+ * — `defaultRedditObjective` upstream and `config.objective ?? 'conversions'` in
  * the legacy creator (`reddit-ads.service.ts`), which agree. Seeding the control with anything
  * else would quietly change what an operator who touches nothing gets.
  */
@@ -1439,7 +1439,7 @@ export const REDDIT_SELECTABLE_OBJECTIVES = ['awareness', 'traffic', 'conversion
 /**
  * The call-to-action button labels Reddit accepts on a promoted post.
  *
- * Mirrors `redditCTAs` in lfx-v2-campaign-service `internal/platform/reddit/client.go:552`, which
+ * Mirrors `redditCTAs` in lfx-v2-campaign-service `internal/platform/reddit/client.go`, which
  * captured them live from the Reddit Ads API v3 post-create validation on 2026-08-20. The values
  * are Reddit's exact title-case labels — that casing is what must be sent — and the order here is
  * upstream's textual order so the two lists diff against each other directly.
@@ -1480,7 +1480,7 @@ export const REDDIT_CALL_TO_ACTIONS = [
 
 /**
  * The CTA upstream falls back to when none is sent — `defaultRedditCTA` in the same upstream file
- * (`client.go:139`). Stated here so the control can pre-select what an empty field would produce
+ * (`defaultRedditCTA`). Stated here so the control can pre-select what an empty field would produce
  * rather than presenting a blank that silently resolves to something else.
  *
  * Must stay a member of `REDDIT_CALL_TO_ACTIONS`, exactly as upstream requires of its own default;
@@ -1489,8 +1489,19 @@ export const REDDIT_CALL_TO_ACTIONS = [
 export const DEFAULT_REDDIT_CALL_TO_ACTION = 'Learn More';
 
 /**
+ * The longest headline Reddit accepts on a promoted post — `maxRedditHeadlineRunes` in the same
+ * upstream file (`maxRedditHeadlineRunes`).
+ *
+ * Counted in CODE POINTS, not UTF-16 units: upstream measures with `utf8.RuneCountInString`, so an
+ * emoji or an astral character is one unit there and two in a JavaScript `.length`. Measuring the
+ * JS way would refuse headlines Reddit accepts, and over-refusal is the one failure mode a guard
+ * mirroring upstream must not have. Use `[...headline].length`.
+ */
+export const MAX_REDDIT_HEADLINE_LENGTH = 300;
+
+/**
  * The concrete video optimization goals Reddit accepts — `validVideoGoals` in the same upstream
- * file (`client.go:539`).
+ * file (`validVideoGoals`).
  *
  * Required for, and only for, the `video_views` objective: Reddit has no bare `VIDEO_VIEWS` goal,
  * so a video-view campaign must name one of these, and upstream validates it before any mutating

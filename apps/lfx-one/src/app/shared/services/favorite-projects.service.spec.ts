@@ -1,14 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpClient } from '@angular/common/http';
 import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { FAVORITE_PROJECTS_MAX_VALUES } from '@lfx-one/shared/constants';
-import { User } from '@lfx-one/shared/interfaces';
-import { NavigationService } from '@services/navigation.service';
+import { PreferenceReadResponse, User } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { NEVER, asapScheduler, observeOn, of, throwError } from 'rxjs';
+import { NEVER, asapScheduler, map, observeOn, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FavoriteProjectsService } from './favorite-projects.service';
@@ -26,6 +26,9 @@ describe('FavoriteProjectsService', () => {
   let messageService: { add: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
+    // The service now owns its own HTTP transport (GH-3453, to avoid a circular dependency with
+    // NavigationService) — `navigationService` here just names the three transport calls so the
+    // test bodies below (unchanged from before the move) can still stub/assert on them by name.
     navigationService = {
       getFavoriteProjectsPreference: vi.fn().mockReturnValue(of(null)),
       upsertFavoriteProjectsPreference: vi.fn().mockReturnValue(of(undefined)),
@@ -34,10 +37,19 @@ describe('FavoriteProjectsService', () => {
     userService = { user: signal<User | null>(null) };
     messageService = { add: vi.fn() };
 
+    const asPreferenceResponse = (value: string | null = null): PreferenceReadResponse => ({ name: 'favorite-projects', value });
+    const httpClient = {
+      get: vi.fn(() => navigationService.getFavoriteProjectsPreference().pipe(map(asPreferenceResponse))),
+      put: vi.fn((_url: string, body: { value: string }) =>
+        navigationService.upsertFavoriteProjectsPreference(body.value).pipe(map(() => asPreferenceResponse()))
+      ),
+      delete: vi.fn(() => navigationService.deleteFavoriteProjectsPreference().pipe(map(() => asPreferenceResponse()))),
+    };
+
     TestBed.configureTestingModule({
       providers: [
         FavoriteProjectsService,
-        { provide: NavigationService, useValue: navigationService },
+        { provide: HttpClient, useValue: httpClient },
         { provide: UserService, useValue: userService },
         { provide: MessageService, useValue: messageService },
       ],

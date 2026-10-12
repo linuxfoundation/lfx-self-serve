@@ -266,11 +266,11 @@ export class ImplementationTabComponent implements OnInit {
    * Whether a Reddit post AUTHORED here will actually be created. `null` (unknown) withholds the
    * controls that depend on it; nothing typed is ever cleared.
    *
-   * Narrower than its Google sibling by one field, and the difference is the whole point. Post URL
-   * — promote an EXISTING post — is read by both creators, so it stays offered whatever this
-   * answers; gating it would withhold a control that works today. Image URL and Call to Action
-   * compose a NEW post, which only campaign-service does, so with the cutover dark they would be
-   * typed, accepted, and discarded into a campaign with no ad.
+   * Post URL — promote an EXISTING post — is read by both creators, so it stays offered whatever
+   * this answers; gating it would withhold a control that works today. Image URL and Call to Action
+   * compose a NEW post, which both creators now do (#3432), so a deployment that answers at all
+   * answers yes. The gate is kept for the `null` case: an unanswered capability still withholds
+   * them rather than letting an operator type creative a creator might discard.
    */
   public readonly redditCreativeEnabled = input<boolean | null>(null);
 
@@ -3246,14 +3246,15 @@ export class ImplementationTabComponent implements OnInit {
    * creators ACCEPT this shape and report success, so refusing it here would refuse a create the
    * platform makes. The legacy creator's no-post branch is a documented workflow in its own right —
    * it writes the variant headlines into `steps` for an operator to paste into Reddit Ads Manager
-   * (`reddit-ads.service.ts:599-630`) — and `canSubmit` deliberately does not read this.
+   * (`reddit-ads.service.ts`) — and `canSubmit` deliberately does not read this.
    *
    * Judged on the two gates the payload itself uses, so the warning can never disagree with what is
-   * sent. `postUrl` goes on both arms and creates the ad on either (`reddit-ads.service.ts:603`,
-   * `internal/platform/reddit/client.go:1622`). `imageUrl` authors a post only when the cutover owns
-   * the create AND only when no post URL is set (`client.go:1629-1652`); with the capability dark or
-   * unanswered the payload drops it, so a typed image does not avert this warning — it is withheld,
-   * and withheld means no ad.
+   * sent. `postUrl` goes on both arms and creates the ad on either (`reddit-ads.service.ts`,
+   * `CreateCampaign` in `internal/platform/reddit/client.go`). `imageUrl` authors a post on either too since
+   * #3432, and on both only when no post URL is set — so a typed image now averts this warning,
+   * where before it was withheld and withheld meant no ad. It is still read through
+   * `redditCreativeAvailable()` rather than on its own: with the capability UNANSWERED the payload
+   * drops the image, and a warning that ignored that would promise an ad the request never asks for.
    */
   private initRedditNoAdWarning(): Signal<string | null> {
     return computed(() => {
@@ -3264,11 +3265,16 @@ export class ImplementationTabComponent implements OnInit {
       // withheld, an image URL is not a remedy and telling them to supply one would be advice they
       // cannot take.
       const missing = this.redditCreativeAvailable() ? 'No post URL and no image URL' : 'No post URL';
-      // "Stays refused" rather than "add the ad later", and it is the same permanence the Google
-      // warning states: activation needs both child ids (`internal/dispatch/reddit.go:484-485`) and
-      // they come from `redditChildIDs` (`:817-832`), which reads only the persisted Result blob.
-      // Nothing re-reads Reddit, so an ad attached by hand upstream is never discovered.
-      return `${missing}, so this campaign is created with no ad: the campaign and its ad group are made and the create reports success, but nothing serves. Activating it from LFX then stays refused permanently, so either supply a post above or build and launch the campaign in Reddit Ads Manager.`;
+      // "Will not change that" rather than "stays refused", for the reason the post-submit sibling
+      // was corrected to the same wording in #3451: the clause has to hold on BOTH arms and the
+      // refusal is campaign-service's alone. There activation needs both child ids
+      // (`RedditDispatcher.ToggleStatus` in `internal/dispatch/reddit.go`), taken from
+      // `redditChildIDs` in the same file, which
+      // reads only the persisted Result blob — nothing re-reads Reddit, so an ad attached by hand
+      // is never discovered and the refusal never lifts. The legacy toggle has no ad-existence
+      // guard at all (`campaign-proxy.service.ts`) and goes through to a campaign with nothing to
+      // serve. Either way activating accomplishes nothing, which is what the operator needs to know.
+      return `${missing}, so this campaign is created with no ad: the campaign and its ad group are made and the create reports success, but nothing serves. Activating it from LFX will not change that, so either supply a post above or build and launch the campaign in Reddit Ads Manager.`;
     });
   }
 
