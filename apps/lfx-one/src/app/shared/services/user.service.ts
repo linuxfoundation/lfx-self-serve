@@ -88,6 +88,12 @@ export class UserService {
    * "Organized by me" meetings filter), so those surfaces can never resolve identity differently.
    */
   public readonly viewerUsername: Signal<string | null> = this.initViewerUsername();
+  /**
+   * Identity the personal meeting feeds belong to: the subject plus the canonical-first LFID, so a
+   * subject swap without LFID claims and late LFID resolution both change it. Consumers holding a
+   * personal feed reconnect when it changes.
+   */
+  public readonly meetingFeedIdentity: Signal<string> = computed(() => `${this.user()?.sub ?? ''}\0${this.viewerUsername() ?? ''}`);
   /** Cached Salesforce user ID from the API Gateway — null until first fetch */
   public readonly apiGatewayUserId = signal<string | null>(null);
 
@@ -123,11 +129,10 @@ export class UserService {
 
     // Invalidate cached user-scoped observables when the authenticated user or
     // impersonation changes, so existing subscribers don't see stale data from
-    // the previous user. Keyed on both the subject and the canonical-first meeting
-    // identity, so subject swaps without LFID claims and late LFID resolution both
-    // invalidate every personal feed. Skip the initial emission since the caches
-    // are lazy-initialized and haven't been populated yet.
-    toObservable(computed(() => `${this.user()?.sub ?? ''}\0${this.viewerUsername() ?? ''}`))
+    // the previous user. Keyed on `meetingFeedIdentity`, so subject swaps without LFID
+    // claims and late LFID resolution both invalidate every personal feed. Skip the
+    // initial emission since the caches are lazy-initialized and haven't been populated yet.
+    toObservable(this.meetingFeedIdentity)
       .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
       .subscribe(() => {
         // Tear down the old chains first — their shareReplay keeps the source alive under

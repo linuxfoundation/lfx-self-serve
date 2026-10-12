@@ -10,6 +10,7 @@ import { By } from '@angular/platform-browser';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { Meeting, MeetingJoinPageState, MeetingOccurrence, MeetingRegistrant, MeetingRsvp, PublicMeetingProject, User } from '@lfx-one/shared/interfaces';
+import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
@@ -1126,6 +1127,14 @@ describe('MeetingJoinComponent', () => {
       const fixture = await createFixture(buildMeeting({ organizer: true, invited: true }));
 
       expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).toBeNull();
+    });
+
+    it('shows an invited organizer their response controls alongside the guest overview, without a toggle', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: true, invited: true, is_invite_responses_enabled: true }));
+
+      expect(fixture.debugElement.query(By.directive(RsvpButtonGroupComponent))).not.toBeNull();
+      expect(fixture.debugElement.query(By.directive(MeetingRsvpDetailsComponent))).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="toggle-rsvp-view-button"]')).toBeNull();
     });
 
     it('removes the viewer once confirmed and swaps the action for registering, even while the refetched flag is stale', async () => {

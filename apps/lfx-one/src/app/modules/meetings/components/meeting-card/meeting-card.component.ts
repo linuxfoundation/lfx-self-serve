@@ -244,7 +244,7 @@ export class MeetingCardComponent implements OnInit {
   );
   // Invited organizers see their response controls alongside the guest overview.
   public readonly canRespondAsOrganizer: Signal<boolean> = computed(
-    () => !!this.meeting().organizer && this.isInvited() && !this.pastMeeting() && this.inviteResponsesEnabled()
+    () => !!this.meeting().organizer && this.effectivelyInvited() && !this.pastMeeting() && this.inviteResponsesEnabled()
   );
   public readonly guestCount: Signal<number> = this.initGuestCount();
 

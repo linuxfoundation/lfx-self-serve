@@ -386,16 +386,13 @@ export class MeetingJoinComponent implements OnInit {
   protected attendeeListShared = computed(() => isMeetingAttendeeListShared(this.meeting()));
   protected canViewGuests = computed(() => !!this.meeting()?.organizer || (this.effectivelyInvited() && this.attendeeListShared()));
   public canRegisterForMeeting: Signal<boolean>;
-  public canToggleRsvpView: Signal<boolean>;
-  public showMyRsvp: WritableSignal<boolean> = signal<boolean>(false);
+  // Invited organizers respond directly alongside their guest overview.
+  public canRespondAsOrganizer: Signal<boolean>;
 
-  // Current user's RSVP for this meeting (null when not responded). Fetched at this level so
-  // the detail page can show the RSVP status even in the default guest-count view, without
-  // waiting for the user to click "Set My RSVP" to mount the button-group child.
+  // Current user's RSVP for this meeting (null when not responded). Fetched at this level so a
+  // confirmed organizer response reaches the guest overview and leaving can clear its registration.
   public currentUserRsvp: Signal<MeetingRsvp | null>;
-  public currentUserRsvpLabel: Signal<string | null>;
-  public currentUserRsvpIcon: Signal<string | null>;
-  public rsvpToggleLabel: Signal<string>;
+  public overviewConfirmedRsvps: Signal<MeetingRsvp[]>;
   // Emits the freshly-submitted RSVP from the button-group so the chip updates immediately,
   // bypassing any query-service indexing lag that would otherwise return stale data on refetch.
   private readonly rsvpUpdateTrigger$ = new Subject<MeetingRsvp | null>();
@@ -514,11 +511,9 @@ export class MeetingJoinComponent implements OnInit {
     // A committee-sourced registration follows committee membership, so it cannot be removed from here.
     this.canLeaveMeeting = computed(() => this.effectivelyInvited() && !this.meeting()?.invited_via_committee);
     this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
-    this.canToggleRsvpView = this.initializeCanToggleRsvpView();
+    this.canRespondAsOrganizer = this.initializeCanRespondAsOrganizer();
     this.currentUserRsvp = this.initializeCurrentUserRsvp();
-    this.currentUserRsvpLabel = this.initializeCurrentUserRsvpLabel();
-    this.currentUserRsvpIcon = this.initializeCurrentUserRsvpIcon();
-    this.rsvpToggleLabel = this.initializeRsvpToggleLabel();
+    this.overviewConfirmedRsvps = this.initializeOverviewConfirmedRsvps();
 
     this.returnTo = this.initializeReturnTo();
     this.canJoinMeeting = this.initializeCanJoinMeeting();
@@ -671,10 +666,6 @@ export class MeetingJoinComponent implements OnInit {
 
   public onShowMembersPlaceholder(): void {
     this.messageService.add({ severity: 'info', summary: 'Coming Soon', detail: 'Attendees list will be available soon.', life: 3000 });
-  }
-
-  public onRsvpViewToggle(): void {
-    this.showMyRsvp.set(!this.showMyRsvp());
   }
 
   public onRsvpChanged(rsvp: MeetingRsvp): void {
@@ -1465,7 +1456,7 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
-  private initializeCanToggleRsvpView(): Signal<boolean> {
+  private initializeCanRespondAsOrganizer(): Signal<boolean> {
     return computed(() => !!this.meeting()?.organizer && this.effectivelyInvited() && this.inviteResponsesEnabled());
   }
 
@@ -1473,11 +1464,11 @@ export class MeetingJoinComponent implements OnInit {
     const meeting$ = toObservable(this.meeting);
     const occurrence$ = toObservable(this.currentOccurrence);
     const authenticated$ = toObservable(this.authenticated);
-    const canToggle$ = toObservable(this.canToggleRsvpView);
+    const canRespond$ = toObservable(this.canRespondAsOrganizer);
 
-    // Fetch trigger: meeting/occurrence/auth/canToggle changes. Deduped on a stable key so that
+    // Fetch trigger: meeting/occurrence/auth/canRespond changes. Deduped on a stable key so that
     // derived signals settling in the same microtask don't cause redundant emissions.
-    const fetchTrigger$ = combineLatest([meeting$, occurrence$, authenticated$, canToggle$]).pipe(
+    const fetchTrigger$ = combineLatest([meeting$, occurrence$, authenticated$, canRespond$]).pipe(
       distinctUntilChanged(([m1, o1, a1, c1], [m2, o2, a2, c2]) => {
         const occ1 = m1?.recurrence ? o1?.occurrence_id : undefined;
         const occ2 = m2?.recurrence ? o2?.occurrence_id : undefined;
@@ -1504,9 +1495,9 @@ export class MeetingJoinComponent implements OnInit {
             this.rsvpUpdateCounter++;
             return of(evt.data);
           }
-          const [meeting, occurrence, authenticated, canToggle] = evt.data;
+          const [meeting, occurrence, authenticated, canRespond] = evt.data;
           // Only fetch when the user can actually RSVP (organizer + invited).
-          if (!authenticated || !canToggle || !meeting?.id) {
+          if (!authenticated || !canRespond || !meeting?.id) {
             return of(null);
           }
           const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
@@ -1528,44 +1519,11 @@ export class MeetingJoinComponent implements OnInit {
     );
   }
 
-  private initializeCurrentUserRsvpLabel(): Signal<string | null> {
+  // Hands the confirmed organizer response to the overview so its counts update before the roster re-indexes.
+  private initializeOverviewConfirmedRsvps(): Signal<MeetingRsvp[]> {
     return computed(() => {
       const rsvp = this.currentUserRsvp();
-      if (!rsvp) return null;
-      switch (rsvp.response_type) {
-        case 'accepted':
-          return 'Going';
-        case 'declined':
-          return 'Not going';
-        case 'maybe':
-          return 'Maybe';
-        default:
-          return rsvp.response_type;
-      }
-    });
-  }
-
-  private initializeCurrentUserRsvpIcon(): Signal<string | null> {
-    return computed(() => {
-      const rsvp = this.currentUserRsvp();
-      if (!rsvp) return null;
-      switch (rsvp.response_type) {
-        case 'accepted':
-          return 'fa-solid fa-circle-check text-emerald-500';
-        case 'declined':
-          return 'fa-solid fa-circle-xmark text-red-500';
-        case 'maybe':
-          return 'fa-solid fa-clock text-amber-500';
-        default:
-          return null;
-      }
-    });
-  }
-
-  private initializeRsvpToggleLabel(): Signal<string> {
-    return computed(() => {
-      if (this.showMyRsvp()) return 'Show Guests';
-      return this.currentUserRsvp() ? 'Update My RSVP' : 'Set My RSVP';
+      return rsvp ? [rsvp] : [];
     });
   }
 
@@ -1821,7 +1779,6 @@ export class MeetingJoinComponent implements OnInit {
           const currentSubject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
           if (this.meeting().id !== meetingId || currentSubject !== subject) return;
           this.rsvpUpdateTrigger$.next(null);
-          this.showMyRsvp.set(false);
           this.optimisticInvited.set(false);
           this.meetingService.markRegistrationRemoved(meetingId);
           this.messageService.add({

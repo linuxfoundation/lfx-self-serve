@@ -690,15 +690,15 @@ export class MeetingsDashboardComponent {
   private initializeRawUserMeetings(): Signal<Meeting[]> {
     const lens$ = toObservable(this.activeLens);
     const timeFilter$ = toObservable(this.timeFilter);
-    const viewerUsername$ = toObservable(this.userService.viewerUsername);
-    let previousViewerUsername = this.userService.viewerUsername();
+    const identity$ = toObservable(this.userService.meetingFeedIdentity);
+    let previousIdentity = this.userService.meetingFeedIdentity();
 
     // Explicit refresh reconnects the cached source if a previous read completed through catchError.
     const rows = toSignal(
-      combineLatest([lens$, timeFilter$, this.refresh$, viewerUsername$]).pipe(
-        switchMap(([lens, timeFilter, , viewerUsername]) => {
-          const identityChanged = viewerUsername !== previousViewerUsername;
-          previousViewerUsername = viewerUsername;
+      combineLatest([lens$, timeFilter$, this.refresh$, identity$]).pipe(
+        switchMap(([lens, timeFilter, , identity]) => {
+          const identityChanged = identity !== previousIdentity;
+          previousIdentity = identity;
           // Skip when not on Me lens, not viewing upcoming, or during SSR.
           if (lens !== 'me' || timeFilter !== 'upcoming' || !isPlatformBrowser(this.platformId)) {
             return of([] as Meeting[]);
@@ -727,14 +727,14 @@ export class MeetingsDashboardComponent {
   private initializeRawUserPastMeetings(): Signal<PastMeeting[]> {
     const lens$ = toObservable(this.activeLens);
     const timeFilter$ = toObservable(this.timeFilter);
-    const viewerUsername$ = toObservable(this.userService.viewerUsername);
-    let previousViewerUsername = this.userService.viewerUsername();
+    const identity$ = toObservable(this.userService.meetingFeedIdentity);
+    let previousIdentity = this.userService.meetingFeedIdentity();
 
     return toSignal(
-      combineLatest([lens$, timeFilter$, this.refresh$, viewerUsername$]).pipe(
-        switchMap(([lens, timeFilter, , viewerUsername]) => {
-          const identityChanged = viewerUsername !== previousViewerUsername;
-          previousViewerUsername = viewerUsername;
+      combineLatest([lens$, timeFilter$, this.refresh$, identity$]).pipe(
+        switchMap(([lens, timeFilter, , identity]) => {
+          const identityChanged = identity !== previousIdentity;
+          previousIdentity = identity;
           // Skip when not on Me lens, not viewing past, or during SSR.
           if (lens !== 'me' || timeFilter !== 'past' || !isPlatformBrowser(this.platformId)) {
             return of([] as PastMeeting[]);

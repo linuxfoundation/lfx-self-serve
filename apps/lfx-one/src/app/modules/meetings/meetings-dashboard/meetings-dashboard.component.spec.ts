@@ -613,6 +613,20 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     expect(ids(component)).toEqual([]);
   });
 
+  it('clears and refetches personal rows when the subject changes without LFID claims', () => {
+    users.user.set({ sub: 'synthetic-a' } as User);
+    flush();
+    const component = mount([pending]);
+    expect(ids(component)).toEqual([pending.id]);
+
+    users.user.set({ sub: 'synthetic-b' } as User);
+    flush();
+    expect(ids(component)).toEqual([]);
+    http.expectOne('/api/user/meetings').flush([legacy]);
+    flush();
+    expect(ids(component)).toEqual([legacy.id]);
+  });
+
   it('keeps a successful No response out of the response queue while a stale index is refreshing', () => {
     const component = mount([pending]);
     respond(component, 'pending');
@@ -909,6 +923,7 @@ describe('MeetingsDashboardComponent — create button per flag', () => {
           provide: UserService,
           useValue: {
             viewerUsername: signal<string | null>('viewer'),
+            meetingFeedIdentity: signal('\0viewer'),
             getUserMeetings: vi.fn(() => of([] as Meeting[])),
             getUserPastMeetings: vi.fn(() => of([] as PastMeeting[])),
             refreshUserMeetings: vi.fn(),
