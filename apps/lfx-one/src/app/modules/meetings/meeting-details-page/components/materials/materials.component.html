@@ -92,7 +92,7 @@
                             {{ file.category }} ·
                           }
                           {{ fileType.label }}
-                          @if (file.file_size) {
+                          @if (file.file_size !== undefined && file.file_size !== null) {
                             · {{ file.file_size | fileSize }}
                           }
                         </span>

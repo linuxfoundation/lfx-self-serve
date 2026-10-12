@@ -149,6 +149,12 @@ describe('MeetingMaterialsComponent', () => {
     expect(unsafe?.textContent).toContain('Link unsafe');
   });
 
+  it('shows the size of an empty file too', async () => {
+    await setup(() => of([file('empty', { file_size: 0 })]));
+
+    expect(text('materials-file-empty')).toContain('PDF · 0 B');
+  });
+
   it('shows five of a group, then Show N more', async () => {
     await setup(() => of(['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((uid) => file(uid))));
 
