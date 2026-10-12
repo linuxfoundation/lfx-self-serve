@@ -521,6 +521,37 @@ describe('UserService', () => {
       subscription.unsubscribe();
     });
 
+    it.each(['single', 'this_and_following'] as const)('does not resurrect a %s confirmation fully covered by a newer indexed following range', (scope) => {
+      const occurrenceId = String(Date.parse('2099-01-01T10:00:00Z') / 1000);
+      const confirmed = response({ scope, occurrence_id: `${occurrenceId}000` });
+      indexed = {
+        ...indexed,
+        recurrence: { type: 2, repeat_interval: 1 },
+        occurrences: [{ occurrence_id: occurrenceId, start_time: '2099-01-01T10:00:00Z', duration: 60 }],
+      };
+      service.recordConfirmedMeetingRsvp(confirmed);
+      let rows: Meeting[] = [];
+      const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      expect(rows[0].my_rsvp).toEqual(confirmed);
+
+      const newer = response({
+        id: 'synthetic-newer-following',
+        scope: 'this_and_following',
+        occurrence_id: String(Number(occurrenceId) - 86400),
+        response_type: 'declined',
+        created_at: '2026-10-12T11:00:00Z',
+      });
+      indexed = { ...indexed, my_rsvp: newer };
+      service.refreshUserMeetings();
+      expect(rows[0].my_rsvp).toEqual(newer);
+      expect(service.confirmedMeetingRsvps(indexed.id)).toEqual([]);
+
+      indexed = { ...indexed, my_rsvp: undefined, my_registrant_ids: undefined };
+      service.refreshUserMeetings();
+      expect(rows[0].my_rsvp).toBeUndefined();
+      subscription.unsubscribe();
+    });
+
     it('applies late registration removal only to its dispatch subject, even when aliases and registration UIDs match', async () => {
       service.user.set({ sub: 'synthetic-a', username: 'unchanged-alias' } as User);
       await TestBed.inject(ApplicationRef).whenStable();

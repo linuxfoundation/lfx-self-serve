@@ -165,16 +165,22 @@ export function selectApplicableRsvp(occurrenceId: string | null | undefined, us
 /**
  * True when `newer` was written strictly after `older` and covers every date `older` answers,
  * so newest-applicable selection ({@link selectApplicableRsvp}) can never pick `older` again.
- * Coverage is conservative: a rewrite of the same row, an `all` answer, or the same scope for
- * the same occurrence and registration. Partial overlaps (e.g. a later `this_and_following`
- * over one `single` date) and scoped answers from other registrations are not treated as superseding.
+ * Coverage includes a rewrite of the same row or an `all` answer. On the same registration,
+ * a `single` answer covers only that date; a `this_and_following` answer covers a single date
+ * or following range anchored at or after its normalized anchor. Partial overlaps and scoped
+ * answers from other registrations are not treated as superseding.
  */
 export function isRsvpSupersededBy(older: MeetingRsvp, newer: MeetingRsvp): boolean {
   if (!(getRsvpTimestampMs(newer) > getRsvpTimestampMs(older))) return false;
   if (newer.id === older.id || newer.scope === 'all') return true;
-  return (
-    older.registrant_id === newer.registrant_id && newer.scope === older.scope && isSameOccurrenceId(getRsvpOccurrenceId(newer), getRsvpOccurrenceId(older))
-  );
+  if (older.registrant_id !== newer.registrant_id) return false;
+  if (newer.scope === 'single') {
+    return older.scope === 'single' && isSameOccurrenceId(getRsvpOccurrenceId(newer), getRsvpOccurrenceId(older));
+  }
+  if (newer.scope !== 'this_and_following' || older.scope === 'all') return false;
+  const newerAnchorMs = occurrenceIdToMs(getRsvpOccurrenceId(newer));
+  const olderAnchorMs = occurrenceIdToMs(getRsvpOccurrenceId(older));
+  return newerAnchorMs !== null && olderAnchorMs !== null && newerAnchorMs <= olderAnchorMs;
 }
 
 /**

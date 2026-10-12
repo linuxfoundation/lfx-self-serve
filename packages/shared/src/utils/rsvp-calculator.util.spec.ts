@@ -680,10 +680,32 @@ describe('isRsvpSupersededBy', () => {
     expect(isRsvpSupersededBy(older, { ...newer, registrant_id: 'reg-A' })).toBe(true);
   });
 
+  it.each(['single', 'this_and_following'] as const)('retires a %s answer fully covered by a newer following range on the same registration', (scope) => {
+    const older = { ...single, scope };
+    for (const anchor of [OCC_JUL_28_SECONDS, `${OCC_AUG_11_SECONDS}000`]) {
+      const newer = later({ scope: 'this_and_following', occurrence_id: anchor });
+      expect(isRsvpSupersededBy(older, newer)).toBe(true);
+      expect(isRsvpSupersededBy(older, { ...newer, registrant_id: 'reg-other' })).toBe(false);
+    }
+  });
+
+  it('preserves earlier dates of a following range when a newer answer only partly covers it', () => {
+    const older = { ...single, scope: 'this_and_following' as const, occurrence_id: OCC_JUL_28_SECONDS };
+    expect(isRsvpSupersededBy(older, later({ scope: 'this_and_following', occurrence_id: OCC_AUG_11_SECONDS }))).toBe(false);
+    expect(isRsvpSupersededBy(older, later({ scope: 'single', occurrence_id: OCC_JUL_28_SECONDS }))).toBe(false);
+  });
+
+  it('compares composite anchors and refuses to infer coverage from malformed anchors', () => {
+    const newer = later({ scope: 'this_and_following', meeting_and_occurrence_id: `series-1-${OCC_JUL_28_SECONDS}000` });
+    expect(isRsvpSupersededBy(single, newer)).toBe(true);
+    expect(isRsvpSupersededBy(single, { ...newer, occurrence_id: 'not-a-date' })).toBe(false);
+    expect(isRsvpSupersededBy({ ...single, occurrence_id: 'not-a-date' }, newer)).toBe(false);
+  });
+
   it('keeps an answer that a newer one only partly covers, or that is not strictly older', () => {
     const allDates = rsvp({ id: 'rsvp-all', scope: 'all', modified_at: '2026-07-11T00:00:00Z' });
     expect(isRsvpSupersededBy(allDates, later({ scope: 'single', occurrence_id: OCC_AUG_11_SECONDS }))).toBe(false);
-    expect(isRsvpSupersededBy(single, later({ scope: 'this_and_following', occurrence_id: OCC_JUL_28_SECONDS }))).toBe(false);
+    expect(isRsvpSupersededBy(single, later({ scope: 'this_and_following', occurrence_id: OCC_AUG_18_SECONDS }))).toBe(false);
     expect(isRsvpSupersededBy(single, { ...single, id: 'rsvp-same-time', scope: 'all' })).toBe(false);
     expect(isRsvpSupersededBy(single, later({ scope: 'all', modified_at: 'not-a-date' }))).toBe(false);
   });

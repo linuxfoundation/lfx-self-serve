@@ -344,11 +344,12 @@ export class MeetingCardComponent implements OnInit {
       )
       .subscribe(() => this.refreshAttachments$.next());
 
-    // Reset post-registration flag if this card instance is reused for a different meeting.
-    toObservable(this.meetingInput)
+    // Local confirmations and post-registration state belong to this meeting and viewer identity.
+    combineLatest([meeting$, toObservable(this.userService.meetingFeedIdentity)])
       .pipe(
-        map((m) => m?.id),
-        distinctUntilChanged(),
+        distinctUntilChanged(
+          ([previousMeeting, previousIdentity], [meeting, identity]) => previousMeeting?.id === meeting?.id && previousIdentity === identity
+        ),
         skip(1),
         takeUntilDestroyed(this.destroyRef)
       )

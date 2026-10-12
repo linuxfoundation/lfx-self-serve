@@ -60,6 +60,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
             user: signal(null),
             authenticated: signal(false),
             viewerUsername: signal(null),
+            meetingFeedIdentity: signal(''),
             refreshUserMeetings: vi.fn(),
             clearConfirmedMeetingRsvps: vi.fn(),
             isMeetingRsvpCurrent: vi.fn(() => true),
@@ -443,6 +444,7 @@ describe('MeetingCardComponent — invitee panels', () => {
             user: signal(null),
             authenticated: signal(true),
             viewerUsername: signal(null),
+            meetingFeedIdentity: signal(''),
             refreshUserMeetings: vi.fn(),
             clearConfirmedMeetingRsvps: vi.fn(),
             isMeetingRsvpCurrent: vi.fn(() => true),
@@ -582,6 +584,58 @@ describe('MeetingCardComponent — remove myself', () => {
     removedIds = signal<ReadonlySet<string>>(new Set());
     registrationClose$ = new Subject<{ registered: boolean }>();
     rsvpButtons = undefined;
+  });
+
+  it.each([{ sub: 'synthetic-other', username: 'synthetic-viewer' }, null])(
+    "removes the previous viewer's card-local confirmations from an organizer overview after identity changes to %s",
+    async (nextUser) => {
+      const component = await mount({ ...INVITEE, organizer: true });
+      const users = TestBed.inject(UserService);
+      const rsvp: MeetingRsvp = {
+        id: 'synthetic-viewer-answer',
+        meeting_id: INVITEE.id,
+        registrant_id: 'synthetic-viewer-registration',
+        username: 'synthetic-viewer',
+        email: 'synthetic@example.com',
+        response_type: 'accepted',
+        scope: 'all',
+        created_at: '2026-10-12T10:00:00Z',
+      };
+      component.onRsvpChanged(rsvp);
+      users.recordConfirmedMeetingRsvp(rsvp);
+      expect(component.overviewConfirmedRsvps()).toContainEqual(rsvp);
+
+      users.user.set(nextUser as User | null);
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(component.confirmedRsvps()).toEqual([]);
+      expect(component.overviewConfirmedRsvps()).toEqual([]);
+    }
+  );
+
+  it("resets local confirmations on LFID changes without discarding the same subject's service-owned response", async () => {
+    const component = await mount({ ...INVITEE, organizer: true });
+    const users = TestBed.inject(UserService);
+    const rsvp: MeetingRsvp = {
+      id: 'synthetic-lfid-answer',
+      meeting_id: INVITEE.id,
+      registrant_id: 'synthetic-viewer-registration',
+      username: 'synthetic-viewer',
+      email: 'synthetic@example.com',
+      response_type: 'maybe',
+      scope: 'all',
+      created_at: '2026-10-12T10:00:00Z',
+    };
+    component.onRsvpChanged(rsvp);
+    users.recordConfirmedMeetingRsvp(rsvp);
+    users.user.set({ ...users.user(), username: 'canonical-viewer' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.confirmedRsvps()).toEqual([]);
+    expect(component.overviewConfirmedRsvps()).toEqual([rsvp]);
+
+    component.onRsvpChanged(rsvp);
+    users.user.set({ ...users.user(), name: 'Updated display name' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.confirmedRsvps()).toEqual([rsvp]);
   });
 
   it('offers the action to a signed-in invitee of an upcoming meeting', async () => {
