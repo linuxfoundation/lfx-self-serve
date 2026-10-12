@@ -1776,9 +1776,10 @@ export class MeetingService {
    * @param req Express request object
    * @param meetingUid Meeting UID to get RSVP for
    * @param occurrenceId Optional occurrence ID to filter RSVP for specific occurrence
+   * @param allDatesOnly Without an occurrence, select only series-wide responses before resolving the newest answer
    * @returns Promise resolving to user's RSVP or null
    */
-  public async getMeetingRsvpForCurrentUser(req: Request, meetingUid: string, occurrenceId?: string): Promise<MeetingRsvp | null> {
+  public async getMeetingRsvpForCurrentUser(req: Request, meetingUid: string, occurrenceId?: string, allDatesOnly = false): Promise<MeetingRsvp | null> {
     logger.debug(req, 'get_meeting_rsvp_for_current_user', 'Fetching user RSVP', {
       meeting_id: meetingUid,
       occurrence_id: occurrenceId,
@@ -1810,7 +1811,8 @@ export class MeetingService {
       const registrantIds = new Set(registrants.map((r) => r.uid));
 
       const allRsvps = await this.getMeetingRsvps(req, meetingUid);
-      const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id));
+      const requireAllDates = allDatesOnly && !occurrenceId;
+      const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id) && (!requireAllDates || rsvp.scope === 'all'));
 
       // Delegate to the shared scope resolver so this endpoint and
       // `calculateRsvpCounts` stay in lockstep. It normalises seconds ↔ ms on

@@ -574,7 +574,9 @@ export class UserService {
               meeting.my_rsvp = null;
               continue;
             }
-            const applicable = selectApplicableRsvp(resolveRsvpOccurrenceId(meeting), meetingRsvps);
+            const occurrenceId = resolveRsvpOccurrenceId(meeting);
+            const candidates = meeting.recurrence && !occurrenceId ? meetingRsvps.filter((rsvp) => rsvp.scope === 'all') : meetingRsvps;
+            const applicable = selectApplicableRsvp(occurrenceId, candidates);
             meeting.my_rsvp = applicable ?? selectApplicableRsvp(undefined, meetingRsvps);
           }
         } catch (error) {

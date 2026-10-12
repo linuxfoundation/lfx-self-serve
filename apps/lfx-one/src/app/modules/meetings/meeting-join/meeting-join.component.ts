@@ -1507,13 +1507,14 @@ export class MeetingJoinComponent implements OnInit {
             return of(null);
           }
           const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
+          const allDatesOnly = !!meeting.recurrence && !occurrenceId;
           // Capture the current update revision at fetch dispatch time. If a manual update
           // bumps the counter before the server response arrives (typically because the
           // query-service hasn't indexed the new RSVP yet), the filter drops both the
           // `startWith(null)` reset and the stale server value so the optimistic local
           // update stays visible and the chip doesn't flash back.
           const counterAtDispatch = this.rsvpUpdateCounter;
-          return this.meetingService.getMeetingRsvpForCurrentUser(meeting.id, occurrenceId).pipe(
+          return this.meetingService.getMeetingRsvpForCurrentUser(meeting.id, occurrenceId, allDatesOnly).pipe(
             startWith(null),
             filter(() => this.rsvpUpdateCounter === counterAtDispatch)
           );

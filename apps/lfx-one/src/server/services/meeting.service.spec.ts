@@ -756,6 +756,38 @@ describe('MeetingService.getMeetingRsvps', () => {
   });
 });
 
+describe('MeetingService.getMeetingRsvpForCurrentUser — unresolved recurring history', () => {
+  it.each(['single', 'this_and_following'] as const)("selects only the viewer's all-date answer before a newer %s response", async (scope) => {
+    vi.mocked(getEffectiveEmail).mockReturnValue('synthetic@example.com');
+    const service = new MeetingService();
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'synthetic-registrant' } as MeetingRegistrant]);
+    const all = {
+      id: 'synthetic-all',
+      meeting_id: 'synthetic-series',
+      registrant_id: 'synthetic-registrant',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-01-01T00:00:00Z',
+    } as MeetingRsvp;
+    const scoped = {
+      ...all,
+      id: 'synthetic-scoped',
+      response_type: 'declined',
+      scope,
+      occurrence_id: '4071031200',
+      created_at: '2026-02-01T00:00:00Z',
+    } as MeetingRsvp;
+    const other = { ...all, id: 'synthetic-other', registrant_id: 'another-registrant', created_at: '2026-03-01T00:00:00Z' };
+    const history = vi.spyOn(service, 'getMeetingRsvps').mockResolvedValue([all, scoped, other]);
+
+    expect((await service.getMeetingRsvpForCurrentUser(req, 'synthetic-series', undefined, true))?.id).toBe(all.id);
+    expect((await service.getMeetingRsvpForCurrentUser(req, 'synthetic-series', '4071031200', true))?.id).toBe(scoped.id);
+    expect((await service.getMeetingRsvpForCurrentUser(req, 'synthetic-series'))?.id).toBe(scoped.id);
+    history.mockResolvedValue([scoped, other]);
+    expect(await service.getMeetingRsvpForCurrentUser(req, 'synthetic-series', undefined, true)).toBeNull();
+  });
+});
+
 describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
   let service: MeetingService;
 

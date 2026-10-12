@@ -99,6 +99,8 @@ Personal meeting caches use `UserService.viewerUsername`, the canonical-first LF
 
 Uploaded-avatar resets and confirmed RSVP ownership instead prefer the effective user's stable `sub`, falling back to the canonical-first LFID when absent. A late canonical claim still refreshes personal feeds and ownership comparisons, but does not discard that subject's uploaded avatar or confirmed responses. Login/logout and subject changes keep those values isolated. When a recurring date becomes unresolved, the dashboard filters retained and indexed RSVP candidates to all-date responses before selecting the newest answer, so a newer date-scoped answer cannot hide an older all-date confirmation.
 
+The BFF personal feed likewise prefers all-date history before reducing an unresolved recurring meeting to `my_rsvp`. It retains the legacy aggregate fallback only when no all-date answer exists; personal response filters still reject that date-scoped fallback. The join page and RSVP controls request `rsvp_scope=all` on the existing current-user RSVP lookup when their recurring date is unresolved, so the BFF selects only the effective user's all-date responses before choosing the newest answer (or returns `null` without one). Resolved-date and default aggregate lookups keep their existing precedence.
+
 ## 🧩 Component Integration
 
 ### Signal Consumption

@@ -776,8 +776,13 @@ export class MeetingService {
     return this.http.get<MeetingRsvp[]>(`/api/meetings/${meetingUid}/rsvp`);
   }
 
-  public getMeetingRsvpForCurrentUser(meetingUid: string, occurrenceId?: string): Observable<MeetingRsvp | null> {
-    const options = occurrenceId ? { params: { occurrenceId } } : {};
+  public getMeetingRsvpForCurrentUser(meetingUid: string, occurrenceId?: string, allDatesOnly = false): Observable<MeetingRsvp | null> {
+    const options: { params?: Record<string, string> } = {};
+    if (occurrenceId) {
+      options.params = { occurrenceId };
+    } else if (allDatesOnly) {
+      options.params = { rsvp_scope: 'all' };
+    }
     return this.http.get<MeetingRsvp | null>(`/api/meetings/${meetingUid}/rsvp/me`, options).pipe(
       catchError((error) => {
         console.error(`Failed to get RSVP for meeting ${meetingUid}:`, error);

@@ -666,6 +666,62 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
     expect(meetings[0].my_rsvp?.response_type).toBe('accepted');
   });
 
+  it.each(['single', 'this_and_following'] as const)(
+    'keeps an older all-date answer before a newer %s response when the recurring date is unresolved',
+    async (scope) => {
+      const occurrenceId = String(Math.floor(Date.parse(tomorrow) / 1000));
+      const meetings: Partial<Meeting>[] = [
+        { id: 'synthetic-series', start_time: tomorrow, duration: 60, recurrence: { type: 1, repeat_interval: 1 }, occurrences: [] },
+        { id: 'synthetic-scoped-only', start_time: tomorrow, duration: 60, recurrence: { type: 1, repeat_interval: 1 }, occurrences: [] },
+        { id: 'synthetic-one-time', start_time: tomorrow, duration: 60 },
+        {
+          id: 'synthetic-resolved',
+          start_time: tomorrow,
+          duration: 60,
+          recurrence: { type: 1, repeat_interval: 1 },
+          occurrences: [{ occurrence_id: occurrenceId, start_time: tomorrow, duration: 60 }],
+        },
+      ];
+      const registrants = meetings.map((meeting) => ({ uid: `reg-${meeting.id}`, meeting_id: meeting.id }));
+      const responses: Partial<MeetingRsvp>[] = meetings.flatMap((meeting) => {
+        const all: Partial<MeetingRsvp> = {
+          id: `all-${meeting.id}`,
+          meeting_id: meeting.id,
+          registrant_id: `reg-${meeting.id}`,
+          response_type: 'accepted',
+          scope: 'all',
+          created_at: '2026-01-01T00:00:00Z',
+        };
+        const scoped: Partial<MeetingRsvp> = {
+          ...all,
+          id: `scoped-${meeting.id}`,
+          response_type: 'declined',
+          scope,
+          occurrence_id: occurrenceId,
+          created_at: '2026-02-01T00:00:00Z',
+        };
+        return meeting.id === 'synthetic-scoped-only' ? [scoped] : [all, scoped];
+      });
+      proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+        if (params?.type === 'v1_meeting') return queryPage(meetings);
+        if (params?.type === 'v1_meeting_registrant') return queryPage(registrants);
+        if (params?.type === 'v1_meeting_rsvp') return queryPage(responses);
+        return queryPage([]);
+      });
+      const service = new UserService();
+      Object.assign(service, {
+        meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items },
+        accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
+      });
+
+      const result = await service.getUserMeetings(req);
+      expect(result.find((meeting) => meeting.id === 'synthetic-series')?.my_rsvp?.id).toBe('all-synthetic-series');
+      expect(result.find((meeting) => meeting.id === 'synthetic-scoped-only')?.my_rsvp?.id).toBe('scoped-synthetic-scoped-only');
+      expect(result.find((meeting) => meeting.id === 'synthetic-one-time')?.my_rsvp?.id).toBe('scoped-synthetic-one-time');
+      expect(result.find((meeting) => meeting.id === 'synthetic-resolved')?.my_rsvp?.id).toBe('scoped-synthetic-resolved');
+    }
+  );
+
   it('flags a meeting as invited through a committee only when a committee registration backs it', async () => {
     const meetings: Partial<Meeting>[] = [
       { id: 'via-committee', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: true },

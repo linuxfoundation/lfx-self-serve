@@ -248,7 +248,8 @@ export class RsvpButtonGroupComponent {
             return of(null);
           }
           const context = this.rsvpContext();
-          return this.meetingService.getMeetingRsvpForCurrentUser(meeting.id, occurrenceId).pipe(
+          const allDatesOnly = !!meeting.recurrence && !occurrenceId;
+          return this.meetingService.getMeetingRsvpForCurrentUser(meeting.id, occurrenceId, allDatesOnly).pipe(
             catchError(() => of(null)),
             map((rsvp) => ({ context, occurrenceId, rsvp }))
           );

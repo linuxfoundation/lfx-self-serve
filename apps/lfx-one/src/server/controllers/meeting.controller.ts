@@ -1302,7 +1302,7 @@ export class MeetingController {
    */
   public async getMeetingRsvpForCurrentUser(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { occurrenceId } = req.query;
+    const { occurrenceId, rsvp_scope } = req.query;
 
     const startTime = logger.startOperation(req, 'get_meeting_rsvp_for_current_user', {
       meeting_id: uid,
@@ -1320,7 +1320,7 @@ export class MeetingController {
       }
 
       // Get the user's RSVP using direct meeting service call
-      const rsvp = await this.meetingService.getMeetingRsvpForCurrentUser(req, uid, occurrenceId as string | undefined);
+      const rsvp = await this.meetingService.getMeetingRsvpForCurrentUser(req, uid, occurrenceId as string | undefined, rsvp_scope === 'all');
 
       // Log success
       logger.success(req, 'get_meeting_rsvp_for_current_user', startTime, {
