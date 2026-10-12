@@ -338,6 +338,19 @@ describe('PersonaService — grant probe recency ordering', () => {
       expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(false);
     });
 
+    it('does not store an unscoped grant that does not cascade from ROOT under the null key, and clears a stale ROOT true', () => {
+      // Seed a ROOT-cascading campaign grant (null key) from an unscoped probe.
+      service.refreshEnrichedPersonas(true).subscribe();
+      http.expectOne((req) => !req.url.includes('project=')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true }));
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
+
+      // ROOT `global_marketing_ops` alone: granted on ROOT, but it does not cascade to other projects.
+      service.refreshEnrichedPersonas(true).subscribe();
+      http.expectOne((req) => !req.url.includes('project=')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: false }));
+
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(false);
+    });
+
     it('gates the ROOT (null) map key by resolved key, not by the queried foundation slug — two probes for different foundations that both resolve to ROOT must race against each other (David Deal finding, PR #1835)', () => {
       service.refreshEnrichedPersonas(true, 'foundation-x').subscribe();
       service.refreshEnrichedPersonas(true, 'foundation-y').subscribe();

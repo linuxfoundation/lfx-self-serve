@@ -36,11 +36,12 @@
         [attr.aria-labelledby]="'mentorship-mentor-program-detail-tab-trigger-' + activeTab()">
         @switch (activeTab()) {
           @case ('applicants') {
-            <lfx-mentorship-mentor-applicants-tab [applicants]="applicants()" (noteRequested)="onNoteRequested($event)" />
+            <lfx-mentorship-mentor-applicants-tab [applicants]="applicants()" [taskSaved]="patchSavedTask" (noteRequested)="onNoteRequested($event)" />
           }
           @case ('mentees') {
             <lfx-mentorship-mentor-mentees-tab
               [mentees]="mentees()"
+              [taskSaved]="patchSavedTask"
               (noteRequested)="onNoteRequested($event)"
               (taskCreateRequested)="onTaskCreateRequested($event)" />
           }

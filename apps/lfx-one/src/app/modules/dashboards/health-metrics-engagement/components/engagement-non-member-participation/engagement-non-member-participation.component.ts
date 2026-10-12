@@ -7,7 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import { HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PAGE_SIZE, HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED } from '@lfx-one/shared/constants';
-import { selectHealthMetricsEngagementNonMemberPeriod, sortHealthMetricsEngagementNonMemberRows } from '@lfx-one/shared/utils';
+import { formatIsoDateLabel, selectHealthMetricsEngagementNonMemberPeriod, sortHealthMetricsEngagementNonMemberRows } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
@@ -20,6 +20,7 @@ import type {
   HealthMetricsEngagementNonMemberCounts,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementNonMemberQuery,
+  HealthMetricsEngagementNonMemberRow,
   HealthMetricsEngagementNonMemberRowView,
 } from '@lfx-one/shared/interfaces';
 
@@ -53,6 +54,8 @@ export class EngagementNonMemberParticipationComponent {
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not an empty foundation, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
+  /** The view carries no project key, so a selected project needs saying out loud here. */
+  protected readonly projectSelected = computed(() => this.chrome.selectedProjectSlug() !== null);
 
   protected readonly query: Signal<HealthMetricsEngagementNonMemberQuery> = computed(() => this.initQuery());
   protected readonly response: Signal<HealthMetricsEngagementNonMemberParticipation> = this.initResponse();
@@ -63,11 +66,27 @@ export class EngagementNonMemberParticipationComponent {
     computation: () => 0,
   });
 
+  // The dates are all-time, so their labels are built once per response rather than on every pill change.
+  private readonly dateLabelsByRow = computed(
+    () =>
+      new Map<HealthMetricsEngagementNonMemberRow, Pick<HealthMetricsEngagementNonMemberRowView, 'firstSeenLabel' | 'lastAttendedLabel'>>(
+        this.response().rows.map((row) => [
+          row,
+          {
+            firstSeenLabel: row.firstSeenDate ? formatIsoDateLabel(row.firstSeenDate) : '—',
+            lastAttendedLabel: row.lastAttendedDate ? formatIsoDateLabel(row.lastAttendedDate) : '—',
+          },
+        ])
+      )
+  );
   protected readonly rowViews = computed<HealthMetricsEngagementNonMemberRowView[]>(() => {
     const range = this.chrome.selectedRange();
+    const dateLabels = this.dateLabelsByRow();
     return sortHealthMetricsEngagementNonMemberRows(this.response().rows, range).map((row) => ({
       row,
       period: selectHealthMetricsEngagementNonMemberPeriod(row, range),
+      firstSeenLabel: dateLabels.get(row)?.firstSeenLabel ?? '—',
+      lastAttendedLabel: dateLabels.get(row)?.lastAttendedLabel ?? '—',
     }));
   });
   protected readonly totalRecords = computed(() => this.rowViews().length);

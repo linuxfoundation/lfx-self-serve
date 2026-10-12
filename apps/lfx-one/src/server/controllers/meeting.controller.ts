@@ -82,14 +82,14 @@ export class MeetingController {
       // forwarding it to /query/resources would send an unsupported param upstream.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { skip_registrants: _skipRegistrants, ...meetingQuery } = req.query as Record<string, any>;
-      const [{ data: meetings, page_token }, registeredMeetingIds] = await Promise.all([
+      const [{ data: meetings, page_token }, registrations] = await Promise.all([
         this.meetingService.getMeetings(req, meetingQuery, 'v1_meeting', true),
-        this.userService.getUserRegisteredMeetingIds(req, userEmail),
+        this.userService.getUserMeetingRegistrations(req, userEmail),
       ]);
 
       // List cards never surface the host key — strip it from every item unconditionally.
       const result = meetings.map((m) => {
-        const meeting = { ...m, invited: registeredMeetingIds.has(m.id) };
+        const meeting = { ...m, invited: registrations.has(m.id), invited_via_committee: registrations.get(m.id) === true };
         stripHostKey(meeting);
         return meeting;
       });
@@ -1033,6 +1033,52 @@ export class MeetingController {
       res.status(statusCode).json(batchResponse);
     } catch (error) {
       // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /meetings/:uid/registrants/self
+   * @description Removes the authenticated user as a registrant of the meeting. The caller's registrant
+   * records are resolved server-side and the delete runs under the user's own token; the M2M token is
+   * used only for the registrant lookup, after the caller's identity has been resolved from their session.
+   */
+  public async removeMyMeetingRegistration(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+
+    const startTime = logger.startOperation(req, 'remove_my_meeting_registration', { meeting_id: uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'remove_my_meeting_registration',
+          service: 'meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const userEmail = getEffectiveEmail(req) || undefined;
+      const username = (await getUsernameFromAuth(req)) ?? undefined;
+
+      if (!userEmail && !username) {
+        next(
+          ServiceValidationError.forField('user', 'Unable to determine your identity', {
+            operation: 'remove_my_meeting_registration',
+            service: 'meeting_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const m2mToken = await generateM2MToken(req);
+      const removedCount = await this.meetingService.removeMeetingRegistrantSelf(req, uid, userEmail, username, m2mToken);
+
+      logger.success(req, 'remove_my_meeting_registration', startTime, { meeting_id: uid, removed_count: removedCount });
+
+      res.status(204).send();
+    } catch (error) {
       next(error);
     }
   }

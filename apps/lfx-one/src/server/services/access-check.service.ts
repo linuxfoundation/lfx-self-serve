@@ -196,6 +196,27 @@ export class AccessCheckService {
     };
   }
 
+  /**
+   * Adds the `writer` field to projects, resolved from `writer_guard` rather than bare `writer`.
+   * Staff whose project access comes from a per-project `global_writer` team grant hold
+   * `writer_guard` without holding `writer`. The field keeps the name `writer`
+   * because the frontend's edit affordances and `writer.guard.ts` read it by that name —
+   * `addAccessToResources` would name it `writer_guard`.
+   */
+  public async addProjectWriterToResources<T extends { uid: string } | { id: string }>(req: Request, projects: T[]): Promise<(T & { writer: boolean })[]> {
+    const results = await this.checkAccess(
+      req,
+      projects.map((project) => ({ resource: 'project', id: this.getResourceId(project), access: 'writer_guard' }))
+    );
+    return projects.map((project) => ({ ...project, writer: results.get(`${this.getResourceId(project)}#writer_guard`) || false }));
+  }
+
+  /** Single-project form of {@link addProjectWriterToResources}. */
+  public async addProjectWriterToResource<T extends { uid: string } | { id: string }>(req: Request, project: T): Promise<T & { writer: boolean }> {
+    const writer = await this.checkSingleAccess(req, { resource: 'project', id: this.getResourceId(project), access: 'writer_guard' });
+    return { ...project, writer };
+  }
+
   private getResourceId(resource: { uid: string } | { id: string }): string {
     return 'uid' in resource ? resource.uid : resource.id;
   }

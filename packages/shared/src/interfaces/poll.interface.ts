@@ -238,6 +238,9 @@ export interface Vote {
   response_status?: VoteResponseStatus;
 }
 
+/** Optional personal-feed filter shared by the summary and client-side table. */
+export type MyVotesQuickFilter = 'closing-soon' | 'needs-vote';
+
 /** Precomputed display fields for votes-table rows (avoids per-CD template method calls). */
 export interface VoteTableRow extends Vote {
   endedEarlyTooltip: string | null;

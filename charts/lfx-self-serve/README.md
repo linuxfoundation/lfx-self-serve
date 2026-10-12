@@ -197,6 +197,7 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`          | Persists the generated brief in campaign-service instead of only in the browser tab                                                                                                                                                                                                                                                                                                                  | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`          | Creates campaigns through campaign-service instead of the per-platform Express services — deploy only after STATUS_TOGGLE converges                                                                                                                                                                                                                                                                  | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`      | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257)                                                                                                                                                                                                                                                                              | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS` | Offers Performance Max, Video and Display. Allows a Performance Max or Display CREATE; Video is only ever offered, never unlocked, because the Google Ads API cannot create one. Requires a campaign-service that knows those `googleAdsConfig.channel` values                                                                                                                                       | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`   | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                                                                                                                                                                                                                                                                                 | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES [campaign-service #190](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/190) deployed first; CHANGES THE NUMBERS — see the flag's own note in `values.yaml`                                                                                                 | No       | on       |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — REQUIRES [campaign-service #191](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/191) deployed first; the legacy path is already broken without the GADS\_\* vars. NOTE: two request-boundary changes apply even with this OFF, deliberately — a 50-row cap and a malformed-id refusal on `/keywords/actions`; see `values.yaml` | No       | on       |
@@ -216,8 +217,8 @@ TIME, each converging before the next:
 JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
 ```
 
-The other four flags in the table -- `..._DEMAND_GEN`, `..._INSIGHTS`, `..._KEYWORD_ACTIONS` and
-`..._HUBSPOT_UTM` -- are NOT part of this enable order. They gate later, independent moves, each
+The other five flags in the table -- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._INSIGHTS`,
+`..._KEYWORD_ACTIONS` and `..._HUBSPOT_UTM` -- are NOT part of this enable order. They gate later, independent moves, each
 with its own prerequisite noted in the table. Their defaults now differ, and the difference
 matters to an operator deciding whether an override is needed:
 
@@ -225,10 +226,10 @@ matters to an operator deciding whether an override is needed:
   campaign-service, so no override is required to use them — and an override back to `"false"` is
   NOT a safe rollback wherever the `GADS_*` credentials have been removed, because the legacy arm
   then calls `getGadsClient()`, which throws before any read.
-- `..._DEMAND_GEN` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
+- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
   HubSpot connection to exist for the project (or the LF system row) before it does anything but
   turn one error into another. The ordering rules below
-  are about the create pipeline only; each of these four carries its own note in `values.yaml`.
+  are about the create pipeline only; each of these five carries its own note in `values.yaml`.
 
 **This is a deploy constraint, not a merge one.** All four of the create-pipeline flags now
 default to `"true"` in this chart, and nothing in CI staggers them — a single rollout of this chart turns them all on at once, which
@@ -305,6 +306,37 @@ There is no version probe because campaign-service exposes no version endpoint, 
 support from a successful create is exactly the ambiguity that makes this dangerous. So the order
 is: deploy campaign-service with LFXV2-3257, confirm it, then set this. Left off, a Demand Gen
 create is refused with a message telling the user to select Search instead.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS` is the same kind of flag, asking the same question
+about a later campaign-service: does the deployed service know the `performance-max`, `video` and
+`display` channel values? The remedy is the same — deploy the service, confirm it, then set this —
+but the failure it guards against is not one symptom, it is two, and which one an operator sees
+depends on how old the deployed service is:
+
+- **Older than LFXV2-3257** — no `channel` field exists, so the silent-Search failure described
+  above applies in full: a Search campaign is created with real budget and the job reports success.
+- **LFXV2-3257 or later** — the field exists, and a value it does not recognise is refused by name
+  (`unsupported channel "performance-max"`) before Google is contacted. The job fails loudly;
+  nothing is created and nothing is charged.
+
+The flag default-denies both, because nothing on the LFX One side can distinguish them: there is no
+version endpoint, and a successful create proves nothing about which channel it created. Left off, a
+create for one of those channels is refused with a message naming the channel and telling the user
+to ask an administrator.
+
+It is deliberately NOT folded into `..._DEMAND_GEN`. A deployment running LFXV2-3257 has had
+Demand Gen for months with that flag on; widening it would turn these three on everywhere Demand
+Gen already is, which is the guess the mechanism exists to avoid.
+
+**Video is not unlocked by this flag, or by any flag.** The Google Ads API has no call that
+creates a Video campaign, so campaign-service refuses one in the first statement of
+`CreateVideoCampaign`. The box is offered but disabled in the Implementation tab, and the server
+refuses a `video` create whatever this value is set to — so turning this on offers Performance Max
+and Display. campaign-service can adopt a Video campaign built by hand in Google Ads, but LFX One
+does not expose that: there is no adoption screen here, so a Video campaign cannot be brought under
+management from this product. It is now at least visible — the monitoring GAQL asks Google for every
+channel type this application knows about, Video included — but visible is not managed. Setting this
+flag changes none of that.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE` moves campaign pause/resume onto campaign-service,
 and what it buys is REACH rather than a different backend. The path it replaces is a `switch` over

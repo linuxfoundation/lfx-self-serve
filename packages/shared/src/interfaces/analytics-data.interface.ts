@@ -2285,6 +2285,8 @@ export interface FoundationProjectsDetailGroup {
 export interface FoundationProjectsDetailGroupedResponse {
   groups: FoundationProjectsDetailGroup[];
   totalCount: number;
+  /** False when a sub-foundation branch was dropped (a failed read or a traversal cap), so the list may miss projects. */
+  complete: boolean;
 }
 
 // ============================================

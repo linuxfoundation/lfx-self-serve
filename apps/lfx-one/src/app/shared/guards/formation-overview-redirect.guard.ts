@@ -5,9 +5,12 @@ import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 import { FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS, FORMATION_CHECKLIST_PATH } from '@lfx-one/shared/constants';
+import { isFormationStageGate } from '@lfx-one/shared/utils';
+import { firstValueFrom } from 'rxjs';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
 import { ProjectContextService } from '../services/project-context.service';
+import { ProjectRecoveryService } from '../services/project-recovery.service';
 import { ProjectService } from '../services/project.service';
 import { isFormationChecklistProject, resolveFormationFlag } from '../utils/formation-checklist-gate.util';
 
@@ -19,8 +22,9 @@ import { isFormationChecklistProject, resolveFormationFlag } from '../utils/form
  *
  * Runs first in the route's `canActivate` array: Angular starts every guard concurrently but
  * honours the first `UrlTree` in array order, so this decides regardless of
- * `projectQueryParamGuard`'s timing. Both read the same `shareReplay`-cached `getProject`, so the
- * redirect costs no extra request.
+ * `projectQueryParamGuard`'s timing. Query-selected projects share the strict/retry lookup with
+ * that guard and Formation CanMatch, so separate caches cannot disagree about the project's stage.
+ * Context-only navigations retain the ordinary lookup until the redirect supplies `?project=`.
  *
  * The slug comes from the route snapshot (`?project=`), falling back to the selected project slot
  * for the in-app navigations that call `setProject()` then `navigate(['/project/overview'])`
@@ -60,6 +64,7 @@ export const formationOverviewRedirectGuard: CanActivateFn = async (route) => {
 
   const featureFlagService = inject(FeatureFlagService);
   const projectService = inject(ProjectService);
+  const projectRecoveryService = inject(ProjectRecoveryService);
   const projectContextService = inject(ProjectContextService);
   const router = inject(Router);
 
@@ -68,12 +73,23 @@ export const formationOverviewRedirectGuard: CanActivateFn = async (route) => {
   // guard never admitted cannot inherit it.
   projectContextService.setFormationOverviewAllowedSlug(null);
 
-  const slug = route.queryParamMap.get('project') ?? projectContextService.selectedProject()?.slug;
+  const querySlug = route.queryParamMap.get('project');
+  const slug = querySlug ?? projectContextService.selectedProject()?.slug;
   if (!slug) {
     return true;
   }
 
-  if (!(await isFormationChecklistProject(projectService, slug))) {
+  if (querySlug) {
+    try {
+      const project = await firstValueFrom(projectRecoveryService.resolve(slug));
+      if (!isFormationStageGate(project.stage)) {
+        return true;
+      }
+    } catch {
+      // The query guard owns in-place not-found/unavailable handling for lookup failures.
+      return true;
+    }
+  } else if (!(await isFormationChecklistProject(projectService, slug))) {
     return true;
   }
 

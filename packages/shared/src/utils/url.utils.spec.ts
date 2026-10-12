@@ -12,7 +12,21 @@ import {
   isPrivateHost,
   isProfileHubPath,
   isRelativeInAppPath,
+  normalizeToUrl,
 } from './url.utils';
+
+describe('normalizeToUrl', () => {
+  it.each(['HTTPS://example.com/team', 'hTtPs://example.com/team', 'HTTP://example.com/team'])('preserves the destination of %s', (input) => {
+    const destination = normalizeToUrl(input);
+    expect(destination).not.toBeNull();
+    expect(new URL(destination!).href).toBe(new URL(input).href);
+    expect(new URL(destination!).hostname).toBe('example.com');
+  });
+
+  it.each(['HTTPS://localhost/chat', 'HTTP://127.0.0.1/chat', 'JaVaScRiPt:alert(1)', '#general'])('does not create a destination for %s', (input) => {
+    expect(normalizeToUrl(input)).toBeNull();
+  });
+});
 
 describe('extractUrls', () => {
   it('extracts http and https URLs from prose', () => {

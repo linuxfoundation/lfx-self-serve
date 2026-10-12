@@ -10,7 +10,6 @@ import { parseMentorshipApplicationNote } from '../helpers/mentorship-applicatio
 import { parseMentorshipMentorProfileUpdate } from '../helpers/mentorship-mentor-profile-update.helper';
 import { parseMentorshipMentorRegisterRequest } from '../helpers/mentorship-mentor-register.helper';
 import { parseMentorshipMentorOpenProgramsQuery } from '../helpers/mentorship-mentor-request.helper';
-import { parseMentorshipMentorTaskCreateRequest } from '../helpers/mentorship-mentor-task.helper';
 import { parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { logger } from '../services/logger.service';
 import { MentorshipMentorService } from '../services/mentorship-mentor.service';
@@ -220,31 +219,6 @@ export class MentorshipMentorController {
       await this.mentorService.updateApplicationNote(req, applicationId, { note });
       logger.success(req, 'update_mentorship_application_note', startTime, { applicationId, cleared: note === '' });
       res.status(204).send();
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // POST /api/mentorship/mentor/tasks  { applicationIds, name, description, dueDate?, requiresFileSubmission? } -> { created, failed }
-  // Auth: logged-in user required (401 otherwise). The body is validated with the task dialog's rules (400). With
-  // one application, upstream's status passes through; with several, the ones not created are listed in `failed`.
-  // Only ids and counts are logged, never the task's text.
-  public async createMenteeTasks(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'create_mentorship_mentor_tasks');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'create_mentorship_mentor_tasks' });
-      }
-
-      const request = parseMentorshipMentorTaskCreateRequest(req.body);
-      const result = await this.mentorService.createMenteeTasks(req, request);
-      logger.success(req, 'create_mentorship_mentor_tasks', startTime, {
-        application_count: request.applicationIds.length,
-        created_count: result.created.length,
-        failed_count: result.failed.length,
-      });
-      res.json(result);
     } catch (error) {
       next(error);
     }

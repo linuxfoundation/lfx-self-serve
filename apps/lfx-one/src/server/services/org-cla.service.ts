@@ -1042,8 +1042,9 @@ export class OrgClaService {
    * plus `withoutUpstreamBody` composition is the same one the corporate hand-off uses, and it
    * is the whole of the difference between a sanctioned outcome and a 403 that just says
    * "Forbidden". The producer answers 403 for a viewer without the ACS grant too, and both
-   * refusals travel this branch — the client hides the toggle when ACS says the grant is not
-   * held, so the runtime 403 the client actually sees is nearly always the sanctions one.
+   * refusals travel this branch — the toggle still renders on every signed row, but the client
+   * disables it when ACS says the grant is not held, so the runtime 403 the client actually sees
+   * is nearly always the sanctions one.
    */
   public async updateEclaAutoCreate(req: Request, orgUid: string, signatureId: string, enable: boolean): Promise<OrgClaEclaAutoCreateUpdateOutcome> {
     const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_update_ecla_auto_create');
@@ -1831,8 +1832,9 @@ export class OrgClaService {
    * identities do not leave the server: the row mapper drops them, and what crosses to the
    * browser is this boolean.
    *
-   * On a row with no roster at all, the UI already hides these controls (the row's
-   * `viewerIsClaManager` is false), but this check still passes the Approval List and Auto ECLA
+   * On a row with no roster at all, the row's `viewerIsClaManager` is false, so the UI already
+   * hides the Approval List and Invalidate controls and renders the Auto ECLA toggle disabled,
+   * with the sentence naming CLA Manager. This check still passes the Approval List and Auto ECLA
    * writes through: EasyCLA re-checks the roster on them and is the authority. `rosterRequired`
    * callers — Invalidate and the acknowledgment read that offers it — fail closed instead, because
    * EasyCLA checks only ACS scope on Invalidate, never the roster, so this is the one roster check

@@ -192,3 +192,41 @@ describe('MeetingService public meeting passcode transport', () => {
     expect(get.mock.calls[0][1].headers).toBeUndefined();
   });
 });
+
+describe('MeetingService.removeMyMeetingRegistration', () => {
+  let service: MeetingService;
+  let del: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    del = vi.fn(() => of(undefined));
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { delete: del } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('sends a body-less DELETE to the self registrant route, with no registrant id from the client', () => {
+    service.removeMyMeetingRegistration(MEETING_UID).subscribe();
+
+    expect(del).toHaveBeenCalledTimes(1);
+    expect(del).toHaveBeenCalledWith(`/api/meetings/${MEETING_UID}/registrants/self`);
+  });
+});
+
+describe('MeetingService removed-registration state', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { delete: vi.fn(() => of(undefined)) } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('records a removal by meeting id and forgets it once the viewer registers again', () => {
+    service.markRegistrationRemoved('mtg-1');
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
+    expect(service.removedRegistrationMeetingIds().has('mtg-2')).toBe(false);
+
+    service.clearRemovedRegistration('mtg-1');
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(false);
+  });
+});

@@ -68,7 +68,7 @@ describe('mapMentorshipMenteeApplicationTask', () => {
       category: 'prerequisite',
       status: 'incomplete',
       submitFile: null,
-      fileUrl: undefined,
+      hasFile: false,
       dueDate: '2026-08-01T23:59:59.999Z',
       submittedOn: undefined,
       updatedOn: '2026-06-05T10:00:00Z',
@@ -86,12 +86,18 @@ describe('mapMentorshipMenteeApplicationTask', () => {
       {
         ...baseTask,
         submit_file: 'required',
-        file: 'https://example.com/files/answer.pdf',
+        file: '/mentorship/v1/tasks/task-1/file-download',
         due_date: '2026-07-15',
       },
       '2026-08-01'
     );
-    expect(task).toMatchObject({ submitFile: 'required', fileUrl: 'https://example.com/files/answer.pdf', dueDate: '2026-07-15T00:00:00Z' });
+    expect(task).toMatchObject({ submitFile: 'required', hasFile: true, dueDate: '2026-07-15T00:00:00Z' });
+    // The upstream download route needs the caller's token, so it never reaches the browser.
+    expect(JSON.stringify(task)).not.toContain('file-download');
+  });
+
+  it('reads any submit_file value as required, since upstream does', () => {
+    expect(mapMentorshipMenteeApplicationTask({ ...baseTask, submit_file: 'yes' }, '2026-08-01').submitFile).toBe('required');
   });
 
   it('gives a non-prerequisite task without its own due date no due date', () => {

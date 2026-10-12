@@ -321,3 +321,58 @@ describe('AccessCheckService — batching', () => {
     );
   });
 });
+
+// The frontend's edit affordances read `project.writer`, so the relation checked (`writer_guard`,
+// which admits per-project global-team grants) must not leak into the field name.
+describe('AccessCheckService.addProjectWriterToResources / addProjectWriterToResource', () => {
+  let service: AccessCheckService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new AccessCheckService();
+  });
+
+  it('checks `writer_guard` and writes the result to `writer`', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      results: ['project:a#writer_guard@user:alice\ttrue', 'project:b#writer_guard@user:alice\tfalse'],
+    });
+
+    const result = await service.addProjectWriterToResources(req, [{ uid: 'a' }, { uid: 'b' }]);
+
+    expect(proxyRequest.mock.calls[0][5]).toEqual({ requests: ['project:a#writer_guard', 'project:b#writer_guard'] });
+    expect(result).toEqual([
+      { uid: 'a', writer: true },
+      { uid: 'b', writer: false },
+    ]);
+    expect(result[0]).not.toHaveProperty('writer_guard');
+  });
+
+  it('decorates a single project the same way', async () => {
+    proxyRequest.mockResolvedValueOnce({ results: ['project:a#writer_guard@user:alice\ttrue'] });
+
+    await expect(service.addProjectWriterToResource(req, { uid: 'a', slug: 'a' })).resolves.toEqual({ uid: 'a', slug: 'a', writer: true });
+  });
+
+  it('keys a project that carries `id` instead of `uid`, as addAccessToResources does', async () => {
+    proxyRequest.mockResolvedValueOnce({ results: ['project:c#writer_guard@user:alice\ttrue'] });
+
+    const result = await service.addProjectWriterToResources(req, [{ id: 'c' }]);
+
+    expect(proxyRequest.mock.calls[0][5]).toEqual({ requests: ['project:c#writer_guard'] });
+    expect(result).toEqual([{ id: 'c', writer: true }]);
+  });
+
+  it('keys a single project that carries `id` instead of `uid`', async () => {
+    proxyRequest.mockResolvedValueOnce({ results: ['project:c#writer_guard@user:alice\ttrue'] });
+
+    const result = await service.addProjectWriterToResource(req, { id: 'c' });
+
+    expect(proxyRequest.mock.calls[0][5]).toEqual({ requests: ['project:c#writer_guard'] });
+    expect(result).toEqual({ id: 'c', writer: true });
+  });
+
+  it('returns an empty list without an upstream call', async () => {
+    await expect(service.addProjectWriterToResources(req, [])).resolves.toEqual([]);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});

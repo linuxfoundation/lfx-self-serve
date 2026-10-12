@@ -48,7 +48,7 @@ async function open(page: Page, requests: AdminProgramRequests, created: unknown
   await stubAdminProgramPage(page);
   await stubAdminMentees(page, requests);
   await stubAdminTasks(page, requests);
-  await page.route('**/api/mentorship/admin/tasks', (route) => {
+  await page.route('**/api/mentorship/tasks', (route) => {
     created.push(route.request().postDataJSON());
     if (createStatus === 200)
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ created: [ACCEPTED_ID], failed: [] }) });

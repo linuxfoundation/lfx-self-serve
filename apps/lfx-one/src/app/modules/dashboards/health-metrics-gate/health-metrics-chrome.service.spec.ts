@@ -81,4 +81,20 @@ describe('HealthMetricsChromeService', () => {
 
     expect(service.selectedRange()).toBe(service.periods[2].range);
   });
+
+  it('starts on all projects and resolves the selected slug against the loaded list', () => {
+    const service = create();
+
+    expect(service.selectedProjectSlug()).toBeNull();
+    expect(service.projects()).toBeNull();
+    expect(service.selectedProject()).toBeNull();
+
+    service.selectedProjectSlug.set('beta');
+    service.projects.set([
+      { slug: 'alpha', name: 'Alpha', initials: 'AL', colorClass: 'bg-blue-500' },
+      { slug: 'beta', name: 'Beta', initials: 'BE', colorClass: 'bg-teal-500' },
+    ]);
+
+    expect(service.selectedProject()?.name).toBe('Beta');
+  });
 });

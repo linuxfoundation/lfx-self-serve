@@ -4,7 +4,7 @@
 <div class="flex flex-col gap-4" data-testid="engagement-group-attendance">
   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
     <lfx-filter-pills
-      [options]="typeFilters"
+      [options]="typeFilters()"
       [selectedFilter]="groupType()"
       (filterChange)="onFilterChange($event)"
       data-testid="engagement-group-attendance-filters" />
@@ -28,6 +28,12 @@
       icon="fa-light fa-users"
       title="No groups recorded for this foundation"
       subtitle="The analytics model has no group attendance records for this foundation."
+      data-testid="engagement-group-attendance-empty" />
+  } @else if (!loading() && counts()?.groups === 0) {
+    <lfx-empty-state
+      icon="fa-light fa-users"
+      title="No groups recorded for this project"
+      subtitle="The analytics model has no group attendance records for the selected project."
       data-testid="engagement-group-attendance-empty" />
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state

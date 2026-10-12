@@ -62,9 +62,9 @@
   <!-- Warning Message -->
   <lfx-message severity="error" [icon]="meetingsV2Enabled() ? 'fa-solid fa-circle-exclamation' : 'fa-light fa-triangle-exclamation'" styleClass="mb-6">
     <ng-template #content>
-      @if (!meetingsV2Enabled()) {
-        <h4 class="mb-1 font-medium">Warning</h4>
-      }
+      <p class="mb-2 text-sm font-medium">
+        You are canceling this occurrence for all registrants of the meeting, not just yourself. This is not how you unregister yourself from an occurrence.
+      </p>
       <p class="text-sm">This will permanently cancel this specific occurrence. Guests will be notified of the cancellation. This action cannot be undone.</p>
     </ng-template>
   </lfx-message>

@@ -21,37 +21,59 @@
   <!-- Spacer -->
   <div class="flex-1"></div>
 
-  <!-- File actions -->
-  <div class="flex items-center gap-2">
-    @if (task().hasUploadedFile) {
-      @if (task().fileUrl; as fileUrl) {
+  <!-- File actions. One hidden picker serves Upload and Replace; picking a file uploads it. -->
+  <div class="flex items-center gap-2" [attr.aria-busy]="fileSaving()" [attr.data-testid]="'mentee-tasks-file-actions-' + task().id">
+    <input
+      #fileInput
+      type="file"
+      class="hidden"
+      [accept]="fileAccept"
+      [attr.data-testid]="'mentee-tasks-file-input-' + task().id"
+      (change)="onFileSelected(fileInput)" />
+    @if (fileSaving()) {
+      <i class="fa-light fa-spinner-third fa-spin text-sm text-gray-500" aria-hidden="true" [attr.data-testid]="'mentee-tasks-file-saving-' + task().id"></i>
+    }
+    @if (effectiveTask().hasUploadedFile) {
+      <button
+        type="button"
+        class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+        [attr.data-testid]="'mentee-tasks-download-file-' + task().id"
+        [attr.aria-label]="'Download submission for ' + task().title"
+        (click)="onDownloadFile()">
+        <i class="fa-light fa-arrow-down-to-bracket text-sm" aria-hidden="true"></i>
+      </button>
+      @if (canReplaceFile()) {
         <button
           type="button"
-          class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-          [attr.data-testid]="'mentee-tasks-view-file-' + task().id"
-          [attr.aria-label]="'View submission for ' + task().title"
-          (click)="onViewFile(fileUrl)">
-          <i class="fa-light fa-eye text-sm" aria-hidden="true"></i>
-        </button>
-        <button
-          type="button"
-          class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-          [attr.data-testid]="'mentee-tasks-download-file-' + task().id"
-          [attr.aria-label]="'Download submission for ' + task().title"
-          (click)="onDownloadFile(fileUrl)">
-          <i class="fa-light fa-arrow-down-to-bracket text-sm" aria-hidden="true"></i>
+          class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+          [disabled]="fileSaving()"
+          [attr.data-testid]="'mentee-tasks-replace-file-' + task().id"
+          [attr.aria-label]="'Replace submission for ' + task().title"
+          (click)="fileInput.click()">
+          <i class="fa-light fa-arrow-up-from-bracket text-sm" aria-hidden="true"></i>
         </button>
       }
-    } @else if (task().needsUpload) {
+      @if (canRemoveFile()) {
+        <button
+          type="button"
+          class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+          [disabled]="fileSaving()"
+          [attr.data-testid]="'mentee-tasks-remove-file-' + task().id"
+          [attr.aria-label]="'Remove submission for ' + task().title"
+          (click)="onRemoveFile()">
+          <i class="fa-light fa-trash-can text-sm" aria-hidden="true"></i>
+        </button>
+      }
+    } @else if (effectiveTask().requiresFile && !effectiveTask().fileLocked) {
       <!-- Past due: disabled, and described by the status hint that says why -->
       <button
         type="button"
         class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white"
-        [disabled]="uploadBlocked()"
+        [disabled]="uploadBlocked() || fileSaving()"
         [attr.aria-describedby]="uploadBlocked() ? statusHintId() : null"
         [attr.data-testid]="'mentee-tasks-upload-' + task().id"
         [attr.aria-label]="'Upload submission for ' + task().title"
-        (click)="onUpload()">
+        (click)="fileInput.click()">
         <i class="fa-light fa-arrow-up-from-bracket text-xs" aria-hidden="true"></i>
         Upload
       </button>

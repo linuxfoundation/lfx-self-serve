@@ -835,6 +835,16 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
   });
 
+  it('applies the committee preference on a restricted meeting only under the composer v2 rule', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    fixture.componentRef.setInput('allowRestrictedAttendees', true);
+    component.form().get('restricted')?.setValue(true);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
   it('does not reapply the committee preference when switching between unlocked types', async () => {
     const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
     component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);

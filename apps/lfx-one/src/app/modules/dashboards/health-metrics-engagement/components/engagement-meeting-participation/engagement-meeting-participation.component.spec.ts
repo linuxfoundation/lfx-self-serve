@@ -136,7 +136,7 @@ describe('EngagementMeetingParticipationComponent', () => {
   it('reads the selected foundation and period, and renders the roll-up the view computed', async () => {
     await render();
 
-    expect(getEngagementMeetingParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD' });
+    expect(getEngagementMeetingParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: null, range: 'YTD' });
     expect(text('engagement-meeting-participation-hero')).toContain('70%');
     expect(text('engagement-meeting-participation-hero')).toContain('All-meeting attendance');
     expect(text('engagement-meeting-participation-delta')).toBe('+4.0pp vs prior period');
@@ -205,6 +205,17 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]').textContent).not.toContain('governance');
   });
 
+  it("re-reads the selected project, since the roll-up is the view's own row for that scope", async () => {
+    await render();
+    getEngagementMeetingParticipation.mockClear();
+
+    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getEngagementMeetingParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: 'acme-core', range: 'YTD' });
+  });
+
   it('re-reads when the period changes, since the response carries every period per row', async () => {
     await render();
     getEngagementMeetingParticipation.mockClear();
@@ -214,7 +225,7 @@ describe('EngagementMeetingParticipationComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(getEngagementMeetingParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'COMPLETED_YEAR' });
+    expect(getEngagementMeetingParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: null, range: 'COMPLETED_YEAR' });
     expect(text('engagement-meeting-participation-hero')).toContain('65%');
   });
 

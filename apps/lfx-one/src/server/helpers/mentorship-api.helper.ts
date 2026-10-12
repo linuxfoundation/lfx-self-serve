@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MentorshipUpstreamListResponse, MentorshipUpstreamUser } from '@lfx-one/shared/interfaces';
+import { ApiRequestOptions, MentorshipUpstreamListResponse, MentorshipUpstreamUser } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils/string.utils';
 import { Request } from 'express';
 
@@ -57,13 +57,16 @@ export async function proxyMentorshipRequest<T>(
   /** Logged in place of `path` when the path carries a credential. */
   logPath: string = path,
   /** Sent on the request and its retry, not on the `PUT /me` provisioning call; a raw upload sets its `Content-Type` here. */
-  customHeaders?: Record<string, string>
+  customHeaders?: Record<string, string>,
+  /** Applied to the request and its retry, not to the provisioning call; a file upload sets a longer `timeoutMs` here. */
+  options?: ApiRequestOptions
 ): Promise<T> {
-  // Headers are passed only when set, so a call without them reaches the proxy with the same arguments it always had.
-  const send = (): Promise<T> =>
-    customHeaders
-      ? proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data, customHeaders)
-      : proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data);
+  // Headers and options are passed only when set, so a call without them reaches the proxy with the same arguments it always had.
+  const send = (): Promise<T> => {
+    if (options) return proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data, customHeaders, options);
+    if (customHeaders) return proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data, customHeaders);
+    return proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data);
+  };
 
   try {
     return await send();

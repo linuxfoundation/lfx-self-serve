@@ -24,13 +24,12 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { formatMentorshipReviewUpdatedLabel, mentorshipMentorReviewTasks, mentorshipPersonAvatarClass, mentorshipPersonInitials } from '@lfx-one/shared/utils';
 
-import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
+import { MentorshipTaskFileService } from '../../../../services/mentorship-task-file.service';
 
 /**
  * Mentor-facing Tasks tab — submitted work awaiting review, plus already-approved
  * (completed) tasks. Approve and Request Changes ask the page to review the task, and
- * stay disabled while the page is reviewing it. Open Submission toasts until file
- * upload lands.
+ * stay disabled while the page is reviewing it. Download Submission saves the mentee's file.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-tasks-tab',
@@ -39,7 +38,7 @@ import { MentorshipComingSoonService } from '../../../../services/mentorship-com
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MentorTasksTabComponent {
-  private readonly comingSoon = inject(MentorshipComingSoonService);
+  private readonly taskFile = inject(MentorshipTaskFileService);
 
   public readonly mentees = input.required<MentorshipProgramMentee[]>();
   /** Upstream task ids the page is reviewing; their buttons stay disabled until the page has re-read the program. */
@@ -69,8 +68,8 @@ export class MentorTasksTabComponent {
     this.requestReview(row.taskId, 'incomplete');
   }
 
-  protected onOpenSubmission(row: Pick<MentorshipMentorReviewTask, 'id' | 'menteeName' | 'taskName'>): void {
-    this.comingSoon.notify(`Open submission for "${row.taskName}" from ${row.menteeName}`);
+  protected onOpenSubmission(row: Pick<MentorshipMentorReviewTask, 'taskId'>): void {
+    this.taskFile.download(row.taskId);
   }
 
   private requestReview(taskId: string, status: MentorshipMentorTaskReviewDecision): void {

@@ -37,7 +37,8 @@ const SUBMITTED_ID = '4c9f5d2b-6e0a-4b14-8f38-0d7a5b1e9c43';
 interface StubTask {
   id: string;
   status: string;
-  submitFile: string | null;
+  submitFile: 'required' | null;
+  hasFile?: boolean;
 }
 
 const TASKS: StubTask[] = [
@@ -64,6 +65,7 @@ function acceptedApplication(tasks: StubTask[]) {
       category: 'non_prerequisite',
       status: task.status,
       submitFile: task.submitFile,
+      hasFile: task.hasFile ?? false,
       updatedOn: '2026-06-02T10:00:00Z',
     })),
   };

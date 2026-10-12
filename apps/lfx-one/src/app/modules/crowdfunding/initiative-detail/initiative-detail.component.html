@@ -3,12 +3,13 @@
 
 <div class="flex flex-col gap-5 p-8" data-testid="initiative-detail">
   <lfx-button
-    label="Back to My Initiatives"
+    [label]="isLensPage ? 'Back to Initiatives' : 'Back to My Initiatives'"
     icon="fa-light fa-chevron-left"
     severity="secondary"
     size="small"
     [text]="true"
-    routerLink="/crowdfunding/initiatives"
+    [routerLink]="backLink"
+    [queryParams]="backQueryParams"
     styleClass="self-start"
     data-testid="initiative-detail-back-btn" />
 

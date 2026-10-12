@@ -23,7 +23,6 @@ const upstream = (overrides: Partial<MentorshipUpstreamAdministeredProgram> = {}
   status: 'published',
   admin_status: 'open',
   project_name: 'Energy Project',
-  term: { id: 't-1', name: 'Spring', status: 'open' },
   stats: { mentors: 2, mentees: 3, graduated: 1 },
   created_on: '2026-01-01T00:00:00Z',
   updated_on: '2026-01-02T00:00:00Z',
@@ -51,7 +50,6 @@ describe('mapMentorshipAdminProgram', () => {
       slug: 'program-one',
       name: 'Program One',
       projectName: 'Energy Project',
-      term: 'Spring',
       status: 'open',
       stats: { mentors: 2, mentees: 3, graduated: 1 },
       logoUrl: 'https://logo.example/p.png',
@@ -74,10 +72,10 @@ describe('mapMentorshipAdminProgram', () => {
     expect(mapMentorshipAdminProgram(upstream({ status, logo_url: logoUrl })).program.logoMissing).toBe(expected);
   });
 
-  it('falls back to empty text for a missing project and term, and to the id for a missing slug', () => {
-    const { program } = mapMentorshipAdminProgram(upstream({ slug: undefined, project_name: undefined, term: undefined }));
+  it('falls back to empty text for a missing project, and to the id for a missing slug', () => {
+    const { program } = mapMentorshipAdminProgram(upstream({ slug: undefined, project_name: undefined }));
 
-    expect(program).toMatchObject({ slug: 'p-1', projectName: '', term: '' });
+    expect(program).toMatchObject({ slug: 'p-1', projectName: '' });
     expect(program).not.toHaveProperty('logoUrl');
   });
 });
@@ -125,13 +123,12 @@ describe('mapMentorshipAdminHeaderProgram', () => {
     expect(mapMentorshipAdminHeaderProgram(header(status))).toMatchObject({ program: { status: 'pending-review' }, unknownStatus: true });
   });
 
-  it('maps the header fields, falling back to empty text and the id', () => {
-    expect(mapMentorshipAdminHeaderProgram(header('published', { active_term: undefined })).program).toEqual({
+  it('maps the header fields, leaving out the active term', () => {
+    expect(mapMentorshipAdminHeaderProgram(header('published')).program).toEqual({
       id: 'p-1',
       slug: 'program-one',
       name: 'Program One',
       projectName: 'Energy Project',
-      term: '',
       status: 'open',
       stats: { mentors: 2, mentees: 3, graduated: 1 },
       createdOn: '2026-01-01T00:00:00Z',

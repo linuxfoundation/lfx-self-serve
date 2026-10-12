@@ -5,20 +5,20 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import {
-  MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_FALLBACK,
-  MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_MESSAGES,
-  MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_SUMMARY,
-  MENTORSHIP_ADMIN_TASK_UPDATE_SUCCESS_SUMMARY,
-  MENTORSHIP_ADMIN_TASK_UPDATE_TOAST_LIFE,
+  MENTORSHIP_TASK_UPDATE_ERROR_FALLBACK,
+  MENTORSHIP_TASK_UPDATE_ERROR_MESSAGES,
+  MENTORSHIP_TASK_UPDATE_ERROR_SUMMARY,
+  MENTORSHIP_TASK_UPDATE_SUCCESS_SUMMARY,
+  MENTORSHIP_TASK_UPDATE_TOAST_LIFE,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
 } from '@lfx-one/shared/constants';
-import { MentorshipAdminTaskUpdate, MentorshipApplicantTask } from '@lfx-one/shared/interfaces';
-import { MentorshipAdminService } from '@services/mentorship-admin.service';
+import { MentorshipApplicantTask, MentorshipTaskUpdate } from '@lfx-one/shared/interfaces';
+import { MentorshipService } from '@services/mentorship.service';
 import { MessageService } from 'primeng/api';
 import { catchError, defer, finalize, map, Observable, of } from 'rxjs';
 
 /**
- * Edits one task, or sets just its status, for an admin and toasts a failure.
+ * Edits one task, or sets just its status, for an admin or a mentor and toasts a failure.
  * `update` emits the task as the row reads it once it is saved, and `null` when it was not, after showing why, so the
  * caller keeps the row as it was. A success toasts only when `toastOnSuccess` is set: a status change is visible in the
  * row, while the edit dialog closes on save and wants the confirmation. A 400 from a change that can trip the file guard
@@ -29,8 +29,8 @@ import { catchError, defer, finalize, map, Observable, of } from 'rxjs';
  * outlive it, and a rebuilt panel must not send a second change for the same task meanwhile.
  */
 @Injectable({ providedIn: 'root' })
-export class AdminTaskUpdateService {
-  private readonly adminService = inject(MentorshipAdminService);
+export class MentorshipTaskUpdateService {
+  private readonly mentorshipService = inject(MentorshipService);
   private readonly messageService = inject(MessageService);
 
   /** A signal, so a panel rebuilt mid-save re-enables Edit when the save settles. */
@@ -41,17 +41,17 @@ export class AdminTaskUpdateService {
     return this.updatingIds().has(taskId);
   }
 
-  public update(taskId: string, body: MentorshipAdminTaskUpdate, toastOnSuccess: boolean): Observable<MentorshipApplicantTask | null> {
+  public update(taskId: string, body: MentorshipTaskUpdate, toastOnSuccess: boolean): Observable<MentorshipApplicantTask | null> {
     return defer(() => {
       this.setUpdating(taskId, true);
-      return this.adminService.updateTask(taskId, body);
+      return this.mentorshipService.updateTask(taskId, body);
     }).pipe(
       map((task) => {
         if (toastOnSuccess) {
           this.messageService.add({
             severity: 'success',
-            summary: MENTORSHIP_ADMIN_TASK_UPDATE_SUCCESS_SUMMARY,
-            life: MENTORSHIP_ADMIN_TASK_UPDATE_TOAST_LIFE,
+            summary: MENTORSHIP_TASK_UPDATE_SUCCESS_SUMMARY,
+            life: MENTORSHIP_TASK_UPDATE_TOAST_LIFE,
           });
         }
         return task;
@@ -74,16 +74,16 @@ export class AdminTaskUpdateService {
   }
 
   /** A 400 gets the file copy only when the change could trip upstream's file guard: a move to Submitted or a new file requirement. */
-  private showUpdateError(err: HttpErrorResponse, body: MentorshipAdminTaskUpdate): void {
+  private showUpdateError(err: HttpErrorResponse, body: MentorshipTaskUpdate): void {
     const code = (err.error as { code?: string } | null | undefined)?.code;
     const fileGuard = body.status === 'submitted' || body.requiresFileSubmission !== undefined;
-    let detail = MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_MESSAGES[err.status] ?? MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_FALLBACK;
+    let detail = MENTORSHIP_TASK_UPDATE_ERROR_MESSAGES[err.status] ?? MENTORSHIP_TASK_UPDATE_ERROR_FALLBACK;
     if (err.status === 400 && !fileGuard) {
-      detail = MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_FALLBACK;
+      detail = MENTORSHIP_TASK_UPDATE_ERROR_FALLBACK;
     } else if (err.status === 403 && code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE) {
-      detail = serverAuthoredMessage(err, MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_FALLBACK);
+      detail = serverAuthoredMessage(err, MENTORSHIP_TASK_UPDATE_ERROR_FALLBACK);
     }
 
-    this.messageService.add({ severity: 'error', summary: MENTORSHIP_ADMIN_TASK_UPDATE_ERROR_SUMMARY, detail, life: MENTORSHIP_ADMIN_TASK_UPDATE_TOAST_LIFE });
+    this.messageService.add({ severity: 'error', summary: MENTORSHIP_TASK_UPDATE_ERROR_SUMMARY, detail, life: MENTORSHIP_TASK_UPDATE_TOAST_LIFE });
   }
 }

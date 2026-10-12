@@ -42,14 +42,14 @@
   } @else if (!loading() && scopeEmpty()) {
     <lfx-empty-state
       icon="fa-light fa-building"
-      title="No organizations recorded for this foundation"
-      subtitle="The analytics model has no organization participation records for this foundation."
+      title="No organizations recorded for this scope"
+      subtitle="The analytics model has no organization participation records for this foundation or project."
       data-testid="engagement-org-participation-empty" />
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state
       icon="fa-light fa-building"
       title="No organizations match this filter"
-      subtitle="No organization in this foundation matches the current search and activity filter."
+      subtitle="No organization in this scope matches the current search and activity filter."
       data-testid="engagement-org-participation-empty" />
   } @else {
     <lfx-table

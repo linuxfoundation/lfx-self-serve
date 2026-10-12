@@ -23,6 +23,7 @@ import {
   ProjectDocument,
   ProjectDocumentSource,
 } from '@lfx-one/shared/interfaces';
+import { resolveProjectDocumentKind } from '@lfx-one/shared/utils';
 import { DocumentService } from '@services/document.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -118,8 +119,15 @@ export class DocumentsDashboardComponent {
   protected readonly project = this.projectContextService.activeContext;
   protected readonly activeLens = this.lensService.activeLens;
   protected readonly personaLoaded = this.personaService.personaLoaded;
-  // Toolbar gated only on project-scope so it can't render under the legacy aggregator (no-op clicks).
-  protected readonly canUpload = computed(() => this.useProjectSource());
+  // Toolbar gated on project-scope (so it can't render under the legacy aggregator, no-op clicks)
+  // and on write access — the upload/folder/link-create endpoints all require project.writer (GH-305).
+  // Also matches activeProject() against the current project uid, like the project staff card and
+  // newsletter audience step gates — canWrite() can still reflect the previous project while the
+  // new one's details are loading (ProjectContextService.initActiveProjectDetails()), so without the
+  // uid check the toolbar could stay visible after switching into a read-only project.
+  protected readonly canUpload = computed(
+    () => this.useProjectSource() && this.projectContextService.canWrite() && this.projectContextService.activeProject()?.uid === this.project()?.uid
+  );
   /**
    * True when the dashboard is project-scoped (Project / Foundation lens with active context).
    *
@@ -421,6 +429,7 @@ export class DocumentsDashboardComponent {
       summaryUid: doc.summary_uid,
       summaryContent: doc.summary_content,
       projectDocumentSource: docSource,
+      documentKind: resolveProjectDocumentKind(doc, docSource),
     };
   }
 

@@ -98,7 +98,7 @@ describe('EngagementOrgParticipationComponent', () => {
   it('reads the selected foundation and renders the returned rows', async () => {
     await render();
 
-    expect(getEngagementOrgParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme' });
+    expect(getEngagementOrgParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: null });
     const row = fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]');
     expect(row.textContent).toContain('Acme Motors');
     expect(row.textContent).toContain('21 / 27');
@@ -113,6 +113,17 @@ describe('EngagementOrgParticipationComponent', () => {
     const label: HTMLLabelElement | null = fixture.nativeElement.querySelector('label[for="engagement-org-participation-search"]');
     expect(label?.textContent?.trim()).toBe('Search organization');
     expect(fixture.nativeElement.querySelector('input#engagement-org-participation-search')).not.toBeNull();
+  });
+
+  it('re-reads the selected project, since the loaded rows cover the previous scope', async () => {
+    await render();
+    getEngagementOrgParticipation.mockClear();
+
+    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getEngagementOrgParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: 'acme-core' });
   });
 
   // The period pill projects the loaded rows, so switching it must not cost another request.
@@ -157,7 +168,7 @@ describe('EngagementOrgParticipationComponent', () => {
     await render(response({ rows: [], counts: null }));
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]').textContent).toContain(
-      'No organizations recorded for this foundation'
+      'No organizations recorded for this scope'
     );
   });
 

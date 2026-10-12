@@ -3,6 +3,7 @@
 
 import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
@@ -72,6 +73,12 @@ const RANGE_PRIOR_COLUMN_SUFFIX: Partial<Record<SupportedEngagementRange, string
   COMPLETED_YEAR_2: '3rd_last_completed_year',
 };
 
+/**
+ * The project selector's scope on views that denormalize an all-projects roll-up row: a null slug
+ * reads the roll-up, since summing per-project rows would double-count shared meetings and people.
+ */
+const PROJECT_SCOPE_PREDICATE = '((? IS NULL AND is_all_projects = TRUE) OR project_slug = ?)';
+
 /** True when this service can serve the range — the controller uses it to validate before binding. */
 export function isSupportedEngagementRange(range: string): range is SupportedEngagementRange {
   return isHealthMetricsL2Range(range);
@@ -80,10 +87,12 @@ export function isSupportedEngagementRange(range: string): range is SupportedEng
 interface GroupAttendanceRow {
   COMMITTEE_ID: string | null;
   COMMITTEE_NAME: string | null;
+  PROJECT_ID: string | null;
   PROJECT_SLUG: string | null;
   PROJECT_NAME: string | null;
   GROUP_TYPE_LABEL: string | null;
   LAST_MET_DATE: Date | string | null;
+  SCOPE_GROUPS: number | null;
   TOTAL_RECORDS: number | null;
   DORMANT_GROUPS: number | null;
   IS_PAGE_ROW: boolean | null;
@@ -116,6 +125,8 @@ interface NonMemberParticipationRow {
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
   MEMBERSHIP_STATUS: string | null;
+  FIRST_SEEN_DATE: Date | string | null;
+  LAST_ATTENDED_DATE: Date | string | null;
   SCOPE_ORGS_COUNT: number | null;
   [periodColumn: string]: unknown;
 }
@@ -123,9 +134,15 @@ interface NonMemberParticipationRow {
 interface RepresentativesRow {
   REP_KEY: string | null;
   PERSON_DISPLAY_NAME: string | null;
+  IS_IDENTITY_UNRESOLVED: boolean | null;
+  PERSON_ROLE: string | null;
+  PERSON_JOB_TITLE: string | null;
   ACCOUNT_NAME: string | null;
+  MEMBERSHIP_TIER: string | null;
   COMMITTEE_NAME: string | null;
   LAST_ATTENDED_DATE: Date | string | null;
+  DAYS_SINCE_LAST_ATTENDED: number | null;
+  IS_LAPSED_180D: boolean | null;
   [periodColumn: string]: unknown;
 }
 
@@ -164,14 +181,30 @@ export class HealthMetricsEngagementService {
       binds.push(query.projectSlug);
     }
 
-    // Each committee row belongs to exactly one project, so all-projects scope drops the predicate
-    // rather than selecting a denormalized roll-up row — this view has no `is_all_projects`.
-    let typePredicate = '';
+    // The chip counts and the header stay on the whole scope, so the type cut applies to the page
+    // and its paginator total only; each chip's labels are bound where they are counted.
+    const typeChips = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.flatMap(({ key }) => {
+      const labels = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS[key];
+      return labels?.length ? [{ key, labels }] : [];
+    });
+    const typeCountColumns = typeChips.flatMap(({ labels }, index) => {
+      const inList = `group_type_label IN (${labels.map(() => '?').join(', ')})`;
+      binds.push(...labels, ...labels);
+      return [`COUNT_IF(${inList}) AS type_groups_${index}`, `COUNT_IF(${inList} AND is_dormant_${suffix}) AS type_dormant_groups_${index}`];
+    });
+
     const typeLabels = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS[query.groupType];
-    if (typeLabels?.length) {
-      typePredicate = `AND group_type_label IN (${typeLabels.map(() => '?').join(', ')})`;
-      binds.push(...typeLabels);
-    }
+    const typeCondition = typeLabels?.length ? `group_type_label IN (${typeLabels.map(() => '?').join(', ')})` : null;
+    // Bound twice in SQL order: the paginator total in `totals`, then the page's own cut.
+    if (typeLabels?.length) binds.push(...typeLabels, ...typeLabels);
+    const typePredicate = typeCondition ? `WHERE ${typeCondition}` : '';
+    const totalsColumns = [
+      'COUNT(*) AS scope_groups',
+      // The view's own dormancy flag. Any further metric definition belongs in dbt, not here.
+      `COUNT_IF(is_dormant_${suffix}) AS dormant_groups`,
+      ...typeCountColumns,
+      `${typeCondition ? `COUNT_IF(${typeCondition})` : 'COUNT(*)'} AS total_records`,
+    ];
 
     const size = clampInteger(query.size, 1, 100, 25);
     const offset = (clampInteger(query.page, 1, 10_000, 1) - 1) * size;
@@ -180,25 +213,25 @@ export class HealthMetricsEngagementService {
     // The totals are a separate aggregate joined onto the page, not a window over it: read as
     // `COUNT(*) OVER()` off the first row they vanish whenever the page is empty, so an out-of-range
     // page would report a foundation with zero groups and collapse the table into its empty state.
+    // Each committee row belongs to exactly one project, so all-projects scope drops the project
+    // predicate rather than selecting a denormalized roll-up row — this view has no `is_all_projects`.
     const sql = `
       WITH scoped AS (
         SELECT *
         FROM ${GROUP_ATTENDANCE_VIEW}
         WHERE foundation_slug = ?
           ${projectPredicate}
-          ${typePredicate}
       ),
       totals AS (
         SELECT
-          COUNT(*) AS total_records,
-          -- The view's own dormancy flag. Any further metric definition belongs in dbt, not here.
-          SUM(CASE WHEN is_dormant_${suffix} THEN 1 ELSE 0 END) AS dormant_groups
+          ${totalsColumns.join(',\n          ')}
         FROM scoped
       ),
       page AS (
         SELECT
           committee_id,
           committee_name,
+          project_id,
           project_slug,
           project_name,
           last_met_date,
@@ -209,6 +242,7 @@ export class HealthMetricsEngagementService {
           -- committee_id cannot serve: it is nullable, so a null-id group would be dropped silently.
           TRUE AS is_page_row
         FROM scoped
+        ${typePredicate}
         -- The trailing keys narrow the tie so paging rarely repeats or skips a same-named group.
         -- None of them is guaranteed unique — committee_id is nullable — so identical rows under a
         -- null id still tie; a hard guarantee needs a non-null row key on the view itself.
@@ -241,17 +275,26 @@ export class HealthMetricsEngagementService {
     const first = result.rows[0];
     // A page past the end still returns one row — the totals, with every page column null.
     const pageRows = result.rows.filter((row) => row.IS_PAGE_ROW === true);
-    const totalRecords = Number(first?.TOTAL_RECORDS ?? 0);
+    const scopeGroups = Number(first?.SCOPE_GROUPS ?? 0);
 
-    // An unfiltered scope with zero rows gets its own empty state and null counts, not "0 groups";
-    // a filtered cut with zero matches keeps its counts so "No groups of this type" can show.
-    const isUnfilteredScope = query.groupType === 'all' && !query.projectSlug;
-    const counts = isUnfilteredScope && totalRecords === 0 ? null : { groups: totalRecords, dormantGroups: Number(first?.DORMANT_GROUPS ?? 0) };
+    // A foundation with no groups gets its own empty state and null counts, not "0 groups"; a project
+    // or a chip with zero matches keeps its counts so the narrower empty state can show.
+    if (!query.projectSlug && scopeGroups === 0) {
+      return { ...HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED, rows: pageRows.map(mapGroupRow) };
+    }
 
     return {
       rows: pageRows.map(mapGroupRow),
-      totalRecords,
-      counts,
+      totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
+      counts: { groups: scopeGroups, dormantGroups: Number(first?.DORMANT_GROUPS ?? 0) },
+      typeCounts: [
+        { groupType: 'all', groups: scopeGroups, dormantGroups: Number(first?.DORMANT_GROUPS ?? 0) },
+        ...typeChips.map(({ key }, index) => ({
+          groupType: key,
+          groups: Number(first?.[`TYPE_GROUPS_${index}`] ?? 0),
+          dormantGroups: Number(first?.[`TYPE_DORMANT_GROUPS_${index}`] ?? 0),
+        })),
+      ],
     };
   }
 
@@ -270,8 +313,6 @@ export class HealthMetricsEngagementService {
     );
     const levels = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS;
 
-    // The project selector is visual-only today, so every read is the all-projects roll-up row the
-    // view denormalizes — summing the per-project rows would double-count shared meetings.
     const sql = `
       SELECT
         meeting_type_level,
@@ -283,18 +324,25 @@ export class HealthMetricsEngagementService {
         meetings_held_count_prev_ytd
       FROM ${MEETING_PARTICIPATION_VIEW}
       WHERE foundation_slug = ?
-        AND is_all_projects = TRUE
+        AND ${PROJECT_SCOPE_PREDICATE}
         AND meeting_type_level IN (${levels.map(() => '?').join(', ')})
     `;
 
-    const result = await executeSnowflakeViewRead<MeetingParticipationRow>(this.snowflakeService, req, sql, [query.foundationSlug, ...levels], {
-      view: MEETING_PARTICIPATION_VIEW,
-      operation: 'get_engagement_meeting_participation',
-      clientMessage: 'Meeting participation is unavailable right now.',
-    });
+    const result = await executeSnowflakeViewRead<MeetingParticipationRow>(
+      this.snowflakeService,
+      req,
+      sql,
+      [query.foundationSlug, query.projectSlug, query.projectSlug, ...levels],
+      {
+        view: MEETING_PARTICIPATION_VIEW,
+        operation: 'get_engagement_meeting_participation',
+        clientMessage: 'Meeting participation is unavailable right now.',
+      }
+    );
 
     logger.debug(req, 'get_engagement_meeting_participation', 'Fetched meeting participation', {
       foundation_slug: query.foundationSlug,
+      project_slug: query.projectSlug,
       range: query.range,
       row_count: result.rows.length,
     });
@@ -334,16 +382,22 @@ export class HealthMetricsEngagementService {
         ${periodColumns}
       FROM ${ORG_PARTICIPATION_VIEW}
       WHERE foundation_slug = ?
-        AND is_all_projects = TRUE
+        AND ${PROJECT_SCOPE_PREDICATE}
       ORDER BY ${bestSortRank} ASC, account_name ASC NULLS LAST, account_id ASC NULLS LAST
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP + 1}
     `;
 
-    const result = await executeSnowflakeViewRead<OrgParticipationRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
-      view: ORG_PARTICIPATION_VIEW,
-      operation: 'get_engagement_org_participation',
-      clientMessage: 'Organization participation is unavailable right now.',
-    });
+    const result = await executeSnowflakeViewRead<OrgParticipationRow>(
+      this.snowflakeService,
+      req,
+      sql,
+      [query.foundationSlug, query.projectSlug, query.projectSlug],
+      {
+        view: ORG_PARTICIPATION_VIEW,
+        operation: 'get_engagement_org_participation',
+        clientMessage: 'Organization participation is unavailable right now.',
+      }
+    );
 
     const rows = this.capRows(req, result.rows, {
       cap: HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
@@ -381,6 +435,8 @@ export class HealthMetricsEngagementService {
         account_id,
         account_name,
         membership_status,
+        first_seen_date,
+        last_attended_date,
         scope_orgs_count,
         ${periodColumns}
       FROM ${NON_MEMBER_PARTICIPATION_VIEW}
@@ -419,24 +475,35 @@ export class HealthMetricsEngagementService {
    */
   public async getRepresentatives(req: Request, query: HealthMetricsEngagementRepQuery): Promise<HealthMetricsEngagementRepresentatives> {
     const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => repSelectList(HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
+    // A capped read has to keep the ranked head, so the cut runs on the best rank across the
+    // periods; the sentinel parks a rep the view left unranked behind every ranked one.
+    const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
 
-    // Caption counts are deduped to (person, committee) upstream while these rows are per project,
+    // Caption counts are deduped to (person, committee) upstream while project rows are per project,
     // so a rep on one committee under two projects is two rows the caption counts once.
     const sql = `
       SELECT
         _key AS rep_key,
         person_display_name,
+        is_identity_unresolved,
+        person_role,
+        person_job_title,
         account_name,
+        membership_tier,
         committee_name,
         last_attended_date,
+        days_since_last_attended,
+        is_lapsed_180d,
         ${periodColumns}
       FROM ${REPRESENTATIVES_VIEW}
       WHERE foundation_slug = ?
-      ORDER BY last_attended_date ASC NULLS FIRST, person_display_name ASC NULLS LAST, committee_name ASC NULLS LAST, rep_key ASC
+        AND ${PROJECT_SCOPE_PREDICATE}
+      ORDER BY ${bestSortRank} ASC, person_display_name ASC NULLS LAST, committee_name ASC NULLS LAST, rep_key ASC
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP + 1}
     `;
 
-    const result = await executeSnowflakeViewRead<RepresentativesRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+    const binds = [query.foundationSlug, query.projectSlug, query.projectSlug];
+    const result = await executeSnowflakeViewRead<RepresentativesRow>(this.snowflakeService, req, sql, binds, {
       view: REPRESENTATIVES_VIEW,
       operation: 'get_engagement_representatives',
       clientMessage: 'Representatives are unavailable right now.',
@@ -490,6 +557,7 @@ function mapGroupRow(row: GroupAttendanceRow): HealthMetricsEngagementGroupRow {
   return {
     committeeId: row.COMMITTEE_ID ?? '',
     committeeName: row.COMMITTEE_NAME ?? '',
+    projectId: row.PROJECT_ID,
     projectSlug: row.PROJECT_SLUG,
     projectName: row.PROJECT_NAME,
     groupTypeLabel: row.GROUP_TYPE_LABEL,
@@ -583,6 +651,8 @@ function mapNonMemberRow(row: NonMemberParticipationRow): HealthMetricsEngagemen
     // Rendered as the view reports it; the organization-matching gap the footnote warns about is a
     // data problem upstream, not something to paper over by rewriting the status here.
     membershipStatus: row.MEMBERSHIP_STATUS ?? '',
+    firstSeenDate: toIsoDate(row.FIRST_SEEN_DATE),
+    lastAttendedDate: toIsoDate(row.LAST_ATTENDED_DATE),
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapNonMemberPeriod(row, range)),
   };
 }
@@ -660,8 +730,8 @@ function participationOrder(group: string | null): number {
 }
 
 /**
- * One period's columns as the view publishes them. The `ALL_PROJECTS` caption columns are
- * denormalized onto every row, so the alias drops the scope from the name the mapper reads.
+ * One period's columns as the view publishes them. A roll-up row captions the whole foundation and
+ * a project row its project, so the caption reads whichever scope the row belongs to.
  */
 function repSelectList(suffix: string): string {
   return [
@@ -669,8 +739,9 @@ function repSelectList(suffix: string): string {
     `meetings_attended_count_${suffix}`,
     `has_never_attended_${suffix}`,
     `is_lapsed_${suffix}`,
-    `scope_reps_count_all_projects_${suffix} AS scope_reps_count_${suffix}`,
-    `scope_never_attended_reps_count_all_projects_${suffix} AS scope_never_attended_reps_count_${suffix}`,
+    `sort_rank_${suffix}`,
+    `IFF(is_all_projects, scope_reps_count_all_projects_${suffix}, scope_reps_count_${suffix}) AS scope_reps_count_${suffix}`,
+    `IFF(is_all_projects, scope_never_attended_reps_count_all_projects_${suffix}, scope_never_attended_reps_count_${suffix}) AS scope_never_attended_reps_count_${suffix}`,
   ].join(', ');
 }
 
@@ -678,9 +749,15 @@ function mapRepRow(row: RepresentativesRow): HealthMetricsEngagementRepRow {
   return {
     key: row.REP_KEY ?? '',
     personName: row.PERSON_DISPLAY_NAME ?? '',
+    identityUnresolved: row.IS_IDENTITY_UNRESOLVED === true,
+    personRole: row.PERSON_ROLE,
+    jobTitle: row.PERSON_JOB_TITLE,
     accountName: row.ACCOUNT_NAME ?? '',
+    membershipTier: row.MEMBERSHIP_TIER,
     committeeName: row.COMMITTEE_NAME ?? '',
     lastAttendedDate: toIsoDate(row.LAST_ATTENDED_DATE),
+    daysSinceLastAttended: toNullableNumber(row.DAYS_SINCE_LAST_ATTENDED),
+    lapsed180d: row.IS_LAPSED_180D === true,
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapRepPeriod(row, range)),
   };
 }
@@ -694,6 +771,7 @@ function mapRepPeriod(row: RepresentativesRow, range: SupportedEngagementRange):
     meetingsAttended: toNullableNumber(row[`MEETINGS_ATTENDED_COUNT_${suffix}`]),
     neverAttended: row[`HAS_NEVER_ATTENDED_${suffix}`] === true,
     lapsed: row[`IS_LAPSED_${suffix}`] === true,
+    sortRank: toNullableNumber(row[`SORT_RANK_${suffix}`]),
   };
 }
 

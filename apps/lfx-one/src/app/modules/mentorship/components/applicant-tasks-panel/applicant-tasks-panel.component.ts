@@ -8,30 +8,27 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
-  MENTORSHIP_APPLICANT_TASK_STATUS_LABELS,
   MENTORSHIP_APPLICANT_TASK_STATUS_OPTIONS,
   MENTORSHIP_APPLICANT_TASKS_HIDE_PREREQUISITE_LABEL,
   MENTORSHIP_TASK_EDIT_ACTION_ICON,
   MENTORSHIP_TASK_EDIT_ACTION_LABEL,
 } from '@lfx-one/shared/constants';
-import { MentorshipAdminTaskUpdate, MentorshipApplicantTask, MentorshipApplicantTaskRow, MentorshipApplicantTaskStatus } from '@lfx-one/shared/interfaces';
-import { buildMentorshipAdminTaskUpdate, filterMentorshipApplicantTasks } from '@lfx-one/shared/utils';
+import { MentorshipTaskUpdate, MentorshipApplicantTask, MentorshipApplicantTaskRow, MentorshipApplicantTaskStatus } from '@lfx-one/shared/interfaces';
+import { buildMentorshipTaskUpdate, filterMentorshipApplicantTasks } from '@lfx-one/shared/utils';
 import { startWith, take } from 'rxjs';
 
-import { AdminTaskUpdateService } from '../../services/admin-task-update.service';
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
+import { MentorshipTaskFileService } from '../../services/mentorship-task-file.service';
+import { MentorshipTaskUpdateService } from '../../services/mentorship-task-update.service';
 
 type TaskStatusForm = FormGroup<{ status: FormControl<MentorshipApplicantTaskStatus> }>;
 
 /**
  * Expanded tasks sub-table for admin Current Mentees and the mentor program-detail Applicants and Mentees rows.
- * With `editable` set (admin Current Mentees) the Edit dialog and the status select save through the BFF: the saved
- * task goes to `taskSaved`, which patches the caller's list, and a failed save puts the select back and toasts why.
- * The caller is a callback rather than an output because collapsing the row destroys this panel while a save is still
- * in flight, and Angular drops an output emitted after destroy. Without `editable` (the mentor tabs, which have no
- * write route yet) every write stubs to the coming-soon toast and the list is left as it was. View and download always
- * stub to the toast, as file transfer is not wired.
+ * The Edit dialog and the status select save through the BFF route both pages share: the saved task goes to
+ * `taskSaved`, which patches the caller's list, and a failed save puts the select back and toasts why. The caller is a
+ * callback rather than an output because collapsing the row destroys this panel while a save is still in flight, and
+ * Angular drops an output emitted after destroy. Download saves the mentee's submission file.
  */
 @Component({
   selector: 'lfx-mentorship-applicant-tasks-panel',
@@ -40,16 +37,14 @@ type TaskStatusForm = FormGroup<{ status: FormControl<MentorshipApplicantTaskSta
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ApplicantTasksPanelComponent {
-  private readonly comingSoon = inject(MentorshipComingSoonService);
   private readonly taskDialog = inject(MentorshipTaskDialogService);
-  private readonly taskUpdate = inject(AdminTaskUpdateService);
+  private readonly taskFile = inject(MentorshipTaskFileService);
+  private readonly taskUpdate = inject(MentorshipTaskUpdateService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly applicantId = input.required<string>();
   public readonly applicantName = input.required<string>();
   public readonly tasks = input.required<MentorshipApplicantTaskRow[]>();
-  /** Saves edits and status changes through the BFF instead of the coming-soon toast. */
-  public readonly editable = input(false);
   /** Called with the applicant's id and the task as saved, so the owner of the list can patch it in place. */
   public readonly taskSaved = input<(applicantId: string, task: MentorshipApplicantTask) => void>(() => undefined);
 
@@ -86,37 +81,25 @@ export class ApplicantTasksPanelComponent {
     this.initStatusSelectLock();
   }
 
-  protected onViewTask(task: MentorshipApplicantTaskRow): void {
-    this.comingSoon.notify(`View ${task.name} for ${this.applicantName()}`);
-  }
-
   protected onDownloadTask(task: MentorshipApplicantTaskRow): void {
-    this.comingSoon.notify(`Download ${task.name} for ${this.applicantName()}`);
+    this.taskFile.download(task.id);
   }
 
   /** Opens the shared task-form dialog in edit mode and saves what it changed. */
   protected onEditTask(task: MentorshipApplicantTaskRow): void {
-    if (this.editable() && this.isBusy(task.id)) return;
+    if (this.isBusy(task.id)) return;
     this.taskDialog
       .openEdit(task)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((value) => {
         if (!value) return;
-        if (!this.editable()) {
-          this.comingSoon.notify(`Update ${value.name} for ${this.applicantName()}`);
-          return;
-        }
-        const update = buildMentorshipAdminTaskUpdate(task, value);
+        const update = buildMentorshipTaskUpdate(task, value);
         if (Object.keys(update).length === 0) return;
         this.saveTask(task, update, true);
       });
   }
 
   protected onStatusChange(task: MentorshipApplicantTaskRow, event: { value: MentorshipApplicantTaskStatus }): void {
-    if (!this.editable()) {
-      this.comingSoon.notify(`Status of ${task.name} for ${this.applicantName()} → ${MENTORSHIP_APPLICANT_TASK_STATUS_LABELS[event.value]}`);
-      return;
-    }
     if (event.value === task.status) return;
     this.saveTask(task, { status: event.value }, false);
   }
@@ -131,7 +114,7 @@ export class ApplicantTasksPanelComponent {
    * mid-save still lands in the caller's list; only the select and the saving flag, which are local, are touched
    * meanwhile. A failure puts the select back on the task's status.
    */
-  private saveTask(task: MentorshipApplicantTaskRow, update: MentorshipAdminTaskUpdate, toastOnSuccess: boolean): void {
+  private saveTask(task: MentorshipApplicantTaskRow, update: MentorshipTaskUpdate, toastOnSuccess: boolean): void {
     if (this.isBusy(task.id)) {
       this.resetStatus(task);
       return;

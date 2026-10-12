@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MENTORSHIP_MENTEE_TASKS_EMPTY_TITLE, MENTORSHIP_MENTEE_TASKS_LOAD_ERROR } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplication, MentorshipMenteeApplicationsResponse } from '@lfx-one/shared/interfaces';
 import { MenteeTaskStatusService } from '@modules/mentorship/services/mentee-task-status.service';
-import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
+import { MentorshipTaskFileService } from '@modules/mentorship/services/mentorship-task-file.service';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { menteeServiceTestDouble, menteeTestApplication, menteeTestTask } from '@shared/testing/mentorship-mentee-test-data';
 import { of, Subject, throwError } from 'rxjs';
@@ -43,7 +43,7 @@ describe('MenteeApplicationTasksComponent', () => {
       imports: [MenteeApplicationTasksComponent],
       providers: [
         { provide: MentorshipMenteeService, useValue: menteeService },
-        { provide: MentorshipComingSoonService, useValue: { notify: vi.fn() } },
+        { provide: MentorshipTaskFileService, useValue: { upload: vi.fn(), remove: vi.fn(), download: vi.fn() } },
         { provide: MenteeTaskStatusService, useValue: { changeStatus: vi.fn() } },
       ],
     });

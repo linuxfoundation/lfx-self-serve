@@ -53,7 +53,7 @@ async function open(page: Page, requests: AdminProgramRequests, patches: unknown
   await stubAdminProgramPage(page);
   await stubAdminMentees(page, requests);
   await stubAdminTasks(page, requests);
-  await page.route(`**/api/mentorship/admin/tasks/${TASK.id}`, (route) => {
+  await page.route(`**/api/mentorship/tasks/${TASK.id}`, (route) => {
     if (route.request().method() !== 'PATCH') return route.fallback();
     const body = route.request().postDataJSON() as Record<string, unknown>;
     patches.push(body);

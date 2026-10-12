@@ -4,7 +4,7 @@ description: Schedule, manage, and join project meetings with calendar integrati
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, calendar, join, zoom, virtual]
-last_updated: 2026-10-04
+last_updated: 2026-10-09
 intercom_collection: Meetings
 ---
 
@@ -18,6 +18,7 @@ The Meetings section lets you create, manage, and join meetings for your Linux F
 - Join meetings via the public meeting join page — no LFX account required
 - Register yourself for a public, non-restricted meeting you weren't invited to (requires signing in)
 - RSVP (Yes/No/Maybe) to a meeting you're invited to (requires signing in)
+- Remove yourself from an upcoming meeting you're registered for, from its card or its page (requires signing in). The option isn't shown when you were added through a committee; leave the committee instead. If you were added through a mailing list, a later list sync can add you back
 - Generate a draft meeting agenda with AI assistance, or start from a pre-built agenda template
 - View a past meeting's recording, transcript, and AI summary, if you have access
 - Upload or view meeting materials (files and links)
@@ -43,6 +44,7 @@ The left navigation label for this section depends on which lens you're in:
 Me, Foundation, and Project lenses share the same dashboard, just scoped differently. Choose **Upcoming** or **Past** with the time control at the left of the filter bar. In the Me lens, these on/off filters sit beside it, each showing how many meetings it matches:
 
 - **Pending RSVP** (Upcoming only) — meetings that collect RSVPs and that you haven't answered yet.
+- **Accepted** (Upcoming only) — meetings you said yes to (for a series, your response for the next date). Meetings you answered "Maybe" or declined, and ones you haven't answered, are left out, so you get a clean view of what you plan to attend.
 - **Organized by me** (Upcoming and Past) — meetings you created.
 - **Show declined** (Upcoming only) — My Meetings hides a meeting you declined for every date, because declining doesn't remove you from the guest list and only an organizer can do that. Turn this on to see those meetings again. Declining a single date keeps the meeting in your list, and a meeting you organized always stays in your list even if you declined every date. The filter appears only when you have declined meetings.
 
@@ -58,7 +60,7 @@ Empty states differ by lens:
 
 - **Materials** lists the files and links for the meeting. On a recurring meeting, the "all dates" note means the same materials apply to every occurrence. Organizers see **Edit materials**.
 - **People Invited** (organizers) shows the RSVP summary and up to five faces, attending people first, plus a "+N" for everyone else. **View all** opens the full guest list, which you can search and filter. **Invite people** opens the same list with the Add Guest form already open. Adding a guest still invites them to every occurrence.
-- Invitees see the same faces and **View all** on the meeting card, but only when the organizer turned on **Show attendees to guests** for the meeting. This doesn't depend on RSVPs: the faces appear even when the meeting doesn't collect them. The same setting controls **Show Members** on the meeting's page: without it, invitees see how many people are invited, but not who. Board and restricted meetings never share their guest list.
+- Invitees see the same faces and **View all** on the meeting card, but only when the organizer turned on **Show attendees to guests** for the meeting. This doesn't depend on RSVPs: the faces appear even when the meeting doesn't collect them. The same setting controls **Show Members** on the meeting's page: without it, invitees see how many people are invited, but not who. Board and restricted meetings never share their guest list. In the new meeting editor (preview), an organizer can turn **Show attendees to guests** on for a Restricted meeting; that lists the attendees in guests' calendar invites, while LFX pages still keep a Restricted meeting's guest list hidden.
 - For a past meeting, the participant list goes to organizers and to the people who were invited or attended, whatever that setting says. Anyone else signed in who can open the meeting sees the attendance numbers, but not who.
 
 ## Key concepts

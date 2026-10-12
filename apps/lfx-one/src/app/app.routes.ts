@@ -36,6 +36,7 @@ import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enable
 import { orgLensRoiEnabledGuard } from './shared/guards/org-lens-roi-enabled.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mentorshipEnabledGuard } from './shared/guards/mentorship-enabled.guard';
+import { crowdfundingAttributionEnabledGuard } from './shared/guards/crowdfunding-attribution-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
@@ -83,6 +84,24 @@ function orgLensPageRoutes(): Routes {
           data: { title: 'CLA Group', description: "Corporate CLA for one of your organization's CLA Groups." },
           loadComponent: () =>
             import('./modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component').then((m) => m.OrgEasyclaDetailComponent),
+        },
+      ],
+    },
+    {
+      // Initiatives attributed to the organization (#348): the My Initiatives page and detail scoped by `data.lens`.
+      // Componentless parent so the dark-launch guard covers both children.
+      path: 'initiatives',
+      canMatch: [crowdfundingAttributionEnabledGuard],
+      data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your organization.', icon: 'fa-light fa-box-dollar' },
+      children: [
+        {
+          path: '',
+          loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
+        },
+        {
+          path: ':slug',
+          data: { title: 'Initiative' },
+          loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
         },
       ],
     },
@@ -428,6 +447,23 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
       },
+      // Initiatives attributed to the lens project (#347) — the My Initiatives page, scoped by `data.lens`.
+      {
+        path: 'foundation/initiatives',
+        title: 'Foundation Initiatives',
+        data: { lens: 'foundation' },
+        canMatch: [crowdfundingAttributionEnabledGuard],
+        canActivate: [projectQueryParamGuard],
+        loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
+      },
+      {
+        path: 'foundation/initiatives/:slug',
+        title: 'Initiative',
+        data: { lens: 'foundation' },
+        canMatch: [crowdfundingAttributionEnabledGuard],
+        canActivate: [projectQueryParamGuard],
+        loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
+      },
       // Formations queue (GH-1958) — dark-launched behind `formation-enabled` (CanMatch), auditor-only
       // (CanActivate). As of GH-2367 the queue scopes to the selected foundation's formations via
       // ProjectContextService.selectedFoundation (the whole subtree since GH-2368's upstream
@@ -544,6 +580,23 @@ export const routes: Routes = [
         data: { lens: 'project' },
         canActivate: [projectQueryParamGuard],
         loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
+      },
+      // Initiatives attributed to the lens project (#347) — the My Initiatives page, scoped by `data.lens`.
+      {
+        path: 'project/initiatives',
+        title: 'Project Initiatives',
+        data: { lens: 'project' },
+        canMatch: [crowdfundingAttributionEnabledGuard],
+        canActivate: [projectQueryParamGuard],
+        loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
+      },
+      {
+        path: 'project/initiatives/:slug',
+        title: 'Initiative',
+        data: { lens: 'project' },
+        canMatch: [crowdfundingAttributionEnabledGuard],
+        canActivate: [projectQueryParamGuard],
+        loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
       },
       // Marketing OS agents — dark-launched behind `mktg-os-agents-enabled` (CanMatch); invisible when the flag is off.
       {
@@ -861,6 +914,11 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./layouts/main-layout/main-layout.component').then((m) => m.MainLayoutComponent),
     children: [
+      {
+        path: 'unavailable',
+        title: 'Temporarily Unavailable',
+        loadComponent: () => import('./modules/unavailable/unavailable.component').then((m) => m.UnavailableComponent),
+      },
       {
         path: '**',
         title: 'Page Not Found',

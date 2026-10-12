@@ -139,7 +139,7 @@
         @if (tasksExpanded && row.hasTasks) {
           <tr class="bg-gray-50" [attr.data-testid]="'mentorship-mentor-applicant-tasks-expanded-' + row.id">
             <td colspan="6" class="px-4 py-3 pl-8">
-              <lfx-mentorship-applicant-tasks-panel [applicantId]="row.id" [applicantName]="row.name" [tasks]="row.taskRows" />
+              <lfx-mentorship-applicant-tasks-panel [applicantId]="row.id" [applicantName]="row.name" [tasks]="row.taskRows" [taskSaved]="taskSaved()" />
             </td>
           </tr>
         }

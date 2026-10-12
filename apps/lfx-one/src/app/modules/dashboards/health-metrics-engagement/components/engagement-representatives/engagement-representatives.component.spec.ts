@@ -21,14 +21,20 @@ function repRow(overrides: Partial<HealthMetricsEngagementRepRow> = {}): HealthM
   return {
     key: 'r-1',
     personName: 'Dana Fields',
+    identityUnresolved: false,
+    personRole: 'Voting Rep',
+    jobTitle: 'Engineer',
     accountName: 'Acme Motors',
+    membershipTier: 'Gold',
     committeeName: 'Technical Steering Committee',
     lastAttendedDate: '2026-08-14',
+    daysSinceLastAttended: 12,
+    lapsed180d: false,
     periods: [
-      { range: 'COMPLETED_YEAR_3', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: true },
-      { range: 'COMPLETED_YEAR_2', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false },
-      { range: 'COMPLETED_YEAR', meetingsInvited: 6, meetingsAttended: 3, neverAttended: false, lapsed: false },
-      { range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false },
+      { range: 'COMPLETED_YEAR_3', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: true, sortRank: 1 },
+      { range: 'COMPLETED_YEAR_2', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false, sortRank: 1 },
+      { range: 'COMPLETED_YEAR', meetingsInvited: 6, meetingsAttended: 3, neverAttended: false, lapsed: false, sortRank: 1 },
+      { range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false, sortRank: 1 },
     ],
     ...overrides,
   };
@@ -106,13 +112,37 @@ describe('EngagementRepresentativesComponent', () => {
   it('reads the selected foundation and renders the returned rows', async () => {
     await render();
 
-    expect(getEngagementRepresentatives).toHaveBeenCalledWith({ foundationSlug: 'acme' });
+    expect(getEngagementRepresentatives).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: null });
     const row = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]');
     expect(row.textContent).toContain('Dana Fields');
     expect(row.textContent).toContain('Acme Motors');
     expect(row.textContent).toContain('Technical Steering Committee');
     expect(row.textContent).toContain('2 / 6');
     expect(row.textContent).toContain('Aug 14, 2026');
+    expect(row.textContent).toContain('Voting Rep · Engineer');
+    expect(row.textContent).toContain('Acme Motors · Gold');
+    expect(row.textContent).toContain('12 days ago');
+  });
+
+  it('re-reads the selected project, since the loaded rows cover the previous scope', async () => {
+    await render();
+    getEngagementRepresentatives.mockClear();
+
+    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getEngagementRepresentatives).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: 'acme-core' });
+  });
+
+  // Two unresolved rows must not read as one person listed twice.
+  it('renders an unresolved identity as unresolved, and flags a 180-day lapse', async () => {
+    await render(response({ rows: [repRow({ identityUnresolved: true, personName: 'Dana Fields', daysSinceLastAttended: 240, lapsed180d: true })] }));
+
+    const row = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]');
+    expect(row.textContent).toContain('Unresolved identity');
+    expect(row.textContent).not.toContain('Dana Fields');
+    expect(row.querySelector('[data-testid="engagement-representatives-days-ago"]').textContent).toContain('lapsed over 180 days');
   });
 
   // The placeholder and the icon give the box no accessible name, so the label has to.
@@ -174,10 +204,10 @@ describe('EngagementRepresentativesComponent', () => {
       key: 'r-2',
       personName: 'Sam Rivera',
       periods: [
-        { range: 'COMPLETED_YEAR_3', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false },
-        { range: 'COMPLETED_YEAR_2', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false },
-        { range: 'COMPLETED_YEAR', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false },
-        { range: 'YTD', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false },
+        { range: 'COMPLETED_YEAR_3', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 },
+        { range: 'COMPLETED_YEAR_2', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false, sortRank: 1 },
+        { range: 'COMPLETED_YEAR', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false, sortRank: 1 },
+        { range: 'YTD', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false, sortRank: 1 },
       ],
     });
     await render(response({ rows: [repRow(), other], counts: counts(2, 1) }));
@@ -192,10 +222,10 @@ describe('EngagementRepresentativesComponent', () => {
       personName: 'Sam Rivera',
       lastAttendedDate: null,
       periods: [
-        { range: 'COMPLETED_YEAR_3', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false },
-        { range: 'COMPLETED_YEAR_2', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false },
-        { range: 'COMPLETED_YEAR', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false },
-        { range: 'YTD', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false },
+        { range: 'COMPLETED_YEAR_3', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 },
+        { range: 'COMPLETED_YEAR_2', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 },
+        { range: 'COMPLETED_YEAR', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 },
+        { range: 'YTD', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 },
       ],
     });
     await render(response({ rows: [repRow(), never], counts: counts(2, 1) }));
@@ -215,10 +245,10 @@ describe('EngagementRepresentativesComponent', () => {
     const lapsed = repRow({
       key: 'r-2',
       periods: [
-        { range: 'COMPLETED_YEAR_3', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: false },
-        { range: 'COMPLETED_YEAR_2', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: false },
-        { range: 'COMPLETED_YEAR', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: false },
-        { range: 'YTD', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: true },
+        { range: 'COMPLETED_YEAR_3', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: false, sortRank: 1 },
+        { range: 'COMPLETED_YEAR_2', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: false, sortRank: 1 },
+        { range: 'COMPLETED_YEAR', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: false, sortRank: 1 },
+        { range: 'YTD', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: true, sortRank: 1 },
       ],
     });
     await render(response({ rows: [repRow(), lapsed], counts: counts(2, 0) }));
@@ -237,7 +267,7 @@ describe('EngagementRepresentativesComponent', () => {
   it('restores the cut from the URL, so a deep link lands on the segment it named', async () => {
     const never = repRow({
       key: 'r-2',
-      periods: [{ range: 'YTD', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false }],
+      periods: [{ range: 'YTD', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 }],
     });
     await render(response({ rows: [repRow(), never], counts: counts(2, 1) }), undefined, { repFilter: 'never' });
 
@@ -292,7 +322,7 @@ describe('EngagementRepresentativesComponent', () => {
     await render(response({ rows: [], counts: null }));
 
     const empty: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]');
-    expect(empty?.textContent).toContain('No representatives recorded for this foundation');
+    expect(empty?.textContent).toContain('No representatives recorded for this scope');
   });
 
   it('keeps the no-match state for a search that filters a measured scope down to nothing', async () => {
@@ -302,7 +332,7 @@ describe('EngagementRepresentativesComponent', () => {
 
     const empty: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]');
     expect(empty?.textContent).toContain('No representatives match this filter');
-    expect(empty?.textContent).not.toContain('recorded for this foundation');
+    expect(empty?.textContent).not.toContain('recorded for this scope');
   });
 
   // Two foundations can hold the same number of reps, so the row count cannot stand in for identity.

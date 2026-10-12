@@ -3,8 +3,9 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { proxyRequest, loggerWarning, getUsernameFromAuth, generateM2MToken } = vi.hoisted(() => ({
+const { proxyRequest, loggerWarning, getUsernameFromAuth, generateM2MToken, isFlagEnabled } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
+  isFlagEnabled: vi.fn(),
   loggerWarning: vi.fn(),
   getUsernameFromAuth: vi.fn(),
   generateM2MToken: vi.fn(),
@@ -14,6 +15,9 @@ vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
   },
+}));
+vi.mock('./launchdarkly-server.service', () => ({
+  LaunchDarklyServerService: { getInstance: () => ({ isFlagEnabled }) },
 }));
 vi.mock('./logger.service', () => ({
   logger: {
@@ -28,7 +32,10 @@ vi.mock('./logger.service', () => ({
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken }));
 // The `@lfx-one/shared/*` alias isn't wired into this app's vitest config.
-vi.mock('@lfx-one/shared/constants', () => import('../../../../../packages/shared/src/constants/insights-tokens.constants'));
+vi.mock('@lfx-one/shared/constants', async () => ({
+  ...(await import('../../../../../packages/shared/src/constants/insights-tokens.constants')),
+  INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG: 'insights-public-api-token-access',
+}));
 
 import type { Request } from 'express';
 
@@ -54,6 +61,7 @@ describe('InsightsTokensService', () => {
     loggerWarning.mockReset();
     getUsernameFromAuth.mockReset().mockResolvedValue('jdoe');
     generateM2MToken.mockReset().mockResolvedValue('m2m-token');
+    isFlagEnabled.mockReset().mockResolvedValue(false);
     service = new InsightsTokensService();
   });
 
@@ -87,6 +95,44 @@ describe('InsightsTokensService', () => {
       expect(error.statusCode).toBe(503);
       expect(error.toResponse()).toMatchObject({ upstreamCode: 'eligibility_unavailable' });
       expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('insights-public-api-token-access flag', () => {
+    beforeEach(() => {
+      isFlagEnabled.mockResolvedValue(true);
+    });
+
+    it('evaluates the flag on the server for the request, defaulting to off', async () => {
+      await service.getEligibility(req);
+
+      expect(isFlagEnabled).toHaveBeenCalledWith(req, 'insights-public-api-token-access', false);
+    });
+
+    it('treats a flagged user as a Key Contact without calling the member-tier endpoint', async () => {
+      expect(await service.getEligibility(req)).toEqual({ canCreate: true, orgs: [], checkFailed: false });
+      expect(generateM2MToken).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('lets a flagged user create, list and revoke through the PAT service, using the user bearer', async () => {
+      proxyRequest.mockResolvedValueOnce({ tokens: [] }).mockResolvedValueOnce({ token: patToken, secret: 'lfi_x' }).mockResolvedValueOnce(undefined);
+
+      await service.listTokens(req);
+      await service.createToken(req, 'ci-pipeline');
+      await service.revokeToken(req, patToken.uid);
+
+      expect(proxyRequest.mock.calls.map((call) => call[2])).toEqual(['/tokens', '/tokens', `/tokens/${patToken.uid}`]);
+      expect(proxyRequest.mock.calls.every((call) => call[0] === req && call[1] === 'LFX_V2_SERVICE')).toBe(true);
+    });
+
+    it('ignores anything the client sends and still runs the Key Contact check when the flag is off', async () => {
+      isFlagEnabled.mockResolvedValue(false);
+      proxyRequest.mockResolvedValueOnce([]);
+      const forged = { bearerToken: 'user-token', headers: { 'x-insights-public-api-flag': 'true' } } as unknown as Request;
+
+      expect(await service.getEligibility(forged)).toEqual({ canCreate: false, orgs: [], checkFailed: false });
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
     });
   });
 

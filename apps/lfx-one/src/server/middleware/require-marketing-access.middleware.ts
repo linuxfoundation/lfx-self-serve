@@ -48,14 +48,18 @@ const projectService = new ProjectService();
  * restores the ED-only baseline, not the pre-PR open baseline. This tightening is covered by the
  * flag-off describe block in this middleware's spec, which is route-agnostic and applies
  * identically here and in `campaigns.route.ts`. When
- * the flag is ON: root-writer bypasses unconditionally; ED bypasses only for foundations it
+ * the flag is ON: a root writer passes a request that names no project, or one naming a project it
+ * also holds `writer_guard` on (`global_writer` is withheld on some projects); otherwise it falls
+ * through like any other caller. ED bypasses only for foundations it
  * actually holds the persona for (same scoping `requireExecutiveDirector` applies, checked
  * against `personaProjects`) — an ED out of scope for the requested slug is not hard-denied, it
  * falls through to the FGA checks below. LF Staff bypass the entire check only when `allowLfStaff`
  * is set to true in options; this allows shared endpoints (e.g. marketing analytics used by both
  * ED and LF Staff) to grant LF Staff access while keeping other endpoints ED/FGA-only. A caller
- * without ED/root status is authorized only via an actual FGA relation: either a ROOT-scoped grant
- * (cascades to every project) or a grant scoped to the specific foundation/project the request names.
+ * without ED/root status is authorized only via an actual FGA relation: either a ROOT grant that
+ * cascades to every project (ROOT `marketing_auditor`, or ROOT `marketing_ops` for campaigns) or a
+ * grant scoped to the specific foundation/project the request names. ROOT `global_marketing_ops`
+ * does not cascade, so it answers only a campaign request that names no project.
  *
  * Deliberately never a single all-or-nothing check: a caller can pass via ED persona OR root FGA
  * grant OR per-project FGA grant, and a transient failure on any one path denies only that path,
@@ -88,16 +92,19 @@ function createMarketingAccessMiddleware(
         await requireExecutiveDirector(req, res, next);
         return;
       }
-      if (result.isRootWriter) {
-        next();
-        return;
-      }
-
       // The two route files this middleware gates name the foundation/project differently
       // (`analytics.route.ts` reads `foundationSlug`, `campaign.controller.ts` reads `project`);
       // each caller lists its own primary param first purely for logging clarity — in practice a
       // request only ever sets one of the two, so the fallback order never has to arbitrate.
       const requestedSlug = slugQueryParams.map((param) => req.query[param]).find((value): value is string => typeof value === 'string' && value.length > 0);
+
+      // The ROOT writer check admits `global_writer`, which is withheld on some projects, so a
+      // request naming a project needs that project's `writer_guard` too. A root writer who fails
+      // it is not denied here — it falls through to the ED/FGA paths like any other caller.
+      if (result.isRootWriter && (!requestedSlug || (await personaDetectionService.checkProjectWriter(req, requestedSlug)))) {
+        next();
+        return;
+      }
 
       // ED is scoped to the foundations it's actually held for (mirrors `requireExecutiveDirector`)
       // — an ED for foundation A must not read foundation B just by passing B's slug. A request
@@ -114,11 +121,20 @@ function createMarketingAccessMiddleware(
         }
       }
 
-      const hasRootAccess =
-        access === 'marketing_auditor'
-          ? await personaDetectionService.checkRootMarketingAuditor(req)
-          : await personaDetectionService.checkRootCampaignManager(req);
-      if (hasRootAccess) {
+      // `marketing_auditor` cascades (`from parent`), so a ROOT grant answers for every project.
+      // `campaign_manager` does not: ROOT `global_marketing_ops` answers only an unscoped request,
+      // and a request naming a project is answered by that project's own relation below. ROOT
+      // `marketing_ops` does cascade, so it answers a named project here, before the slug lookup.
+      if (access === 'marketing_auditor' || !requestedSlug) {
+        const hasRootAccess =
+          access === 'marketing_auditor'
+            ? await personaDetectionService.checkRootMarketingAuditor(req)
+            : await personaDetectionService.checkRootCampaignManager(req);
+        if (hasRootAccess) {
+          next();
+          return;
+        }
+      } else if (await personaDetectionService.checkRootCampaignManagerCascade(req)) {
         next();
         return;
       }
@@ -196,8 +212,8 @@ export const requireMarketingAuditorOrLfStaff = createMarketingAccessMiddleware(
 /**
  * North Star foundation KPI endpoints: same audience as {@link requireMarketingAuditorOrLfStaff},
  * except the `tlf` umbrella (a cross-foundation aggregate) needs a ROOT `marketing_auditor` grant —
- * a project-scoped grant on `tlf` is refused. EDs scoped to `tlf`, LF Staff and root writers are
- * unaffected.
+ * a project-scoped grant on `tlf` is refused. EDs scoped to `tlf`, LF Staff and root writers that
+ * hold `writer_guard` on `tlf` are unaffected.
  */
 export const requireNorthStarAccess = createMarketingAccessMiddleware('marketing_auditor', ['foundationSlug', 'project'], 'require_north_star_access', {
   allowLfStaff: true,

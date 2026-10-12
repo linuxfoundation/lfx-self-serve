@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, model, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, linkedSignal, model, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router, UrlTree } from '@angular/router';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
@@ -55,6 +55,7 @@ export class PendingActionsDrawerComponent {
 
   public readonly pendingActions = input.required<PendingActionItem[]>();
   public readonly visible = model<boolean>(false);
+  public readonly processingApplicationKey = input<string | null>(null);
 
   public readonly actionCompleted = output<PendingActionItem>();
   // Emits voteUid when a Vote row's CTA is clicked so the parent dashboard can open the cast drawer inline.
@@ -63,26 +64,30 @@ export class PendingActionsDrawerComponent {
   // deferred-undo decline (whose Undo affordance lives in the parent's shared p-toast) are all owned in one place.
   public readonly acceptInvitationRequested = output<PendingActionItem>();
   public readonly declineInvitationRequested = output<PendingActionItem>();
+  public readonly approveApplicationRequested = output<PendingActionItem>();
+  public readonly rejectApplicationRequested = output<PendingActionItem>();
 
   private readonly hiddenActionsVersion = signal(0);
   // Rows currently in the fade-out + collapse transition; keeps them rendered through the animation.
   protected readonly completingRowKeys = signal<ReadonlySet<string>>(new Set());
   private readonly meetingCache = signal<Record<string, Meeting>>({});
   private readonly loadingMeetingUids = signal<ReadonlySet<string>>(new Set());
-  private readonly failedMeetingUids = signal<ReadonlySet<string>>(new Set());
+  // A replacement feed permits one new attempt; cache/loading updates must not create a retry loop.
+  private readonly failedMeetingUids = linkedSignal<ReadonlySet<string>>(() => {
+    this.pendingActions();
+    return new Set<string>();
+  });
 
   protected readonly visibleRows: Signal<DrawerActionRow[]> = this.initVisibleRows();
   protected readonly uncompletedCount: Signal<number> = computed(() => this.visibleRows().length);
   protected readonly sectionedRows: Signal<DrawerActionSection[]> = this.initSectionedRows();
 
   public constructor() {
-    // When the drawer becomes visible, eagerly load Meeting payloads for every RSVP row so the inline RSVP buttons render immediately.
-    // Subscribe only to the visibility signal (not `visibleRows`) — `visibleRows` re-emits every time `meetingCache` updates,
-    // which would cause an O(n) rescan per fetched meeting (O(n²) overall). Read `visibleRows()` synchronously inside the
-    // subscribe instead so each fetch fires exactly once per row.
-    toObservable(this.visible)
+    // Load missing RSVP meetings when the drawer opens or receives a refreshed feed while open.
+    // Watch the raw input, not `visibleRows`: cache updates would otherwise rescan every row per fetched meeting (O(n²)).
+    toObservable(computed(() => (this.visible() ? this.pendingActions() : null)))
       .pipe(
-        filter((isVisible) => isVisible),
+        filter((actions) => actions !== null),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(() => {
@@ -99,6 +104,7 @@ export class PendingActionsDrawerComponent {
   }
 
   protected handleAgendaOrOtherClick(item: DrawerActionRow): void {
+    if (item.type === 'JoinApplication') return;
     if (item.isVoteInline && item.voteUid) {
       this.visible.set(false);
       this.castVoteRequested.emit(item.voteUid);
@@ -112,6 +118,7 @@ export class PendingActionsDrawerComponent {
   }
 
   protected handleDismiss(item: DrawerActionRow): void {
+    if (item.type === 'JoinApplication') return;
     this.hiddenActionsService.dismissAction(item);
     // skipHide: the permanent dismiss cookie already hides the row; a 24h hideAction cookie would be redundant.
     this.startCompletion(item, true);
@@ -179,6 +186,7 @@ export class PendingActionsDrawerComponent {
 
   // Persist the hide synchronously unless `skipHide` is set (Dismiss already wrote a permanent cookie), then drive the fade animation through a single timer.
   private startCompletion(item: PendingActionItem, skipHide = false): void {
+    if (item.type === 'JoinApplication') return;
     const rowKey = this.getRowKey(item);
     if (!skipHide) {
       this.hiddenActionsService.hideAction(item);
@@ -203,6 +211,9 @@ export class PendingActionsDrawerComponent {
 
   // Mirror HiddenActionsService.getActionIdentifier so the row key, hidden-cookie identifier, and `@for` track key all stay in sync.
   private getRowKey(item: PendingActionItem): string {
+    if (item.type === 'JoinApplication' && item.committeeUid && item.applicationUid) {
+      return `JoinApplication-${item.committeeUid}-${item.applicationUid}`;
+    }
     if (item.meetingUid) {
       return `${item.type}-${item.meetingUid}-${item.occurrenceId ?? ''}`;
     }

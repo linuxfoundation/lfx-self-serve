@@ -57,13 +57,17 @@ export interface PersonaDetections {
 }
 
 export interface PersonaApiResponse extends PersonaDetections {
-  /** Writer on the tenant root project — bypasses nav persona filtering. Request-scoped, not cached. */
+  /**
+   * `writer_guard` on the tenant root project — bypasses nav persona filtering. The ROOT
+   * `global_writer` half does not cascade, so this does not imply writer on a named project.
+   * Request-scoped, not cached.
+   */
   isRootWriter: boolean;
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona. Request-scoped, not cached. */
   isLFStaff: boolean;
   /**
-   * `auditor` FGA grant on the tenant ROOT project — the Formations queue's (`foundation/formations`,
-   * GH-1958) authorization boundary. Unlike {@link isMarketingAuditor}, `auditor` has no
+   * `auditor_guard` FGA grant on the tenant ROOT project — the Formations queue's (`foundation/formations`,
+   * GH-1958) authorization boundary. Unlike {@link isMarketingAuditor}, it has no
    * project-scoped variant to race, so this is always computed (not flag-gated) and carries no
    * "root grant" distinction field. Request-scoped, not cached.
    */
@@ -85,7 +89,11 @@ export interface PersonaApiResponse extends PersonaDetections {
    * foundation). `false` (not `undefined`) whenever {@link isMarketingAuditor} is `false`.
    */
   isMarketingAuditorRootGrant: boolean;
-  /** Same distinction as {@link isMarketingAuditorRootGrant}, for {@link isCampaignManager}. */
+  /**
+   * True only when {@link isCampaignManager} is backed by the cascading ROOT `marketing_ops` grant.
+   * ROOT `global_marketing_ops` does not cascade, so it leaves this `false` even when it satisfied an
+   * unscoped {@link isCampaignManager}.
+   */
   isCampaignManagerRootGrant: boolean;
 }
 
@@ -107,4 +115,10 @@ export interface AffiliatedProjectUidsCacheEntry {
 export interface PersonaApiResponseCacheEntry {
   promise: Promise<PersonaDetections>;
   expiresAt: number;
+}
+
+/** The caller's ROOT `marketing_ops` and `global_marketing_ops` grants, read in one batched check. */
+export interface RootMarketingOpsGrants {
+  marketingOps: boolean;
+  globalMarketingOps: boolean;
 }

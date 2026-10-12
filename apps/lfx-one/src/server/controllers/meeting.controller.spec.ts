@@ -24,6 +24,7 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
     canViewMeetingRoster: vi.fn(),
     getMeetingRsvps: vi.fn(),
     getMeetingRegistrantsForUser: vi.fn(),
+    removeMeetingRegistrantSelf: vi.fn(),
     addMeetingRegistrant: vi.fn(),
     updateMeetingRegistrant: vi.fn(),
     createMeetingRsvp: vi.fn(),
@@ -169,6 +170,7 @@ const { MeetingController } = await import('./meeting.controller');
 // The stubbed logger, imported after the mock is registered, so the metadata assertions read the same
 // object the controller writes to.
 const { logger } = await import('../services/logger.service');
+const { getEffectiveEmail, getUsernameFromAuth } = await import('../utils/auth-helper');
 
 function buildRes(): Response {
   const res = { status: vi.fn(() => res), json: vi.fn(() => res), send: vi.fn(() => res) } as unknown as Response;
@@ -1121,6 +1123,46 @@ describe('MeetingController', () => {
       await controller.updateOccurrence(buildOccurrenceReq({ start_time: futureStart(), duration: 30 }), buildRes(), next);
 
       expect(next).toHaveBeenCalledWith(upstream);
+    });
+  });
+
+  describe('removeMyMeetingRegistration', () => {
+    beforeEach(() => {
+      generateM2MTokenMock.mockResolvedValue(M2M_TOKEN);
+      meetingSvc.removeMeetingRegistrantSelf.mockResolvedValue(1);
+    });
+
+    it('removes the caller under their own identity, using the M2M token only for the lookup, and answers 204', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce('alice');
+      const req = buildReq();
+      const res = buildRes();
+
+      await controller.removeMyMeetingRegistration(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.removeMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'alice', M2M_TOKEN);
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(res.send).toHaveBeenCalled();
+    });
+
+    it('rejects a caller whose identity cannot be resolved, without touching the service', async () => {
+      vi.mocked(getEffectiveEmail).mockReturnValueOnce('');
+
+      await controller.removeMyMeetingRegistration(buildReq(), buildRes(), next);
+
+      expect(meetingSvc.removeMeetingRegistrantSelf).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
+    });
+
+    it('passes service failures to the error handler', async () => {
+      const failure = new FakeMicroserviceError('forbidden', 403, 'FORBIDDEN');
+      meetingSvc.removeMeetingRegistrantSelf.mockRejectedValue(failure);
+      const res = buildRes();
+
+      await controller.removeMyMeetingRegistration(buildReq(), res, next);
+
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(res.status).not.toHaveBeenCalled();
     });
   });
 });

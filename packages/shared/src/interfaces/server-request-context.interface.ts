@@ -30,6 +30,9 @@ export interface ServerRequestContext {
    */
   notFound?: boolean;
 
+  /** SSR emits 503 so a transient failure is never cached or indexed as missing. */
+  unavailable?: boolean;
+
   /**
    * Static providers threaded into the Angular render (base href, `REQUEST`). Present only
    * on the server-side producer in `server.ts`; typing it here binds that literal to this

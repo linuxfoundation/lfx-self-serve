@@ -5,7 +5,7 @@
   <lfx-card-tabs-bar [options]="statusTabOptions()" [selectedFilter]="statusTab()" (filterChange)="onStatusTabChange($event)" data-testid="votes-status-tabs">
   </lfx-card-tabs-bar>
 
-  @if (loading() || votes().length > 0) {
+  @if (loading() || votes().length > 0 || isFiltered()) {
     <div class="px-5 pt-4 pb-3">
       <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
         <div class="flex-1 min-w-0">

@@ -491,10 +491,27 @@
               } @else if (authenticated() && !isPastMeeting()) {
                 <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) -->
                 <div class="w-full md:w-[296px]">
-                  @if (effectivelyInvited() && inviteResponsesEnabled()) {
-                    @defer (when meeting()) {
-                      <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
-                    }
+                  @if (effectivelyInvited()) {
+                    <div class="flex flex-col gap-2">
+                      @if (inviteResponsesEnabled()) {
+                        @defer (when meeting()) {
+                          <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+                        }
+                      }
+                      @if (canLeaveMeeting()) {
+                        <lfx-button
+                          class="w-full"
+                          styleClass="w-full"
+                          icon="fa-light fa-user-xmark"
+                          label="Remove Myself"
+                          size="small"
+                          severity="secondary"
+                          [loading]="leavingMeeting()"
+                          (onClick)="confirmLeaveMeeting()"
+                          data-testid="leave-meeting-button">
+                        </lfx-button>
+                      }
+                    </div>
                   } @else if (canRegisterForMeeting()) {
                     <lfx-button
                       class="w-full"
@@ -907,4 +924,6 @@
       </div>
     </div>
   }
+
+  <p-confirmDialog></p-confirmDialog>
 </div>

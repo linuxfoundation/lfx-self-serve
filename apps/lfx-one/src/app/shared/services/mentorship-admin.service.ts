@@ -21,7 +21,6 @@ import {
   MentorshipAdminMentorsQuery,
   MentorshipAdminMentorsResponse,
   MentorshipAdminProgramPage,
-  MentorshipAdminTaskUpdate,
   MentorshipAdminTermInput,
   MentorshipAdminTermsQuery,
   MentorshipAdminTermsResponse,
@@ -30,12 +29,11 @@ import {
   MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
   MentorshipEnrollUpdateRequest,
-  MentorshipMentorTaskCreateRequest,
-  MentorshipMentorTaskCreateResponse,
   MentorshipProgramLogoUploadResult,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipProgramTermRow,
+  MentorshipProgramVisibilityAction,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, retry, take, throwError, timer } from 'rxjs';
 
@@ -146,21 +144,6 @@ export class MentorshipAdminService {
       .pipe(take(1), this.logFailure('withdrawApplication'));
   }
 
-  /** Gives accepted mentees a task. With one application a failure arrives as the error; with several, the ones not created are in `failed`. */
-  public createTasks(request: MentorshipMentorTaskCreateRequest): Observable<MentorshipMentorTaskCreateResponse> {
-    return this.http.post<MentorshipMentorTaskCreateResponse>('/api/mentorship/admin/tasks', request).pipe(take(1), this.logFailure('createTasks'));
-  }
-
-  /**
-   * Edits one task, or sets just its status, and returns it as the row reads it, so the caller patches the row in place.
-   * Upstream's 400 (a submitted task that requires a file with none), 403 and 404 reach the caller as the error.
-   */
-  public updateTask(taskId: string, body: MentorshipAdminTaskUpdate): Observable<MentorshipApplicantTask> {
-    return this.http
-      .patch<MentorshipApplicantTask>(`/api/mentorship/admin/tasks/${encodeURIComponent(taskId)}`, body)
-      .pipe(take(1), this.logFailure('updateTask'));
-  }
-
   /**
    * Invites the picked candidate as a mentor of the program. Resolves on 204. A 409 (already on the program), 422 (no
    * LF account) and 503 (account lookup down) reach the caller as the error.
@@ -211,6 +194,13 @@ export class MentorshipAdminService {
     return this.http
       .patch<MentorshipEnrollProgramRef>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}`, body)
       .pipe(take(1), this.logFailure('updateProgram'));
+  }
+
+  /** Hides a published program or unhides a hidden one. Resolves on 204. */
+  public setProgramVisibility(programId: string, action: MentorshipProgramVisibilityAction): Observable<void> {
+    return this.http
+      .post<void>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/${action}`, {})
+      .pipe(take(1), this.logFailure('setProgramVisibility'));
   }
 
   /**

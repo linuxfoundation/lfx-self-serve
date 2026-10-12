@@ -6,6 +6,7 @@ import { computed, DestroyRef, inject, Injectable, linkedSignal, signal, type Si
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormArray, FormControl, FormGroup, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import {
+  COMPOSER_ATTENDEE_LOCK,
   DEFAULT_ARTIFACT_VISIBILITY,
   DEFAULT_DURATION,
   DEFAULT_EARLY_JOIN_TIME,
@@ -65,6 +66,7 @@ import {
   mapRecurrenceToFormValue,
   markMeetingFormForValidation,
   normalizeMeetingApiVotingStatuses,
+  getSavedAttendeeVisibility,
   resolveMeetingOwner,
   sanitizeMeetingCommittees,
   syncShowMeetingAttendeesLock,
@@ -1308,8 +1310,10 @@ export class MeetingComposerFormService {
     const restrictedControl = form.get('restricted');
     const attendeesTypeControl = form.get('meeting_type');
     if (restrictedControl && attendeesTypeControl) {
-      syncShowMeetingAttendeesLock(form);
-      this.formSubscriptions.add(merge(restrictedControl.valueChanges, attendeesTypeControl.valueChanges).subscribe(() => syncShowMeetingAttendeesLock(form)));
+      syncShowMeetingAttendeesLock(form, COMPOSER_ATTENDEE_LOCK);
+      this.formSubscriptions.add(
+        merge(restrictedControl.valueChanges, attendeesTypeControl.valueChanges).subscribe(() => syncShowMeetingAttendeesLock(form, COMPOSER_ATTENDEE_LOCK))
+      );
     }
   }
 
@@ -1979,7 +1983,10 @@ export class MeetingComposerFormService {
       recording_enabled: meeting.recording_enabled || false,
       transcript_enabled: meeting.transcript_enabled || false,
       youtube_upload_enabled: meeting.youtube_upload_enabled || false,
-      show_meeting_attendees: meeting.show_meeting_attendees || false,
+      // Read through the default (pre-v2) lock, not the composer's: a restricted meeting saved before the
+      // composer existed opens with sharing off, so a stale stored `true` is never re-saved as a choice.
+      // A v2 opt-in on a restricted meeting reads the same way and has to be switched on again per edit.
+      show_meeting_attendees: getSavedAttendeeVisibility(meeting) ?? false,
       zoom_ai_enabled: meeting.ai_summary_enabled || false,
       require_ai_summary_approval: meeting.require_ai_summary_approval ?? false,
       artifact_visibility: meeting.artifact_visibility ?? DEFAULT_ARTIFACT_VISIBILITY,
@@ -2008,7 +2015,7 @@ export class MeetingComposerFormService {
 
     this.populateExistingLinks();
     this.updateFormValidator();
-    syncShowMeetingAttendeesLock(form);
+    syncShowMeetingAttendeesLock(form, COMPOSER_ATTENDEE_LOCK);
   }
 
   private populateRecurrenceGroup(meeting: Meeting, isCustomRecurrence: boolean): void {

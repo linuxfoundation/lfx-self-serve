@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG,
   INSIGHTS_TOKEN_AUDIENCE,
   INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE,
   INSIGHTS_TOKEN_ERROR_CODES,
+  INSIGHTS_TOKEN_FLAG_ELIGIBLE,
   INSIGHTS_TOKEN_INELIGIBLE,
 } from '@lfx-one/shared/constants';
 import type {
@@ -24,6 +26,7 @@ import { getDefaultMessageForStatus } from '../helpers/http-status.helper';
 import { MicroserviceError } from '../errors/microservice.error';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
+import { LaunchDarklyServerService } from './launchdarkly-server.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -63,7 +66,7 @@ export class InsightsTokensService {
     this.microserviceProxy = new MicroserviceProxyService();
   }
 
-  /** Caller's Insights tokens, newest first. Key Contacts only; the audience is always fixed server-side. */
+  /** Caller's Insights tokens, newest first. Key Contacts and flag-targeted users only; the audience is always fixed server-side. */
   public async listTokens(req: Request): Promise<InsightsToken[]> {
     await this.assertKeyContact(req, 'list_insights_tokens', '/tokens');
     const response = await this.microserviceProxy.proxyRequest<PatServiceListResponse>(req, 'LFX_V2_SERVICE', '/tokens', 'GET', {
@@ -75,7 +78,7 @@ export class InsightsTokensService {
     return tokens;
   }
 
-  /** Issues a token for a Key Contact. The plaintext secret is returned exactly once by the PAT service. */
+  /** Issues a token for a Key Contact or flag-targeted user. The plaintext secret is returned exactly once by the PAT service. */
   public async createToken(req: Request, name: string): Promise<CreateInsightsTokenResponse> {
     await this.assertKeyContact(req, 'create_insights_token', '/tokens');
 
@@ -97,7 +100,7 @@ export class InsightsTokensService {
     return { token: this.toInsightsToken(response.token), secret: response.secret };
   }
 
-  /** Revokes one of the caller's tokens, for Key Contacts only. The PAT service returns 404 for tokens the caller does not own. */
+  /** Revokes one of the caller's tokens, for Key Contacts and flag-targeted users only. The PAT service returns 404 for tokens the caller does not own. */
   public async revokeToken(req: Request, uid: string): Promise<void> {
     await this.assertKeyContact(req, 'revoke_insights_token', '/tokens/{uid}');
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/tokens/${encodeURIComponent(uid)}`, 'DELETE', { v: '1' });
@@ -105,7 +108,9 @@ export class InsightsTokensService {
   }
 
   /**
-   * Whether the caller may create tokens: they must be a Key Contact of at least one org. Any entry
+   * Whether the caller may create tokens. A user targeted by the `insights-public-api-token-access` flag is eligible
+   * straight away (`INSIGHTS_TOKEN_FLAG_ELIGIBLE`, no member-service call); everyone else must be a Key
+   * Contact of at least one org, as follows. Any entry
    * with a non-empty `b2b_org_uid` is enough; `company_name` is optional upstream and the tier value
    * itself is not checked. Fails closed:
    * an empty list or a missing username yields `canCreate: false`; any upstream error, a response that
@@ -118,6 +123,11 @@ export class InsightsTokensService {
    * token is scoped to this single call via `options.bearerToken`.
    */
   public async getEligibility(req: Request): Promise<InsightsTokenEligibility> {
+    if (await this.hasFlagAccess(req)) {
+      logger.debug(req, 'get_insights_token_eligibility', 'User targeted by insights-public-api-token-access flag; skipping Key Contact check');
+      return INSIGHTS_TOKEN_FLAG_ELIGIBLE;
+    }
+
     const username = await getUsernameFromAuth(req);
     if (!username) {
       logger.warning(req, 'get_insights_token_eligibility', 'No username on session; treating as ineligible');
@@ -176,8 +186,8 @@ export class InsightsTokensService {
   }
 
   /**
-   * Re-runs the Key Contact check (the UI gate is not trusted) before any token call, so list, create
-   * and revoke share one enforcement: 503 `eligibility_unavailable` when it could not be verified, 403
+   * Re-runs the eligibility check (the UI gate is not trusted) before any token call: a flag-targeted
+   * user passes, everyone else needs Key Contact status. List, create and revoke share one enforcement: 503 `eligibility_unavailable` when it could not be verified, 403
    * `not_key_contact` when the caller is not one. A user who loses Key Contact status loses access to
    * their existing tokens too (product decision, IN-1233).
    */
@@ -199,6 +209,20 @@ export class InsightsTokensService {
         errorBody: { error: INSIGHTS_TOKEN_ERROR_CODES.NOT_KEY_CONTACT },
       });
     }
+  }
+
+  /**
+   * Users targeted by the `insights-public-api-token-access` flag may do anything a Key Contact can.
+   * It is separate from the `insights-public-api` visibility flag, so widening visibility never widens
+   * access. The server evaluates the flag itself against the session's LFID username, never from
+   * anything the client sends. It fails closed until LaunchDarkly has been reached: with no SDK key,
+   * or no connection yet, the answer is `false` and the normal Key Contact check runs. Once connected,
+   * a later outage serves the last known flag value, so a targeting removal takes effect on reconnect
+   * (accepted; see `LaunchDarklyServerService`). The PAT service still scopes every token to the
+   * caller's own principal.
+   */
+  private hasFlagAccess(req: Request): Promise<boolean> {
+    return LaunchDarklyServerService.getInstance().isFlagEnabled(req, INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG, false);
   }
 
   private toInsightsToken(token: PatServiceToken): InsightsToken {

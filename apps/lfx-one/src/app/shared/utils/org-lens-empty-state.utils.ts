@@ -2,8 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ORG_LENS_UNVERIFIABLE_ACCESS_CODES } from '@lfx-one/shared/constants';
-import { OrgLensEmptyStateName, OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
+import { ORG_LENS_OUTCOME_SEVERITY, ORG_LENS_UNVERIFIABLE_ACCESS_CODES } from '@lfx-one/shared/constants';
+import { OrgLensEmptyStateName, OrgLensSectionErrorOutcome, OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
+
+/** Reduce a carousel's per-pipeline outcomes to the one overall outcome the section renders (worst wins). */
+export function worstSectionOutcome(outcomes: OrgLensSectionErrorOutcome[]): OrgLensSectionErrorOutcome {
+  return outcomes.reduce(
+    (worst, outcome) => (ORG_LENS_OUTCOME_SEVERITY[outcome] < ORG_LENS_OUTCOME_SEVERITY[worst] ? outcome : worst),
+    'records' as OrgLensSectionErrorOutcome
+  );
+}
 
 /** Classify a failed section request. */
 export function classifySectionError(error: unknown): Exclude<OrgLensSectionOutcome, 'records' | 'empty'> {

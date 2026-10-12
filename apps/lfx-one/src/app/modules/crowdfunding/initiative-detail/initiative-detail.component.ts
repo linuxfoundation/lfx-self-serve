@@ -7,8 +7,10 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { filter, firstValueFrom, map, switchMap, tap } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
-import { CrowdfundingInitiativeStatus, InitiativeDetail } from '@lfx-one/shared/interfaces';
+import { NAV_LENSES } from '@lfx-one/shared/constants';
+import { CrowdfundingInitiativeStatus, InitiativeDetail, Lens, NavLens } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { InitiativeDetailHeaderComponent } from './components/initiative-detail-header/initiative-detail-header.component';
 import { InitiativeOverviewComponent } from './components/initiative-overview/initiative-overview.component';
 import { InitiativeFinancialsComponent } from './components/initiative-financials/initiative-financials.component';
@@ -32,6 +34,16 @@ export class InitiativeDetailComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
   private readonly route = inject(ActivatedRoute);
   private readonly crowdfundingService = inject(CrowdfundingService);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
+
+  // ─── Route Fields ──────────────────────────────────────────────────────────
+  // Opened from a lens Initiatives page — Project/Foundation (#347, keeping ?project=) or Org (#348, the selected
+  // organization's address): go back there.
+  private readonly lens = this.route.snapshot.data['lens'] as Lens | undefined;
+  private readonly isNavLens = NAV_LENSES.includes(this.lens as NavLens);
+  protected readonly isLensPage = this.isNavLens || this.lens === 'org';
+  protected readonly backLink: string | string[] = this.initBackLink();
+  protected readonly backQueryParams: Record<string, string> = this.isNavLens ? this.route.snapshot.queryParams : {};
 
   // ─── WritableSignals ───────────────────────────────────────────────────────
   protected readonly isLoading = signal(true);
@@ -62,6 +74,11 @@ export class InitiativeDetailComponent {
   }
 
   // ─── Private Initializers ──────────────────────────────────────────────────
+  private initBackLink(): string | string[] {
+    if (this.lens === 'org') return this.orgLensNavigation.orgLensLink('initiatives');
+    return this.isNavLens ? `/${this.lens}/initiatives` : '/crowdfunding/initiatives';
+  }
+
   private initInitiative(): Signal<InitiativeDetail | null> {
     return toSignal(
       toObservable(this.initiativeSlug).pipe(

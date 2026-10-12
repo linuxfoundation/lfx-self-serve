@@ -21,6 +21,7 @@ function groupRow(overrides: Partial<HealthMetricsEngagementGroupRow> = {}): Hea
   return {
     committeeId: 'c-1',
     committeeName: 'Technical Steering Committee',
+    projectId: 'p-1',
     projectSlug: 'acme-core',
     projectName: 'Acme Core',
     groupTypeLabel: 'Technical Steering Committee',
@@ -36,7 +37,18 @@ function groupRow(overrides: Partial<HealthMetricsEngagementGroupRow> = {}): Hea
 }
 
 function response(overrides: Partial<HealthMetricsEngagementGroupAttendance> = {}): HealthMetricsEngagementGroupAttendance {
-  return { rows: [groupRow()], totalRecords: 1, counts: { groups: 1, dormantGroups: 0 }, ...overrides };
+  return {
+    rows: [groupRow()],
+    totalRecords: 1,
+    counts: { groups: 1, dormantGroups: 0 },
+    typeCounts: [
+      { groupType: 'all', groups: 1, dormantGroups: 0 },
+      { groupType: 'gov', groups: 1, dormantGroups: 0 },
+      { groupType: 'sigtag', groups: 0, dormantGroups: 0 },
+      { groupType: 'wg', groups: 0, dormantGroups: 0 },
+    ],
+    ...overrides,
+  };
 }
 
 describe('EngagementGroupAttendanceComponent', () => {
@@ -147,6 +159,53 @@ describe('EngagementGroupAttendanceComponent', () => {
     await fixture.whenStable();
 
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ range: 'COMPLETED_YEAR', page: 1 }));
+  });
+
+  it('re-reads the selected project from page 1, since its page came from the wider scope', async () => {
+    await render(response({ totalRecords: 80 }));
+    fixture.componentInstance['page'].set(3);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    getEngagementGroupAttendance.mockClear();
+
+    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ projectSlug: 'acme-core', page: 1 }));
+  });
+
+  // Each chip's count is its own, so it does not move when another chip is selected.
+  it('labels each chip with its own count and keeps the header count scope-wide under a chip', async () => {
+    const typeCounts = [
+      { groupType: 'all' as const, groups: 34, dormantGroups: 3 },
+      { groupType: 'gov' as const, groups: 12, dormantGroups: 1 },
+      { groupType: 'sigtag' as const, groups: 5, dormantGroups: 0 },
+      { groupType: 'wg' as const, groups: 17, dormantGroups: 2 },
+    ];
+    await render(
+      response({ counts: { groups: 34, dormantGroups: 3 }, typeCounts }),
+      undefined,
+      {},
+      response({ totalRecords: 17, counts: { groups: 34, dormantGroups: 3 }, typeCounts })
+    );
+
+    fixture.componentInstance['onFilterChange']('wg');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const labels = fixture.componentInstance['typeFilters']().map((option: { label: string }) => option.label);
+    expect(labels).toEqual(['All types · 34', 'Governance · 12', 'SIG / TAG · 5', 'Working groups · 17']);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('34 groups');
+  });
+
+  it('says the project has no groups, rather than blaming the type chip', async () => {
+    await render(response({ rows: [], totalRecords: 0, counts: { groups: 0, dormantGroups: 0 } }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]').textContent).toContain(
+      'No groups recorded for this project'
+    );
   });
 
   // A `DatePipe` render of the date-only value reads a day early west of UTC, so the label is

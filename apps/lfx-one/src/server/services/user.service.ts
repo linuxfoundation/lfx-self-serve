@@ -5,6 +5,7 @@ import {
   LATEST_PAST_MEETINGS_FETCH_SIZE,
   LATEST_PAST_MEETINGS_RETURN_LIMIT,
   NATS_CONFIG,
+  PENDING_ACTION_BUTTON_ICON,
   PENDING_ACTION_SEVERITY,
   PROFILE_BIO_MAX_LENGTH,
   PROFILE_VISIBILITY_DEFAULTS,
@@ -21,6 +22,7 @@ import {
   ActiveWeeksStreakRow,
   ApiGatewayUserProfile,
   IndexedVote,
+  ManagedPendingApplication,
   Meeting,
   MeetingOccurrence,
   MeetingRegistrant,
@@ -428,7 +430,7 @@ export class UserService {
    * @param projectUid - Optional project UID; omit for unscoped (all-grants) aggregation
    * @param email - User email, or null when the auth context carries only a username (GH-2987) —
    *   strictly email-keyed sources (pending invitations) are skipped in that case
-   * @param projectSlug - Optional project slug; supplied together with projectUid on lens-scoped calls (controller-enforced) — its presence alone gates off the Me-lens-only sources (invitations, formation items)
+   * @param projectSlug - Optional project slug; supplied together with projectUid on lens-scoped calls (controller-enforced) — its presence alone gates off the Me-lens-only sources (invitations, formation items, join applications)
    * @param limit - Optional cap on the response size (aggregator still runs in full;
    *   this just shrinks the payload for callers that only need a top-N view)
    * @returns Array of pending action items
@@ -533,6 +535,7 @@ export class UserService {
     // Wrapped in try/catch so an RSVP-lookup failure degrades gracefully: meetings still return,
     // `my_rsvp` stays undefined per row, the dashboard doesn't 500, and the Pending RSVP filter
     // chip just shows the unfiltered list.
+    const committeeMeetingIds = new Set<string>();
     if (!options?.basic) {
       const rawUsername = await getUsernameFromAuth(req);
       const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
@@ -540,10 +543,8 @@ export class UserService {
 
       if ((email || username) && normalizedMeetings.length > 0) {
         try {
-          const [userRsvps, activeRegistrants] = await Promise.all([
-            this.fetchAllUserRsvps(req, email, username),
-            this.fetchUserActiveRegistrantIdentities(req, email, username),
-          ]);
+          const { userRsvps, activeRegistrants } = await this.fetchUserRsvpsAndRegistrants(req, email, username);
+          activeRegistrants.committeeMeetingIds.forEach((id) => committeeMeetingIds.add(id));
 
           // Group all RSVPs per meeting so recurring series can be resolved against the
           // occurrence the card is actually representing. Drop RSVPs whose `registrant_id` isn't
@@ -635,7 +636,9 @@ export class UserService {
     // `invited: true` — every row has a direct host/participant FGA tuple by virtue of
     // `filter_grants=direct`, so the user is invited by definition. Data-shape marker, not an
     // access decision (the subsequent `addAccessToResources` is the actual access layer).
-    const invited = enriched.map((m) => ({ ...m, invited: true }));
+    // `invited_via_committee` comes from the same registrant lookup as `my_rsvp`; it stays false when that lookup
+    // failed, which only means the Remove action may be offered and then refused by the server.
+    const invited = enriched.map((m) => ({ ...m, invited: true, invited_via_committee: committeeMeetingIds.has(m.id) }));
 
     return this.accessCheckService.addAccessToResources(req, invited, 'v1_meeting', 'organizer');
   }
@@ -960,6 +963,17 @@ export class UserService {
    * @returns Set of meeting IDs the user is registered for
    */
   public async getUserRegisteredMeetingIds(req: Request, email?: string): Promise<Set<string>> {
+    return new Set((await this.getUserMeetingRegistrations(req, email)).keys());
+  }
+
+  /**
+   * Gets the meetings the user is registered for, with whether any of their registrations came from a committee.
+   * Same lookup and failure behavior as {@link getUserRegisteredMeetingIds}, which this backs.
+   * @param req - Express request object
+   * @param email - Optional user email address; if omitted, only username lookup is performed
+   * @returns Map of meeting ID to whether the user is registered for it through a committee
+   */
+  public async getUserMeetingRegistrations(req: Request, email?: string): Promise<Map<string, boolean>> {
     const normalizedEmail = email?.toLowerCase() ?? '';
     const username = await getUsernameFromAuth(req);
 
@@ -968,7 +982,7 @@ export class UserService {
     if (username) filtersOr.push(`username:${stripAuthPrefix(username)}`);
 
     if (filtersOr.length === 0) {
-      return new Set();
+      return new Map();
     }
 
     // Match on data.email OR data.username in a single round trip. Using `filters_or` (field-level)
@@ -995,14 +1009,16 @@ export class UserService {
       return [] as MeetingRegistrant[];
     });
 
-    const meetingIds = new Set<string>();
-    for (const r of registrants) meetingIds.add(r.meeting_id);
+    const registrations = new Map<string, boolean>();
+    for (const r of registrants) {
+      registrations.set(r.meeting_id, registrations.get(r.meeting_id) === true || r.type === 'committee');
+    }
 
     logger.debug(req, 'get_user_registered_meeting_ids', 'Collected unique meeting IDs', {
-      total_unique_meeting_ids: meetingIds.size,
+      total_unique_meeting_ids: registrations.size,
     });
 
-    return meetingIds;
+    return registrations;
   }
 
   /**
@@ -1363,10 +1379,10 @@ export class UserService {
     // context carries no email (username-only identity, GH-2987).
     const isMeLens = !projectUid && !projectSlug;
 
-    // Phase 1: surveys, meetings, pending votes, and (Me-lens only) invitations are independent —
+    // Phase 1: surveys, meetings, pending votes, and Me-only review/assigned sources are independent —
     // issue them in parallel. Each source has its own `.catch` returning [] so one flaky source
     // can't wipe the whole list.
-    const [surveyRows, meetings, pendingVotes, pendingInvitations, formationItems] = await Promise.all([
+    const [surveyRows, meetings, pendingVotes, pendingInvitations, formationItems, pendingApplications] = await Promise.all([
       this.fetchPendingSurveyResponses(req, projectUid).catch((error) => {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch surveys for pending actions', { err: error });
         return [] as SurveyResponseRecord[];
@@ -1405,6 +1421,14 @@ export class UserService {
               return [] as MyFormationItemRow[];
             })
         : Promise.resolve([] as MyFormationItemRow[]),
+
+      // Review authority comes from committee writer access, not the caller's email identity.
+      isMeLens
+        ? this.committeeService.getManagedPendingApplications(req).catch((error) => {
+            logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending join applications', { err: error });
+            return [] as ManagedPendingApplication[];
+          })
+        : Promise.resolve([] as ManagedPendingApplication[]),
     ]);
 
     const inWindowMeetings = this.filterMeetingsInWindow(meetings);
@@ -1414,6 +1438,7 @@ export class UserService {
     const surveyActions = this.transformSurveysToActions(req, surveyRows);
     const invitationActions = this.transformInvitationsToActions(pendingInvitations);
     const formationItemActions = this.transformFormationItemsToActions(formationItems);
+    const applicationActions = this.transformApplicationsToActions(pendingApplications);
 
     // Phase 2: RSVP + registrant lookups only pay off when at least one in-window meeting
     // collects LFX RSVPs. Pre-feature series still produce Review Agenda actions on project/foundation lenses, but they
@@ -1426,10 +1451,7 @@ export class UserService {
     const rsvpEligibleMeetings = inWindowMeetings.filter((meeting) => isMeetingInviteResponsesEnabled(meeting));
     if (rsvpEligibleMeetings.length > 0) {
       try {
-        const [userRsvps, activeRegistrants] = await Promise.all([
-          this.fetchAllUserRsvps(req, email, username),
-          this.fetchUserActiveRegistrantIdentities(req, email, username),
-        ]);
+        const { userRsvps, activeRegistrants } = await this.fetchUserRsvpsAndRegistrants(req, email, username);
         rsvpActions = this.transformMissingRsvpsToActions(rsvpEligibleMeetings, userRsvps, activeRegistrants);
       } catch (error) {
         logger.warning(req, 'get_user_pending_actions', 'RSVP prerequisite lookup failed, suppressing Set RSVP actions', { err: error });
@@ -1439,10 +1461,10 @@ export class UserService {
     // Order by actionability: pending invitations are the most actionable (someone is waiting on
     // the user to join) and only ever appear on the Me lens, so they lead. Formation checklist
     // items come next — assigned work with a due date is more actionable than an RSVP (GH-1956).
-    // RSVPs and votes have closing windows next. Surveys are time-bounded by their cutoff. Review
+    // Join applications follow assigned work. RSVPs and votes have closing windows next. Surveys are time-bounded by their cutoff. Review
     // Agenda appears only on project/foundation lenses and is informational, so it still goes last
     // there — with the card's display cap, plentiful meetings shouldn't crowd out real responses.
-    return [...invitationActions, ...formationItemActions, ...rsvpActions, ...voteActions, ...surveyActions, ...meetingActions];
+    return [...invitationActions, ...formationItemActions, ...applicationActions, ...rsvpActions, ...voteActions, ...surveyActions, ...meetingActions];
   }
 
   /**
@@ -1545,6 +1567,74 @@ export class UserService {
   }
 
   /**
+   * Fetch the user's RSVPs together with their active registrant identities.
+   * @description RSVP rows are matched by the auth email/username, but those fields are unreliable on
+   * RSVP records: the email can differ from the auth email (accounts with several addresses) and the
+   * username is often null. `registrant_id` is the field RSVPs reliably carry — it is what
+   * `MeetingService.getMeetingRsvpForCurrentUser` matches on — so any of the user's active
+   * registrants that the identity query did not already cover get a second query by `registrant_id`.
+   * Without it a meeting whose RSVP is only reachable that way comes back with `my_rsvp: null`,
+   * showing as "pending" in the list while its card (which resolves via the registrant) shows the
+   * response. The identity and registrant lookups still run in parallel; the extra query only
+   * covers registrants with no RSVP found yet.
+   */
+  private async fetchUserRsvpsAndRegistrants(
+    req: Request,
+    email: string | null,
+    username: string | null
+  ): Promise<{ userRsvps: MeetingRsvp[]; activeRegistrants: { uids: Set<string>; meetingIds: Set<string>; committeeMeetingIds: Set<string> } }> {
+    const [identityRsvps, activeRegistrants] = await Promise.all([
+      this.fetchAllUserRsvps(req, email, username),
+      this.fetchUserActiveRegistrantIdentities(req, email, username),
+    ]);
+
+    const covered = new Set(identityRsvps.map((rsvp) => rsvp.registrant_id));
+    const uncovered = [...activeRegistrants.uids].filter((uid) => !covered.has(uid));
+    if (uncovered.length === 0) {
+      return { userRsvps: identityRsvps, activeRegistrants };
+    }
+
+    const byRegistrant = await this.fetchRsvpsByRegistrantIds(req, uncovered);
+    const seen = new Set(identityRsvps.map((rsvp) => rsvp.id));
+    const userRsvps = [...identityRsvps, ...byRegistrant.filter((rsvp) => !seen.has(rsvp.id))];
+
+    logger.debug(req, 'fetch_user_rsvps', 'Found RSVPs missed by the email/username lookup', {
+      uncovered_registrants: uncovered.length,
+      recovered_rsvps: userRsvps.length - identityRsvps.length,
+    });
+
+    return { userRsvps, activeRegistrants };
+  }
+
+  /**
+   * Fetch `v1_meeting_rsvp` rows for the given registrant UIDs, in OR-filter batches so a user with
+   * many registrations stays within the query string limit. Same `failOnPartial` stance as
+   * {@link fetchAllUserRsvps}: a truncated set must fail the caller closed, not under-report.
+   */
+  private async fetchRsvpsByRegistrantIds(req: Request, registrantUids: string[]): Promise<MeetingRsvp[]> {
+    const batches: string[][] = [];
+    for (let i = 0; i < registrantUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(registrantUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
+
+    const results = await Promise.all(
+      batches.map((batch) =>
+        fetchAllQueryResources<MeetingRsvp>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'v1_meeting_rsvp',
+              filters_or: batch.map((uid) => `registrant_id:${uid}`),
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        )
+      )
+    );
+    return results.flat();
+  }
+
+  /**
    * Fetch every `v1_meeting_rsvp` row for the current user. We don't try to narrow by
    * meeting_id on the server because `tags_or` isn't used elsewhere in this repo and the
    * query service may silently ignore it — filtering meeting-side in code is both reliable
@@ -1581,16 +1671,18 @@ export class UserService {
    *    having a v1_meeting_registrant row, in which case `createMeetingRsvp` returns 404
    *    ("Only invited users are allowed to RSVP"). Filtering here keeps the dashboard from
    *    surfacing rows the user can't action.
+   *  - `committeeMeetingIds`: the subset of `meetingIds` where any of the user's registrations came from a
+   *    committee. Those follow committee membership, so the user cannot remove themselves from them.
    */
   private async fetchUserActiveRegistrantIdentities(
     req: Request,
     email: string | null,
     username: string | null
-  ): Promise<{ uids: Set<string>; meetingIds: Set<string> }> {
+  ): Promise<{ uids: Set<string>; meetingIds: Set<string>; committeeMeetingIds: Set<string> }> {
     const orClauses: string[] = [];
     if (email) orClauses.push(`email:${email.toLowerCase()}`);
     if (username) orClauses.push(`username:${username}`);
-    if (orClauses.length === 0) return { uids: new Set(), meetingIds: new Set() };
+    if (orClauses.length === 0) return { uids: new Set(), meetingIds: new Set(), committeeMeetingIds: new Set() };
 
     // failOnPartial: a missing registrant UID here means an RSVP-guard lookup would wrongly
     // reject a still-active registrant's RSVP, which then fires a duplicate Set RSVP nag.
@@ -1607,11 +1699,13 @@ export class UserService {
 
     const uids = new Set<string>();
     const meetingIds = new Set<string>();
+    const committeeMeetingIds = new Set<string>();
     for (const r of registrants) {
       if (r.uid) uids.add(r.uid);
       if (r.meeting_id) meetingIds.add(r.meeting_id);
+      if (r.meeting_id && r.type === 'committee') committeeMeetingIds.add(r.meeting_id);
     }
-    return { uids, meetingIds };
+    return { uids, meetingIds, committeeMeetingIds };
   }
 
   /**
@@ -1692,6 +1786,22 @@ export class UserService {
    */
   private transformInvitationsToActions(invitations: PendingInvitation[]): PendingActionItem[] {
     return buildInvitationActions(invitations);
+  }
+
+  /** Emit only the applicant/group identity and review address; omit private application details. */
+  private transformApplicationsToActions(applications: ManagedPendingApplication[]): PendingActionItem[] {
+    return applications.map((application) => ({
+      type: 'JoinApplication',
+      badge: application.committee_name,
+      text: application.applicant_name ? `${application.applicant_name} (${application.applicant_email})` : application.applicant_email,
+      icon: PENDING_ACTION_BUTTON_ICON.JoinApplication,
+      severity: PENDING_ACTION_SEVERITY.JoinApplication,
+      buttonText: '',
+      committeeUid: application.committee_uid,
+      applicationUid: application.uid,
+      applicationApplicantEmail: application.applicant_email,
+      applicationApplicantName: application.applicant_name,
+    }));
   }
 
   /**

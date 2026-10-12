@@ -18,9 +18,10 @@ import {
 } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess } from '@lfx-one/shared/enums';
 import { CommitteeReference, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
-import { getMailingListCommands, getMailingListEmail, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
+import { getMailingListCommands, getMailingListEmail, getMailingListGroupsIoUrl, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
 import { MailingListVisibilitySeverityPipe } from '@pipes/mailing-list-visibility-severity.pipe';
 import { StripHtmlPipe } from '@pipes/strip-html.pipe';
+import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -55,10 +56,14 @@ export class MailingListViewComponent {
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly lensService = inject(LensService);
   private readonly destroyRef = inject(DestroyRef);
 
   // Back-navigation label injected from router state at navigation time
   private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
+
+  // True when the user arrived from the Me lens My Mailing Lists page — drives the context-transition notice
+  protected readonly fromMeLens: boolean = this.router.getCurrentNavigation()?.extras?.state?.['fromMeLens'] === true;
 
   // Protected constants
   protected readonly mailingListLabel = MAILING_LIST_LABEL;
@@ -102,6 +107,9 @@ export class MailingListViewComponent {
   }
 
   public goBack(): void {
+    if (this.fromMeLens) {
+      this.lensService.setLens('me');
+    }
     this.router.navigate(['/', 'mailing-lists']);
   }
 
@@ -175,7 +183,7 @@ export class MailingListViewComponent {
   }
 
   private initGroupsIoUrl(): Signal<string | null> {
-    return computed(() => this.mailingList()?.service?.url || null);
+    return computed(() => getMailingListGroupsIoUrl(this.mailingList()));
   }
 
   // Canonical edit URL derives from the list's own tier (is_foundation), not the active lens;

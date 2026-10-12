@@ -1,12 +1,16 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+<div [class]="isMeLens() ? 'flex flex-wrap items-end gap-3' : 'flex flex-col md:flex-row md:items-center gap-3 md:gap-4'">
   <!-- Search Input -->
-  <div class="flex-1">
+  <div [class]="isMeLens() ? 'w-full min-w-0 md:flex-1 md:min-w-64' : 'flex-1'">
+    @if (isMeLens()) {
+      <label for="my-groups-search" class="block text-xs font-medium text-gray-600 mb-1">Search groups</label>
+    }
     <lfx-input-text
       [form]="searchForm()"
       control="search"
+      [inputId]="isMeLens() ? 'my-groups-search' : undefined"
       [placeholder]="'Search ' + committeeLabel.plural.toLowerCase() + '...'"
       icon="fa-light fa-search"
       styleClass="w-full"
@@ -16,10 +20,15 @@
 
   <!-- Foundation Filter (Me lens) -->
   @if (showFoundationFilter()) {
-    <div class="w-full sm:w-48">
+    <div [class]="isMeLens() ? 'w-full sm:w-48 min-w-0' : 'w-full sm:w-48'">
+      @if (isMeLens()) {
+        <label for="my-groups-foundation" class="block text-xs font-medium text-gray-600 mb-1">Foundation</label>
+      }
       <lfx-select
         [form]="searchForm()"
         control="foundationFilter"
+        [inputId]="isMeLens() ? 'my-groups-foundation' : undefined"
+        [ariaLabel]="isMeLens() ? 'Foundation' : undefined"
         size="small"
         [options]="foundationOptions()"
         styleClass="w-full"
@@ -30,10 +39,15 @@
 
   <!-- Project Filter (Me lens) -->
   @if (showProjectFilter()) {
-    <div class="w-full sm:w-48">
+    <div [class]="isMeLens() ? 'w-full sm:w-48 min-w-0' : 'w-full sm:w-48'">
+      @if (isMeLens()) {
+        <label for="my-groups-project" class="block text-xs font-medium text-gray-600 mb-1">Project</label>
+      }
       <lfx-select
         [form]="searchForm()"
         control="projectFilter"
+        [inputId]="isMeLens() ? 'my-groups-project' : undefined"
+        [ariaLabel]="isMeLens() ? 'Project' : undefined"
         size="small"
         [options]="projectOptions()"
         styleClass="w-full"
@@ -44,12 +58,17 @@
 
   <!-- Voting Status Filter Dropdown -->
   <div class="w-full sm:w-48">
+    @if (isMeLens()) {
+      <label for="my-groups-voting" class="block text-xs font-medium text-gray-600 mb-1">Voting capability</label>
+    }
     <lfx-select
       [form]="searchForm()"
       control="votingStatus"
+      [inputId]="isMeLens() ? 'my-groups-voting' : undefined"
+      [ariaLabel]="isMeLens() ? 'Voting capability' : undefined"
       size="small"
       [options]="votingStatusOptions()"
-      placeholder="All Voting Status"
+      [placeholder]="isMeLens() ? 'All voting' : 'All Voting Status'"
       [showClear]="true"
       styleClass="w-full"
       data-testid="committee-voting-status-filter"></lfx-select>

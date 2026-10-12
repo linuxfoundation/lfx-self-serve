@@ -4,6 +4,7 @@
 import { Component, computed, inject, input, signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 import {
@@ -22,7 +23,8 @@ import { hexToRgba, computePeriodChange, computeHealthyOrBetterPct, computeScore
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
-import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
+import { classifySectionError, sectionEmptyState, worstSectionOutcome } from '@shared/utils/org-lens-empty-state.utils';
+import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
 
 import { ActiveContributorsDrawerComponent } from '../active-contributors-drawer/active-contributors-drawer.component';
 import { EventsDrawerComponent } from '../events-drawer/events-drawer.component';
@@ -43,6 +45,7 @@ import type {
   FoundationMaintainersMonthlyResponse,
   FoundationMaintainersResponse,
   FoundationValueConcentrationResponse,
+  OrgLensSectionErrorOutcome,
   UniqueContributorsDailyResponse,
 } from '@lfx-one/shared/interfaces';
 
@@ -52,6 +55,7 @@ import type {
     FilterPillsComponent,
     MetricCardComponent,
     DataCopilotComponent,
+    OrgLensEmptyStateComponent,
     ScrollShadowDirective,
     TotalValueDrawerComponent,
     TotalProjectsDrawerComponent,
@@ -85,10 +89,27 @@ export class FoundationHealthComponent {
   private readonly activeContributorsLoading = signal(true);
   protected readonly eventsLoading = signal(true);
 
+  // Outcome signals for each data source, tracked alongside loading for the combined empty state
+  private readonly totalProjectsOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly totalMembersOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly softwareValueOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly companyBusFactorOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly maintainersOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly maintainersMonthlyOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly healthScoresOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly activeContributorsOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly activeContributorsMonthlyDistinctOutcome = signal<OrgLensSectionErrorOutcome>('records');
+  private readonly eventsOutcome = signal<OrgLensSectionErrorOutcome>('records');
+
+  private readonly attempt = signal(0);
+  private readonly attempt$ = toObservable(this.attempt);
+
   private readonly selectedFoundationSlug$ = toObservable(this.projectContextService.selectedFoundation).pipe(
     map((foundation) => foundation?.slug || ''),
     filter((slug) => !!slug)
   );
+  // Re-fires every data source after retry() without requiring the foundation selection to change
+  private readonly selectedFoundationSlugWithRetry$ = combineLatest([this.selectedFoundationSlug$, this.attempt$]).pipe(map(([slug]) => slug));
   public readonly hasFoundationSelected = computed<boolean>(() => !!this.projectContextService.selectedFoundation());
 
   // Data signals - each fetches its own data independently
@@ -102,6 +123,35 @@ export class FoundationHealthComponent {
   protected readonly activeContributorsData = this.initializeActiveContributorsData();
   protected readonly activeContributorsMonthlyDistinctData = this.initializeActiveContributorsMonthlyDistinctData();
   protected readonly eventsQuarterlyData = this.initializeEventsQuarterlyData();
+
+  private readonly isLoading = computed<boolean>(
+    () =>
+      this.totalProjectsLoading() ||
+      this.totalMembersLoading() ||
+      this.softwareValueLoading() ||
+      this.companyBusFactorLoading() ||
+      this.maintainersLoading() ||
+      this.maintainersMonthlyLoading() ||
+      this.healthScoresLoading() ||
+      this.activeContributorsLoading() ||
+      this.activeContributorsMonthlyDistinctLoading() ||
+      this.eventsLoading()
+  );
+  public readonly sectionOutcome = computed<OrgLensSectionErrorOutcome>(() =>
+    worstSectionOutcome([
+      this.totalProjectsOutcome(),
+      this.totalMembersOutcome(),
+      this.softwareValueOutcome(),
+      this.companyBusFactorOutcome(),
+      this.maintainersOutcome(),
+      this.maintainersMonthlyOutcome(),
+      this.healthScoresOutcome(),
+      this.activeContributorsOutcome(),
+      this.activeContributorsMonthlyDistinctOutcome(),
+      this.eventsOutcome(),
+    ])
+  );
+  public readonly emptyState = computed(() => (this.isLoading() ? null : sectionEmptyState(this.sectionOutcome())));
 
   // totalProjectsData retains the prior foundation's total until the next request
   // resolves; surface 0 while loading so the card and drawer never reconcile a
@@ -158,6 +208,10 @@ export class FoundationHealthComponent {
 
   public handleFilterChange(filter: string): void {
     this.selectedFilter.set(filter);
+  }
+
+  public retry(): void {
+    this.attempt.update((n) => n + 1);
   }
 
   public handleCardClick(drawerType: DashboardDrawerType): void {
@@ -613,13 +667,17 @@ export class FoundationHealthComponent {
     };
 
     return toSignal(
-      this.selectedFoundationSlug$.pipe(
+      this.selectedFoundationSlugWithRetry$.pipe(
         tap(() => this.totalProjectsLoading.set(true)),
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationTotalProjects(foundationSlug).pipe(
-            tap(() => this.totalProjectsLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.totalProjectsLoading.set(false);
+              this.totalProjectsOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.totalProjectsLoading.set(false);
+              this.totalProjectsOutcome.set(classifySectionError(error));
               return of(defaultValue);
             })
           )
@@ -637,13 +695,17 @@ export class FoundationHealthComponent {
     };
 
     return toSignal(
-      this.selectedFoundationSlug$.pipe(
+      this.selectedFoundationSlugWithRetry$.pipe(
         tap(() => this.totalMembersLoading.set(true)),
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationTotalMembers(foundationSlug).pipe(
-            tap(() => this.totalMembersLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.totalMembersLoading.set(false);
+              this.totalMembersOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.totalMembersLoading.set(false);
+              this.totalMembersOutcome.set(classifySectionError(error));
               return of(defaultValue);
             })
           )
@@ -668,13 +730,17 @@ export class FoundationHealthComponent {
     };
 
     return toSignal(
-      this.selectedFoundationSlug$.pipe(
+      this.selectedFoundationSlugWithRetry$.pipe(
         tap(() => this.softwareValueLoading.set(true)),
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationValueConcentration(foundationSlug).pipe(
-            tap(() => this.softwareValueLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.softwareValueLoading.set(false);
+              this.softwareValueOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.softwareValueLoading.set(false);
+              this.softwareValueOutcome.set(classifySectionError(error));
               return of(defaultValue);
             })
           )
@@ -693,13 +759,17 @@ export class FoundationHealthComponent {
     };
 
     return toSignal(
-      this.selectedFoundationSlug$.pipe(
+      this.selectedFoundationSlugWithRetry$.pipe(
         tap(() => this.companyBusFactorLoading.set(true)),
         switchMap((foundationSlug) =>
           this.analyticsService.getCompanyBusFactor(foundationSlug).pipe(
-            tap(() => this.companyBusFactorLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.companyBusFactorLoading.set(false);
+              this.companyBusFactorOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.companyBusFactorLoading.set(false);
+              this.companyBusFactorOutcome.set(classifySectionError(error));
               return of(defaultValue);
             })
           )
@@ -713,13 +783,17 @@ export class FoundationHealthComponent {
     const defaultValue = DEFAULT_FOUNDATION_MAINTAINERS;
 
     return toSignal(
-      this.selectedFoundationSlug$.pipe(
+      this.selectedFoundationSlugWithRetry$.pipe(
         tap(() => this.maintainersLoading.set(true)),
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationMaintainers(foundationSlug).pipe(
-            tap(() => this.maintainersLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.maintainersLoading.set(false);
+              this.maintainersOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.maintainersLoading.set(false);
+              this.maintainersOutcome.set(classifySectionError(error));
               return of(defaultValue);
             })
           )
@@ -736,13 +810,17 @@ export class FoundationHealthComponent {
     };
 
     return toSignal(
-      this.selectedFoundationSlug$.pipe(
+      this.selectedFoundationSlugWithRetry$.pipe(
         tap(() => this.maintainersMonthlyLoading.set(true)),
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationMaintainersMonthly(foundationSlug).pipe(
-            tap(() => this.maintainersMonthlyLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.maintainersMonthlyLoading.set(false);
+              this.maintainersMonthlyOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.maintainersMonthlyLoading.set(false);
+              this.maintainersMonthlyOutcome.set(classifySectionError(error));
               return of(defaultValue);
             })
           )
@@ -763,13 +841,17 @@ export class FoundationHealthComponent {
     };
 
     return toSignal(
-      this.selectedFoundationSlug$.pipe(
+      this.selectedFoundationSlugWithRetry$.pipe(
         tap(() => this.healthScoresLoading.set(true)),
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationHealthScoreDistribution(foundationSlug).pipe(
-            tap(() => this.healthScoresLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.healthScoresLoading.set(false);
+              this.healthScoresOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.healthScoresLoading.set(false);
+              this.healthScoresOutcome.set(classifySectionError(error));
               return of(defaultValue);
             })
           )
@@ -787,13 +869,17 @@ export class FoundationHealthComponent {
     };
 
     return toSignal(
-      this.selectedFoundationSlug$.pipe(
+      this.selectedFoundationSlugWithRetry$.pipe(
         tap(() => this.activeContributorsLoading.set(true)),
         switchMap((foundationSlug) =>
           this.analyticsService.getUniqueContributorsDaily(foundationSlug, 'foundation').pipe(
-            tap(() => this.activeContributorsLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.activeContributorsLoading.set(false);
+              this.activeContributorsOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.activeContributorsLoading.set(false);
+              this.activeContributorsOutcome.set(classifySectionError(error));
               return of(defaultValue);
             })
           )
@@ -813,13 +899,17 @@ export class FoundationHealthComponent {
     };
 
     return toSignal(
-      this.selectedFoundationSlug$.pipe(
+      this.selectedFoundationSlugWithRetry$.pipe(
         tap(() => this.activeContributorsMonthlyDistinctLoading.set(true)),
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationActiveContributorsMonthlyDistinct(foundationSlug).pipe(
-            tap(() => this.activeContributorsMonthlyDistinctLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.activeContributorsMonthlyDistinctLoading.set(false);
+              this.activeContributorsMonthlyDistinctOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.activeContributorsMonthlyDistinctLoading.set(false);
+              this.activeContributorsMonthlyDistinctOutcome.set(classifySectionError(error));
               return of(defaultValue);
             })
           )
@@ -836,13 +926,17 @@ export class FoundationHealthComponent {
     };
 
     return toSignal(
-      this.selectedFoundationSlug$.pipe(
+      this.selectedFoundationSlugWithRetry$.pipe(
         tap(() => this.eventsLoading.set(true)),
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationEventsQuarterly(foundationSlug).pipe(
-            tap(() => this.eventsLoading.set(false)),
-            catchError(() => {
+            tap(() => {
               this.eventsLoading.set(false);
+              this.eventsOutcome.set('records');
+            }),
+            catchError((error: unknown) => {
+              this.eventsLoading.set(false);
+              this.eventsOutcome.set(classifySectionError(error));
               return of(defaultValue);
             })
           )

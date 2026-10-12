@@ -140,7 +140,9 @@ export class MicroserviceProxyService {
     path: string,
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
     query?: Record<string, any>,
-    customHeaders?: Record<string, string>
+    customHeaders?: Record<string, string>,
+    /** Only `timeoutMs` is read; it bounds the whole transfer, body included. */
+    options?: Pick<ApiRequestOptions, 'timeoutMs'>
   ): Promise<Response> {
     const baseUrl = this.resolveBaseUrl(service);
     const endpoint = `${baseUrl}${path}`;
@@ -150,7 +152,7 @@ export class MicroserviceProxyService {
 
     // ApiClientService.streamRequest already throws MicroserviceError with full context,
     // so no try/catch wrapping is needed here.
-    return this.apiClient.streamRequest(method, endpoint, token, mergedQuery, customHeaders);
+    return this.apiClient.streamRequest(method, endpoint, token, mergedQuery, customHeaders, options);
   }
 
   // Single source of truth for per-service base URLs. LFX_V2_MEMBER_SERVICE,

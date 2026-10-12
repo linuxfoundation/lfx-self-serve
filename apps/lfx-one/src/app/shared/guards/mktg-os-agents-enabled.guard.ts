@@ -16,7 +16,8 @@ function queryProject(value: unknown): string | undefined {
   return undefined;
 }
 
-function deniedOverview(router: Router, route: Route): UrlTree {
+/** Lens overview for a denied lens-scoped route, keeping the `?project=` context. Shared with `crowdfundingAttributionEnabledGuard`. */
+export function deniedOverview(router: Router, route: Route): UrlTree {
   const lens = route.data?.['lens'] === 'foundation' ? 'foundation' : 'project';
   const project =
     queryProject(router.getCurrentNavigation()?.extractedUrl.queryParams['project']) ?? queryProject(router.parseUrl(router.url).queryParams['project']);

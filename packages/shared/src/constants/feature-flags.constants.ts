@@ -3,6 +3,13 @@
 
 export const AKRITES_ENABLED_FLAG = 'akrites-enabled';
 export const MKTG_OS_AGENTS_ENABLED_FLAG = 'mktg-os-agents-enabled';
+/**
+ * Dark-launch gate for initiative attribution (lfx-crowdfunding #256). Crowdfunding uses the same
+ * LaunchDarkly client id, so this one toggle also shows the project/org picker in its fundraise form. Here it hides the
+ * Project/Foundation lens Initiatives route and sidebar entry (#347). Browser-only: the BFF stays open,
+ * and CF's writer check on the project is the authorization boundary.
+ */
+export const CROWDFUNDING_ATTRIBUTION_STEP_FLAG = 'crowdfunding-attribution-step';
 export const MY_CLAS_ENABLED_FLAG = 'my-clas-enabled';
 /**
  * Dark-launch gate for the M2 My CLAs overlay (#1738) — Sign CLA, Status column,
@@ -213,8 +220,23 @@ export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
  * false: the group stays hidden until LaunchDarkly targeting turns it on, which also keeps it dark
  * while `lfx-v2-pat-service` and the member-service tier endpoint roll out.
  *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF: the
- * `/api/profile/insights-tokens` routes stay authenticated and re-check Key Contact eligibility on
- * create, so this flag controls visibility, never what a user may do.
+ * **Visibility only** — evaluated in the browser (`FeatureFlagService.getBooleanFlag`). It grants no
+ * access: widening its targeting to launch the group never widens who may use the token endpoints.
+ * Access for non-Key-Contacts is `INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG`.
  */
 export const INSIGHTS_PUBLIC_API_FLAG = 'insights-public-api';
+/**
+ * Access override for LFX Insights API tokens. Default false. Evaluated on the server only
+ * (`LaunchDarklyServerService`): users it targets are treated as Key Contacts by
+ * `/api/profile/insights-tokens`, so they can list, create and revoke tokens without being a Key
+ * Contact. Target individual users only; a fallthrough or percentage rollout removes the Key Contact
+ * gate for everyone it reaches. Users also need `INSIGHTS_PUBLIC_API_FLAG` to see the group.
+ */
+export const INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG = 'insights-public-api-token-access';
+
+/**
+ * How long the server's LaunchDarkly SDK may take to connect on first use, in seconds. The request
+ * that triggers initialization waits at most this long, then falls back to the flag's default
+ * (fail closed) and the SDK keeps connecting in the background.
+ */
+export const LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS = 3;

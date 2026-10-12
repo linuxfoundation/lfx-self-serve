@@ -6,7 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSign
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
-import { NODE_MAX_TIMER_DELAY_MS } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTEE_TASK_FILE_ACCEPT, NODE_MAX_TIMER_DELAY_MS } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskStatusChange,
@@ -23,7 +23,7 @@ import {
   normalizeMentorshipMenteeTaskStatus,
 } from '@lfx-one/shared/utils';
 import { MenteeTaskStatusService } from '@modules/mentorship/services/mentee-task-status.service';
-import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
+import { MentorshipTaskFileService } from '@modules/mentorship/services/mentorship-task-file.service';
 import { concat, defer, Observable, of, switchMap, timer } from 'rxjs';
 
 /**
@@ -37,11 +37,12 @@ import { concat, defer, Observable, of, switchMap, timer } from 'rxjs';
  * `ariaLabelledBy`, because PrimeNG marks neither disabled options nor a read-only select for
  * assistive technology.
  *
- * File upload, view and download are not implemented yet, so those actions only fire the Coming Soon
- * toast. The BFF never sends a file, so a task that requires one cannot be submitted from here.
- * Once a task is past due (the end of its due date's UTC day), Submitted and Upload are disabled. The row
- * re-reads the clock whenever the due date changes and again at its cutoff, so a page left open across it
- * locks without a reload.
+ * File actions go through `MentorshipTaskFileService`. A task that needs a file shows Upload until one is
+ * stored, and Submitted stays disabled until then. A stored file can be downloaded; it can be replaced
+ * until the reviewer completes the task, and removed only before the task is submitted, as upstream allows.
+ * Once a task is past due (the end of its due date's UTC day), Submitted and every file change are closed.
+ * The row re-reads the clock whenever the due date changes and again at its cutoff, so a page left open
+ * across it locks without a reload.
  */
 @Component({
   selector: 'lfx-mentee-task-row',
@@ -52,7 +53,7 @@ import { concat, defer, Observable, of, switchMap, timer } from 'rxjs';
 })
 export class MenteeTaskRowComponent {
   // ---- 1. DI ----------------------------------------------------------------
-  private readonly comingSoonService = inject(MentorshipComingSoonService);
+  private readonly taskFileService = inject(MentorshipTaskFileService);
   private readonly taskStatusService = inject(MenteeTaskStatusService);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -66,6 +67,9 @@ export class MenteeTaskRowComponent {
   // ---- 3. Simple writable signals -------------------------------------------
   /** True while a status change is in flight; blocks the select and shows the spinner. */
   protected readonly saving = signal(false);
+  /** True while a file upload or removal is in flight; blocks the file actions and shows a spinner. */
+  protected readonly fileSaving = signal(false);
+  protected readonly fileAccept = MENTORSHIP_MENTEE_TASK_FILE_ACCEPT;
 
   // ---- 4. Computed signals --------------------------------------------------
   /**
@@ -84,8 +88,18 @@ export class MenteeTaskRowComponent {
   protected readonly statusState: Signal<MentorshipMenteeTaskStatusOptionsState> = computed(() => getMentorshipMenteeTaskStatusOptions(this.effectiveTask()));
   protected readonly statusLabelId: Signal<string> = computed(() => `mentee-task-status-label-${this.task().id}`);
   protected readonly statusHintId: Signal<string> = computed(() => `mentee-task-status-hint-${this.task().id}`);
-  /** Upload is closed once an unsubmitted task is past due; the status hint, which then shows, says why. */
-  protected readonly uploadBlocked: Signal<boolean> = computed(() => this.effectiveTask().pastDue && !this.effectiveTask().submitted);
+  /** Upload is closed once the task is past due; the status hint, which then shows, says why. */
+  protected readonly uploadBlocked: Signal<boolean> = computed(() => this.effectiveTask().pastDue);
+  /** A stored file can be replaced until the reviewer completes the task or it is past due. */
+  protected readonly canReplaceFile: Signal<boolean> = computed(() => {
+    const task = this.effectiveTask();
+    return task.hasUploadedFile && !task.fileLocked && !task.pastDue;
+  });
+  /** A stored file can be removed only before the task is submitted; after that upstream takes only a replacement. */
+  protected readonly canRemoveFile: Signal<boolean> = computed(() => {
+    const task = this.effectiveTask();
+    return task.hasUploadedFile && !task.submitted && !task.pastDue;
+  });
   /** Ids the combobox is labelled by: the sr-only name, plus the hint when there is one. */
   protected readonly statusLabelledBy: Signal<string> = computed(() =>
     this.statusState().hint === null ? this.statusLabelId() : `${this.statusLabelId()} ${this.statusHintId()}`
@@ -111,18 +125,24 @@ export class MenteeTaskRowComponent {
     this.taskStatusService.changeStatus(current.id, requested).subscribe((changed) => this.onStatusSettled(current.id, requested, changed));
   }
 
-  protected onUpload(): void {
-    this.comingSoonService.notify(`Upload submission for ${this.task().title}`);
+  /** Uploads the picked file, which replaces any stored one. The input is cleared so the same file can be picked again. */
+  protected onFileSelected(input: HTMLInputElement): void {
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || this.fileSaving()) return;
+    this.fileSaving.set(true);
+    // No takeUntilDestroyed: the toast and cache invalidation must run even if the row is destroyed mid-flight.
+    this.taskFileService.upload(this.task().id, file).subscribe(() => this.fileSaving.set(false));
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- fileUrl reserved for the real view endpoint
-  protected onViewFile(_fileUrl: string): void {
-    this.comingSoonService.notify(`View submission for ${this.task().title}`);
+  protected onRemoveFile(): void {
+    if (this.fileSaving()) return;
+    this.fileSaving.set(true);
+    this.taskFileService.remove(this.task().id).subscribe(() => this.fileSaving.set(false));
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- fileUrl reserved for the real download endpoint
-  protected onDownloadFile(_fileUrl: string): void {
-    this.comingSoonService.notify(`Download submission for ${this.task().title}`);
+  protected onDownloadFile(): void {
+    this.taskFileService.download(this.task().id);
   }
 
   // ---- 6. Private initializers ----------------------------------------------

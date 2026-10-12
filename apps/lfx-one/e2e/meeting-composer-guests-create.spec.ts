@@ -57,13 +57,21 @@ test.describe('Meeting composer — inviting guests before the meeting exists', 
     await expect(page.getByTestId('composer-guest-manual-link')).toBeEnabled();
   });
 
-  test('adds a directory hit directly, and removing it restores the empty state', async ({ page }) => {
+  test('adds a directory hit after staging, and removing it restores the empty state', async ({ page }) => {
     await openGuestsSection(page);
     const option = await searchDirectory(page, 'ada');
     await option.click();
 
-    // A directory result carries first name, last name and email, which is everything the add
-    // payload requires — so it lands in the list outright rather than via the manual dialog.
+    // A directory pick now stages the person in a preview card rather than adding immediately.
+    const stagedCard = page.getByTestId('composer-guest-staged');
+    await expect(stagedCard).toBeVisible();
+    await expect(stagedCard).toContainText('Ada Byron');
+
+    // Confirming the staged pick commits the guest to the list.
+    await hostedButton(page, 'composer-guest-staged-confirm').click();
+    await expect(stagedCard).toHaveCount(0);
+
+    // A directory result carries first name, last name and email — lands directly, no manual dialog.
     const row = guestList(page).locator('li').first();
     await expect(row).toContainText('Ada Byron');
     // One assertion for the whole secondary line: `email · org`, joined in that order.
@@ -74,6 +82,11 @@ test.describe('Meeting composer — inviting guests before the meeting exists', 
     // The row is brand new, so it has no uid — hence the testid prefix rather than a known id.
     await expect(removeButtons(page)).toHaveCount(1);
     await removeButtons(page).first().click();
+
+    // Removal now shows a confirm dialog — accept it.
+    const confirmDialog = page.locator('p-confirmdialog');
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.getByRole('button', { name: /remove/i }).click();
 
     await expect(guestList(page)).toHaveCount(0);
     await expect(emptyState(page)).toBeVisible();
@@ -113,6 +126,9 @@ test.describe('Meeting composer — inviting guests before the meeting exists', 
     await openGuestsSection(page);
     const option = await searchDirectory(page, 'ada');
     await option.click();
+
+    // Pick stages the guest; confirm the staged card to commit to the list.
+    await hostedButton(page, 'composer-guest-staged-confirm').click();
     await expect(guestList(page)).toContainText('Ada Byron');
 
     // Guests is not the last section, and only the last one offers "Create meeting".

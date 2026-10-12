@@ -2329,6 +2329,7 @@ describe('WeeklyBriefService', () => {
 
       await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 403, code: 'NOT_PROJECT_WRITER' });
       expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(checkSingleAccessStrictMock).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer_guard' });
     });
 
     it('throws 409 BACKEND_NOT_LIVE when WEEKLY_BRIEF_BACKEND is not "live" — checked only after every other local precondition passes, before the committee-service call', async () => {
@@ -2513,7 +2514,7 @@ describe('WeeklyBriefService', () => {
       expect(result).toEqual({ committee_name: 'Test Committee', total_recipients: 42 });
       expect(checkSingleAccessStrictMock).toHaveBeenCalledWith(
         nonImpersonatingReq,
-        { resource: 'project', id: 'project-1', access: 'writer' },
+        { resource: 'project', id: 'project-1', access: 'writer_guard' },
         { bearerToken: 'writer-token' }
       );
       expect(createNewsletterMock).toHaveBeenCalledWith(

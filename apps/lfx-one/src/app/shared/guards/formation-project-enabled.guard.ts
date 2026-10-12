@@ -3,11 +3,14 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
-import { CanMatchFn, Router, UrlTree } from '@angular/router';
+import { CanMatchFn, RedirectCommand, Router, UrlTree } from '@angular/router';
+import { isFormationStageGate } from '@lfx-one/shared/utils';
+import { firstValueFrom } from 'rxjs';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
-import { ProjectService } from '../services/project.service';
-import { isFormationChecklistProject, resolveFormationFlag } from '../utils/formation-checklist-gate.util';
+import { ProjectRecoveryService } from '../services/project-recovery.service';
+import { resolveFormationFlag } from '../utils/formation-checklist-gate.util';
+import { isTransientHttpError } from '../utils/http-error.utils';
 
 function queryProject(value: unknown): string | undefined {
   if (typeof value === 'string' && value.length > 0) {
@@ -35,7 +38,7 @@ function deniedOverview(router: Router, slug: string | undefined): UrlTree {
  * runs before `projectQueryParamGuard` (a `CanActivate`) populates it for this navigation — reading
  * it here would see the *previous* route's project. The slug is resolved directly from the
  * navigation's query params instead (same pattern as `mktgOsAgentsEnabledGuard`'s `deniedOverview`),
- * and the stage is fetched directly via `ProjectService.getProject` — not the dead
+ * and the stage is fetched via the shared strict/retry recovery policy — not the dead
  * `ProjectService.project` signal (see the PR description for that diagnosis).
  *
  * SSR defers to the browser (LaunchDarkly never initializes server-side); the browser run waits for
@@ -56,7 +59,10 @@ export const formationProjectEnabledGuard: CanMatchFn = async () => {
 
   const featureFlagService = inject(FeatureFlagService);
   const router = inject(Router);
-  const projectService = inject(ProjectService);
+  const projectRecoveryService = inject(ProjectRecoveryService);
+  const navigation = router.getCurrentNavigation();
+  const targetUrl = navigation?.extractedUrl;
+  const retryUrl = targetUrl ? router.serializeUrl(targetUrl) : router.url;
   const slug = resolveSlug(router);
 
   if (!(await resolveFormationFlag(featureFlagService, 'formationProjectEnabledGuard'))) {
@@ -67,5 +73,16 @@ export const formationProjectEnabledGuard: CanMatchFn = async () => {
     return deniedOverview(router, undefined);
   }
 
-  return (await isFormationChecklistProject(projectService, slug)) ? true : deniedOverview(router, slug);
+  try {
+    const project = await firstValueFrom(projectRecoveryService.resolve(slug));
+    return isFormationStageGate(project.stage) ? true : deniedOverview(router, slug);
+  } catch (error: unknown) {
+    // Promise-backed guards outlive cancelled navigations; only the active one may set recovery.
+    if (router.getCurrentNavigation() !== navigation) {
+      return false;
+    }
+    return isTransientHttpError(error)
+      ? projectRecoveryService.unavailable(retryUrl)
+      : new RedirectCommand(router.parseUrl('/not-found'), { skipLocationChange: true });
+  }
 };

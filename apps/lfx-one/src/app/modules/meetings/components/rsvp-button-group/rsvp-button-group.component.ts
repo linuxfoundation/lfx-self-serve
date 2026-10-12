@@ -122,6 +122,9 @@ export class RsvpButtonGroupComponent {
           }
           // Trigger refresh to fetch updated RSVP
           this.refreshTrigger.set(this.refreshTrigger() + 1);
+          // My Meetings reads `my_rsvp` from a cached user-meetings list; without this refetch its
+          // Accepted / Pending RSVP filters and counts keep showing the pre-RSVP state.
+          this.userService.refreshUserMeetings();
         }),
         catchError((error: HttpErrorResponse) => {
           let errorMessage = 'Failed to update RSVP. Please try again.';

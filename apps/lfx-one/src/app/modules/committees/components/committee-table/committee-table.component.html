@@ -34,6 +34,7 @@
         </lfx-empty-state>
       } @else {
         <lfx-table
+          [class.my-groups-table]="isMeLens()"
           [value]="tableRows()"
           [paginator]="committees().length > 0"
           [rows]="10"
@@ -48,150 +49,258 @@
           [attr.data-testid]="tableTestId()">
           <ng-template #header>
             <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th class="min-w-[200px]">Description</th>
-              <th>Members</th>
-              <th>Channels</th>
-              <th>Voting</th>
-              @if (!isMeLens()) {
-                <th>Join Mode</th>
-              }
-              @if (hasRoleColumn()) {
+              @if (isMeLens()) {
+                <th>Group</th>
                 <th>My Role</th>
-              }
-              <th>Last Updated</th>
-              @if (canManageCommittee()) {
-                <th></th>
+                <th>Type</th>
+                <th>Members</th>
+                <th>Channels</th>
+                <th>Voting</th>
+                <th>Updated</th>
+                <th>Actions</th>
+              } @else {
+                <th>Name</th>
+                <th>Type</th>
+                <th class="min-w-[200px]">Description</th>
+                <th>Members</th>
+                <th>Channels</th>
+                <th>Voting</th>
+                <th>Join Mode</th>
+                @if (hasRoleColumn()) {
+                  <th>My Role</th>
+                }
+                <th>Last Updated</th>
+                @if (canManageCommittee()) {
+                  <th></th>
+                }
               }
             </tr>
           </ng-template>
           <ng-template #body let-committee let-rowIndex="rowIndex">
             <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'committee-row-' + committee.uid">
-              <td>
-                <div class="flex items-center gap-2">
-                  @if (isBoardMember()) {
-                    <span class="text-sm font-medium">{{ committee.name || '-' }}</span>
-                  } @else {
+              @if (isMeLens()) {
+                <td data-label="Group">
+                  <div class="flex flex-col gap-1 min-w-0">
                     <a
                       [routerLink]="committee.viewCommands"
                       [queryParams]="committee.linkQueryParams"
-                      [state]="{ backLabel: isMeLens() ? 'My Groups' : 'Groups', fromMeLens: isMeLens() }"
-                      class="lfx-table-name-link text-sm">
+                      [state]="{ backLabel: 'My Groups', fromMeLens: true }"
+                      class="lfx-table-name-link text-sm font-medium">
                       {{ committee.name || '-' }}
                     </a>
-                  }
-                  @if (!isMeLens() && committee.isMember) {
-                    <span
-                      class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700"
-                      pTooltip="You are a member of this group"
-                      tooltipPosition="top"
-                      [attr.data-testid]="'member-badge-' + committee.uid">
-                      <i class="fa-solid fa-circle-check text-[9px]" aria-hidden="true"></i>
-                      Member
-                    </span>
-                  }
-                  @if (committee.public) {
-                    <button
-                      type="button"
-                      class="inline-flex items-center p-0 leading-none text-blue-400 hover:text-blue-600"
-                      pTooltip="Public · Copy shareable group link"
-                      tooltipPosition="top"
-                      aria-label="Public group — copy shareable link"
-                      [attr.data-testid]="'public-group-copy-link-' + committee.uid"
-                      (click)="$event.stopPropagation(); copyPublicGroupLink(committee)">
-                      <i class="fa-light fa-copy text-xs" aria-hidden="true"></i>
-                    </button>
-                  } @else {
-                    <span class="inline-flex items-center leading-none text-gray-500" pTooltip="Private" tooltipPosition="top" aria-label="Private group">
-                      <i class="fa-light fa-lock text-xs" aria-hidden="true"></i>
-                    </span>
-                  }
-                </div>
-              </td>
-              <td>
-                <span
-                  class="inline-flex max-w-[180px] items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
-                  [class]="committee.classDisplay.bgColor + ' ' + committee.classDisplay.color"
-                  [pTooltip]="committee.typeDisplay"
-                  tooltipPosition="top"
-                  tabindex="0"
-                  [attr.aria-label]="committee.typeDisplay">
-                  <i [class]="committee.classDisplay.icon + ' text-[10px] shrink-0'" aria-hidden="true"></i>
-                  <span class="truncate">{{ committee.typeDisplay }}</span>
-                </span>
-              </td>
-              <td class="min-w-[200px]">
-                <div class="max-w-[300px] line-clamp-2 text-sm text-gray-700">
-                  @if (committee.description) {
-                    {{ committee.description }}
-                  } @else {
-                    <span class="text-gray-400 italic">No description provided</span>
-                  }
-                </div>
-              </td>
-              <td>
-                <span class="text-sm text-gray-700">{{ committee.total_members ?? 0 | number }}</span>
-              </td>
-              <td>
-                <!-- Channels: mailing_list is the direct email string; has_mailing_list is an enriched boolean from query-service association -->
-                <div class="flex items-center gap-2">
-                  @if (committee.mailing_list) {
-                    <a
-                      [href]="'mailto:' + committee.mailing_list"
-                      class="inline-flex items-center text-gray-500 hover:text-blue-600 no-underline"
-                      [pTooltip]="committee.mailing_list"
-                      tooltipPosition="top"
-                      aria-label="Mailing list">
-                      <i class="fa-light fa-envelope w-4 h-4" aria-hidden="true"></i>
-                    </a>
-                  } @else if (committee.has_mailing_list) {
-                    <span
-                      class="inline-flex items-center text-gray-500 cursor-default"
-                      pTooltip="Mailing list associated"
-                      tooltipPosition="top"
-                      tabindex="0"
-                      aria-label="Mailing list associated">
-                      <i class="fa-light fa-envelope w-4 h-4" aria-hidden="true"></i>
-                    </span>
-                  } @else {
-                    <span
-                      class="inline-flex items-center text-gray-300 cursor-default"
-                      pTooltip="No mailing list"
-                      tooltipPosition="top"
-                      tabindex="0"
-                      aria-label="No mailing list">
-                      <i class="fa-light fa-envelope w-4 h-4" aria-hidden="true"></i>
-                    </span>
-                  }
-                  @if (committee.chat_channel) {
-                    <a
-                      [href]="committee.chat_channel"
-                      target="_blank"
-                      rel="noopener"
-                      class="inline-flex items-center text-gray-500 hover:text-blue-600 no-underline"
-                      [pTooltip]="committee.chat_channel | platformLabel"
-                      tooltipPosition="top"
-                      [attr.aria-label]="committee.chat_channel | platformLabel">
-                      <i [class]="(committee.chat_channel | platformIcon) + ' w-4 h-4'" aria-hidden="true"></i>
-                    </a>
-                  } @else {
-                    <span class="inline-flex items-center text-gray-300 cursor-default" pTooltip="No chat channel" tooltipPosition="top">
-                      <i class="fa-light fa-comment w-4 h-4"></i>
-                    </span>
-                  }
-                </div>
-              </td>
-              <td>
-                @if (committee.enable_voting) {
-                  <span class="inline-flex items-center" pTooltip="Voting enabled" tooltipPosition="top" tabindex="0" aria-label="Voting enabled">
-                    <i class="fa-solid fa-circle-check w-4 h-4 text-emerald-600" aria-hidden="true"></i>
+                    @if (committee.project_name || committee.foundation_name) {
+                      <span class="text-xs text-gray-500">{{ committee.project_name || committee.foundation_name }}</span>
+                    }
+                    <div class="flex items-center gap-2 text-xs text-gray-500">
+                      <span>{{ committee.public ? 'Public' : 'Private' }}</span>
+                      @if (committee.public) {
+                        <button
+                          type="button"
+                          class="inline-flex h-8 w-8 items-center justify-center rounded text-blue-600 hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                          [attr.aria-label]="'Copy public link for ' + committee.name"
+                          [attr.data-testid]="'public-group-copy-link-' + committee.uid"
+                          (click)="$event.stopPropagation(); copyPublicGroupLink(committee)">
+                          <i class="fa-light fa-copy" aria-hidden="true"></i>
+                        </button>
+                      }
+                    </div>
+                  </div>
+                </td>
+                <td data-label="My Role">
+                  <span class="text-sm text-gray-700" [attr.data-testid]="'role-chip-' + committee.uid">{{ committee.my_role || '—' }}</span>
+                </td>
+                <td data-label="Type">
+                  <span
+                    class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                    [class]="committee.classDisplay.bgColor + ' ' + committee.classDisplay.color">
+                    <i [class]="committee.classDisplay.icon" aria-hidden="true"></i>{{ committee.typeDisplay }}
                   </span>
-                } @else {
-                  <span class="text-gray-400 text-xs" aria-label="Voting disabled">—</span>
-                }
-              </td>
-              @if (!isMeLens()) {
+                </td>
+                <td data-label="Members">
+                  <span class="text-sm text-gray-700">{{ committee.total_members ?? 0 | number }}</span>
+                </td>
+                <td data-label="Channels">
+                  <div class="flex flex-wrap items-center gap-2 text-xs">
+                    @if (committee.mailing_list) {
+                      <a
+                        [href]="'mailto:' + committee.mailing_list"
+                        aria-label="Mailing list"
+                        class="inline-flex min-h-8 items-center gap-1 text-blue-600"
+                        (click)="$event.stopPropagation()">
+                        <i class="fa-light fa-envelope" aria-hidden="true"></i>Mailing list
+                      </a>
+                    } @else if (committee.has_mailing_list) {
+                      <span class="text-gray-500">Mailing list associated</span>
+                    }
+                    @if (committee.chat_channel | validExternalUrl; as chatUrl) {
+                      <a
+                        [href]="chatUrl"
+                        target="_blank"
+                        rel="noopener"
+                        class="inline-flex min-h-8 items-center gap-1 text-blue-600"
+                        [attr.aria-label]="committee.chat_channel | platformLabel"
+                        (click)="$event.stopPropagation()">
+                        <i [class]="committee.chat_channel | platformIcon" aria-hidden="true"></i>{{ committee.chat_channel | platformLabel }}
+                      </a>
+                    } @else if (committee.chat_channel) {
+                      <span class="inline-flex items-center gap-1 text-gray-500">
+                        <i class="fa-light fa-comments" aria-hidden="true"></i>{{ committee.chat_channel }}
+                      </span>
+                    }
+                    @if (!committee.mailing_list && !committee.has_mailing_list && !committee.chat_channel) {
+                      <span class="text-gray-500">No channels</span>
+                    }
+                  </div>
+                </td>
+                <td data-label="Voting" [attr.data-testid]="'committee-voting-' + committee.uid">
+                  @if (committee.enable_voting === true) {
+                    <span class="text-xs text-emerald-700">Enabled</span>
+                  } @else if (committee.enable_voting === false) {
+                    <span class="text-xs text-gray-500">Disabled</span>
+                  } @else {
+                    <span class="text-xs text-gray-500">Unavailable</span>
+                  }
+                </td>
+                <td data-label="Updated">
+                  <span class="text-xs text-gray-500">{{ committee.updated_at | date: 'MMM d, y' }}</span>
+                </td>
+                <td data-label="Actions">
+                  <lfx-button
+                    icon="fa-light fa-arrow-right-from-bracket"
+                    label="Leave"
+                    severity="danger"
+                    size="small"
+                    [text]="true"
+                    [tooltip]="'Leave ' + committeeLabel.singular"
+                    [ariaLabel]="'Leave ' + committee.name"
+                    [disabled]="committee.isLeaving"
+                    (onClick)="onLeave($event, committee)"
+                    [attr.data-testid]="'committee-leave-' + committee.uid" />
+                </td>
+              } @else {
+                <td>
+                  <div class="flex items-center gap-2">
+                    @if (isBoardMember()) {
+                      <span class="text-sm font-medium">{{ committee.name || '-' }}</span>
+                    } @else {
+                      <a
+                        [routerLink]="committee.viewCommands"
+                        [queryParams]="committee.linkQueryParams"
+                        [state]="{ backLabel: isMeLens() ? 'My Groups' : 'Groups', fromMeLens: isMeLens() }"
+                        class="lfx-table-name-link text-sm">
+                        {{ committee.name || '-' }}
+                      </a>
+                    }
+                    @if (!isMeLens() && committee.isMember) {
+                      <span
+                        class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700"
+                        pTooltip="You are a member of this group"
+                        tooltipPosition="top"
+                        [attr.data-testid]="'member-badge-' + committee.uid">
+                        <i class="fa-solid fa-circle-check text-[9px]" aria-hidden="true"></i>
+                        Member
+                      </span>
+                    }
+                    @if (committee.public) {
+                      <button
+                        type="button"
+                        class="inline-flex items-center p-0 leading-none text-blue-400 hover:text-blue-600"
+                        pTooltip="Public · Copy shareable group link"
+                        tooltipPosition="top"
+                        aria-label="Public group — copy shareable link"
+                        [attr.data-testid]="'public-group-copy-link-' + committee.uid"
+                        (click)="$event.stopPropagation(); copyPublicGroupLink(committee)">
+                        <i class="fa-light fa-copy text-xs" aria-hidden="true"></i>
+                      </button>
+                    } @else {
+                      <span class="inline-flex items-center leading-none text-gray-500" pTooltip="Private" tooltipPosition="top" aria-label="Private group">
+                        <i class="fa-light fa-lock text-xs" aria-hidden="true"></i>
+                      </span>
+                    }
+                  </div>
+                </td>
+                <td>
+                  <span
+                    class="inline-flex max-w-[180px] items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
+                    [class]="committee.classDisplay.bgColor + ' ' + committee.classDisplay.color"
+                    [pTooltip]="committee.typeDisplay"
+                    tooltipPosition="top"
+                    tabindex="0"
+                    [attr.aria-label]="committee.typeDisplay">
+                    <i [class]="committee.classDisplay.icon + ' text-[10px] shrink-0'" aria-hidden="true"></i>
+                    <span class="truncate">{{ committee.typeDisplay }}</span>
+                  </span>
+                </td>
+                <td class="min-w-[200px]">
+                  <div class="max-w-[300px] line-clamp-2 text-sm text-gray-700">
+                    @if (committee.description) {
+                      {{ committee.description }}
+                    } @else {
+                      <span class="text-gray-400 italic">No description provided</span>
+                    }
+                  </div>
+                </td>
+                <td>
+                  <span class="text-sm text-gray-700">{{ committee.total_members ?? 0 | number }}</span>
+                </td>
+                <td>
+                  <!-- Channels: mailing_list is the direct email string; has_mailing_list is an enriched boolean from query-service association -->
+                  <div class="flex items-center gap-2">
+                    @if (committee.mailing_list) {
+                      <a
+                        [href]="'mailto:' + committee.mailing_list"
+                        class="inline-flex items-center text-gray-500 hover:text-blue-600 no-underline"
+                        [pTooltip]="committee.mailing_list"
+                        tooltipPosition="top"
+                        aria-label="Mailing list">
+                        <i class="fa-light fa-envelope w-4 h-4" aria-hidden="true"></i>
+                      </a>
+                    } @else if (committee.has_mailing_list) {
+                      <span
+                        class="inline-flex items-center text-gray-500 cursor-default"
+                        pTooltip="Mailing list associated"
+                        tooltipPosition="top"
+                        tabindex="0"
+                        aria-label="Mailing list associated">
+                        <i class="fa-light fa-envelope w-4 h-4" aria-hidden="true"></i>
+                      </span>
+                    } @else {
+                      <span
+                        class="inline-flex items-center text-gray-300 cursor-default"
+                        pTooltip="No mailing list"
+                        tooltipPosition="top"
+                        tabindex="0"
+                        aria-label="No mailing list">
+                        <i class="fa-light fa-envelope w-4 h-4" aria-hidden="true"></i>
+                      </span>
+                    }
+                    @if (committee.chat_channel) {
+                      <a
+                        [href]="committee.chat_channel"
+                        target="_blank"
+                        rel="noopener"
+                        class="inline-flex items-center text-gray-500 hover:text-blue-600 no-underline"
+                        [pTooltip]="committee.chat_channel | platformLabel"
+                        tooltipPosition="top"
+                        [attr.aria-label]="committee.chat_channel | platformLabel">
+                        <i [class]="(committee.chat_channel | platformIcon) + ' w-4 h-4'" aria-hidden="true"></i>
+                      </a>
+                    } @else {
+                      <span class="inline-flex items-center text-gray-300 cursor-default" pTooltip="No chat channel" tooltipPosition="top">
+                        <i class="fa-light fa-comment w-4 h-4"></i>
+                      </span>
+                    }
+                  </div>
+                </td>
+                <td>
+                  @if (committee.enable_voting) {
+                    <span class="inline-flex items-center" pTooltip="Voting enabled" tooltipPosition="top" tabindex="0" aria-label="Voting enabled">
+                      <i class="fa-solid fa-circle-check w-4 h-4 text-emerald-600" aria-hidden="true"></i>
+                    </span>
+                  } @else {
+                    <span class="text-gray-400 text-xs" aria-label="Voting disabled">—</span>
+                  }
+                </td>
                 <td>
                   <lfx-tag
                     [value]="committee.join_mode | joinModeLabel"
@@ -199,47 +308,47 @@
                     [tooltip]="committee.joinModeTooltip"
                     [attr.data-testid]="'join-mode-tag-' + committee.uid" />
                 </td>
-              }
-              @if (hasRoleColumn()) {
+                @if (hasRoleColumn()) {
+                  <td>
+                    @if (committee.roleChip) {
+                      <span class="text-sm text-gray-700" [attr.data-testid]="'role-chip-' + committee.uid">
+                        {{ committee.my_role }}
+                      </span>
+                    } @else {
+                      <span class="text-gray-400 text-xs">—</span>
+                    }
+                  </td>
+                }
                 <td>
-                  @if (committee.roleChip) {
-                    <span class="text-sm text-gray-700" [attr.data-testid]="'role-chip-' + committee.uid">
-                      {{ committee.my_role }}
-                    </span>
-                  } @else {
-                    <span class="text-gray-400 text-xs">—</span>
-                  }
+                  <span class="text-sm text-gray-700">{{ committee.updated_at | date: 'MMM d, y' }}</span>
                 </td>
-              }
-              <td>
-                <span class="text-sm text-gray-700">{{ committee.updated_at | date: 'MMM d, y' }}</span>
-              </td>
-              @if (canManageCommittee()) {
-                <td>
-                  <div class="flex items-center justify-end gap-1">
-                    <lfx-button
-                      icon="fa-light fa-user-plus"
-                      severity="secondary"
-                      size="small"
-                      [text]="true"
-                      styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                      [disabled]="true"
-                      [attr.data-testid]="'committee-add-member-' + committee.uid"
-                      [pTooltip]="'Add Member — coming soon'"
-                      tooltipPosition="top">
-                    </lfx-button>
-                    <a
-                      [routerLink]="committee.editCommands"
-                      [queryParams]="committee.linkQueryParams"
-                      class="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                      [attr.aria-label]="'Edit ' + committeeLabel.singular"
-                      [attr.data-testid]="'committee-edit-' + committee.uid"
-                      [pTooltip]="'Edit ' + committeeLabel.singular"
-                      tooltipPosition="top">
-                      <i class="fa-light fa-pencil" aria-hidden="true"></i>
-                    </a>
-                  </div>
-                </td>
+                @if (canManageCommittee()) {
+                  <td>
+                    <div class="flex items-center justify-end gap-1">
+                      <lfx-button
+                        icon="fa-light fa-user-plus"
+                        severity="secondary"
+                        size="small"
+                        [text]="true"
+                        styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                        [disabled]="true"
+                        [attr.data-testid]="'committee-add-member-' + committee.uid"
+                        [pTooltip]="'Add Member — coming soon'"
+                        tooltipPosition="top">
+                      </lfx-button>
+                      <a
+                        [routerLink]="committee.editCommands"
+                        [queryParams]="committee.linkQueryParams"
+                        class="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                        [attr.aria-label]="'Edit ' + committeeLabel.singular"
+                        [attr.data-testid]="'committee-edit-' + committee.uid"
+                        [pTooltip]="'Edit ' + committeeLabel.singular"
+                        tooltipPosition="top">
+                        <i class="fa-light fa-pencil" aria-hidden="true"></i>
+                      </a>
+                    </div>
+                  </td>
+                }
               }
             </tr>
           </ng-template>
@@ -257,3 +366,7 @@
     </div>
   }
 </lfx-card>
+
+@if (isMeLens()) {
+  <p-confirmDialog [key]="leaveConfirmKey"></p-confirmDialog>
+}

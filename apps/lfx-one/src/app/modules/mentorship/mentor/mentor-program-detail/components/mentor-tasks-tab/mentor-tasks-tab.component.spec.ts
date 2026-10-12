@@ -4,9 +4,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MentorshipMentorTaskReviewRequest, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
-import { MessageService, ToastMessageOptions } from 'primeng/api';
+import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MentorshipTaskFileService } from '../../../../services/mentorship-task-file.service';
 import { MentorTasksTabComponent } from './mentor-tasks-tab.component';
 
 describe('MentorTasksTabComponent', () => {
@@ -51,12 +52,14 @@ describe('MentorTasksTabComponent', () => {
   });
 
   let fixture: ComponentFixture<MentorTasksTabComponent>;
+  let download: ReturnType<typeof vi.fn>;
 
   const setup = (mentees: MentorshipProgramMentee[] = [mentee()]): void => {
+    download = vi.fn();
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MentorTasksTabComponent],
-      providers: [provideNoopAnimations(), MessageService],
+      providers: [provideNoopAnimations(), MessageService, { provide: MentorshipTaskFileService, useValue: { download } }],
     });
 
     fixture = TestBed.createComponent(MentorTasksTabComponent);
@@ -93,7 +96,7 @@ describe('MentorTasksTabComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-task-approve-mnt_1__tsk_approved"]')).toBeNull();
   });
 
-  it('lists submitted and completed tasks on All, and hides Open Submission when there is no file', () => {
+  it('lists submitted and completed tasks on All, and hides Download Submission when there is no file', () => {
     setup([
       mentee({
         tasks: [
@@ -175,13 +178,10 @@ describe('MentorTasksTabComponent', () => {
     expect(button('mentorship-mentor-task-approve-mnt_1__tsk_awaiting')?.disabled).toBe(false);
   });
 
-  it('routes open-submission to the coming-soon toast', () => {
-    const addSpy = vi.spyOn(TestBed.inject(MessageService), 'add');
-
+  it('downloads the submission by its upstream task id', () => {
     button('mentorship-mentor-task-open-submission-mnt_1__tsk_awaiting')?.click();
 
-    expect(addSpy).toHaveBeenCalledTimes(1);
-    expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Open submission for "Backpressure design note" from Hana Suzuki');
+    expect(download).toHaveBeenCalledWith('tsk_awaiting');
   });
 
   it('shows the empty state when no tasks match the filter', () => {

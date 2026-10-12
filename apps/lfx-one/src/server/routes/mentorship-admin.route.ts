@@ -42,8 +42,6 @@ router.get('/applications/:applicationId/tasks', (req, res, next) => adminContro
 router.patch('/applications/:applicationId/status', blockDuringImpersonation, (req, res, next) => adminController.updateApplicationStatus(req, res, next));
 router.put('/applications/:applicationId/note', blockDuringImpersonation, (req, res, next) => adminController.updateApplicationNote(req, res, next));
 router.post('/applications/:applicationId/withdraw', blockDuringImpersonation, (req, res, next) => adminController.withdrawApplication(req, res, next));
-router.post('/tasks', blockDuringImpersonation, (req, res, next) => adminController.createTasks(req, res, next));
-router.patch('/tasks/:taskId', blockDuringImpersonation, (req, res, next) => adminController.updateTask(req, res, next));
 router.post('/programs/:programId/mentors', blockDuringImpersonation, (req, res, next) => adminController.inviteProgramMentor(req, res, next));
 router.patch('/programs/:programId/mentors/:memberId', blockDuringImpersonation, (req, res, next) => adminController.updateProgramMentor(req, res, next));
 router.post('/programs/:programId/terms/:termId/decline-pending', blockDuringImpersonation, (req, res, next) =>
@@ -51,6 +49,8 @@ router.post('/programs/:programId/terms/:termId/decline-pending', blockDuringImp
 );
 router.post('/programs', blockDuringImpersonation, (req, res, next) => adminController.createProgram(req, res, next));
 router.patch('/programs/:programId', blockDuringImpersonation, (req, res, next) => adminController.updateProgram(req, res, next));
+router.post('/programs/:programId/hide', blockDuringImpersonation, (req, res, next) => adminController.hideProgram(req, res, next));
+router.post('/programs/:programId/unhide', blockDuringImpersonation, (req, res, next) => adminController.unhideProgram(req, res, next));
 router.post(
   '/programs/:programId/logo',
   blockDuringImpersonation,

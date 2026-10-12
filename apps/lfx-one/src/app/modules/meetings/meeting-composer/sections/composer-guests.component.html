@@ -33,6 +33,33 @@
         Add manually
       </button>
     </p>
+
+    <!-- Persistent live region: must exist before content appears so screen readers announce the insertion. -->
+    <div aria-live="polite">
+      @if (stagedGuest()) {
+        <!-- Preview of the selected user — requires an explicit Add click before being committed. -->
+        <div class="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="composer-guest-staged">
+          <span class="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700" aria-hidden="true">
+            {{ stagedGuestInitials() }}
+          </span>
+          <div class="flex min-w-0 flex-1 flex-col">
+            <span class="min-w-0 truncate text-sm font-medium text-gray-900" data-testid="composer-guest-staged-name">{{ stagedGuestDisplayName() }}</span>
+            <span class="truncate text-xs text-gray-500" data-testid="composer-guest-staged-secondary">{{ stagedGuestSecondaryLine() }}</span>
+          </div>
+          <div class="flex flex-none items-center gap-2">
+            <lfx-button label="Add guest" size="small" data-testid="composer-guest-staged-confirm" (onClick)="onConfirmStagedGuest()" />
+            <button
+              type="button"
+              class="rounded-md p-2 text-gray-400 hover:bg-blue-100 hover:text-gray-600"
+              aria-label="Dismiss selection"
+              (click)="onDismissStagedGuest()"
+              data-testid="composer-guest-staged-dismiss">
+              <i class="fa-light fa-xmark" aria-hidden="true"></i>
+            </button>
+          </div>
+        </div>
+      }
+    </div>
   </div>
 
   <!-- Groups and the guest-list visibility toggle are series settings: hidden when editing one occurrence. -->
@@ -40,6 +67,7 @@
     <!-- Groups -->
     <lfx-meeting-committee-manager
       [selectedCommittees]="selectedCommittees()"
+      [allowRestrictedAttendees]="true"
       [form]="form()"
       [savedAttendeeVisibility]="savedAttendeeVisibility()"
       [committeeContext]="formService.committeeContext()"
@@ -167,7 +195,7 @@
                   type="button"
                   class="flex-none rounded-md p-2 text-gray-400 hover:bg-gray-50 hover:text-red-600"
                   [attr.aria-label]="row.removeLabel"
-                  (click)="onRemoveGuest(row.guest)"
+                  (click)="onRequestRemoveGuest(row.guest, row.displayName)"
                   [attr.data-testid]="'composer-guest-remove-' + row.trackId">
                   <i class="fa-light fa-xmark" aria-hidden="true"></i>
                 </button>
@@ -182,3 +210,5 @@
     }
   }
 </div>
+
+<p-confirmDialog></p-confirmDialog>

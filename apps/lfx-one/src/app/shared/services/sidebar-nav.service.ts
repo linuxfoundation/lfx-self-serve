@@ -6,6 +6,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   AKRITES_ENABLED_FLAG,
   COMMITTEE_LABEL,
+  CROWDFUNDING_ATTRIBUTION_STEP_FLAG,
   DOCUMENT_LABEL,
   FORMATION_CHECKLIST_PATH,
   FORMATION_ENABLED_FLAG,
@@ -24,10 +25,12 @@ import {
 } from '@lfx-one/shared/constants';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { isFormationStageGate, isGwEmbedAllowedForSlug } from '@lfx-one/shared/utils';
+import { AccountContextService } from '@services/account-context.service';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -51,6 +54,8 @@ export class SidebarNavService {
   private readonly userService = inject(UserService);
   private readonly writerGrantsService = inject(WriterGrantsService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
+  private readonly accountContext = inject(AccountContextService);
+  private readonly orgRoleGrants = inject(OrgRoleGrantsService);
 
   /** The section EasyCLA is inserted into; matched by label because the tree is built inline. */
   private readonly orgEngagementSectionLabel = 'Organization Engagement';
@@ -63,6 +68,8 @@ export class SidebarNavService {
   private readonly isMentorshipEnabled = this.featureFlagService.getBooleanFlag(MENTORSHIP_ENABLED_FLAG, false);
   /** Dark-launch gate for the Marketing OS marketplace; hides the nav item on project and foundation lenses when off. */
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
+  /** Dark-launch gate for the Project/Foundation lens Initiatives entry (#347), matching `crowdfundingAttributionEnabledGuard`. */
+  private readonly isCrowdfundingAttributionEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ATTRIBUTION_STEP_FLAG, false);
   /** Pilot gate: decides whether the Communications links point at the embed or at LFX's own pages. */
   private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
@@ -147,7 +154,9 @@ export class SidebarNavService {
         // Mktg OS agents is dark-launched: when its flag is on, the entry is inserted between
         // Documents (last of projectLensItems) and the Governance section in the project sidebar.
         const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
-        const base = [...this.projectLensItems, ...mktgOsItems, this.projectGovernanceSection];
+        // Initiatives (#347) is dark-launched and follows canWrite — CF lists a project's initiatives to its writers only.
+        const initiativesItems = this.isCrowdfundingAttributionEnabled() && this.projectContextService.canWrite() ? [this.projectInitiativesNavItem] : [];
+        const base = [...this.projectLensItems, ...initiativesItems, ...mktgOsItems, this.projectGovernanceSection];
         const withComms = this.canSeeNewsletters() ? [...base, this.buildProjectCommunicationsSection()] : base;
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
@@ -166,13 +175,20 @@ export class SidebarNavService {
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
     const base = this.orgLensItems();
     const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(base) : base;
-    if (!this.isOrgLensRoiEnabled()) return items;
+    const afterProjectsItems = [
+      ...(this.isOrgLensRoiEnabled() ? [this.orgRoiNavItem()] : []),
+      // Initiatives (#348) is dark-launched and follows a direct writer grant on the selected organization — CF lists an
+      // organization's initiatives to its writers only, and b2b_org writer access does not cascade from a parent.
+      ...(this.isCrowdfundingAttributionEnabled() && this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '')
+        ? [this.orgInitiativesNavItem()]
+        : []),
+    ];
+    if (afterProjectsItems.length === 0) return items;
     const projectsIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('projects'));
-    const roi = this.orgRoiNavItem();
-    // Append rather than prepend if Projects ever goes away, so ROI can't silently jump to the top.
-    if (projectsIndex === -1) return [...items, roi];
+    // Append rather than prepend if Projects ever goes away, so these can't silently jump to the top.
+    if (projectsIndex === -1) return [...items, ...afterProjectsItems];
     const afterProjects = projectsIndex + 1;
-    return [...items.slice(0, afterProjects), roi, ...items.slice(afterProjects)];
+    return [...items.slice(0, afterProjects), ...afterProjectsItems, ...items.slice(afterProjects)];
   });
 
   // Me Lens nav with feature-flagged sections stripped (Security/Akrites and Mentorship are dark-launched),
@@ -474,6 +490,11 @@ export class SidebarNavService {
         }
       );
 
+      // CF lists a project's initiatives to its writers only (403 otherwise), so the entry follows canWrite (#347).
+      if (this.isCrowdfundingAttributionEnabled() && this.projectContextService.canWrite()) {
+        items.push(this.foundationInitiativesNavItem);
+      }
+
       if (this.isMktgOsAgentsEnabled()) {
         items.push(this.foundationMktgOsAgentsNavItem);
       }
@@ -662,6 +683,21 @@ export class SidebarNavService {
     },
   ];
 
+  // --- Project / Foundation — Initiatives (#347; the My Initiatives page scoped to the lens project) ---
+  private readonly projectInitiativesNavItem: SidebarMenuItem = {
+    label: 'Initiatives',
+    icon: 'fa-light fa-box-dollar',
+    routerLink: '/project/initiatives',
+    testId: 'sidebar-project-initiatives',
+  };
+
+  private readonly foundationInitiativesNavItem: SidebarMenuItem = {
+    label: 'Initiatives',
+    icon: 'fa-light fa-box-dollar',
+    routerLink: '/foundation/initiatives',
+    testId: 'sidebar-foundation-initiatives',
+  };
+
   // --- Project — Formation checklist (GH-1958; dark-launched, heads a Formation-stage project's sidebar — #2754) ---
   private readonly formationNavItem: SidebarMenuItem = {
     label: 'Formation',
@@ -739,6 +775,13 @@ export class SidebarNavService {
     icon: 'fa-light fa-chart-mixed-up-circle-dollar',
     routerLink: this.orgLensNavigation.orgLensPath('roi'),
     testId: 'sidebar-org-roi',
+  }));
+
+  private readonly orgInitiativesNavItem: Signal<SidebarMenuItem> = computed(() => ({
+    label: 'Initiatives',
+    icon: 'fa-light fa-box-dollar',
+    routerLink: this.orgLensNavigation.orgLensPath('initiatives'),
+    testId: 'sidebar-org-initiatives',
   }));
 
   private readonly orgEasyclaNavItem: Signal<SidebarMenuItem> = computed(() => ({

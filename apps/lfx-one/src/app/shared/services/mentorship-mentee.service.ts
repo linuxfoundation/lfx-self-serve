@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
+import { MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER, MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeApplicationsResponse,
   MentorshipMenteeApplyIds,
@@ -12,6 +13,7 @@ import {
   MentorshipMenteeRegisterRequest,
   MentorshipMenteeProfileUpdateRequest,
   MentorshipMenteeProfileUpdateResponse,
+  MentorshipMenteeTaskFileUploadResponse,
   MentorshipMenteeTaskStatusUpdateRequest,
   MentorshipMenteeUpdatableTaskStatus,
 } from '@lfx-one/shared/interfaces';
@@ -94,13 +96,40 @@ export class MentorshipMenteeService {
 
   /**
    * Moves one of the signed-in mentee's tasks to `in_progress` or `submitted`. The body is only the
-   * status: file upload is not wired, so no file is ever sent. On success the cached applications are
+   * status: the file goes through `uploadMenteeTaskFile`. On success the cached applications are
    * dropped, so the Overview, My Tasks and the open-task badge re-read. A failure is left to the caller,
    * which decides whether the tasks are stale.
    */
   public updateMenteeTaskStatus(taskId: string, status: MentorshipMenteeUpdatableTaskStatus): Observable<void> {
     const body: MentorshipMenteeTaskStatusUpdateRequest = { status };
     return this.http.patch<void>(`/api/mentorship/mentee/tasks/${encodeURIComponent(taskId)}`, body).pipe(
+      take(1),
+      tap(() => this.clearMenteeCaches())
+    );
+  }
+
+  /**
+   * Uploads, or replaces, the submission file of one of the signed-in mentee's tasks. The raw bytes go as the body, with
+   * the file name URI-encoded in a header, kept out of the logged URL; the BFF re-sends them upstream as multipart. On success the cached applications are
+   * dropped, so the task row re-reads whether a file is stored. A failure is left to the caller.
+   */
+  public uploadMenteeTaskFile(taskId: string, file: File): Observable<MentorshipMenteeTaskFileUploadResponse> {
+    return this.http
+      .post<MentorshipMenteeTaskFileUploadResponse>(`/api/mentorship/mentee/tasks/${encodeURIComponent(taskId)}/file`, file, {
+        headers: new HttpHeaders({
+          'Content-Type': MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE,
+          [MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER]: encodeURIComponent(file.name),
+        }),
+      })
+      .pipe(
+        take(1),
+        tap(() => this.clearMenteeCaches())
+      );
+  }
+
+  /** Removes the submission file of one of the signed-in mentee's tasks, then drops the cached applications. A failure is left to the caller. */
+  public deleteMenteeTaskFile(taskId: string): Observable<void> {
+    return this.http.delete<void>(`/api/mentorship/mentee/tasks/${encodeURIComponent(taskId)}/file`).pipe(
       take(1),
       tap(() => this.clearMenteeCaches())
     );

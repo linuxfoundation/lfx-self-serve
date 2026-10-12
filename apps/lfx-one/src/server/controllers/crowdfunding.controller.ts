@@ -5,16 +5,23 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { ALLOWED_LOGO_MIME_TYPES, CROWDFUNDING_INITIATIVE_STATUSES, SPONSORSHIP_DONATION_MODES, SPONSORSHIP_TIER_NAMES } from '@lfx-one/shared/constants';
+import {
+  ALLOWED_LOGO_MIME_TYPES,
+  CROWDFUNDING_INITIATIVE_STATUSES,
+  ORG_ACCOUNT_ID_PATTERN,
+  SPONSORSHIP_DONATION_MODES,
+  SPONSORSHIP_TIER_NAMES,
+} from '@lfx-one/shared/constants';
 import {
   CreateAnnouncementInput,
+  InitiativesScope,
   CrowdfundingInitiativeStatus,
   SponsorshipDonationMode,
   SponsorshipTierName,
   UpdateAnnouncementInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
-import { stripHtml } from '@lfx-one/shared/utils';
+import { isUuid, stripHtml } from '@lfx-one/shared/utils';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { CrowdfundingService } from '../services/crowdfunding.service';
@@ -27,10 +34,35 @@ const parseNonNegativeInt = (val: unknown): number | undefined => {
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
 };
 
+/**
+ * Optional scope for the initiatives list/stats: `projectUid` (Project/Foundation lens, a UUID) or `orgUid` (Org Lens,
+ * an 18-char b2b_org SFID). Interpolated into the CF path, so each must match its id format; at most one may be set.
+ */
+const parseInitiativesScope = (query: Request['query'], operation: string): InitiativesScope | undefined => {
+  const { projectUid, orgUid } = query;
+  const given = (val: unknown): boolean => val != null && val !== '';
+  if (given(projectUid) && given(orgUid)) {
+    throw ServiceValidationError.forField('orgUid', 'Pass projectUid or orgUid, not both', { operation });
+  }
+  if (given(projectUid)) {
+    if (typeof projectUid !== 'string' || !isUuid(projectUid)) {
+      throw ServiceValidationError.forField('projectUid', 'projectUid must be a UUID', { operation });
+    }
+    return { kind: 'projects', uid: projectUid };
+  }
+  if (given(orgUid)) {
+    if (typeof orgUid !== 'string' || !ORG_ACCOUNT_ID_PATTERN.test(orgUid)) {
+      throw ServiceValidationError.forField('orgUid', 'orgUid must be an organization account id', { operation });
+    }
+    return { kind: 'organizations', uid: orgUid };
+  }
+  return undefined;
+};
+
 export class CrowdfundingController {
   private readonly crowdfundingService = new CrowdfundingService();
 
-  // GET /api/crowdfunding/initiatives
+  // GET /api/crowdfunding/initiatives[?projectUid=|?orgUid=]
   public async getMyInitiatives(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_my_initiatives');
 
@@ -41,7 +73,12 @@ export class CrowdfundingController {
 
       const { pageSize, offset } = req.query;
 
-      const initiatives = await this.crowdfundingService.getMyInitiatives(req, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
+      const initiatives = await this.crowdfundingService.getMyInitiatives(
+        req,
+        parseNonNegativeInt(pageSize),
+        parseNonNegativeInt(offset),
+        parseInitiativesScope(req.query, 'get_my_initiatives')
+      );
 
       logger.success(req, 'get_my_initiatives', startTime, { result_count: initiatives.data.length });
 
@@ -157,7 +194,7 @@ export class CrowdfundingController {
     }
   }
 
-  // GET /api/crowdfunding/initiatives-stats
+  // GET /api/crowdfunding/initiatives-stats[?projectUid=|?orgUid=]
   public async getInitiativesStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_initiatives_stats');
 
@@ -166,7 +203,7 @@ export class CrowdfundingController {
         throw new AuthenticationError('User authentication required', { operation: 'get_initiatives_stats' });
       }
 
-      const stats = await this.crowdfundingService.getInitiativesStats(req);
+      const stats = await this.crowdfundingService.getInitiativesStats(req, parseInitiativesScope(req.query, 'get_initiatives_stats'));
 
       logger.success(req, 'get_initiatives_stats', startTime);
 

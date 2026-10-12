@@ -84,11 +84,13 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -141,6 +143,7 @@ import { RescheduleOccurrenceDialogComponent } from '../components/reschedule-oc
     GuestFormComponent,
     HostKeyPanelComponent,
     TooltipModule,
+    ConfirmDialogModule,
     DrawerModule,
     SkeletonModule,
     MeetingTimePipe,
@@ -153,12 +156,13 @@ import { RescheduleOccurrenceDialogComponent } from '../components/reschedule-oc
     MeetingMaterialsDrawerComponent,
     ImpersonationBannerComponent,
   ],
-  providers: [DialogService],
+  providers: [DialogService, ConfirmationService],
   templateUrl: './meeting-join.component.html',
 })
 export class MeetingJoinComponent implements OnInit {
   // Injected services
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly meetingService = inject(MeetingService);
@@ -269,6 +273,11 @@ export class MeetingJoinComponent implements OnInit {
   // Set immediately on self-registration success so the UI responds before the meeting refetch
   // settles the invited flag (query-service indexing lag).
   private optimisticInvited = signal(false);
+  // True once the user has removed themselves from the meeting on screen, so the UI responds before the meeting
+  // refetch settles the invited flag (same query-service indexing lag, in the other direction). Keyed by meeting
+  // id in the service, so a page that stays mounted across meetings never carries one meeting's removal to another.
+  private optimisticLeft = computed(() => this.meetingService.removedRegistrationMeetingIds().has(this.meeting()?.id ?? ''));
+  public leavingMeeting = signal(false);
   private readonly optimisticDeletedUids = signal(new Set<string>());
   private readonly optimisticAddedAttachments = signal<PastMeetingAttachment[]>([]);
   public emailError: Signal<boolean>;
@@ -370,6 +379,7 @@ export class MeetingJoinComponent implements OnInit {
   // Computed signals for invited/registration status
   public isInvited: Signal<boolean>;
   public effectivelyInvited: Signal<boolean>;
+  public canLeaveMeeting: Signal<boolean>;
   // Matches the BFF roster gate: an invitee sees the other guests only when the organizer shares them.
   protected attendeeListShared = computed(() => isMeetingAttendeeListShared(this.meeting()));
   protected canViewGuests = computed(() => !!this.meeting()?.organizer || (this.effectivelyInvited() && this.attendeeListShared()));
@@ -498,7 +508,9 @@ export class MeetingJoinComponent implements OnInit {
 
     // Initialize invited/registration signals
     this.isInvited = this.initializeIsInvited();
-    this.effectivelyInvited = computed(() => this.isInvited() || this.optimisticInvited());
+    this.effectivelyInvited = computed(() => (this.isInvited() && !this.optimisticLeft()) || this.optimisticInvited());
+    // A committee-sourced registration follows committee membership, so it cannot be removed from here.
+    this.canLeaveMeeting = computed(() => this.effectivelyInvited() && !this.meeting()?.invited_via_committee);
     this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
     this.canToggleRsvpView = this.initializeCanToggleRsvpView();
     this.currentUserRsvp = this.initializeCurrentUserRsvp();
@@ -745,9 +757,22 @@ export class MeetingJoinComponent implements OnInit {
     dialogRef.onClose.pipe(take(1)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
         this.optimisticInvited.set(true);
+        this.meetingService.clearRemovedRegistration(meeting.id);
         this.registrantsRefresh$.next();
         this.refreshTrigger$.next();
       }
+    });
+  }
+
+  public confirmLeaveMeeting(): void {
+    this.confirmationService.confirm({
+      header: 'Remove Yourself',
+      message: `Remove yourself from "${this.meetingTitle()}"? You will no longer be invited to any occurrence and will lose your RSVP.`,
+      acceptLabel: 'Remove Me',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => this.leaveMeeting(),
     });
   }
 
@@ -1433,7 +1458,7 @@ export class MeetingJoinComponent implements OnInit {
   private initializeCanRegisterForMeeting(): Signal<boolean> {
     return computed(() => {
       const meeting = this.meeting();
-      return !this.isInvited() && !this.optimisticInvited() && !meeting?.restricted && meeting?.visibility === 'public';
+      return !this.effectivelyInvited() && !meeting?.restricted && meeting?.visibility === 'public';
     });
   }
 
@@ -1767,5 +1792,38 @@ export class MeetingJoinComponent implements OnInit {
       ),
       { initialValue: [] }
     );
+  }
+
+  private leaveMeeting(): void {
+    const meetingId = this.meeting().id;
+    this.leavingMeeting.set(true);
+
+    this.meetingService
+      .removeMyMeetingRegistration(meetingId)
+      .pipe(
+        take(1),
+        finalize(() => this.leavingMeeting.set(false))
+      )
+      .subscribe({
+        next: () => {
+          this.optimisticInvited.set(false);
+          this.meetingService.markRegistrationRemoved(meetingId);
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Removed',
+            detail: 'You have been removed from this meeting.',
+          });
+          this.registrantsRefresh$.next();
+          this.refreshTrigger$.next();
+        },
+        error: (error: unknown) => {
+          const fallback = 'Unable to remove you from this meeting. Please try again.';
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: isBffValidationError(error) ? extractErrorMessage(error, fallback) : fallback,
+          });
+        },
+      });
   }
 }

@@ -1174,9 +1174,9 @@ describe('OrgClasController.checkPermission', () => {
     expect(res.json).toHaveBeenCalledWith({ allowed: true });
   });
 
-  // The Overview toggle uses the ACS hop before rendering (#1988), so the typed action has to
-  // be accepted here. Without this a viewer who legitimately holds the grant would still see the
-  // toggle hidden — the check fails-closed at 400.
+  // The Overview toggle renders on every signed row and uses the ACS hop to decide whether it is
+  // enabled (#1988), so the typed action has to be accepted here. Without this a viewer who
+  // legitimately holds the grant would still see the toggle disabled — the check fails-closed at 400.
   it('accepts the auto-ecla-update action the Overview toggle uses', async () => {
     checkAcs.mockResolvedValue(true);
     const res = buildRes();

@@ -1051,15 +1051,41 @@ export class CommitteeMembersComponent implements OnInit {
 
   private initTableRows(): Signal<CommitteeTableRow[]> {
     return computed(() => {
+      const toInviteRow = (invite: CommitteeInvite): CommitteeTableRow => ({ rowType: 'invite' as const, data: invite });
       const memberRows: CommitteeTableRow[] = this.filteredMembers().map((m) => ({ rowType: 'member' as const, data: m }));
       if (!this.canManageMembers()) {
         return memberRows;
       }
-      const inviteRows: CommitteeTableRow[] = this.invites().map((invite) => ({ rowType: 'invite' as const, data: invite }));
       if (this.activeTab() === 'pending' && this.showPendingInvites()) {
-        return inviteRows;
+        return this.invites().map(toInviteRow);
       }
-      return [...memberRows, ...inviteRows];
+      const chip = this.memberFilterChip();
+      const roleFilter = this.roleFilter();
+      const searchTerm = this.searchTerm().toLowerCase();
+      const filteredInviteRows: CommitteeTableRow[] = this.invites()
+        .filter((invite) => {
+          if (chip === 'chairs') {
+            if (invite.role !== CommitteeMemberRole.CHAIR && invite.role !== CommitteeMemberRole.VICE_CHAIR) {
+              return false;
+            }
+          } else if (chip !== 'all') {
+            // voting, observers, atRisk — invites carry no voting status or engagement data
+            return false;
+          }
+          if (roleFilter && invite.role !== roleFilter) {
+            return false;
+          }
+          // voting-status and org filters have no invite equivalent — hide invites when either is active
+          if (this.votingStatusFilter() || this.organizationFilter()) {
+            return false;
+          }
+          if (searchTerm && !invite.invitee_email?.toLowerCase().includes(searchTerm)) {
+            return false;
+          }
+          return true;
+        })
+        .map(toInviteRow);
+      return [...memberRows, ...filteredInviteRows];
     });
   }
 

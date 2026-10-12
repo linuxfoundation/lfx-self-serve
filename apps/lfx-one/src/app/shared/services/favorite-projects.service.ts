@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
 import { DestroyRef, Injectable, Injector, PLATFORM_ID, inject } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FAVORITE_PROJECTS_MAX_VALUES, FAVORITE_PROJECTS_PREFERENCE_CONTEXT_ID, FAVORITE_PROJECTS_PREFERENCE_NAME } from '@lfx-one/shared/constants';
+import { PreferenceReadResponse, PreferenceUpsertRequest } from '@lfx-one/shared/interfaces';
 import { parseFavoriteProjectUids } from '@lfx-one/shared/utils';
-import { NavigationService } from '@services/navigation.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
+import { map, Observable } from 'rxjs';
 
 import { UserPreferenceStore } from './user-preference-store';
 
@@ -18,20 +20,24 @@ import { UserPreferenceStore } from './user-preference-store';
  * rendered app-wide (sidebar), not confined to one page; a page-scoped store would be destroyed
  * and recreated on every navigation. Context tracks the signed-in user via `toObservable` here
  * rather than requiring a hosting component to call `setContext`.
+ *
+ * Owns its own HTTP transport (GH-3453) rather than delegating to `NavigationService` — the nav
+ * service reads this service's favorited uids to float them into the browse list's first page, so
+ * the reverse dependency would form a circular injection.
  */
 @Injectable({
   providedIn: 'root',
 })
 export class FavoriteProjectsService {
+  private readonly http = inject(HttpClient);
   private readonly messageService = inject(MessageService);
-  private readonly navigationService = inject(NavigationService);
   private readonly userService = inject(UserService);
 
   private readonly store = new UserPreferenceStore<Set<string>>({
     transport: {
-      get: () => this.navigationService.getFavoriteProjectsPreference(),
-      put: (_name, value) => this.navigationService.upsertFavoriteProjectsPreference(value),
-      delete: () => this.navigationService.deleteFavoriteProjectsPreference(),
+      get: () => this.getFavoriteProjectsPreference(),
+      put: (_name, value) => this.upsertFavoriteProjectsPreference(value),
+      delete: () => this.deleteFavoriteProjectsPreference(),
     },
     destroyRef: inject(DestroyRef),
     injector: inject(Injector),
@@ -108,5 +114,21 @@ export class FavoriteProjectsService {
       summary: 'Favorites unavailable',
       detail: 'Your favorites could not be loaded. Refresh the page and try again.',
     });
+  }
+
+  /** Reads the current user's favorited foundation/project uids (`null` when unset) — `UserPreferenceStore` transport (GH-2995). */
+  private getFavoriteProjectsPreference(): Observable<string | null> {
+    return this.http.get<PreferenceReadResponse>('/api/nav/favorite-projects').pipe(map((response) => response.value));
+  }
+
+  /** Upserts the current user's favorited uids (stringified JSON array). */
+  private upsertFavoriteProjectsPreference(value: string): Observable<void> {
+    const body: PreferenceUpsertRequest = { value };
+    return this.http.put<PreferenceReadResponse>('/api/nav/favorite-projects', body).pipe(map(() => undefined));
+  }
+
+  /** Clears the current user's favorited uids (idempotent server-side). */
+  private deleteFavoriteProjectsPreference(): Observable<void> {
+    return this.http.delete<PreferenceReadResponse>('/api/nav/favorite-projects').pipe(map(() => undefined));
   }
 }

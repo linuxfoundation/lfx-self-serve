@@ -7,7 +7,7 @@
  *
  * The page reads `/api/mentorship/admin/programs`, which the BFF serves from upstream `GET /me/programs`.
  * Each test stubs that read via `page.route` with a synthetic payload, so the suite never
- * depends on upstream data: one payload proves each program's name, project, term and status badge, another
+ * depends on upstream data: one payload proves each program's name, project and status badge, another
  * a failed read followed by a successful Retry. The logo upload is stubbed too (`page.route` on `.../programs/:id/logo`), so
  * nothing is ever sent to a real bucket.
  *
@@ -42,12 +42,11 @@ const PENDING_ID = '72222222-2222-4222-8222-222222222222';
 const REJECTED_ID = '73333333-3333-4333-8333-333333333333';
 const HIDDEN_ID = '74444444-4444-4444-8444-444444444444';
 
-const program = (id: string, name: string, status: MentorshipProgram['status'], term: string): MentorshipProgram => ({
+const program = (id: string, name: string, status: MentorshipProgram['status']): MentorshipProgram => ({
   id,
   slug: id,
   name,
   projectName: 'Test Project',
-  term,
   status,
   stats: { mentors: 1, mentees: 2, graduated: 0 },
   createdOn: '2026-06-01',
@@ -56,10 +55,10 @@ const program = (id: string, name: string, status: MentorshipProgram['status'], 
 
 const POPULATED: MentorshipProgramsResponse = {
   data: [
-    program(OPEN_ID, 'Test Program Open', 'open', 'Test Term Open'),
-    program(PENDING_ID, 'Test Program Pending', 'pending-review', ''),
-    program(REJECTED_ID, 'Test Program Rejected', 'rejected', ''),
-    program(HIDDEN_ID, 'Test Program Hidden', 'hidden', 'Test Term Closed'),
+    program(OPEN_ID, 'Test Program Open', 'open'),
+    program(PENDING_ID, 'Test Program Pending', 'pending-review'),
+    program(REJECTED_ID, 'Test Program Rejected', 'rejected'),
+    program(HIDDEN_ID, 'Test Program Hidden', 'hidden'),
   ],
   total: 4,
 };
@@ -82,10 +81,11 @@ test.describe('Admin programs list — real programs', () => {
 
     await expect(page.getByTestId('mentorship-programs-cards')).toHaveCount(4);
     await expect(page.getByTestId(`mentorship-program-card-${OPEN_ID}`)).toContainText('Test Program Open');
-    await expect(page.getByTestId(`mentorship-program-card-${OPEN_ID}`)).toContainText('Test Project · Test Term Open');
+    await expect(page.getByTestId(`mentorship-program-card-${OPEN_ID}`)).toContainText('Test Project');
+    await expect(page.getByTestId(`mentorship-program-card-${OPEN_ID}`)).not.toContainText('·');
   });
 
-  test('shows each program status badge, and no dangling separator when the term is empty', async ({ page }) => {
+  test('shows each program status badge, and the project alone with no term', async ({ page }) => {
     await expect(page.getByTestId(`mentorship-program-card-${PENDING_ID}`)).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
 
     const badge = (id: string) => page.getByTestId(`mentorship-program-card-${id}`).getByTestId('mentorship-program-card-status');
@@ -178,10 +178,10 @@ test.describe('Admin programs list — logo missing', () => {
   // Rows as the BFF maps them: `logoMissing` is set for an upstream `pending` or `published` program without a logo only.
   const rows = (pendingLogoAdded = false): MentorshipProgramsResponse => ({
     data: [
-      { ...program(PENDING_NO_LOGO_ID, 'Acme Rocket Mentorship', 'pending-review', ''), logoMissing: !pendingLogoAdded },
-      { ...program(PUBLISHED_NO_LOGO_ID, 'Acme Orbit Mentorship', 'open', 'Test Term Open'), logoMissing: true },
-      { ...program(PENDING_WITH_LOGO_ID, 'Acme Lander Mentorship', 'pending-review', ''), logoMissing: false },
-      { ...program(REJECTED_NO_LOGO_ID, 'Acme Probe Mentorship', 'rejected', ''), logoMissing: false },
+      { ...program(PENDING_NO_LOGO_ID, 'Acme Rocket Mentorship', 'pending-review'), logoMissing: !pendingLogoAdded },
+      { ...program(PUBLISHED_NO_LOGO_ID, 'Acme Orbit Mentorship', 'open'), logoMissing: true },
+      { ...program(PENDING_WITH_LOGO_ID, 'Acme Lander Mentorship', 'pending-review'), logoMissing: false },
+      { ...program(REJECTED_NO_LOGO_ID, 'Acme Probe Mentorship', 'rejected'), logoMissing: false },
     ],
     total: 4,
   });

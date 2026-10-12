@@ -11,8 +11,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AccessCheckService } from '../services/access-check.service';
 
-const { resolveCreatedByForMeetings } = vi.hoisted(() => ({
+const { resolveCreatedByForMeetings, getMeetingRegistrantsForUser } = vi.hoisted(() => ({
   resolveCreatedByForMeetings: vi.fn<(req: unknown, uids: string[]) => Promise<Map<string, Pick<Meeting, 'created_by' | 'owner'>>>>(),
+  getMeetingRegistrantsForUser: vi.fn(),
 }));
 
 // This app's vitest config resolves plain Node modules only — the `@lfx-one/shared/*` tsconfig
@@ -50,6 +51,7 @@ vi.mock('@lfx-one/shared/constants', () => ({ HOST_KEY_EARLY_MINUTES: 70, HOST_K
 vi.mock('../services/meeting.service', () => ({
   MeetingService: class {
     public resolveCreatedByForMeetings = resolveCreatedByForMeetings;
+    public getMeetingRegistrantsForUser = getMeetingRegistrantsForUser;
   },
 }));
 vi.mock('../services/committee.service', () => ({ CommitteeService: class {} }));
@@ -59,7 +61,13 @@ vi.mock('../services/logger.service', () => ({
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(), getUsernameFromAuth: vi.fn() }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn() }));
 
-import { applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, resolveOrganizerAndHostKey, stripHostKey } from './meeting.helper';
+import {
+  addInvitedStatusToMeeting,
+  applyOrganizerAndHostKeyResult,
+  enrichMeetingsWithCreatedBy,
+  resolveOrganizerAndHostKey,
+  stripHostKey,
+} from './meeting.helper';
 
 const req = {} as unknown as Request;
 const human: MeetingUserInfo = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
@@ -354,5 +362,40 @@ describe('stripHostKey', () => {
   it('no-ops on null/undefined', () => {
     expect(() => stripHostKey(null)).not.toThrow();
     expect(() => stripHostKey(undefined)).not.toThrow();
+  });
+});
+
+describe('addInvitedStatusToMeeting', () => {
+  const meeting = { id: 'mtg-1' } as Meeting;
+
+  beforeEach(() => {
+    getMeetingRegistrantsForUser.mockReset();
+  });
+
+  it('marks a viewer with only direct registrations as invited, not via a committee', async () => {
+    getMeetingRegistrantsForUser.mockResolvedValue([{ uid: 'r1', type: 'direct' }]);
+
+    const result = await addInvitedStatusToMeeting(req, meeting, 'user@example.com', 'm2m-token');
+
+    expect(result).toMatchObject({ invited: true, invited_via_committee: false });
+  });
+
+  it('marks the invitation as committee-sourced when any registration came from a committee', async () => {
+    getMeetingRegistrantsForUser.mockResolvedValue([
+      { uid: 'r1', type: 'direct' },
+      { uid: 'r2', type: 'committee' },
+    ]);
+
+    const result = await addInvitedStatusToMeeting(req, meeting, 'user@example.com', 'm2m-token');
+
+    expect(result).toMatchObject({ invited: true, invited_via_committee: true });
+  });
+
+  it('reports a viewer with no registration as not invited', async () => {
+    getMeetingRegistrantsForUser.mockResolvedValue([]);
+
+    const result = await addInvitedStatusToMeeting(req, meeting, 'user@example.com', 'm2m-token');
+
+    expect(result).toMatchObject({ invited: false, invited_via_committee: false });
   });
 });

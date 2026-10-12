@@ -18,12 +18,14 @@ import {
   MeetingHostCandidate,
   MeetingOccurrence,
   MeetingRegistrant,
+  MeetingRegistrantWithState,
   PastMeeting,
   PastMeetingParticipant,
   PastParticipantAttendanceFilter,
   PastParticipantInvitationFilter,
 } from '@lfx-one/shared/interfaces';
 import {
+  avatarInitials,
   compareMeetingPeopleByHostThenName,
   filterPastMeetingParticipants,
   getRegistrantAttendanceStatus,
@@ -38,7 +40,8 @@ import type { RegistrantAttendanceStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, combineLatest, debounceTime, filter, finalize, map, of, pairwise, startWith, switchMap, take, tap } from 'rxjs';
 
@@ -52,6 +55,7 @@ type RegistrantWithAttendance = MeetingRegistrant & { attendanceStatus: Registra
     AvatarComponent,
     BadgeComponent,
     ButtonComponent,
+    ConfirmDialogModule,
     TooltipModule,
     ReactiveFormsModule,
     RadioButtonComponent,
@@ -60,12 +64,14 @@ type RegistrantWithAttendance = MeetingRegistrant & { attendanceStatus: Registra
     NgTemplateOutlet,
     MeetingTimePipe,
   ],
+  providers: [ConfirmationService],
   templateUrl: './meeting-registrants-display.component.html',
 })
 export class MeetingRegistrantsDisplayComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly committeeService = inject(CommitteeService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly meeting: InputSignal<Meeting | PastMeeting> = input.required<Meeting | PastMeeting>();
@@ -90,6 +96,9 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly internalLoading: WritableSignal<boolean> = signal(true);
   private readonly refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
   private readonly optimisticRegistrants: WritableSignal<MeetingRegistrant[]> = signal<MeetingRegistrant[]>([]);
+  // UIDs removed by the organizer — filtered immediately from the displayed list so the guest
+  // disappears without waiting for the async refetch to complete.
+  private readonly deletedRegistrantUids = signal<Set<string>>(new Set());
   private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
   public readonly pastMeetingParticipants: Signal<EnrichedPastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
@@ -104,6 +113,11 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly additionalRegistrantsCount: WritableSignal<number> = signal(0);
   public readonly showAddForm = signal(false);
   public readonly submitting = signal(false);
+  public readonly deleting = signal(false);
+
+  // Staged guests — accumulate picked users; each can be independently added without clearing others.
+  protected readonly stagedGuests = signal<{ id: string; data: Record<string, unknown> }[]>([]);
+  private readonly submittingGuestIds = signal<Set<string>>(new Set());
 
   // Add registrant form
   public addRegistrantForm: FormGroup;
@@ -241,7 +255,9 @@ export class MeetingRegistrantsDisplayComponent {
         this.showAddForm.set(false);
         this.addRegistrantForm.reset();
         this.inviteScopeForm.reset();
+        this.stagedGuests.set([]);
         this.optimisticRegistrants.set([]);
+        this.deletedRegistrantUids.set(new Set());
       });
   }
 
@@ -256,87 +272,202 @@ export class MeetingRegistrantsDisplayComponent {
     if (isShowing) {
       this.addRegistrantForm.reset();
       this.inviteScopeForm.reset();
+      this.stagedGuests.set([]);
     }
   }
 
   public onAddRegistrant(): void {
     if (this.submitting()) return;
-
     if (this.addRegistrantForm.valid) {
-      this.submitting.set(true);
       const formValue = this.addRegistrantForm.value;
       const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
-      const createData = {
-        ...this.meetingService.stripMetadata(this.meeting().id, formValue),
-        ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
-      };
-
-      this.meetingService
-        .addMeetingRegistrants(this.meeting().id, [createData])
-        .pipe(take(1))
-        .subscribe({
-          next: (response) => {
-            this.submitting.set(false);
-            if (response.summary.successful > 0) {
-              this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Guest added successfully' });
-              if (this.externallyManaged()) {
-                // Parent owns the data — request a refetch and let it bump its own optimistic count.
-                this.refreshRequested.emit(response.summary.successful);
-              } else {
-                // Self-managed mode: optimistically add to the displayed list immediately
-                // (query-service indexing is async; the refetch may not include them yet).
-                const optimistic: MeetingRegistrant = {
-                  uid: `optimistic-${crypto.randomUUID()}`,
-                  meeting_id: this.meeting().id,
-                  email: formValue.email ?? '',
-                  first_name: formValue.first_name ?? '',
-                  last_name: formValue.last_name ?? '',
-                  host: formValue.host ?? false,
-                  job_title: formValue.job_title || null,
-                  org_name: formValue.org_name || null,
-                  linkedin_profile: formValue.linkedin_profile || null,
-                  occurrence_id: occurrenceId,
-                  org_is_member: false,
-                  org_is_project_member: false,
-                  avatar_url: null,
-                  username: null,
-                  created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                  type: 'direct',
-                  invite_accepted: null,
-                  attended: null,
-                };
-                const meeting = this.meeting();
-                const baseCount = resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length;
-                const nextAdditionalCount = this.additionalRegistrantsCount() + response.summary.successful;
-                this.optimisticRegistrants.update((list) => [...list, optimistic]);
-                this.additionalRegistrantsCount.set(nextAdditionalCount);
-                this.registrantsCountChange.emit(nextAdditionalCount);
-                this.totalCountChange.emit(baseCount + nextAdditionalCount);
-                this.refresh$.next(true);
-              }
-              this.addRegistrantForm.reset();
-              this.inviteScopeForm.reset();
-            } else {
-              this.messageService.add({
-                severity: 'error',
-                summary: 'Error',
-                detail: response.failures[0]?.error?.message || 'Failed to add guest',
-              });
-            }
-          },
-          error: () => {
-            this.submitting.set(false);
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to add guest. Please try again.' });
-          },
-        });
+      this.submitGuest(formValue, occurrenceId);
     } else {
       markFormControlsAsTouched(this.addRegistrantForm);
     }
   }
 
   public onUserSelectedFromSearch(): void {
-    this.onAddRegistrant();
+    if (this.addRegistrantForm.valid) {
+      const id = crypto.randomUUID();
+      this.stagedGuests.update((list) => [...list, { id, data: this.addRegistrantForm.value as Record<string, unknown> }]);
+      this.addRegistrantForm.reset();
+    }
+  }
+
+  public onConfirmStagedGuest(id: string): void {
+    const entry = this.stagedGuests().find((g) => g.id === id);
+    if (!entry || this.submittingGuestIds().has(id)) return;
+    const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
+    this.submitGuest(entry.data, occurrenceId, id);
+  }
+
+  public onDismissStagedGuest(id: string): void {
+    this.stagedGuests.update((list) => list.filter((g) => g.id !== id));
+  }
+
+  public onRequestRemoveGuest(registrant: MeetingRegistrant): void {
+    const label = [registrant.first_name, registrant.last_name].filter(Boolean).join(' ') || registrant.email || 'this guest';
+    this.confirmationService.confirm({
+      header: 'Remove guest',
+      message: `Are you sure you want to remove ${label} from this meeting?`,
+      icon: 'fa-light fa-triangle-exclamation',
+      acceptLabel: 'Remove',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => this.deleteGuest(registrant),
+    });
+  }
+
+  // === Protected Methods (template helpers) ===
+  protected isGuestSubmitting(id: string): boolean {
+    return this.submittingGuestIds().has(id);
+  }
+  protected stagedGuestDisplayName(data: Record<string, unknown>): string {
+    return [data['first_name'], data['last_name']].filter(Boolean).join(' ') || String(data['email'] ?? '');
+  }
+  protected stagedGuestInitials(data: Record<string, unknown>): string {
+    return avatarInitials(data['first_name'] as string, data['last_name'] as string, data['email'] as string);
+  }
+  protected stagedGuestSecondaryLine(data: Record<string, unknown>): string {
+    return [data['email'], data['org_name']].filter(Boolean).join(' · ');
+  }
+
+  private submitGuest(formValue: Record<string, unknown>, occurrenceId: string | null, stagedGuestId?: string): void {
+    if (stagedGuestId) {
+      this.submittingGuestIds.update((ids) => new Set([...ids, stagedGuestId]));
+    } else {
+      if (this.submitting()) return;
+      this.submitting.set(true);
+    }
+    const createData = {
+      ...this.meetingService.stripMetadata(this.meeting().id, formValue as unknown as MeetingRegistrantWithState),
+      ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
+    };
+
+    this.meetingService
+      .addMeetingRegistrants(this.meeting().id, [createData])
+      .pipe(take(1))
+      .subscribe({
+        next: (response) => {
+          if (stagedGuestId) {
+            this.submittingGuestIds.update((ids) => {
+              const next = new Set(ids);
+              next.delete(stagedGuestId);
+              return next;
+            });
+          } else {
+            this.submitting.set(false);
+          }
+          if (response.summary.successful > 0) {
+            this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Guest added successfully' });
+            if (stagedGuestId) {
+              this.stagedGuests.update((list) => list.filter((g) => g.id !== stagedGuestId));
+            } else {
+              this.addRegistrantForm.reset();
+            }
+            if (this.externallyManaged()) {
+              this.refreshRequested.emit(response.summary.successful);
+            } else {
+              // Use the real UID from the API response so immediate removal calls the backend correctly.
+              // Fall back to a locally-constructed row if the response has no successes detail.
+              const optimistic: MeetingRegistrant = response.successes[0] ?? {
+                uid: `optimistic-${crypto.randomUUID()}`,
+                meeting_id: this.meeting().id,
+                email: (formValue['email'] as string) ?? '',
+                first_name: (formValue['first_name'] as string) ?? '',
+                last_name: (formValue['last_name'] as string) ?? '',
+                host: (formValue['host'] as boolean) ?? false,
+                job_title: (formValue['job_title'] as string) || null,
+                org_name: (formValue['org_name'] as string) || null,
+                linkedin_profile: (formValue['linkedin_profile'] as string) || null,
+                occurrence_id: occurrenceId,
+                org_is_member: false,
+                org_is_project_member: false,
+                avatar_url: null,
+                username: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                type: 'direct',
+                invite_accepted: null,
+                attended: null,
+              };
+              const meeting = this.meeting();
+              const baseCount = resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length;
+              const nextAdditionalCount = this.additionalRegistrantsCount() + response.summary.successful;
+              this.optimisticRegistrants.update((list) => [...list, optimistic]);
+              this.additionalRegistrantsCount.set(nextAdditionalCount);
+              this.registrantsCountChange.emit(nextAdditionalCount);
+              this.totalCountChange.emit(baseCount + nextAdditionalCount);
+              this.refresh$.next(true);
+            }
+          } else {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: response.failures[0]?.error?.message || 'Failed to add guest',
+            });
+          }
+        },
+        error: () => {
+          if (stagedGuestId) {
+            this.submittingGuestIds.update((ids) => {
+              const next = new Set(ids);
+              next.delete(stagedGuestId);
+              return next;
+            });
+          } else {
+            this.submitting.set(false);
+          }
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to add guest. Please try again.' });
+        },
+      });
+  }
+
+  private deleteGuest(registrant: MeetingRegistrant): void {
+    if (this.deleting()) return;
+    const uid = registrant.uid;
+    if (!uid || uid.startsWith('optimistic-')) {
+      this.optimisticRegistrants.update((list) => list.filter((r) => r.uid !== uid));
+      return;
+    }
+    this.deleting.set(true);
+    this.meetingService
+      .deleteMeetingRegistrants(this.meeting().id, [uid])
+      .pipe(take(1))
+      .subscribe({
+        next: (response) => {
+          this.deleting.set(false);
+          if (response.summary.successful > 0) {
+            this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Guest removed successfully' });
+            // Remove the guest from both signals immediately so the UI updates without
+            // waiting for the async refetch (works for both managed and self-managed modes).
+            this.deletedRegistrantUids.update((uids) => new Set([...uids, uid]));
+            this.optimisticRegistrants.update((list) => list.filter((r) => r.uid !== uid));
+            if (this.externallyManaged()) {
+              this.refreshRequested.emit(-response.summary.successful);
+            } else {
+              const meeting = this.meeting();
+              const baseCount = resolveMeetingBaseCount(meeting) ?? this.internalRegistrants().length;
+              // Capture the current total before decrementing additionalRegistrantsCount so we subtract
+              // response.summary.successful exactly once from the emitted total, not twice.
+              const currentTotal = baseCount + this.additionalRegistrantsCount();
+              const nextAdditionalCount = Math.max(0, this.additionalRegistrantsCount() - response.summary.successful);
+              this.additionalRegistrantsCount.set(nextAdditionalCount);
+              this.registrantsCountChange.emit(nextAdditionalCount);
+              this.totalCountChange.emit(Math.max(0, currentTotal - response.summary.successful));
+              this.refresh$.next(true);
+            }
+          } else {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: response.failures[0]?.error?.message || 'Failed to remove guest' });
+          }
+        },
+        error: () => {
+          this.deleting.set(false);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to remove guest. Please try again.' });
+        },
+      });
   }
 
   private initRegistrantsList(): Signal<MeetingRegistrant[]> {
@@ -370,6 +501,8 @@ export class MeetingRegistrantsDisplayComponent {
                 catchError(() => of([])),
                 map((registrants) => registrants.sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]),
                 tap((registrants) => {
+                  // The fetch returned a fresh list — any pending deletions are now reflected.
+                  this.deletedRegistrantUids.set(new Set());
                   const meeting = this.meeting();
                   const resolvedBaseCount = resolveMeetingBaseCount(meeting);
                   const hasBackendBaseCount = resolvedBaseCount !== undefined;
@@ -459,15 +592,26 @@ export class MeetingRegistrantsDisplayComponent {
 
   private initRegistrants(): Signal<MeetingRegistrant[]> {
     return computed(() => {
+      const deletedUids = this.deletedRegistrantUids();
       let list: MeetingRegistrant[];
       if (this.externallyManaged()) {
         const seed = this.initialRegistrants() ?? [];
-        list = [...seed].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[];
+        list = [...seed].filter((r) => !deletedUids.has(r.uid)).sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[];
       } else {
-        list = this.internalRegistrants();
+        list = this.internalRegistrants().filter((r) => !deletedUids.has(r.uid));
       }
-      const fetchedEmails = new Set(list.map((r) => r.email?.trim().toLowerCase()));
-      const pending = this.optimisticRegistrants().filter((r) => !fetchedEmails.has(r.email?.trim().toLowerCase()));
+      // Deduplicate optimistic rows against the fetched list. Use UID for real registrants (exact
+      // match regardless of email normalisation) and email as a fallback for optimistic-* rows
+      // where the API UID isn't known yet.
+      const fetchedUids = new Set<string>(list.map((r) => r.uid).filter((uid): uid is string => !!uid));
+      const fetchedEmails = new Set<string>(list.map((r) => r.email?.trim().toLowerCase()).filter((e): e is string => !!e));
+      const pending = this.optimisticRegistrants().filter((r) => {
+        if (r.uid && !r.uid.startsWith('optimistic-')) {
+          return !fetchedUids.has(r.uid);
+        }
+        const email = r.email?.trim().toLowerCase();
+        return !email || !fetchedEmails.has(email);
+      });
       return pending.length ? ([...pending, ...list].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]) : list;
     });
   }

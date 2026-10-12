@@ -61,6 +61,12 @@ export class MeetingCommitteeManagerComponent {
    * only once the load has settled.
    */
   public readonly savedAttendeeVisibility = input<boolean | null>(null);
+  /**
+   * Meeting v2 composer only: restricted meetings may opt in, so only board meetings lock the toggle.
+   * @description Off by default, which keeps the pre-v2 wizard's registrants manager on the rule it has
+   * always had (board or restricted).
+   */
+  public readonly allowRestrictedAttendees = input<boolean>(false);
 
   // Outputs
   public readonly committeesChange: OutputEmitterRef<MeetingCommittee[]> = output<MeetingCommittee[]>();
@@ -253,11 +259,13 @@ export class MeetingCommitteeManagerComponent {
           if (!meetingTypeControl || !restrictedControl) {
             return EMPTY;
           }
-          this.attendeeVisibilityLocked = isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value);
+          this.attendeeVisibilityLocked = isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value, {
+            allowRestricted: this.allowRestrictedAttendees(),
+          });
           this.seedSessionAttendeeChoice(form, this.attendeeVisibilityLocked);
           return merge(
             merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges).pipe(
-              map(() => isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value))
+              map(() => isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value, { allowRestricted: this.allowRestrictedAttendees() }))
             ),
             this.watchAttendeeEdits(form)
           );
@@ -591,7 +599,11 @@ export class MeetingCommitteeManagerComponent {
       this.committeeOwnsAttendeeToggle = false;
       return;
     }
-    if (isShowMeetingAttendeesLocked(this.form().get('meeting_type')?.value, this.form().get('restricted')?.value)) {
+    if (
+      isShowMeetingAttendeesLocked(this.form().get('meeting_type')?.value, this.form().get('restricted')?.value, {
+        allowRestricted: this.allowRestrictedAttendees(),
+      })
+    ) {
       this.committeeOwnsAttendeeToggle = true;
       return;
     }

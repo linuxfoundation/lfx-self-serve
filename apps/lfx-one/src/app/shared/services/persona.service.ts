@@ -44,14 +44,14 @@ export class PersonaService {
   public readonly personaLoaded: WritableSignal<boolean>;
   /** True once enriched persona data has been fetched this session — guards against redundant refetches on re-navigation. */
   public readonly enrichedPersonasLoaded: WritableSignal<boolean> = signal<boolean>(false);
-  /** Writer on the tenant root project — bypasses nav persona filtering */
+  /** `writer_guard` on the tenant root project — bypasses nav persona filtering; does not imply writer on a named project */
   public readonly isRootWriter: WritableSignal<boolean> = signal<boolean>(false);
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona */
   public readonly isLFStaff: WritableSignal<boolean> = signal<boolean>(false);
   /**
-   * `auditor` FGA grant on the tenant ROOT project — the Formations queue's (`foundation/formations`,
+   * `auditor_guard` FGA grant on the tenant ROOT project — the Formations queue's (`foundation/formations`,
    * GH-1958) authorization boundary. Unlike {@link isMarketingAuditor}/{@link isCampaignManager},
-   * `auditor` has no project-scoped variant to race against, so it rides the same simple, ungated
+   * it has no project-scoped variant to race against, so it rides the same simple, ungated
    * write as {@link isRootWriter}/{@link isLFStaff} rather than the probe-recency machinery below.
    */
   public readonly isAuditor: WritableSignal<boolean> = signal<boolean>(false);
@@ -349,8 +349,11 @@ export class PersonaService {
     const marketingIsRoot = marketingGranted && !!response.isMarketingAuditorRootGrant;
     const campaignIsRoot = campaignGranted && !!response.isCampaignManagerRootGrant;
 
-    const marketingGrantedKey = marketingIsRoot ? null : (projectSlug ?? null);
-    const campaignGrantedKey = campaignIsRoot ? null : (projectSlug ?? null);
+    // Without a projectSlug there is no project key to hold a grant that does not cascade from ROOT
+    // (ROOT `global_marketing_ops`), and the null key means "every project", so it is stored at
+    // neither and the null key is cleared instead.
+    const marketingGrantedKey = marketingIsRoot ? null : projectSlug;
+    const campaignGrantedKey = campaignIsRoot ? null : projectSlug;
     // Denial is authoritative for both ROOT (null) and project scope: clear all paths.
     const denialKeys: (string | null)[] = [projectSlug ?? null, null].filter(
       (k, i, a) => a.indexOf(k) === i // deduplicate
@@ -373,13 +376,14 @@ export class PersonaService {
       }
     };
 
-    const marketingWriteKey = marketingGranted && canWrite('marketing', marketingGrantedKey) ? marketingGrantedKey : undefined;
+    const marketingWriteKey =
+      marketingGranted && marketingGrantedKey !== undefined && canWrite('marketing', marketingGrantedKey) ? marketingGrantedKey : undefined;
     // A granted response also resolves the other key to known-false; a fully-denied response
     // clears both keys — either way the untargeted key(s) get an explicit false write.
     const marketingClearKeys = (marketingGranted ? denialKeys.filter((key) => key !== marketingGrantedKey) : denialKeys).filter((key) =>
       canWrite('marketing', key)
     );
-    const campaignWriteKey = campaignGranted && canWrite('campaign', campaignGrantedKey) ? campaignGrantedKey : undefined;
+    const campaignWriteKey = campaignGranted && campaignGrantedKey !== undefined && canWrite('campaign', campaignGrantedKey) ? campaignGrantedKey : undefined;
     const campaignClearKeys = (campaignGranted ? denialKeys.filter((key) => key !== campaignGrantedKey) : denialKeys).filter((key) =>
       canWrite('campaign', key)
     );

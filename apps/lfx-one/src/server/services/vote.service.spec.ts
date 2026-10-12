@@ -12,10 +12,10 @@
 import '@angular/compiler';
 
 import type { Request } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IndexedVoteResponseStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
-import type { IndexedVote, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import type { CreateVoteResponseRequest, IndexedVote, IndexedVoteResponse, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 
 // Only `@lfx-one/shared/utils` is stubbed: its barrel pulls `@angular/common/http` (HttpParams via
 // meeting.utils), which can't JIT-compile in this plain-Node env. Enums/constants resolve for real via the alias.
@@ -35,9 +35,8 @@ const {
 } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
-  // Resolve immediately without invoking pollFn — the index-polling loop is pollEndpoint's own
-  // tested helper; these suites pin the upstream paths plus the captured poll budgets/retry grids.
-  pollEndpoint: vi.fn(() => Promise.resolve(true)),
+  // Most suites bypass the callback; submission regressions install the real poll implementation.
+  pollEndpoint: vi.fn<(options: PollEndpointOptions) => Promise<boolean>>(() => Promise.resolve(true)),
   fetchEntityProject: vi.fn<(...args: unknown[]) => Promise<Record<string, unknown> | null>>(() => Promise.resolve(null)),
   toEntityProjectFields: vi.fn(),
   getProjectsByIds: vi.fn(),
@@ -247,13 +246,274 @@ describe('VoteService', () => {
   });
 
   describe('createVoteResponse', () => {
-    it('posts the ballot without an X-Sync header — exactly six proxy arguments', async () => {
-      const payload = { vote_uid: CANONICAL_UID, vote_response_uid: 'vr000000-0000-0000-0000-00000000d201' };
+    const RESPONSE_UID = 'vr000000-0000-0000-0000-00000000d201';
+    const EMAIL = 'spec-voter@example.org';
+    const USERNAME = 'spec-voter';
+    const payload: CreateVoteResponseRequest = {
+      vote_uid: CANONICAL_UID,
+      vote_response_uid: RESPONSE_UID,
+      abstain: false,
+      user_vote_content: [{ question_id: 'question-1', choice_ids: ['choice-1'] }],
+    };
+    const responseRow = (overrides: Partial<IndexedVoteResponse> = {}): IndexedVoteResponse => ({
+      uid: RESPONSE_UID,
+      vote_uid: CANONICAL_UID,
+      user_email: EMAIL,
+      username: '',
+      vote_status: IndexedVoteResponseStatus.RESPONDED,
+      ...overrides,
+    });
+    let indexedRows: IndexedVoteResponse[];
+    let secondPageRows: IndexedVoteResponse[] | undefined;
+    let queryReads: number;
+    let writes: number;
+    let accepted: boolean;
+    let submitGate: Promise<void> | undefined;
+    let submitError: Error | undefined;
+    let queryError: Error | undefined;
+    let ignoreIndexFilters: boolean;
 
-      await service.createVoteResponse(req, payload as never);
+    beforeEach(async () => {
+      vi.useFakeTimers();
+      const realPoll = await vi.importActual<typeof import('../helpers/poll-endpoint.helper')>('../helpers/poll-endpoint.helper');
+      const realPaginator = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+      pollEndpoint.mockImplementation(realPoll.pollEndpoint);
+      fetchAllQueryResources.mockImplementation(realPaginator.fetchAllQueryResources);
+      getEffectiveEmail.mockReturnValue(EMAIL);
+      getRawEffectiveEmail.mockReturnValue(null);
+      getUsernameFromAuth.mockResolvedValue(USERNAME);
+      indexedRows = [responseRow()];
+      secondPageRows = undefined;
+      queryReads = 0;
+      writes = 0;
+      accepted = false;
+      submitGate = undefined;
+      submitError = undefined;
+      queryError = undefined;
+      ignoreIndexFilters = false;
+      proxyRequest.mockImplementation(async (_req: Request, _service: string, path: string, method: string, params: Record<string, unknown> = {}) => {
+        if (path === '/vote_responses' && method === 'POST') {
+          writes++;
+          if (submitError) throw submitError;
+          await submitGate;
+          accepted = true;
+          return;
+        }
+        if (path !== '/query/resources' || method !== 'GET') throw new Error(`Unexpected transport call: ${method} ${path}`);
+        if (!accepted) throw new Error('Confirmation read before ballot acceptance');
+        queryReads++;
+        if (queryError) throw queryError;
+        const pageRows = params['page_token'] ? (secondPageRows ?? []) : indexedRows;
+        const matches = (row: IndexedVoteResponse, clause: string): boolean => {
+          const [field, value] = clause.split(':', 2);
+          return row[field as keyof IndexedVoteResponse] === value;
+        };
+        const rows = ignoreIndexFilters
+          ? pageRows
+          : pageRows.filter((row) => {
+              if (params['filter_grants'] === 'direct' && row.username !== USERNAME) return false;
+              const filters = (params['filters'] as string[] | undefined) ?? [];
+              const identities = (params['filters_or'] as string[] | undefined) ?? [];
+              return filters.every((clause) => matches(row, clause)) && (!identities.length || identities.some((clause) => matches(row, clause)));
+            });
+        return {
+          resources: rows.map((data) => ({ data })),
+          ...(secondPageRows && !params['page_token'] && { page_token: 'cursor-2' }),
+        };
+      });
+    });
 
-      // Exactly six args — a seventh would be the removed X-Sync header (GH-1637).
-      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/vote_responses', 'POST', undefined, payload);
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      pollEndpoint.mockImplementation(() => Promise.resolve(true));
+      fetchAllQueryResources.mockReset();
+      getEffectiveEmail.mockReset();
+      getRawEffectiveEmail.mockReset();
+      getUsernameFromAuth.mockReset();
+      proxyRequest.mockReset();
+    });
+
+    const expectConfirmed = (): void => {
+      expect(writes).toBe(1);
+      expect(logger.warning).not.toHaveBeenCalledWith(req, 'create_vote_response', expect.any(String), expect.anything());
+    };
+    const expectUnconfirmed = (): void => {
+      expect(writes).toBe(1);
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'create_vote_response',
+        expect.any(String),
+        expect.objectContaining({ vote_response_uid: RESPONSE_UID })
+      );
+    };
+    const settleSubmission = async (): Promise<void> => {
+      const submission = service.createVoteResponse(req, payload);
+      await vi.runAllTimersAsync();
+      await submission;
+    };
+
+    it('confirms an email-only invitation even when the caller also has an LFID', async () => {
+      // Exercise the real proxy and JSON serialization; assert the HTTP contract, not proxy arity.
+      const { MicroserviceProxyService } = await vi.importActual<typeof import('./microservice-proxy.service')>('./microservice-proxy.service');
+      const upstream = new MicroserviceProxyService();
+      proxyRequest.mockImplementationOnce(upstream.proxyRequest.bind(upstream));
+      let ballot!: globalThis.Request;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string, options: RequestInit) => {
+          ballot = new globalThis.Request(url, options);
+          writes++;
+          accepted = true;
+          return new Response(null, { status: 204 });
+        })
+      );
+
+      await settleSubmission();
+
+      expect(new URL(ballot.url).pathname).toBe('/vote_responses');
+      expect(ballot.method).toBe('POST');
+      expect(ballot.headers.has('X-Sync')).toBe(false);
+      expect(await ballot.json()).toEqual(payload);
+      expect(queryReads).toBe(1);
+      expectConfirmed();
+    });
+
+    it('keeps username-only confirmation on the first responded read', async () => {
+      getEffectiveEmail.mockReturnValue(null);
+      indexedRows = [responseRow({ user_email: undefined, username: USERNAME })];
+
+      await settleSubmission();
+
+      expect(queryReads).toBe(1);
+      expectConfirmed();
+    });
+
+    it('confirms a mixed-case email invitation through the shared raw-email clause', async () => {
+      getRawEffectiveEmail.mockReturnValue('Spec-Voter@Example.org');
+      indexedRows = [responseRow({ user_email: 'Spec-Voter@Example.org' })];
+
+      await settleSubmission();
+
+      expect(queryReads).toBe(1);
+      expectConfirmed();
+    });
+
+    it('waits for upstream acceptance before attempting confirmation', async () => {
+      let acceptPost!: () => void;
+      submitGate = new Promise<void>((resolve) => {
+        acceptPost = resolve;
+      });
+      const submission = service.createVoteResponse(req, payload);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(queryReads).toBe(0);
+      expect(accepted).toBe(false);
+
+      acceptPost();
+      await vi.runAllTimersAsync();
+      await submission;
+
+      expect(queryReads).toBe(1);
+      expectConfirmed();
+    });
+
+    it('does not settle an awaiting response until the next 1000 ms read sees responded', async () => {
+      indexedRows = [responseRow({ vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE })];
+      let settled = false;
+      const submission = service.createVoteResponse(req, payload).then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(queryReads).toBe(1);
+      expect(settled).toBe(false);
+      indexedRows = [responseRow()];
+
+      await vi.advanceTimersByTimeAsync(999);
+      expect(queryReads).toBe(1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(settled).toBe(true);
+      await submission;
+
+      expect(queryReads).toBe(2);
+      expectConfirmed();
+    });
+
+    it.each([
+      { label: 'another response UID on the same vote', overrides: { uid: 'another-response' } },
+      { label: 'a foreign identity on the exact response UID', overrides: { user_email: 'foreign@example.org', username: 'foreign-voter' } },
+      { label: 'the exact owned row still awaiting', overrides: { vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE } },
+    ])('does not confirm $label even if the index returns it', async ({ overrides }) => {
+      // Deliberately loosen the index: the callback and ownership guard must still reject bad rows.
+      ignoreIndexFilters = true;
+      indexedRows = [responseRow(overrides)];
+
+      await settleSubmission();
+
+      expect(queryReads).toBe(5);
+      expectUnconfirmed();
+    });
+
+    it('confirms by response UID when only legacy parent fields are indexed', async () => {
+      indexedRows = [responseRow({ vote_uid: undefined, poll_id: CANONICAL_UID, vote_id: RESPONSE_UID })];
+
+      await settleSubmission();
+
+      expect(queryReads).toBe(1);
+      expectConfirmed();
+    });
+
+    it('finds the owned responded target on a later cursor page in the first outer attempt', async () => {
+      indexedRows = [];
+      secondPageRows = [responseRow()];
+      const start = Date.now();
+
+      await settleSubmission();
+
+      expect(queryReads).toBe(2);
+      expect(Date.now()).toBe(start);
+      expectConfirmed();
+    });
+
+    it('warns without recasting an accepted ballot when neither identity is usable', async () => {
+      getEffectiveEmail.mockReturnValue(null);
+      getUsernameFromAuth.mockResolvedValue(null);
+
+      await settleSubmission();
+
+      expect(queryReads).toBe(0);
+      expectUnconfirmed();
+    });
+
+    it('keeps an accepted ballot successful after five unconfirmed reads', async () => {
+      indexedRows = [];
+      const start = Date.now();
+
+      await settleSubmission();
+
+      expect(queryReads).toBe(5);
+      expect(Date.now() - start).toBe(4000);
+      expectUnconfirmed();
+    });
+
+    it('keeps an accepted ballot successful when confirmation queries fail', async () => {
+      queryError = new Error('Synthetic query failure');
+
+      await settleSubmission();
+
+      expect(queryReads).toBe(1);
+      expectUnconfirmed();
+    });
+
+    it('propagates a rejected POST without attempting confirmation or warning of success', async () => {
+      submitError = new Error('Synthetic ballot rejection');
+
+      await expect(service.createVoteResponse(req, payload)).rejects.toBe(submitError);
+
+      expect(writes).toBe(1);
+      expect(accepted).toBe(false);
+      expect(queryReads).toBe(0);
+      expect(logger.warning).not.toHaveBeenCalled();
     });
   });
 

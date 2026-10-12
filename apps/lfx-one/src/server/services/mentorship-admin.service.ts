@@ -24,7 +24,6 @@ import {
   MentorshipAdminMentorStatusUpdate,
   MentorshipAdminProgramPage,
   MentorshipAdminProgramTabCounts,
-  MentorshipAdminTaskUpdate,
   MentorshipAdminTermInput,
   MentorshipAdminTermOption,
   MentorshipAdminTermsQuery,
@@ -34,12 +33,11 @@ import {
   MentorshipEnrollImport,
   MentorshipEnrollProgramRef,
   MentorshipEnrollUpdateRequest,
-  MentorshipMentorTaskCreateRequest,
-  MentorshipMentorTaskCreateResponse,
   MentorshipProgramLogoUploadResult,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipProgramTermRow,
+  MentorshipProgramVisibilityAction,
   MentorshipTermRowStatus,
   MentorshipUpstreamAdministeredProgram,
   MentorshipUpstreamApplication,
@@ -68,7 +66,6 @@ import {
   MENTORSHIP_APPLICATIONS_PATH,
   MENTORSHIP_ME_PROGRAMS_PATH,
   MENTORSHIP_PROGRAMS_PATH,
-  MENTORSHIP_TASKS_PATH,
 } from '../constants';
 import { ConflictError, MicroserviceError } from '../errors';
 import {
@@ -77,7 +74,6 @@ import {
   mapMentorshipAdminProgram,
   mapMentorshipAdminTermRow,
 } from '../helpers/mentorship-admin-program.helper';
-import { buildMentorshipUpstreamTaskUpdate } from '../helpers/mentorship-admin-task.helper';
 import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest, withoutQueryInErrorPath } from '../helpers/mentorship-api.helper';
 import { saveMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
 import {
@@ -87,7 +83,6 @@ import {
   toMentorshipUpstreamProgramUpdate,
   toMentorshipUpstreamTermDates,
 } from '../helpers/mentorship-enroll.helper';
-import { createMentorshipMenteeTasks } from '../helpers/mentorship-mentor-task.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
 import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask } from '../helpers/mentorship-program-application.helper';
 
@@ -438,35 +433,6 @@ export class MentorshipAdminService {
   }
 
   /**
-   * Gives accepted mentees a task, through the shared create the mentor route uses too, logged under the admin
-   * operation: the caller's local user id owns and authors each task, and with one application upstream's status
-   * passes through. Upstream checks the caller administers the program. The task's text is never logged.
-   */
-  public async createTasks(req: Request, request: MentorshipMentorTaskCreateRequest): Promise<MentorshipMentorTaskCreateResponse> {
-    return createMentorshipMenteeTasks(this.microserviceProxy, req, request, 'create_mentorship_admin_tasks');
-  }
-
-  /**
-   * Edits one task and returns it as the row reads it, so the page patches the row in place instead of reading the list
-   * again. Upstream checks the caller mentors or manages the task's program and is not its assignee (403), answers 404 for
-   * an unknown task and 400 for a submitted task that requires a file with none uploaded; its status passes through. Only
-   * the task id and the names of the fields sent are logged, never the task's text.
-   */
-  public async updateTask(req: Request, taskId: string, update: MentorshipAdminTaskUpdate): Promise<MentorshipApplicantTask> {
-    logger.debug(req, 'mentorship_admin_update_task', 'Updating task', { taskId, fields: Object.keys(update) });
-
-    const task = await proxyMentorshipRequest<MentorshipUpstreamTask>(
-      this.microserviceProxy,
-      req,
-      `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`,
-      'PATCH',
-      undefined,
-      buildMentorshipUpstreamTaskUpdate(update)
-    );
-    return mapMentorshipProgramTask(task);
-  }
-
-  /**
    * Invites the LF account behind `lfid` as a mentor of the program and returns the new member's id. Upstream creates
    * the Mentorship user when there is none and emails the invite to the account's primary email. Its 400, 403, 409
    * (already invited or a mentor), 422 (no LF account) and 503 (account lookup down) pass through.
@@ -562,6 +528,15 @@ export class MentorshipAdminService {
       toMentorshipUpstreamProgramUpdate(body)
     );
     return toMentorshipEnrollProgramRef(updated);
+  }
+
+  /**
+   * Hides a published program or unhides a hidden one with upstream's `POST .../hide` or `.../unhide`. Upstream refuses to hide a
+   * program that still has active applications, and to unhide an archived one; those refusals, and its 403 and 404, pass through.
+   */
+  public async setProgramVisibility(req: Request, programId: string, action: MentorshipProgramVisibilityAction): Promise<void> {
+    logger.debug(req, 'mentorship_admin_set_program_visibility', 'Changing program visibility', { programId, action });
+    await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/${action}`, 'POST');
   }
 
   /**

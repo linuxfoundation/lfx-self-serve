@@ -1,10 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { QUERY_SERVICE_FILTERS_OR_BATCH_SIZE } from '@lfx-one/shared/constants';
 import { ProjectFunding, ProjectStage } from '@lfx-one/shared/enums';
 import { GetLensItemsParams, LensItem, LensItemsQuery, LensItemsResponse, NavLens, Project, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation, getFormationSubStageLabel } from '@lfx-one/shared/utils';
 import { Request } from 'express';
+
+import { fetchAllQueryResources } from '../helpers/query-service.helper';
 
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -48,7 +51,7 @@ export class NavigationService {
   }
 
   public async getLensItems(req: Request, params: GetLensItemsParams): Promise<LensItemsResponse> {
-    const { lens, pageToken, name, selectedUid } = params;
+    const { lens, pageToken, name, selectedUid, favoritedUids } = params;
 
     const firstPage = await this.fetchUpstreamPage(req, lens, pageToken, name);
 
@@ -70,10 +73,23 @@ export class NavigationService {
     if (selectedUid && !pageToken) {
       const alreadyIncluded = items.some((item) => item.uid === selectedUid);
       if (!alreadyIncluded) {
-        const selectedItem = await this.fetchSelectedItem(req, lens, selectedUid);
+        const [selectedItem] = await this.fetchItemsByUids(req, lens, [selectedUid], { allowConfidential: true });
         if (selectedItem) {
           items.unshift(selectedItem);
         }
+      }
+    }
+
+    // Ensure favorited items are in the first-page (browse) response, even on a page they haven't
+    // loaded into yet, so the client's favorite-floats-to-top sort (GH-2995) has something to float.
+    // Scoped to the browse list only — during search, a non-matching favorite would just be noise.
+    if (favoritedUids?.length && !pageToken && !name?.trim()) {
+      const missingUids = favoritedUids.filter((uid) => uid !== selectedUid && !items.some((item) => item.uid === uid));
+      if (missingUids.length) {
+        // allowConfidential: false — unlike an explicit selectedUid pin, a favorite shouldn't
+        // resurrect a confidential-stage project into the general browse list (GH-3456 review).
+        const favoriteItems = await this.fetchItemsByUids(req, lens, missingUids, { allowConfidential: false });
+        items.push(...favoriteItems);
       }
     }
 
@@ -107,25 +123,54 @@ export class NavigationService {
     }
   }
 
-  private async fetchSelectedItem(req: Request, lens: NavLens, uid: string): Promise<LensItem | null> {
+  /**
+   * Fetches specific projects by uid (a prior selection, or favorites not yet loaded into the
+   * current page). Chunks at `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE` and follows pagination within
+   * each batch via `fetchAllQueryResources` — mirrors `ProjectService.getProjectsByIds` — so a
+   * caller passing more than query-service's default page size (50) isn't silently truncated.
+   *
+   * `allowConfidential` keeps the FormationConfidential exception scoped to an explicit
+   * `selectedUid` pin: the listing hides that stage, but a caller's own current selection must
+   * survive it. A favorite must not get the same pass — otherwise a stored favorite uid can
+   * resurrect a confidential-stage project into the general browse list (GH-3456 review).
+   */
+  private async fetchItemsByUids(req: Request, lens: NavLens, uids: string[], options: { allowConfidential: boolean }): Promise<LensItem[]> {
+    const batches: string[][] = [];
+    for (let i = 0; i < uids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(uids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
+
+    const batchResults = await Promise.all(batches.map((batch) => this.fetchItemsByUidsBatch(req, lens, batch)));
+    const projects = batchResults.flat();
+
+    // Mirror the main-pipeline contract so an archived item doesn't get re-injected.
+    return projects
+      .filter((project) =>
+        lens === 'foundation'
+          ? computeIsFoundation(project)
+          : PROJECT_LENS_ALLOWED_STAGES.has(project.stage) || (options.allowConfidential && project.stage === ProjectStage.FormationConfidential)
+      )
+      .map((project) => this.toLensItem(project));
+  }
+
+  private async fetchItemsByUidsBatch(req: Request, lens: NavLens, batch: string[]): Promise<Project[]> {
     try {
-      const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'project',
-        filters: [`uid:${uid}`],
-      });
-      const project = response?.resources?.[0]?.data;
-      if (!project) return null;
-      // Mirror the main-pipeline contract so an archived selection doesn't get re-injected —
-      // except FormationConfidential, which the listing hides but a prior selection must survive.
-      if (lens === 'foundation') {
-        if (!computeIsFoundation(project)) return null;
-      } else {
-        if (!PROJECT_LENS_ALLOWED_STAGES.has(project.stage) && project.stage !== ProjectStage.FormationConfidential) return null;
-      }
-      return this.toLensItem(project);
+      return await fetchAllQueryResources<Project>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project',
+            filters: [],
+            filters_or: batch.map((uid) => `uid:${uid}`),
+            // One call per batch — see ProjectService.fetchProjectBatchByIds for why page_size must exceed the batch size.
+            page_size: String(batch.length + 1),
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: false }
+      );
     } catch (error) {
-      logger.warning(req, 'fetch_selected_item', 'Failed to fetch selected lens item', { err: error, uid, lens });
-      return null;
+      logger.warning(req, 'fetch_items_by_uids', 'Failed to fetch a batch of pinned lens items', { err: error, batch_size: batch.length, lens });
+      return [];
     }
   }
 

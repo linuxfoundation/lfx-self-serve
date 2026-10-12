@@ -14,6 +14,7 @@ import {
   CCLA_SIGN_COPY,
   ORG_CLA_DESIGNEE_REFUSAL_COPY,
   ORG_CLA_DESIGNEE_START_COPY,
+  ORG_CLA_DOWNLOAD_COPY,
   ORG_CLA_IDENTIFY_MANAGER_COPY,
   ORG_CLA_LOCKED_TAB_COPY,
   ORG_CLA_MANAGERS_COPY,
@@ -33,6 +34,7 @@ import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import type { Confirmation } from 'primeng/api';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
+import { Tooltip } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
@@ -207,6 +209,17 @@ describe('OrgEasyclaDetailComponent', () => {
 
   function identifySomeoneElse(fixture: ComponentFixture<OrgEasyclaDetailComponent>): HTMLButtonElement | null {
     return byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null;
+  }
+
+  /**
+   * What the download's `[tooltip]` is actually bound to, read off the directive rather than the
+   * DOM: PrimeNG only renders the tooltip element on hover, which jsdom cannot produce. Asserting
+   * the rendered text would therefore be impossible, and asserting only the accessible name would
+   * leave the binding free to be dropped with every test still green.
+   */
+  function downloadTooltipContent(fixture: ComponentFixture<OrgEasyclaDetailComponent>): string | undefined {
+    const host = fixture.debugElement.query(By.css('[data-testid="org-easycla-detail-download"] p-button'));
+    return host?.injector.get(Tooltip, null)?.content as string | undefined;
   }
 
   /** Unavailable to activate, but still in the tab order so the aria-label reason is reachable. */
@@ -1283,6 +1296,17 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
     });
 
+    /**
+     * The Auto ECLA toggle stayed hidden here when #3406 made it read-visible on a signed row.
+     * The flag lives on the corporate signature record, and a preview is a row nobody has signed,
+     * so there is no stored value for a disabled switch to reflect.
+     */
+    it('offers no Auto ECLA toggle, since the record its value lives on does not exist yet', async () => {
+      const fixture = await render(previewing());
+
+      expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).toBeNull();
+    });
+
     it('renders the preview when the route and the selection spell the same group differently', async () => {
       const fixture = await render(previewing({ claGroupId: PREVIEW_GROUP_ID.replaceAll('-', '') }));
 
@@ -1885,6 +1909,41 @@ describe('OrgEasyclaDetailComponent', () => {
     // Sanctions win the single status slot, so `sanctioned` says nothing about signedness. This
     // row has no document, and reading the status alone would offer one.
     expect(byTestId(fixture, 'org-easycla-detail-download')).toBeNull();
+  });
+
+  it.each([
+    ['is not on the roster', false],
+    ['has no roster answer', undefined],
+  ])('offers the download disabled, carrying its reason, when the viewer %s', async (_case, viewerIsClaManager) => {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ viewerIsClaManager })] }));
+
+    const fixture = await render();
+    const control = byTestId(fixture, 'org-easycla-detail-download');
+
+    // Disabled rather than absent, so a reader who cannot download still learns the document
+    // exists and who to ask. The reason is in the accessible name as well as the tooltip, because
+    // a disabled button is not focusable and so never receives the hover a sighted reader gets.
+    expect(control?.querySelector('button')?.disabled).toBe(true);
+    expect(control?.querySelector('[aria-label]')?.getAttribute('aria-label')).toContain(ORG_CLA_DOWNLOAD_COPY.offRosterTooltip);
+    expect(downloadTooltipContent(fixture)).toBe(ORG_CLA_DOWNLOAD_COPY.offRosterTooltip);
+  });
+
+  it('offers the download enabled, with no reason attached, to a CLA manager on the roster', async () => {
+    const fixture = await render();
+    const control = byTestId(fixture, 'org-easycla-detail-download');
+
+    expect(control?.querySelector('button')?.disabled).toBe(false);
+    expect(control?.querySelector('[aria-label]')?.getAttribute('aria-label')).not.toContain(ORG_CLA_DOWNLOAD_COPY.offRosterTooltip);
+    expect(downloadTooltipContent(fixture)).toBeUndefined();
+  });
+
+  it('refuses the download for an off-roster viewer reached another way', async () => {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ viewerIsClaManager: false })] }));
+
+    const fixture = await render();
+    fixture.componentInstance['onDownload']();
+
+    expect(getPdfUrl).not.toHaveBeenCalled();
   });
 
   it('opens Overview by default and fills the Managers tab, leaving the rest empty', async () => {
@@ -3460,13 +3519,17 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
 });
 
 /**
- * The Auto ECLA toggle on the Overview (#1988).
+ * The Auto ECLA toggle on the Overview (#1988, narrowed by #3406).
  *
  * Rendered inside the signed-agreement path: the flag lives on the corporate signature record, so
- * an unsigned row has nothing to update. Hidden entirely when ACS denies the write — the design
- * withholds the control from a viewer who cannot use it, since the disabled-with-banner pattern
- * needs #1989 to explain itself. The write is optimistic: the toggle answers the click first and
- * rolls back on a refusal, using the producer's own sentence on the toast.
+ * an unsigned or preview row has nothing to show or update. Every viewer who can read a signed
+ * agreement sees it, because the setting is a fact about the agreement. The two write checks —
+ * the CCLA roster and the ACS grant — decide whether the switch moves, not whether it renders; a
+ * viewer who fails either gets it disabled. Only a viewer off the roster also gets the sentence
+ * naming the role that can change it; a roster CLA manager whom ACS denies, or whose ACS answer is
+ * still pending, sees the disabled switch alone.
+ * The write is optimistic: the toggle answers the click first and rolls back on a refusal, using
+ * the producer's own sentence on the toast.
  */
 describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
@@ -3564,6 +3627,15 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
   }
 
+  /** The rendered switch input, which carries the disabled state the template binds. */
+  function autoEclaSwitch(fixture: ComponentFixture<unknown>): HTMLInputElement | null {
+    return fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle');
+  }
+
+  function lockedHint(fixture: ComponentFixture<unknown>): string | undefined {
+    return byTestId(fixture, 'org-easycla-detail-auto-ecla-locked-hint')?.textContent?.trim();
+  }
+
   beforeEach(() => {
     selectedAccount.set(SELECTED_ACCOUNT);
     paramMap.next(convertToParamMap({ claGroupId: GROUP_ID }));
@@ -3586,12 +3658,13 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'auto-ecla-update', PAIR_PROJECT);
   });
 
-  it('renders the toggle when ACS allows the write on a signed row', async () => {
+  it('renders the toggle enabled and unexplained for a CLA manager ACS allows', async () => {
     const fixture = await render();
 
     expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).not.toBeNull();
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(false);
     expect(fixture.nativeElement.querySelector('label[for="org-easycla-detail-auto-ecla-toggle"]')).not.toBeNull();
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla-locked-hint')).toBeNull();
   });
 
   it('withdraws the roster-gated controls when a self-removal lands after the Managers tab was left', async () => {
@@ -3620,20 +3693,20 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     component.selectTab('overview');
     fixture.detectChanges();
     expect(fixture.debugElement.query(By.directive(OrgEasyclaManagersComponent))).toBeNull();
-    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).not.toBeNull();
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(false);
 
     removal.next();
     removal.complete();
     fixture.detectChanges();
 
     expect(component.claGroup()?.viewerIsClaManager).toBe(false);
-    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
   });
 
   it('offers the roster-gated controls after a manager change once the re-read list names the viewer', async () => {
     const fixture = await render(row({ viewerIsClaManager: false }));
     const component = fixture.componentInstance as unknown as { selectTab: (tab: string) => void; claGroup: () => OrgClaGroup | undefined };
-    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
 
     component.selectTab('managers');
     fixture.detectChanges();
@@ -3649,10 +3722,10 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     component.selectTab('overview');
     fixture.detectChanges();
     expect(component.claGroup()?.viewerIsClaManager).toBe(true);
-    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).not.toBeNull();
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(false);
   });
 
-  it('keeps the controls hidden after a self-removal when an older re-read still naming the viewer lands last', async () => {
+  it('keeps the controls withdrawn after a self-removal when an older re-read still naming the viewer lands last', async () => {
     const fixture = await render();
     const component = fixture.componentInstance as unknown as { onRosterChanged: () => void; claGroup: () => OrgClaGroup | undefined };
     const older = new Subject<OrgClaGroupList>();
@@ -3668,10 +3741,10 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     await fixture.whenStable();
 
     expect(component.claGroup()?.viewerIsClaManager).toBe(false);
-    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
   });
 
-  it('keeps the controls hidden when a self-removal lands after the panel closed and an earlier re-read still naming the viewer lands after it', async () => {
+  it('keeps the controls withdrawn when a self-removal lands after the panel closed and an earlier re-read still naming the viewer lands after it', async () => {
     const fixture = await render();
     const component = fixture.componentInstance;
     const earlier = new Subject<OrgClaGroupList>();
@@ -3686,10 +3759,10 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
 
     expect(getClaGroups.mock.calls.length).toBe(listReads);
     expect(component['claGroup']()?.viewerIsClaManager).toBe(false);
-    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
   });
 
-  it('keeps a self-removal hidden through a failed re-read, and still applies the next re-read', async () => {
+  it('keeps a self-removal in force through a failed re-read, and still applies the next re-read', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const fixture = await render();
     const component = fixture.componentInstance;
@@ -3702,7 +3775,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     await fixture.whenStable();
     expect(selfRemovals.removed(SELECTED_ACCOUNT.uid, 'signature-uuid-1')).toBe(true);
     expect(component['claGroup']()?.viewerIsClaManager).toBe(false);
-    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
 
     getClaGroups.mockReturnValueOnce(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: false })] }));
     component['onRosterChanged']();
@@ -3729,7 +3802,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(component.claGroup()?.viewerIsClaManager).toBe(false);
   });
 
-  it('keeps a self-removal hidden while a re-read still lists the viewer, and drops it once one does not', async () => {
+  it('keeps a self-removal in force while a re-read still lists the viewer, and drops it once one does not', async () => {
     const fixture = await render();
     const component = fixture.componentInstance as unknown as { onRosterChanged: () => void; claGroup: () => OrgClaGroup | undefined };
     const selfRemovals = TestBed.inject(OrgClaSelfRemovalsService);
@@ -3740,7 +3813,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     expect(component.claGroup()?.viewerIsClaManager).toBe(false);
-    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
 
     getClaGroups.mockReturnValueOnce(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: false })] }));
     component.onRosterChanged();
@@ -3772,24 +3845,128 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     fixture.detectChanges();
 
     expect(component.claGroup()?.viewerIsClaManager).toBe(false);
-    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
   });
 
-  it('hides the toggle when ACS denies, rather than rendering it disabled', async () => {
+  // `checkPermission` answers a failed check as `false` too, so this is also the ACS-outage case.
+  // Telling a CLA manager that only CLA managers can change it would contradict them.
+  it('disables the toggle without the CLA Manager sentence for a roster CLA manager whom ACS denies', async () => {
     checkPermission.mockReturnValue(of(false));
 
     const fixture = await render();
 
-    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).toBeNull();
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).not.toBeNull();
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla-locked-hint')).toBeNull();
+    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto ECLA');
+  });
+
+  it('explains the disabled toggle to a viewer off the roster while the ACS answer is still pending', async () => {
+    checkPermission.mockReturnValue(new Subject<boolean>());
+
+    const fixture = await render(row({ viewerIsClaManager: false }));
+
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
+    expect(lockedHint(fixture)).toBe('Only CLA Managers can change this setting.');
+  });
+
+  it('names the reason in the switch accessible name, so the sentence is not sighted-only', async () => {
+    const fixture = await render(row({ viewerIsClaManager: false }));
+
+    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto ECLA — Only CLA Managers can change this setting.');
+  });
+
+  it('leaves the accessible name unqualified for a viewer who can move the switch', async () => {
+    const fixture = await render();
+
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(false);
+    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto ECLA');
   });
 
   it.each([
     ['is not on the roster', false],
     ['has no roster answer', undefined],
-  ])('hides the toggle when ACS allows but the viewer %s', async (_case, viewerIsClaManager) => {
+  ])('renders the toggle disabled and explained when ACS allows but the viewer %s', async (_case, viewerIsClaManager) => {
     const fixture = await render(row({ viewerIsClaManager }));
 
-    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).toBeNull();
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).not.toBeNull();
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
+    expect(lockedHint(fixture)).toBe('Only CLA Managers can change this setting.');
+  });
+
+  it.each([
+    ['on', true],
+    ['off', false],
+  ])('shows the stored value to a viewer who cannot change it, with the switch %s', async (_case, autoCreateEcla) => {
+    const fixture = await render(row({ viewerIsClaManager: false, autoCreateEcla }));
+
+    expect(autoEclaSwitch(fixture)?.checked).toBe(autoCreateEcla);
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
+  });
+
+  // The ACS answer arrives a round trip after the row does. The viewer here is on the roster, so the
+  // sentence never shows for them: the switch waits disabled with nothing under it, then the grant enables it.
+  it('disables the toggle without the sentence for a roster CLA manager while the ACS answer is still pending', async () => {
+    const pending = new Subject<boolean>();
+    checkPermission.mockReturnValue(pending);
+
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).not.toBeNull();
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla-locked-hint')).toBeNull();
+
+    pending.next(true);
+    pending.complete();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(false);
+  });
+
+  // The ACS answer is asked for one pair and reaches the page a round trip later, so the answer on
+  // hand while the next row loads belongs to the previous pair.
+  it('does not let the previous agreement ACS grant enable the switch on the next one', async () => {
+    const NEXT_PROJECT = 'a0941000002wBz9AAE';
+    const pending = new Subject<boolean>();
+    checkPermission.mockImplementation((_uid: string, _op: string, projectSfid: string) => (projectSfid === NEXT_PROJECT ? pending : of(true)));
+    const previous = row();
+    const next = row({
+      id: 'signature-uuid-2',
+      projects: [{ projectName: 'Drift', projectSfid: NEXT_PROJECT }],
+      pairProjectSfid: NEXT_PROJECT,
+    });
+
+    const fixture = await render(previous, [previous, next]);
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-2' }));
+    fixture.detectChanges();
+
+    expect((fixture.componentInstance as unknown as { claGroup: () => OrgClaGroup | undefined }).claGroup()?.id).toBe('signature-uuid-2');
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla-locked-hint')).toBeNull();
+  });
+
+  // The pair is what the ACS grant is written on. A row carrying neither a usable project SFID
+  // nor a foundation id cannot be asked about, which is a denial rather than a pending answer. The
+  // viewer here is on the roster, so no sentence claims otherwise.
+  it('renders the toggle disabled on a row whose ACS pair cannot be resolved', async () => {
+    const fixture = await render(row({ projects: [{ projectName: 'Cascade' }], pairProjectSfid: undefined, foundationSfid: undefined }));
+
+    expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla-locked-hint')).toBeNull();
+    expect(checkPermission).not.toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'auto-ecla-update', expect.anything());
+  });
+
+  it('issues no write when a viewer who cannot change the setting reaches the toggle handler', async () => {
+    const fixture = await render(row({ viewerIsClaManager: false }));
+
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaValue: () => boolean };
+    component.onAutoEclaToggle(true);
+    fixture.detectChanges();
+
+    expect(setAutoCreateEcla).not.toHaveBeenCalled();
+    expect(component.autoEclaValue()).toBe(false);
   });
 
   it('withholds the toggle from an unsigned agreement, so no ACS hop fires either', async () => {

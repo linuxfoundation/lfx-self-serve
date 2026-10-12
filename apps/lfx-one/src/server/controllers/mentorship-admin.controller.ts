@@ -28,16 +28,15 @@ import {
   MentorshipAdminMentorStatus,
   MentorshipAdminMentorStatusUpdate,
   MentorshipAttendanceType,
+  MentorshipProgramVisibilityAction,
 } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, MicroserviceError, ServiceValidationError } from '../errors';
-import { parseMentorshipAdminTaskUpdate } from '../helpers/mentorship-admin-task.helper';
 import { parseMentorshipAdminTermInput } from '../helpers/mentorship-admin-term.helper';
 import { parseMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
 import { parseMentorshipEnrollCreateRequest, parseMentorshipEnrollUpdateRequest } from '../helpers/mentorship-enroll.helper';
-import { parseMentorshipMentorTaskCreateRequest } from '../helpers/mentorship-mentor-task.helper';
 import { parseMentorshipAdminPaging, parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
 import { isMentorshipProgramStatus, MentorshipAdminService } from '../services/mentorship-admin.service';
@@ -335,58 +334,6 @@ export class MentorshipAdminController {
     }
   }
 
-  // POST /api/mentorship/admin/tasks  { applicationIds, name, description, dueDate?, requiresFileSubmission? } -> { created, failed }
-  // Auth: logged-in user required (401 otherwise). The body is validated with the task dialog's rules (400), the same
-  // as the mentor route. With one application upstream's status passes through; with several, the ones not created
-  // are listed in `failed`. Only ids and counts are logged, never the task's text.
-  public async createTasks(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const operation = 'create_mentorship_admin_tasks';
-    const startTime = logger.startOperation(req, operation);
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation });
-      }
-
-      const request = parseMentorshipMentorTaskCreateRequest(req.body, operation);
-      const result = await this.mentorshipAdminService.createTasks(req, request);
-
-      logger.success(req, operation, startTime, {
-        application_count: request.applicationIds.length,
-        created_count: result.created.length,
-        failed_count: result.failed.length,
-      });
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // PATCH /api/mentorship/admin/tasks/:taskId
-  // Auth: logged-in user required (401 otherwise). The id must be a UUID and the body is validated (400) before any upstream
-  // call. Returns the updated task so the page patches its row without reading the list again. Upstream checks the caller
-  // mentors or manages the program and is not the assignee; its 403, 404 and 400 pass through. Only the task id and the
-  // names of the fields changed are logged, never the task's text.
-  public async updateTask(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const operation = 'update_mentorship_admin_task';
-    const startTime = logger.startOperation(req, operation);
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation });
-      }
-
-      const taskId = this.requireUuidParam(req, 'taskId', operation);
-      const update = parseMentorshipAdminTaskUpdate(req.body, operation);
-      const task = await this.mentorshipAdminService.updateTask(req, taskId, update);
-
-      logger.success(req, operation, startTime, { taskId, fields: Object.keys(update) });
-      res.json(task);
-    } catch (error) {
-      next(error);
-    }
-  }
-
   // POST /api/mentorship/admin/programs/:programId/terms/:termId/decline-pending
   public async declinePendingForTerm(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'decline_mentorship_admin_pending_for_term';
@@ -490,6 +437,16 @@ export class MentorshipAdminController {
     } catch (error) {
       next(error);
     }
+  }
+
+  // POST /api/mentorship/admin/programs/:programId/hide -> 204
+  public async hideProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.runProgramVisibilityAction(req, res, next, 'hide');
+  }
+
+  // POST /api/mentorship/admin/programs/:programId/unhide -> 204
+  public async unhideProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.runProgramVisibilityAction(req, res, next, 'unhide');
   }
 
   // POST /api/mentorship/admin/programs/:programId/logo — raw PNG or JPEG bytes -> 201 + { logoUrl }
@@ -611,6 +568,26 @@ export class MentorshipAdminController {
       await action(programId, termId);
 
       logger.success(req, operation, startTime, { programId, termId });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** The shared shape of hide and unhide: authenticate, check the program id, write, answer 204. */
+  private async runProgramVisibilityAction(req: Request, res: Response, next: NextFunction, action: MentorshipProgramVisibilityAction): Promise<void> {
+    const operation = `${action}_mentorship_admin_program`;
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      await this.mentorshipAdminService.setProgramVisibility(req, programId, action);
+
+      logger.success(req, operation, startTime, { programId });
       res.status(204).send();
     } catch (error) {
       next(error);

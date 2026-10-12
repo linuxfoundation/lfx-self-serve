@@ -4,13 +4,15 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { inject, PLATFORM_ID } from '@angular/core';
-import { ActivatedRouteSnapshot, CanActivateFn, Router, UrlTree } from '@angular/router';
+import { ActivatedRouteSnapshot, CanActivateFn, RedirectCommand, Router, UrlTree } from '@angular/router';
 import { GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
 import { catchError, map, Observable, of } from 'rxjs';
 
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
+import { ProjectRecoveryService } from '../services/project-recovery.service';
 import { ProjectService } from '../services/project.service';
+import { isTransientHttpError } from '../utils/http-error.utils';
 
 /**
  * Route guard for the newsletters feature.
@@ -36,6 +38,10 @@ import { ProjectService } from '../services/project.service';
  *
  * Redirects to the lens-appropriate overview on denial to preserve
  * the active project context without triggering a lens switch.
+ * Query-slug lookups share the selected-project strict/retry policy: persistent
+ * transient failures render the unavailable view instead of losing the requested page.
+ * Non-transient query-slug failures render not-found in-place; resolved writer denials
+ * still redirect to overview.
  *
  * SSR behaviour is split by mount (GH-3274). On the Gatewaze embed mounts
  * (`GW_EMBED_ROUTE_PREFIXES`) the server returns `true` and the gate runs
@@ -48,7 +54,7 @@ import { ProjectService } from '../services/project.service';
  * recipient engagement DO fetch during SSR and the page policy (writer)
  * is stricter than some upstream read permissions.
  */
-export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
+export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot, state) => {
   // SSR defers to the browser on the Gatewaze embed mounts ONLY (see the JSDoc's SSR
   // paragraph for the GH-3274 rationale; gatewazeEmbedEnabledGuard on the same mounts
   // defers identically). Scoped to the gw mounts because they render no SSR data — the
@@ -68,6 +74,7 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
   const projectContextService = inject(ProjectContextService);
   const projectService = inject(ProjectService);
   const router = inject(Router);
+  const projectRecoveryService = inject(ProjectRecoveryService);
 
   // Edit/analytics routes carry the owning project as `:projectUid` — for writer
   // checks it wins over the query param and the cookie-restored context, both of
@@ -106,8 +113,9 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
   const routeLens = route.parent?.data?.['lens'] ?? route.data?.['lens'];
   const overviewPath = routeLens === 'foundation' ? '/foundation/overview' : '/project/overview';
 
-  const checkWriterAccess = (slug: string): Observable<boolean | UrlTree> =>
-    projectService.getProject(slug, false).pipe(
+  const querySlug = route.queryParamMap.get('project');
+  const checkWriterAccess = (slug: string): Observable<boolean | UrlTree | RedirectCommand> =>
+    (querySlug === slug ? projectRecoveryService.resolve(slug) : projectService.getProject(slug, false)).pipe(
       map((project) => {
         if (project?.writer !== true) {
           // Legacy list/create denial — plain redirect, no `_notice` toast: GH-1570 requires
@@ -115,6 +123,15 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
           return router.createUrlTree([overviewPath], { queryParams: { project: slug } });
         }
         return true;
+      }),
+      catchError((error: unknown) => {
+        if (isTransientHttpError(error)) {
+          return of(projectRecoveryService.unavailable(state.url));
+        }
+        if (querySlug === slug) {
+          return of(new RedirectCommand(router.parseUrl('/not-found'), { skipLocationChange: true }));
+        }
+        return of(router.createUrlTree([overviewPath], { queryParams: { project: slug } }));
       })
     );
 

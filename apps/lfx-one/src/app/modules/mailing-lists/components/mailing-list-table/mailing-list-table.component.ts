@@ -22,7 +22,7 @@ import {
 } from '@lfx-one/shared';
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
 import { FilterOption, GroupsIOMailingList, MailingListTableRowVm, MyMailingList } from '@lfx-one/shared/interfaces';
-import { getMailingListCommands, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
+import { getMailingListCommands, getMailingListGroupsIoUrl, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
 import { GroupEmailPipe } from '@pipes/group-email.pipe';
 import { MailingListTypeLabelPipe } from '@pipes/mailing-list-type-label.pipe';
 import { RemainingGroupsTooltipPipe } from '@pipes/remaining-groups-tooltip.pipe';
@@ -84,6 +84,7 @@ export class MailingListTableComponent {
 
   // Constants
   protected readonly maxVisibleGroups = MAILING_LIST_MAX_VISIBLE_GROUPS;
+  protected readonly mailingListLabelPlural = MAILING_LIST_LABEL.plural;
   protected readonly committeeLabel = COMMITTEE_LABEL;
   protected readonly audienceAccess = MailingListAudienceAccess;
   protected readonly deliveryModeLabels = MAILING_LIST_DELIVERY_MODE_LABELS;
@@ -206,6 +207,7 @@ export class MailingListTableComponent {
           ...mailingList,
           viewCommands: getMailingListCommands(mailingList),
           linkQueryParams: getMailingListLinkQueryParams(mailingList),
+          groupsIoUrl: getMailingListGroupsIoUrl(mailingList),
           canJoin: !stillLoading && !membershipUnknown && mailingList.audience_access === MailingListAudienceAccess.PUBLIC && !joinedUids.has(mailingList.uid),
           mySubscriptionLabel: myDeliveryMode ? this.deliveryModeLabels[myDeliveryMode] : 'Subscribed',
         };

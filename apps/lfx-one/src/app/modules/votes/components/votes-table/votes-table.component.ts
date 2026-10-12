@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { formatDate, isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, input, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -14,8 +14,8 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
-import { FilterPillOption, Vote, VoteFilterState, VoteTableRow } from '@lfx-one/shared/interfaces';
-import { getEntityCommands, getUserTimezone, getVoteEndedEarlyDetailTooltip, isVoteEndedEarly } from '@lfx-one/shared/utils';
+import { FilterPillOption, MyVotesQuickFilter, Vote, VoteFilterState, VoteTableRow } from '@lfx-one/shared/interfaces';
+import { getEntityCommands, getUserTimezone, getVoteEndedEarlyDetailTooltip, isVoteEndedEarly, matchesMyVotesQuickFilter } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
@@ -83,6 +83,9 @@ export class VotesTableComponent {
   // Merged UNDER each row's own derived params — the committee tab passes its committee_uid here so a
   // row missing the field still admits committee writers; per-row values always win (dashboard spans projects).
   public readonly editQueryParamsFallback = input<Record<string, string>>({});
+  public readonly quickFilter = input<MyVotesQuickFilter | null>(null);
+  public readonly quickFilterNowMs = input<number>(0);
+  public readonly scopeActive = input<boolean>(false);
 
   // === Outputs ===
   public readonly viewVote = output<string>();
@@ -92,6 +95,8 @@ export class VotesTableComponent {
   public readonly filtersChange = output<VoteFilterState>();
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();
+  public readonly statusTabSelected = output<string>();
+  public readonly filtersReset = output<void>();
 
   // === Forms ===
   public searchForm = new FormGroup({
@@ -101,9 +106,10 @@ export class VotesTableComponent {
     projectFilter: new FormControl<string | null>(null),
   });
 
+  public readonly statusTab = model<string>('all');
+
   // === Writable Signals ===
   protected readonly isDeleting = signal(false);
-  protected readonly statusTab = signal<string>('all');
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
 
   // === Computed Signals ===
@@ -112,7 +118,7 @@ export class VotesTableComponent {
   protected readonly isFiltered = computed(() => {
     if (this.lazy()) return false;
     const f = this.filterState();
-    return this.statusTab() !== 'all' || !!f.search || !!f.group;
+    return this.statusTab() !== 'all' || !!f.search.trim() || !!f.group || !!this.quickFilter() || this.scopeActive();
   });
 
   protected readonly rppOptions = computed<number[] | undefined>(() => {
@@ -132,6 +138,17 @@ export class VotesTableComponent {
         untracked(() => this.statusTab.set('all'));
       }
     });
+    // Only personal/client scope owns these options. Do not clear controls during a feed refresh.
+    const availableGroups = computed(() => (this.lazy() || this.loading() ? null : this.groupOptions()));
+    toObservable(availableGroups)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((options) => {
+        if (!options) return;
+        const group = this.searchForm.controls.group.value;
+        if (group && !options.some((option) => option.value === group)) {
+          this.searchForm.controls.group.setValue(null);
+        }
+      });
   }
 
   // === Protected Methods ===
@@ -144,6 +161,7 @@ export class VotesTableComponent {
   }
 
   protected onStatusTabChange(tab: string): void {
+    this.statusTabSelected.emit(tab);
     this.statusTab.set(tab);
   }
 
@@ -171,6 +189,7 @@ export class VotesTableComponent {
     this.statusTab.set('all');
     this.foundationFilterChange.emit(null);
     this.projectFilterChange.emit(null);
+    this.filtersReset.emit();
   }
 
   protected onDeleteVote(vote: Vote): void {
@@ -272,6 +291,12 @@ export class VotesTableComponent {
 
       if (filters.group) {
         filtered = filtered.filter((v) => v.committee_name === filters.group);
+      }
+
+      const quickFilter = this.quickFilter();
+      if (quickFilter) {
+        const nowMs = this.quickFilterNowMs();
+        filtered = filtered.filter((vote) => matchesMyVotesQuickFilter(vote, quickFilter, nowMs));
       }
 
       return filtered.map((vote) => this.toVoteTableRow(vote));

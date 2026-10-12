@@ -6,10 +6,11 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import {
+  MentorshipApplicantTask,
   MentorshipMentorProgramDetail,
-  MentorshipMentorTaskCreateRequest,
-  MentorshipMentorTaskCreateResponse,
   MentorshipMentorTaskReviewDecision,
+  MentorshipTaskCreateRequest,
+  MentorshipTaskCreateResponse,
 } from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { MessageService } from 'primeng/api';
@@ -19,9 +20,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorNoteSaveService } from '../../services/mentor-note-save.service';
-import { MentorTaskCreateService } from '../../services/mentor-task-create.service';
 import { MentorTaskReviewService } from '../../services/mentor-task-review.service';
+import { MentorshipTaskCreateService } from '../../services/mentorship-task-create.service';
 import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
+import { MentorshipTaskFileService } from '../../services/mentorship-task-file.service';
 import { MentorProgramDetailComponent } from './mentor-program-detail.component';
 
 describe('MentorProgramDetailComponent', () => {
@@ -31,12 +33,10 @@ describe('MentorProgramDetailComponent', () => {
       slug: 'gridflow-time-series-ingestion-pipeline',
       name: 'GridFlow: Ingestion Pipeline',
       projectName: 'LF Energy',
-      term: 'Fall 2026',
-      termStatus: 'active-term',
+      status: 'open',
       stats: { mentees: 2, applicants: 1, tasksToReview: 3 },
-      termStartDate: '2026-09-01',
-      termEndDate: '2026-12-15',
     },
+    // The detail is program-wide: each row carries its own application's term.
     mentees: [
       {
         id: 'mnt_1',
@@ -52,7 +52,7 @@ describe('MentorProgramDetailComponent', () => {
         name: 'Ifeoma Adeyemi',
         email: 'ifeoma.adeyemi@example.com',
         status: 'pending',
-        termName: 'Fall 2026',
+        termName: 'Spring 2027',
         createdOn: '2026-06-28',
         updatedOn: '2026-07-02',
       },
@@ -64,7 +64,7 @@ describe('MentorProgramDetailComponent', () => {
   let dialogOpen: ReturnType<typeof vi.fn>;
   let getMentorProgram: ReturnType<typeof vi.fn>;
   let saveNote: ReturnType<typeof vi.fn>;
-  let createTasks: ReturnType<typeof vi.fn<(request: MentorshipMentorTaskCreateRequest) => Observable<MentorshipMentorTaskCreateResponse | null>>>;
+  let createTasks: ReturnType<typeof vi.fn<(request: MentorshipTaskCreateRequest) => Observable<MentorshipTaskCreateResponse | null>>>;
   let reviewTask: ReturnType<typeof vi.fn<(taskId: string, status: MentorshipMentorTaskReviewDecision) => Observable<boolean>>>;
 
   /**
@@ -80,7 +80,7 @@ describe('MentorProgramDetailComponent', () => {
     dialogOpen = vi.fn(() => (onClose ? { onClose } : null));
     getMentorProgram = vi.fn(() => program$);
     saveNote = vi.fn(() => save$);
-    createTasks = vi.fn(() => of<MentorshipMentorTaskCreateResponse | null>({ created: ['mnt_1'], failed: [] }));
+    createTasks = vi.fn(() => of<MentorshipTaskCreateResponse | null>({ created: ['mnt_1'], failed: [] }));
     reviewTask = vi.fn(() => of(true));
 
     TestBed.resetTestingModule();
@@ -97,8 +97,9 @@ describe('MentorProgramDetailComponent', () => {
         },
         { provide: MentorshipMentorService, useValue: { getMentorProgram } },
         { provide: MentorNoteSaveService, useValue: { save: saveNote } },
-        { provide: MentorTaskCreateService, useValue: { create: createTasks } },
+        { provide: MentorshipTaskCreateService, useValue: { create: createTasks } },
         { provide: MentorTaskReviewService, useValue: { review: reviewTask } },
+        { provide: MentorshipTaskFileService, useValue: { download: vi.fn() } },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],
     });
@@ -303,7 +304,7 @@ describe('MentorProgramDetailComponent', () => {
   });
 
   describe('task create', () => {
-    const request: MentorshipMentorTaskCreateRequest = { applicationIds: ['mnt_1'], name: 'Write a design doc', description: 'One page.' };
+    const request: MentorshipTaskCreateRequest = { applicationIds: ['mnt_1'], name: 'Write a design doc', description: 'One page.' };
     const withNewTask = (tasksTotal = 1): MentorshipMentorProgramDetail => {
       const value = detail();
       value.mentees = [{ ...value.mentees[0], tasksTotal }];
@@ -444,6 +445,53 @@ describe('MentorProgramDetailComponent', () => {
 
       expect(reviewing()).toEqual([]);
       expect(shownDetail()?.mentees[0].id).toBe('mnt_1');
+    });
+  });
+
+  describe('task saved from an expanded row', () => {
+    const task = (overrides: Partial<MentorshipApplicantTask> = {}): MentorshipApplicantTask => ({
+      id: 'tsk_1',
+      name: 'Resume',
+      description: 'Upload your resume.',
+      status: 'pending',
+      prerequisite: false,
+      createdOn: '2026-07-01',
+      updatedOn: '2026-08-15',
+      ...overrides,
+    });
+    const withTasks = (): MentorshipMentorProgramDetail => {
+      const value = detail();
+      value.mentees = [{ ...value.mentees[0], id: 'app_1', tasks: [task(), task({ id: 'tsk_2', name: 'Report' })] }];
+      value.applicants = [{ ...value.applicants[0], tasks: [task()] }];
+      return value;
+    };
+
+    it('writes the task into both lists at once, then re-reads the detail', () => {
+      const pending = new Subject<MentorshipMentorProgramDetail>();
+      buildWith(of('a saved note'), of(withTasks()));
+      getMentorProgram.mockReturnValueOnce(pending);
+      const saved = task({ status: 'completed', updatedOn: '2026-10-08' });
+
+      fixture.componentInstance['patchSavedTask']('app_1', saved);
+
+      expect(shownDetail()?.mentees[0].tasks).toEqual([saved, task({ id: 'tsk_2', name: 'Report' })]);
+      expect(shownDetail()?.applicants[0].tasks).toEqual([saved]);
+      expect(getMentorProgram).toHaveBeenCalledTimes(2);
+
+      const reread = withTasks();
+      reread.tabCounts = { tasks: 2, mentees: 1, applicants: 1 };
+      pending.next(reread);
+      pending.complete();
+      expect(shownDetail()?.tabCounts.tasks).toBe(2);
+    });
+
+    it("leaves another application's rows as they were", () => {
+      buildWith(of('a saved note'), of(withTasks()));
+
+      fixture.componentInstance['patchSavedTask']('app_other', task({ status: 'completed' }));
+
+      expect(shownDetail()?.mentees[0].tasks?.[0].status).toBe('pending');
+      expect(shownDetail()?.applicants[0].tasks?.[0].status).toBe('pending');
     });
   });
 });

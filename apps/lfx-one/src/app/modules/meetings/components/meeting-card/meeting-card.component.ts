@@ -81,6 +81,7 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -128,6 +129,7 @@ export class MeetingCardComponent implements OnInit {
   private readonly meetingService = inject(MeetingService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly injector = inject(Injector);
   private readonly clipboard = inject(Clipboard);
   private readonly userService = inject(UserService);
@@ -169,6 +171,9 @@ export class MeetingCardComponent implements OnInit {
    */
   public drawerGuestCount: WritableSignal<number | null> = signal(null);
   private readonly optimisticInvited: WritableSignal<boolean> = signal(false);
+  // True once the user has removed themselves, so the card does not offer "Remove" again while a refetched
+  // `invited` flag is stale (query-service indexing lag). Read from the service so it outlasts this card.
+  private readonly optimisticLeft: Signal<boolean> = computed(() => this.meetingService.removedRegistrationMeetingIds().has(this.meeting().id));
   // Host-flagged people surfaced by the registrants drawer, fed to the organizer chip so it
   // resolves the same organizer set the drawer badges (see resolvedHostsChange).
   public drawerHosts: WritableSignal<MeetingHostCandidate[]> = signal<MeetingHostCandidate[]>([]);
@@ -176,6 +181,7 @@ export class MeetingCardComponent implements OnInit {
   public materialsDrawerVisible = signal(false);
   /** Set while the pre-open write-access probe is in flight, so the edit button cannot be double-fired. */
   public checkingEditAccess: WritableSignal<boolean> = signal(false);
+  public readonly leavingMeeting: WritableSignal<boolean> = signal(false);
 
   // Computed values for template
   public readonly summaryContent: Signal<string | null> = this.initSummaryContent();
@@ -224,9 +230,14 @@ export class MeetingCardComponent implements OnInit {
   public readonly isInvited: Signal<boolean> = computed(() => this.meeting().invited ?? false);
   // True when the user is invited OR has just registered in this session (optimistic, before the
   // meeting refetch settles invited:true). Used to show RSVP options immediately after registration.
-  public readonly effectivelyInvited: Signal<boolean> = computed(() => this.isInvited() || this.optimisticInvited());
+  public readonly effectivelyInvited: Signal<boolean> = computed(() => (this.isInvited() && !this.optimisticLeft()) || this.optimisticInvited());
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
   public readonly attendeeListShared: Signal<boolean> = computed(() => isMeetingAttendeeListShared(this.meeting()));
+  public readonly isRegisteredAttendee: Signal<boolean> = computed(
+    () => this.authenticated() && this.effectivelyInvited() && !this.meeting().organizer && !this.pastMeeting()
+  );
+  // A committee-sourced registration follows committee membership, so it cannot be removed from here.
+  public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee() && !this.meeting().invited_via_committee);
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
@@ -343,7 +354,9 @@ export class MeetingCardComponent implements OnInit {
         skip(1),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(() => this.optimisticInvited.set(false));
+      .subscribe(() => {
+        this.optimisticInvited.set(false);
+      });
   }
 
   /**
@@ -490,9 +503,22 @@ export class MeetingCardComponent implements OnInit {
     dialogRef.onClose.pipe(take(1)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
         this.optimisticInvited.set(true);
+        this.meetingService.clearRemovedRegistration(meeting.id);
         this.additionalRegistrantsCount.set(this.additionalRegistrantsCount() + 1);
         this.refreshMeeting();
       }
+    });
+  }
+
+  public confirmLeaveMeeting(): void {
+    this.confirmationService.confirm({
+      header: 'Remove Yourself',
+      message: `Remove yourself from "${this.meetingTitle()}"? You will no longer be invited to any occurrence and will lose your RSVP.`,
+      acceptLabel: 'Remove Me',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => this.leaveMeeting(),
     });
   }
 
@@ -805,6 +831,39 @@ export class MeetingCardComponent implements OnInit {
         this.meetingDeleted.emit();
       }
     });
+  }
+
+  private leaveMeeting(): void {
+    const meetingId = this.meeting().id;
+    this.leavingMeeting.set(true);
+
+    this.meetingService
+      .removeMyMeetingRegistration(meetingId)
+      .pipe(
+        take(1),
+        finalize(() => this.leavingMeeting.set(false))
+      )
+      .subscribe({
+        next: () => {
+          this.optimisticInvited.set(false);
+          this.meetingService.markRegistrationRemoved(meetingId);
+          this.meeting.update((meeting) => ({ ...meeting, invited: false, my_rsvp: null }));
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Removed',
+            detail: 'You have been removed from this meeting.',
+          });
+          this.meetingDeleted.emit();
+        },
+        error: (error: unknown) => {
+          const fallback = 'Unable to remove you from this meeting. Please try again.';
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: isBffValidationError(error) ? extractErrorMessage(error, fallback) : fallback,
+          });
+        },
+      });
   }
 
   private refreshMeeting(): void {

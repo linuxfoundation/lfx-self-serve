@@ -5,7 +5,7 @@
  * Mentor task create — one mentee, a group, a partial group failure and a refused create on the program
  * detail page (linuxfoundation/lfx-mentorship#214).
  *
- * The Mentees tab creates tasks through `POST /api/mentorship/mentor/tasks` when the task dialog is
+ * The Mentees tab creates tasks through `POST /api/mentorship/tasks` when the task dialog is
  * submitted, then re-reads the detail so the new task shows. Each test stubs the detail read and that
  * write via `page.route` with synthetic data, so the suite never creates a task on a real program. Only
  * an accepted mentee can be given a task, so a graduated mentee has no create control.
@@ -19,7 +19,7 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
  */
 
-import { MentorshipMentorProgramDetail, MentorshipMentorTaskCreateResponse } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorProgramDetail, MentorshipTaskCreateResponse } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
@@ -35,7 +35,7 @@ test.use({ viewport: { width: 1440, height: 900 } });
 const PROGRAM_ID = '71111111-1111-4111-8111-111111111111';
 const DETAIL_URL = `${MENTOR_PROGRAMS_URL}/${PROGRAM_ID}`;
 const DETAIL_ROUTE = `**/api/mentorship/mentor/programs/${PROGRAM_ID}`;
-const TASKS_ROUTE = '**/api/mentorship/mentor/tasks';
+const TASKS_ROUTE = '**/api/mentorship/tasks';
 const FIRST_ID = '72222222-2222-4222-8222-222222222222';
 const SECOND_ID = '73333333-3333-4333-8333-333333333333';
 const GRADUATED_ID = '74444444-4444-4444-8444-444444444444';
@@ -64,8 +64,7 @@ function detailWith(taskFor?: string): MentorshipMentorProgramDetail {
       slug: 'test-program-tasks',
       name: 'Test Program Tasks',
       projectName: 'Test Project',
-      term: 'Test Term Fall',
-      termStatus: 'active-term',
+      status: 'open',
       stats: { mentees: 3, tasksToReview: 0, applicants: 0 },
     },
     tabCounts: { tasks: taskFor ? 1 : 0, mentees: 3, applicants: 0 },
@@ -102,7 +101,7 @@ async function stubDetail(page: Page, first: MentorshipMentorProgramDetail, late
 }
 
 /** Answers the task create with `status` and `body`, and returns the bodies the page sent. */
-async function stubTaskCreate(page: Page, status: number, body: MentorshipMentorTaskCreateResponse | { error: string }): Promise<unknown[]> {
+async function stubTaskCreate(page: Page, status: number, body: MentorshipTaskCreateResponse | { error: string }): Promise<unknown[]> {
   const sent: unknown[] = [];
   await page.route(TASKS_ROUTE, (route) => {
     sent.push(route.request().postDataJSON());
