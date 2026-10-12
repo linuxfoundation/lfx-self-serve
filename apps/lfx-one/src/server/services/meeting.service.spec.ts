@@ -244,6 +244,20 @@ describe('MeetingService public attachments (E3-03)', () => {
     expect(proxyRequest.mock.calls[0][7]).toEqual({ bearerToken: 'm2m-token' });
   });
 
+  // The download route's ownership check needs the whole set, not the first page of it.
+  it('reads every page of attachments, each with the given identity', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [{ data: { uid: 'att-1', type: 'file', name: 'a' } }], page_token: 'next' })
+      .mockResolvedValueOnce({ resources: [{ data: { uid: 'att-2', type: 'link', name: 'b' } }] });
+
+    const attachments = await service.getMeetingAttachments(req, 'meeting-abc', { bearerToken: 'm2m-token' });
+
+    expect(attachments.map((attachment) => attachment.uid)).toEqual(['att-1', 'att-2']);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest.mock.calls[1][4]).toMatchObject({ page_token: 'next' });
+    expect(proxyRequest.mock.calls[1][7]).toEqual({ bearerToken: 'm2m-token' });
+  });
+
   it('presigns a download with the given identity', async () => {
     proxyRequest.mockResolvedValueOnce({ download_url: 'https://storage.example/presigned' });
 

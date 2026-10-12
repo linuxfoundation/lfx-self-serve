@@ -26,10 +26,10 @@ import {
   PaginatedResponse,
   PastMeeting,
   PastMeetingAttachment,
-  PublicMeetingAttachment,
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
+  PublicMeetingAttachment,
   PastMeetingTranscript,
   PastMeetingTranscriptContent,
   PastOccurrenceSummary,
@@ -1861,7 +1861,9 @@ export class MeetingService {
   }
 
   /**
-   * Gets all meeting attachments via Query Service
+   * Gets all meeting attachments via Query Service, every page of them. The public download route
+   * uses this list as the meeting's ownership set, so a partial result fails rather than leaving a
+   * real attachment out (and its download refused).
    */
   public async getMeetingAttachments(req: Request, meetingUid: string, options?: ApiRequestOptions): Promise<MeetingAttachment[]> {
     const params = {
@@ -1871,18 +1873,21 @@ export class MeetingService {
 
     logger.debug(req, 'get_meeting_attachments', 'Fetching meeting attachments', { meeting_id: meetingUid, query_params: params });
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(
+    return fetchAllQueryResources<MeetingAttachment>(
       req,
-      'LFX_V2_SERVICE',
-      '/query/resources',
-      'GET',
-      params,
-      undefined,
-      undefined,
-      options
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          { ...params, ...(pageToken && { page_token: pageToken }) },
+          undefined,
+          undefined,
+          options
+        ),
+      { failOnPartial: true }
     );
-
-    return resources.map((resource) => resource.data);
   }
 
   /**
