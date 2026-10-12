@@ -64,6 +64,7 @@ import {
   isOccurrencePast,
   isPastMeetingCompositeId,
   isUnresolvableParticipantName,
+  isBatchRegistrantOperationResponse,
   isVoteCalendarEventPast,
   mergeBatchRegistrantResponses,
   normalizeIndexedMeetingAiSummary,
@@ -1921,5 +1922,28 @@ describe('mergeBatchRegistrantResponses', () => {
     expect(merged.failures.map((item) => item.input)).toEqual(['reg-4', 'reg-5', 'reg-6']);
     expect(merged.failures[0].error.message).toBe('Forbidden');
     expect(merged.summary).toEqual({ total: 6, successful: 3, failed: 3 });
+  });
+});
+
+describe('isBatchRegistrantOperationResponse', () => {
+  it('accepts a batch response, including an all-failed one', () => {
+    expect(
+      isBatchRegistrantOperationResponse({
+        successes: [],
+        failures: [{ input: 'reg-1', error: { message: 'Not found' } }],
+        summary: { total: 1, successful: 0, failed: 1 },
+      })
+    ).toBe(true);
+  });
+
+  it.each([
+    ['null', null],
+    ['a string', 'Bad Request'],
+    ['a validation error body', { error: 'Validation failed', validationErrors: [{ field: 'registrants', message: 'No registrants provided' }] }],
+    ['a body missing failures', { successes: [], summary: { total: 0, successful: 0, failed: 0 } }],
+    ['a body with a null summary', { successes: [], failures: [], summary: null }],
+    ['a body with a non-numeric count', { successes: [], failures: [], summary: { total: '1', successful: 0, failed: 1 } }],
+  ])('rejects %s', (_label, value) => {
+    expect(isBatchRegistrantOperationResponse(value)).toBe(false);
   });
 });

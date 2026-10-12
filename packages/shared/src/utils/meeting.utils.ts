@@ -1718,3 +1718,22 @@ export function mergeBatchRegistrantResponses<T>(responses: BatchRegistrantOpera
     { successes: [], failures: [], summary: { total: 0, successful: 0, failed: 0 } }
   );
 }
+
+/**
+ * Whether `value` has the shape of a batch registrant operation response.
+ * @description The BFF answers a batch whose every item failed with a 400 that still carries this body,
+ * so an HTTP error alone does not mean the request produced no per-item results.
+ */
+export function isBatchRegistrantOperationResponse<T>(value: unknown): value is BatchRegistrantOperationResponse<T> {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const { successes, failures, summary } = value as Partial<Record<keyof BatchRegistrantOperationResponse<T>, unknown>>;
+  if (!Array.isArray(successes) || !Array.isArray(failures) || typeof summary !== 'object' || summary === null) {
+    return false;
+  }
+
+  const { total, successful, failed } = summary as Partial<Record<keyof BatchRegistrantOperationResponse<T>['summary'], unknown>>;
+  return typeof total === 'number' && typeof successful === 'number' && typeof failed === 'number';
+}

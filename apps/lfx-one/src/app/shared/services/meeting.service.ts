@@ -1,14 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import {
   LINKEDIN_PROFILE_PATTERN,
   MEETING_DETAIL_CACHE_TTL_MS,
   MEETING_PASSWORD_HEADER,
-  MEETING_REGISTRANT_BATCH_MAX,
+  MEETING_REGISTRANT_CLIENT_CHUNK_SIZE,
   PAST_MEETING_RECORDING_CACHE_TTL_MS,
   PAST_MEETING_SORT,
 } from '@lfx-one/shared/constants';
@@ -55,7 +55,7 @@ import {
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
-import { mergeBatchRegistrantResponses } from '@lfx-one/shared/utils';
+import { isBatchRegistrantOperationResponse, mergeBatchRegistrantResponses } from '@lfx-one/shared/utils';
 import { catchError, concatMap, from, map, Observable, of, shareReplay, take, tap, throwError, toArray } from 'rxjs';
 
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
@@ -835,30 +835,38 @@ export class MeetingService {
   }
 
   /**
-   * Sends a registrant batch in requests of at most MEETING_REGISTRANT_BATCH_MAX items — the BFF refuses
-   * longer arrays — one after another, and merges the responses.
-   * @description Sequential so the client never multiplies the BFF's per-request concurrency bound. A
-   * failed first request rethrows, matching the single-request behavior callers already handle; a
-   * failed later request reports its items as failures and keeps the chunks that already landed, so a
-   * partial save is counted as one.
+   * Sends a registrant batch in requests of at most MEETING_REGISTRANT_CLIENT_CHUNK_SIZE items, one after
+   * another, and merges the responses. A batch that fits in one request is sent as-is, so its errors reach
+   * the caller exactly as before.
+   * @description Sequential so the client never multiplies the BFF's per-request concurrency bound; the
+   * chunk is smaller than the BFF's MEETING_REGISTRANT_BATCH_MAX so each request stays inside the ingress
+   * read timeout. When every item of a chunk fails the BFF answers 400 with the per-item results in the
+   * body, so that body is merged like any other response and the remaining chunks are still sent — as a
+   * single request would have attempted them. Any other error on the first request (a 403, a validation
+   * 400) rethrows, which callers already handle; on a later request it reports that chunk's items as
+   * failures and keeps the chunks that already landed, so a partial save is counted as one.
    */
   private sendRegistrantBatchInChunks<I, T>(
     items: I[],
     send: (chunk: I[]) => Observable<BatchRegistrantOperationResponse<T>>
   ): Observable<BatchRegistrantOperationResponse<T>> {
-    if (items.length <= MEETING_REGISTRANT_BATCH_MAX) {
+    if (items.length <= MEETING_REGISTRANT_CLIENT_CHUNK_SIZE) {
       return send(items);
     }
 
     const chunks: I[][] = [];
-    for (let i = 0; i < items.length; i += MEETING_REGISTRANT_BATCH_MAX) {
-      chunks.push(items.slice(i, i + MEETING_REGISTRANT_BATCH_MAX));
+    for (let i = 0; i < items.length; i += MEETING_REGISTRANT_CLIENT_CHUNK_SIZE) {
+      chunks.push(items.slice(i, i + MEETING_REGISTRANT_CLIENT_CHUNK_SIZE));
     }
 
     return from(chunks).pipe(
       concatMap((chunk, index) =>
         send(chunk).pipe(
           catchError((error: unknown) => {
+            if (error instanceof HttpErrorResponse && isBatchRegistrantOperationResponse<T>(error.error)) {
+              return of(error.error);
+            }
+
             if (index === 0) {
               return throwError(() => error);
             }

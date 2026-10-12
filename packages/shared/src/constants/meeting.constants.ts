@@ -30,6 +30,16 @@ export const IMPORT_REGISTRANTS_MAX = 50;
 export const MEETING_REGISTRANT_BATCH_MAX = 100;
 
 /**
+ * Registrants per request when the frontend `MeetingService` splits a larger batch save.
+ * @description Deliberately below MEETING_REGISTRANT_BATCH_MAX: the BFF runs the first item alone and
+ * the rest MEETING_REGISTRANT_BATCH_CONCURRENCY at a time, so one request costs
+ * 1 + ceil((n - 1) / 5) serial upstream rounds — 21 at the cap, 6 at this size. Against the ingress
+ * read timeout (ingress-nginx defaults to 60s), six rounds fit while a round averages under 10s; 21 needed
+ * under about 2.9s.
+ */
+export const MEETING_REGISTRANT_CLIENT_CHUNK_SIZE = 25;
+
+/**
  * Max concurrent upstream registrant writes the BFF runs for one batch request.
  * @description Bounds the per-request fan-out in `MeetingController.processRegistrantOperations`, which
  * previously fired every item at once. Matches `COMMITTEE_INVITE_CONCURRENCY`, which caps the
