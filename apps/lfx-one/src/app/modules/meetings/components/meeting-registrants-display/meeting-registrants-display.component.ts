@@ -113,6 +113,9 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly additionalRegistrantsCount: WritableSignal<number> = signal(0);
   public readonly showAddForm = signal(false);
   public readonly submitting = signal(false);
+  // Collapsed state of the group members / guests sections in the two-section layout
+  public readonly membersCollapsed = signal(false);
+  public readonly guestsCollapsed = signal(false);
   public readonly deleting = signal(false);
 
   // Staged guests — accumulate picked users; each can be independently added without clearing others.
@@ -135,6 +138,7 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly searchControl: FormControl<string> = new FormControl<string>('', { nonNullable: true });
   public readonly rsvpFilterControl: FormControl<string> = new FormControl<string>('all', { nonNullable: true });
   public readonly groupFilterControl: FormControl<string> = new FormControl<string>('all', { nonNullable: true });
+  public readonly organizerFilterControl: FormControl<string> = new FormControl<string>('all', { nonNullable: true });
   // Past-meeting-only controls — past participants carry attendance/invitation, not RSVP responses.
   public readonly attendanceFilterControl: FormControl<PastParticipantAttendanceFilter> = new FormControl<PastParticipantAttendanceFilter>('all', {
     nonNullable: true,
@@ -145,6 +149,7 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly filterForm: FormGroup = new FormGroup({
     rsvpFilter: this.rsvpFilterControl,
     groupFilter: this.groupFilterControl,
+    organizerFilter: this.organizerFilterControl,
     attendanceFilter: this.attendanceFilterControl,
     invitationFilter: this.invitationFilterControl,
   });
@@ -155,6 +160,11 @@ export class MeetingRegistrantsDisplayComponent {
     { label: 'Accepted', value: 'yes' },
     { label: 'Declined', value: 'no' },
     { label: 'Pending', value: 'pending' },
+  ];
+
+  public readonly organizerFilterOptions = [
+    { label: 'All Roles', value: 'all' },
+    { label: 'Organizers', value: 'organizer' },
   ];
 
   // Past-meeting attendance / invitation options (mirror the past-meeting-details filters)
@@ -181,6 +191,7 @@ export class MeetingRegistrantsDisplayComponent {
   // Filter signals from form controls
   public readonly rsvpFilter: Signal<string> = toSignal(this.rsvpFilterControl.valueChanges.pipe(startWith('all')), { initialValue: 'all' });
   public readonly groupFilter: Signal<string> = toSignal(this.groupFilterControl.valueChanges.pipe(startWith('all')), { initialValue: 'all' });
+  public readonly organizerFilter: Signal<string> = toSignal(this.organizerFilterControl.valueChanges.pipe(startWith('all')), { initialValue: 'all' });
   public readonly attendanceFilter: Signal<PastParticipantAttendanceFilter> = toSignal(
     this.attendanceFilterControl.valueChanges.pipe(startWith('all' as const)),
     {
@@ -264,6 +275,14 @@ export class MeetingRegistrantsDisplayComponent {
   // === Public Methods ===
   public refresh(): void {
     this.refresh$.next(true);
+  }
+
+  public toggleMembersCollapsed(): void {
+    this.membersCollapsed.update((collapsed) => !collapsed);
+  }
+
+  public toggleGuestsCollapsed(): void {
+    this.guestsCollapsed.update((collapsed) => !collapsed);
   }
 
   public toggleAddForm(): void {
@@ -646,6 +665,7 @@ export class MeetingRegistrantsDisplayComponent {
       const query = this.searchQuery().toLowerCase().trim();
       const rsvp = this.rsvpFilter();
       const group = this.groupFilter();
+      const organizerOnly = this.organizerFilter() === 'organizer';
 
       return registrants
         .map((registrant) => ({
@@ -681,19 +701,22 @@ export class MeetingRegistrantsDisplayComponent {
           // Group (Committee) filter
           const matchesGroup = group === 'all' || registrant.committee_uid === group;
 
-          return matchesSearch && matchesRsvp && matchesGroup;
+          const matchesOrganizer = !organizerOnly || !!registrant.host;
+
+          return matchesSearch && matchesRsvp && matchesGroup && matchesOrganizer;
         });
     });
   }
 
   private initFilteredPastParticipants() {
-    return computed(() =>
-      filterPastMeetingParticipants(this.pastMeetingParticipants(), {
+    return computed(() => {
+      const filtered = filterPastMeetingParticipants(this.pastMeetingParticipants(), {
         search: this.searchQuery(),
         attendance: this.attendanceFilter(),
         invitation: this.invitationFilter(),
         group: this.groupFilter(),
-      })
-    );
+      });
+      return this.organizerFilter() === 'organizer' ? filtered.filter((participant) => participant.host) : filtered;
+    });
   }
 }
