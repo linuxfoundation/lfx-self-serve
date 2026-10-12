@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { MeetingVisibility } from '../enums';
-import type { RsvpResponse } from './meeting.interface';
+import type { MeetingRegistrant, RsvpResponse } from './meeting.interface';
 
 /**
  * Where the viewer sits relative to the meeting's schedule.
@@ -221,4 +221,60 @@ export interface MeetingSectionVisibility {
   rsvpSummary: boolean;
   /** Recording, transcript and AI summary — post-meeting, gated on artifact access. */
   tools: boolean;
+}
+
+/** What the people section's roster is fetched for (E3-04): the meeting and the RSVP occurrence. */
+export interface MeetingRosterRequest {
+  meetingId: string;
+  /** `undefined` for a one-off meeting, whose registrants and RSVPs are not per occurrence. */
+  occurrenceId: string | undefined;
+}
+
+/** One upcoming roster row of the people section (E3-04), display-ready. */
+export interface MeetingPeopleRow {
+  uid: string;
+  name: string;
+  /** "job title · organization", whichever of the two exist; `null` when neither does. */
+  role: string | null;
+  avatarUrl: string | null;
+  /** The registrant's `host` flag: shown as "Organizer" ahead of any RSVP. */
+  organizer: boolean;
+  /**
+   * The RSVP the row shows, as `data-attendance` reads it; `null` when RSVP tracking is off for the
+   * meeting, so no RSVP UI renders at all.
+   */
+  attendance: RsvpResponse | 'pending' | null;
+  /** How they came to be invited: directly, or with a committee (`data-invitation`). */
+  invitation: 'direct' | 'committee';
+}
+
+/** The people section's RSVP tallies; `pending` is everyone on the roster who has not answered. */
+export interface MeetingPeopleTallies {
+  accepted: number;
+  maybe: number;
+  declined: number;
+  pending: number;
+}
+
+/** Options for `buildMeetingPeopleRows` (E3-04). */
+export interface MeetingPeopleRowOptions {
+  /** `Meeting.is_invite_responses_enabled`: when false, no row carries an RSVP. */
+  inviteResponsesEnabled: boolean;
+  /** The signed-in viewer, to find their own row. */
+  viewer?: { username?: string | null; email?: string | null } | null;
+  /**
+   * The viewer's own answer as the page knows it (`MeetingDetailsStateService.myRsvp`). An answer the
+   * viewer just saved reaches the page before the query service indexes it, so it wins over the
+   * roster's copy on the viewer's row; `null` or `undefined` leave the roster's copy alone.
+   */
+  viewerRsvp?: RsvpResponse | null;
+}
+
+/**
+ * The people section's roster load (E3-04). `registrants` is what the section shows: the last roster
+ * fetched for the same meeting and occurrence while a refresh is in flight or after it fails.
+ */
+export interface MeetingRosterState {
+  status: 'loading' | 'ready' | 'error';
+  registrants: MeetingRegistrant[];
 }

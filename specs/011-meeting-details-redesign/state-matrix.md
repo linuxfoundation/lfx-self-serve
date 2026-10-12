@@ -207,7 +207,7 @@ Not decided here, and each blocks the issue named:
 
 - Unapproved AI summaries: hide them (`isPastMeetingSummaryVisible`) or keep "Pending"? — E4-03
 - `artifact_visibility` is authored but enforced nowhere; enforcing it hides some artifacts — E4-04
-- `show_meeting_attendees` is enforced nowhere and V1 only toasts "Coming Soon" — E3-04
+- ~~`show_meeting_attendees` is enforced nowhere and V1 only toasts "Coming Soon"~~ — decided in E3-04: the BFF returns `[]` to a registrant of an unshared meeting, and V2 gives that registrant no people section rather than a placeholder
 - Materials "Primary / Supporting" is really file vs link — E3-02
 - RSVP alongside Join during the window (V1 has no RSVP there) — E2-01
 - How much participant identity a public viewer sees (N-02 tiers) — N-02

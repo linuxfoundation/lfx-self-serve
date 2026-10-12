@@ -957,6 +957,58 @@ describe('MeetingDetailsStateService', () => {
     });
   });
 
+  describe('roster request', () => {
+    const upcoming = (overrides: Partial<Meeting> = {}) =>
+      of({ meeting: { ...buildMeeting(), start_time: new Date(Date.now() + 86_400_000).toISOString(), duration: 60, ...overrides }, project });
+
+    it('fetches the roster for an organizer of an upcoming meeting', async () => {
+      getPublicMeeting.mockReturnValue(upcoming({ organizer: true }));
+      const state = create();
+      await settle();
+
+      expect(state.rosterRequest()).toEqual({ meetingId: MEETING_ID, occurrenceId: undefined });
+    });
+
+    // V1's gate: a registrant sees the other guests only when the organizer shares the list.
+    it.each([
+      [true, true],
+      [false, false],
+    ])('gives a registrant a roster only when the guest list is shared (shared %s)', async (shared, expected) => {
+      getPublicMeeting.mockReturnValue(upcoming({ invited: true, show_meeting_attendees: shared }));
+      const state = create();
+      await settle();
+
+      expect(state.rosterRequest() !== null).toBe(expected);
+    });
+
+    it('gives no roster to a signed-in outsider', async () => {
+      getPublicMeeting.mockReturnValue(upcoming({ show_meeting_attendees: true }));
+      const state = create();
+      await settle();
+
+      expect(state.rosterRequest()).toBeNull();
+    });
+
+    it('gives no roster to an anonymous viewer, even one the payload calls invited', async () => {
+      authenticated.set(false);
+      getPublicMeeting.mockReturnValue(upcoming({ invited: true, show_meeting_attendees: true }));
+      const state = create();
+      await settle();
+
+      expect(state.rosterRequest()).toBeNull();
+    });
+
+    it('gives no roster on an ended meeting, even to its organizer', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: { ...buildMeeting(), organizer: true, start_time: new Date(Date.now() - 86_400_000).toISOString(), duration: 60 }, project })
+      );
+      const state = create();
+      await settle();
+
+      expect(state.rosterRequest()).toBeNull();
+    });
+  });
+
   describe('sign-in link', () => {
     it('signs in back to this meeting', () => {
       getPublicMeeting.mockReturnValue(new Subject());

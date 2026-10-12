@@ -251,10 +251,25 @@ the row's contents.
 
 ## People
 
-| `data-testid`            | Element             |
-| ------------------------ | ------------------- |
-| `people-section`         | The roster section  |
-| `participant-row-${uid}` | One participant row |
+| `data-testid`                    | Element                                                            |
+| -------------------------------- | ------------------------------------------------------------------ |
+| `people-section`                 | The roster section                                                 |
+| `people-section-count`           | "{n} invited", the fetched roster's length                         |
+| `people-section-add`             | Add guest (organizers, upcoming only)                              |
+| `people-section-loading`         | The roster's first load                                            |
+| `people-section-error`           | The roster failed to load, with nothing to fall back on            |
+| `people-section-retry`           | Its Try again                                                      |
+| `people-section-empty`           | Nobody invited yet                                                 |
+| `people-section-indexing`        | Added guests counted but not listed yet                            |
+| `people-section-tallies`         | The RSVP tallies (RSVP tracking on only)                           |
+| `people-section-tally-${status}` | One tally: `accepted`, `maybe`, `declined`, `pending`              |
+| `people-section-list`            | The rows shown on the page (the first five)                        |
+| `participant-row-${uid}`         | One participant row                                                |
+| `people-section-view-all`        | Opens the full list                                                |
+| `people-drawer`                  | The full list's drawer (V1's guest list inside)                    |
+| `people-drawer-title`            | Its title: Meeting Members (a committee meeting) or Meeting Guests |
+| `people-drawer-count`            | Its "{n} guests" / "{n} members" (a loaded roster only)            |
+| `people-drawer-close`            | Its close button                                                   |
 
 Upcoming and past rows come from different data, so they carry different state attributes. An
 upcoming row is a `MeetingRegistrant`; a past row is a `PastMeetingParticipant`, which has no RSVP

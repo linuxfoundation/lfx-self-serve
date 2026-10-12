@@ -5,7 +5,7 @@ import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { Component, input, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ButtonComponent } from '@components/button/button.component';
-import { Meeting, MeetingDetailsLoadStatus, MeetingSectionVisibility, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingDetailsLoadStatus, MeetingRosterRequest, MeetingSectionVisibility, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,10 +37,14 @@ class OrganizerStubComponent {}
 @Component({ selector: 'lfx-meeting-agenda', template: '<span data-testid="agenda-stub"></span>' })
 class AgendaStubComponent {}
 
+@Component({ selector: 'lfx-meeting-people', template: '<span data-testid="people-stub"></span>' })
+class PeopleStubComponent {}
+
 describe('MeetingDetailsPageComponent', () => {
   let fixture: ComponentFixture<MeetingDetailsPageComponent>;
   let status: WritableSignal<MeetingDetailsLoadStatus>;
   let visibleSections: WritableSignal<Partial<MeetingSectionVisibility> | null>;
+  let rosterRequest: WritableSignal<MeetingRosterRequest | null>;
   let refresh: ReturnType<typeof vi.fn>;
   let retrying: WritableSignal<boolean>;
   let failureCount: WritableSignal<number>;
@@ -50,6 +54,7 @@ describe('MeetingDetailsPageComponent', () => {
   beforeEach(async () => {
     status = signal<MeetingDetailsLoadStatus>('loading');
     visibleSections = signal<Partial<MeetingSectionVisibility> | null>({ agenda: true });
+    rosterRequest = signal<MeetingRosterRequest | null>({ meetingId: 'meeting-1', occurrenceId: undefined });
     refresh = vi.fn();
     retrying = signal(false);
     failureCount = signal(1);
@@ -70,11 +75,15 @@ describe('MeetingDetailsPageComponent', () => {
             IdentityBarStubComponent,
             ImpersonationBannerStubComponent,
             OrganizerStubComponent,
+            PeopleStubComponent,
             TimeBannerStubComponent,
             SkeletonModule,
           ],
           providers: [
-            { provide: MeetingDetailsStateService, useValue: { status, meeting: signal(meeting), refresh, retrying, failureCount, visibleSections } },
+            {
+              provide: MeetingDetailsStateService,
+              useValue: { status, meeting: signal(meeting), refresh, retrying, failureCount, visibleSections, rosterRequest },
+            },
           ],
         },
       })
@@ -119,6 +128,16 @@ describe('MeetingDetailsPageComponent', () => {
     visibleSections.set({ agenda: false });
     fixture.detectChanges();
     expect(query('agenda-stub')).toBeNull();
+  });
+
+  // E3-04: the people section renders only for a viewer the state gives a roster to.
+  it('renders the people section only when the viewer has a roster', () => {
+    show('ready');
+    expect(query('people-stub')).not.toBeNull();
+
+    rosterRequest.set(null);
+    fixture.detectChanges();
+    expect(query('people-stub')).toBeNull();
   });
 
   // Placeholder testids are temporary (testid-contract.md), so this asserts on whatever skeleton

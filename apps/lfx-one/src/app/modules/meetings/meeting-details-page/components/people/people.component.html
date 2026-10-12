@@ -1,0 +1,201 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities): a 16px bold
+     heading 14px above a 14px-radius card padded 20px by 22px; 40px faces on 9px rows, 30px faces in
+     the footer stack; chips and tallies are pills. -->
+<section class="flex flex-col gap-[14px]" aria-labelledby="meeting-people-heading" data-testid="people-section">
+  <div class="flex items-center justify-between gap-[12px]">
+    <div class="flex items-center gap-[9px]">
+      <i class="fa-light fa-user-group text-[var(--md-text-muted)]" aria-hidden="true"></i>
+      <h2 id="meeting-people-heading" class="m-0 text-[16px] font-bold text-[var(--md-text-heading)]">Who's coming</h2>
+    </div>
+    <div class="flex items-center gap-[12px]">
+      @if (roster().status === 'ready' && invitedCount() > 0) {
+        <span class="text-[13px] text-[var(--md-text-muted)]" data-testid="people-section-count">{{ invitedCount() }} invited</span>
+      }
+      <!-- Only over a loaded roster: the drawer opened over a failed one would read as an empty list. -->
+      @if (organizer() && roster().status === 'ready') {
+        <button
+          type="button"
+          class="inline-flex h-[30px] flex-none cursor-pointer items-center gap-[6px] rounded-full border border-[var(--md-border-strong)] bg-[var(--md-surface-card)] px-[12px] text-[12.5px] font-semibold text-[var(--md-text-heading)] hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+          aria-haspopup="dialog"
+          (click)="openDrawer(true)"
+          data-testid="people-section-add">
+          <i class="fa-light fa-plus" aria-hidden="true"></i>
+          Add guest
+        </button>
+      }
+    </div>
+  </div>
+
+  <div class="flex flex-col rounded-[14px] border border-[var(--md-border)] bg-[var(--md-surface-card)] px-[22px] py-[20px]">
+    @switch (roster().status) {
+      @case ('loading') {
+        <div class="flex flex-col gap-[14px]" aria-busy="true" data-testid="people-section-loading">
+          @for (row of [1, 2, 3]; track row) {
+            <div class="flex items-center gap-[13px]">
+              <p-skeleton shape="circle" size="40px" aria-hidden="true" />
+              <p-skeleton width="45%" height="14px" aria-hidden="true" />
+            </div>
+          }
+          <span class="sr-only">Loading the guest list</span>
+        </div>
+      }
+      @case ('error') {
+        <div class="flex flex-wrap items-center justify-between gap-[12px]" role="alert" data-testid="people-section-error">
+          <p class="m-0 text-[14px] text-[var(--md-text-body)]">We couldn't load the guest list.</p>
+          <button
+            type="button"
+            class="inline-flex h-[30px] cursor-pointer items-center rounded-full border border-[var(--md-border-strong)] bg-[var(--md-surface-card)] px-[12px] text-[12.5px] font-semibold text-[var(--md-text-heading)] hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+            (click)="retry()"
+            data-testid="people-section-retry">
+            Try again
+          </button>
+        </div>
+      }
+      @default {
+        @if (invitedCount() === 0) {
+          <p class="m-0 text-[14px] text-[var(--md-text-muted)]" data-testid="people-section-empty">
+            {{ committeeMeeting() ? 'No members have been added to this meeting yet.' : 'No guests have been invited to this meeting yet.' }}
+          </p>
+        } @else {
+          @if (showTallies()) {
+            <ul class="m-0 mb-[18px] flex list-none flex-wrap gap-[10px] p-0" aria-label="RSVP summary" data-testid="people-section-tallies">
+              <li
+                class="inline-flex items-center gap-[7px] rounded-full bg-[var(--md-status-good-bg)] px-[12px] py-[6px] text-[13px] font-semibold text-[var(--md-text-body)]"
+                data-testid="people-section-tally-accepted">
+                <span class="h-[8px] w-[8px] rounded-full bg-[var(--md-status-good)]" aria-hidden="true"></span>{{ tallies().accepted }} accepted
+              </li>
+              <li
+                class="inline-flex items-center gap-[7px] rounded-full bg-[var(--md-status-warn-bg)] px-[12px] py-[6px] text-[13px] font-semibold text-[var(--md-text-body)]"
+                data-testid="people-section-tally-maybe">
+                <span class="h-[8px] w-[8px] rounded-full bg-[var(--md-status-warn)]" aria-hidden="true"></span>{{ tallies().maybe }} maybe
+              </li>
+              <li
+                class="inline-flex items-center gap-[7px] rounded-full bg-[var(--md-surface-hover)] px-[12px] py-[6px] text-[13px] font-semibold text-[var(--md-text-muted)]"
+                data-testid="people-section-tally-declined">
+                <span class="h-[8px] w-[8px] rounded-full bg-[var(--md-dot)]" aria-hidden="true"></span>{{ tallies().declined }} declined
+              </li>
+              <li
+                class="inline-flex items-center gap-[7px] rounded-full border border-[var(--md-border)] px-[12px] py-[6px] text-[13px] font-semibold text-[var(--md-text-muted)]"
+                data-testid="people-section-tally-pending">
+                <span class="h-[8px] w-[8px] rounded-full border border-[var(--md-dot)]" aria-hidden="true"></span>{{ tallies().pending }} pending
+              </li>
+            </ul>
+          }
+
+          @if (rows().length === 0) {
+            <!-- Guests the organizer just added, before the roster indexes them: counted, not yet listed. -->
+            <p class="m-0 text-[14px] text-[var(--md-text-muted)]" data-testid="people-section-indexing">
+              {{ committeeMeeting() ? 'The members you added will appear here shortly.' : 'The guests you added will appear here shortly.' }}
+            </p>
+          }
+          <ul class="m-0 flex list-none flex-col gap-[2px] p-0" data-testid="people-section-list">
+            @for (row of previewRows(); track row.uid) {
+              <li
+                class="flex min-w-0 items-center gap-[13px] py-[9px]"
+                [attr.data-testid]="'participant-row-' + row.uid"
+                [attr.data-attendance]="row.attendance"
+                [attr.data-invitation]="row.invitation">
+                <lfx-person-avatar class="flex-none" [avatarUrl]="row.avatarUrl" [name]="row.name" [identity]="row.uid" size="lg" />
+                <span class="flex min-w-0 flex-1 flex-col">
+                  <span class="break-words text-[14px] font-semibold text-[var(--md-text-heading)]">{{ row.name }}</span>
+                  @if (row.role) {
+                    <span class="break-words text-[12.5px] text-[var(--md-text-muted)]">{{ row.role }}</span>
+                  }
+                </span>
+                @if (row.organizer) {
+                  <span class="flex-none rounded-full bg-[var(--md-accent-bg)] px-[10px] py-[3px] text-[11.5px] font-semibold text-[var(--md-accent-ink)]"
+                    >Organizer</span
+                  >
+                } @else if (row.attendance; as attendance) {
+                  <span class="flex-none rounded-full px-[10px] py-[3px] text-[11.5px] font-semibold" [ngClass]="attendanceChipClasses[attendance]">
+                    {{ attendanceLabels[attendance] }}
+                  </span>
+                }
+              </li>
+            }
+          </ul>
+
+          <div class="mt-[14px] flex items-center gap-[12px] border-t border-[var(--md-divider)] pt-[16px]">
+            @if (overflowRows().length > 0) {
+              <span class="flex items-center" aria-hidden="true">
+                @for (row of overflowRows(); track row.uid; let first = $first) {
+                  <span class="inline-flex rounded-full ring-2 ring-[var(--md-surface-card)]" [ngClass]="{ '-ml-[8px]': !first }">
+                    <lfx-person-avatar [avatarUrl]="row.avatarUrl" [name]="row.name" [identity]="row.uid" size="sm" />
+                  </span>
+                }
+              </span>
+            }
+            <button
+              type="button"
+              class="cursor-pointer border-0 bg-transparent p-0 text-[13px] font-semibold text-[var(--md-accent-ink)] hover:underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+              aria-haspopup="dialog"
+              (click)="openDrawer(false)"
+              data-testid="people-section-view-all">
+              @if (overflowCount() > 0) {
+                View all {{ invitedCount() }} {{ committeeMeeting() ? 'members' : 'guests' }}
+              } @else {
+                {{ committeeMeeting() ? 'Open the member list' : 'Open the guest list' }}
+              }
+            </button>
+          </div>
+        }
+      }
+    }
+  </div>
+</section>
+
+<!-- V1's guest list, as its join page opens it: the full roster with search and filters, and for an
+     organizer, Add guest and remove. -->
+<p-drawer
+  [(visible)]="drawerVisible"
+  position="right"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  [modal]="true"
+  [showCloseIcon]="false"
+  [pt]="drawerPt"
+  (onShow)="onDrawerShow()"
+  data-testid="people-drawer">
+  <ng-template #header>
+    <div class="flex w-full items-center justify-between">
+      <div class="flex flex-col">
+        <!-- The dialog's accessible name, and where focus lands on open (tabindex -1: out of the Tab order). -->
+        <h2
+          #drawerTitle
+          id="people-drawer-title"
+          tabindex="-1"
+          class="m-0 text-[18px] font-bold text-[var(--md-text-heading)] focus:outline-none"
+          data-testid="people-drawer-title">
+          {{ committeeMeeting() ? 'Meeting Members' : 'Meeting Guests' }}
+        </h2>
+        @if (roster().status === 'ready') {
+          <span class="text-[13px] text-[var(--md-text-muted)]" data-testid="people-drawer-count"
+            >{{ invitedCount() }} {{ committeeMeeting() ? 'members' : 'guests' }}</span
+          >
+        }
+      </div>
+      <button
+        type="button"
+        class="cursor-pointer p-[8px] text-[var(--md-text-muted)] hover:text-[var(--md-text-heading)]"
+        (click)="closeDrawer()"
+        aria-label="Close panel"
+        data-testid="people-drawer-close">
+        <i class="fa-light fa-xmark text-[20px]" aria-hidden="true"></i>
+      </button>
+    </div>
+  </ng-template>
+  @if (meeting(); as meeting) {
+    <lfx-meeting-registrants-display
+      [meeting]="meeting"
+      [showAddRegistrant]="organizer()"
+      [openAddFormOnShow]="drawerOpensAddForm()"
+      [occurrence]="occurrence()"
+      [myMeetingRegistrants]="true"
+      [initialRegistrants]="roster().status === 'error' ? null : roster().registrants"
+      [initialRegistrantsLoading]="roster().status === 'loading'"
+      [visible]="drawerVisible()"
+      (refreshRequested)="onRosterChanged($event)" />
+  }
+</p-drawer>

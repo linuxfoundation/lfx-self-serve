@@ -8,6 +8,7 @@ import type {
   MeetingComposerPreviewFeature,
   MeetingStatusKind,
   MeetingTypeConfig,
+  RsvpResponse,
   ShowMeetingAttendeesLockOptions,
 } from '../interfaces';
 import { lfxColors } from './colors.constants';
@@ -1139,3 +1140,17 @@ export const MEETING_DURATION_OPTIONS = [
  * details page uses 300, and is not part of this redesign).
  */
 export const MEETING_AGENDA_COLLAPSED_HEIGHT_PX = 200;
+
+/**
+ * The people section's RSVP labels (E3-04), for each row's chip and the tallies above the rows.
+ * Same words as the V1 guest drawer's filter.
+ */
+export const MEETING_PEOPLE_ATTENDANCE_LABELS: Record<RsvpResponse | 'pending', string> = {
+  accepted: 'Accepted',
+  maybe: 'Maybe',
+  declined: 'Declined',
+  pending: 'Pending',
+};
+
+/** The people section's row order after the organizers (E3-04): coming, undecided, no reply, declined. */
+export const MEETING_PEOPLE_ATTENDANCE_ORDER: Record<RsvpResponse | 'pending', number> = { accepted: 0, maybe: 1, pending: 2, declined: 3 };

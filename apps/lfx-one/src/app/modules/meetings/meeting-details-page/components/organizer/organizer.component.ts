@@ -13,7 +13,8 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * "Organized by" in the V2 rail card, under the action slot (E2-01, #1775, FR-014; moved here from
  * E1-03, where the prototype does not put it).
  * @description The organizer is the meeting's owner, else its creator (`resolveMeetingOrganizer`, as
- * V1's chip resolves it, without V1's host fallback: V2 does not load the registrants yet). The
+ * V1's chip resolves it, without V1's host fallback: only some viewers get a roster (E3-04), so it
+ * cannot be a fallback for everyone). The
  * whole block is absent when nobody resolves, and for anonymous viewers, from whom the BFF removes
  * these fields anyway. The name falls back to the username, then the email, so a missing name never
  * renders as "undefined".
