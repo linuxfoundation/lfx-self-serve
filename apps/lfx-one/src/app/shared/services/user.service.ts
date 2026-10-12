@@ -309,30 +309,30 @@ export class UserService {
   /**
    * Retain a successful write beyond the route that submitted it, under its captured effective subject.
    * Pass the generation captured at submit time: an acknowledgement that arrives after a removal ends its registration instead.
+   * Returns the retained copy, stamped to sort after earlier confirmations, or null when the write was not retained.
    */
   public recordConfirmedMeetingRsvp(
     rsvp: MeetingRsvp,
     subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '',
     generation?: number
-  ): void {
-    if (!subject || !rsvp.registrant_id) return;
+  ): MeetingRsvp | null {
+    if (!subject || !rsvp.registrant_id) return null;
     const key = `${subject}\0${rsvp.meeting_id}`;
     if (generation !== undefined && generation !== this.meetingRegistrationGeneration(rsvp.meeting_id, subject)) {
       this.endMeetingRegistrants(key, [rsvp.registrant_id]);
-      return;
+      return null;
     }
     const ended = this.endedMeetingRegistrantIds().get(key);
-    if (ended?.has(rsvp.registrant_id)) return;
+    if (ended?.has(rsvp.registrant_id)) return null;
     const current = this.confirmedMeetingRsvps$.value;
-    const next = new Map(current);
-    next.set(
-      key,
-      retainConfirmedRsvp(
-        (current.get(key) ?? []).filter((saved) => !ended?.has(saved.registrant_id)),
-        rsvp
-      )
+    const retained = retainConfirmedRsvp(
+      (current.get(key) ?? []).filter((saved) => !ended?.has(saved.registrant_id)),
+      rsvp
     );
+    const next = new Map(current);
+    next.set(key, retained);
     this.confirmedMeetingRsvps$.next(next);
+    return retained[0];
   }
 
   /** End only this subject's registrations after a successful removal, including late write acknowledgements. */

@@ -161,13 +161,14 @@ export class RsvpButtonGroupComponent {
       .createMeetingRsvp(meetingUid, request)
       .pipe(
         tap((rsvp: MeetingRsvp) => {
-          const savedRsvp = {
+          const acknowledged = {
             ...rsvp,
             occurrence_id: rsvp.occurrence_id || scopedOccurrenceId,
             // Creation time may predate a changed answer; use confirmation time without a modification timestamp.
             updated_at: rsvp.updated_at || rsvp.modified_at || new Date().toISOString(),
           };
-          this.userService.recordConfirmedMeetingRsvp(savedRsvp, subject, generation);
+          // Use the retained copy so every view orders this answer after the confirmations it follows.
+          const savedRsvp = this.userService.recordConfirmedMeetingRsvp(acknowledged, subject, generation) ?? acknowledged;
           if (!this.userService.isMeetingRsvpCurrent(savedRsvp, meeting, subject)) return;
           // The successful POST is authoritative. Never replace it with a stale/null
           // query-service refetch while the new response is still being indexed.

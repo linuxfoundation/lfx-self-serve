@@ -86,6 +86,11 @@ function getRsvpOccurrenceId(rsvp: Pick<MeetingRsvp, 'occurrence_id' | 'meeting_
   return suffix.length > 0 ? suffix : null;
 }
 
+/** Effective write time of an RSVP: API sends `modified_at`; older payloads fall back through `updated_at` then `created_at`. */
+function getRsvpTimestampMs(rsvp: Pick<MeetingRsvp, 'modified_at' | 'updated_at' | 'created_at'>): number {
+  return new Date(rsvp.modified_at || rsvp.updated_at || rsvp.created_at).getTime();
+}
+
 /**
  * Pick the single RSVP that applies to a given occurrence for one user.
  *
@@ -117,12 +122,7 @@ function getRsvpOccurrenceId(rsvp: Pick<MeetingRsvp, 'occurrence_id' | 'meeting_
 export function selectApplicableRsvp(occurrenceId: string | null | undefined, userRsvps: MeetingRsvp[]): MeetingRsvp | null {
   if (userRsvps.length === 0) return null;
 
-  // API sends `modified_at`; older payloads fall back through `updated_at` then `created_at`.
-  const sortedRsvps = [...userRsvps].sort((a, b) => {
-    const dateA = new Date(a.modified_at || a.updated_at || a.created_at).getTime();
-    const dateB = new Date(b.modified_at || b.updated_at || b.created_at).getTime();
-    return dateB - dateA;
-  });
+  const sortedRsvps = [...userRsvps].sort((a, b) => getRsvpTimestampMs(b) - getRsvpTimestampMs(a));
 
   if (!occurrenceId) {
     return sortedRsvps[0] || null;
@@ -169,14 +169,22 @@ export function selectApplicableRsvp(occurrenceId: string | null | undefined, us
  * another registration stay retained: an older all-dates answer keeps covering the dates a
  * newer single-date answer does not. A new `all` answer covers every date, so it supersedes
  * every retained answer — including one whose stored timestamp is later than this
- * acknowledgement's. Ended registrations are filtered by callers, not here.
+ * acknowledgement's. A scoped answer whose stored timestamp is not later than every retained
+ * answer is stamped just after the newest one, so {@link selectApplicableRsvp} keeps
+ * confirmation order. Ended registrations are filtered by callers, not here.
  *
  * @param retained Previously confirmed answers for the same viewer and meeting.
- * @param rsvp The newly confirmed answer.
+ * @param rsvp The newly confirmed answer; read the stored copy from the head of the result.
  */
 export function retainConfirmedRsvp(retained: MeetingRsvp[], rsvp: MeetingRsvp): MeetingRsvp[] {
   if (rsvp.scope === 'all') return [rsvp];
-  return [rsvp, ...retained.filter((saved) => saved.id !== rsvp.id)];
+  const others = retained.filter((saved) => saved.id !== rsvp.id);
+  const newestMs = others.reduce((newest, saved) => {
+    const savedMs = getRsvpTimestampMs(saved);
+    return Number.isFinite(savedMs) && savedMs > newest ? savedMs : newest;
+  }, -Infinity);
+  const confirmed = newestMs === -Infinity || getRsvpTimestampMs(rsvp) > newestMs ? rsvp : { ...rsvp, modified_at: new Date(newestMs + 1).toISOString() };
+  return [confirmed, ...others];
 }
 
 /**

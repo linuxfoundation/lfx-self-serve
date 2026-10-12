@@ -595,7 +595,13 @@ describe('buildAttendeePreviewFromRsvps', () => {
 
 describe('retainConfirmedRsvp', () => {
   const allDates = rsvp({ id: 'rsvp-all', registrant_id: 'reg-1', scope: 'all' });
-  const single = rsvp({ id: 'rsvp-single', registrant_id: 'reg-2', scope: 'single', occurrence_id: OCC_AUG_11_SECONDS });
+  const single = rsvp({
+    id: 'rsvp-single',
+    registrant_id: 'reg-2',
+    scope: 'single',
+    occurrence_id: OCC_AUG_11_SECONDS,
+    modified_at: '2026-07-11T00:00:00Z',
+  });
 
   it('keeps answers from other registrations when a scoped answer is confirmed', () => {
     expect(retainConfirmedRsvp([allDates], single)).toEqual([single, allDates]);
@@ -609,5 +615,28 @@ describe('retainConfirmedRsvp', () => {
   it('lets a new all-dates answer supersede every retained answer, across registrations', () => {
     const newAll = rsvp({ id: 'rsvp-new-all', registrant_id: 'reg-2', scope: 'all' });
     expect(retainConfirmedRsvp([single, allDates], newAll)).toEqual([newAll]);
+  });
+
+  it('stamps a scoped answer with a stale timestamp after the retained all-dates answer it follows', () => {
+    const laterAll = rsvp({ id: 'rsvp-all', registrant_id: 'reg-1', scope: 'all', modified_at: '2026-07-12T00:00:00Z' });
+    const staleSingle = rsvp({
+      id: 'rsvp-single',
+      registrant_id: 'reg-1',
+      response_type: 'declined',
+      scope: 'single',
+      occurrence_id: OCC_AUG_11_SECONDS,
+      modified_at: '2026-07-11T00:00:00Z',
+    });
+
+    const retained = retainConfirmedRsvp([laterAll], staleSingle);
+
+    expect(retained).toEqual([{ ...staleSingle, modified_at: '2026-07-12T00:00:00.001Z' }, laterAll]);
+    expect(selectApplicableRsvp(OCC_AUG_11_SECONDS, retained)?.id).toBe('rsvp-single');
+    expect(selectApplicableRsvp(OCC_AUG_18_SECONDS, retained)?.id).toBe('rsvp-all');
+  });
+
+  it('ignores unparseable retained timestamps when ordering a scoped answer', () => {
+    const malformed = rsvp({ id: 'rsvp-all', scope: 'all', modified_at: 'not-a-date' });
+    expect(retainConfirmedRsvp([malformed], single)).toEqual([single, malformed]);
   });
 });

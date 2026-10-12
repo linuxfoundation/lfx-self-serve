@@ -295,6 +295,24 @@ describe('UserService', () => {
       subscription.unsubscribe();
     });
 
+    it('shows a single-date answer confirmed after a retained all-dates answer even when its acknowledgement timestamp is older', () => {
+      const firstDate = String(Date.parse('2099-01-01T10:00:00Z') / 1000);
+      indexed = {
+        ...indexed,
+        recurrence: { type: 2, repeat_interval: 1 },
+        occurrences: [{ occurrence_id: firstDate, start_time: '2099-01-01T10:00:00Z', duration: 60 }],
+      };
+      service.recordConfirmedMeetingRsvp(response({ modified_at: '2026-10-12T12:00:00Z' }));
+      const stored = service.recordConfirmedMeetingRsvp(
+        response({ id: 'synthetic-single-response', scope: 'single', occurrence_id: firstDate, response_type: 'declined', modified_at: '2026-10-12T11:00:00Z' })
+      );
+      let rows: Meeting[] = [];
+      const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      expect(stored?.modified_at).toBe('2026-10-12T12:00:00.001Z');
+      expect(rows[0].my_rsvp).toEqual(stored);
+      subscription.unsubscribe();
+    });
+
     it('keeps newer applicable indexed responses and occurrence-specific precedence on the same registration', () => {
       const occurrenceId = String(Date.parse('2099-01-01T10:00:00Z') / 1000);
       indexed = {

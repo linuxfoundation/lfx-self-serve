@@ -47,6 +47,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
       meeting_type: 'Technical',
       is_invite_responses_enabled: true,
       my_rsvp: null,
+      my_registrant_ids: ['synthetic-registrant'],
       ...extra,
     }) as Meeting;
   const response = (responseType: 'accepted' | 'declined' | 'maybe', scope: 'all' | 'single' = 'all'): NonNullable<Meeting['my_rsvp']> => ({
@@ -367,6 +368,15 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     respond(component, 'all');
     expect(ids(component)).toEqual(['unknown', 'pending', 'owned', 'maybe', 'declined', 'legacy', 'disabled-unknown']);
     http.expectNone('/api/user/meetings');
+  });
+
+  it('keeps meetings without an active registration in All meetings but out of Needs response', () => {
+    const component = mount([pending, row('organizer-only', { organizer: true, my_registrant_ids: [] })]);
+
+    expect(ids(component)).toEqual(['pending', 'organizer-only']);
+    expect(component['pendingRsvpCount']()).toBe(1);
+    respond(component, 'pending');
+    expect(ids(component)).toEqual(['pending']);
   });
 
   it.each(['pending', 'accepted', 'maybe', 'declined'] as const)('reclassifies an unavailable RSVP as %s when a refresh recovers enrichment', (answer) => {

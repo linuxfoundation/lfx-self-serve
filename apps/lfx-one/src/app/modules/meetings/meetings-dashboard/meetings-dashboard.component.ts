@@ -893,7 +893,10 @@ export class MeetingsDashboardComponent {
   }
 
   private isPendingRsvp(meeting: Meeting): boolean {
-    return isMeetingInviteResponsesEnabled(meeting) && meeting.my_rsvp !== undefined && !getApplicableMeetingRsvp(meeting);
+    // Without an active registration the RSVP write cannot resolve a registrant, so there is nothing to answer.
+    return (
+      isMeetingInviteResponsesEnabled(meeting) && meeting.my_rsvp !== undefined && !!meeting.my_registrant_ids?.length && !getApplicableMeetingRsvp(meeting)
+    );
   }
 
   private meetingStartLabel(meeting: Meeting, options: Intl.DateTimeFormatOptions): string {
