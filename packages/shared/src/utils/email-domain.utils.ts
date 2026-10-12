@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MULTI_PART_PUBLIC_SUFFIXES, PERSONAL_EMAIL_PROVIDER_LABELS } from '../constants/newsletter-member-benefit.constants';
+import { getDomain } from 'tldts';
+
+import { MULTI_TENANT_MAIL_PARENT_DOMAINS, PERSONAL_EMAIL_PROVIDER_LABELS } from '../constants/newsletter-member-benefit.constants';
 
 /** Lowercase LDH labels separated by dots, at least two labels — the only shape a domain may take in a query-service filter. */
 const DOMAIN_PATTERN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -31,32 +33,40 @@ export function emailDomain(email: string | null | undefined): string | null {
 }
 
 /**
- * The registrable domain (the company-owned part) of a normalized domain: its last two labels, or
- * last three when the last two form a known multi-part public suffix (`eng.acme.co.uk` → `acme.co.uk`).
+ * The registrable domain (the part one organization owns) of a normalized domain, from the Public
+ * Suffix List including its private section (`eng.acme.co.uk` → `acme.co.uk`). Under a multi-tenant
+ * mail host the tenant is the owner (`support.acme.zendesk.com` → `acme.zendesk.com`), so a tenant
+ * address never stands in for the host company. Null when the domain is itself a public suffix.
  */
-export function registrableDomain(domain: string): string {
-  const labels = domain.split('.');
-  const lastTwo = labels.slice(-2).join('.');
-  const take = MULTI_PART_PUBLIC_SUFFIXES.has(lastTwo) && labels.length >= 3 ? 3 : 2;
-  return labels.slice(-take).join('.');
+export function registrableDomain(domain: string): string | null {
+  for (const parent of MULTI_TENANT_MAIL_PARENT_DOMAINS) {
+    if (domain.endsWith(`.${parent}`)) {
+      const tenantLabel = domain
+        .slice(0, -(parent.length + 1))
+        .split('.')
+        .pop();
+      return `${tenantLabel}.${parent}`;
+    }
+  }
+  return getDomain(domain, { allowPrivateDomains: true });
 }
 
 /** True when the domain belongs to a personal mailbox provider (`gmail.com`, `outlook.jp`, `yahoo.co.in`, …). */
 export function isPersonalEmailDomain(domain: string): boolean {
   const registrable = registrableDomain(domain);
-  if (MULTI_PART_PUBLIC_SUFFIXES.has(registrable)) return false;
-  return PERSONAL_EMAIL_PROVIDER_LABELS.has(registrable.split('.')[0]);
+  return !!registrable && PERSONAL_EMAIL_PROVIDER_LABELS.has(registrable.split('.')[0]);
 }
 
 /**
  * Domains a member company may have recorded for this address's domain: the domain itself, then
  * each parent down to (and including) the registrable domain — `eng.acme.com` → `[eng.acme.com,
- * acme.com]`. Never walks up to a bare public suffix (`co.uk`, `com`), so a parent can only ever
- * match a company that registered that exact domain.
+ * acme.com]`. Never walks up to a public suffix (`co.uk`, `com.vn`) or out of a multi-tenant tenant
+ * (`acme.atlassian.net` never yields `atlassian.net`), so a parent only matches a company that
+ * registered that exact domain and controls every mailbox under it.
  */
 export function candidateMemberDomains(domain: string): string[] {
   const registrable = registrableDomain(domain);
-  if (MULTI_PART_PUBLIC_SUFFIXES.has(registrable)) return [];
+  if (!registrable) return [];
   const candidates: string[] = [];
   let current = domain;
   while (current.length >= registrable.length) {

@@ -39,57 +39,29 @@ export const PERSONAL_EMAIL_PROVIDER_LABELS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Two-label public suffixes under which the registrable domain is the last THREE labels
- * (`acme.co.uk`, not `co.uk`). Used to stop the parent-domain walk before a bare public suffix and
- * to find the provider label of addresses like `name@yahoo.co.in`.
+ * Hosts whose subdomains belong to different customers and can receive mail (help desks, hosted
+ * tenants). A tenant (`acme.zendesk.com`) is treated as its own registrable domain, so an address
+ * there can never qualify through the host company's own domain (`zendesk.com`). The Public Suffix
+ * List's private section does not list these.
  */
-export const MULTI_PART_PUBLIC_SUFFIXES: ReadonlySet<string> = new Set([
-  'co.uk',
-  'org.uk',
-  'ac.uk',
-  'gov.uk',
-  'me.uk',
-  'ltd.uk',
-  'plc.uk',
-  'com.au',
-  'net.au',
-  'org.au',
-  'edu.au',
-  'co.nz',
-  'org.nz',
-  'co.jp',
-  'ne.jp',
-  'or.jp',
-  'ac.jp',
-  'co.kr',
-  'or.kr',
-  'co.in',
-  'net.in',
-  'org.in',
-  'co.za',
-  'org.za',
-  'co.il',
-  'org.il',
-  'com.br',
-  'net.br',
-  'org.br',
-  'com.cn',
-  'net.cn',
-  'org.cn',
-  'com.hk',
-  'com.tw',
-  'com.sg',
-  'com.my',
-  'com.mx',
-  'com.ar',
-  'com.tr',
-  'com.pl',
-  'co.id',
-  'co.th',
+export const MULTI_TENANT_MAIL_PARENT_DOMAINS: ReadonlySet<string> = new Set([
+  'onmicrosoft.com',
+  'atlassian.net',
+  'zendesk.com',
+  'freshdesk.com',
+  'service-now.com',
+  'my.salesforce.com',
+  'force.com',
+  'helpscoutapp.com',
+  'groups.io',
+  'googlegroups.com',
 ]);
 
 /** 404 code the reader endpoint returns for an unsent (draft/scheduled) issue opened by a non-manager — the page shows its draft notice. */
 export const NEWSLETTER_NOT_SENT_ERROR_CODE = 'NEWSLETTER_NOT_SENT';
+
+/** 403 code of a write refused because the caller is impersonating (BFF `blockDuringImpersonation`). */
+export const IMPERSONATION_READ_ONLY_ERROR_CODE = 'IMPERSONATION_READ_ONLY';
 
 /** Linux Foundation (TLF) project slug whose corporate memberships make a company's employees eligible. */
 export const MEMBER_BENEFIT_FOUNDATION_SLUG = 'tlf';
@@ -103,8 +75,15 @@ export const MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS = 10 * 60 * 1000;
 /** Upper bound on member-benefit candidate domains checked per user (several verified emails × parent domains). */
 export const MEMBER_BENEFIT_MAX_CANDIDATE_DOMAINS = 20;
 
-/** `project_membership.status` filters sent to query-service (exact, case-sensitive); responses are re-filtered case-insensitively. */
-export const MEMBER_BENEFIT_ACTIVE_STATUS_FILTERS: readonly string[] = ['status:Active', 'status:Purchased', 'status:active', 'status:purchased'];
+/**
+ * `project_membership.status` filters sent to query-service, derived from the active statuses in
+ * both the stored (`Active`) and lowercase casing — matching is exact and case-sensitive upstream;
+ * responses are re-filtered case-insensitively.
+ */
+export const MEMBER_BENEFIT_ACTIVE_STATUS_FILTERS: readonly string[] = [...MEMBER_BENEFIT_ACTIVE_MEMBERSHIP_STATUSES].flatMap((status) => [
+  `status:${status.charAt(0).toUpperCase()}${status.slice(1)}`,
+  `status:${status}`,
+]);
 
 /** Most b2b_org rows read for one domain check — a handful of companies can share an alias. */
 export const MEMBER_BENEFIT_B2B_ORG_MAX_RESULTS = 200;

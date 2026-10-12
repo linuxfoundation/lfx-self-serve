@@ -64,16 +64,17 @@ Me-only pages are the exception: `/profile`, `/crowdfunding`, `/mentorship`, `/f
 
 ### Newsletter permalink reader: Linux Foundation member benefit
 
-`/newsletters/:projectSlug/:id` (`NewsletterReaderComponent`, `authGuard` only) resolves the slug, then asks `GET /api/newsletters/:projectUid/:id/reader` (`NewsletterReaderController`, #3469) for an access decision. The BFF evaluates this ladder on every call, and the decision is never cached:
+`/newsletters/:projectSlug/:id` (`NewsletterReaderComponent`, `authGuard` only) resolves the slug, then asks `GET /api/newsletters/:projectUid/:id/reader` (`NewsletterReaderController` over `NewsletterMemberBenefitService.evaluateReaderAccess`, #3469) for an access decision. The BFF evaluates this ladder on every call, and the decision is never cached:
 
-1. **Project writer → `manager`.** Drafts are included. The ED/admin experience is unchanged.
+1. **Project `writer_guard` → `manager`.** Drafts are included. The ED/admin experience is unchanged.
 2. **Any other caller sees sent issues only.** An unsent issue answers 404 with code `NEWSLETTER_NOT_SENT`, which the page renders as the draft notice. Draft gating is therefore server-side.
-3. **Already in one of the issue's audience committees → `group_member`.** Matched by LFID username, or by any verified email for members added by email only.
-4. **Employee of a Linux Foundation member company → `eligible`.** Every Persona can reach this rung. The caller qualifies through a verified email (auth-service `user_emails.read`; the primary only when the session email is verified):
+3. **Project `auditor_guard` → `auditor`.** Auditors, including LF staff with the global grant, read sent issues and are never auto-joined.
+4. **Already in one of the issue's audience committees → `group_member`.** Matched by LFID username, or by any verified email for members added by email only.
+5. **Employee of a Linux Foundation member company → `eligible`.** Every Persona can reach this rung. The caller qualifies through a verified email (auth-service `user_emails.read`, keyed on the LFID username; the primary only when the session email is verified). An auth-service outage answers 503 rather than denying:
    - Personal mailbox providers never qualify.
-   - The email domain, or a parent domain down to the registrable domain, must match an active (`Active`/`Purchased`) TLF `project_membership.company_domain`, or a `b2b_org` `primary_domain`/`domain_aliases` (`tags_all=is_member:true`) for a company that holds an active TLF membership.
+   - The email domain, or a parent domain down to the registrable domain, must match. The registrable domain comes from the Public Suffix List, so `com.vn` is never a candidate. A tenant of a multi-tenant mail host such as `acme.zendesk.com` is its own registrable domain, so it never matches the host company. The domain must match an active (`Active`/`Purchased`) TLF `project_membership.company_domain`, or a `b2b_org` `primary_domain`/`domain_aliases` (`tags_all=is_member:true`) for a company that holds an active TLF membership.
    - The issue must also have a **Newsletter-category** audience committee.
-5. **Otherwise → `denied`.** The body is withheld and the page shows the members-only screen. The reason is one of `no_company_email`, `not_member_company` or `no_newsletter_group`.
+6. **Otherwise → `denied`.** The body is withheld and the page shows the members-only screen. The reason is one of `no_company_email`, `not_member_company` or `no_newsletter_group`.
 
 For an `eligible` reader the page calls `POST …/join` once, in the browser only (never during SSR), and shows a "You're on the list" banner. The join:
 
@@ -88,7 +89,7 @@ Future issues then reach the reader through the existing committee-based send.
 
 **`b2b_org` access.** `b2b_org` is gated on `auditor`, and the app's M2M client cannot currently read it. That lookup is fail-soft, so matching uses membership domains until the grant lands. The active-membership index is cached per process for 10 minutes. An empty index throws 503 rather than denying everyone.
 
-**Known limitation.** The upstream `GET /projects/{uid}/newsletters/{id}` is still `project#viewer`. The reader gate is enforced by the BFF, not by newsletter-service.
+**Scope of the gate.** The ladder decides what the reader page shows and who the benefit join adds. It is not the authorization boundary of the issue itself: the upstream `GET /projects/{uid}/newsletters/{id}`, and the BFF route that proxies it, remain `project#viewer`. A caller who cannot read the project at all, for example on a private project, gets the reader's generic error state rather than the members-only screen.
 
 My Meetups (`/meetups`, including the legacy `/me/meetups` redirect) uses a conditional exception: `meetupsLensGuard` selects Me before page activation when entering from Foundation or Project, but preserves Org. It calls the non-navigating `setLens('me')` for every effective lens except Org, including Me: delayed writer grants can temporarily clamp a stored Foundation/Project selection to Me, so reasserting Me corrects the persisted selection before grants arrive. An already-selected Me lens does not rewrite its cookie. The flat meetup URL, query parameters, and fragment remain intact; no Foundation/Project meetup destination is constructed.
 

@@ -27,6 +27,8 @@ export class NewsletterMemberBenefitBannerComponent {
   // === Computed Signals ===
   protected readonly status = computed(() => this.joinState().status);
   protected readonly confirmedEmail = computed(() => this.joinState().result?.email || this.email());
+  /** Only the address the server confirmed: an existing membership may be under a different email than the one that qualified. */
+  protected readonly alreadyListedEmail = computed(() => this.joinState().result?.email ?? '');
   protected readonly companyLabel = computed(() => this.joinState().result?.company_name || this.companyName() || 'your company');
   protected readonly groupLabel = computed(() => this.joinState().result?.committee_name || this.groupName() || 'this newsletter');
 }

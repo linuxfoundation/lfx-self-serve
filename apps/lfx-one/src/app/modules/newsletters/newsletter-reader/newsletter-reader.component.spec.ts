@@ -359,6 +359,21 @@ describe('NewsletterReaderComponent', () => {
       expect(fixture.nativeElement.textContent).toContain('jane@acme-motors.example');
     });
 
+    it('shows no banner when the join is refused because an admin is impersonating', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of(eligibleAccess));
+      vi.mocked(newsletterService.joinNewsletterGroup).mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'not available', code: 'IMPERSONATION_READ_ONLY' } }))
+      );
+
+      fixture = TestBed.createComponent(NewsletterReaderComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+      TestBed.tick();
+
+      expect(component['joinState']().status).toBe('idle');
+    });
+
     it('surfaces a failed join and retries on demand', () => {
       vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
       vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of(eligibleAccess));

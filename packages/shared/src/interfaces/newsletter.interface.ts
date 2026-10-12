@@ -183,12 +183,13 @@ export interface NewsletterReaderState {
 /**
  * Why the reader may open an issue:
  * - `manager` — project writer (drafts included)
- * - `group_member` — already in the issue's newsletter group
+ * - `auditor` — project auditor (LF staff included); reads sent issues, never auto-joined
+ * - `group_member` — already in one of the issue's audience committees
  * - `eligible` — verified email at an active Linux Foundation member company; the reader page then
  *   adds that email to the newsletter group (the member benefit)
  * - `denied` — none of the above; the body is withheld
  */
-export type NewsletterReaderAccessLevel = 'manager' | 'group_member' | 'eligible' | 'denied';
+export type NewsletterReaderAccessLevel = 'manager' | 'auditor' | 'group_member' | 'eligible' | 'denied';
 
 /** Why a reader was denied: no verified company email, a company that is not an LF member, or an issue with no newsletter group to join. */
 export type NewsletterReaderDeniedReason = 'no_company_email' | 'not_member_company' | 'no_newsletter_group';
@@ -260,7 +261,7 @@ export interface NewsletterMemberBenefitGroup {
 
 /** Server-side outcome of the newsletter reader access ladder (BFF-internal; never serialized as-is). */
 export type NewsletterReaderEvaluation =
-  | { level: 'manager' | 'group_member'; newsletter: Newsletter }
+  | { level: 'manager' | 'auditor' | 'group_member'; newsletter: Newsletter }
   | { level: 'eligible'; newsletter: Newsletter; match: NewsletterMemberBenefitMatch; group: NewsletterMemberBenefitGroup }
   | { level: 'denied'; newsletter: Newsletter; reason: NewsletterReaderDeniedReason };
 

@@ -10,42 +10,64 @@ import {
   MEMBER_BENEFIT_FOUNDATION_SLUG,
   MEMBER_BENEFIT_MAX_CANDIDATE_DOMAINS,
   NEWSLETTER_COMMITTEE_CATEGORY,
+  NEWSLETTER_NOT_SENT_ERROR_CODE,
 } from '@lfx-one/shared/constants';
 import {
   B2bOrgIndexedDoc,
   Committee,
-  CommitteeMember,
-  CreateCommitteeMemberRequest,
   MemberBenefitCompany,
   MemberBenefitDomainIndex,
   Newsletter,
-  NewsletterJoinStatus,
+  NewsletterJoinResult,
   NewsletterMemberBenefitEligibility,
   NewsletterMemberBenefitGroup,
   NewsletterMemberBenefitMatch,
+  NewsletterReaderEvaluation,
   ProjectMembershipDoc,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
-import { candidateMemberDomains, emailDomain, isPersonalEmailDomain, normalizeDomain } from '@lfx-one/shared/utils/email-domain.utils';
-import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils/org-selector.utils';
+import {
+  candidateMemberDomains,
+  emailDomain,
+  isFilterSafeIdentifier,
+  isFilterSafeUsername,
+  isPersonalEmailDomain,
+  normalizeDomain,
+} from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { isBaseApiError, MicroserviceError } from '../errors';
+import { AuthorizationError, isBaseApiError, MicroserviceError, ResourceNotFoundError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { generateM2MToken } from '../utils/m2m-token.util';
+import { AccessCheckService } from './access-check.service';
+import { CommitteeService } from './committee.service';
 import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { NewsletterService } from './newsletter.service';
 
 /**
- * Newsletter member benefit (#3469): an employee of a Linux Foundation (TLF) member company may
- * read a newsletter permalink and is added to the newsletter's group automatically.
+ * Newsletter permalink reader access and the Linux Foundation member benefit (#3469): an employee
+ * of a TLF member company may read a newsletter permalink and is added to the newsletter's group.
  *
- * Eligibility needs facts the signed-in user cannot read with their own token — TLF memberships,
- * member-company domains, the newsletter group's roster — so those reads use the app's M2M token,
- * scoped per call through `ApiRequestOptions.bearerToken`. Identity always comes from the user's
- * session (auth-service verified emails), never from the client.
+ * Reader access ladder ({@link evaluateReaderAccess}), evaluated on every call:
+ * 1. project `writer_guard` → `manager` (drafts included)
+ * 2. any other caller only ever sees SENT issues (unsent → 404 `NEWSLETTER_NOT_SENT`)
+ * 3. project `auditor_guard` (incl. LF staff) → `auditor`
+ * 4. already in one of the issue's audience committees → `group_member`
+ * 5. verified email at an active TLF member company, and the issue has a Newsletter-category
+ *    group → `eligible`
+ * 6. otherwise → `denied`
+ *
+ * This ladder governs the reader page and the benefit join. It is not the authorization boundary
+ * of the issue itself: upstream `GET /projects/{uid}/newsletters/{id}` remains `project#viewer`.
+ *
+ * Facts the signed-in user cannot read with their own token — TLF memberships, member-company
+ * domains, group rosters — and the single group add use the app's M2M token, scoped per call
+ * through `ApiRequestOptions.bearerToken`, only after the issue was read with the user's token.
+ * Identity always comes from the user's session (auth-service verified emails), never the client.
  *
  * Domain sources, unioned:
  * 1. `project_membership.company_domain` of active TLF memberships (one domain per membership).
@@ -59,10 +81,22 @@ export class NewsletterMemberBenefitService {
 
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly emailVerificationService: EmailVerificationService;
+  private readonly newsletterService: NewsletterService;
+  private readonly accessCheckService: AccessCheckService;
+  private readonly committeeService: CommitteeService;
 
-  public constructor(microserviceProxy?: MicroserviceProxyService, emailVerificationService?: EmailVerificationService) {
+  public constructor(
+    microserviceProxy?: MicroserviceProxyService,
+    emailVerificationService?: EmailVerificationService,
+    newsletterService?: NewsletterService,
+    accessCheckService?: AccessCheckService,
+    committeeService?: CommitteeService
+  ) {
     this.microserviceProxy = microserviceProxy ?? new MicroserviceProxyService();
     this.emailVerificationService = emailVerificationService ?? new EmailVerificationService();
+    this.newsletterService = newsletterService ?? new NewsletterService();
+    this.accessCheckService = accessCheckService ?? new AccessCheckService();
+    this.committeeService = committeeService ?? new CommitteeService();
   }
 
   /** Test seam: forget the cached TLF domain index. */
@@ -71,17 +105,83 @@ export class NewsletterMemberBenefitService {
     NewsletterMemberBenefitService.domainIndexInFlight = null;
   }
 
+  /** The reader access ladder for one issue (see the class doc). Throws on any lookup outage rather than denying. */
+  public async evaluateReaderAccess(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterReaderEvaluation> {
+    const [newsletter, access] = await Promise.all([
+      this.newsletterService.getNewsletter(req, projectUid, newsletterUid),
+      this.accessCheckService.checkAccessStrict(req, [
+        { resource: 'project', id: projectUid, access: 'writer_guard' },
+        { resource: 'project', id: projectUid, access: 'auditor_guard' },
+      ]),
+    ]);
+
+    if (access.get(`${projectUid}#writer_guard`)) return { level: 'manager', newsletter };
+
+    if (newsletter.status !== 'sent') {
+      throw new ResourceNotFoundError('Newsletter', newsletterUid, {
+        operation: 'evaluate_newsletter_reader_access',
+        service: 'newsletter_member_benefit',
+        code: NEWSLETTER_NOT_SENT_ERROR_CODE,
+      });
+    }
+
+    if (access.get(`${projectUid}#auditor_guard`)) return { level: 'auditor', newsletter };
+
+    const m2mToken = await generateM2MToken(req);
+    const verifiedEmails = await resolveVerifiedUserEmails(req, this.emailVerificationService, { strict: true });
+
+    if (await this.isGroupMember(req, m2mToken, newsletter.committee_uids ?? [], verifiedEmails)) {
+      return { level: 'group_member', newsletter };
+    }
+
+    const eligibility = await this.resolveEligibility(req, m2mToken, verifiedEmails);
+    if (!eligibility.match) {
+      return { level: 'denied', newsletter, reason: eligibility.denied_reason ?? 'not_member_company' };
+    }
+
+    const group = await this.resolveNewsletterGroup(req, m2mToken, newsletter);
+    if (!group) {
+      return { level: 'denied', newsletter, reason: 'no_newsletter_group' };
+    }
+
+    return { level: 'eligible', newsletter, match: eligibility.match, group };
+  }
+
+  /**
+   * The member benefit: re-runs the whole ladder, then adds the caller's qualifying work email to
+   * the issue's newsletter group. A caller already in the group gets `already_member` (a second tab,
+   * or a retry after the add was indexed). Managers, auditors and denied callers are refused.
+   */
+  public async joinNewsletterGroup(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterJoinResult> {
+    const evaluation = await this.evaluateReaderAccess(req, projectUid, newsletterUid);
+
+    if (evaluation.level === 'group_member') {
+      return { status: 'already_member', email: '', committee_name: '', company_name: '' };
+    }
+
+    if (evaluation.level !== 'eligible') {
+      throw new AuthorizationError('Not eligible to join this newsletter', {
+        operation: 'join_newsletter_group',
+        service: 'newsletter_member_benefit',
+        code: 'NEWSLETTER_MEMBER_BENEFIT_NOT_ELIGIBLE',
+      });
+    }
+
+    const status = await this.addToNewsletterGroup(req, await generateM2MToken(req), evaluation.group, evaluation.match);
+    logger.info(req, 'newsletter_member_benefit_join', 'Member benefit join completed', {
+      committee_uid: evaluation.group.uid,
+      b2b_org_uid: evaluation.match.b2b_org_uid,
+      status,
+    });
+    return { status, email: evaluation.match.email, committee_name: evaluation.group.name, company_name: evaluation.match.company_name };
+  }
+
   /**
    * Whether the signed-in user qualifies through a verified email at an active TLF member company.
    * Emails are tried in auth-service order (primary first); within an email the most specific
    * domain wins. Throws when the membership index cannot be loaded — an outage must never read as
    * "not a member".
    */
-  /** The signed-in user's verified emails (auth-service, impersonation-aware), lowercased, primary first. */
-  public async getVerifiedEmails(req: Request): Promise<string[]> {
-    return resolveVerifiedUserEmails(req, this.emailVerificationService);
-  }
-
   public async resolveEligibility(req: Request, m2mToken: string, verifiedEmails: string[]): Promise<NewsletterMemberBenefitEligibility> {
     const companyEmails: { email: string; candidates: string[] }[] = [];
     for (const email of verifiedEmails) {
@@ -171,30 +271,23 @@ export class NewsletterMemberBenefitService {
 
   /**
    * Adds the qualifying work email to the newsletter group. M2M because newsletter groups are
-   * invite-only and member-create requires `committee#writer`; the caller must already have
-   * re-verified eligibility in-app. The member gets the matched member company as their
-   * organization, and the generic group-invite email is suppressed because the reader page shows
-   * its own confirmation. A 409 means the email is already a member.
+   * invite-only and member-create requires `committee#writer` (granted to the app's client in
+   * #3470); the caller must already have re-verified eligibility in-app. The member gets the
+   * matched member company as their organization, and the generic group-invite email is
+   * suppressed because the reader page shows its own confirmation. A 409 means already a member.
    */
   public async addToNewsletterGroup(
     req: Request,
     m2mToken: string,
     group: NewsletterMemberBenefitGroup,
     match: NewsletterMemberBenefitMatch
-  ): Promise<NewsletterJoinStatus> {
-    const body: CreateCommitteeMemberRequest = {
-      email: match.email,
-      organization: { id: match.b2b_org_uid, name: match.company_name || null },
-    };
+  ): Promise<NewsletterJoinResult['status']> {
     try {
-      await this.microserviceProxy.proxyRequest<CommitteeMember>(
+      await this.committeeService.createCommitteeMember(
         req,
-        'LFX_V2_SERVICE',
-        `/committees/${group.uid}/members`,
-        'POST',
-        {},
-        body,
-        { 'X-Skip-Notification': 'true' },
+        group.uid,
+        { email: match.email, organization: { id: match.b2b_org_uid, name: match.company_name || null } },
+        true,
         { bearerToken: m2mToken }
       );
       return 'added';

@@ -131,7 +131,7 @@ test.describe('Newsletter member benefit', () => {
 
     await expect(page.getByTestId('newsletter-member-benefit-failed')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await page.getByTestId('newsletter-member-benefit-retry').click();
-    await expect(page.getByTestId('newsletter-member-benefit-already')).toContainText(WORK_EMAIL, { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-member-benefit-already')).toContainText("You're already on the list", { timeout: ELEMENT_TIMEOUT });
   });
 
   test('a reader outside the group and outside member companies gets the members-only screen', async ({ page }) => {

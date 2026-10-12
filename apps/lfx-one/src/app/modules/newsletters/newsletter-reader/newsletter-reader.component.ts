@@ -5,7 +5,7 @@ import { formatDate, isPlatformBrowser, isPlatformServer } from '@angular/common
 import { Component, computed, inject, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { NEWSLETTER_NOT_SENT_ERROR_CODE } from '@lfx-one/shared/constants';
+import { IMPERSONATION_READ_ONLY_ERROR_CODE, NEWSLETTER_NOT_SENT_ERROR_CODE } from '@lfx-one/shared/constants';
 import { NewsletterJoinState, NewsletterReaderState, ServerRequestContext } from '@lfx-one/shared/interfaces';
 import { newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
@@ -209,6 +209,11 @@ export class NewsletterReaderComponent {
               this.newsletterService.joinNewsletterGroup(projectUid, newsletterId).pipe(
                 map((result): NewsletterJoinState => ({ status: result.status, result })),
                 catchError((err) => {
+                  // An admin impersonating a member cannot write on their behalf; that is not a
+                  // failure the reader can retry, so show no banner at all.
+                  if (err?.error?.code === IMPERSONATION_READ_ONLY_ERROR_CODE) {
+                    return of(idle);
+                  }
                   console.error('Failed to add reader to newsletter group', err);
                   return of<NewsletterJoinState>({ status: 'failed' });
                 }),
