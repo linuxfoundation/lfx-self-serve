@@ -8,17 +8,33 @@
       <div class="flex items-center gap-2 flex-wrap">
         <!-- Privacy Badge -->
         @if (meeting().visibility === 'private') {
-          <lfx-tag value="Private" severity="danger" icon="fa-light fa-shield" styleClass="tag-private"></lfx-tag>
+          <lfx-tag
+            value="Private"
+            severity="danger"
+            icon="fa-light fa-shield"
+            styleClass="tag-private"
+            tooltip="Not publicly discoverable. You can't find this meeting in the app, the project calendar, or the webcal feed unless you're invited."
+            data-testid="private-badge"></lfx-tag>
         }
 
         <!-- Restricted Badge -->
         @if (meeting().restricted) {
-          <lfx-tag value="Restricted" severity="warn" icon="fa-light fa-lock"></lfx-tag>
+          <lfx-tag
+            value="Restricted"
+            severity="warn"
+            icon="fa-light fa-lock"
+            tooltip="Only people on the invite list can join."
+            data-testid="restricted-badge"></lfx-tag>
         }
 
         <!-- Registered Badge (upcoming meetings the viewer is registered for) -->
         @if (isRegisteredAttendee()) {
-          <lfx-tag value="Registered" severity="success" icon="fa-light fa-circle-check" data-testid="registered-badge"></lfx-tag>
+          <lfx-tag
+            value="Registered"
+            severity="success"
+            icon="fa-light fa-circle-check"
+            tooltip="You're registered for this meeting."
+            data-testid="registered-badge"></lfx-tag>
         }
 
         <!-- Meeting Type Badge -->
