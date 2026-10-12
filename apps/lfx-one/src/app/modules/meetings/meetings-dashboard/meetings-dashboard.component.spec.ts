@@ -379,6 +379,25 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     expect(ids(component)).toEqual(['pending']);
   });
 
+  it('keeps a retained answer for another date in Needs response while registration IDs are unavailable', () => {
+    const nextId = String(Date.parse('2099-01-01T12:00:00Z') / 1000);
+    const component = mount([
+      row('series', {
+        recurrence: { type: 1, repeat_interval: 1 },
+        occurrences: [{ occurrence_id: nextId, start_time: '2099-01-01T12:00:00Z', duration: 30 }],
+        my_rsvp: undefined,
+        my_registrant_ids: undefined,
+      }),
+    ]);
+    expect(component['pendingRsvpCount']()).toBe(0);
+
+    users.recordConfirmedMeetingRsvp({ ...response('declined', 'single'), meeting_id: 'series', occurrence_id: String(Number(nextId) - 86400) });
+    flush();
+    expect(component['pendingRsvpCount']()).toBe(1);
+    respond(component, 'pending');
+    expect(ids(component)).toEqual(['series']);
+  });
+
   it.each(['pending', 'accepted', 'maybe', 'declined'] as const)('reclassifies an unavailable RSVP as %s when a refresh recovers enrichment', (answer) => {
     const unknown = row('unknown', { my_rsvp: undefined });
     const component = mount([unknown]);

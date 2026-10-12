@@ -119,12 +119,15 @@ async function stubMeetingLists(page: Page, viewerLfid: string, failWrite: boole
         invited: true,
         is_invite_responses_enabled: true,
         my_rsvp: responses.get('up-theirs') ?? null,
+        // Matches the write stub's registrant; the feed always pairs `my_rsvp` with active registrations.
+        my_registrant_ids: ['guest-up-theirs'],
       }),
       upcomingMeeting('up-organizer-pending', 'Invited Organizer', viewer, {
         organizer: true,
         invited: true,
         is_invite_responses_enabled: true,
         my_rsvp: responses.get('up-organizer-pending') ?? null,
+        my_registrant_ids: ['guest-up-organizer-pending'],
       }),
       upcomingMeeting('up-granted', 'Upcoming Granted', SERVICE_ACCOUNT, { organizer: true, is_invite_responses_enabled: false }),
       upcomingMeeting('up-alias', 'Alias Is Not Ownership', { ...OTHER_ORGANIZER, username: 'display-alias-e2e' }, { is_invite_responses_enabled: false }),

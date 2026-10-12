@@ -893,9 +893,14 @@ export class MeetingsDashboardComponent {
   }
 
   private isPendingRsvp(meeting: Meeting): boolean {
-    // Without an active registration the RSVP write cannot resolve a registrant, so there is nothing to answer.
+    // A confirmed empty registration list leaves nothing to answer: the RSVP write cannot resolve a registrant.
+    // Absent IDs mean the lookup was unavailable, and a retained confirmed write already proves a live registration.
+    const registrationIds = meeting.my_registrant_ids;
     return (
-      isMeetingInviteResponsesEnabled(meeting) && meeting.my_rsvp !== undefined && !!meeting.my_registrant_ids?.length && !getApplicableMeetingRsvp(meeting)
+      isMeetingInviteResponsesEnabled(meeting) &&
+      meeting.my_rsvp !== undefined &&
+      (registrationIds === undefined || registrationIds.length > 0) &&
+      !getApplicableMeetingRsvp(meeting)
     );
   }
 
