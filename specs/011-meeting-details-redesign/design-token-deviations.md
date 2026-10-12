@@ -140,6 +140,7 @@ Icon-only colours that sit beside their own label, so no text-contrast tier appl
 | `--md-video-still-disc`        | `rgb(255 255 255 / 15%)` | none                   | The play disc's fill over the still                                                          | No                                     |
 | `--md-video-still-disc-border` | `rgb(255 255 255 / 50%)` | none                   | The play disc's ring                                                                         | No                                     |
 | `--md-video-still-glyph`       | `#fff`                   | none                   | The play glyph                                                                               | No                                     |
+| `--md-video-still-badge`       | `rgb(0 0 0 / 45%)`       | none                   | The recording length badge's fill over the still (E4-02)                                     | No                                     |
 
 ## Dark values
 

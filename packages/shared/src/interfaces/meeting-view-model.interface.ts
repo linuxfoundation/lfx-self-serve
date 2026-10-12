@@ -289,6 +289,8 @@ export interface MeetingArtifactState {
   status: 'available' | 'none' | 'no-access' | 'error' | 'session-expired';
   /** The recording's share URL (`getLargestSessionShareUrl`); unset for the transcript, which opens in a modal. */
   url?: string;
+  /** The recording's length as shown (`formatRecordingDuration`, E4-02); unset when it could not be measured. */
+  duration?: string;
 }
 
 /**

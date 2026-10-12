@@ -6,7 +6,13 @@ import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { MeetingArtifactState, MeetingRecordingSectionState } from '@lfx-one/shared/interfaces';
-import { getLargestSessionShareUrl, getPastMeetingResourceId, getPastMeetingTranscriptUrl, toSafeExternalHref } from '@lfx-one/shared/utils';
+import {
+  formatRecordingDuration,
+  getLargestSessionShareUrl,
+  getPastMeetingResourceId,
+  getPastMeetingTranscriptUrl,
+  toSafeExternalHref,
+} from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -26,8 +32,9 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  *
  * The artifact routes need a session and an occurrence record, so an anonymous viewer is asked to
  * sign in (until the public artifact routes, E4-04), and an ended meeting opened by its series id,
- * which has no occurrence record yet, says its recording appears once it is ready. The AI summary
- * (E4-03) and the recording's duration (E4-02) join this section later.
+ * which has no occurrence record yet, says its recording appears once it is ready. The recording's
+ * length (E4-02) shows on the still when the BFF could measure it. The AI summary (E4-03) joins
+ * this section later.
  */
 @Component({
   selector: 'lfx-meeting-recording',
@@ -107,7 +114,9 @@ export class MeetingRecordingComponent {
           const recording$ = this.meetingService.getPastMeetingRecording(req.id).pipe(
             map((recording): MeetingArtifactState => {
               const url = toSafeExternalHref(getLargestSessionShareUrl(recording));
-              return url ? { status: 'available', url } : { status: 'none' };
+              // The BFF measures the linked session (E4-02); no length is shown rather than a guess.
+              const duration = formatRecordingDuration(recording.duration_seconds) ?? undefined;
+              return url ? { status: 'available', url, duration } : { status: 'none' };
             }),
             catchError((error: unknown) => of(this.artifactFailure(error, 'recording')))
           );

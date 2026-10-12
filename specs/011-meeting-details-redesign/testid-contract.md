@@ -332,6 +332,7 @@ public page shows; until then it has no name here.
 | `tools-summary-btn`                         | AI summary control                                              |
 | `tools-transcript-btn`                      | Transcript control                                              |
 | `tools-recording-poster`                    | The recording's decorative still (not a link)                   |
+| `tools-recording-duration`                  | Its length (E4-02), only when the BFF could measure it          |
 | `tools-recording-unavailable[data-reason]`  | No recording to open: `none` (no artifact) or `no-access`       |
 | `tools-transcript-unavailable[data-reason]` | No transcript to open: `none` (no artifact) or `no-access`      |
 | `tools-loading`                             | The artifacts' first load                                       |
