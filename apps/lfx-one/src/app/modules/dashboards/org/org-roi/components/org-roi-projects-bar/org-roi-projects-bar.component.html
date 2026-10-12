@@ -23,14 +23,20 @@
       role="group"
       aria-label="Bars drawn"
       data-testid="org-roi-projects-bar-series">
-      <label class="flex cursor-pointer items-center gap-2" data-testid="org-roi-projects-bar-series-investment">
-        <p-checkbox [binary]="true" [ngModel]="showInvestment()" [disabled]="!showReturn()" (ngModelChange)="setShowInvestment($event)" />
-        <span>Investment</span>
-      </label>
-      <label class="flex cursor-pointer items-center gap-2" data-testid="org-roi-projects-bar-series-return">
-        <p-checkbox [binary]="true" [ngModel]="showReturn()" [disabled]="!showInvestment()" (ngModelChange)="setShowReturn($event)" />
-        <span>Return</span>
-      </label>
+      <lfx-checkbox
+        [form]="seriesForm"
+        control="investment"
+        inputId="org-roi-projects-bar-series-investment-input"
+        label="Investment"
+        labelClass="cursor-pointer text-sm text-gray-700"
+        data-testid="org-roi-projects-bar-series-investment" />
+      <lfx-checkbox
+        [form]="seriesForm"
+        control="return"
+        inputId="org-roi-projects-bar-series-return-input"
+        label="Return"
+        labelClass="cursor-pointer text-sm text-gray-700"
+        data-testid="org-roi-projects-bar-series-return" />
       @if (!showInvestment() || !showReturn()) {
         <span class="text-xs text-gray-500" data-testid="org-roi-projects-bar-series-hint">At least one stays selected.</span>
       }

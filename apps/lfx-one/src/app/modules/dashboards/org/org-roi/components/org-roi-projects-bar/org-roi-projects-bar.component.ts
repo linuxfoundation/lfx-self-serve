@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, Signal, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { Component, computed, input, Signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
+import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import {
   lfxColors,
   ORG_LENS_ROI_CATEGORY_COLOR,
@@ -15,17 +17,23 @@ import {
 import type { OrgLensRoiProjectBarRow, OrgLensRoiProjectBarSegment, OrgLensRoiProjectRow } from '@lfx-one/shared/interfaces';
 import { formatCurrency } from '@lfx-one/shared/utils';
 import type { ChartData, ChartOptions } from 'chart.js';
-import { CheckboxModule } from 'primeng/checkbox';
+import { map } from 'rxjs';
 
 /** Each project's investment, stacked by contribution category, against the return it is associated with. */
 @Component({
   selector: 'lfx-org-roi-projects-bar',
-  imports: [ChartComponent, CheckboxModule, FormsModule],
+  imports: [ChartComponent, CheckboxComponent],
   templateUrl: './org-roi-projects-bar.component.html',
 })
 export class OrgRoiProjectsBarComponent {
   /** The selected projects, in the order the picker ranked them. */
   public readonly projects = input.required<OrgLensRoiProjectRow[]>();
+
+  /** Which series are drawn. Both start on; whichever is left on alone is disabled, so the chart is never empty. */
+  protected readonly seriesForm = new FormGroup({
+    investment: new FormControl(true, { nonNullable: true }),
+    return: new FormControl(true, { nonNullable: true }),
+  });
 
   /** The same wording the KPI band uses. This chart stacks investment, so it owes the disclosure. */
   protected readonly investmentExplanation = ORG_LENS_ROI_KPI_EXPLANATION.totalExpenditure;
@@ -37,9 +45,12 @@ export class OrgRoiProjectsBarComponent {
   /** Everything past the ceiling is dropped from the drawing and disclosed, never silently. */
   protected readonly hiddenCount: Signal<number> = computed(() => Math.max(0, this.projects().length - this.maxRows));
 
-  /** Which series are drawn. Both start on; the template keeps at least one of them on. */
-  protected readonly showInvestment = signal(true);
-  protected readonly showReturn = signal(true);
+  // Raw value, so a series still counts as shown while its checkbox is disabled.
+  private readonly series = toSignal(this.seriesForm.valueChanges.pipe(map(() => this.seriesForm.getRawValue())), {
+    initialValue: this.seriesForm.getRawValue(),
+  });
+  protected readonly showInvestment: Signal<boolean> = computed(() => this.series().investment);
+  protected readonly showReturn: Signal<boolean> = computed(() => this.series().return);
 
   protected readonly rows: Signal<OrgLensRoiProjectBarRow[]> = computed(() =>
     this.projects()
@@ -216,12 +227,22 @@ export class OrgRoiProjectsBarComponent {
     },
   }));
 
-  public setShowInvestment(shown: boolean): void {
-    this.showInvestment.set(shown);
+  public constructor() {
+    this.seriesForm.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.lockLastSeries());
   }
 
-  public setShowReturn(shown: boolean): void {
-    this.showReturn.set(shown);
+  private lockLastSeries(): void {
+    const { investment, return: returned } = this.seriesForm.controls;
+    if (investment.value && !returned.value) {
+      investment.disable({ emitEvent: false });
+    } else {
+      investment.enable({ emitEvent: false });
+    }
+    if (returned.value && !investment.value) {
+      returned.disable({ emitEvent: false });
+    } else {
+      returned.enable({ emitEvent: false });
+    }
   }
 
   private toSegments(project: OrgLensRoiProjectRow): OrgLensRoiProjectBarSegment[] {
