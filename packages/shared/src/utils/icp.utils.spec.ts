@@ -4,11 +4,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  ICP_DIMENSION_FIELDS,
   ICP_FORM_TYPE,
   ICP_GAP_FILL_QUESTIONS,
   ICP_KEY_PREFIX,
-  ICP_PERSONA_FIELDS,
   ICP_Q_GITHUB_URL,
   ICP_Q_PROJECT_NAME,
   ICP_Q_SIBLING_DOCS,
@@ -44,19 +42,20 @@ const structure = (): IcpStructure => ({
   disqualifiers: 'confirmed',
 });
 
+/** Paul's level-3 subsections that belong under a numbered section heading (§1.x under "## 1.", §3.x under "## 3."). */
+const subheadingsOf = (heading: string): string[] => {
+  const section = /^## (\d+)\./.exec(heading)?.[1];
+  return section ? ICP_REQUIRED_SUBHEADINGS.filter((sub) => sub.startsWith(`### ${section}.`)) : [];
+};
+
 /**
- * A document that satisfies every deterministic gate: the ten level-2
- * headings, the four section-1 subheadings, both Velocity Engine field sets,
- * and every structure value verbatim.
+ * A document that satisfies every deterministic gate: the eleven level-2
+ * headings (Paul's 0.4.0 skeleton), the seven subheadings under sections 1
+ * and 3, and every structure value verbatim.
  */
 const document = (spine: IcpStructure = structure()): string => {
   const verbatim = [...spine.icps.map((icp) => icp.label), ...spine.icps.flatMap((icp) => icp.personas), ...spine.fit_warmth_attributes];
-  const lines = [
-    ...ICP_REQUIRED_HEADINGS.flatMap((heading, index) => (index === 2 ? [heading, ...ICP_REQUIRED_SUBHEADINGS] : [heading])),
-    ...ICP_DIMENSION_FIELDS.map((field) => `- ${field}: covered`),
-    ...ICP_PERSONA_FIELDS.map((field) => `- ${field}: covered`),
-    ...verbatim.map((value) => `- ${value}`),
-  ];
+  const lines = [...ICP_REQUIRED_HEADINGS.flatMap((heading) => [heading, ...subheadingsOf(heading)]), ...verbatim.map((value) => `- ${value}`)];
   // The contract's 1000-character floor — padded with real prose lines so the
   // fixture never passes the length gate on filler the gates would reject.
   while (lines.join('\n').length < 1200) {
@@ -80,7 +79,7 @@ const envelope = (overrides: Partial<IcpEnvelope> = {}): Record<string, unknown>
     content_sha256: 'a'.repeat(64),
     business_outcome: 'Membership growth',
     structure: spine,
-    inputs: { brand_kit_provided: false, message_foundation_provided: false, live_membership_data_provided: false },
+    inputs: { brand_kit_provided: false, message_foundation_provided: false, live_membership_data_provided: false, existing_documents_provided: false },
     intake: {
       mode: 'form',
       completed_at: '2026-09-10T12:00:00Z',
@@ -260,6 +259,18 @@ describe('findMissingIcpHeadings — structural gate S1', () => {
     const broken = document().replace('### 1.4 Current Member/Adopter Segments', '### 1.4 Members');
     expect(findMissingIcpHeadings(broken)).toContain('### 1.4 Current Member/Adopter Segments');
   });
+
+  it('reports a missing section-3 persona subheading (0.4.0)', () => {
+    const broken = document().replace('### 3.3 Persona map', '### 3.3 Map');
+    expect(findMissingIcpHeadings(broken)).toContain('### 3.3 Persona map');
+  });
+
+  it('requires the 0.4.0 Review Sheet and the renamed sections 3-5', () => {
+    const missing = findMissingIcpHeadings(
+      document().replace('## Review Sheet', '## Reviewer Notes').replace('## 5. Regional Emphasis', '## 5. Messaging & Content Handoff')
+    );
+    expect(missing).toEqual(['## Review Sheet', '## 5. Regional Emphasis']);
+  });
 });
 
 describe('findIcpStructureViolations — gates G1-G6', () => {
@@ -267,10 +278,28 @@ describe('findIcpStructureViolations — gates G1-G6', () => {
     expect(findIcpStructureViolations(structure(), document())).toEqual([]);
   });
 
-  it('G1 rejects an ICP with too few personas', () => {
+  it('G1 rejects fewer than four personas in total (0.4.0: 4-9 across all ICPs)', () => {
     const spine = structure();
     spine.icps[0].personas = ['Platform Architect'];
-    expect(findIcpStructureViolations(spine, document(spine)).some((violation) => violation.startsWith('G1'))).toBe(true);
+    const violations = findIcpStructureViolations(spine, document(spine));
+    expect(violations.some((violation) => violation.startsWith('G1') && violation.includes('3 personas in total'))).toBe(true);
+  });
+
+  it('G1 rejects an ICP with no personas even when the total is in band', () => {
+    const spine = structure();
+    spine.icps[0].personas = [];
+    spine.icps[1].personas = ['Head of Infrastructure', 'Staff SRE', 'Developer Advocate', 'Procurement Lead'];
+    const violations = findIcpStructureViolations(spine, document(spine));
+    expect(violations.some((violation) => violation.startsWith('G1') && violation.includes('has 0 personas'))).toBe(true);
+  });
+
+  it('G1 no longer caps personas per ICP at three — up to nine in total pass', () => {
+    const spine = structure();
+    spine.icps[0].personas = ['Platform Architect', 'VP of Engineering', 'Release Manager', 'Security Lead', 'Developer Advocate', 'Procurement Lead'];
+    spine.icps[1].personas = ['Head of Infrastructure', 'Staff SRE', 'Compliance Officer'];
+    expect(findIcpStructureViolations(spine, document(spine))).toEqual([]);
+    spine.icps[1].personas.push('Finance Partner');
+    expect(findIcpStructureViolations(spine, document(spine)).some((violation) => violation.includes('10 personas in total'))).toBe(true);
   });
 
   it('G2 rejects a fit/warmth set outside the 4-6 band', () => {
@@ -291,10 +320,9 @@ describe('findIcpStructureViolations — gates G1-G6', () => {
     expect(findIcpStructureViolations(spine, document(spine)).some((violation) => violation.startsWith('G4'))).toBe(true);
   });
 
-  it('G5 rejects a document missing a Velocity Engine field name', () => {
-    const spine = structure();
-    const violations = findIcpStructureViolations(spine, document(spine).replace('- Trusted Sources: covered', '- Sources: covered'));
-    expect(violations.some((violation) => violation.startsWith('G5') && violation.includes('Trusted Sources'))).toBe(true);
+  it('no longer enforces the retired G5 Velocity Engine field-name gate (0.4.0)', () => {
+    // The reference document carries none of the old twelve persona fields.
+    expect(findIcpStructureViolations(structure(), document()).some((violation) => violation.startsWith('G5'))).toBe(false);
   });
 
   it('G6 requires an inferred disqualifier set to be labelled as such in the document', () => {
@@ -338,26 +366,65 @@ describe('validateIcpEnvelope', () => {
     expect(result.errors.some((error) => error.includes('business_outcome'))).toBe(true);
   });
 
-  it('requires the input-provenance booleans', () => {
+  it('requires the input-provenance booleans, including the 0.4.0 existing-documents flag', () => {
     const result = validateIcpEnvelope(envelope({ inputs: { brand_kit_provided: true } as never }));
     expect(result.valid).toBe(false);
     expect(result.errors.some((error) => error.includes('message_foundation_provided'))).toBe(true);
+    expect(result.errors.some((error) => error.includes('existing_documents_provided'))).toBe(true);
+  });
+
+  it('accepts the existing-documents count when it is a positive integer and rejects it otherwise', () => {
+    const inputs = { brand_kit_provided: false, message_foundation_provided: false, live_membership_data_provided: false, existing_documents_provided: true };
+    expect(validateIcpEnvelope(envelope({ inputs: { ...inputs, existing_documents_count: 2 } })).valid).toBe(true);
+    const result = validateIcpEnvelope(envelope({ inputs: { ...inputs, existing_documents_count: 0 } }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.includes('existing_documents_count'))).toBe(true);
   });
 
   it('rejects a malformed input sha', () => {
     const result = validateIcpEnvelope(
-      envelope({ inputs: { brand_kit_provided: true, brand_kit_sha256: 'nope', message_foundation_provided: false, live_membership_data_provided: false } })
+      envelope({
+        inputs: {
+          brand_kit_provided: true,
+          brand_kit_sha256: 'nope',
+          message_foundation_provided: false,
+          live_membership_data_provided: false,
+          existing_documents_provided: false,
+        },
+      })
     );
     expect(result.valid).toBe(false);
     expect(result.errors.some((error) => error.includes('brand_kit_sha256'))).toBe(true);
   });
 
-  it('enforces the 3-8 intake answer band', () => {
-    const result = validateIcpEnvelope(
-      envelope({ intake: { mode: 'form', completed_at: '2026-09-10T12:00:00Z', answers: [{ question_number: 1, question: 'q', answer: 'a' }] } })
-    );
+  it('enforces the 8-entry intake answer cap', () => {
+    const answers = Array.from({ length: 9 }, (_, index) => ({ question_number: 1 + (index % 8), question: 'q', answer: 'a' }));
+    const result = validateIcpEnvelope(envelope({ intake: { mode: 'form', completed_at: '2026-09-10T12:00:00Z', answers } }));
     expect(result.valid).toBe(false);
     expect(result.errors.some((error) => error.includes('intake.answers'))).toBe(true);
+  });
+
+  it('accepts an empty interview log only for a prefill run or a documents-grounded run (0.4.0 cross-field guard)', () => {
+    const emptyLog = (mode: 'form' | 'prefill') => ({ mode, completed_at: '2026-09-10T12:00:00Z', answers: [] });
+    const withDocuments = {
+      brand_kit_provided: false,
+      message_foundation_provided: false,
+      live_membership_data_provided: false,
+      existing_documents_provided: true,
+    };
+
+    expect(validateIcpEnvelope(envelope({ intake: emptyLog('prefill') })).valid).toBe(true);
+    expect(validateIcpEnvelope(envelope({ intake: emptyLog('form'), inputs: withDocuments })).valid).toBe(true);
+
+    const result = validateIcpEnvelope(envelope({ intake: emptyLog('form') }));
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('intake.answers may be empty only in a prefill run or when existing documents were provided');
+  });
+
+  it('rejects an intake mode outside the contract vocabulary', () => {
+    const result = validateIcpEnvelope(envelope({ intake: { mode: 'batch', completed_at: '2026-09-10T12:00:00Z', answers: [] } as never }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.includes('intake.mode'))).toBe(true);
   });
 
   it('rejects a non-object candidate', () => {

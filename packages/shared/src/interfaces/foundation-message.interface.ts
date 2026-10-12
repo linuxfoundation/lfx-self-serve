@@ -12,7 +12,7 @@ import type { MktgReadmeOutcome, MktgRunGenerateBody, MktgRunResultBody, MktgRun
 
 /** One verbatim intake Q/A pair from the variable-length interview log. */
 export interface FoundationMessageIntakeAnswer {
-  /** 1-based position in the order the question was asked, 1–15. */
+  /** 1-based position in the order the question was asked, 1–20. */
   question_number: number;
   /** The question text as asked (Paul's exact wording for fixed questions). */
   question: string;
@@ -23,19 +23,20 @@ export interface FoundationMessageIntakeAnswer {
 /** How the intake answers were collected. */
 export type FoundationMessageIntakeMode = 'form' | 'conversational';
 
-/** Machine-readable log of the interview (2–15 answers; variable-length). */
+/** Machine-readable log of the interview (2–20 answers; variable-length). */
 export interface FoundationMessageIntake {
   /** How the answers were collected. */
   mode: FoundationMessageIntakeMode;
   /** ISO-8601 timestamp when intake completed — UTC by producer contract, but the shape gate accepts any offset. */
   completed_at: string;
-  /** 2–15 entries, in the order asked. */
+  /** 2–20 entries, in the order asked. */
   answers: FoundationMessageIntakeAnswer[];
 }
 
 /**
- * The five word-count-locked derivative assets from the document's section
- * 1a — each a VERBATIM substring of `document_markdown` (contract gate G3).
+ * The five word-count-locked derivative assets from the document's §3 Copy
+ * Primitives — each a VERBATIM substring of `document_markdown` (contract
+ * gate G3).
  */
 export interface FoundationMessageDerivatives {
   /** 25-word summary (hard cap 25 words). */
@@ -46,8 +47,8 @@ export interface FoundationMessageDerivatives {
   boilerplate: string;
   /** llms.txt content (starts with an `# ` H1 line). */
   llms_txt: string;
-  /** Elevator pitch headline (hard cap 10 words). */
-  elevator_pitch_headline: string;
+  /** The full elevator pitch (hard cap 90 words; Paul's 0.5.0 §3). */
+  elevator_pitch: string;
 }
 
 /** Which inputs the run consumed, as recorded by the agent wrapper. */
