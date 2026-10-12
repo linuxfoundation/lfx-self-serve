@@ -102,7 +102,7 @@ describe('MeetingRecordingComponent', () => {
     );
 
     expect(query('tools-recording-duration')?.textContent?.trim()).toBe('58:24');
-    expect(query('tools-recording-link')?.querySelector('a')?.getAttribute('aria-label')).toBe('Watch recording, 58:24 (opens in a new tab)');
+    expect(query('tools-recording-link')?.querySelector('a')?.getAttribute('aria-label')).toBe('Watch recording, 58 minutes 24 seconds (opens in a new tab)');
   });
 
   it('shows no length when the BFF could not measure it', async () => {

@@ -40,7 +40,7 @@
             </span>
             @if (recording.duration) {
               <span
-                class="absolute bottom-[12px] left-[14px] rounded-[6px] bg-[var(--md-video-still-badge)] px-[9px] py-[3px] text-[12px] font-semibold tabular-nums text-[var(--md-video-still-glyph)]"
+                class="absolute bottom-[12px] left-[14px] rounded-[6px] bg-[var(--md-video-still-badge)] px-[9px] py-[3px] text-[12px] font-semibold tabular-nums text-[var(--md-video-still-ink)]"
                 data-testid="tools-recording-duration"
                 >{{ recording.duration }}</span
               >
@@ -52,7 +52,9 @@
             @case ('available') {
               <lfx-button
                 label="Watch recording"
-                [ariaLabel]="recording.duration ? 'Watch recording, ' + recording.duration + ' (opens in a new tab)' : 'Watch recording (opens in a new tab)'"
+                [ariaLabel]="
+                  recording.durationLabel ? 'Watch recording, ' + recording.durationLabel + ' (opens in a new tab)' : 'Watch recording (opens in a new tab)'
+                "
                 icon="fa-light fa-play"
                 [href]="recording.url"
                 target="_blank"

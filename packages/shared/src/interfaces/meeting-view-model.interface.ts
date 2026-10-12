@@ -291,6 +291,8 @@ export interface MeetingArtifactState {
   url?: string;
   /** The recording's length as shown (`formatRecordingDuration`, E4-02); unset when it could not be measured. */
   duration?: string;
+  /** The same length for a screen reader (`formatRecordingDurationSpoken`), e.g. "58 minutes 24 seconds". */
+  durationLabel?: string;
 }
 
 /**

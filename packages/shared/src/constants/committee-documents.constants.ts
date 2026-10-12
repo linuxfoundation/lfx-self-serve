@@ -3,6 +3,7 @@
 
 import { TagSeverity } from '../interfaces/components.interface';
 import { CommitteeDocumentSource, CommitteeDocumentType } from '../interfaces/committee.interface';
+import { MEETING_RECORDING_MEDIA_FILE_TYPES } from './meeting.constants';
 
 /** Recording type labels for human-readable display. */
 export const RECORDING_TYPE_LABELS: Record<string, string> = {
@@ -17,7 +18,7 @@ export const RECORDING_TYPE_LABELS: Record<string, string> = {
 };
 
 /** Allowed recording file types — only these are surfaced in the documents tab. */
-export const ALLOWED_RECORDING_FILE_TYPES = new Set(['MP4', 'M4A', 'TRANSCRIPT']);
+export const ALLOWED_RECORDING_FILE_TYPES = new Set([...MEETING_RECORDING_MEDIA_FILE_TYPES, 'TRANSCRIPT']);
 
 /** Icon class for each document source type (FA icon only — color applied in Angular pipe). */
 export const DOCUMENT_SOURCE_ICONS: Record<CommitteeDocumentSource, string> = {

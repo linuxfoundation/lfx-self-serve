@@ -142,6 +142,13 @@ Icon-only colours that sit beside their own label, so no text-contrast tier appl
 | `--md-video-still-glyph`       | `#fff`                   | none                   | The play glyph                                                                               | No                                     |
 | `--md-video-still-badge`       | `rgb(0 0 0 / 45%)`       | none                   | The recording length badge's fill over the still (E4-02)                                     | No                                     |
 
+The recording length badge's figures are text, so they get a text-role token with its ratio rather than
+the non-text play-glyph colour:
+
+| Token                  | V2 value | On                                      | Contrast                                             | Used for                     |
+| ---------------------- | -------- | --------------------------------------- | ---------------------------------------------------- | ---------------------------- |
+| `--md-video-still-ink` | `#fff`   | `--md-video-still-badge` over the still | ≈18:1 at the lighter end (`#1a2740` under 45% black) | The recording length (E4-02) |
+
 ## Dark values
 
 The prototype carries a `[data-theme="dark"]` block. Those values are reproduced under

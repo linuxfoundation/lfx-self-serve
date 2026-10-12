@@ -8,6 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { MeetingArtifactState, MeetingRecordingSectionState } from '@lfx-one/shared/interfaces';
 import {
   formatRecordingDuration,
+  formatRecordingDurationSpoken,
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
@@ -116,7 +117,8 @@ export class MeetingRecordingComponent {
               const url = toSafeExternalHref(getLargestSessionShareUrl(recording));
               // The BFF measures the linked session (E4-02); no length is shown rather than a guess.
               const duration = formatRecordingDuration(recording.duration_seconds) ?? undefined;
-              return url ? { status: 'available', url, duration } : { status: 'none' };
+              const durationLabel = formatRecordingDurationSpoken(recording.duration_seconds) ?? undefined;
+              return url ? { status: 'available', url, duration, durationLabel } : { status: 'none' };
             }),
             catchError((error: unknown) => of(this.artifactFailure(error, 'recording')))
           );

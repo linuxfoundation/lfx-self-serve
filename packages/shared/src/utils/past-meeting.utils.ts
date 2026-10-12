@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EnrichedPastMeetingParticipant, Meeting, PastMeeting, PastMeetingRecording, PastParticipantFilters } from '../interfaces';
+import { MEETING_RECORDING_MEDIA_FILE_TYPES, MEETING_RECORDING_SESSION_TOLERANCE_MS } from '../constants/meeting.constants';
+import { EnrichedPastMeetingParticipant, Meeting, PastMeeting, PastMeetingRecording, PastParticipantFilters, RecordingSession } from '../interfaces';
 import { firstValidTimestampMs } from './iso-timestamp.utils';
 
 // scheduled_start_time can be absent or a Go zero-date depending on the row's source — fall back to
@@ -14,60 +15,78 @@ export function getPastMeetingStartTimeMs(meeting: Pick<PastMeeting, 'scheduled_
   return firstValidTimestampMs(meeting.scheduled_start_time, meeting.start_time);
 }
 
+/**
+ * The largest recording session (by total_size), the canonical one: the one Watch recording opens and
+ * the one its length is measured on. The first wins a tie.
+ */
+export function getLargestRecordingSession(recording: PastMeetingRecording | null | undefined): RecordingSession | null {
+  if (!recording?.sessions?.length) {
+    return null;
+  }
+  return recording.sessions.reduce((a, b) => (b.total_size > a.total_size ? b : a));
+}
+
 // Largest recording session (by total_size) is canonical; a recording "exists" only if that
 // session has a shareable URL. Single source of truth for recording availability.
 export function getLargestSessionShareUrl(recording: PastMeetingRecording | null): string | null {
-  if (!recording?.sessions?.length) {
-    return null;
-  }
-  const largest = recording.sessions.reduce((a, b) => (b.total_size > a.total_size ? b : a));
-  return largest.share_url || null;
+  return getLargestRecordingSession(recording)?.share_url || null;
 }
 
-/** Recording file types that carry the meeting's media, as opposed to chat, transcripts or captions. */
-const RECORDING_MEDIA_FILE_TYPES = new Set(['MP4', 'M4A']);
-
 /**
- * The length in seconds of the session `getLargestSessionShareUrl` opens (E4-02, #3256): the span from
- * the earliest start to the latest end of that session's media files (MP4 / M4A).
+ * The length in seconds of the session `getLargestSessionShareUrl` opens (E4-02, #3256): the total
+ * time its media files (MP4 / M4A) cover.
  * @description Sessions carry a start but no end, and files carry no session id, so a file belongs to
- * the session whose start is the latest one at or before the file's own start. A multi-session
- * recording therefore measures only the linked (largest) session, never the sum of all of them.
- * `null` rather than a guess when that session has no media file with valid times.
+ * the session whose start is the latest one at or before the file's own start (allowing
+ * `MEETING_RECORDING_SESSION_TOLERANCE_MS`). A multi-session recording therefore measures only the
+ * linked (largest) session, never the sum of all of them. Within it, the files' intervals are merged
+ * and summed: views of the same span (speaker, gallery, audio) count once, and a gap where the host
+ * stopped and restarted recording does not count. `null` rather than a guess when that session has no
+ * media file with valid times, when any session start cannot be read, or when the total is zero.
  */
 export function getRecordingDurationSeconds(recording: PastMeetingRecording | null | undefined): number | null {
-  if (!recording?.sessions?.length) {
+  const largest = getLargestRecordingSession(recording);
+  if (!recording || !largest) {
     return null;
   }
-  const largest = recording.sessions.reduce((a, b) => (b.total_size > a.total_size ? b : a));
-  const sessionStarts = recording.sessions
-    .map((session) => Date.parse(session.start_time))
-    .filter((start) => Number.isFinite(start))
-    .sort((a, b) => a - b);
+  const sessionStarts = recording.sessions.map((session) => Date.parse(session.start_time));
+  if (sessionStarts.some((start) => !Number.isFinite(start))) {
+    return null;
+  }
   const largestStart = Date.parse(largest.start_time);
-  if (!Number.isFinite(largestStart)) {
-    return null;
-  }
-  const nextStart = sessionStarts.find((start) => start > largestStart) ?? Number.POSITIVE_INFINITY;
+  const nextStart = Math.min(...sessionStarts.filter((start) => start > largestStart), Number.POSITIVE_INFINITY);
+  const from = largestStart - MEETING_RECORDING_SESSION_TOLERANCE_MS;
+  const until = nextStart - MEETING_RECORDING_SESSION_TOLERANCE_MS;
 
-  let earliest = Number.POSITIVE_INFINITY;
-  let latest = Number.NEGATIVE_INFINITY;
+  const intervals: [number, number][] = [];
   for (const file of recording.recording_files ?? []) {
-    if (!RECORDING_MEDIA_FILE_TYPES.has((file.file_type ?? '').toUpperCase())) {
+    if (!MEETING_RECORDING_MEDIA_FILE_TYPES.includes((file.file_type ?? '').toUpperCase())) {
       continue;
     }
     const start = Date.parse(file.recording_start);
     const end = Date.parse(file.recording_end);
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start || start < largestStart || start >= nextStart) {
-      continue;
+    if (Number.isFinite(start) && Number.isFinite(end) && end > start && start >= from && start < until) {
+      intervals.push([start, end]);
     }
-    earliest = Math.min(earliest, start);
-    latest = Math.max(latest, end);
   }
-  if (!Number.isFinite(earliest) || !Number.isFinite(latest)) {
-    return null;
+
+  intervals.sort((a, b) => a[0] - b[0]);
+  let totalMs = 0;
+  let current: [number, number] | null = null;
+  for (const [start, end] of intervals) {
+    if (current && start <= current[1]) {
+      current[1] = Math.max(current[1], end);
+    } else {
+      if (current) {
+        totalMs += current[1] - current[0];
+      }
+      current = [start, end];
+    }
   }
-  return Math.round((latest - earliest) / 1000);
+  if (current) {
+    totalMs += current[1] - current[0];
+  }
+  const seconds = Math.round(totalMs / 1000);
+  return seconds > 0 ? seconds : null;
 }
 
 /** A recording length as the prototype shows it: `m:ss` under an hour, `h:mm:ss` from an hour. */
@@ -80,6 +99,24 @@ export function formatRecordingDuration(seconds: number | null | undefined): str
   const minutes = Math.floor((total % 3600) / 60);
   const secs = String(total % 60).padStart(2, '0');
   return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${secs}` : `${minutes}:${secs}`;
+}
+
+/**
+ * A recording length for a screen reader ("58 minutes 24 seconds"), which can read `58:24` as a time
+ * of day. Zero parts are left out; `null` like `formatRecordingDuration`.
+ */
+export function formatRecordingDurationSpoken(seconds: number | null | undefined): string | null {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds) || seconds < 0) {
+    return null;
+  }
+  const total = Math.round(seconds);
+  const parts: [number, string][] = [
+    [Math.floor(total / 3600), 'hour'],
+    [Math.floor((total % 3600) / 60), 'minute'],
+    [total % 60, 'second'],
+  ];
+  const spoken = parts.filter(([value]) => value > 0).map(([value, unit]) => `${value} ${unit}${value === 1 ? '' : 's'}`);
+  return spoken.length ? spoken.join(' ') : '0 seconds';
 }
 
 // Past-meeting sub-resources are keyed by meeting_and_occurrence_id; project-scoped lists may
