@@ -6,6 +6,8 @@ import {
   MEETING_AGENDA_MAX_LENGTH,
   MEETING_AGENDA_PROMPT_MAX_LENGTH,
   MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH,
+  MEETING_REGISTRANT_BATCH_CONCURRENCY,
+  MEETING_REGISTRANT_BATCH_MAX,
   MIN_CUSTOM_DURATION,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
@@ -41,6 +43,7 @@ import {
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { MicroserviceError, ServiceValidationError } from '../errors';
 import { addInvitedStatusToMeeting, applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
+import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
 import { CommitteeService } from '../services/committee.service';
@@ -839,6 +842,23 @@ export class MeetingController {
         return;
       }
 
+      // Each item becomes one upstream write, so the array length is capped before anything is
+      // attempted — see MEETING_REGISTRANT_BATCH_MAX.
+      if (registrantData.length > MEETING_REGISTRANT_BATCH_MAX) {
+        const validationError = ServiceValidationError.forField(
+          'registrants',
+          `At most ${MEETING_REGISTRANT_BATCH_MAX} registrants can be processed per request`,
+          {
+            operation: 'add_meeting_registrants',
+            service: 'meeting_controller',
+            path: req.path,
+          }
+        );
+
+        next(validationError);
+        return;
+      }
+
       // `email` is the only identity a not-yet-created registrant has — it's what
       // `createBatchResponse` passes to `getIdentifier` for the per-failure log line, so without it a
       // failure is logged against `undefined` and can't be traced back to a row. (Three more fields
@@ -971,6 +991,23 @@ export class MeetingController {
         return;
       }
 
+      // Each item becomes one upstream write, so the array length is capped before anything is
+      // attempted — see MEETING_REGISTRANT_BATCH_MAX.
+      if (updateData.length > MEETING_REGISTRANT_BATCH_MAX) {
+        const validationError = ServiceValidationError.forField(
+          'registrants',
+          `At most ${MEETING_REGISTRANT_BATCH_MAX} registrants can be processed per request`,
+          {
+            operation: 'update_meeting_registrants',
+            service: 'meeting_controller',
+            path: req.path,
+          }
+        );
+
+        next(validationError);
+        return;
+      }
+
       // Check if the registrant UIDs are provided
       if (updateData.some((update) => !update.uid)) {
         const validationError = ServiceValidationError.forField('registrants.uid', 'One or more registrants are missing UID', {
@@ -1094,7 +1131,9 @@ export class MeetingController {
     const startTime = logger.startOperation(req, 'delete_meeting_registrants', {
       meeting_id: uid,
       registrant_count: registrantsUid.length,
-      body_size: JSON.stringify(req.body).length,
+      // Read from the header rather than re-serializing a body that hasn't been validated yet — same
+      // field as the add and update batch endpoints.
+      request_content_length: MeetingController.readContentLength(req),
     });
 
     try {
@@ -1129,6 +1168,23 @@ export class MeetingController {
           service: 'meeting_controller',
           path: req.path,
         });
+
+        next(validationError);
+        return;
+      }
+
+      // Each item becomes one upstream write, so the array length is capped before anything is
+      // attempted — see MEETING_REGISTRANT_BATCH_MAX.
+      if (registrantsUid.length > MEETING_REGISTRANT_BATCH_MAX) {
+        const validationError = ServiceValidationError.forField(
+          'registrantUids',
+          `At most ${MEETING_REGISTRANT_BATCH_MAX} registrants can be processed per request`,
+          {
+            operation: 'delete_meeting_registrants',
+            service: 'meeting_controller',
+            path: req.path,
+          }
+        );
 
         next(validationError);
         return;
@@ -1918,10 +1974,10 @@ export class MeetingController {
       // Process the first registrant
       const firstResult = await operation(inputData[0]);
 
-      // If the first registrant succeeds, process the remaining in parallel
+      // If the first registrant succeeds, process the remaining with bounded concurrency
       let results: PromiseSettledResult<R>[];
       if (inputData.length > 1) {
-        const remainingResults = await Promise.allSettled(inputData.slice(1).map((input) => operation(input)));
+        const remainingResults = await settleInBatches(inputData.slice(1), MEETING_REGISTRANT_BATCH_CONCURRENCY, operation);
         results = [{ status: 'fulfilled', value: firstResult }, ...remainingResults];
       } else {
         results = [{ status: 'fulfilled', value: firstResult }];
@@ -1960,7 +2016,7 @@ export class MeetingController {
       let results: PromiseSettledResult<R>[] = [{ status: 'rejected', reason: error }];
 
       if (inputData.length > 1) {
-        const remainingResults = await Promise.allSettled(inputData.slice(1).map((input) => operation(input)));
+        const remainingResults = await settleInBatches(inputData.slice(1), MEETING_REGISTRANT_BATCH_CONCURRENCY, operation);
         results = [...results, ...remainingResults];
       }
 
