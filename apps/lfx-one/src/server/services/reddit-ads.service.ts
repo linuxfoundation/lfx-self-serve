@@ -142,9 +142,21 @@ export function redditOutcomeAmbiguous(err: unknown): boolean {
   return !(err instanceof RedditApiError) || err.status >= 500;
 }
 
+/**
+ * A 2xx that carried no id for the resource it was supposed to create.
+ *
+ * Deliberately NOT a `RedditApiError`: there is no failing status to report, and the outcome must
+ * stay on `redditOutcomeAmbiguous`'s ambiguous arm because the resource may well exist. It needs its
+ * own type only so `describeRedditFailure` does not call this "no response from Reddit" — Reddit
+ * responded, and with a success status.
+ */
+export class RedditMissingIdError extends Error {}
+
 /** `HTTP <status>` when Reddit answered, or a no-status phrase when it may never have been asked. */
 function describeRedditFailure(err: unknown): string {
-  return err instanceof RedditApiError ? `HTTP ${err.status}` : 'no response from Reddit';
+  if (err instanceof RedditApiError) return `HTTP ${err.status}`;
+  if (err instanceof RedditMissingIdError) return 'Reddit accepted the request but returned no id';
+  return 'no response from Reddit';
 }
 
 async function redditRequest(method: 'GET' | 'POST' | 'PATCH', path: string, body?: Record<string, unknown>): Promise<RedditApiResponse> {
@@ -596,7 +608,7 @@ async function createRedditPromotedPost(accountId: string, config: RedditCampaig
     // A 2xx with no id is not a success with a missing field — there is no id to attach an ad to,
     // and treating it as one would attach the ad to `undefined`. Thrown so it lands on the
     // ambiguous arm: a post may well exist.
-    throw new Error('Reddit post creation returned no id');
+    throw new RedditMissingIdError('Reddit post creation returned no id');
   }
   return postId;
 }
@@ -836,8 +848,16 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
     // Appended to EVERY arm that ends with no ad, because a post this service authored is then
     // sitting unattached and only this result tells the operator it exists. Empty when the post was
     // the operator's own: nothing happened to it, and calling it a stray would be wrong.
+    //
+    // Two wordings, for the same reason the two ad-failure arms differ: "is now unattached" is only
+    // true when the ad definitely was not created. On an ambiguous outcome the ad may exist and the
+    // post may be attached to it, so asserting the stray would send the operator to delete a post
+    // that is in fact serving.
     const strayNote = authoredPostId
-      ? ` A promoted post was authored for this campaign (${authoredPostId}) and is now unattached — attach it to an ad here, or delete it in Reddit Ads Manager.`
+      ? ` A promoted post was authored for this campaign (${authoredPostId}) and is now unattached — attach it to an ad in Reddit Ads Manager, or delete it there.`
+      : '';
+    const unconfirmedStrayNote = authoredPostId
+      ? ` A promoted post was authored for this campaign (${authoredPostId}) and may now be unattached — if no ad exists, attach it to one in Reddit Ads Manager, or delete it there.`
       : '';
 
     try {
@@ -859,7 +879,7 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
           post_id: postId,
         });
         steps.push(
-          `Ad creation UNCONFIRMED (Reddit accepted the request but returned no ad id) — check this campaign in Reddit Ads Manager before adding an ad, to avoid creating a duplicate.${strayNote}`
+          `Ad creation UNCONFIRMED (Reddit accepted the request but returned no ad id) — check this campaign in Reddit Ads Manager BEFORE adding an ad, to avoid creating a duplicate.${unconfirmedStrayNote}`
         );
       }
     } catch (err) {
@@ -870,7 +890,16 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
       });
       // Status only, never the body — see `RedditApiError`. The full message is in the log line
       // above, which is where a 400 gets diagnosed.
-      steps.push(`Ad creation failed (${describeRedditFailure(err)}) — add the ad to this campaign in Reddit Ads Manager.${strayNote}`);
+      //
+      // Split on the same rule as the post arm above, and for the same consequence: a 5xx may have
+      // been raised after the ad was written and a `fetch` rejection cannot say whether the request
+      // was sent, so "add the ad in Reddit Ads Manager" is how a duplicate AD gets made. Two ads in
+      // one paused ad group both go live the moment the campaign is activated.
+      steps.push(
+        redditOutcomeAmbiguous(err)
+          ? `Ad creation UNCONFIRMED (${describeRedditFailure(err)}) — check this campaign in Reddit Ads Manager BEFORE adding an ad, to avoid creating a duplicate.${unconfirmedStrayNote}`
+          : `Ad creation failed (${describeRedditFailure(err)}) — add the ad to this campaign in Reddit Ads Manager.${strayNote}`
+      );
     }
   } else {
     const variantCount = config.variants.length;

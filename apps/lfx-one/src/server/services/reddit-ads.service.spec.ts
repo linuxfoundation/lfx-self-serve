@@ -245,11 +245,17 @@ describe('executeRedditCampaignCreation — the authored post', () => {
    * else. Matched on the path rather than the whole URL because the host is `ads-api.reddit.com` —
    * a naive `includes('/ads')` matches every call there is.
    */
-  function stubFetch(failPath?: string, status = 500, failBody = 'rejected'): void {
+  /**
+   * Fail the ads-API path(s) `failPath` selects, and succeed everything else. A string matches on
+   * substring; a predicate is for the cases substring matching cannot express — every call in this
+   * service sits under `/ad_accounts/<id>`, so only a predicate can single out the account GET.
+   */
+  function stubFetch(failPath?: string | ((path: string) => boolean), status = 500, failBody = 'rejected'): void {
+    const fails = (path: string): boolean => (typeof failPath === 'function' ? failPath(path) : !!failPath && path.includes(failPath));
     let idCounter = 0;
     fetchMock = vi.fn(async (url: string) => {
       const path = String(url).startsWith(ADS_API) ? String(url).slice(ADS_API.length) : '';
-      if (failPath && path.includes(failPath)) {
+      if (fails(path)) {
         return { ok: false, status, json: async () => ({}), text: async () => failBody };
       }
       return {
@@ -377,6 +383,21 @@ describe('executeRedditCampaignCreation — the authored post', () => {
       expect(result.steps.some((s) => s.includes('UNCONFIRMED'))).toBe(false);
     });
 
+    it('does not say "no response from Reddit" when Reddit answered 2xx with no post id', async () => {
+      // The outcome is genuinely ambiguous — a post may exist — so the UNCONFIRMED arm is right.
+      // What would be false is the parenthetical: Reddit responded, and with a success status.
+      stubFetchWithoutId('/posts');
+
+      const result = await executeRedditCampaignCreation(undefined, config());
+      const step = result.steps.find((s) => s.includes('Promoted post authoring UNCONFIRMED'));
+
+      expect(step).toContain('Reddit accepted the request but returned no id');
+      expect(step).not.toContain('no response from Reddit');
+      expect(step).toContain('BEFORE authoring the post again');
+      expect(postPaths()).not.toContain('/ad_accounts/t2_gv9wtbfa/ads');
+      expect(result.adCount).toBe(0);
+    });
+
     it('never writes the Reddit error body into the persisted steps', async () => {
       // `steps` is an operator-facing narrative that is returned to the browser and persisted with
       // the campaign. An upstream error body is none of those things: it is up to 400 characters of
@@ -394,28 +415,76 @@ describe('executeRedditCampaignCreation — the authored post', () => {
     });
   });
 
-  it('names the stray post when the ad fails after the post was authored', async () => {
+  it('names the stray post when the ad is DEFINITELY not created after the post was authored', async () => {
     // Whether an ads-API post is feed-distributed is undocumented by Reddit, so an unattached post
     // is treated as a stray for the operator to clean up — and they cannot clean up a post id the
-    // step never tells them.
-    stubFetch('/ads', 500);
+    // step never tells them. Only a 4xx licenses the flat "is now unattached".
+    stubFetch('/ads', 400);
 
     const result = await executeRedditCampaignCreation(undefined, config());
     const step = result.steps.find((s) => s.startsWith('Ad creation failed'));
 
-    expect(step).toContain('HTTP 500');
+    expect(step).toContain('HTTP 400');
     expect(step).toMatch(/A promoted post was authored for this campaign \(id-\d+\) and is now unattached/);
     expect(result.adCount).toBe(0);
+  });
+
+  it('warns that a duplicate AD is possible when the ad create fails ambiguously', async () => {
+    // The same rule as the post arm, with the same consequence one level down: a 5xx may have been
+    // raised after the ad was written, so telling the operator to add the ad by hand is how a
+    // second ad gets made — and both go live the moment the paused campaign is activated.
+    stubFetch('/ads', 500);
+
+    const result = await executeRedditCampaignCreation(undefined, config());
+    const step = result.steps.find((s) => s.startsWith('Ad creation UNCONFIRMED'));
+
+    expect(step).toContain('HTTP 500');
+    expect(step).toContain('BEFORE adding an ad, to avoid creating a duplicate');
+    expect(result.adCount).toBe(0);
+  });
+
+  it('does not assert the post is unattached when the ad outcome is ambiguous', async () => {
+    // If the 500 was raised after the write, the ad exists and the post is attached to it. Saying
+    // "is now unattached" there sends the operator to delete a post that is in fact serving.
+    stubFetch('/ads', 500);
+
+    const result = await executeRedditCampaignCreation(undefined, config());
+    const step = result.steps.find((s) => s.startsWith('Ad creation UNCONFIRMED'));
+
+    expect(step).toMatch(/A promoted post was authored for this campaign \(id-\d+\) and may now be unattached/);
+    expect(step).not.toContain('is now unattached');
   });
 
   it('says nothing about a stray when no post was authored here', async () => {
     // The operator's own post is not a stray — nothing happened to it, and telling them to delete
     // it would be telling them to delete something this create did not make.
-    stubFetch('/ads', 500);
+    stubFetch('/ads', 400);
 
     const result = await executeRedditCampaignCreation(undefined, config({ postUrl: 'https://redd.it/abc123' }));
 
     expect(result.steps.find((s) => s.startsWith('Ad creation failed'))).not.toContain('unattached');
+  });
+
+  it('never writes the Reddit error body into the steps on the ad arm either', async () => {
+    // The sibling assertion on the post arm left this one unpinned: a future edit back to
+    // `${errMsg}` here would have stayed green.
+    stubFetch('/ads', 400, 'INVALID: click_url rejected by policy check 7731');
+
+    const result = await executeRedditCampaignCreation(undefined, config());
+
+    expect(result.steps.join('\n')).not.toContain('policy check 7731');
+    expect(result.steps.join('\n')).not.toContain('rejected by');
+  });
+
+  it('reports a failed account verification by status, without the body', async () => {
+    // Exact match: every other call in this service also starts `/ad_accounts/t2_gv9wtbfa`.
+    stubFetch((p) => p === '/ad_accounts/t2_gv9wtbfa', 500, 'upstream said something long and reflective');
+
+    const result = await executeRedditCampaignCreation(undefined, config());
+    const step = result.steps.find((s) => s.startsWith('Account verification warning'));
+
+    expect(step).toContain('HTTP 500');
+    expect(result.steps.join('\n')).not.toContain('reflective');
   });
 
   it('reports an ad create that returned 2xx with no ad id, and names the stray post', async () => {
@@ -429,7 +498,8 @@ describe('executeRedditCampaignCreation — the authored post', () => {
 
     expect(step).toContain('Reddit accepted the request but returned no ad id');
     expect(step).toContain('to avoid creating a duplicate');
-    expect(step).toMatch(/A promoted post was authored for this campaign \(id-\d+\) and is now unattached/);
+    // "may", not "is": Reddit accepted the call, so an ad may exist with this post attached to it.
+    expect(step).toMatch(/A promoted post was authored for this campaign \(id-\d+\) and may now be unattached/);
     expect(result.adCount).toBe(0);
   });
 

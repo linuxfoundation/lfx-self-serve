@@ -3246,7 +3246,7 @@ export class ImplementationTabComponent implements OnInit {
    * creators ACCEPT this shape and report success, so refusing it here would refuse a create the
    * platform makes. The legacy creator's no-post branch is a documented workflow in its own right —
    * it writes the variant headlines into `steps` for an operator to paste into Reddit Ads Manager
-   * (`reddit-ads.service.ts:599-630`) — and `canSubmit` deliberately does not read this.
+   * (`reddit-ads.service.ts`) — and `canSubmit` deliberately does not read this.
    *
    * Judged on the two gates the payload itself uses, so the warning can never disagree with what is
    * sent. `postUrl` goes on both arms and creates the ad on either (`reddit-ads.service.ts`,
