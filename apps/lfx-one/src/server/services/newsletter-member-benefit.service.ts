@@ -424,8 +424,10 @@ export class NewsletterMemberBenefitService {
   /**
    * Member companies whose `primary_domain` or `domain_aliases` exactly equal a candidate domain,
    * keyed by that domain. Query-service matching is exact and case-sensitive, so candidates are
-   * lowercased and every returned record is re-checked. All-or-nothing: a failed later page discards the earlier ones rather than passing a partial set off as every alias hit. Fail-soft: any failure (including the M2M
-   * client lacking `b2b_org` read access, which shows as an empty result) yields no matches.
+   * lowercased and every returned record is re-checked. All-or-nothing: a failed later page
+   * discards the earlier ones rather than passing a partial set off as every alias hit. Fail-soft:
+   * any failure (including the M2M client lacking `b2b_org` read access, which shows as an empty
+   * result) yields no matches.
    */
   private async findB2bOrgMatches(req: Request, m2mToken: string, domains: string[]): Promise<Map<string, string[]>> {
     const matches = new Map<string, string[]>();
