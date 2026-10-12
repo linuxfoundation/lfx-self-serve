@@ -182,6 +182,8 @@ describe('MeetingMaterialsComponent', () => {
     await setup(() => throwError(() => new HttpErrorResponse({ status: 400 })));
 
     expect(query('materials-section-sign-in')?.querySelector('a')?.getAttribute('href')).toBe('/login?returnTo=x');
+    // returnTo can carry the meeting password: masked in Session Replay, as the action slot's is.
+    expect(query('materials-section-sign-in-link')?.getAttribute('data-dd-privacy')).toBe('mask');
     expect(query('materials-section-empty')).toBeNull();
   });
 
@@ -293,6 +295,17 @@ describe('MeetingMaterialsComponent', () => {
     expect(query('materials-section-add')).not.toBeNull();
     expect(drawer()?.meetingId()).toBeUndefined();
     expect(drawer()?.pastMeetingId()).toBe('meeting-1-1700000000000');
+  });
+
+  // The real drawer reports an upcoming meeting's additions as addedMeetingAttachments.
+  it("shows an upcoming meeting's additions the drawer reports, before the index has them", async () => {
+    await setup(() => of([file('keep')]));
+
+    fixture.componentInstance.onMaterialsChanged({ deletedUids: [], addedAttachments: [], addedMeetingAttachments: [{ ...file('new') }] });
+    fixture.detectChanges();
+
+    expect(query('materials-file-new')).not.toBeNull();
+    expect(query('materials-file-keep')).not.toBeNull();
   });
 
   it("applies the drawer's changes at once, then refetches", async () => {

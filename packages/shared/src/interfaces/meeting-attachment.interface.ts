@@ -243,6 +243,11 @@ export interface MaterialsChangedEvent {
   deletedUids: string[];
   /** Newly created past-meeting attachments, ready for optimistic display */
   addedAttachments: PastMeetingAttachment[];
+  /**
+   * Newly created attachments of an upcoming meeting (the drawer in meeting mode), for the same
+   * optimistic display; absent or empty in past mode. V1's join page refetches instead and ignores it.
+   */
+  addedMeetingAttachments?: MeetingAttachment[];
 }
 
 /**

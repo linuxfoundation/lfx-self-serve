@@ -132,8 +132,10 @@ export class MeetingMaterialsComponent {
       this.removedUids.update((removed) => new Set([...removed, ...event.deletedUids]));
       this.addedAttachments.update((added) => added.filter((attachment) => !event.deletedUids.includes(attachment.uid)));
     }
-    if (event.addedAttachments.length) {
-      this.addedAttachments.update((added) => [...event.addedAttachments, ...added]);
+    // Past mode reports `addedAttachments`, meeting mode `addedMeetingAttachments`.
+    const reported: PublicMeetingAttachment[] = [...event.addedAttachments, ...(event.addedMeetingAttachments ?? [])];
+    if (reported.length) {
+      this.addedAttachments.update((added) => [...reported, ...added]);
     }
     this.retry();
     timer(1000)

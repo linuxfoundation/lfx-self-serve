@@ -42,9 +42,12 @@
       </div>
     }
     @case ('sign-in') {
+      <!-- data-dd-privacy="mask": returnTo can carry the meeting password; keep it out of Session Replay. -->
       <p class="m-0 text-[14px] text-[var(--md-text-body)]" data-testid="materials-section-sign-in">
-        <a class="font-semibold text-[var(--md-accent-ink)] underline" [href]="signInHref()" data-testid="materials-section-sign-in-link">Sign in</a> to view
-        the materials for this meeting.
+        <a class="font-semibold text-[var(--md-accent-ink)] underline" [href]="signInHref()" data-dd-privacy="mask" data-testid="materials-section-sign-in-link"
+          >Sign in</a
+        >
+        to view the materials for this meeting.
       </p>
     }
     @case ('error') {

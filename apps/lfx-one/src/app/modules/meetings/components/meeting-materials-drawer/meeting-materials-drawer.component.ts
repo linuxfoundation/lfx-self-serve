@@ -181,7 +181,8 @@ export class MeetingMaterialsDrawerComponent {
         this.saving.set(false);
         this.messageService.add({ severity: 'success', summary: 'Link Added', detail: `"${title}" has been added.` });
         const addedAttachments: PastMeetingAttachment[] = isPast ? [attachment as PastMeetingAttachment] : [];
-        this.materialsChanged.emit({ deletedUids: [], addedAttachments });
+        const addedMeetingAttachments: MeetingAttachment[] = isPast ? [] : [attachment as MeetingAttachment];
+        this.materialsChanged.emit({ deletedUids: [], addedAttachments, addedMeetingAttachments });
       },
       error: () => {
         this.saving.set(false);
@@ -266,7 +267,23 @@ export class MeetingMaterialsDrawerComponent {
                   created_by: r.created_by,
                 }))
             : [];
-          this.materialsChanged.emit({ deletedUids: successfullyDeletedUids, addedAttachments });
+          const addedMeetingAttachments: MeetingAttachment[] = isPast
+            ? []
+            : uploadResults
+                .filter((r): r is PresignAttachmentResponse => r !== null)
+                .map((r) => ({
+                  uid: r.uid,
+                  meeting_id: r.meeting_id ?? id!,
+                  type: r.type,
+                  name: r.name,
+                  category: r.category,
+                  file_name: r.file_name,
+                  file_size: r.file_size,
+                  file_upload_status: r.file_upload_status,
+                  file_content_type: r.file_content_type,
+                  created_at: r.created_at,
+                }));
+          this.materialsChanged.emit({ deletedUids: successfullyDeletedUids, addedAttachments, addedMeetingAttachments });
           if (hasPartialFailure) {
             this.messageService.add({ severity: 'warn', summary: 'Partial Update', detail: 'Some changes could not be saved. Please try again.' });
           } else {
