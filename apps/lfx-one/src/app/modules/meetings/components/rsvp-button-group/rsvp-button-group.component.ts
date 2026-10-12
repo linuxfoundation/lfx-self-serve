@@ -133,6 +133,7 @@ export class RsvpButtonGroupComponent {
       return;
     }
     const currentUser = this.user();
+    const subject = currentUser?.sub || this.userService.viewerUsername() || currentUser?.email || '';
     const meetingUid = this.meetingUid();
     const context = this.rsvpContext();
     const scopedOccurrenceId = scope === 'all' ? undefined : (occurrenceIdToSeconds(occurrenceId) ?? undefined);
@@ -180,6 +181,7 @@ export class RsvpButtonGroupComponent {
             });
           }
           // Show the global confirmation before the parent removes a Needs response card.
+          this.userService.recordConfirmedMeetingRsvp(savedRsvp, subject);
           this.rsvpChanged.emit(savedRsvp);
           // Defer personal refetches outside Me without keeping a stale replay on return.
           this.userService.refreshUserMeetings(this.lensService.activeLens() === 'me');

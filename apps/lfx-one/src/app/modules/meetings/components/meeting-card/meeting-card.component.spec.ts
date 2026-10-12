@@ -634,11 +634,13 @@ describe('MeetingCardComponent — remove myself', () => {
 
 describe('MeetingCardComponent — RSVP cache freshness', () => {
   it.each([
-    [false, true],
-    [true, true],
-    [false, false],
-    [true, false],
-  ])('updates pending consumers only after a successful write (organizer=%s, success=%s)', async (organizer, success) => {
+    [false, true, 'me'],
+    [true, true, 'me'],
+    [false, false, 'me'],
+    [true, false, 'me'],
+    [true, true, 'foundation'],
+    [true, true, 'project'],
+  ] as const)('keeps successful responses through stale reads and remounts (organizer=%s, success=%s, lens=%s)', async (organizer, success, sourceLens) => {
     vi.stubGlobal(
       'IntersectionObserver',
       class {
@@ -648,13 +650,14 @@ describe('MeetingCardComponent — RSVP cache freshness', () => {
       }
     );
     const toastAdd = vi.fn();
+    const activeLens = signal<string>(sourceLens);
     TestBed.configureTestingModule({
       deferBlockBehavior: DeferBlockBehavior.Manual,
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
-        { provide: LensService, useValue: { activeLens: signal('me') } },
+        { provide: LensService, useValue: { activeLens } },
         { provide: ProjectService, useValue: { project: signal(null) } },
         { provide: MeetingComposerService, useValue: { open: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
@@ -679,7 +682,7 @@ describe('MeetingCardComponent — RSVP cache freshness', () => {
       ])
     );
     const userService = TestBed.inject(UserService);
-    userService.user.set({ username: 'viewer', email: 'synthetic@example.com' } as User);
+    userService.user.set({ sub: 'synthetic-subject', username: 'viewer', email: 'synthetic@example.com' } as User);
     userService.authenticated.set(true);
     await TestBed.inject(ApplicationRef).whenStable();
 
@@ -709,8 +712,6 @@ describe('MeetingCardComponent — RSVP cache freshness', () => {
 
     const fixture = TestBed.createComponent(MeetingCardComponent);
     fixture.componentRef.setInput('meetingInput', meeting);
-    const emittedRsvps = vi.fn();
-    fixture.componentInstance.rsvpChanged.subscribe(emittedRsvps);
     fixture.detectChanges();
     for (const block of await fixture.getDeferBlocks()) {
       await block.render(DeferBlockState.Complete);
@@ -734,9 +735,12 @@ describe('MeetingCardComponent — RSVP cache freshness', () => {
     };
     if (success) {
       write.flush(rsvp);
-      http.expectOne('/api/user/meetings').flush([{ ...meeting, my_rsvp: rsvp }]);
-      expect(pendingIds).toEqual([]);
-      expect(emittedRsvps).toHaveBeenCalledWith(expect.objectContaining({ response_type: 'accepted', scope: 'all' }));
+      if (sourceLens === 'me') {
+        http.expectOne('/api/user/meetings').flush([{ ...meeting, my_rsvp: rsvp }]);
+      } else {
+        http.expectNone('/api/user/meetings');
+      }
+      if (sourceLens === 'me') expect(pendingIds).toEqual([]);
       expect(buttons.selectedResponse()).toBe('accepted');
       expect(fixture.componentInstance.confirmedRsvps()).toEqual([expect.objectContaining({ response_type: 'accepted', scope: 'all' })]);
     } else {
@@ -744,7 +748,6 @@ describe('MeetingCardComponent — RSVP cache freshness', () => {
       http.expectNone('/api/user/meetings');
       expect(pendingIds).toEqual(['synthetic-rsvp']);
       expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'RSVP Failed' }));
-      expect(emittedRsvps).not.toHaveBeenCalled();
       expect(buttons.selectedResponse()).toBeNull();
       expect(fixture.componentInstance.confirmedRsvps()).toEqual([]);
     }
@@ -759,8 +762,19 @@ describe('MeetingCardComponent — RSVP cache freshness', () => {
     }
     if (organizer && success) {
       fixture.destroy();
+      let returningMeeting: Meeting = { ...meeting, my_rsvp: rsvp };
+      if (sourceLens !== 'me') {
+        subscription.unsubscribe();
+        activeLens.set('me');
+        let returningRows: Meeting[] = [];
+        const returning = userService.getUserMeetings().subscribe((rows) => (returningRows = rows));
+        http.expectOne('/api/user/meetings').flush([meeting]);
+        returningMeeting = returningRows[0];
+        expect(returningMeeting.my_rsvp?.response_type).toBe('accepted');
+        returning.unsubscribe();
+      }
       const recreated = TestBed.createComponent(MeetingCardComponent);
-      recreated.componentRef.setInput('meetingInput', { ...meeting, my_rsvp: rsvp });
+      recreated.componentRef.setInput('meetingInput', returningMeeting);
       recreated.detectChanges();
       for (const block of await recreated.getDeferBlocks()) {
         await block.render(DeferBlockState.Complete);

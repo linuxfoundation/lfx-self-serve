@@ -59,7 +59,10 @@ async function render(actions: PendingActionItem[], flagEnabled = true): Promise
       { provide: InvitationService, useValue: { resolvedInviteUids: signal(new Set<string>()) } },
       { provide: InvitationAcceptFlowService, useValue: {} },
       { provide: MeetingService, useValue: meetingClient },
-      { provide: UserService, useValue: { user: signal(null), authenticated: signal(false), viewerUsername: signal(null) } },
+      {
+        provide: UserService,
+        useValue: { user: signal(null), authenticated: signal(false), viewerUsername: signal(null), recordConfirmedMeetingRsvp: vi.fn() },
+      },
       { provide: LensService, useValue: { activeLens: signal('me') } },
       { provide: VoteService, useValue: {} },
       { provide: CommitteeService, useValue: reviewClient },

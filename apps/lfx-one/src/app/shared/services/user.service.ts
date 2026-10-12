@@ -20,6 +20,7 @@ import {
   LinuxAliasData,
   Meeting,
   MeetingInviteEmail,
+  MeetingRsvp,
   PastMeeting,
   ProfileAuthStatus,
   ProfilePictureUploadResponse,
@@ -34,7 +35,24 @@ import {
   WorkExperienceCreateUpdateBody,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { catchError, distinctUntilChanged, EMPTY, Observable, of, shareReplay, skip, startWith, Subject, switchMap, take, takeUntil } from 'rxjs';
+import { resolveRsvpOccurrenceId, selectApplicableRsvp } from '@lfx-one/shared/utils';
+import {
+  BehaviorSubject,
+  catchError,
+  combineLatest,
+  distinctUntilChanged,
+  EMPTY,
+  map,
+  Observable,
+  of,
+  shareReplay,
+  skip,
+  startWith,
+  Subject,
+  switchMap,
+  take,
+  takeUntil,
+} from 'rxjs';
 
 import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
 
@@ -73,6 +91,7 @@ export class UserService {
   public readonly apiGatewayUserId = signal<string | null>(null);
 
   private readonly userMeetingsRefresh$ = new Subject<void>();
+  private readonly confirmedMeetingRsvps$ = new BehaviorSubject(new Map<string, MeetingRsvp[]>());
   private readonly userPastMeetingsRefresh$ = new Subject<void>();
   // Shared identities refresh trigger — tab and shell each run their own getIdentities() fetch off
   // this so the shell's GitHub handle / dots update after a link/verify/add/remove (LFXV2-2767).
@@ -86,6 +105,7 @@ export class UserService {
   private userLatestPastMeetingsDestroy$ = new Subject<void>();
   private userMeetings$: Observable<Meeting[]> | null = null;
   private userMeetingsDirty = false;
+  private userMeetingsSubject: string | null = null;
   private userPastMeetings$: Observable<PastMeeting[]> | null = null;
   private userLatestPastMeetings$: Observable<PastMeeting[]> | null = null;
 
@@ -276,6 +296,16 @@ export class UserService {
     return this.http.get<DeveloperTokenInfo>('/api/profile/developer').pipe(take(1));
   }
 
+  /** Retain a successful write beyond the route that submitted it, under its captured effective subject. */
+  public recordConfirmedMeetingRsvp(rsvp: MeetingRsvp, subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || ''): void {
+    if (!subject) return;
+    const key = `${subject}\0${rsvp.meeting_id}`;
+    const current = this.confirmedMeetingRsvps$.value;
+    const next = new Map(current);
+    next.set(key, [rsvp, ...(current.get(key) ?? []).filter((saved) => saved.id !== rsvp.id)]);
+    this.confirmedMeetingRsvps$.next(next);
+  }
+
   /**
    * Gets all meetings for the current authenticated user.
    * Returns a shared, cached observable. Call refreshUserMeetings() after
@@ -283,7 +313,8 @@ export class UserService {
    * lens to invalidate the replay and fetch when a personal consumer returns.
    */
   public getUserMeetings(): Observable<Meeting[]> {
-    if (this.userMeetingsDirty) {
+    const subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '';
+    if (this.userMeetingsDirty || (this.userMeetings$ && this.userMeetingsSubject !== subject)) {
       this.userMeetingsDestroy$.next();
       this.userMeetingsDestroy$ = new Subject<void>();
       this.userMeetings$ = null;
@@ -293,9 +324,15 @@ export class UserService {
       // Capture the current destroy$ at build time — when the user changes, we swap the field
       // to a new Subject after firing .next() on this one, so the old chain completes cleanly.
       const destroy$ = this.userMeetingsDestroy$;
-      this.userMeetings$ = this.userMeetingsRefresh$.pipe(
-        startWith(undefined),
-        switchMap(() => this.http.get<Meeting[]>('/api/user/meetings')),
+      this.userMeetingsSubject = subject;
+      this.userMeetings$ = combineLatest([
+        this.userMeetingsRefresh$.pipe(
+          startWith(undefined),
+          switchMap(() => this.http.get<Meeting[]>('/api/user/meetings'))
+        ),
+        this.confirmedMeetingRsvps$,
+      ]).pipe(
+        map(([meetings, confirmed]) => this.applyConfirmedMeetingRsvps(meetings, subject, confirmed)),
         takeUntil(destroy$),
         shareReplay({ bufferSize: 1, refCount: false })
       );
@@ -484,6 +521,19 @@ export class UserService {
    */
   public getSalesforceId(): Observable<SalesforceIdResponse> {
     return this.http.get<SalesforceIdResponse>('/api/user/salesforce-id').pipe(take(1));
+  }
+
+  private applyConfirmedMeetingRsvps(meetings: Meeting[], subject: string, saved: Map<string, MeetingRsvp[]>): Meeting[] {
+    if (saved.size === 0) return meetings;
+    return meetings.map((meeting) => {
+      const confirmed = saved.get(`${subject}\0${meeting.id}`);
+      if (!confirmed) return meeting;
+      const candidates = meeting.my_rsvp ? [...confirmed, meeting.my_rsvp] : confirmed;
+      const occurrenceId = resolveRsvpOccurrenceId(meeting);
+      const applicable = meeting.recurrence && !occurrenceId ? candidates.filter((rsvp) => rsvp.scope === 'all') : candidates;
+      const myRsvp = selectApplicableRsvp(occurrenceId, applicable) ?? selectApplicableRsvp(undefined, applicable);
+      return myRsvp === meeting.my_rsvp ? meeting : { ...meeting, my_rsvp: myRsvp };
+    });
   }
 
   private initViewerUsername(): Signal<string | null> {

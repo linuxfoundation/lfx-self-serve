@@ -48,8 +48,6 @@ import {
   isMeetingOrganizedByViewer,
   meetingToCalendarEvents,
   resolveMeetingCalendarClickRoute,
-  resolveRsvpOccurrenceId,
-  selectApplicableRsvp,
   sortPastMeetingsDescending,
 } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -150,7 +148,6 @@ export class MeetingsDashboardComponent {
   public responseFilter = signal<MeetingResponseFilter>('all');
   public organizedByMe = signal(false);
   public hideDeclined = signal(false);
-  private confirmedRsvps = signal(new Map<string, MeetingRsvp[]>());
   public showFoundationFilter: Signal<boolean>;
   public showProjectFilter: Signal<boolean>;
   public foundationOptions: Signal<{ label: string; value: string | null }[]>;
@@ -345,15 +342,6 @@ export class MeetingsDashboardComponent {
       this.userService.refreshUserPastMeetings();
     }
     this.refresh$.next();
-  }
-  /** Keep a confirmed write visible while the query index catches up. */
-  public onRsvpChanged(rsvp: MeetingRsvp): void {
-    const key = `${this.userService.user()?.sub || this.userService.viewerUsername()}\0${rsvp.meeting_id}`;
-    this.confirmedRsvps.update((current) => {
-      const next = new Map(current);
-      next.set(key, [rsvp, ...(current.get(key) ?? []).filter((saved) => saved.id !== rsvp.id)]);
-      return next;
-    });
   }
 
   /** FullCalendar event click → navigate to the meeting detail. Cancelled occurrences are inert. */
@@ -732,19 +720,7 @@ export class MeetingsDashboardComponent {
     // Hide removed registrations even while the query index still returns them, without dropping organizers.
     return computed(() => {
       const removed = this.meetingService.removedRegistrationMeetingIds();
-      const meetings = removed.size === 0 ? rows() : rows().filter((meeting) => meeting.organizer || !removed.has(meeting.id));
-      const saved = this.confirmedRsvps();
-      if (saved.size === 0) return meetings;
-      const viewer = this.userService.user()?.sub || this.userService.viewerUsername();
-      return meetings.map((meeting) => {
-        const confirmed = saved.get(`${viewer}\0${meeting.id}`);
-        if (!confirmed) return meeting;
-        const candidates = meeting.my_rsvp ? [...confirmed, meeting.my_rsvp] : confirmed;
-        const occurrenceId = resolveRsvpOccurrenceId(meeting);
-        const applicable = meeting.recurrence && !occurrenceId ? candidates.filter((rsvp) => rsvp.scope === 'all') : candidates;
-        const myRsvp = selectApplicableRsvp(occurrenceId, applicable) ?? selectApplicableRsvp(undefined, applicable);
-        return { ...meeting, my_rsvp: myRsvp };
-      });
+      return removed.size === 0 ? rows() : rows().filter((meeting) => meeting.organizer || !removed.has(meeting.id));
     });
   }
 

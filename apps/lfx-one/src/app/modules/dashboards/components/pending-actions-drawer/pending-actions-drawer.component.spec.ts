@@ -244,7 +244,10 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
         // The inline RSVP child reads userService.user/authenticated at field-init. DialogService needs no
         // provider: the child declares its own component-level `providers: [DialogService]`, which shadows
         // any TestBed provider (the recurring-scope modal is never opened here).
-        { provide: UserService, useValue: { user: signal(null), authenticated: signal(false), viewerUsername: signal(null) } },
+        {
+          provide: UserService,
+          useValue: { user: signal(null), authenticated: signal(false), viewerUsername: signal(null), recordConfirmedMeetingRsvp: vi.fn() },
+        },
         { provide: LensService, useValue: { activeLens: signal('me') } },
         MessageService,
       ],

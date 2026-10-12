@@ -389,8 +389,8 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
       occurrences: [{ occurrence_id: '4071031200', start_time: '2099-01-02T10:00:00Z', duration: 30 }],
     });
     const component = mount([series]);
-    component.onRsvpChanged({ ...response('accepted'), meeting_id: series.id, updated_at: '2098-12-31T10:00:00Z' });
-    component.onRsvpChanged({
+    users.recordConfirmedMeetingRsvp({ ...response('accepted'), meeting_id: series.id, updated_at: '2098-12-31T10:00:00Z' });
+    users.recordConfirmedMeetingRsvp({
       ...response('declined'),
       meeting_id: series.id,
       scope,
@@ -493,7 +493,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     expect(ids(component)).toEqual(['series']);
     respond(component, 'declined');
     expect(ids(component)).toEqual([]);
-    component.onRsvpChanged({ ...response('declined', 'single'), meeting_id: 'series', occurrence_id: nextId });
+    users.recordConfirmedMeetingRsvp({ ...response('declined', 'single'), meeting_id: 'series', occurrence_id: nextId });
     flush();
     expect(ids(component)).toEqual(['series']);
     respond(component, 'pending');
@@ -504,7 +504,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     users.user.set({ sub: 'synthetic-a', username: 'alias' } as User);
     flush();
     const component = mount([pending]);
-    component.onRsvpChanged({ ...response('accepted'), meeting_id: pending.id });
+    users.recordConfirmedMeetingRsvp({ ...response('accepted'), meeting_id: pending.id });
     respond(component, 'accepted');
     expect(ids(component)).toEqual([pending.id]);
 
@@ -528,7 +528,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
   it('keeps a successful No response out of the response queue while a stale index is refreshing', () => {
     const component = mount([pending]);
     respond(component, 'pending');
-    component.onRsvpChanged({ ...response('declined'), meeting_id: pending.id });
+    users.recordConfirmedMeetingRsvp({ ...response('declined'), meeting_id: pending.id });
     flush();
     expect(ids(component)).toEqual([]);
     users.refreshUserMeetings();

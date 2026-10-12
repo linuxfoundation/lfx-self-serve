@@ -185,6 +185,7 @@ describe('MeetingJoinComponent', () => {
             viewerUsername: signal<string | null>('me'),
             effectiveAvatarUrl: signal(''),
             getCurrentUserProfile: vi.fn().mockReturnValue(of(null)),
+            recordConfirmedMeetingRsvp: vi.fn(),
           },
         },
         { provide: ProjectContextService, useValue: { setFoundation: vi.fn() } },

@@ -289,7 +289,6 @@ export class MeetingCardComponent implements OnInit {
   );
 
   public readonly meetingDeleted = output<void>();
-  public readonly rsvpChanged = output<MeetingRsvp>();
   public readonly project = this.projectService.project;
   public readonly committeeLabel = COMMITTEE_LABEL;
 
@@ -361,7 +360,6 @@ export class MeetingCardComponent implements OnInit {
 
   public onRsvpChanged(rsvp: MeetingRsvp): void {
     this.confirmedRsvps.update((responses) => [rsvp, ...responses.filter((saved) => saved.id !== rsvp.id)]);
-    this.rsvpChanged.emit(rsvp);
   }
 
   /**

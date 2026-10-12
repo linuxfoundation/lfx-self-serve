@@ -375,7 +375,6 @@
               <lfx-meeting-card
                 [attr.id]="'meeting-' + meeting.id"
                 [meetingInput]="meeting"
-                (rsvpChanged)="onRsvpChanged($event)"
                 (meetingUpdated)="refreshMeetings()"
                 (meetingDeleted)="refreshMeetings()"
                 [pastMeeting]="timeFilter() === 'past'"

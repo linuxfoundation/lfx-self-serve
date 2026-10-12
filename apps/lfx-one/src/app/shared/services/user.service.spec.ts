@@ -4,7 +4,7 @@
 import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
-import { Meeting, PastMeeting, User } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingRsvp, PastMeeting, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -101,6 +101,43 @@ describe('UserService', () => {
     const returning = service.getUserMeetings().subscribe((rows) => (returnedRows = rows));
     expect(returnedRows.find((meeting) => meeting.id === pending.id)?.my_rsvp?.response_type).toBe('accepted');
     expect(returnedRows.filter((meeting) => meeting.is_invite_responses_enabled && !meeting.my_rsvp)).toEqual([]);
+    returning.unsubscribe();
+  });
+
+  it('keeps a late confirmation under the dispatch subject instead of the current impersonation subject', async () => {
+    const pending = { id: 'synthetic-meeting', is_invite_responses_enabled: true, my_rsvp: null } as Meeting;
+    httpGet.mockImplementation((url: string) => of(url === '/api/user/meetings' ? [pending] : { profile: {} }));
+    service.user.set({ sub: 'synthetic-a', username: 'unchanged-alias' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+    const primed = service.getUserMeetings().subscribe();
+    primed.unsubscribe();
+
+    service.user.set({ sub: 'synthetic-b', username: 'unchanged-alias' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+    let otherRows: Meeting[] = [];
+    const other = service.getUserMeetings().subscribe((rows) => (otherRows = rows));
+    service.recordConfirmedMeetingRsvp(
+      {
+        id: 'synthetic-response',
+        meeting_id: pending.id,
+        registrant_id: 'synthetic-registrant',
+        username: 'unchanged-alias',
+        email: 'synthetic@example.com',
+        response_type: 'accepted',
+        scope: 'all',
+        created_at: '2026-10-12T10:00:00Z',
+      } as MeetingRsvp,
+      'synthetic-a'
+    );
+    expect(otherRows[0].my_rsvp).toBeNull();
+
+    service.user.set({ sub: 'synthetic-a', username: 'unchanged-alias' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+    let returningRows: Meeting[] = [];
+    const returning = service.getUserMeetings().subscribe((rows) => (returningRows = rows));
+    expect(returningRows[0].my_rsvp?.response_type).toBe('accepted');
+    expect(pending.my_rsvp).toBeNull();
+    other.unsubscribe();
     returning.unsubscribe();
   });
 

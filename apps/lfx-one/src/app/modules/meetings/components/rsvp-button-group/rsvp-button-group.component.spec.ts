@@ -76,6 +76,7 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
             viewerUsername: computed(() => user()['https://sso.linuxfoundation.org/claims/username'] || user().username || null),
             authenticated: signal(true),
             refreshUserMeetings: vi.fn(),
+            recordConfirmedMeetingRsvp: vi.fn(),
           },
         },
         { provide: MessageService, useValue: { add: toastAdd } },
