@@ -8,7 +8,7 @@
 import { MKTG_DOCUMENT_STATUS_LABEL_REGEX, MKTG_DOCUMENT_STATUS_LEAD_REGEX } from '../constants/mktg-run.constants';
 
 /**
- * The document's review status, as Paul's agents write it on the cover and
+ * The document's review status, as the agents write it on the cover and
  * above the Review Sheet table: the first status label found, scanning line
  * by line (`Draft — pre-filled`, `Draft — from your documents`,
  * `ED-reviewed — Jane Doe, 2026-10-12`, …), with trailing punctuation and

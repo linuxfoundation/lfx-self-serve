@@ -69,7 +69,7 @@ export const FOUNDATION_MESSAGE_DISCOVERY_KEYS = FOUNDATION_MESSAGE_DISCOVERY_QU
  * `missingHeadings` gate (e.g. "## 3. Copy Primitives (word-count-locked)"
  * passes).
  *
- * Paul's message-foundation 0.5.0 template (agent 1.1.0, marketing-os-agents
+ * The message-foundation 0.5.0 template (agent 1.1.0, marketing-os-agents
  * wi-re-pin-our-message-foundation-agent-to-p): the document opens with the
  * two-page Review Sheet and a How-to-use routing block, runs §1–§9, and
  * closes with Appendices A (inputs & interview record), B (Stat Bank) and C
@@ -95,7 +95,7 @@ export const FOUNDATION_MESSAGE_REQUIRED_HEADINGS = [
 
 /**
  * The five derivative keys the contract's `derivatives` object requires —
- * Paul's 0.5.0 §3 copy primitives. `elevator_pitch` (the full ≤90-word
+ * the 0.5.0 template's §3 copy primitives. `elevator_pitch` (the full ≤90-word
  * pitch) replaced the 0.1.0 `elevator_pitch_headline` (a ≤10-word slide
  * headline) in the agent's 1.1.0 re-pin.
  */
@@ -140,7 +140,7 @@ export const FOUNDATION_MESSAGE_ISO_TIMESTAMP_REGEX = /^\d{4}-\d{2}-\d{2}[Tt ]\d
 
 /**
  * Intake log size bounds per the contract schema (variable-length interview).
- * The cap rose 15 → 20 with Paul's 0.5.0 (Step 1d gap-fill grew from five to
+ * The cap rose 15 → 20 with the 0.5.0 template (Step 1d gap-fill grew from five to
  * eight questions).
  */
 export const FOUNDATION_MESSAGE_INTAKE_ANSWERS_MIN = 2;

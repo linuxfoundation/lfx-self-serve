@@ -43,7 +43,7 @@ const structure = (): IcpStructure => ({
   disqualifiers: 'confirmed',
 });
 
-/** Paul's level-3 subsections that belong under a numbered section heading (§1.x under "## 1.", §3.x under "## 3."). */
+/** The template's level-3 subsections that belong under a numbered section heading (§1.x under "## 1.", §3.x under "## 3."). */
 const subheadingsOf = (heading: string): string[] => {
   const section = /^## (\d+)\./.exec(heading)?.[1];
   return section ? ICP_REQUIRED_SUBHEADINGS.filter((sub) => sub.startsWith(`### ${section}.`)) : [];
@@ -51,7 +51,7 @@ const subheadingsOf = (heading: string): string[] => {
 
 /**
  * A document that satisfies every deterministic gate: the eleven level-2
- * headings (Paul's 0.4.0 skeleton), the seven subheadings under sections 1
+ * headings (the 0.4.0 skeleton), the seven subheadings under sections 1
  * and 3, and every structure value verbatim.
  */
 const document = (spine: IcpStructure = structure()): string => {

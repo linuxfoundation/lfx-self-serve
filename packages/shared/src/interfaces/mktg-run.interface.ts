@@ -191,7 +191,7 @@ export interface MktgAttachmentChip {
 }
 
 /**
- * The document's review-status chip on the result card — Paul's label as it
+ * The document's review-status chip on the result card — the label as it
  * appears inside the document (`Draft — pre-filled`, `Draft — from your
  * documents`, `ED-reviewed — [name], [date]`, …), with the styling that
  * tells a reviewed document from a draft. Precomputed in the component

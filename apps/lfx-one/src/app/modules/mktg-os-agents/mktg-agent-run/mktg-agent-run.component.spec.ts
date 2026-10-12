@@ -442,7 +442,7 @@ describe('MktgAgentRunComponent', () => {
     });
   });
 
-  describe('document status chip — Paul’s review label read from the document', () => {
+  describe('document status chip — the review label read from the document', () => {
     beforeEach(async () => configure());
 
     it('shows a draft label from the Review Sheet status line, styled as a draft', async () => {

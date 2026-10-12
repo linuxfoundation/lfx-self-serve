@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { findMktgDocumentStatus } from './mktg-document.utils';
 
-describe('findMktgDocumentStatus — Paul’s review label read from the document', () => {
+describe('findMktgDocumentStatus — the review label read from the document', () => {
   it('reads the status line above the Review Sheet table', () => {
     const doc = '# Example Brand Kit\n\n## Review Sheet\n\nStatus: Draft — pre-filled\n9 of 14 fields from your documents; 3 asked.\n\n| # | Field |';
     expect(findMktgDocumentStatus(doc)).toBe('Draft — pre-filled');
@@ -25,7 +25,7 @@ describe('findMktgDocumentStatus — Paul’s review label read from the documen
     expect(findMktgDocumentStatus('> **Draft — from your answers**')).toBe('Draft — from your answers');
   });
 
-  it('accepts the classic "Draft v1 — for review" and Paul’s upper-case docx variant', () => {
+  it('accepts the classic "Draft v1 — for review" and the template’s upper-case docx variant', () => {
     expect(findMktgDocumentStatus('Status: Draft v1 — for review')).toBe('Draft v1 — for review');
     expect(findMktgDocumentStatus('Status: DRAFT — pre-filled, awaiting ED review')).toBe('DRAFT — pre-filled, awaiting ED review');
   });

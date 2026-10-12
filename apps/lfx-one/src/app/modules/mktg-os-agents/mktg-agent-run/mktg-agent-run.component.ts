@@ -258,7 +258,7 @@ export class MktgAgentRunComponent {
     return MKTG_README_SKIP_NOTES[readme.skipReason];
   });
   /**
-   * The document's own review status — Paul's label read out of the document
+   * The document's own review status — the label read out of the document
    * (`Draft — pre-filled`, `Draft — from your documents`, `ED-reviewed —
    * [name], [date]`, …). Null when the document carries none, so nothing is
    * asserted that the document does not say.
@@ -302,7 +302,7 @@ export class MktgAgentRunComponent {
     present: { chipClass: 'border-blue-200 bg-blue-50 text-blue-700', iconClass: 'fa-light fa-paperclip' },
     absent: { chipClass: 'border-gray-200 bg-gray-50 text-gray-600', iconClass: 'fa-light fa-circle-info' },
   };
-  // Status chip presentation: a draft (any of Paul's "Draft — …" labels) is
+  // Status chip presentation: a draft (any of the "Draft — …" labels) is
   // amber, a reviewed document emerald. Literal class names for the same
   // Tailwind content-scan reason as above.
   private readonly statusChipStyle: Record<'draft' | 'reviewed', string> = {

@@ -531,7 +531,7 @@ function validateInputs(inputs: unknown): string[] {
  * The agent's cross-field guard (0.4.0): an EMPTY interview log is legitimate
  * only when there was no interviewee (`prefill`) or the run was grounded in
  * attached existing documents. A form or conversational run with no documents
- * must carry Paul's interview answers — the log is the document's provenance
+ * must carry the interview answers — the log is the document's provenance
  * record. Expects records that already passed `validateIntake` and
  * `validateInputs`; the caller skips this gate otherwise.
  */

@@ -78,8 +78,8 @@ export const ICP_REQUIRED_GAP_FILL_KEY = 'business_outcome';
 // ---------------------------------------------------------------------------
 
 /**
- * Structural presence gate S1 (contract §1): Paul's 0.4.0 template skeleton
- * (agent 1.1.0, marketing-os-agents wi-re-pin-our-icp-agent-to-paul-s-0-4-0),
+ * Structural presence gate S1 (contract §1): the 0.4.0 template skeleton
+ * (agent 1.1.0, marketing-os-agents PR #24, the icp agent's re-pin),
  * as level-2 headings — Cover, the two-page Review Sheet, How to Use This
  * Document, sections 1-6, Appendix A, Appendix B. Matching is heading-prefix
  * per line with a qualifier boundary, mirroring the agent's own
@@ -103,7 +103,7 @@ export const ICP_REQUIRED_HEADINGS = [
 ] as const;
 
 /**
- * The seven level-3 subsections Paul's 0.4.0 template specifies, mirroring
+ * The seven level-3 subsections the 0.4.0 template specifies, mirroring
  * the agent's own REQUIRED_SUBHEADINGS: the four under section 1 (§1.4 is
  * present in BOTH paths — with no live member data the template requires the
  * subsection to stay and carry "TBD — needs input") and the three under
@@ -119,17 +119,17 @@ export const ICP_REQUIRED_SUBHEADINGS = [
   '### 3.3 Persona map',
 ] as const;
 
-/** Gate G1 — Paul's dual-audience default, collapsible to one ICP. */
+/** Gate G1 — the template's dual-audience default, collapsible to one ICP. */
 export const ICP_ICPS_BAND = { min: 1, max: 2 } as const;
 
 /**
  * Gate G1 — personas per ICP: at least one under each ICP; the per-ICP
  * ceiling is the total ceiling (0.4.0 retired the old 2-3-per-ICP cap with
- * Paul's restructured persona section).
+ * the template's restructured persona section).
  */
 export const ICP_PERSONAS_PER_ICP_BAND = { min: 1, max: 9 } as const;
 
-/** Gate G1 — Paul's 0.4.0 rule: 4-9 personas IN TOTAL across all ICPs, each on the fixed eleven-field template. */
+/** Gate G1 — the 0.4.0 template's rule: 4-9 personas IN TOTAL across all ICPs, each on the fixed eleven-field template. */
 export const ICP_PERSONAS_TOTAL_BAND = { min: 4, max: 9 } as const;
 
 /** Gate G2 — 4-6 attributes an actual contact or org can be scored against. */

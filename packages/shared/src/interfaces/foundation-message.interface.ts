@@ -47,7 +47,7 @@ export interface FoundationMessageDerivatives {
   boilerplate: string;
   /** llms.txt content (starts with an `# ` H1 line). */
   llms_txt: string;
-  /** The full elevator pitch (hard cap 90 words; Paul's 0.5.0 §3). */
+  /** The full elevator pitch (hard cap 90 words; 0.5.0 template §3). */
   elevator_pitch: string;
 }
 

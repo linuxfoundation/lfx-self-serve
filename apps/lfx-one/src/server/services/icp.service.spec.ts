@@ -100,7 +100,7 @@ function buildDocument(): string {
   const lines: string[] = ['# TestOrbit ICP & Target Markets', ''];
   for (const heading of ICP_REQUIRED_HEADINGS) {
     lines.push(heading, '', filler, '');
-    // Paul's level-3 subsections sit under their numbered section (§1.x, §3.x).
+    // The template's level-3 subsections sit under their numbered section (§1.x, §3.x).
     const section = /^## (\d+)\./.exec(heading)?.[1];
     lines.push(...ICP_REQUIRED_SUBHEADINGS.filter((sub) => section && sub.startsWith(`### ${section}.`)).flatMap((sub) => [sub, '', filler, '']));
   }

@@ -48,8 +48,8 @@ export const BRAND_KIT_SHA256_REGEX = MKTG_ARTIFACT_SHA256_REGEX;
  * "starts with" per heading line, so trailing qualifiers the template allows
  * do not fail the gate.
  *
- * Updated for Paul's 0.4.0 template (marketing-os-agents
- * wi-re-pin-our-brand-kit-agent-to-paul-s-0-4): the document now opens with
+ * Updated for the brand-guidelines 0.4.0 template (marketing-os-agents
+ * PR #22, the brand-kit agent's 1.1.0 re-pin): the document now opens with
  * the Review Sheet, §3 is "Voice & Language" and §4 "Primary Audiences" (the
  * per-audience messaging table moved to the ICP document), §9 Channel Quick
  * Reference is retired, and Appendix C (LFX Project Record & Research Sweep)
