@@ -2,9 +2,23 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { afterRenderEffect, Component, computed, ContentChild, ElementRef, inject, input, output, Renderer2, Signal, TemplateRef } from '@angular/core';
+import {
+  afterRenderEffect,
+  Component,
+  computed,
+  ContentChild,
+  ElementRef,
+  inject,
+  input,
+  output,
+  Renderer2,
+  Signal,
+  TemplateRef,
+  viewChild,
+} from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { AutoCompleteCompleteEvent, AutoCompleteModule, AutoCompleteSelectEvent } from 'primeng/autocomplete';
+import { AutoComplete, AutoCompleteCompleteEvent, AutoCompleteModule, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 
 @Component({
   selector: 'lfx-autocomplete',
@@ -20,6 +34,7 @@ export class AutocompleteComponent {
 
   private readonly renderer = inject(Renderer2);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly autoComplete = viewChild<AutoComplete>('autoComplete');
 
   public form = input.required<FormGroup>();
   public control = input.required<string>();
@@ -91,6 +106,34 @@ export class AutocompleteComponent {
         this.renderer.removeAttribute(inputElement, 'aria-invalid');
       }
     });
+
+    // PrimeNG resolves a keyboard-committed selection (Enter/Tab) by indexing into the live
+    // `suggestions` array at `focusedOptionIndex`, not by the object the user actually arrow-keyed
+    // onto. If `suggestions` is reassigned (e.g. a new debounced search response lands) while the
+    // panel is open and a row is focused, that stale index can now point at a different option —
+    // committing the wrong selection on Enter. Resetting the index whenever the array changes
+    // forces a fresh arrow-key focus before anything can be committed, closing the race. Mouse
+    // click selection is unaffected — PrimeNG binds that path directly to the clicked object.
+    // toObservable()+subscribe rather than effect(): this writes a signal owned by the child
+    // AutoComplete instance, and writing into external/child state from an effect risks
+    // ExpressionChangedAfterItHasBeenCheckedError under zoneless change detection (see the same
+    // reasoning in user-search.component.ts).
+    // Respect autoOptionFocus rather than always forcing -1: PrimeNG's own suggestions setter
+    // already recomputes focusedOptionIndex via findFirstFocusedOptionIndex() when autoOptionFocus
+    // is on, but only while its internal `loading` flag is set (i.e. during its own debounced
+    // search cycle). A blanket -1 here would stomp that freshly-computed index whenever this
+    // subscriber's effect flushes after PrimeNG's own synchronous setter logic runs.
+    toObservable(this.suggestions)
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        const instance = this.autoComplete();
+        if (!instance?.overlayVisible) {
+          return;
+        }
+
+        const focusedOptionIndex = this.autoOptionFocus() ? instance.findFirstFocusedOptionIndex() : -1;
+        instance.focusedOptionIndex.set(focusedOptionIndex);
+      });
   }
 
   public searchCompleted(event: AutoCompleteCompleteEvent): void {
