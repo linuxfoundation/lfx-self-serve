@@ -43,6 +43,9 @@ class PeopleStubComponent {}
 @Component({ selector: 'lfx-meeting-materials', template: '<span data-testid="materials-stub"></span>' })
 class MaterialsStubComponent {}
 
+@Component({ selector: 'lfx-meeting-recording', template: '<span data-testid="recording-stub"></span>' })
+class RecordingStubComponent {}
+
 describe('MeetingDetailsPageComponent', () => {
   let fixture: ComponentFixture<MeetingDetailsPageComponent>;
   let status: WritableSignal<MeetingDetailsLoadStatus>;
@@ -80,6 +83,7 @@ describe('MeetingDetailsPageComponent', () => {
             MaterialsStubComponent,
             OrganizerStubComponent,
             PeopleStubComponent,
+            RecordingStubComponent,
             TimeBannerStubComponent,
             SkeletonModule,
           ],
@@ -142,6 +146,16 @@ describe('MeetingDetailsPageComponent', () => {
     visibleSections.set({ agenda: true, materials: false });
     fixture.detectChanges();
     expect(query('materials-stub')).toBeNull();
+  });
+
+  // E4-01: recording and transcript follow the tools flag (ended, with artifact access).
+  it('renders the recording and transcript only where the section visibility allows them', () => {
+    show('ready');
+    expect(query('recording-stub')).toBeNull();
+
+    visibleSections.set({ agenda: true, materials: true, tools: true });
+    fixture.detectChanges();
+    expect(query('recording-stub')).not.toBeNull();
   });
 
   // E3-04: the people section renders only for a viewer the state gives a roster to.

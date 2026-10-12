@@ -103,6 +103,12 @@
   // Non-text: the AI-summary icon only, beside its own label, so no text-contrast tier applies.
   --md-feature-ai: #7c3aed; // DIVERGENCE: nearest lfxColors.violet.600 (#7F22FE), which is more saturated; prototype violet
 
+  // ── Feature: recording poster ─────────────────────────────────────────────
+  // Non-text: the recording's dark video still behind a white play disc (E4-01). Not a brand
+  // colour and not themed: a video still stays dark in either mode, so dark mode keeps it.
+  --md-video-still-from: #1a2740; // prototype video still, top-left; no lfxColors equivalent
+  --md-video-still-to: #0f1b33; // prototype video still, bottom-right
+
   // ── Radii ─────────────────────────────────────────────────────────────────
   --md-radius-xs: 3px; // progress bars, rails, hairline chips
   --md-radius-md: 8px; // buttons, inputs, small tiles

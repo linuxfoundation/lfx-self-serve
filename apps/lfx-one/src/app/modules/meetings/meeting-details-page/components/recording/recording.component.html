@@ -1,0 +1,103 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities): a 16px bold
+     heading 14px above a 14px-radius card; a 172px poster with a 60px play disc; 38px pill actions
+     in a row padded 16px by 18px. The poster's gradient is the --md-video-still-* tokens. -->
+<section class="flex flex-col gap-[14px]" aria-labelledby="meeting-recording-heading" data-testid="tools-section">
+  <h2 id="meeting-recording-heading" class="m-0 text-[16px] font-bold text-[var(--md-text-heading)]">Recording &amp; Transcript</h2>
+
+  @switch (section().status) {
+    @case ('loading') {
+      <div class="overflow-hidden rounded-[14px] border border-[var(--md-border)]" aria-busy="true" data-testid="tools-loading">
+        <p-skeleton height="172px" borderRadius="0" aria-hidden="true" />
+        <span class="sr-only">Loading the recording and transcript</span>
+      </div>
+    }
+    @case ('sign-in') {
+      <p class="m-0 text-[14px] text-[var(--md-text-body)]" data-testid="tools-sign-in">
+        <!-- data-dd-privacy="mask": returnTo can carry the meeting password; keep it out of Session Replay. -->
+        <a class="font-semibold text-[var(--md-accent-ink)] underline" [href]="signInHref()" data-dd-privacy="mask" data-testid="tools-sign-in-link">Sign in</a>
+        to watch the recording and read the transcript.
+      </p>
+    }
+    @case ('pending') {
+      <p class="m-0 text-[14px] text-[var(--md-text-muted)]" data-testid="tools-pending">The recording and transcript appear here once they are ready.</p>
+    }
+    @default {
+      @let recording = section().recording;
+      @let transcript = section().transcript;
+      <div class="overflow-hidden rounded-[14px] border border-[var(--md-border)] bg-[var(--md-surface-card)]">
+        @if (recording.status === 'available' && recording.url) {
+          <a
+            class="relative flex h-[172px] items-center justify-center bg-[linear-gradient(135deg,var(--md-video-still-from),var(--md-video-still-to))] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+            [href]="recording.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Watch the recording (opens in a new tab)"
+            data-testid="tools-recording-poster">
+            <span
+              class="flex h-[60px] w-[60px] items-center justify-center rounded-full border-[1.5px] border-white/50 bg-white/15 backdrop-blur-sm"
+              aria-hidden="true">
+              <i class="fa-solid fa-play text-[22px] text-white"></i>
+            </span>
+          </a>
+        }
+        <div class="flex flex-wrap items-center gap-[10px] px-[18px] py-[16px]">
+          @switch (recording.status) {
+            @case ('available') {
+              <lfx-button
+                label="Watch recording"
+                icon="fa-light fa-play"
+                [href]="recording.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                [styleClass]="primaryButtonClass"
+                data-testid="tools-recording-link" />
+            }
+            @case ('no-access') {
+              <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-recording-unavailable" data-reason="no-access">
+                <i class="fa-light fa-lock mr-[6px]" aria-hidden="true"></i>You don't have access to the recording
+              </span>
+            }
+            @case ('none') {
+              <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-recording-unavailable" data-reason="none">
+                <i class="fa-light fa-video-slash mr-[6px]" aria-hidden="true"></i>No recording for this meeting
+              </span>
+            }
+          }
+          @switch (transcript.status) {
+            @case ('available') {
+              <lfx-button
+                label="Transcript"
+                icon="fa-light fa-file-lines"
+                [styleClass]="secondaryButtonClass"
+                ariaHaspopup="dialog"
+                (onClick)="openTranscript()"
+                data-testid="tools-transcript-btn" />
+            }
+            @case ('no-access') {
+              <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-transcript-unavailable" data-reason="no-access">
+                <i class="fa-light fa-lock mr-[6px]" aria-hidden="true"></i>You don't have access to the transcript
+              </span>
+            }
+            @case ('none') {
+              <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-transcript-unavailable" data-reason="none">
+                <i class="fa-light fa-file-slash mr-[6px]" aria-hidden="true"></i>No transcript for this meeting
+              </span>
+            }
+          }
+        </div>
+        @if (recording.status === 'error' || transcript.status === 'error') {
+          <div
+            class="flex flex-wrap items-center justify-between gap-[12px] border-t border-[var(--md-divider)] px-[18px] py-[14px]"
+            role="alert"
+            data-testid="tools-error">
+            <p class="m-0 text-[13.5px] text-[var(--md-text-body)]">We couldn't load the {{ failedArtifacts() }}.</p>
+            <lfx-button label="Try again" [styleClass]="secondaryButtonClass" (onClick)="retry()" data-testid="tools-retry" />
+          </div>
+        }
+      </div>
+    }
+  }
+</section>

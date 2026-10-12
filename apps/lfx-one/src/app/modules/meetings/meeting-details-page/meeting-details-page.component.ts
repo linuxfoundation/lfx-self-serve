@@ -16,6 +16,7 @@ import { MeetingOrganizerComponent } from './components/organizer/organizer.comp
 import { MeetingTimeBannerComponent } from './components/time-banner/time-banner.component';
 import { MeetingMaterialsComponent } from './components/materials/materials.component';
 import { MeetingPeopleComponent } from './components/people/people.component';
+import { MeetingRecordingComponent } from './components/recording/recording.component';
 import { MeetingDetailsStateService } from './meeting-details-state.service';
 
 /**
@@ -40,6 +41,7 @@ import { MeetingDetailsStateService } from './meeting-details-state.service';
     MeetingAgendaComponent,
     MeetingMaterialsComponent,
     MeetingPeopleComponent,
+    MeetingRecordingComponent,
     MeetingHeaderComponent,
     MeetingIdentityBarComponent,
     MeetingOrganizerComponent,

@@ -132,9 +132,11 @@ because acceptance requires every radius and shadow to resolve through a token.
 
 Icon-only colours that sit beside their own label, so no text-contrast tier applies.
 
-| Token             | V2 value  | Nearest `lfxColors` | Difference | Adopt upstream?        |
-| ----------------- | --------- | ------------------- | ---------- | ---------------------- | ------------------------------------------------------------------- | ------------------------------ |
-| `--md-feature-ai` | `#7c3aed` | n/a                 | n/a        | `violet.600` `#7F22FE` | AI-summary icon only (non-text); prototype violet is less saturated | Yes — converge on `violet.600` |
+| Token                   | V2 value  | Nearest `lfxColors` | Difference | Adopt upstream?        |
+| ----------------------- | --------- | ------------------- | ---------- | ---------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `--md-feature-ai`       | `#7c3aed` | n/a                 | n/a        | `violet.600` `#7F22FE` | AI-summary icon only (non-text); prototype violet is less saturated                          | Yes — converge on `violet.600`         |
+| `--md-video-still-from` | `#1a2740` | n/a                 | n/a        | none                   | The recording poster's dark video still (E4-01), behind a white play disc; same in dark mode | No — a video still, not a brand colour |
+| `--md-video-still-to`   | `#0f1b33` | n/a                 | n/a        | none                   | The other end of that gradient                                                               | No                                     |
 
 ## Dark values
 
