@@ -664,7 +664,44 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
 
     expect(meetings).toHaveLength(1);
     expect(meetings[0].my_rsvp?.response_type).toBe('accepted');
+    expect(meetings[0].my_registrant_ids).toEqual(['reg-1']);
   });
+
+  it.each(['identity-rsvp', 'registrant', 'registrant-rsvp', 'empty'])(
+    'distinguishes unavailable prerequisite enrichment from a successful empty lookup (%s)',
+    async (lookup) => {
+      const meeting = { id: 'synthetic-enrichment', start_time: tomorrow, duration: 60 } satisfies Partial<Meeting>;
+      proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string; filters_or?: string[] }) => {
+        if (params?.type === 'v1_meeting') return queryPage([meeting]);
+        if (params?.type === 'v1_meeting_registrant') {
+          if (lookup === 'registrant') return Promise.reject(new Error('Synthetic registration lookup unavailable'));
+          return queryPage(lookup === 'registrant-rsvp' ? [{ uid: 'synthetic-reg', meeting_id: meeting.id }] : []);
+        }
+        if (params?.type === 'v1_meeting_rsvp') {
+          if (lookup === 'identity-rsvp' || (lookup === 'registrant-rsvp' && params.filters_or?.includes('registrant_id:synthetic-reg'))) {
+            return Promise.reject(new Error('Synthetic RSVP lookup unavailable'));
+          }
+        }
+        return queryPage([]);
+      });
+      const service = new UserService();
+      Object.assign(service, {
+        meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items },
+        accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
+      });
+
+      const result = await service.getUserMeetings(req);
+
+      expect(result).toHaveLength(1);
+      if (lookup === 'empty') {
+        expect(result[0].my_rsvp).toBeNull();
+        expect(result[0].my_registrant_ids).toEqual([]);
+      } else {
+        expect(result[0].my_rsvp).toBeUndefined();
+        expect(result[0].my_registrant_ids).toBeUndefined();
+      }
+    }
+  );
 
   it.each(['single', 'this_and_following'] as const)(
     'keeps an older all-date answer before a newer %s response when the recurring date is unresolved',
@@ -751,6 +788,7 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
     const result = await service.getUserMeetings(req);
 
     expect(Object.fromEntries(result.map((m) => [m.id, m.invited_via_committee]))).toEqual({ 'via-committee': true, direct: false });
+    expect(Object.fromEntries(result.map((m) => [m.id, m.my_registrant_ids]))).toEqual({ 'via-committee': ['reg-c'], direct: ['reg-d'] });
   });
 });
 

@@ -338,6 +338,65 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     expect(ids(component)).toEqual(['owned', 'pending', 'single-declined']);
   });
 
+  it('keeps unavailable and RSVP-disabled rows in All meetings without classifying them as responses', () => {
+    const component = mount([
+      row('unknown', { my_rsvp: undefined }),
+      pending,
+      owned,
+      row('maybe', { my_rsvp: response('maybe') }),
+      row('declined', { my_rsvp: response('declined') }),
+      legacy,
+      row('disabled-unknown', { is_invite_responses_enabled: false, my_rsvp: undefined }),
+    ]);
+
+    expect(ids(component)).toEqual(['unknown', 'pending', 'owned', 'maybe', 'declined', 'legacy', 'disabled-unknown']);
+    expect(component['allMeetingsCount']()).toBe(7);
+    expect(component['pendingRsvpCount']()).toBe(1);
+    expect(component['acceptedCount']()).toBe(1);
+    expect(component['maybeCount']()).toBe(1);
+    expect(component['declinedCount']()).toBe(1);
+
+    respond(component, 'pending');
+    expect(ids(component)).toEqual(['pending']);
+    respond(component, 'accepted');
+    expect(ids(component)).toEqual(['owned']);
+    respond(component, 'maybe');
+    expect(ids(component)).toEqual(['maybe']);
+    respond(component, 'declined');
+    expect(ids(component)).toEqual(['declined']);
+    respond(component, 'all');
+    expect(ids(component)).toEqual(['unknown', 'pending', 'owned', 'maybe', 'declined', 'legacy', 'disabled-unknown']);
+    http.expectNone('/api/user/meetings');
+  });
+
+  it.each(['pending', 'accepted', 'maybe', 'declined'] as const)('reclassifies an unavailable RSVP as %s when a refresh recovers enrichment', (answer) => {
+    const unknown = row('unknown', { my_rsvp: undefined });
+    const component = mount([unknown]);
+
+    expect(ids(component)).toEqual(['unknown']);
+    expect(component['allMeetingsCount']()).toBe(1);
+    expect(component['pendingRsvpCount']()).toBe(0);
+    expect(component['acceptedCount']()).toBe(0);
+    expect(component['maybeCount']()).toBe(0);
+    expect(component['declinedCount']()).toBe(0);
+    respond(component, answer);
+    expect(ids(component)).toEqual([]);
+
+    users.refreshUserMeetings();
+    http.expectOne('/api/user/meetings').flush([{ ...unknown, my_rsvp: answer === 'pending' ? null : response(answer) }]);
+    flush();
+
+    expect(component.responseFilter()).toBe(answer);
+    expect(ids(component)).toEqual(['unknown']);
+    expect(component['allMeetingsCount']()).toBe(1);
+    expect(component['pendingRsvpCount']()).toBe(answer === 'pending' ? 1 : 0);
+    expect(component['acceptedCount']()).toBe(answer === 'accepted' ? 1 : 0);
+    expect(component['maybeCount']()).toBe(answer === 'maybe' ? 1 : 0);
+    expect(component['declinedCount']()).toBe(answer === 'declined' ? 1 : 0);
+    respond(component, 'all');
+    expect(ids(component)).toEqual(['unknown']);
+  });
+
   it('counts and filters Accepted only when the RSVP applies to the current recurring date', () => {
     const nextId = String(Date.parse('2099-01-01T12:00:00Z') / 1000);
     const recurring = {

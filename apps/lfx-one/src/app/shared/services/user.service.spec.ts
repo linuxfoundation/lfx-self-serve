@@ -141,6 +141,177 @@ describe('UserService', () => {
     returning.unsubscribe();
   });
 
+  describe('RSVP registration retention', () => {
+    const response = (overrides: Partial<MeetingRsvp> = {}): MeetingRsvp => ({
+      id: 'synthetic-response',
+      meeting_id: 'synthetic-meeting',
+      registrant_id: 'synthetic-old-registration',
+      username: 'synthetic-viewer',
+      email: 'synthetic@example.com',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-10-12T10:00:00Z',
+      ...overrides,
+    });
+    let indexed: Meeting;
+
+    beforeEach(() => {
+      service.user.set({ sub: 'synthetic-subject', username: 'synthetic-viewer' } as User);
+      indexed = { id: 'synthetic-meeting', my_rsvp: null, my_registrant_ids: ['synthetic-old-registration'] } as Meeting;
+      httpGet.mockImplementation((url: string) => of(url === '/api/user/meetings' ? [indexed] : { profile: {} }));
+    });
+
+    it.each([null, undefined])('retains a confirmed write through stale RSVP %s and a personal-feed remount', (myRsvp) => {
+      service.recordConfirmedMeetingRsvp(response());
+      let rows: Meeting[] = [];
+      const first = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      expect(rows[0].my_rsvp?.response_type).toBe('accepted');
+      indexed = { ...indexed, my_rsvp: myRsvp, my_registrant_ids: myRsvp === undefined ? undefined : indexed.my_registrant_ids };
+      service.refreshUserMeetings();
+      expect(rows[0].my_rsvp?.response_type).toBe('accepted');
+      first.unsubscribe();
+      service.refreshUserMeetings(false);
+      const returning = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      expect(rows[0].my_rsvp?.response_type).toBe('accepted');
+      expect(indexed.my_rsvp).toBe(myRsvp);
+      returning.unsubscribe();
+    });
+
+    it.each([{ registrantIds: [] }, { registrantIds: ['synthetic-new-registration'] }])(
+      'invalidates old retained and indexed answers on authoritative registrations $registrantIds',
+      ({ registrantIds }) => {
+        const oldResponse = response();
+        service.recordConfirmedMeetingRsvp(oldResponse);
+        let rows: Meeting[] = [];
+        const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+        indexed = { ...indexed, my_rsvp: oldResponse, my_registrant_ids: registrantIds };
+        service.refreshUserMeetings();
+        expect(rows[0].my_rsvp).toBeNull();
+
+        // A later query outage or late acknowledgement cannot resurrect a registration already known to have ended.
+        indexed = { ...indexed, my_rsvp: undefined, my_registrant_ids: undefined };
+        service.refreshUserMeetings();
+        service.recordConfirmedMeetingRsvp({ ...oldResponse, id: 'synthetic-late-old-response' });
+        expect(rows[0].my_rsvp).toBeUndefined();
+        subscription.unsubscribe();
+        service.refreshUserMeetings(false);
+        const returning = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+        expect(rows[0].my_rsvp).toBeUndefined();
+        returning.unsubscribe();
+      }
+    );
+
+    it('ends the removed registration through stale indexed reads and accepts a new registration response', () => {
+      const oldResponse = response({ created_at: '2026-10-12T12:00:00Z' });
+      indexed = { ...indexed, my_rsvp: oldResponse };
+      service.recordConfirmedMeetingRsvp(oldResponse);
+      let rows: Meeting[] = [];
+      const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-subject', indexed.my_registrant_ids);
+      expect(rows[0].my_rsvp).toBeNull();
+      service.recordConfirmedMeetingRsvp({ ...oldResponse, id: 'synthetic-late-acknowledgement' });
+      expect(rows[0].my_rsvp).toBeNull();
+
+      indexed = { ...indexed, my_rsvp: null, my_registrant_ids: ['synthetic-new-registration'] };
+      service.refreshUserMeetings();
+      const newResponse = response({ id: 'synthetic-new-response', registrant_id: 'synthetic-new-registration', response_type: 'maybe' });
+      service.recordConfirmedMeetingRsvp(newResponse);
+      expect(rows[0].my_rsvp).toEqual(newResponse);
+      subscription.unsubscribe();
+      service.refreshUserMeetings(false);
+      const returning = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      expect(rows[0].my_rsvp).toEqual(newResponse);
+      returning.unsubscribe();
+    });
+
+    it.each([{ registrantIds: [] }, { registrantIds: ['synthetic-old-registration'] }])(
+      'retains a new registration answer through stale registration metadata $registrantIds until indexing catches up',
+      ({ registrantIds }) => {
+        const oldResponse = response();
+        service.recordConfirmedMeetingRsvp(oldResponse);
+        let rows: Meeting[] = [];
+        const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+        service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-subject', [oldResponse.registrant_id]);
+        indexed = { ...indexed, my_rsvp: oldResponse, my_registrant_ids: registrantIds };
+        service.refreshUserMeetings();
+        const newResponse = response({ id: 'synthetic-new-response', registrant_id: 'synthetic-new-registration', response_type: 'maybe' });
+        service.recordConfirmedMeetingRsvp(newResponse);
+        expect(rows[0].my_rsvp).toEqual(newResponse);
+        service.refreshUserMeetings();
+        expect(rows[0].my_rsvp).toEqual(newResponse);
+
+        indexed = { ...indexed, my_rsvp: null, my_registrant_ids: [newResponse.registrant_id] };
+        service.refreshUserMeetings();
+        expect(rows[0].my_rsvp).toEqual(newResponse);
+        indexed = { ...indexed, my_registrant_ids: [] };
+        service.refreshUserMeetings();
+        expect(rows[0].my_rsvp).toBeNull();
+        service.recordConfirmedMeetingRsvp(oldResponse);
+        expect(rows[0].my_rsvp).toBeNull();
+        subscription.unsubscribe();
+      }
+    );
+
+    it('does not let a retained answer from another registration beat a newly confirmed response during an enrichment outage', () => {
+      indexed = { ...indexed, my_registrant_ids: undefined };
+      service.recordConfirmedMeetingRsvp(response({ created_at: '2026-10-12T12:00:00Z' }));
+      const newResponse = response({ id: 'synthetic-new-response', registrant_id: 'synthetic-new-registration', response_type: 'declined' });
+      service.recordConfirmedMeetingRsvp(newResponse);
+      let rows: Meeting[] = [];
+      const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      expect(rows[0].my_rsvp).toEqual(newResponse);
+      subscription.unsubscribe();
+    });
+
+    it('keeps newer applicable indexed responses and occurrence-specific precedence on the same registration', () => {
+      const occurrenceId = String(Date.parse('2099-01-01T10:00:00Z') / 1000);
+      indexed = {
+        ...indexed,
+        recurrence: { type: 1, repeat_interval: 1 },
+        occurrences: [{ occurrence_id: occurrenceId, start_time: '2099-01-01T10:00:00Z', duration: 60 }],
+      };
+      service.recordConfirmedMeetingRsvp(response());
+      let rows: Meeting[] = [];
+      const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      const indexedResponse = response({
+        id: 'synthetic-newer-single',
+        scope: 'single',
+        occurrence_id: occurrenceId,
+        response_type: 'declined',
+        created_at: '2026-10-12T11:00:00Z',
+      });
+      indexed = { ...indexed, my_rsvp: indexedResponse };
+      service.refreshUserMeetings();
+      expect(rows[0].my_rsvp).toEqual(indexedResponse);
+      indexed = { ...indexed, occurrences: [] };
+      service.refreshUserMeetings();
+      expect(rows[0].my_rsvp?.scope).toBe('all');
+      expect(rows[0].my_rsvp?.response_type).toBe('accepted');
+      subscription.unsubscribe();
+    });
+
+    it('applies late registration removal only to its dispatch subject, even when aliases and registration UIDs match', async () => {
+      service.user.set({ sub: 'synthetic-a', username: 'unchanged-alias' } as User);
+      await TestBed.inject(ApplicationRef).whenStable();
+      service.recordConfirmedMeetingRsvp(response(), 'synthetic-a');
+      service.recordConfirmedMeetingRsvp(response({ id: 'synthetic-b-response', response_type: 'maybe' }), 'synthetic-b');
+      service.user.set({ sub: 'synthetic-b', username: 'unchanged-alias' } as User);
+      await TestBed.inject(ApplicationRef).whenStable();
+      let rows: Meeting[] = [];
+      const other = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-a', ['synthetic-old-registration']);
+      expect(rows[0].my_rsvp?.response_type).toBe('maybe');
+      other.unsubscribe();
+
+      service.user.set({ sub: 'synthetic-a', username: 'unchanged-alias' } as User);
+      await TestBed.inject(ApplicationRef).whenStable();
+      const returning = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      service.recordConfirmedMeetingRsvp(response({ id: 'synthetic-late-a-response' }), 'synthetic-a');
+      expect(rows[0].my_rsvp).toBeNull();
+      returning.unsubscribe();
+    });
+  });
+
   it('falls back to the Auth0 picture claim when no avatar has been uploaded', () => {
     service.user.set({ picture: 'https://cdn.auth0.com/stale.png' } as User);
     expect(service.effectiveAvatarUrl()).toBe('https://cdn.auth0.com/stale.png');

@@ -61,7 +61,13 @@ async function render(actions: PendingActionItem[], flagEnabled = true): Promise
       { provide: MeetingService, useValue: meetingClient },
       {
         provide: UserService,
-        useValue: { user: signal(null), authenticated: signal(false), viewerUsername: signal(null), recordConfirmedMeetingRsvp: vi.fn() },
+        useValue: {
+          user: signal(null),
+          authenticated: signal(false),
+          viewerUsername: signal(null),
+          recordConfirmedMeetingRsvp: vi.fn(),
+          isMeetingRsvpCurrent: vi.fn(() => true),
+        },
       },
       { provide: LensService, useValue: { activeLens: signal('me') } },
       { provide: VoteService, useValue: {} },

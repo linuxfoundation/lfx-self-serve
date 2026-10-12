@@ -402,9 +402,13 @@ export interface Meeting {
    * see `getActiveOccurrences` (LFXV2-2057).
    */
   cancelled_occurrences?: string[];
-  /** Current user's RSVP for this meeting (null when the user hasn't responded).
-   * Populated by /api/user/meetings only. Absent on other Meeting-returning endpoints. */
+  /** Effective viewer's RSVP, enriched by /api/user/meetings only.
+   * Null confirms no response; undefined means enrichment was unavailable (or another endpoint).
+   * A date-scoped response may not apply to the meeting's current/next occurrence. */
   my_rsvp?: MeetingRsvp | null;
+  /** Effective viewer's active registration UIDs, enriched by /api/user/meetings only.
+   * An empty array confirms no active registration; undefined means enrichment was unavailable. */
+  my_registrant_ids?: string[];
   /** Project name — populated on query-service list payloads; on the authenticated detail
    * response (`GET /api/meetings/:uid`) it is populated via BFF enrichment and is
    * absent when that enrichment fails (and from the raw ITX detail payload). */

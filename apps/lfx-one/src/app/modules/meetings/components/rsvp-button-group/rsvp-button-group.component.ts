@@ -135,6 +135,7 @@ export class RsvpButtonGroupComponent {
     const currentUser = this.user();
     const subject = currentUser?.sub || this.userService.viewerUsername() || currentUser?.email || '';
     const meetingUid = this.meetingUid();
+    const meeting = this.meeting();
     const context = this.rsvpContext();
     const scopedOccurrenceId = scope === 'all' ? undefined : (occurrenceIdToSeconds(occurrenceId) ?? undefined);
     if (scope !== 'all' && !scopedOccurrenceId) {
@@ -165,6 +166,8 @@ export class RsvpButtonGroupComponent {
             // Creation time may predate a changed answer; use confirmation time without a modification timestamp.
             updated_at: rsvp.updated_at || rsvp.modified_at || new Date().toISOString(),
           };
+          this.userService.recordConfirmedMeetingRsvp(savedRsvp, subject);
+          if (!this.userService.isMeetingRsvpCurrent(savedRsvp, meeting, subject)) return;
           // The successful POST is authoritative. Never replace it with a stale/null
           // query-service refetch while the new response is still being indexed.
           if (this.confirmedContext() !== context) {
@@ -180,9 +183,7 @@ export class RsvpButtonGroupComponent {
               life: 5000,
             });
           }
-          // Show the global confirmation before the parent removes a Needs response card.
-          this.userService.recordConfirmedMeetingRsvp(savedRsvp, subject);
-          this.rsvpChanged.emit(savedRsvp);
+          if (this.rsvpContext() === context) this.rsvpChanged.emit(savedRsvp);
           // Defer personal refetches outside Me without keeping a stale replay on return.
           this.userService.refreshUserMeetings(this.lensService.activeLens() === 'me');
         }),
@@ -297,7 +298,7 @@ export class RsvpButtonGroupComponent {
   }
 
   private applicableRsvp(rsvp: MeetingRsvp | null | undefined): MeetingRsvp | null {
-    if (!rsvp || rsvp.meeting_id !== this.meetingUid()) {
+    if (!rsvp || rsvp.meeting_id !== this.meetingUid() || !this.userService.isMeetingRsvpCurrent(rsvp, this.meeting())) {
       return null;
     }
     // Without a resolved recurring date, only an all-dates response is meaningful.

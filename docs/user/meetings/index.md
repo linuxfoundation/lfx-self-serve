@@ -4,7 +4,7 @@ description: Schedule, manage, and join project meetings with calendar integrati
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, calendar, join, zoom, virtual]
-last_updated: 2026-10-11
+last_updated: 2026-10-12
 intercom_collection: Meetings
 ---
 
@@ -49,6 +49,8 @@ In My Meetings, response filters sit below the Upcoming/Past tabs:
 - **Needs response** — meetings that collect RSVPs and have no response for the current or next date. A response for a different recurring date does not answer this date.
 - **Going**, **Maybe**, and **Not going** — meetings with your corresponding response for the current or next date.
 
+If response data is temporarily unavailable, the meeting remains in **All meetings** but is excluded from response filters and their counts until its response is known. An unavailable response is not treated as an unanswered invitation.
+
 If a recurring meeting's current or next date is unavailable, only an **All dates** response counts as an answer. A date-specific response stays out of Going, Maybe, and Not going and leaves the meeting in Needs response. Organizer response counts and attendee previews also ignore date-specific responses until the date is resolved, preserving an older All dates answer even if a guest later answered for one date; invited guests remain in the roster.
 
 The **Organized by me** checkbox combines with any response filter. It matches meetings you own; when no owner is recorded, the original creator is used. Inherited management access alone does not count as organizing.
@@ -58,6 +60,8 @@ Declining does not remove a meeting from **All meetings**. To hide meetings you 
 All response filters and **Organized by me** show their upcoming-meeting count in parentheses only when it is greater than zero. Counts are hidden while loading and describe upcoming meetings before search, foundation, project, meeting-type, response, organizer, or hide-declined filters. **Hide meetings declined for all dates** is a separate checkbox without a count. Search and meeting type stay selected when changing the time tab. Foundation/project and personal response/organizer/hide selections reset when switching between Upcoming and Past. **Reset filters** clears every secondary selection without changing the time tab.
 
 At the top of My Meetings, **Meetings in the Next 7 Days** counts each upcoming date, including dates you declined. **Needs response** opens the response queue and clears other filters so they cannot hide meetings needing your answer. A successful response removes the meeting from that queue but keeps it findable under All meetings. Confirmed responses stay visible while the query index catches up.
+
+Removing yourself from a meeting ends your registration and discards its saved response. If you register again, the new registration starts unanswered; an old response cannot return from cached data. A failed removal keeps your registration and response unchanged.
 
 Foundation and Project dashboards keep their Upcoming/Past choices and existing calendar, paging, and Subscribe controls. Personal response and organizer selections never narrow a scoped list. Switching away from My Meetings clears personal rows while the scoped list loads; inactive personal updates do not replace scoped results.
 

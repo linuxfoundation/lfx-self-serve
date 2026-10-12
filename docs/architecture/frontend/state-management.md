@@ -101,6 +101,12 @@ Uploaded-avatar resets prefer the effective user's stable `sub`, falling back to
 
 The BFF personal feed likewise prefers all-date history before reducing an unresolved recurring meeting to `my_rsvp`. It retains the legacy aggregate fallback only when no all-date answer exists; personal response filters still reject that date-scoped fallback. The join page and RSVP controls request `rsvp_scope=all` on the existing current-user RSVP lookup when their recurring date is unresolved, so the BFF selects only the effective user's all-date responses before choosing the newest answer (or returns `null` without one). Resolved-date and default aggregate lookups keep their existing precedence.
 
+Registration lifetime also bounds retained responses. The personal-feed BFF enriches `my_registrant_ids` from its existing active-registration lookup (`[]` means no active registration; absent means enrichment unavailable). `UserService` reconciles retained and indexed candidates against those IDs and records ended registration UIDs per effective subject and meeting. Successful card/page removals clear root confirmations under the captured subject and discard local history; RSVP controls reject supplied, fetched, retained, and late write acknowledgements for ended registrations. Re-registration can retain responses only for the new registration, while a failed removal leaves the previous response intact.
+
+Fresh acknowledgements bridge registration-index lag too: before a newly confirmed registration first appears in indexed metadata, an older or empty registration list cannot invalidate its successful write. Once its UID has appeared, a later missing/replaced UID invalidates that registration's retained responses. Explicit successful removal always ends the registration immediately, even before its first indexed appearance.
+
+For the personal feed, `my_rsvp: null` confirms no response, whereas absent `my_rsvp` means the prerequisite lookup was unavailable. The dashboard keeps unknown rows in All meetings but excludes them from response-specific membership and counts. Otherwise-valid local confirmations still bridge an enrichment outage; an outage alone does not invalidate a registration.
+
 ## 🧩 Component Integration
 
 ### Signal Consumption

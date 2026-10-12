@@ -17,6 +17,7 @@ import {
   runInInjectionContext,
   signal,
   Signal,
+  viewChild,
   WritableSignal,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -140,6 +141,7 @@ export class MeetingCardComponent implements OnInit {
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly refreshAttachments$ = new BehaviorSubject<void>(undefined);
+  private readonly rsvpControls = viewChild(RsvpButtonGroupComponent);
 
   public readonly meetingInput = input.required<Meeting | PastMeeting>();
   public readonly occurrenceInput = input<MeetingOccurrence | null>(null);
@@ -359,7 +361,8 @@ export class MeetingCardComponent implements OnInit {
   }
 
   public onRsvpChanged(rsvp: MeetingRsvp): void {
-    this.confirmedRsvps.update((responses) => [rsvp, ...responses.filter((saved) => saved.id !== rsvp.id)]);
+    if (!this.userService.isMeetingRsvpCurrent(rsvp, this.meetingInput())) return;
+    this.confirmedRsvps.update((responses) => [rsvp, ...responses.filter((saved) => saved.registrant_id === rsvp.registrant_id && saved.id !== rsvp.id)]);
   }
 
   /**
@@ -834,6 +837,12 @@ export class MeetingCardComponent implements OnInit {
 
   private leaveMeeting(): void {
     const meetingId = this.meeting().id;
+    const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+    const input = this.meetingInput();
+    const registrantIds = [...(input.my_registrant_ids ?? []), ...this.confirmedRsvps().map((rsvp) => rsvp.registrant_id)];
+    if (input.my_rsvp) registrantIds.push(input.my_rsvp.registrant_id);
+    const fetchedRsvp = this.rsvpControls()?.currentRsvp();
+    if (fetchedRsvp) registrantIds.push(fetchedRsvp.registrant_id);
     this.leavingMeeting.set(true);
 
     this.meetingService
@@ -844,6 +853,10 @@ export class MeetingCardComponent implements OnInit {
       )
       .subscribe({
         next: () => {
+          this.userService.clearConfirmedMeetingRsvps(meetingId, subject, registrantIds);
+          const currentSubject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+          if (this.meeting().id !== meetingId || currentSubject !== subject) return;
+          this.confirmedRsvps.set([]);
           this.optimisticInvited.set(false);
           this.meetingService.markRegistrationRemoved(meetingId);
           this.meeting.update((meeting) => ({ ...meeting, invited: false, my_rsvp: null }));
@@ -983,15 +996,20 @@ export class MeetingCardComponent implements OnInit {
   private initRsvpMeeting(): Signal<Meeting> {
     return computed(() => {
       const meeting = this.meeting();
-      const myRsvp = this.meetingInput().my_rsvp;
-      return meeting.my_rsvp === myRsvp ? meeting : { ...meeting, my_rsvp: myRsvp };
+      const input = this.meetingInput();
+      const supplied = input.my_rsvp;
+      const myRsvp = supplied && !this.userService.isMeetingRsvpCurrent(supplied, input) ? null : supplied;
+      return meeting.my_rsvp === myRsvp && meeting.my_registrant_ids === input.my_registrant_ids
+        ? meeting
+        : { ...meeting, my_rsvp: myRsvp, my_registrant_ids: input.my_registrant_ids };
     });
   }
 
   private initOverviewConfirmedRsvps(): Signal<MeetingRsvp[]> {
     return computed(() => {
-      const supplied = this.meetingInput().my_rsvp;
-      const confirmed = this.confirmedRsvps();
+      const meeting = this.rsvpMeeting();
+      const supplied = meeting.my_rsvp;
+      const confirmed = this.confirmedRsvps().filter((rsvp) => this.userService.isMeetingRsvpCurrent(rsvp, meeting));
       return supplied ? [...confirmed, supplied] : confirmed;
     });
   }

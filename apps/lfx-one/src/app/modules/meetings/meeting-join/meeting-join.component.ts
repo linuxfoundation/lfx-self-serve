@@ -15,6 +15,7 @@ import {
   signal,
   Signal,
   TransferState,
+  viewChild,
   WritableSignal,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -174,6 +175,7 @@ export class MeetingJoinComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly transferState = inject(TransferState);
+  private readonly rsvpControls = viewChild(RsvpButtonGroupComponent);
 
   // Persists the SSR-resolved meeting so the client's first paint matches the server DOM instead
   // of tearing it down at hydration (GH-2041) — see `MeetingJoinPageState` for why the meeting
@@ -396,7 +398,7 @@ export class MeetingJoinComponent implements OnInit {
   public rsvpToggleLabel: Signal<string>;
   // Emits the freshly-submitted RSVP from the button-group so the chip updates immediately,
   // bypassing any query-service indexing lag that would otherwise return stale data on refetch.
-  private readonly rsvpUpdateTrigger$ = new Subject<MeetingRsvp>();
+  private readonly rsvpUpdateTrigger$ = new Subject<MeetingRsvp | null>();
   // Monotonic counter bumped on every manual RSVP update. Captured at fetch dispatch time and
   // checked on response; if it has advanced, the server response is stale relative to a newer
   // optimistic update and is dropped so the chip doesn't revert.
@@ -679,6 +681,7 @@ export class MeetingJoinComponent implements OnInit {
     // rsvp-button-group emits the confirmed RSVP after the POST succeeds. Push it directly into the
     // signal stream so the chip updates instantly, even when the backend polling window times out
     // before the query service has indexed the new RSVP (server would still return stale on refetch).
+    if (!this.userService.isMeetingRsvpCurrent(rsvp, this.meeting())) return;
     this.rsvpUpdateTrigger$.next(rsvp);
   }
 
@@ -1463,7 +1466,7 @@ export class MeetingJoinComponent implements OnInit {
   }
 
   private initializeCanToggleRsvpView(): Signal<boolean> {
-    return computed(() => !!this.meeting()?.organizer && this.isInvited() && this.inviteResponsesEnabled());
+    return computed(() => !!this.meeting()?.organizer && this.effectivelyInvited() && this.inviteResponsesEnabled());
   }
 
   private initializeCurrentUserRsvp(): Signal<MeetingRsvp | null> {
@@ -1516,7 +1519,8 @@ export class MeetingJoinComponent implements OnInit {
           const counterAtDispatch = this.rsvpUpdateCounter;
           return this.meetingService.getMeetingRsvpForCurrentUser(meeting.id, occurrenceId, allDatesOnly).pipe(
             startWith(null),
-            filter(() => this.rsvpUpdateCounter === counterAtDispatch)
+            filter(() => this.rsvpUpdateCounter === counterAtDispatch),
+            map((rsvp) => (rsvp && this.userService.isMeetingRsvpCurrent(rsvp, meeting) ? rsvp : null))
           );
         })
       ),
@@ -1798,6 +1802,11 @@ export class MeetingJoinComponent implements OnInit {
 
   private leaveMeeting(): void {
     const meetingId = this.meeting().id;
+    const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+    const meeting = this.meeting();
+    const registrantIds = [...(meeting.my_registrant_ids ?? [])];
+    const rsvp = this.currentUserRsvp() ?? this.rsvpControls()?.currentRsvp() ?? meeting.my_rsvp;
+    if (rsvp) registrantIds.push(rsvp.registrant_id);
     this.leavingMeeting.set(true);
 
     this.meetingService
@@ -1808,6 +1817,11 @@ export class MeetingJoinComponent implements OnInit {
       )
       .subscribe({
         next: () => {
+          this.userService.clearConfirmedMeetingRsvps(meetingId, subject, registrantIds);
+          const currentSubject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+          if (this.meeting().id !== meetingId || currentSubject !== subject) return;
+          this.rsvpUpdateTrigger$.next(null);
+          this.showMyRsvp.set(false);
           this.optimisticInvited.set(false);
           this.meetingService.markRegistrationRemoved(meetingId);
           this.messageService.add({

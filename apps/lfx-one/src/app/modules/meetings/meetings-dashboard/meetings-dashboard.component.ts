@@ -893,7 +893,7 @@ export class MeetingsDashboardComponent {
   }
 
   private isPendingRsvp(meeting: Meeting): boolean {
-    return isMeetingInviteResponsesEnabled(meeting) && !getApplicableMeetingRsvp(meeting);
+    return isMeetingInviteResponsesEnabled(meeting) && meeting.my_rsvp !== undefined && !getApplicableMeetingRsvp(meeting);
   }
 
   private meetingStartLabel(meeting: Meeting, options: Intl.DateTimeFormatOptions): string {

@@ -52,6 +52,7 @@ import {
   switchMap,
   take,
   takeUntil,
+  tap,
 } from 'rxjs';
 
 import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
@@ -92,6 +93,8 @@ export class UserService {
 
   private readonly userMeetingsRefresh$ = new Subject<void>();
   private readonly confirmedMeetingRsvps$ = new BehaviorSubject(new Map<string, MeetingRsvp[]>());
+  private readonly endedMeetingRegistrantIds = signal(new Map<string, ReadonlySet<string>>());
+  private readonly indexedMeetingRegistrantIds = new Map<string, Set<string>>();
   private readonly userPastMeetingsRefresh$ = new Subject<void>();
   // Shared identities refresh trigger — tab and shell each run their own getIdentities() fetch off
   // this so the shell's GitHub handle / dots update after a link/verify/add/remove (LFXV2-2767).
@@ -298,12 +301,40 @@ export class UserService {
 
   /** Retain a successful write beyond the route that submitted it, under its captured effective subject. */
   public recordConfirmedMeetingRsvp(rsvp: MeetingRsvp, subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || ''): void {
-    if (!subject) return;
+    if (!subject || !rsvp.registrant_id) return;
     const key = `${subject}\0${rsvp.meeting_id}`;
+    if (this.endedMeetingRegistrantIds().get(key)?.has(rsvp.registrant_id)) return;
     const current = this.confirmedMeetingRsvps$.value;
     const next = new Map(current);
-    next.set(key, [rsvp, ...(current.get(key) ?? []).filter((saved) => saved.id !== rsvp.id)]);
+    next.set(key, [rsvp, ...(current.get(key) ?? []).filter((saved) => saved.registrant_id === rsvp.registrant_id && saved.id !== rsvp.id)]);
     this.confirmedMeetingRsvps$.next(next);
+  }
+
+  /** End only this subject's registrations after a successful removal, including late write acknowledgements. */
+  public clearConfirmedMeetingRsvps(
+    meetingId: string,
+    subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '',
+    registrantIds: string[] = []
+  ): void {
+    if (!subject) return;
+    const key = `${subject}\0${meetingId}`;
+    const current = this.confirmedMeetingRsvps$.value;
+    this.endMeetingRegistrants(key, [...registrantIds, ...(current.get(key) ?? []).map((rsvp) => rsvp.registrant_id)]);
+    const next = new Map(current);
+    next.delete(key);
+    this.confirmedMeetingRsvps$.next(next);
+  }
+
+  /** Reject responses from ended registrations; missing enrichment does not invalidate a confirmation. */
+  public isMeetingRsvpCurrent(rsvp: MeetingRsvp, meeting: Meeting, subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || ''): boolean {
+    const key = `${subject}\0${meeting.id}`;
+    if (this.endedMeetingRegistrantIds().get(key)?.has(rsvp.registrant_id)) return false;
+    if (meeting.my_registrant_ids === undefined || meeting.my_registrant_ids.includes(rsvp.registrant_id)) return true;
+    // A successful write can precede this registration's first indexed appearance.
+    return (
+      !this.indexedMeetingRegistrantIds.get(key)?.has(rsvp.registrant_id) &&
+      this.confirmedMeetingRsvps$.value.get(key)?.some((saved) => saved.registrant_id === rsvp.registrant_id) === true
+    );
   }
 
   /**
@@ -328,7 +359,7 @@ export class UserService {
       this.userMeetings$ = combineLatest([
         this.userMeetingsRefresh$.pipe(
           startWith(undefined),
-          switchMap(() => this.http.get<Meeting[]>('/api/user/meetings'))
+          switchMap(() => this.http.get<Meeting[]>('/api/user/meetings').pipe(tap((meetings) => this.reconcileMeetingRegistrations(meetings, subject))))
         ),
         this.confirmedMeetingRsvps$,
       ]).pipe(
@@ -524,15 +555,55 @@ export class UserService {
   }
 
   private applyConfirmedMeetingRsvps(meetings: Meeting[], subject: string, saved: Map<string, MeetingRsvp[]>): Meeting[] {
-    if (saved.size === 0) return meetings;
+    if (saved.size === 0 && this.endedMeetingRegistrantIds().size === 0 && meetings.every((meeting) => meeting.my_registrant_ids === undefined))
+      return meetings;
     return meetings.map((meeting) => {
-      const confirmed = saved.get(`${subject}\0${meeting.id}`);
-      if (!confirmed) return meeting;
-      const candidates = meeting.my_rsvp ? [...confirmed, meeting.my_rsvp] : confirmed;
+      const confirmed = saved.get(`${subject}\0${meeting.id}`) ?? [];
+      const candidates = (meeting.my_rsvp ? [...confirmed, meeting.my_rsvp] : confirmed).filter((rsvp) => this.isMeetingRsvpCurrent(rsvp, meeting, subject));
       const occurrenceId = resolveRsvpOccurrenceId(meeting);
       const applicable = meeting.recurrence && !occurrenceId ? candidates.filter((rsvp) => rsvp.scope === 'all') : candidates;
-      const myRsvp = selectApplicableRsvp(occurrenceId, applicable) ?? selectApplicableRsvp(undefined, applicable);
+      const myRsvp =
+        selectApplicableRsvp(occurrenceId, applicable) ?? selectApplicableRsvp(undefined, applicable) ?? (meeting.my_rsvp === undefined ? undefined : null);
       return myRsvp === meeting.my_rsvp ? meeting : { ...meeting, my_rsvp: myRsvp };
+    });
+  }
+
+  private reconcileMeetingRegistrations(meetings: Meeting[], subject: string): void {
+    const current = this.confirmedMeetingRsvps$.value;
+    let next: Map<string, MeetingRsvp[]> | undefined;
+    for (const meeting of meetings) {
+      const registrantIds = meeting.my_registrant_ids;
+      if (registrantIds === undefined) continue;
+      const key = `${subject}\0${meeting.id}`;
+      if (registrantIds.length > 0) {
+        let indexedIds = this.indexedMeetingRegistrantIds.get(key);
+        if (!indexedIds) {
+          indexedIds = new Set<string>();
+          this.indexedMeetingRegistrantIds.set(key, indexedIds);
+        }
+        for (const id of registrantIds) indexedIds.add(id);
+      }
+      const confirmed = current.get(key) ?? [];
+      const candidates = meeting.my_rsvp ? [...confirmed, meeting.my_rsvp] : confirmed;
+      const endedIds = candidates.filter((rsvp) => !this.isMeetingRsvpCurrent(rsvp, meeting, subject)).map((rsvp) => rsvp.registrant_id);
+      if (endedIds.length === 0) continue;
+      this.endMeetingRegistrants(key, endedIds);
+      if (confirmed.length > 0) {
+        next ??= new Map(current);
+        const retained = confirmed.filter((rsvp) => !endedIds.includes(rsvp.registrant_id));
+        if (retained.length > 0) next.set(key, retained);
+        else next.delete(key);
+      }
+    }
+    if (next) this.confirmedMeetingRsvps$.next(next);
+  }
+
+  private endMeetingRegistrants(key: string, registrantIds: string[]): void {
+    if (registrantIds.length === 0 || registrantIds.every((id) => this.endedMeetingRegistrantIds().get(key)?.has(id))) return;
+    this.endedMeetingRegistrantIds.update((current) => {
+      const next = new Map(current);
+      next.set(key, new Set([...(current.get(key) ?? []), ...registrantIds]));
+      return next;
     });
   }
 

@@ -77,6 +77,7 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
             authenticated: signal(true),
             refreshUserMeetings: vi.fn(),
             recordConfirmedMeetingRsvp: vi.fn(),
+            isMeetingRsvpCurrent: vi.fn(() => true),
           },
         },
         { provide: MessageService, useValue: { add: toastAdd } },
@@ -455,5 +456,135 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
     http.expectNone(`/api/meetings/${MEETING.id}/rsvp`);
     expect(fixture.componentInstance.isLoading()).toBe(false);
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+  });
+});
+
+describe('RsvpButtonGroupComponent — registration lifetime', () => {
+  let http: HttpTestingController;
+  let users: UserService;
+  let toastAdd: ReturnType<typeof vi.fn>;
+  const meeting = { ...MEETING, recurrence: null, occurrences: [], my_registrant_ids: ['synthetic-registrant'] } as Meeting;
+  const oldResponse = { ...response('accepted', 'all'), updated_at: '2026-10-12T10:00:00Z' };
+
+  beforeEach(async () => {
+    toastAdd = vi.fn();
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: MessageService, useValue: { add: toastAdd } },
+        { provide: LensService, useValue: { activeLens: signal('me') } },
+      ],
+    });
+    await TestBed.compileComponents();
+    http = TestBed.inject(HttpTestingController);
+    users = TestBed.inject(UserService);
+    users.user.set({ sub: 'synthetic-a', username: 'synthetic-viewer', email: 'synthetic@example.com' } as User);
+    users.authenticated.set(true);
+  });
+
+  afterEach(() => http.verify());
+
+  const mount = (suppliedMeeting = meeting, fetched: MeetingRsvp | null = null) => {
+    const fixture = TestBed.createComponent(RsvpButtonGroupComponent);
+    fixture.componentRef.setInput('meeting', suppliedMeeting);
+    fixture.detectChanges();
+    TestBed.tick();
+    for (const request of http.match('/api/profile')) request.flush({ profile: {} });
+    http.expectOne(`/api/meetings/${MEETING.id}/rsvp/me`).flush(fetched);
+    return fixture;
+  };
+
+  it('rejects retained, supplied, and fetched history after leave/rejoin on the same control and after remount', () => {
+    const fixture = mount({ ...meeting, my_rsvp: oldResponse }, oldResponse);
+    const component = fixture.componentInstance;
+    component.handleRsvpClick('accepted');
+    http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush(oldResponse);
+    expect(component.selectedResponse()).toBe('accepted');
+
+    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-a', ['synthetic-registrant']);
+    expect(component.selectedResponse()).toBeNull();
+    expect(component.responseSaved()).toBe(false);
+    const rejoined = { ...meeting, my_rsvp: oldResponse, my_registrant_ids: ['synthetic-new-registration'] };
+    fixture.componentRef.setInput('meeting', rejoined);
+    fixture.detectChanges();
+    TestBed.tick();
+    http.expectOne(`/api/meetings/${MEETING.id}/rsvp/me`).flush(oldResponse);
+    expect(component.selectedResponse()).toBeNull();
+    fixture.destroy();
+
+    const remounted = mount(rejoined, oldResponse);
+    expect(remounted.componentInstance.selectedResponse()).toBeNull();
+    const newResponse = { ...oldResponse, id: 'synthetic-new-response', registrant_id: 'synthetic-new-registration', response_type: 'maybe' as const };
+    remounted.componentInstance.handleRsvpClick('maybe');
+    http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush(newResponse);
+    expect(remounted.componentInstance.selectedResponse()).toBe('maybe');
+    remounted.destroy();
+  });
+
+  it('shows a successfully saved new-registration answer while supplied and refetched registration metadata is stale', () => {
+    const fixture = mount({ ...meeting, my_rsvp: oldResponse }, oldResponse);
+    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-a', ['synthetic-registrant']);
+    const newResponse = { ...oldResponse, id: 'synthetic-new-response', registrant_id: 'synthetic-new-registration', response_type: 'maybe' as const };
+    fixture.componentInstance.handleRsvpClick('maybe');
+    http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush(newResponse);
+    expect(fixture.componentInstance.selectedResponse()).toBe('maybe');
+    let rows: Meeting[] = [];
+    const subscription = users.getUserMeetings().subscribe((meetings) => (rows = meetings));
+    http.expectOne('/api/user/meetings').flush([{ ...meeting, my_rsvp: oldResponse }]);
+    expect(rows[0].my_rsvp?.registrant_id).toBe(newResponse.registrant_id);
+    expect(fixture.componentInstance.selectedResponse()).toBe('maybe');
+    subscription.unsubscribe();
+    fixture.destroy();
+  });
+
+  it('does not retain or emit a late acknowledgement from a successfully removed registration', () => {
+    const fixture = mount();
+    const changed = vi.fn();
+    fixture.componentInstance.rsvpChanged.subscribe(changed);
+    fixture.componentInstance.handleRsvpClick('accepted');
+    const write = http.expectOne(`/api/meetings/${MEETING.id}/rsvp`);
+
+    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-a', ['synthetic-registrant']);
+    write.flush(oldResponse);
+
+    expect(changed).not.toHaveBeenCalled();
+    expect(toastAdd).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.selectedResponse()).toBeNull();
+    expect(fixture.componentInstance.isLoading()).toBe(false);
+    let rows: Meeting[] = [];
+    const subscription = users.getUserMeetings().subscribe((meetings) => (rows = meetings));
+    http.expectOne('/api/user/meetings').flush([{ ...meeting, my_rsvp: null, my_registrant_ids: undefined }]);
+    expect(rows[0].my_rsvp).toBeNull();
+    subscription.unsubscribe();
+    fixture.destroy();
+  });
+
+  it('uses the dispatch subject for a late confirmation without emitting it into another viewer', () => {
+    const fixture = mount();
+    const changed = vi.fn();
+    fixture.componentInstance.rsvpChanged.subscribe(changed);
+    fixture.componentInstance.handleRsvpClick('accepted');
+    const write = http.expectOne(`/api/meetings/${MEETING.id}/rsvp`);
+    users.user.set({ sub: 'synthetic-b', username: 'synthetic-viewer', email: 'synthetic@example.com' } as User);
+    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-b', ['synthetic-registrant']);
+    fixture.detectChanges();
+    TestBed.tick();
+    http.expectOne(`/api/meetings/${MEETING.id}/rsvp/me`).flush(null);
+    write.flush(oldResponse);
+
+    expect(changed).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.selectedResponse()).toBeNull();
+    let rows: Meeting[] = [];
+    const other = users.getUserMeetings().subscribe((meetings) => (rows = meetings));
+    http.expectOne('/api/user/meetings').flush([{ ...meeting, my_rsvp: null }]);
+    expect(rows[0].my_rsvp).toBeNull();
+    other.unsubscribe();
+    users.user.set({ sub: 'synthetic-a', username: 'synthetic-viewer', email: 'synthetic@example.com' } as User);
+    const returning = users.getUserMeetings().subscribe((meetings) => (rows = meetings));
+    http.expectOne('/api/user/meetings').flush([{ ...meeting, my_rsvp: null }]);
+    expect(rows[0].my_rsvp?.response_type).toBe('accepted');
+    returning.unsubscribe();
+    fixture.destroy();
   });
 });
