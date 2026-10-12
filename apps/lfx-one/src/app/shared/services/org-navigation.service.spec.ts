@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
 import { LensService } from './lens.service';
+import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgLensNavigationService } from './org-lens-navigation.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
@@ -51,6 +52,7 @@ describe('OrgNavigationService default selection', () => {
   let inheritedAuditorSet: WritableSignal<Set<string>>;
   let grantsLoaded: WritableSignal<boolean>;
   let grantsError: WritableSignal<string | null>;
+  let claM3Enabled: WritableSignal<boolean>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let isOnAddressedPage: ReturnType<typeof vi.fn>;
   let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
@@ -71,6 +73,7 @@ describe('OrgNavigationService default selection', () => {
     inheritedAuditorSet = signal(new Set<string>());
     grantsLoaded = signal(true);
     grantsError = signal<string | null>(null);
+    claM3Enabled = signal(false);
     navigateToSelectedOrg = vi.fn();
     isOnAddressedPage = vi.fn(() => false);
     refreshCanonicalRecord = vi.fn(() => Promise.resolve());
@@ -96,6 +99,7 @@ describe('OrgNavigationService default selection', () => {
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnAddressedPage } },
+        { provide: OrgClaOnlyAccessService, useValue: { enabled: claM3Enabled } },
         {
           provide: AccountContextService,
           useValue: { selectedAccount, isAdoptedFromAddress, setAccount, setIndexedSlug, pinSelection, clearAccount, refreshCanonicalRecord },
@@ -115,6 +119,26 @@ describe('OrgNavigationService default selection', () => {
     service.resetAndReload();
     http.expectOne((req) => req.url === '/api/nav/org-items').flush(page(items));
   };
+
+  // M3: the server lists CLA-only rows whatever the flag says, so the client drops them while it is off.
+  describe('CLA-only rows', () => {
+    const claOnlyRow = item(UID_B, 'Beta', { slug: null, claOnly: true });
+
+    it('drops CLA-only rows while org-lens-cla-m3-enabled is off, so the default never selects one', () => {
+      bootstrapWith([claOnlyRow, item(UID_A, 'Acme')]);
+
+      expect(service.items().map((row) => row.uid)).toEqual([UID_A]);
+      expect(setAccount).not.toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+    });
+
+    it('lists CLA-only rows while org-lens-cla-m3-enabled is on', () => {
+      claM3Enabled.set(true);
+
+      bootstrapWith([claOnlyRow, item(UID_A, 'Acme')]);
+
+      expect(service.items().map((row) => row.uid)).toEqual([UID_B, UID_A]);
+    });
+  });
 
   // The default re-address reads the *current* address; mid-navigation that is the page being
   // left, so the write waits until the router is idle and then re-reads the destination. A cancel
