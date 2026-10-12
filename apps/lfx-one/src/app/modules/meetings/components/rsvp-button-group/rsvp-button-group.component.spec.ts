@@ -129,27 +129,21 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
     expect(component.currentRsvp()?.occurrence_id).toBe(FIRST_DATE);
     expect(component.selectedResponse()).toBe('declined');
     expect(component.responseSaved()).toBe(true);
-    fixture.detectChanges();
-    const host = fixture.nativeElement as HTMLElement;
-    const changeResponse = host.querySelector<HTMLButtonElement>('[data-testid="meeting-rsvp-change-response"]')!;
-    const yesButton = host.querySelector<HTMLButtonElement>('[data-testid="meeting-rsvp-button-yes"]')!;
-    const focus = vi.spyOn(yesButton, 'focus');
-    changeResponse.click();
-    expect(focus).toHaveBeenCalledTimes(1);
-    http.expectNone(`/api/meetings/${MEETING.id}/rsvp`);
   });
 
   it('keeps a single decline on its date and preserves the prior all-dates response on another date', async () => {
     const fixture = await mount();
     flushRead(null);
     const component = fixture.componentInstance;
-    component.handleRsvpClick('accepted');
+    const host = fixture.nativeElement as HTMLElement;
+    host.querySelector<HTMLButtonElement>('[data-testid="meeting-rsvp-button-yes"]')!.click();
     dialogClose.next({ confirmed: true, scope: 'all' });
     const allWrite = http.expectOne(`/api/meetings/${MEETING.id}/rsvp`);
     expect(allWrite.request.body).toEqual({ response: 'accepted', scope: 'all', email: 'synthetic@example.com' });
     allWrite.flush(response('accepted', 'all'));
 
-    component.handleRsvpClick('declined');
+    fixture.detectChanges();
+    host.querySelector<HTMLButtonElement>('[data-testid="meeting-rsvp-button-no"]')!.click();
     dialogClose.next({ confirmed: true, scope: 'single' });
     http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush(response('declined', 'single', FIRST_DATE));
     expect(component.selectedResponse()).toBe('declined');

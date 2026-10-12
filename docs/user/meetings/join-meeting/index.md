@@ -34,7 +34,7 @@ If a meeting is **public and not restricted**, and you haven't already been invi
 
 ## Respond to an invitation (RSVP)
 
-If you've been invited to a meeting that collects RSVPs, the join page shows **Yes**, **Maybe**, and **No** buttons — you need to be **signed in** to respond. Your current response is shown as **Going**, **Maybe**, or **Not going**. Select a different answer at any time; where available, **Change response** moves focus to the answer buttons.
+If you've been invited to a meeting that collects RSVPs, the join page shows **Yes**, **Maybe**, and **No** buttons — you need to be **signed in** to respond. Your current response is shown as **Going**, **Maybe**, or **Not going**. Select a different answer at any time to change your response.
 
 For a recurring meeting, **This date or all dates?** asks which dates your response applies to:
 

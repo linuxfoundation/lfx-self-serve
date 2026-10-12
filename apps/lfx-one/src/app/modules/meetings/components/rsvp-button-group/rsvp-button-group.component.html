@@ -119,22 +119,10 @@
           }
         }
       </div>
-      @if (responseLabel()) {
-        <button
-          type="button"
-          (click)="yesResponseButton.focus()"
-          [disabled]="isLoading() || disabled()"
-          class="self-start text-blue-700 underline underline-offset-2 hover:text-blue-900 disabled:opacity-60 disabled:cursor-not-allowed"
-          data-testid="meeting-rsvp-change-response">
-          Change response
-        </button>
-      }
-
       <!-- RSVP Buttons -->
       <div class="flex gap-[7px]" [attr.data-testid]="'meeting-rsvp-buttons'">
         <!-- Yes Button -->
         <button
-          #yesResponseButton
           type="button"
           (click)="handleRsvpClick('accepted')"
           [disabled]="isLoading() || disabled()"
