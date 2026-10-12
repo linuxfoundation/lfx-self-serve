@@ -133,15 +133,16 @@
             placeholder="Link title (e.g., Project Repository)"
             class="w-full h-10 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-300"
             data-testid="new-link-title-input" />
-          <div class="flex items-center gap-3">
+          <!-- Stacked on phones, where the URL, the category and Add don't fit one row; the URL shrinks beside them above sm. -->
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
             <input
               [value]="newLinkUrl()"
               (input)="newLinkUrl.set($any($event.target).value)"
               placeholder="https://example.com"
-              class="flex-1 h-10 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-300"
+              class="w-full min-w-0 sm:flex-1 h-10 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-300"
               data-testid="new-link-url-input" />
             <lfx-select
-              class="w-40 flex-shrink-0"
+              class="w-full sm:w-40 sm:flex-shrink-0"
               [form]="categoryForm"
               control="link"
               [options]="categoryOptions"
@@ -149,6 +150,7 @@
               styleClass="w-full"
               data-testid="new-link-category-select" />
             <lfx-button
+              class="self-end sm:self-auto"
               icon="fa-light fa-plus"
               size="small"
               [disabled]="!newLinkTitle() || !newLinkUrl() || saving()"
