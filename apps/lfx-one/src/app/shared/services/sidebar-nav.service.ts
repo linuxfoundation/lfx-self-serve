@@ -18,6 +18,7 @@ import {
   MENTORSHIP_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
+  ORG_EASYCLA_PATH,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
   SURVEY_LABEL,
@@ -57,9 +58,7 @@ export class SidebarNavService {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
 
-  /** The section EasyCLA is inserted into; matched by label because the tree is built inline. */
-  private readonly orgEngagementSectionLabel = 'Organization Engagement';
-  /** The Me lens section My Formations (#2753) is appended to; matched by label for the same reason. */
+  /** The Me lens section My Formations (#2753) is appended to; matched by label because the tree is built inline. */
   private readonly meEngagementSectionLabel = 'My Engagement';
 
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
@@ -174,7 +173,7 @@ export class SidebarNavService {
 
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
     const base = this.orgLensItems();
-    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(base) : base;
+    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaSection(base) : base;
     const afterProjectsItems = [
       ...(this.isOrgLensRoiEnabled() ? [this.orgRoiNavItem()] : []),
       // Initiatives (#348) is dark-launched and follows a direct writer grant on the selected organization — CF lists an
@@ -788,7 +787,17 @@ export class SidebarNavService {
     label: 'EasyCLA',
     icon: 'fa-light fa-file-signature',
     routerLink: this.orgLensNavigation.orgLensPath('easycla'),
+    activeOnSubpaths: true,
+    // A signing return on the leftover mount stays at `/org/easycla/…` after it adopts the organization.
+    activeAliases: [ORG_EASYCLA_PATH],
     testId: 'sidebar-org-easycla',
+  }));
+
+  private readonly orgEasyclaSection: Signal<SidebarMenuItem> = computed(() => ({
+    label: 'EasyCLA Management',
+    isSection: true,
+    expanded: true,
+    items: [this.orgEasyclaNavItem()],
   }));
 
   /**
@@ -817,7 +826,7 @@ export class SidebarNavService {
       // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
       // top-level item or a section when re-enabled.
       {
-        label: this.orgEngagementSectionLabel,
+        label: 'Organization Engagement',
         isSection: true,
         expanded: true,
         items: [
@@ -855,24 +864,15 @@ export class SidebarNavService {
     ];
   });
 
-  /**
-   * The M3 prototype places EasyCLA inside Organization Engagement, between Code Contributions
-   * and Events — not at top level beside Memberships/Projects. Falls back to the end of the
-   * section if Code Contributions moves, so the item can never land above People.
-   */
-  private withEasyclaNavItem(items: SidebarMenuItem[]): SidebarMenuItem[] {
-    return items.map((item) => {
-      if (!item.isSection || item.label !== this.orgEngagementSectionLabel || !item.items) return item;
-      const afterContributions = item.items.findIndex((child) => child.routerLink === this.orgLensNavigation.orgLensPath('contributions')) + 1;
-      const at = afterContributions === 0 ? item.items.length : afterContributions;
-      return { ...item, items: [...item.items.slice(0, at), this.orgEasyclaNavItem(), ...item.items.slice(at)] };
-    });
+  private withEasyclaSection(items: SidebarMenuItem[]): SidebarMenuItem[] {
+    const profileIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('profile'));
+    if (profileIndex === -1) return [...items, this.orgEasyclaSection()];
+    return [...items.slice(0, profileIndex), this.orgEasyclaSection(), ...items.slice(profileIndex)];
   }
 
   /**
-   * Appends My Formations (#2753) as the last child of the Me lens's My Engagement section —
-   * mirrors `withEasyclaNavItem`. Only called while `formation-enabled` is on, so the static
-   * `meLensItems` tree stays flag-free.
+   * Appends My Formations (#2753) as the last child of the Me lens's My Engagement section. Only
+   * called while `formation-enabled` is on, so the static `meLensItems` tree stays flag-free.
    */
   private withMyFormationsNavItem(items: SidebarMenuItem[]): SidebarMenuItem[] {
     return items.map((item) => {
