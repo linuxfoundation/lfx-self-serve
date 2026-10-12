@@ -3,11 +3,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { proxyRequest, proxyRequestWithResponse, resolveSegment, getRoleGrants } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, resolveSegment, getRoleGrants, getClaManagerOrgUids } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   resolveSegment: vi.fn(),
   getRoleGrants: vi.fn(),
+  getClaManagerOrgUids: vi.fn(),
 }));
 
 vi.mock('../services/microservice-proxy.service', () => ({
@@ -26,6 +27,13 @@ vi.mock('../services/org-lens-addresses.service', () => ({ OrgLensAddressesServi
 vi.mock('../services/org-slug-resolver.service', () => ({
   OrgSlugResolverService: class {
     public resolveSegment = resolveSegment;
+  },
+}));
+// The real predicate is pinned in org-cla-only-orgs.service.spec.ts.
+vi.mock('../services/org-cla-only-orgs.service', () => ({
+  claOnlyEntryApplies: (isStaff: boolean, grantedOrgCount: number) => !isStaff && grantedOrgCount === 0,
+  OrgClaOnlyOrgsService: class {
+    public getOrgUids = getClaManagerOrgUids;
   },
 }));
 vi.mock('../services/logger.service', () => ({
@@ -262,6 +270,7 @@ describe('OrgIdentityController.getRoleGrants', () => {
 
   beforeEach(() => {
     getRoleGrants.mockResolvedValue(grants);
+    getClaManagerOrgUids.mockResolvedValue([]);
   });
 
   // Spec 053: the viewer's Retry asks for a recompute past the BFF cache; nothing else does.
@@ -289,6 +298,46 @@ describe('OrgIdentityController.getRoleGrants', () => {
     await controller.getRoleGrants(request(), okRes, vi.fn());
     expect(okRes.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     expect(okRes.setHeader).not.toHaveBeenCalledWith(ORG_ROLE_GRANTS_CORRELATION_HEADER, expect.anything());
-    expect(okRes.json).toHaveBeenCalledWith(grants);
+    expect(okRes.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [] });
+  });
+
+  describe('CLA-only organizations', () => {
+    const COMPANY_A = '001A000000AAAAAAAA';
+
+    it('adds the caller’s CLA-manager companies when Org Lens granted nothing', async () => {
+      getClaManagerOrgUids.mockResolvedValueOnce([COMPANY_A]);
+      const res = buildRes();
+
+      await new OrgIdentityController().getRoleGrants(request(), res, vi.fn());
+
+      expect(res.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [COMPANY_A] });
+    });
+
+    it.each([
+      ['a writer grant', { writers: [VALID_UID] }],
+      ['an auditor grant', { auditors: [VALID_UID] }],
+      ['a cascading writer grant', { cascadingWriters: [{ uid: VALID_UID, parentUid: VALID_UID, parentName: 'Parent' }] }],
+      ['a cascading auditor grant', { cascadingAuditors: [{ uid: VALID_UID, parentUid: VALID_UID, parentName: 'Parent' }] }],
+      ['staff', { isStaff: true }],
+    ])('never asks user-service for a caller with %s', async (_label, overrides) => {
+      getRoleGrants.mockResolvedValueOnce({ ...grants, ...overrides });
+      const res = buildRes();
+
+      await new OrgIdentityController().getRoleGrants(request(), res, vi.fn());
+
+      expect(getClaManagerOrgUids).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ claManagerOrgs: [] }));
+    });
+
+    it('answers none, with the grant arrays intact, when the scopes cannot be read', async () => {
+      getClaManagerOrgUids.mockRejectedValueOnce(new Error('user-service down'));
+      const res = buildRes();
+      const next = vi.fn();
+
+      await new OrgIdentityController().getRoleGrants(request(), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [] });
+    });
   });
 });
