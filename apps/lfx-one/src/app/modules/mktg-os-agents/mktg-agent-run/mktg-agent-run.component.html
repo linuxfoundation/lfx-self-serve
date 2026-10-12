@@ -204,18 +204,22 @@
               <!-- Document card -->
               <div class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                 <div class="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-gray-100">
-                  <div class="flex items-center gap-2 min-w-0">
+                  <!-- flex-wrap: on narrow widths the version and status chips drop under the title instead of clipping it or themselves. -->
+                  <div class="flex flex-wrap items-center gap-2 min-w-0">
                     <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true"></span>
                     <span class="text-sm font-medium text-gray-700 truncate" data-testid="mktg-agent-run-doc-title">{{ docTitle() }}</span>
                     <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500 shrink-0" data-testid="mktg-agent-run-doc-version">
                       v{{ currentVersion()?.version }}
                     </span>
-                    <!-- Paul's review status, verbatim from the document (Draft — pre-filled / from your documents / ED-reviewed — name, date). -->
+                    <!--
+                      Paul's review status, verbatim from the document (Draft — pre-filled / from your documents /
+                      ED-reviewed — name, date). The label is never truncated — it wraps — so the full text is always
+                      visible to every user and no hover-only tooltip is needed.
+                    -->
                     @if (statusChip(); as statusChip) {
                       <span
-                        class="rounded-full border px-2 py-0.5 text-xs font-medium truncate"
+                        class="rounded-full border px-2 py-0.5 text-xs font-medium whitespace-normal"
                         [ngClass]="statusChip.chipClass"
-                        [title]="statusChip.label"
                         data-testid="mktg-agent-run-doc-status">
                         {{ statusChip.label }}
                       </span>

@@ -470,6 +470,20 @@ describe('MktgAgentRunComponent', () => {
       expect(chip?.className).toContain('emerald');
     });
 
+    it('keeps the full label visible to every user — it wraps rather than truncating behind a hover-only tooltip', async () => {
+      const doc = '# Project One Brand Kit\n\n| Status | ED-reviewed — A Very Long Executive Director Name, 12 October 2026 |\n\n## Review Sheet';
+      storedRuns = { 'proj-1': storedRun('proj-1', doc, {}) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      const chip = query('mktg-agent-run-doc-status');
+      // No `title`: a tooltip on a non-focusable span is mouse-only. The text is
+      // the single exposure of the label, so it must never be clipped.
+      expect(chip?.hasAttribute('title')).toBe(false);
+      expect(chip?.className).not.toContain('truncate');
+      expect(chip?.className).not.toContain('whitespace-nowrap');
+    });
+
     it('renders no status chip when the document states no status', async () => {
       storedRuns = { 'proj-1': storedRun('proj-1', '# Doc\n\nThis first draft — built from your answers — has no status line.', {}) };
       activeContext.set(PROJECT_1);
