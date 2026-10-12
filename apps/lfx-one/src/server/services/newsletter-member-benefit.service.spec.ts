@@ -92,7 +92,8 @@ function stubUpstream(options: {
     }
     if (query['type'] === 'b2b_org') {
       if (options.b2bOrgs instanceof Error) throw options.b2bOrgs;
-      return { resources: (options.b2bOrgs ?? []).map((data) => ({ type: 'b2b_org', id: data.uid, data })) };
+      // Real envelope: the canonical id is on the wrapper (`b2b_org:<sfid>`), not in `data`.
+      return { resources: (options.b2bOrgs ?? []).map(({ uid, ...data }) => ({ type: 'b2b_org', id: `b2b_org:${uid}`, data })) };
     }
     if (query['type'] === 'committee_member') {
       return { resources: options.committeeMembers?.(query) ? [{ type: 'committee_member', id: 'm-1', data: {} }] : [] };
@@ -381,7 +382,7 @@ describe('NewsletterMemberBenefitService', () => {
           return { resources: [{ type: 'project_membership', id: ORG_A, data: { project_slug: 'tlf', ...ACME_ACTIVE } }] };
         }
         if (query['type'] === 'b2b_org' && !query['page_token']) {
-          return { resources: [{ type: 'b2b_org', id: ORG_A, data: { uid: ORG_A, domain_aliases: ['acme-labs.example'] } }], page_token: 'next' };
+          return { resources: [{ type: 'b2b_org', id: `b2b_org:${ORG_A}`, data: { domain_aliases: ['acme-labs.example'] } }], page_token: 'next' };
         }
         throw new MicroserviceError('page 2 failed', 502, 'BAD_GATEWAY');
       });

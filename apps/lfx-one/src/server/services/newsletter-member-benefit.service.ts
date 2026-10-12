@@ -329,6 +329,13 @@ export class NewsletterMemberBenefitService {
     return (response?.resources?.length ?? 0) > 0;
   }
 
+  /** The bare id of a query-service resource id (`b2b_org:<sfid>` → `<sfid>`); '' when absent. */
+  private resourceUid(resourceId: string | undefined | null): string {
+    if (!resourceId) return '';
+    const colon = resourceId.indexOf(':');
+    return colon === -1 ? resourceId : resourceId.substring(colon + 1);
+  }
+
   /** Exact-domain company for a candidate: the TLF membership index first, then b2b_org hits that hold an active TLF membership. */
   private pickCompany(candidate: string, index: MemberBenefitDomainIndex, b2bMatches: Map<string, string[]>): MemberBenefitCompany | null {
     const fromMembership = index.by_domain.get(candidate);
@@ -438,22 +445,33 @@ export class NewsletterMemberBenefitService {
       const orgs = await fetchAllQueryResources<B2bOrgIndexedDoc>(
         req,
         (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(
-            req,
-            'LFX_V2_SERVICE',
-            '/query/resources',
-            'GET',
-            {
-              type: 'b2b_org',
-              tags_all: ['is_member:true'],
-              filters_or: filtersOr,
-              page_size: 50,
-              ...(pageToken && { page_token: pageToken }),
-            },
-            undefined,
-            undefined,
-            { bearerToken: m2mToken }
-          ),
+          this.microserviceProxy
+            .proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(
+              req,
+              'LFX_V2_SERVICE',
+              '/query/resources',
+              'GET',
+              {
+                type: 'b2b_org',
+                tags_all: ['is_member:true'],
+                filters_or: filtersOr,
+                page_size: 50,
+                ...(pageToken && { page_token: pageToken }),
+              },
+              undefined,
+              undefined,
+              { bearerToken: m2mToken }
+            )
+            // The canonical account id lives on the query-service wrapper (`resource.id`, e.g.
+            // `b2b_org:<sfid>`), which flattening drops — carry it onto the row, as the other
+            // b2b_org consumers do (`org-navigation.service.ts`), falling back to `data.uid`.
+            .then((page) => ({
+              ...page,
+              resources: (page?.resources ?? []).map((resource) => ({
+                ...resource,
+                data: { ...resource.data, uid: this.resourceUid(resource.id) || resource.data?.uid },
+              })),
+            })),
         { maxResults: MEMBER_BENEFIT_B2B_ORG_MAX_RESULTS, failOnPartial: true }
       );
 
