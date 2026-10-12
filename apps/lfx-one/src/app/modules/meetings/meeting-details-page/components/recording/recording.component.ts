@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MEETING_AGENDA_COLLAPSED_HEIGHT_PX, PAST_MEETING_SUMMARY_APPROVAL_LABELS } from '@lfx-one/shared/constants';
-import { MeetingArtifactState, MeetingRecordingSectionState, MeetingSummaryArtifactState, PastMeetingSummary } from '@lfx-one/shared/interfaces';
+import { MeetingArtifactState, MeetingRecordingSectionState, MeetingSummaryArtifactState } from '@lfx-one/shared/interfaces';
 import {
   formatRecordingDuration,
   formatRecordingDurationSpoken,
