@@ -278,17 +278,6 @@ describe('MeetingRecordingComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Agreed the roadmap');
   });
 
-  // The BFF withholds a pending summary's text from non-organizers, so it arrives blank: still awaiting review.
-  it('reads a pending summary whose text the BFF withheld as awaiting review, not as none', async () => {
-    meetingService.getPastMeetingSummary.mockReturnValue(of(summaryRecord({ approved: false, requires_approval: true, content: '', edited_content: '' })));
-    await setup(
-      () => of(recording([])),
-      () => of(transcript(false))
-    );
-
-    expect(query('tools-summary-unavailable')?.getAttribute('data-reason')).toBe('awaiting-review');
-  });
-
   it('surfaces no affordance for a summary record without content', async () => {
     meetingService.getPastMeetingSummary.mockReturnValue(of(summaryRecord({ content: '  ', edited_content: '' })));
     await setup(
@@ -298,6 +287,16 @@ describe('MeetingRecordingComponent', () => {
 
     expect(query('tools-summary-unavailable')?.getAttribute('data-reason')).toBe('none');
     expect(query('tools-summary-btn')).toBeNull();
+  });
+
+  it('reads a pending record without content as none for a non-organizer too', async () => {
+    meetingService.getPastMeetingSummary.mockReturnValue(of(summaryRecord({ approved: false, requires_approval: true, content: '', edited_content: '' })));
+    await setup(
+      () => of(recording([])),
+      () => of(transcript(false))
+    );
+
+    expect(query('tools-summary-unavailable')?.getAttribute('data-reason')).toBe('none');
   });
 
   it('names every artifact that failed to load', async () => {

@@ -167,14 +167,13 @@ export class MeetingRecordingComponent {
           const organizer = this.state.viewerRole() === 'organizer';
           const summary$ = this.meetingService.getPastMeetingSummary(req.id).pipe(
             map((summary): MeetingSummaryArtifactState => {
+              const content = getPastMeetingSummaryContent(summary);
+              if (!content) {
+                return { status: 'none' };
+              }
               const approval = getPastMeetingSummaryApprovalState(summary);
               // Approval required and not given: only organizers see the text (isPastMeetingSummaryVisible).
-              // Checked before the content, since the BFF withholds the text from everyone else.
-              if (approval === 'pending' && !organizer) {
-                return { status: 'awaiting-review' };
-              }
-              const content = getPastMeetingSummaryContent(summary);
-              return content ? { status: 'available', content, approval, record: summary } : { status: 'none' };
+              return approval === 'pending' && !organizer ? { status: 'awaiting-review' } : { status: 'available', content, approval, record: summary };
             }),
             catchError((error: unknown) => of(this.artifactFailure(error, 'AI summary')))
           );
