@@ -212,13 +212,16 @@ export class MeetingMaterialsComponent {
     // The last list fetched and what for: a refetch of the same one keeps showing it, and a failed
     // refetch keeps it rather than replacing the rows with an error.
     let last: { key: string; attachments: PublicMeetingAttachment[] } | null = null;
+    // Which meeting (mode and id) the section is on; `undefined` before the first request. The reset
+    // below runs only when this changes, not on a retry of the same meeting before its first success.
+    let viewKey: string | null | undefined;
 
     return toSignal(
       toObservable(trigger).pipe(
         switchMap(({ request, signedIn }): Observable<MeetingMaterialsState> => {
           const key = request ? `${request.mode}:${request.id}` : null;
-          const kept = key && last?.key === key ? last.attachments : null;
-          if (!kept) {
+          if (key !== viewKey) {
+            viewKey = key;
             last = null;
             // The last change's follow-up belongs to the previous meeting: cancel its refetches
             // and pending expiry, which would otherwise act on this one.
@@ -231,6 +234,7 @@ export class MeetingMaterialsComponent {
             this.showAllFiles.set(false);
             this.showAllLinks.set(false);
           }
+          const kept = key && last?.key === key ? last.attachments : null;
           if (!request || !key) {
             return of({ status: 'loading', attachments: [] });
           }

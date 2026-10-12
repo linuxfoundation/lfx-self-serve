@@ -387,6 +387,28 @@ describe('MeetingMaterialsComponent', () => {
   });
 
   // The section stays mounted across in-app meeting changes: a change's follow-up must not act on the next meeting.
+  // A retry of the same meeting before its first success is not a meeting change: the drawer's
+  // follow-up and optimistic rows survive it.
+  it("keeps a change's follow-up when the meeting has not loaded yet", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    viewerRole.set('organizer');
+    let calls = 0;
+    await setup(() => (++calls <= 2 ? throwError(() => new HttpErrorResponse({ status: 500 })) : of([file('new')])));
+    expect(query('materials-section-error')).not.toBeNull();
+
+    fixture.componentInstance.onMaterialsChanged({ deletedUids: [], addedAttachments: [], addedMeetingAttachments: [{ ...file('new') }] });
+    fixture.detectChanges();
+
+    // The immediate retry fails too; the 1s follow-up must still run, not be cancelled by it.
+    vi.advanceTimersByTime(1000);
+    fixture.detectChanges();
+
+    expect(meetingService.getPublicMeetingAttachments).toHaveBeenCalledTimes(3);
+    expect(query('materials-file-new')).not.toBeNull();
+    vi.useRealTimers();
+  });
+
   it("cancels a change's follow-up refetches when the section moves to another meeting", async () => {
     vi.useFakeTimers();
     await setup(() => of([file('keep')]));
