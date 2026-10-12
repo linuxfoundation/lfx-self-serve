@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
-import { Component, computed, inject, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { isPlatformBrowser, NgClass } from '@angular/common';
+import { Component, computed, ElementRef, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { MEETING_ATTENDEE_PREVIEW_LIMIT, MEETING_PEOPLE_ATTENDANCE_LABELS } from '@lfx-one/shared/constants';
 import { MeetingPeopleRow, MeetingPeopleTallies, MeetingRegistrant, MeetingRosterRequest, MeetingRosterState, RsvpResponse } from '@lfx-one/shared/interfaces';
@@ -12,7 +12,7 @@ import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, map, Observable, of, startWith, switchMap } from 'rxjs';
+import { catchError, filter, map, Observable, of, startWith, switchMap } from 'rxjs';
 
 import { MeetingRegistrantsDisplayComponent } from '../../../components/meeting-registrants-display/meeting-registrants-display.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
@@ -38,6 +38,11 @@ export class MeetingPeopleComponent {
   private readonly state = inject(MeetingDetailsStateService);
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
+  private readonly platformId = inject(PLATFORM_ID);
+  /** The drawer's title: its `aria-labelledby` target and where focus lands when it opens. */
+  private readonly drawerTitle = viewChild<ElementRef<HTMLHeadingElement>>('drawerTitle');
+  /** What opened the drawer, so closing it hands focus back (docs/architecture/frontend/drawer-pattern.md). */
+  private drawerTrigger: HTMLElement | null = null;
 
   protected readonly attendanceLabels = MEETING_PEOPLE_ATTENDANCE_LABELS;
   /** Each RSVP chip's colours, in the prototype's good / warn / neutral pills. */
@@ -47,6 +52,8 @@ export class MeetingPeopleComponent {
     declined: 'bg-[var(--md-surface-hover)] text-[var(--md-text-muted)]',
     pending: 'border border-[var(--md-border)] text-[var(--md-text-muted)]',
   };
+  /** `p-drawer` announces as an unnamed `complementary` landmark otherwise, even with its mask. */
+  protected readonly drawerPt = { root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'people-drawer-title' } };
   protected readonly meeting = this.state.meeting;
   protected readonly occurrence = this.state.selectedOccurrence;
 
@@ -81,6 +88,18 @@ export class MeetingPeopleComponent {
   /** Everyone invited: the roster's rows plus any added guests it has not caught up with. */
   protected readonly invitedCount = computed(() => this.rows().length + this.addedPad());
 
+  public constructor() {
+    // Hand focus back on every close path: PrimeNG emits `onHide` only for its own Escape and mask
+    // closes, not for the close button's programmatic one, so this keys off the visibility itself.
+    // The initial `false` finds no trigger to restore.
+    toObservable(this.drawerVisible)
+      .pipe(
+        filter((visible) => !visible),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.restoreFocus());
+  }
+
   public openDrawer(addForm: boolean): void {
     this.drawerOpensAddForm.set(addForm);
     this.drawerVisible.set(true);
@@ -88,6 +107,15 @@ export class MeetingPeopleComponent {
 
   public closeDrawer(): void {
     this.drawerVisible.set(false);
+  }
+
+  /** `p-drawer` never moves focus in on open: capture the trigger, then land on the title. */
+  public onDrawerShow(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    this.drawerTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    this.drawerTitle()?.nativeElement.focus();
   }
 
   public retry(): void {
@@ -156,6 +184,14 @@ export class MeetingPeopleComponent {
         viewerRsvp: this.state.myRsvp() ?? null,
       })
     );
+  }
+
+  private restoreFocus(): void {
+    const trigger = this.drawerTrigger;
+    this.drawerTrigger = null;
+    if (trigger?.isConnected) {
+      trigger.focus();
+    }
   }
 
   private isLastFetched(key: MeetingRosterRequest): boolean {

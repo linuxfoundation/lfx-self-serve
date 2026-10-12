@@ -265,6 +265,40 @@ describe('MeetingPeopleComponent', () => {
     expect(text('people-section-count')).toBe('4 invited');
   });
 
+  it('says added guests are on their way rather than that nobody is invited', async () => {
+    await setup(() => of([]));
+    expect(query('people-section-empty')).not.toBeNull();
+
+    fixture.componentInstance.onRosterChanged(1);
+    fixture.detectChanges();
+
+    expect(text('people-section-count')).toBe('1 invited');
+    expect(query('people-section-empty')).toBeNull();
+    expect(text('people-section-indexing')).toBe('The guests you added will appear here shortly.');
+  });
+
+  it('opens the drawer as a named dialog, focuses its title, and hands focus back on close', async () => {
+    await setup(() => of([registrant('a')]));
+    document.body.appendChild(fixture.nativeElement);
+    const trigger = query('people-section-view-all') as HTMLButtonElement;
+
+    trigger.focus();
+    trigger.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const dialog = document.body.querySelector('[role="dialog"][aria-modal="true"]');
+    expect(dialog?.getAttribute('aria-labelledby')).toBe('people-drawer-title');
+    expect(document.activeElement?.id).toBe('people-drawer-title');
+
+    fixture.componentInstance.closeDrawer();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(document.activeElement).toBe(trigger);
+    fixture.nativeElement.remove();
+  });
+
   it('offers no Add guest over a roster that failed to load', async () => {
     viewerRole.set('organizer');
     await setup(() => throwError(() => new Error('boom')));

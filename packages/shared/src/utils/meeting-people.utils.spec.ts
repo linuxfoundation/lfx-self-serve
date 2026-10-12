@@ -59,6 +59,19 @@ describe('buildMeetingPeopleRows', () => {
     expect(rows.map((row) => row.attendance)).toEqual(['declined', 'accepted', 'accepted', 'maybe', 'pending', 'declined']);
   });
 
+  it('orders names the same way everywhere, ignoring case and accents', () => {
+    const rows = buildMeetingPeopleRows(
+      [
+        registrant({ uid: 'z', first_name: 'zoe', last_name: '' }),
+        registrant({ uid: 'e', first_name: 'Émile', last_name: '' }),
+        registrant({ uid: 'a', first_name: 'adam', last_name: '' }),
+      ],
+      { inviteResponsesEnabled: false }
+    );
+
+    expect(rows.map((row) => row.uid)).toEqual(['a', 'e', 'z']);
+  });
+
   it('carries no RSVP when the meeting predates invite responses', () => {
     const rows = buildMeetingPeopleRows([registrant({ invite_accepted: true, type: 'committee' })], { inviteResponsesEnabled: false });
 

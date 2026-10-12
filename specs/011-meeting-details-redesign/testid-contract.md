@@ -260,6 +260,7 @@ the row's contents.
 | `people-section-error`           | The roster failed to load, with nothing to fall back on            |
 | `people-section-retry`           | Its Try again                                                      |
 | `people-section-empty`           | Nobody invited yet                                                 |
+| `people-section-indexing`        | Added guests counted but not listed yet                            |
 | `people-section-tallies`         | The RSVP tallies (RSVP tracking on only)                           |
 | `people-section-tally-${status}` | One tally: `accepted`, `maybe`, `declined`, `pending`              |
 | `people-section-list`            | The rows shown on the page (the first five)                        |

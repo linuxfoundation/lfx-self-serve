@@ -55,7 +55,7 @@
         </div>
       }
       @default {
-        @if (rows().length === 0) {
+        @if (invitedCount() === 0) {
           <p class="m-0 text-[14px] text-[var(--md-text-muted)]" data-testid="people-section-empty">
             {{ committeeMeeting() ? 'No members have been added to this meeting yet.' : 'No guests have been invited to this meeting yet.' }}
           </p>
@@ -85,6 +85,12 @@
             </ul>
           }
 
+          @if (rows().length === 0) {
+            <!-- Guests the organizer just added, before the roster indexes them: counted, not yet listed. -->
+            <p class="m-0 text-[14px] text-[var(--md-text-muted)]" data-testid="people-section-indexing">
+              {{ committeeMeeting() ? 'The members you added will appear here shortly.' : 'The guests you added will appear here shortly.' }}
+            </p>
+          }
           <ul class="m-0 flex list-none flex-col gap-[2px] p-0" data-testid="people-section-list">
             @for (row of previewRows(); track row.uid) {
               <li
@@ -149,11 +155,19 @@
   styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
   [modal]="true"
   [showCloseIcon]="false"
+  [pt]="drawerPt"
+  (onShow)="onDrawerShow()"
   data-testid="people-drawer">
   <ng-template #header>
     <div class="flex w-full items-center justify-between">
       <div class="flex flex-col">
-        <h2 class="m-0 text-[18px] font-bold text-[var(--md-text-heading)]" data-testid="people-drawer-title">
+        <!-- The dialog's accessible name, and where focus lands on open (tabindex -1: out of the Tab order). -->
+        <h2
+          #drawerTitle
+          id="people-drawer-title"
+          tabindex="-1"
+          class="m-0 text-[18px] font-bold text-[var(--md-text-heading)] focus:outline-none"
+          data-testid="people-drawer-title">
           {{ committeeMeeting() ? 'Meeting Members' : 'Meeting Guests' }}
         </h2>
         @if (roster().status === 'ready') {

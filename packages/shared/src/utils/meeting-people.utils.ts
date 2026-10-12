@@ -1,11 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MeetingPeopleRow, MeetingPeopleRowOptions, MeetingPeopleTallies, MeetingRegistrant, RsvpResponse } from '../interfaces';
+import { MEETING_PEOPLE_ATTENDANCE_ORDER } from '../constants/meeting.constants';
+import type { MeetingPeopleRow, MeetingPeopleRowOptions, MeetingPeopleTallies, MeetingRegistrant } from '../interfaces';
 import { getRegistrantAttendanceStatus } from './rsvp-calculator.util';
-
-/** Row order after the organizers: people coming first, then undecided, then no reply, then declined. */
-const PEOPLE_ROW_ATTENDANCE_ORDER: Record<RsvpResponse | 'pending', number> = { accepted: 0, maybe: 1, pending: 2, declined: 3 };
 
 /**
  * Maps an upcoming meeting's registrants to the people section's rows (E3-04, FR-032).
@@ -15,26 +13,29 @@ const PEOPLE_ROW_ATTENDANCE_ORDER: Record<RsvpResponse | 'pending', number> = { 
  * invite responses, because then no RSVP UI renders at all.
  */
 export function buildMeetingPeopleRows(registrants: ReadonlyArray<MeetingRegistrant>, options: MeetingPeopleRowOptions): MeetingPeopleRow[] {
-  return registrants
-    .map((registrant): MeetingPeopleRow => {
-      let attendance: MeetingPeopleRow['attendance'] = null;
-      if (options.inviteResponsesEnabled) {
-        attendance =
-          options.viewerRsvp && isViewerRegistrant(registrant, options.viewer)
-            ? options.viewerRsvp
-            : getRegistrantAttendanceStatus(registrant, { inviteResponsesEnabled: true });
-      }
-      return {
-        uid: registrant.uid,
-        name: getMeetingRegistrantDisplayName(registrant),
-        role: formatMeetingRegistrantRole(registrant),
-        avatarUrl: registrant.avatar_url || null,
-        organizer: registrant.host === true,
-        attendance,
-        invitation: registrant.type === 'committee' ? 'committee' : 'direct',
-      };
-    })
-    .sort((a, b) => rowRank(a) - rowRank(b) || a.name.localeCompare(b.name));
+  return (
+    registrants
+      .map((registrant): MeetingPeopleRow => {
+        let attendance: MeetingPeopleRow['attendance'] = null;
+        if (options.inviteResponsesEnabled) {
+          attendance =
+            options.viewerRsvp && isViewerRegistrant(registrant, options.viewer)
+              ? options.viewerRsvp
+              : getRegistrantAttendanceStatus(registrant, { inviteResponsesEnabled: true });
+        }
+        return {
+          uid: registrant.uid,
+          name: getMeetingRegistrantDisplayName(registrant),
+          role: formatMeetingRegistrantRole(registrant),
+          avatarUrl: registrant.avatar_url || null,
+          organizer: registrant.host === true,
+          attendance,
+          invitation: registrant.type === 'committee' ? 'committee' : 'direct',
+        };
+      })
+      // The locale is pinned so the server and the browser (and every viewer) order names alike.
+      .sort((a, b) => rowRank(a) - rowRank(b) || a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }))
+  );
 }
 
 /** The people section's RSVP tallies over its rows; all zero when RSVP tracking is off. */
@@ -64,7 +65,7 @@ function rowRank(row: MeetingPeopleRow): number {
   if (row.organizer) {
     return -1;
   }
-  return row.attendance ? PEOPLE_ROW_ATTENDANCE_ORDER[row.attendance] : 0;
+  return row.attendance ? MEETING_PEOPLE_ATTENDANCE_ORDER[row.attendance] : 0;
 }
 
 function isViewerRegistrant(registrant: Pick<MeetingRegistrant, 'username' | 'email'>, viewer: MeetingPeopleRowOptions['viewer']): boolean {
