@@ -134,6 +134,21 @@ describe('MeetingMaterialsComponent', () => {
     expect(anchor.textContent).toContain('Link · github.example');
   });
 
+  // Organizer-entered links: one without a scheme opens over https, and an unsafe one is never a link.
+  it('opens a bare host/path link over https, and shows an unsafe link as text', async () => {
+    await setup(() => of([link('bare', 'docs.vendor-corp.example/document/d/abc'), link('unsafe', 'javascript:alert(1)')]));
+
+    const bare = query('materials-link-bare') as HTMLAnchorElement;
+    expect(bare.tagName).toBe('A');
+    expect(bare.getAttribute('href')).toBe('https://docs.vendor-corp.example/document/d/abc');
+    expect(bare.textContent).toContain('Link · docs.vendor-corp.example');
+
+    const unsafe = query('materials-link-unsafe');
+    expect(unsafe?.tagName).toBe('DIV');
+    expect(unsafe?.querySelector('a')).toBeNull();
+    expect(unsafe?.textContent).toContain('Link unsafe');
+  });
+
   it('shows five of a group, then Show N more', async () => {
     await setup(() => of(['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((uid) => file(uid))));
 
@@ -184,6 +199,29 @@ describe('MeetingMaterialsComponent', () => {
     expect(query('materials-file-f1')).not.toBeNull();
   });
 
+  // An expired session answers 401 even while the page still believes it is signed in: Try again
+  // would loop, so the viewer is asked to sign in.
+  it('asks a viewer whose session has expired to sign in', async () => {
+    authenticated.set(true);
+    await setup(() => throwError(() => new HttpErrorResponse({ status: 401 })));
+
+    expect(query('materials-section-sign-in-link')).not.toBeNull();
+    expect(query('materials-section-error')).toBeNull();
+  });
+
+  it('keeps the rows it has when a refetch fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let calls = 0;
+    await setup(() => (++calls === 1 ? of([file('f1')]) : throwError(() => new HttpErrorResponse({ status: 500 }))));
+
+    fixture.componentInstance.retry();
+    fixture.detectChanges();
+
+    expect(query('materials-section-error')).toBeNull();
+    expect(query('materials-file-f1')).not.toBeNull();
+    expect(console.error).toHaveBeenCalled();
+  });
+
   it("reads a past occurrence's own list, and asks an anonymous viewer to sign in without fetching", async () => {
     loadedViaPastMeetingId.set(true);
     meeting.set({ id: 'meeting-1', meeting_and_occurrence_id: 'meeting-1-1700000000000', project: {} } as unknown as LoadedMeeting);
@@ -214,6 +252,7 @@ describe('MeetingMaterialsComponent', () => {
   });
 
   it("keeps V1's toast when a download fails", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
     meetingService.getPublicMeetingAttachmentDownloadUrl.mockReturnValue(throwError(() => new Error('boom')));
     await setup(() => of([file('f1')]));
 

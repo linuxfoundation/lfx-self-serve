@@ -248,6 +248,7 @@ data-state: idle | loading | ready | error
 | `materials-section-updated`      | The "Updated" pill: a change in the last seven days              |
 | `materials-section-loading`      | The list's first load                                            |
 | `materials-section-sign-in`      | Sign in to view the materials (anonymous and refused)            |
+| `materials-section-sign-in-link` | Its Sign in link                                                 |
 | `materials-section-error`        | The list failed to load, with nothing to fall back on            |
 | `materials-section-retry`        | Its Try again                                                    |
 | `materials-section-empty`        | None attached                                                    |

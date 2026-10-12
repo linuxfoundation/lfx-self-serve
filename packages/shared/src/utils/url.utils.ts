@@ -973,3 +973,26 @@ export function getUrlHostname(url: string | null | undefined): string | null {
     return null;
   }
 }
+
+/**
+ * A user-entered link made safe to put in an `href`: an absolute http(s) URL as it is, or a bare
+ * `host/path` (no scheme, as organizers often paste) given `https://`. Anything else (another
+ * scheme, or no recognisable host) is `null`, and is rendered as text rather than a link.
+ */
+export function toSafeExternalHref(link: string | null | undefined): string | null {
+  const trimmed = link?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed);
+  const candidate = hasScheme ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(candidate);
+    if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || !parsed.hostname.includes('.')) {
+      return null;
+    }
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}

@@ -2,12 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MEETING_MATERIALS_PREVIEW_LIMIT, MEETING_MATERIALS_UPDATED_WINDOW_MS } from '@lfx-one/shared/constants';
-import { MaterialsChangedEvent, MeetingMaterialsRequest, MeetingMaterialsState, PublicMeetingAttachment } from '@lfx-one/shared/interfaces';
-import { getPastMeetingResourceId, getUrlHostname } from '@lfx-one/shared/utils';
+import {
+  MaterialsChangedEvent,
+  MeetingMaterialLink,
+  MeetingMaterialsRequest,
+  MeetingMaterialsState,
+  PublicMeetingAttachment,
+} from '@lfx-one/shared/interfaces';
+import { getPastMeetingResourceId, getUrlHostname, toSafeExternalHref } from '@lfx-one/shared/utils';
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { MeetingService } from '@services/meeting.service';
@@ -37,7 +43,7 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  */
 @Component({
   selector: 'lfx-meeting-materials',
-  imports: [SkeletonModule, FileSizePipe, FileTypeDisplayPipe, MeetingMaterialsDrawerComponent],
+  imports: [NgTemplateOutlet, SkeletonModule, FileSizePipe, FileTypeDisplayPipe, MeetingMaterialsDrawerComponent],
   templateUrl: './materials.component.html',
 })
 export class MeetingMaterialsComponent {
@@ -63,7 +69,7 @@ export class MeetingMaterialsComponent {
   protected readonly materials: Signal<MeetingMaterialsState> = this.initMaterials();
   protected readonly attachments: Signal<PublicMeetingAttachment[]> = this.initAttachments();
   protected readonly files = computed(() => this.attachments().filter((attachment) => attachment.type === 'file'));
-  protected readonly links = computed(() => this.attachments().filter((attachment) => attachment.type === 'link'));
+  protected readonly links: Signal<MeetingMaterialLink[]> = this.initLinks();
   protected readonly visibleFiles = computed(() => (this.showAllFiles() ? this.files() : this.files().slice(0, MEETING_MATERIALS_PREVIEW_LIMIT)));
   protected readonly visibleLinks = computed(() => (this.showAllLinks() ? this.links() : this.links().slice(0, MEETING_MATERIALS_PREVIEW_LIMIT)));
   /** Whether anything was added or changed in the last seven days, on the page's clock. */
@@ -93,12 +99,6 @@ export class MeetingMaterialsComponent {
     this.refreshCount.update((count) => count + 1);
   }
 
-  /** The caption under a link: "Link · host", or just "Link" for a URL without one. */
-  public linkCaption(link: string | undefined): string {
-    const host = getUrlHostname(link);
-    return host ? `Link · ${host}` : 'Link';
-  }
-
   public download(attachment: PublicMeetingAttachment): void {
     const request = this.request();
     if (!request || !isPlatformBrowser(this.platformId)) {
@@ -116,7 +116,10 @@ export class MeetingMaterialsComponent {
           opened.opener = null;
         }
       },
-      error: () => this.messageService.add({ severity: 'error', summary: 'Download Failed', detail: 'Unable to download the attachment. Please try again.' }),
+      error: (error: unknown) => {
+        console.error('Failed to download the meeting material', error);
+        this.messageService.add({ severity: 'error', summary: 'Download Failed', detail: 'Unable to download the attachment. Please try again.' });
+      },
     });
   }
 
@@ -190,23 +193,34 @@ export class MeetingMaterialsComponent {
               return { status: 'ready', attachments };
             }),
             catchError((error: unknown) => {
-              if (kept) {
-                return of<MeetingMaterialsState>({ status: 'ready', attachments: kept });
-              }
-              // The public route refuses as the meeting route does: an anonymous viewer is asked to
-              // sign in; anything else is a failure to load.
-              const refused = error instanceof HttpErrorResponse && (error.status === 400 || error.status === 401 || error.status === 403);
-              if (refused && !signedIn) {
+              const status = error instanceof HttpErrorResponse ? error.status : 0;
+              // Not a failure, so not logged: an expired session (401, whatever the client still
+              // believes), or the public route refusing an anonymous viewer as the meeting route
+              // does (400 / 403). Signing in is the way forward, and Try again would loop.
+              if (status === 401 || (!signedIn && (status === 400 || status === 403))) {
                 return of<MeetingMaterialsState>({ status: 'sign-in', attachments: [] });
               }
               console.error('Failed to load the meeting materials', error);
-              return of<MeetingMaterialsState>({ status: 'error', attachments: [] });
+              return of<MeetingMaterialsState>(kept ? { status: 'ready', attachments: kept } : { status: 'error', attachments: [] });
             }),
             startWith<MeetingMaterialsState>(kept ? { status: 'ready', attachments: kept } : { status: 'loading', attachments: [] })
           );
         })
       ),
       { initialValue: { status: 'loading', attachments: [] } }
+    );
+  }
+
+  /** Links as rows: an `href` only when the link is safe to open, and its caption. */
+  private initLinks(): Signal<MeetingMaterialLink[]> {
+    return computed(() =>
+      this.attachments()
+        .filter((attachment) => attachment.type === 'link')
+        .map((attachment): MeetingMaterialLink => {
+          const href = toSafeExternalHref(attachment.link);
+          const host = getUrlHostname(href);
+          return { attachment, href, caption: host ? `Link · ${host}` : 'Link' };
+        })
     );
   }
 

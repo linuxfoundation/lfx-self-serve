@@ -43,7 +43,8 @@
     }
     @case ('sign-in') {
       <p class="m-0 text-[14px] text-[var(--md-text-body)]" data-testid="materials-section-sign-in">
-        <a class="font-semibold text-[var(--md-accent-ink)] underline" [href]="signInHref()">Sign in</a> to view the materials for this meeting.
+        <a class="font-semibold text-[var(--md-accent-ink)] underline" [href]="signInHref()" data-testid="materials-section-sign-in-link">Sign in</a> to view
+        the materials for this meeting.
       </p>
     }
     @case ('error') {
@@ -76,7 +77,6 @@
                     <button
                       type="button"
                       class="flex w-full cursor-pointer items-center gap-[14px] border-0 bg-transparent px-[16px] py-[14px] text-left hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-                      [attr.aria-label]="'Download ' + file.name"
                       (click)="download(file)"
                       [attr.data-testid]="'materials-file-' + file.uid">
                       <span class="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[9px] bg-[var(--md-accent-bg)] text-[var(--md-accent)]">
@@ -94,8 +94,8 @@
                           }
                         </span>
                       </span>
-                      <span class="inline-flex flex-none items-center gap-[6px] text-[12.5px] font-semibold text-[var(--md-text-muted)]" aria-hidden="true">
-                        Open <i class="fa-light fa-arrow-up-right"></i>
+                      <span class="inline-flex flex-none items-center gap-[6px] text-[12.5px] font-semibold text-[var(--md-text-muted)]">
+                        Open <i class="fa-light fa-arrow-up-right" aria-hidden="true"></i><span class="sr-only">(opens in a new tab)</span>
                       </span>
                     </button>
                   </li>
@@ -121,26 +121,26 @@
                 <p class="m-0 mt-[2px] text-[12.5px] text-[var(--md-glyph-faint)]">Links to related pages and documents.</p>
               </div>
               <ul class="m-0 list-none overflow-hidden rounded-[14px] border border-[var(--md-border)] bg-[var(--md-surface-card)] p-0">
-                @for (link of visibleLinks(); track link.uid; let first = $first) {
+                @for (row of visibleLinks(); track row.attachment.uid; let first = $first) {
                   <li class="border-[var(--md-divider)]" [class.border-t]="!first">
-                    <a
-                      class="flex items-center gap-[14px] px-[16px] py-[14px] no-underline hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-                      [href]="link.link"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      [attr.data-testid]="'materials-link-' + link.uid">
-                      <span
-                        class="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[9px] bg-[var(--md-surface-hover)] text-[var(--md-text-muted)]">
-                        <i class="fa-light fa-link" aria-hidden="true"></i>
-                      </span>
-                      <span class="flex min-w-0 flex-1 flex-col">
-                        <span class="break-words text-[14px] font-semibold text-[var(--md-text-heading)]">{{ link.name }}</span>
-                        <span class="text-[12.5px] text-[var(--md-text-muted)]">{{ linkCaption(link.link) }}</span>
-                      </span>
-                      <span class="inline-flex flex-none items-center gap-[6px] text-[12.5px] font-semibold text-[var(--md-text-muted)]">
-                        Open <i class="fa-light fa-arrow-up-right" aria-hidden="true"></i><span class="sr-only">(opens in a new tab)</span>
-                      </span>
-                    </a>
+                    <!-- Only a link safe to open is a link; anything else is shown as text (toSafeExternalHref). -->
+                    @if (row.href; as href) {
+                      <a
+                        class="flex items-center gap-[14px] px-[16px] py-[14px] no-underline hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+                        [href]="href"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        [attr.data-testid]="'materials-link-' + row.attachment.uid">
+                        <ng-container *ngTemplateOutlet="linkBody; context: { $implicit: row }" />
+                        <span class="inline-flex flex-none items-center gap-[6px] text-[12.5px] font-semibold text-[var(--md-text-muted)]">
+                          Open <i class="fa-light fa-arrow-up-right" aria-hidden="true"></i><span class="sr-only">(opens in a new tab)</span>
+                        </span>
+                      </a>
+                    } @else {
+                      <div class="flex items-center gap-[14px] px-[16px] py-[14px]" [attr.data-testid]="'materials-link-' + row.attachment.uid">
+                        <ng-container *ngTemplateOutlet="linkBody; context: { $implicit: row }" />
+                      </div>
+                    }
                   </li>
                 }
               </ul>
@@ -170,3 +170,13 @@
     [pastMeetingId]="drawerPastMeetingId()"
     (materialsChanged)="onMaterialsChanged($event)" />
 }
+
+<ng-template #linkBody let-row>
+  <span class="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[9px] bg-[var(--md-surface-hover)] text-[var(--md-text-muted)]">
+    <i class="fa-light fa-link" aria-hidden="true"></i>
+  </span>
+  <span class="flex min-w-0 flex-1 flex-col">
+    <span class="break-words text-[14px] font-semibold text-[var(--md-text-heading)]">{{ row.attachment.name }}</span>
+    <span class="text-[12.5px] text-[var(--md-text-muted)]">{{ row.caption }}</span>
+  </span>
+</ng-template>

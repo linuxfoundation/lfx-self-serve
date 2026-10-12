@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   getUrlHostname,
+  toSafeExternalHref,
   canonicalHttpUrl,
   extractUrls,
   isHttpsUrl,
@@ -765,5 +766,24 @@ describe('getUrlHostname', () => {
     expect(getUrlHostname('javascript:alert(1)')).toBeNull();
     expect(getUrlHostname('not a url')).toBeNull();
     expect(getUrlHostname(undefined)).toBeNull();
+  });
+});
+
+describe('toSafeExternalHref', () => {
+  it('keeps an absolute http(s) URL', () => {
+    expect(toSafeExternalHref(' https://github.example/org/repo ')).toBe('https://github.example/org/repo');
+    expect(toSafeExternalHref('http://docs.vendor-corp.example')).toBe('http://docs.vendor-corp.example/');
+  });
+
+  it('gives a bare host/path https://', () => {
+    expect(toSafeExternalHref('docs.vendor-corp.example/document/d/abc')).toBe('https://docs.vendor-corp.example/document/d/abc');
+  });
+
+  it('refuses other schemes and anything without a host', () => {
+    expect(toSafeExternalHref('javascript:alert(1)')).toBeNull();
+    expect(toSafeExternalHref('data:text/html,hi')).toBeNull();
+    expect(toSafeExternalHref('mailto:someone@vendor-corp.example')).toBeNull();
+    expect(toSafeExternalHref('not a link')).toBeNull();
+    expect(toSafeExternalHref('')).toBeNull();
   });
 });

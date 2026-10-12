@@ -287,3 +287,12 @@ export interface MeetingMaterialsRequest {
   /** The meeting password the page holds, sent in its header to the public route. */
   password: string | null;
 }
+
+/** One supporting-materials row of the V2 materials section (E3-02), display-ready. */
+export interface MeetingMaterialLink {
+  attachment: PublicMeetingAttachment;
+  /** The link made safe for an `href` (`toSafeExternalHref`); `null` renders the row as text. */
+  href: string | null;
+  /** "Link · host", or "Link" without a recognisable host. */
+  caption: string;
+}
