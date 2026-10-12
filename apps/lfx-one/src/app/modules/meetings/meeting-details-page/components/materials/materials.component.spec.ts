@@ -209,20 +209,37 @@ describe('MeetingMaterialsComponent', () => {
     expect(query('materials-file-f1')).not.toBeNull();
   });
 
-  // An expired session answers 401 even while the page still believes it is signed in: Try again
-  // would loop, so the viewer is asked to sign in.
-  it('asks a viewer whose session has expired to sign in', async () => {
+  // An expired session still reads as signed in: the optional-auth public route refuses it as it
+  // refuses anyone (400), and the session-gated past route answers 401. Both ask for sign-in.
+  it('asks a viewer whose session has expired to sign in, on either route', async () => {
     authenticated.set(true);
+    await setup(() => throwError(() => new HttpErrorResponse({ status: 400 })));
+    expect(query('materials-section-sign-in-link')).not.toBeNull();
+    expect(query('materials-section-error')).toBeNull();
+  });
+
+  it('asks for sign-in on a past occurrence whose session-gated route answers 401', async () => {
+    authenticated.set(true);
+    loadedViaPastMeetingId.set(true);
+    meeting.set({ id: 'meeting-1', meeting_and_occurrence_id: 'meeting-1-1700000000000', project: {} } as unknown as LoadedMeeting);
     await setup(() => throwError(() => new HttpErrorResponse({ status: 401 })));
 
     expect(query('materials-section-sign-in-link')).not.toBeNull();
-    expect(query('materials-section-error')).toBeNull();
+  });
+
+  // The public route's 401 is its own upstream call failing, which signing in cannot fix.
+  it("shows an error, not sign-in, for the public route's 401", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await setup(() => throwError(() => new HttpErrorResponse({ status: 401 })));
+
+    expect(query('materials-section-error')).not.toBeNull();
+    expect(query('materials-section-sign-in')).toBeNull();
   });
 
   it('offers an organizer whose session has expired Sign in, not Add material', async () => {
     authenticated.set(true);
     viewerRole.set('organizer');
-    await setup(() => throwError(() => new HttpErrorResponse({ status: 401 })));
+    await setup(() => throwError(() => new HttpErrorResponse({ status: 400 })));
 
     expect(query('materials-section-sign-in-link')).not.toBeNull();
     expect(query('materials-section-add')).toBeNull();

@@ -254,10 +254,13 @@ export class MeetingMaterialsComponent {
             }),
             catchError((error: unknown) => {
               const status = error instanceof HttpErrorResponse ? error.status : 0;
-              // Not a failure, so not logged: an expired session (401, whatever the client still
-              // believes), or the public route refusing an anonymous viewer as the meeting route
-              // does (400 / 403). Signing in is the way forward, and Try again would loop.
-              if (status === 401 || (!signedIn && (status === 400 || status === 403))) {
+              // Not a failure, so not logged: signing in is the way forward, and Try again would loop.
+              // - Upcoming: the optional-auth public route refuses as the meeting route does (400 /
+              //   403), including a viewer whose session expired while the page still reads signed in.
+              //   Its 401 is its own upstream call failing, which signing in cannot fix: an error.
+              // - Past: the session-gated route answers 401 for an expired session.
+              const signInNeeded = request.mode === 'upcoming' ? status === 400 || status === 403 : status === 401;
+              if (signInNeeded) {
                 return of<MeetingMaterialsState>({ status: 'sign-in', attachments: [] });
               }
               console.error('Failed to load the meeting materials', error);
