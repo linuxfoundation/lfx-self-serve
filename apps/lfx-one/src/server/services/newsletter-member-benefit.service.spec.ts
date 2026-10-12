@@ -560,10 +560,18 @@ describe('NewsletterMemberBenefitService', () => {
       expect(membershipQueries).toEqual(['project_slug:aaif', 'project_slug:tlf']);
     });
 
-    it("reads a foundation with no members yet as 'not a member', not as an outage", async () => {
+    it("treats an empty foundation roster as an outage (503), never as 'not a member', and does not cache it", async () => {
       stubUpstream({ memberships: [ACME_ACTIVE] });
 
-      await expect(service.findMemberCompanyForEmail(req, M2M, 'pat@acme-motors.example', 'new-foundation')).resolves.toBeNull();
+      await expect(service.findMemberCompanyForEmail(req, M2M, 'pat@acme-motors.example', 'renamed-foundation')).rejects.toMatchObject({
+        statusCode: 503,
+        code: 'MEMBER_BENEFIT_INDEX_UNAVAILABLE',
+      });
+      stubUpstream({ memberships: [{ ...ACME_ACTIVE, project_slug: 'renamed-foundation' }] });
+      await expect(service.findMemberCompanyForEmail(req, M2M, 'pat@acme-motors.example', 'renamed-foundation')).resolves.toEqual({
+        b2b_org_uid: ORG_A,
+        company_name: 'Acme Motors',
+      });
     });
   });
 

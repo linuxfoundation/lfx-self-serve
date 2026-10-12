@@ -71,11 +71,12 @@ import { NewsletterService } from './newsletter.service';
  * through `ApiRequestOptions.bearerToken`, only after the issue was read with the user's token.
  * Identity always comes from the user's session (auth-service verified emails), never the client.
  *
- * Domain sources, unioned:
- * 1. `project_membership.company_domain` of active TLF memberships (one domain per membership).
+ * Domain sources, unioned, per membership roster (TLF for the reader ladder; a coworker invite
+ * uses its foundation's roster — see `NewsletterInviteService`):
+ * 1. `project_membership.company_domain` of the roster's active memberships (one domain per membership).
  * 2. `b2b_org.primary_domain` / `domain_aliases` of member companies — the full domain set, but
  *    `b2b_org` is gated on `auditor` and is fail-soft: when the M2M client cannot read it the check
- *    degrades to source 1 instead of denying. A b2b_org hit still needs an active TLF membership.
+ *    degrades to source 1 instead of denying. A b2b_org hit still needs an active membership in the roster.
  */
 export class NewsletterMemberBenefitService {
   /** Membership slug → cached domain index (TLF for the reader benefit; each invite foundation for invites). */
@@ -471,12 +472,15 @@ export class NewsletterMemberBenefitService {
       }
     }
 
-    // TLF always has active members; an empty index means the read was filtered or broken, and
-    // caching it would silently deny every member for the TTL. Another foundation can genuinely
-    // have none yet (the same M2M read serves TLF, so it is not filtered) — that is "no members".
-    if (activeOrgUids.size === 0 && membershipSlug === MEMBER_BENEFIT_FOUNDATION_SLUG) {
-      logger.warning(req, 'newsletter_member_benefit_domain_index', 'TLF membership read returned no active members', { membership_rows: memberships.length });
-      throw new MicroserviceError('Linux Foundation membership data is unavailable', 503, 'MEMBER_BENEFIT_INDEX_UNAVAILABLE', {
+    // Only membership-funded foundations (and TLF) get a roster read, and each always has active
+    // members: an empty index means the read was filtered, broken, or keyed on a slug the
+    // memberships do not carry. Caching it would silently deny every member for the TTL.
+    if (activeOrgUids.size === 0) {
+      logger.warning(req, 'newsletter_member_benefit_domain_index', 'Membership read returned no active members', {
+        foundation_slug: membershipSlug,
+        membership_rows: memberships.length,
+      });
+      throw new MicroserviceError('Membership data is unavailable', 503, 'MEMBER_BENEFIT_INDEX_UNAVAILABLE', {
         operation: 'newsletter_member_benefit_domain_index',
         service: 'query_service',
       });

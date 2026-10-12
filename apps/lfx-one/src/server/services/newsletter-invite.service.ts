@@ -44,7 +44,7 @@ import { Request } from 'express';
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { buildNewsletterInviteAcceptUrl, renderNewsletterInviteEmail } from '../helpers/newsletter-invite-email.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { resolveRootProjectUid } from '../helpers/root-project.helper';
+import { collapseRootParentUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
 import { getEffectiveName, getEffectiveUsername } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
@@ -118,10 +118,13 @@ export class NewsletterInviteService {
   /** GET /api/newsletters/my-foundations — the card grid and every drill-down's rows in one fan-out. */
   public async getMyNewsletterFoundations(req: Request): Promise<MyNewsletterFoundationsResponse> {
     const committeeUids = await this.committeeService.getMyCommitteeUids(req, undefined, { failOnPartial: true });
-    const [feed, groups] = await Promise.all([this.newsletterService.getMyNewsletters(req, committeeUids), this.getMyNewsletterGroupsSafe(req, committeeUids)]);
+    const [feed, { groups, complete: groupsComplete }] = await Promise.all([
+      this.newsletterService.getMyNewsletters(req, committeeUids),
+      this.getMyNewsletterGroupsSafe(req, committeeUids),
+    ]);
     const { inviter, eligibilityBySlug } = await this.resolveInviter(req, groups);
 
-    const foundations = this.groupByFoundation(feed.newsletters, groups, inviter, eligibilityBySlug);
+    const foundations = this.groupByFoundation(feed.newsletters, groups, groupsComplete, inviter, eligibilityBySlug);
     logger.debug(req, 'get_my_newsletter_foundations', 'Grouped newsletters by foundation', {
       foundation_count: foundations.length,
       newsletter_count: feed.newsletters.length,
@@ -132,8 +135,9 @@ export class NewsletterInviteService {
   }
 
   /**
-   * POST /api/newsletters/foundations/:foundationUid/invites. The sender must be eligible and in
-   * the foundation's newsletter group; the invitee's domain must be a Linux Foundation member's.
+   * POST /api/newsletters/foundations/:foundationUid/invites. The sender must be in the
+   * foundation's newsletter group and work at a member of its membership scope (its own roster, or
+   * The Linux Foundation's); the invitee's domain must belong to a member of the same scope.
    * Someone already on the list is not emailed again, but gets the same answer, so the endpoint
    * does not reveal the roster.
    */
@@ -144,8 +148,8 @@ export class NewsletterInviteService {
     const committeeUids = await this.committeeService.getMyCommitteeUids(req, undefined, { failOnPartial: true });
     const { groups, unresolvedProjectUids } = await this.getMyNewsletterGroups(req, committeeUids);
     const entry = groups.get(foundationUid);
-    // Only this card's group decides; another group whose project could not be resolved must not
-    // block it. But when the target is missing and something was unresolved, it may be that group.
+    // When this card's group resolved, other groups' unresolved projects do not matter. When it is
+    // missing and anything was unresolved, it may be that one: answer a retryable 503, not a 403.
     if (!entry && unresolvedProjectUids.length > 0) this.throwFoundationUnavailable(unresolvedProjectUids[0]);
     if (!entry) {
       throw new AuthorizationError("Join this foundation's newsletter group to invite others", {
@@ -298,15 +302,16 @@ export class NewsletterInviteService {
   private groupByFoundation(
     newsletters: MyNewsletter[],
     groups: Map<string, FoundationNewsletterGroup>,
+    groupsComplete: boolean,
     inviter: MyNewsletterInviter,
-    eligibilityBySlug: Map<string, NewsletterMemberBenefitEligibility>
+    eligibilityBySlug: Map<string, NewsletterMemberBenefitEligibility | null>
   ): MyNewsletterFoundation[] {
     const cards = new Map<string, MyNewsletterFoundation>();
     const card = (summary: NewsletterFoundationSummary): MyNewsletterFoundation => {
       let existing = cards.get(summary.uid);
       if (!existing) {
         const entry = groups.get(summary.uid);
-        const deniedReason = this.inviteDeniedReason(entry, inviter, eligibilityBySlug);
+        const deniedReason = this.inviteDeniedReason(entry, groupsComplete, inviter, eligibilityBySlug);
         existing = {
           ...summary,
           received_count: 0,
@@ -341,58 +346,89 @@ export class NewsletterInviteService {
     });
   }
 
-  /** Why one card cannot invite, or undefined when it can. */
+  /**
+   * Why one card cannot invite, or undefined when it can. A lookup that did not complete reads as
+   * `unavailable` — never as "join the list" or "not a member".
+   */
   private inviteDeniedReason(
     entry: FoundationNewsletterGroup | undefined,
+    groupsComplete: boolean,
     inviter: MyNewsletterInviter,
-    eligibilityBySlug: Map<string, NewsletterMemberBenefitEligibility>
+    eligibilityBySlug: Map<string, NewsletterMemberBenefitEligibility | null>
   ): MyNewsletterInviteDeniedReason | undefined {
-    if (inviter.denied_reason === 'unavailable') return 'unavailable';
-    if (!entry) return 'no_newsletter_group';
+    if (!entry) return groupsComplete ? 'no_newsletter_group' : 'unavailable';
     const eligibility = eligibilityBySlug.get(entry.membership.slug);
-    if (eligibility?.match) return undefined;
-    return eligibility?.denied_reason ?? 'not_member_company';
+    if (!eligibility) return 'unavailable';
+    if (eligibility.match) return undefined;
+    return eligibility.denied_reason ?? 'not_member_company';
   }
 
   /**
    * Whether the signed-in user may invite, checked once per membership roster the user's groups
    * use (a card decides with its own foundation's). With no group the TLF check still runs, so the
-   * page copy can name the user's company. Fail-soft: the cards still render when it cannot run.
+   * page copy can name the user's company. Fail-soft per roster: a roster that cannot be checked
+   * maps to null, so only the cards that use it read `unavailable`.
    */
   private async resolveInviter(
     req: Request,
     groups: Map<string, FoundationNewsletterGroup>
-  ): Promise<{ inviter: MyNewsletterInviter; eligibilityBySlug: Map<string, NewsletterMemberBenefitEligibility> }> {
-    const eligibilityBySlug = new Map<string, NewsletterMemberBenefitEligibility>();
+  ): Promise<{ inviter: MyNewsletterInviter; eligibilityBySlug: Map<string, NewsletterMemberBenefitEligibility | null> }> {
+    const eligibilityBySlug = new Map<string, NewsletterMemberBenefitEligibility | null>();
     const slugs = [...new Set([MEMBER_BENEFIT_FOUNDATION_SLUG, ...[...groups.values()].map((entry) => entry.membership.slug)])];
+    const unavailable: MyNewsletterInviter = { eligible: false, company_name: null, denied_reason: 'unavailable' };
+    let m2mToken: string;
+    let verifiedEmails: string[];
     try {
-      const m2mToken = await generateM2MToken(req);
-      const verifiedEmails = await resolveVerifiedUserEmails(req, this.emailVerificationService, { strict: true });
-      const results = await Promise.all(slugs.map((slug) => this.memberBenefitService.resolveEligibility(req, m2mToken, verifiedEmails, slug)));
-      slugs.forEach((slug, i) => eligibilityBySlug.set(slug, results[i]));
+      m2mToken = await generateM2MToken(req);
+      verifiedEmails = await resolveVerifiedUserEmails(req, this.emailVerificationService, { strict: true });
     } catch (error) {
       logger.warning(req, 'get_my_newsletter_foundations', 'Inviter eligibility check failed — invites hidden', { err: error });
-      return { inviter: { eligible: false, company_name: null, denied_reason: 'unavailable' }, eligibilityBySlug };
+      slugs.forEach((slug) => eligibilityBySlug.set(slug, null));
+      return { inviter: unavailable, eligibilityBySlug };
     }
 
+    const results = await Promise.allSettled(slugs.map((slug) => this.memberBenefitService.resolveEligibility(req, m2mToken, verifiedEmails, slug)));
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') {
+        eligibilityBySlug.set(slugs[i], result.value);
+        return;
+      }
+      logger.warning(req, 'get_my_newsletter_foundations', 'Inviter eligibility check failed for one membership roster — its invites hidden', {
+        membership_slug: slugs[i],
+        err: result.reason,
+      });
+      eligibilityBySlug.set(slugs[i], null);
+    });
+
     const groupSlugs = new Set([...groups.values()].map((entry) => entry.membership.slug));
-    const match = [...eligibilityBySlug.entries()].find(([slug, eligibility]) => groupSlugs.has(slug) && eligibility.match)?.[1].match;
+    const match = [...eligibilityBySlug.entries()].find(([slug, eligibility]) => groupSlugs.has(slug) && eligibility?.match)?.[1]?.match;
     if (match) return { inviter: { eligible: true, company_name: match.company_name || null }, eligibilityBySlug };
     const tlf = eligibilityBySlug.get(MEMBER_BENEFIT_FOUNDATION_SLUG);
+    if (!tlf) return { inviter: unavailable, eligibilityBySlug };
     return {
-      inviter: tlf?.match
+      inviter: tlf.match
         ? { eligible: false, company_name: tlf.match.company_name || null, denied_reason: 'not_member_company' }
-        : { eligible: false, company_name: null, denied_reason: tlf?.denied_reason ?? 'not_member_company' },
+        : { eligible: false, company_name: null, denied_reason: tlf.denied_reason ?? 'not_member_company' },
       eligibilityBySlug,
     };
   }
 
-  private async getMyNewsletterGroupsSafe(req: Request, committeeUids: Set<string>): Promise<Map<string, FoundationNewsletterGroup>> {
+  /** The grid's groups; `complete` is false when the lookup failed or a group's project could not be resolved. */
+  private async getMyNewsletterGroupsSafe(
+    req: Request,
+    committeeUids: Set<string>
+  ): Promise<{ groups: Map<string, FoundationNewsletterGroup>; complete: boolean }> {
     try {
-      return (await this.getMyNewsletterGroups(req, committeeUids)).groups;
+      const { groups, unresolvedProjectUids } = await this.getMyNewsletterGroups(req, committeeUids);
+      if (unresolvedProjectUids.length > 0) {
+        logger.warning(req, 'get_my_newsletter_foundations', 'Some newsletter groups could not be placed under a foundation', {
+          unresolved_project_count: unresolvedProjectUids.length,
+        });
+      }
+      return { groups, complete: unresolvedProjectUids.length === 0 };
     } catch (error) {
       logger.warning(req, 'get_my_newsletter_foundations', 'Newsletter group lookup failed — invites hidden', { err: error });
-      return new Map();
+      return { groups: new Map(), complete: false };
     }
   }
 
@@ -487,7 +523,7 @@ export class NewsletterInviteService {
       this.projectService.getProjectsByIds(req, new Set(projectUids)),
       resolveRootProjectUid(req, this.natsService),
     ]);
-    const parentOf = (project: Project): string | undefined => (project.parent_uid && project.parent_uid !== rootUid ? project.parent_uid : undefined);
+    const parentOf = (project: Project): string | undefined => collapseRootParentUid(project.parent_uid, rootUid) || undefined;
 
     const parentUids = new Set<string>();
     for (const owner of owners.values()) {

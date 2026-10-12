@@ -26,7 +26,10 @@ vi.mock('./email.service', () => ({ EmailService: class {} }));
 vi.mock('./newsletter-member-benefit.service', () => ({ NewsletterMemberBenefitService: class {} }));
 vi.mock('./nats.service', () => ({ NatsService: class {} }));
 vi.mock('../helpers/user-emails.helper', () => ({ resolveVerifiedUserEmails }));
-vi.mock('../helpers/root-project.helper', () => ({ resolveRootProjectUid }));
+vi.mock('../helpers/root-project.helper', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../helpers/root-project.helper')>()),
+  resolveRootProjectUid,
+}));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveName, getEffectiveUsername }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken }));
 vi.mock('./logger.service', () => ({
@@ -225,6 +228,31 @@ describe('NewsletterInviteService', () => {
       // One roster read per membership scope, not per card.
       expect(deps.memberBenefitService.resolveEligibility.mock.calls.map((call) => call[3]).sort()).toEqual(['acme-foundation', 'tlf']);
       expect(result.inviter).toEqual({ eligible: true, company_name: 'Acme Motors' });
+    });
+
+    it('hides invites only on cards whose membership roster could not be checked', async () => {
+      deps.committeeService.getMyCommitteeUids.mockResolvedValue(new Set(['c-news', 'c-beta']));
+      committees = [NEWSLETTER_GROUP, BETA_GROUP];
+      deps.memberBenefitService.resolveEligibility.mockImplementation(async (_req: Request, _token: string, emails: string[], slug: string) => {
+        if (slug === 'acme-foundation') throw new Error('membership read failed');
+        return { verified_emails: emails, match: MATCH };
+      });
+
+      const byUid = new Map((await service.getMyNewsletterFoundations(req)).foundations.map((card) => [card.uid, card]));
+
+      expect(byUid.get('f-1')).toMatchObject({ can_invite: false, invite_denied_reason: 'unavailable' });
+      expect(byUid.get('f-2')).toMatchObject({ can_invite: true });
+    });
+
+    it("reads a card as 'unavailable', not 'join the list', when its group's project could not be resolved", async () => {
+      resolveRootProjectUid.mockResolvedValue(null);
+      deps.committeeService.getMyCommitteeUids.mockResolvedValue(new Set(['c-tlf']));
+      committees = [TLF_GROUP];
+      deps.newsletterService.getMyNewsletters.mockResolvedValue({ newsletters: [feedRow('n-1', '2026-09-01T00:00:00Z', 'tlf-1')], complete: true });
+
+      const [card] = (await service.getMyNewsletterFoundations(req)).foundations;
+
+      expect(card).toMatchObject({ uid: 'tlf-1', can_invite: false, invite_denied_reason: 'unavailable' });
     });
 
     it('marks cards without a newsletter group as not invitable', async () => {
