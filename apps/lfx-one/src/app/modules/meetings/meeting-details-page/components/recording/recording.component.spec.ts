@@ -108,18 +108,24 @@ describe('MeetingRecordingComponent', () => {
   });
 
   // V1's three-state distinction must survive: no artifact is not the same as no access.
-  it('tells "no recording" apart from "no access", for each artifact', async () => {
-    await setup(
-      () => throwError(() => new HttpErrorResponse({ status: 404 })),
-      () => throwError(() => new HttpErrorResponse({ status: 403 }))
-    );
+  it.each([
+    [404, 403, 'none', 'no-access'],
+    [403, 404, 'no-access', 'none'],
+  ])(
+    'tells "none" apart from "no access" for each artifact (recording %s, transcript %s)',
+    async (recordingStatus, transcriptStatus, recordingReason, transcriptReason) => {
+      await setup(
+        () => throwError(() => new HttpErrorResponse({ status: recordingStatus })),
+        () => throwError(() => new HttpErrorResponse({ status: transcriptStatus }))
+      );
 
-    expect(query('tools-recording-unavailable')?.getAttribute('data-reason')).toBe('none');
-    expect(query('tools-recording-link')).toBeNull();
-    expect(query('tools-recording-poster')).toBeNull();
-    expect(query('tools-transcript-unavailable')?.getAttribute('data-reason')).toBe('no-access');
-    expect(query('tools-transcript-btn')).toBeNull();
-  });
+      expect(query('tools-recording-unavailable')?.getAttribute('data-reason')).toBe(recordingReason);
+      expect(query('tools-recording-link')).toBeNull();
+      expect(query('tools-recording-poster')).toBeNull();
+      expect(query('tools-transcript-unavailable')?.getAttribute('data-reason')).toBe(transcriptReason);
+      expect(query('tools-transcript-btn')).toBeNull();
+    }
+  );
 
   // The artifact routes sit behind the auth middleware: a 401 is an expired session, not a refusal.
   it.each([
