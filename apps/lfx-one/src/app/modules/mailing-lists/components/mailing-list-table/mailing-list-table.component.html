@@ -147,7 +147,6 @@
                     aria-label="Open on Groups.io"
                     (click)="$event.stopPropagation()"
                     [attr.data-testid]="'mailing-list-groups-io-link-' + mailingList.uid">
-                    <!-- 9px icon matches the maintainer-row external link -->
                     <i class="fa-light fa-external-link text-[9px]"></i>
                   </a>
                 }
@@ -233,13 +232,14 @@
                     class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700"
                     pTooltip="You are a member of this mailing list"
                     tooltipPosition="top"
+                    tabindex="0"
                     [attr.data-testid]="'mailing-list-member-badge-' + mailingList.uid">
                     <i class="fa-solid fa-circle-check text-[9px]" aria-hidden="true"></i>
                     Member
                   </span>
                 }
               </div>
-              <!-- Inline flow (not flex) so the icon hugs the last line of a wrapped email -->
+              <!-- Inline flow (not flex) so the icon hugs the last line of a wrapped email; ! modifiers beat the unlayered `td a` link colors in table.component.scss -->
               <span class="text-xs text-gray-500">
                 {{ mailingList | groupEmail }}
                 @if (mailingList.groupsIoUrl) {
@@ -247,11 +247,11 @@
                     [href]="mailingList.groupsIoUrl"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="ml-1.5 inline-block align-middle text-gray-600 transition-colors hover:text-gray-900"
+                    class="ml-1.5 inline-block align-middle !text-gray-600 !no-underline transition-colors hover:!text-gray-900"
                     aria-label="Open on Groups.io"
                     (click)="$event.stopPropagation()"
                     [attr.data-testid]="'mailing-list-groups-io-link-' + mailingList.uid">
-                    <i class="fa-light fa-external-link-alt !text-xs"></i>
+                    <i class="fa-light fa-external-link-alt !text-sm"></i>
                   </a>
                 }
               </span>
@@ -326,13 +326,14 @@
                     class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700"
                     pTooltip="You are a member of this mailing list"
                     tooltipPosition="top"
+                    tabindex="0"
                     [attr.data-testid]="'mailing-list-member-badge-' + mailingList.uid">
                     <i class="fa-solid fa-circle-check text-[9px]" aria-hidden="true"></i>
                     Member
                   </span>
                 }
               </div>
-              <!-- Inline flow (not flex) so the icon hugs the last line of a wrapped email -->
+              <!-- Inline flow (not flex) so the icon hugs the last line of a wrapped email; ! modifiers beat the unlayered `td a` link colors in table.component.scss -->
               <span class="text-xs text-gray-500">
                 {{ mailingList | groupEmail }}
                 @if (mailingList.groupsIoUrl) {
@@ -340,11 +341,11 @@
                     [href]="mailingList.groupsIoUrl"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="ml-1.5 inline-block align-middle text-gray-600 transition-colors hover:text-gray-900"
+                    class="ml-1.5 inline-block align-middle !text-gray-600 !no-underline transition-colors hover:!text-gray-900"
                     aria-label="Open on Groups.io"
                     (click)="$event.stopPropagation()"
                     [attr.data-testid]="'mailing-list-groups-io-link-' + mailingList.uid">
-                    <i class="fa-light fa-external-link-alt !text-xs"></i>
+                    <i class="fa-light fa-external-link-alt !text-sm"></i>
                   </a>
                 }
               </span>

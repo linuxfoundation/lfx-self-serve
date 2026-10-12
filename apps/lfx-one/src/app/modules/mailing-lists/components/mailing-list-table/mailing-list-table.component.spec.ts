@@ -111,6 +111,58 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
     });
   });
 
+  describe('member badge', () => {
+    const badgeSelector = '[data-testid="mailing-list-member-badge-list-1"]';
+    const iconLinkSelector = '[data-testid="mailing-list-groups-io-link-list-1"]';
+    const withDomain: GroupsIOMailingList = { ...baseList, domain: 'lists.example.org' };
+
+    const setInputs = async (inputs: Record<string, unknown>): Promise<void> => {
+      Object.entries(inputs).forEach(([name, value]) => fixture.componentRef.setInput(name, value));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    it('marks rows the user belongs to as members', async () => {
+      await render([withDomain, { ...withDomain, uid: 'list-2' }]);
+      await setInputs({ myMailingListUids: new Set(['list-1']) });
+
+      const rows = fixture.componentInstance['tableRows']();
+      expect(rows.map((r) => r.isMember)).toEqual([true, false]);
+    });
+
+    it('shows the badge in the maintainer layout only for joined lists', async () => {
+      await render([withDomain, { ...withDomain, uid: 'list-2' }]);
+      await setInputs({ isMaintainer: true, myMailingListUids: new Set(['list-1']) });
+
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.querySelector(badgeSelector)).not.toBeNull();
+      expect(el.querySelector('[data-testid="mailing-list-member-badge-list-2"]')).toBeNull();
+    });
+
+    it('shows the badge in the PMO layout for joined lists', async () => {
+      await render([withDomain]);
+      await setInputs({ myMailingListUids: new Set(['list-1']) });
+
+      expect(fixture.nativeElement.querySelector(badgeSelector)).not.toBeNull();
+    });
+
+    it('does not show the badge on the Me lens rows', async () => {
+      await render([withDomain]);
+      await setInputs({ isMeLens: true, myMailingListUids: new Set(['list-1']) });
+
+      expect(fixture.nativeElement.querySelector(badgeSelector)).toBeNull();
+    });
+
+    it('renders the Groups.io link in the maintainer layout when the list has a domain', async () => {
+      await render([withDomain]);
+      await setInputs({ isMaintainer: true });
+
+      const link: HTMLAnchorElement | null = fixture.nativeElement.querySelector(iconLinkSelector);
+      expect(link?.href).toBe('https://lists.example.org/g/maintainers');
+    });
+  });
+
   describe('onJoin', () => {
     it('calls createMember with the caller own email and emits refresh on success', async () => {
       await render([baseList]);
