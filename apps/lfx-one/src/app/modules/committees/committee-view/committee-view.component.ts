@@ -93,6 +93,7 @@ import {
 import { committeeJoinErrorMessage, committeeLeaveErrorMessage, getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { restoreMeLensOnBrowserBack } from '@shared/utils/restore-me-lens.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
 import { AcceptInviteOrganizationDialogComponent } from '@components/accept-invite-organization-dialog/accept-invite-organization-dialog.component';
 import { JoinApplicationDialogComponent } from '../components/join-application-dialog/join-application-dialog.component';
@@ -545,6 +546,7 @@ export class CommitteeViewComponent {
     }
 
     syncEntityProjectContext(this.committee, this.projectContextService, this.router, this.destroyRef);
+    restoreMeLensOnBrowserBack(this.router, this.lensService, this.destroyRef, this.fromMeLens, '/groups');
 
     bindLfxDocumentTitle(computed(() => this.committee()?.name));
 
