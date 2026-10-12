@@ -50,7 +50,7 @@ const PROJECTS = [
 describe('OrgRoiProjectsBarComponent — series toggles', () => {
   let fixture: ComponentFixture<OrgRoiProjectsBarComponent>;
 
-  // Checked and disabled state arrive through ngModel, which applies them after a microtask.
+  // Let each form control's value and disabled state reach the rendered checkbox before asserting.
   const settle = async (): Promise<void> => {
     fixture.detectChanges();
     await fixture.whenStable();

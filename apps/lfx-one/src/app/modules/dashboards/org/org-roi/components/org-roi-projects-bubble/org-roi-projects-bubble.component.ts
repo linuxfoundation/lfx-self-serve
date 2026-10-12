@@ -119,6 +119,9 @@ export class OrgRoiProjectsBubbleComponent {
           backgroundColor: projects.map((project) => (project.profit < 0 ? ORG_LENS_ROI_BUBBLE_FILL.lossMaking : ORG_LENS_ROI_BUBBLE_FILL.profitable)),
           borderColor: projects.map((project) => (project.profit < 0 ? lfxColors.amber[500] : ORG_LENS_ROI_RETURN_COLOR)),
           borderWidth: 1,
+          // Pinned axes make Chart.js clip at the plot edge, which would halve the bubbles sitting on
+          // it — the largest one always does. Autoscaled axes allowed a bubble's radius of overflow.
+          clip: false,
         },
         ...(segment
           ? [
