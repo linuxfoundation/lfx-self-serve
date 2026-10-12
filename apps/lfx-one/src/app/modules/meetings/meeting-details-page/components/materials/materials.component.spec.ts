@@ -219,6 +219,16 @@ describe('MeetingMaterialsComponent', () => {
     expect(query('materials-section-error')).toBeNull();
   });
 
+  it('offers an organizer whose session has expired Sign in, not Add material', async () => {
+    authenticated.set(true);
+    viewerRole.set('organizer');
+    await setup(() => throwError(() => new HttpErrorResponse({ status: 401 })));
+
+    expect(query('materials-section-sign-in-link')).not.toBeNull();
+    expect(query('materials-section-add')).toBeNull();
+    expect(drawer()).toBeUndefined();
+  });
+
   it('keeps the rows it has when a refetch fails', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     let calls = 0;

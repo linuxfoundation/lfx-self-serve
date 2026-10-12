@@ -115,7 +115,13 @@ export class MeetingMaterialsComponent {
    * is the previous one, and Add material (with the drawer it opens) must not write to it.
    */
   protected readonly canManage = computed(
-    () => this.state.matchesRoute() && this.state.viewerRole() === 'organizer' && (this.state.timeState() !== 'ended' || this.state.loadedViaPastMeetingId())
+    () =>
+      this.state.matchesRoute() &&
+      // An expired session reads as signed in until a request says otherwise: once one has, the
+      // drawer's writes would fail too, so only Sign in is offered.
+      this.materials().status !== 'sign-in' &&
+      this.state.viewerRole() === 'organizer' &&
+      (this.state.timeState() !== 'ended' || this.state.loadedViaPastMeetingId())
   );
   protected readonly drawerMeetingId = computed(() => (this.state.loadedViaPastMeetingId() ? undefined : this.state.meeting()?.id));
   protected readonly drawerPastMeetingId = computed(() => {
