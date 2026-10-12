@@ -11,9 +11,11 @@ import {
   Newsletter,
   NewsletterAnalytics,
   NewsletterCancelScheduleResult,
+  NewsletterJoinResult,
   NewsletterListParams,
   NewsletterListResponse,
   NewsletterOptOutListResponse,
+  NewsletterReaderAccess,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
   NewsletterRecipientEngagementResponse,
@@ -108,6 +110,19 @@ export class NewsletterService {
    */
   public getMyNewsletters(): Observable<MyNewslettersApiResponse> {
     return this.http.get<MyNewslettersApiResponse>('/api/newsletters/my-newsletters', { params: { include_status: 'true' } });
+  }
+
+  /**
+   * Permalink reader access decision (#3469): manager, group member, eligible Linux Foundation
+   * member employee (with the issue), or denied (body withheld). Errors propagate to the reader.
+   */
+  public getReaderAccess(projectUid: string, newsletterUid: string): Observable<NewsletterReaderAccess> {
+    return this.http.get<NewsletterReaderAccess>(`/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}/reader`).pipe(take(1));
+  }
+
+  /** Member benefit: add the caller's qualifying work email to the issue's newsletter group (server re-checks eligibility). */
+  public joinNewsletterGroup(projectUid: string, newsletterUid: string): Observable<NewsletterJoinResult> {
+    return this.http.post<NewsletterJoinResult>(`/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}/join`, {}).pipe(take(1));
   }
 
   public updateNewsletter(projectUid: string, newsletterUid: string, version: number, payload: UpdateNewsletterRequest): Observable<Newsletter> {

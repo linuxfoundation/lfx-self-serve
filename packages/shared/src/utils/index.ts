@@ -55,6 +55,7 @@ export * from './org-lens-url.utils';
 export * from './org.utils';
 export * from './search.utils';
 export * from './email.utils';
+export * from './email-domain.utils';
 export * from './invitation.utils';
 export * from './lens.utils';
 export * from './nav-default-selection.utils';

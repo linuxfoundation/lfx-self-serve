@@ -174,7 +174,95 @@ export interface NewsletterReaderState {
   error: boolean;
   project: Project | null;
   newsletter: Newsletter | null;
+  /** Server access decision for the reader; null while loading, on error, or when nothing resolved. */
+  access: NewsletterReaderAccess | null;
+  /** The issue exists but is unsent and the reader is not a manager (draft notice, SSR 404). */
+  draftHidden?: boolean;
 }
+
+/**
+ * Why the reader may open an issue:
+ * - `manager` — project writer (drafts included)
+ * - `group_member` — already in the issue's newsletter group
+ * - `eligible` — verified email at an active Linux Foundation member company; the reader page then
+ *   adds that email to the newsletter group (the member benefit)
+ * - `denied` — none of the above; the body is withheld
+ */
+export type NewsletterReaderAccessLevel = 'manager' | 'group_member' | 'eligible' | 'denied';
+
+/** Why a reader was denied: no verified company email, a company that is not an LF member, or an issue with no newsletter group to join. */
+export type NewsletterReaderDeniedReason = 'no_company_email' | 'not_member_company' | 'no_newsletter_group';
+
+/** Response of GET /api/newsletters/:projectUid/:newsletterUid/reader. */
+export interface NewsletterReaderAccess {
+  access: NewsletterReaderAccessLevel;
+  /** Present for every level except `denied`. */
+  newsletter?: Newsletter;
+  denied_reason?: NewsletterReaderDeniedReason;
+  /** `eligible` only: the verified work email that qualified and will be added. */
+  qualifying_email?: string;
+  /** `eligible` only: the matched Linux Foundation member company. */
+  company_name?: string;
+  /** `eligible` only: the newsletter group the email will be added to. */
+  committee_name?: string;
+}
+
+/** Outcome of POST /api/newsletters/:projectUid/:newsletterUid/join. */
+export type NewsletterJoinStatus = 'added' | 'already_member';
+
+/** Response of POST /api/newsletters/:projectUid/:newsletterUid/join. */
+export interface NewsletterJoinResult {
+  status: NewsletterJoinStatus;
+  email: string;
+  committee_name: string;
+  company_name: string;
+}
+
+/** Reader-page state of the automatic member-benefit group add. */
+export interface NewsletterJoinState {
+  status: 'idle' | 'joining' | NewsletterJoinStatus | 'failed';
+  result?: NewsletterJoinResult;
+}
+
+/** A verified email that qualified for the member benefit, with the member company it matched. */
+export interface NewsletterMemberBenefitMatch {
+  email: string;
+  b2b_org_uid: string;
+  company_name: string;
+}
+
+/** Result of the member-benefit eligibility check for the signed-in user. */
+export interface NewsletterMemberBenefitEligibility {
+  /** Lowercased verified emails of the user (used for the group-membership check). */
+  verified_emails: string[];
+  match: NewsletterMemberBenefitMatch | null;
+  /** Set when `match` is null. */
+  denied_reason?: Extract<NewsletterReaderDeniedReason, 'no_company_email' | 'not_member_company'>;
+}
+
+/** One active Linux Foundation member company recorded against a domain. */
+export interface MemberBenefitCompany {
+  b2b_org_uid: string;
+  company_name: string;
+}
+
+/** Index of active Linux Foundation memberships: domain → companies, plus the set of active member org uids. */
+export interface MemberBenefitDomainIndex {
+  by_domain: Map<string, MemberBenefitCompany[]>;
+  active_org_uids: Map<string, string>;
+}
+
+/** The newsletter group (Newsletter-category committee) a member is added to. */
+export interface NewsletterMemberBenefitGroup {
+  uid: string;
+  name: string;
+}
+
+/** Server-side outcome of the newsletter reader access ladder (BFF-internal; never serialized as-is). */
+export type NewsletterReaderEvaluation =
+  | { level: 'manager' | 'group_member'; newsletter: Newsletter }
+  | { level: 'eligible'; newsletter: Newsletter; match: NewsletterMemberBenefitMatch; group: NewsletterMemberBenefitGroup }
+  | { level: 'denied'; newsletter: Newsletter; reason: NewsletterReaderDeniedReason };
 
 export interface CreateNewsletterRequest {
   subject: string;

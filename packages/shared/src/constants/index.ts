@@ -78,6 +78,7 @@ export * from './org-people-committee-members.constants';
 export * from './org-events.constants';
 export * from './individual-enrollment-catalog';
 export * from './newsletter.constants';
+export * from './newsletter-member-benefit.constants';
 export * from './vote.constants';
 export * from './docs.constant';
 export * from './linux-email.constants';
