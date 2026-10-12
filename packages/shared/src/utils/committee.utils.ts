@@ -114,7 +114,13 @@ export function getCommitteeMailingListLink(
 
   const queryParams = committee.project_slug ? { project: committee.project_slug } : null;
   if (lists.length === 1) {
-    return { commands: getMailingListCommands(lists[0]), queryParams, label: lists[0].group_name };
+    // A group's lists belong to the group's project, and the list index never emits `is_foundation`, so use the committee's tier.
+    const [list] = lists;
+    return {
+      commands: getMailingListCommands({ uid: list.uid, is_foundation: committee.is_foundation }),
+      queryParams,
+      label: list.title || list.group_name || 'Mailing list',
+    };
   }
 
   return { commands: getGroupCommands(committee) ?? ['/groups', committee.uid], queryParams, label: `${lists.length} mailing lists` };

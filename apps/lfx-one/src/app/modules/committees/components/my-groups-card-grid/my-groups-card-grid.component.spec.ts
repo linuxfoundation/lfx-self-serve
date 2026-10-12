@@ -159,14 +159,14 @@ describe('MyGroupsCardGridComponent', () => {
 
   it('links an associated mailing list to its detail page, or to the group when several are associated', async () => {
     await render([
-      group({ has_mailing_list: true, is_foundation: true, mailing_lists: [{ uid: 'ml-1', group_name: 'synthetic-list', is_foundation: true }] }),
+      group({ has_mailing_list: true, is_foundation: true, mailing_lists: [{ uid: 'ml-1', group_name: 'synthetic-list' }] }),
       group({
         uid: 'group-2',
         has_mailing_list: true,
         is_foundation: true,
         mailing_lists: [
-          { uid: 'ml-2', group_name: 'synthetic-list-a', is_foundation: true },
-          { uid: 'ml-3', group_name: 'synthetic-list-b', is_foundation: true },
+          { uid: 'ml-2', group_name: 'synthetic-list-a' },
+          { uid: 'ml-3', group_name: 'synthetic-list-b' },
         ],
       }),
     ]);

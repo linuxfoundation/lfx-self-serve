@@ -2625,8 +2625,8 @@ export class CommitteeService {
   }
 
   /**
-   * Returns the subset of the provided committee UIDs that have at least one associated
-   * `groupsio_mailing_list` resource. Uses OR-tag semantics (the query service `tags`
+   * Returns a map from committee UID to its associated `groupsio_mailing_list` refs (uid, name,
+   * title) — only committees with at least one list appear. Uses OR-tag semantics (the query service `tags`
    * parameter is ArrayOf(String) with OR logic) instead of one count call per committee.
    * UIDs are chunked at 100 per request for URL-length safety; batches run concurrently
    * via Promise.allSettled so a single chunk failure does not suppress the others.
@@ -2667,7 +2667,7 @@ export class CommitteeService {
             if (!ref.uid) continue;
             const lists = found.get(ref.uid) ?? [];
             if (!lists.some((l) => l.uid === ml.uid)) {
-              lists.push({ uid: ml.uid, group_name: ml.group_name, is_foundation: ml.is_foundation });
+              lists.push({ uid: ml.uid, group_name: ml.group_name, title: ml.title });
             }
             found.set(ref.uid, lists);
           }
@@ -2688,7 +2688,7 @@ export class CommitteeService {
   /**
    * Single-committee count wrapper around {@link getCommitteesWithMailingList} — used by
    * `getCommitteeById`'s `includeMailingListStatus` option, which needs a boolean-ish
-   * result rather than the batch method's `Set`. `/committees/{uid}` does not reliably
+   * result rather than the batch method's `Map`. `/committees/{uid}` does not reliably
    * populate `has_mailing_list` itself (verified false against real, populated
    * committees — LFXV2-2914), so this recomputes it the same way the list endpoints do.
    *

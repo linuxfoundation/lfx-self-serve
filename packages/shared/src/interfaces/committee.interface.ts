@@ -18,8 +18,11 @@ export interface CommitteeMailingListLink {
   label: string;
 }
 
-/** Minimal mailing-list reference carried on a committee so list views can link to it without a second fetch. */
-export type CommitteeMailingListRef = Pick<GroupsIOMailingList, 'uid' | 'group_name' | 'is_foundation'>;
+/**
+ * Minimal mailing-list reference carried on a committee so list views can link to it without a second fetch.
+ * Deliberately has no `is_foundation`: the mailing-list index never emits it, so the link takes the tier from the committee.
+ */
+export type CommitteeMailingListRef = Pick<GroupsIOMailingList, 'uid' | 'group_name'> & Partial<Pick<GroupsIOMailingList, 'title'>>;
 
 // ── v2.0 Taxonomy Types ─────────────────────────────────────────────────────
 

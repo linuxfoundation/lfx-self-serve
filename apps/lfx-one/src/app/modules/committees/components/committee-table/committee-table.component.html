@@ -135,7 +135,7 @@
                         [queryParams]="mlLink.queryParams"
                         class="inline-flex min-h-8 items-center gap-1 text-blue-600"
                         [attr.aria-label]="'Mailing list: ' + mlLink.label"
-                        [attr.data-testid]="'mailing-list-link-' + committee.uid"
+                        [attr.data-testid]="'committee-table-mailing-list-link-' + committee.uid"
                         (click)="$event.stopPropagation()">
                         <i class="fa-light fa-envelope" aria-hidden="true"></i>Mailing list
                       </a>
@@ -273,7 +273,8 @@
                         [pTooltip]="mlLink.label"
                         tooltipPosition="top"
                         [attr.aria-label]="'Mailing list: ' + mlLink.label"
-                        [attr.data-testid]="'mailing-list-link-' + committee.uid">
+                        [attr.data-testid]="'committee-table-mailing-list-link-' + committee.uid"
+                        (click)="$event.stopPropagation()">
                         <i class="fa-light fa-envelope w-4 h-4" aria-hidden="true"></i>
                       </a>
                     } @else if (committee.has_mailing_list) {

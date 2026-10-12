@@ -192,10 +192,10 @@ describe('CommitteeTableComponent consumer behavior', () => {
         uid: 'listed',
         has_mailing_list: true,
         is_foundation: true,
-        mailing_lists: [{ uid: 'ml-1', group_name: 'synthetic-list', is_foundation: true }],
+        mailing_lists: [{ uid: 'ml-1', group_name: 'synthetic-list' }],
       }),
     ]);
-    const link = element('[data-testid="mailing-list-link-listed"]');
+    const link = element('[data-testid="committee-table-mailing-list-link-listed"]');
     expect(link.getAttribute('href')).toContain('/foundation/mailing-lists/ml-1');
     expect(element('[data-testid="committee-row-listed"]').textContent).not.toContain('Mailing list associated');
   });
