@@ -166,6 +166,26 @@ export class NewsletterMemberBenefitService {
   }
 
   /**
+   * Guard for the publisher collection (`GET /api/projects/:projectUid/newsletters`), whose rows
+   * carry `body_html` and drafts: only project `writer_guard` or `auditor_guard` holders (writers,
+   * auditors, EDs, LF staff — everyone the publisher UI admits) may list. Members and member
+   * employees read single issues through the ladder instead, so the list cannot bypass it.
+   */
+  public async assertPublisherRead(req: Request, projectUid: string): Promise<void> {
+    const access = await this.accessCheckService.checkAccessStrict(req, [
+      { resource: 'project', id: projectUid, access: 'writer_guard' },
+      { resource: 'project', id: projectUid, access: 'auditor_guard' },
+    ]);
+    if (!access.get(`${projectUid}#writer_guard`) && !access.get(`${projectUid}#auditor_guard`)) {
+      throw new AuthorizationError('Only project managers and auditors can list newsletters', {
+        operation: 'assert_publisher_read',
+        service: 'newsletter_member_benefit',
+        code: 'NEWSLETTER_LIST_FORBIDDEN',
+      });
+    }
+  }
+
+  /**
    * The member benefit: re-runs the whole ladder, then adds the caller's qualifying work email to
    * the issue's newsletter group. A caller already in the group gets `already_member` (a second tab,
    * or a retry after the add was indexed). Managers, auditors and denied callers are refused.

@@ -243,6 +243,18 @@ describe('NewsletterMemberBenefitService', () => {
     });
   });
 
+  describe('assertPublisherRead (project newsletter list)', () => {
+    it.each([{ writer: true }, { auditor: true }])('allows %o', async (access) => {
+      checkAccessStrict.mockResolvedValue(grant(access));
+
+      await expect(service.assertPublisherRead(req, PROJECT_UID)).resolves.toBeUndefined();
+    });
+
+    it('refuses (403) project viewers who are neither writer nor auditor', async () => {
+      await expect(service.assertPublisherRead(req, PROJECT_UID)).rejects.toMatchObject({ statusCode: 403, code: 'NEWSLETTER_LIST_FORBIDDEN' });
+    });
+  });
+
   describe('joinNewsletterGroup', () => {
     it('re-checks eligibility and adds the work email with the member company, invite suppressed, via M2M', async () => {
       stubUpstream({ memberships: [ACME_ACTIVE], committees: NEWSLETTER_GROUP });

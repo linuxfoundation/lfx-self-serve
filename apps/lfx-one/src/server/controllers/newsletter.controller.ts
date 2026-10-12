@@ -153,6 +153,8 @@ export class NewsletterController {
         status: statusParam as NewsletterStatus | undefined,
         page_token: pageToken,
       };
+      // Rows carry body_html and drafts: publisher-only, so the list cannot bypass the reader ladder (#3469).
+      await this.memberBenefitService.assertPublisherRead(req, projectUid);
       const result = await this.newsletterService.listNewsletters(req, projectUid, params);
 
       logger.success(req, 'newsletter_list', startTime, {

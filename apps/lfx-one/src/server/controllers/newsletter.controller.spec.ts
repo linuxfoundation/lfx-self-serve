@@ -3,16 +3,25 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getMyNewsletters, listNewsletters, createNewsletter, updateNewsletter, scheduleNewsletter, cancelScheduleNewsletter, getReadableNewsletter } =
-  vi.hoisted(() => ({
-    getReadableNewsletter: vi.fn(),
-    getMyNewsletters: vi.fn(),
-    listNewsletters: vi.fn(),
-    createNewsletter: vi.fn(),
-    updateNewsletter: vi.fn(),
-    scheduleNewsletter: vi.fn(),
-    cancelScheduleNewsletter: vi.fn(),
-  }));
+const {
+  getMyNewsletters,
+  listNewsletters,
+  createNewsletter,
+  updateNewsletter,
+  scheduleNewsletter,
+  cancelScheduleNewsletter,
+  getReadableNewsletter,
+  assertPublisherRead,
+} = vi.hoisted(() => ({
+  assertPublisherRead: vi.fn(),
+  getReadableNewsletter: vi.fn(),
+  getMyNewsletters: vi.fn(),
+  listNewsletters: vi.fn(),
+  createNewsletter: vi.fn(),
+  updateNewsletter: vi.fn(),
+  scheduleNewsletter: vi.fn(),
+  cancelScheduleNewsletter: vi.fn(),
+}));
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest
 // config — mock the barrels the controller imports from directly, same as
@@ -40,6 +49,7 @@ vi.mock('../services/ai.service', () => ({ AiService: class {} }));
 vi.mock('../services/newsletter-member-benefit.service', () => ({
   NewsletterMemberBenefitService: class {
     public getReadableNewsletter = getReadableNewsletter;
+    public assertPublisherRead = assertPublisherRead;
   },
 }));
 vi.mock('../services/logger.service', () => ({
@@ -133,6 +143,16 @@ describe('NewsletterController.listNewsletters — status allowlist', () => {
     expect(next).not.toHaveBeenCalled();
     expect(listNewsletters).toHaveBeenCalledWith(expect.anything(), 'p1', { status, page_token: undefined });
     expect(res.json).toHaveBeenCalled();
+  });
+
+  it('refuses non-publishers before proxying the body-carrying list (#3469)', async () => {
+    assertPublisherRead.mockRejectedValueOnce(Object.assign(new Error('forbidden'), { statusCode: 403, code: 'NEWSLETTER_LIST_FORBIDDEN' }));
+    const next = vi.fn();
+
+    await new NewsletterController().listNewsletters({ params: { projectUid: 'p1' }, query: {}, path: '/x' } as any, buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    expect(listNewsletters).not.toHaveBeenCalled();
   });
 
   it('rejects an unknown status value', async () => {
