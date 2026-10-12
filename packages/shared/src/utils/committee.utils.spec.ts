@@ -23,6 +23,7 @@ import {
   canManageCommitteeMembers,
   canViewCommitteeRoster,
   committeeRouteIdMatches,
+  getCommitteeMailingListLink,
   countVotingReps,
   getSelectableCommitteeCategories,
   groupCommitteesByFoundation,
@@ -634,5 +635,35 @@ describe('resolveTypeDisplay', () => {
   it('returns "Other" when classDisplay is absent', () => {
     const result = resolveTypeDisplay({ behavioralClass: 'working-group', category: 'Anything' });
     expect(result).toBe('Other');
+  });
+});
+
+describe('getCommitteeMailingListLink', () => {
+  const list = (uid: string, name: string) => ({ uid, group_name: name, is_foundation: false });
+
+  it('is null when no mailing lists were enriched onto the committee', () => {
+    expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: false })).toBeNull();
+    expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: false, mailing_lists: [] })).toBeNull();
+  });
+
+  it('links a single list straight to its detail page and carries the project slug', () => {
+    expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: false, project_slug: 'synthetic-proj', mailing_lists: [list('ml-1', 'dev')] })).toEqual({
+      commands: ['/', 'project', 'mailing-lists', 'ml-1'],
+      queryParams: { project: 'synthetic-proj' },
+      label: 'dev',
+    });
+  });
+
+  it('links several lists to the group page', () => {
+    expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: true, mailing_lists: [list('ml-1', 'a'), list('ml-2', 'b')] })).toEqual({
+      commands: ['/', 'foundation', 'groups', 'c1'],
+      queryParams: null,
+      label: '2 mailing lists',
+    });
+  });
+
+  it('falls back to the flat paths when the tier is unknown', () => {
+    expect(getCommitteeMailingListLink({ uid: 'c1', mailing_lists: [{ uid: 'ml-1', group_name: 'dev' }] })?.commands).toEqual(['/mailing-lists', 'ml-1']);
+    expect(getCommitteeMailingListLink({ uid: 'c1', mailing_lists: [list('a', 'a'), list('b', 'b')] })?.commands).toEqual(['/groups', 'c1']);
   });
 });

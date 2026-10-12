@@ -14,7 +14,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
 import { CommitteeTableRowVm } from '@lfx-one/shared/interfaces';
 import { JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
-import { getGroupCommands, resolveJoinModeSeverity, resolveRoleChip, resolveTypeDisplay } from '@lfx-one/shared/utils';
+import { getCommitteeMailingListLink, getGroupCommands, resolveJoinModeSeverity, resolveRoleChip, resolveTypeDisplay } from '@lfx-one/shared/utils';
 import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
 import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
@@ -111,6 +111,7 @@ export class CommitteeTableComponent {
       ...committee,
       viewCommands: getGroupCommands(committee) ?? ['/groups', committee.uid],
       editCommands: getGroupCommands(committee, 'edit') ?? ['/groups', committee.uid, 'edit'],
+      mailingListLink: getCommitteeMailingListLink(committee),
       linkQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
       join_mode: committee.join_mode ?? 'invite_only',
       joinModeSeverity: resolveJoinModeSeverity(committee.join_mode ?? 'invite_only'),

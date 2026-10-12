@@ -10,7 +10,14 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE, JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
 import { MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity, resolveJoinModeSeverity, resolveTypeDisplay } from '@lfx-one/shared/utils';
+import {
+  formatRelativeTime,
+  getCommitteeMailingListLink,
+  getGroupCommands,
+  resolveGroupsCardRoleSeverity,
+  resolveJoinModeSeverity,
+  resolveTypeDisplay,
+} from '@lfx-one/shared/utils';
 import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { ValidExternalUrlPipe } from '@app/shared/pipes/valid-external-url.pipe';
 import { MessageService } from 'primeng/api';
@@ -78,6 +85,7 @@ export class MyGroupsCardGridComponent {
           // /foundation vs /project; rows without tier data keep the flat /groups/:uid fallback.
           viewCommands: getGroupCommands(committee) ?? ['/groups', committee.uid],
           viewQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
+          mailingListLink: getCommitteeMailingListLink(committee),
           typeDisplay,
           joinModeSeverity: resolveJoinModeSeverity(effectiveJoinMode),
           joinModeTooltip: JOIN_MODE_TOOLTIPS[effectiveJoinMode],

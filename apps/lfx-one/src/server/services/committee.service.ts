@@ -32,6 +32,7 @@ import {
   CreateCommitteeMemberRequest,
   GroupsIOMailingList,
   ManagedPendingApplication,
+  CommitteeMailingListRef,
   MyCommittee,
   MyPendingApplication,
   PendingCommitteeInviteForOrg,
@@ -175,14 +176,18 @@ export class CommitteeService {
     // CommitteeBaseWithReadonlyAttributes — no separate per-committee count call needed.
     const committeeUids = committees.map((c) => c.uid).filter(Boolean);
     const committeesWithMailingList =
-      options.skipMailingListEnrichment || committeeUids.length === 0 ? new Set<string>() : await this.getCommitteesWithMailingList(req, committeeUids);
+      options.skipMailingListEnrichment || committeeUids.length === 0
+        ? new Map<string, CommitteeMailingListRef[]>()
+        : await this.getCommitteesWithMailingList(req, committeeUids);
 
     committees = committees.map((committee) => ({
       ...committee,
       total_members: committee.total_members ?? 0,
       // Omit rather than default to false when the lookup was skipped — false means a confirmed
       // absence, and no lookup ran to confirm one.
-      ...(options.skipMailingListEnrichment ? {} : { has_mailing_list: committeesWithMailingList.has(committee.uid) }),
+      ...(options.skipMailingListEnrichment
+        ? {}
+        : { has_mailing_list: committeesWithMailingList.has(committee.uid), mailing_lists: committeesWithMailingList.get(committee.uid) ?? [] }),
     }));
 
     // Add writer access field (used by the access filter below and consumed by the UI)
@@ -1492,7 +1497,8 @@ export class CommitteeService {
 
     // Batch check mailing-list presence for all committee UIDs in one query instead of N
     // per-committee count calls. total_members is already indexed by the committee-service.
-    const committeesWithMailingList = committeeUids.length > 0 ? await this.getCommitteesWithMailingList(req, committeeUids) : new Set<string>();
+    const committeesWithMailingList =
+      committeeUids.length > 0 ? await this.getCommitteesWithMailingList(req, committeeUids) : new Map<string, CommitteeMailingListRef[]>();
 
     // Enrich each committee with membership metadata; counts come from the indexed resource
     const enriched = committeeUids.map((uid) => {
@@ -1509,6 +1515,7 @@ export class CommitteeService {
         category: committee.category || membership.committee_category || '',
         total_members: committee.total_members ?? 0,
         has_mailing_list: committeesWithMailingList.has(uid),
+        mailing_lists: committeesWithMailingList.get(uid) ?? [],
         my_role: membership.role,
         my_member_uid: membership.member_uid,
       } as MyCommittee;
@@ -2624,9 +2631,9 @@ export class CommitteeService {
    * UIDs are chunked at 100 per request for URL-length safety; batches run concurrently
    * via Promise.allSettled so a single chunk failure does not suppress the others.
    */
-  private async getCommitteesWithMailingList(req: Request, committeeUids: string[]): Promise<Set<string>> {
+  private async getCommitteesWithMailingList(req: Request, committeeUids: string[]): Promise<Map<string, CommitteeMailingListRef[]>> {
     const unique = [...new Set(committeeUids)].filter(Boolean);
-    if (unique.length === 0) return new Set();
+    if (unique.length === 0) return new Map();
 
     const BATCH_SIZE = 100;
     const batches: string[][] = [];
@@ -2652,12 +2659,17 @@ export class CommitteeService {
       )
     );
 
-    const found = new Set<string>();
+    const found = new Map<string, CommitteeMailingListRef[]>();
     for (const [i, result] of results.entries()) {
       if (result.status === 'fulfilled') {
         for (const ml of result.value) {
           for (const ref of ml.committees ?? []) {
-            if (ref.uid) found.add(ref.uid);
+            if (!ref.uid) continue;
+            const lists = found.get(ref.uid) ?? [];
+            if (!lists.some((l) => l.uid === ml.uid)) {
+              lists.push({ uid: ml.uid, group_name: ml.group_name, is_foundation: ml.is_foundation });
+            }
+            found.set(ref.uid, lists);
           }
         }
       } else {

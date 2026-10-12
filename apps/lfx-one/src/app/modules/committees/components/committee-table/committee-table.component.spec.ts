@@ -186,6 +186,20 @@ describe('CommitteeTableComponent consumer behavior', () => {
     expect(element('[data-testid="committee-row-none"]').textContent).toContain('No channels');
   });
 
+  it('links an associated mailing list to its detail page when the list is known', async () => {
+    await showRows([
+      group({
+        uid: 'listed',
+        has_mailing_list: true,
+        is_foundation: true,
+        mailing_lists: [{ uid: 'ml-1', group_name: 'synthetic-list', is_foundation: true }],
+      }),
+    ]);
+    const link = element('[data-testid="mailing-list-link-listed"]');
+    expect(link.getAttribute('href')).toContain('/foundation/mailing-lists/ml-1');
+    expect(element('[data-testid="committee-row-listed"]').textContent).not.toContain('Mailing list associated');
+  });
+
   it.each(['#general', 'team-chat', 'javascript:alert(1)', 'data:text/html,chat', 'vbscript:msgbox(1)', 'file:///chat', 'ftp://example.com/chat'])(
     'shows chat channel %s as informational text without a destination',
     async (chatChannel) => {
