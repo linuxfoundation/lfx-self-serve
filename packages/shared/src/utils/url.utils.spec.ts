@@ -787,4 +787,11 @@ describe('toSafeExternalHref', () => {
     expect(toSafeExternalHref('not a link')).toBeNull();
     expect(toSafeExternalHref('')).toBeNull();
   });
+
+  it('refuses links to private, loopback and local hosts', () => {
+    expect(toSafeExternalHref('http://192.168.1.1/admin')).toBeNull();
+    expect(toSafeExternalHref('10.0.0.5/dashboard')).toBeNull();
+    expect(toSafeExternalHref('http://127.0.0.1:8080')).toBeNull();
+    expect(toSafeExternalHref('https://intranet.localhost/x')).toBeNull();
+  });
 });

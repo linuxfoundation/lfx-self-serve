@@ -977,7 +977,8 @@ export function getUrlHostname(url: string | null | undefined): string | null {
 /**
  * A user-entered link made safe to put in an `href`: an absolute http(s) URL as it is, or a bare
  * `host/path` or `host:port/path` (no scheme, as organizers often paste) given `https://`. Anything else (another
- * scheme, or no recognisable host) is `null`, and is rendered as text rather than a link.
+ * scheme, no recognisable host, or a private / loopback host) is `null`, and is rendered as text
+ * rather than a link.
  */
 export function toSafeExternalHref(link: string | null | undefined): string | null {
   const trimmed = link?.trim();
@@ -991,6 +992,12 @@ export function toSafeExternalHref(link: string | null | undefined): string | nu
   try {
     const parsed = new URL(candidate);
     if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || !parsed.hostname.includes('.')) {
+      return null;
+    }
+    // A link must not point at the viewer's own network (a router, an internal service, loopback):
+    // the click would carry that service's ambient credentials. Same guard as the app's other
+    // outbound URLs (`isPrivateHost`).
+    if (isPrivateHost(parsed.hostname)) {
       return null;
     }
     return parsed.href;
