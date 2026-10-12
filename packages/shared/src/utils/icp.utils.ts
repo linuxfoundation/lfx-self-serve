@@ -425,9 +425,16 @@ export function validateIcpEnvelope(candidate: unknown): IcpValidationResult {
   }
 
   errors.push(...validateStructure(envelope.structure, documentMarkdown));
-  errors.push(...validateInputs(envelope.inputs));
-  errors.push(...validateIntake(envelope.intake));
-  errors.push(...validateEmptyIntakeLog(envelope.intake, envelope.inputs));
+  const inputsErrors = validateInputs(envelope.inputs);
+  const intakeErrors = validateIntake(envelope.intake);
+  errors.push(...inputsErrors, ...intakeErrors);
+
+  // The cross-field guard reads both records, so it only runs once both shapes
+  // are known-good — the agent's own zod `superRefine` behaves the same way,
+  // and a shape error already explains why the envelope was rejected.
+  if (inputsErrors.length === 0 && intakeErrors.length === 0) {
+    errors.push(...validateEmptyIntakeLog(envelope.intake as IcpEnvelope['intake'], envelope.inputs as IcpEnvelope['inputs']));
+  }
 
   return { valid: errors.length === 0, errors };
 }
@@ -525,16 +532,11 @@ function validateInputs(inputs: unknown): string[] {
  * only when there was no interviewee (`prefill`) or the run was grounded in
  * attached existing documents. A form or conversational run with no documents
  * must carry Paul's interview answers — the log is the document's provenance
- * record. Shape errors on either side are already reported by
- * `validateIntake` / `validateInputs`, so this only speaks when both parse.
+ * record. Expects records that already passed `validateIntake` and
+ * `validateInputs`; the caller skips this gate otherwise.
  */
-function validateEmptyIntakeLog(intake: unknown, inputs: unknown): string[] {
-  const intakeRecord = (typeof intake === 'object' && intake !== null ? intake : {}) as Partial<IcpEnvelope['intake']>;
-  const inputsRecord = (typeof inputs === 'object' && inputs !== null ? inputs : {}) as Partial<IcpEnvelope['inputs']>;
-  if (!Array.isArray(intakeRecord.answers) || intakeRecord.answers.length > 0) {
-    return [];
-  }
-  if (intakeRecord.mode === 'prefill' || inputsRecord.existing_documents_provided === true) {
+function validateEmptyIntakeLog(intake: IcpEnvelope['intake'], inputs: IcpEnvelope['inputs']): string[] {
+  if (intake.answers.length > 0 || intake.mode === 'prefill' || inputs.existing_documents_provided) {
     return [];
   }
   return ['intake.answers may be empty only in a prefill run or when existing documents were provided'];

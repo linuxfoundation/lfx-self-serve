@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ICP_FORM_TYPE,
   ICP_GAP_FILL_QUESTIONS,
+  ICP_INTAKE_MODES,
   ICP_KEY_PREFIX,
   ICP_Q_GITHUB_URL,
   ICP_Q_PROJECT_NAME,
@@ -425,6 +426,21 @@ describe('validateIcpEnvelope', () => {
     const result = validateIcpEnvelope(envelope({ intake: { mode: 'batch', completed_at: '2026-09-10T12:00:00Z', answers: [] } as never }));
     expect(result.valid).toBe(false);
     expect(result.errors.some((error) => error.includes('intake.mode'))).toBe(true);
+  });
+
+  it('keeps the cross-field guard quiet while a shape gate already explains the rejection', () => {
+    const crossField = 'intake.answers may be empty only in a prefill run or when existing documents were provided';
+    const emptyLog: IcpEnvelope['intake'] = { mode: 'form', completed_at: '2026-09-10T12:00:00Z', answers: [] };
+
+    const badMode = validateIcpEnvelope(envelope({ intake: { ...emptyLog, mode: 'batch' } as never }));
+    expect(badMode.valid).toBe(false);
+    expect(badMode.errors.filter((error) => error.startsWith('intake.'))).toEqual([`intake.mode must be one of: ${ICP_INTAKE_MODES.join(', ')}`]);
+    expect(badMode.errors).not.toContain(crossField);
+
+    const badInputs = validateIcpEnvelope(envelope({ intake: emptyLog, inputs: 'x' as never }));
+    expect(badInputs.valid).toBe(false);
+    expect(badInputs.errors).toContain('inputs must be an object');
+    expect(badInputs.errors).not.toContain(crossField);
   });
 
   it('rejects a non-object candidate', () => {
