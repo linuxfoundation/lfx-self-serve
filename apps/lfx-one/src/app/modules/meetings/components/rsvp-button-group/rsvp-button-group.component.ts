@@ -305,7 +305,7 @@ export class RsvpButtonGroupComponent {
   }
 
   private rsvpContext(): string {
-    return `${this.meetingUid()}|${this.userService.viewerUsername() ?? this.user()?.email ?? ''}`;
+    return `${this.meetingUid()}|${this.user()?.sub || this.userService.viewerUsername() || this.user()?.email || ''}`;
   }
 
   private formatOccurrenceLabel(occurrenceId: string | undefined): string | null {

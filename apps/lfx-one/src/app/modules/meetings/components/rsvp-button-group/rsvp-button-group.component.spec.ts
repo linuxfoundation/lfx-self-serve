@@ -371,6 +371,31 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
     expect(fixture.componentInstance.responseSaved()).toBe(true);
   });
 
+  it('retains a confirmed answer across late canonical LFID arrival but clears it for another subject', async () => {
+    user.set({ sub: 'synthetic-a', username: 'display-alias', email: 'synthetic@example.com' } as User);
+    const fixture = await mount();
+    flushRead(null);
+    fixture.componentInstance.handleRsvpClick('accepted');
+    dialogClose.next({ confirmed: true, scope: 'all' });
+    http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush(response('accepted', 'all'));
+
+    user.update((current) => ({ ...current, 'https://sso.linuxfoundation.org/claims/username': 'canonical-viewer' }));
+    fixture.detectChanges();
+    TestBed.tick();
+    for (const request of http.match((request) => request.url === `/api/meetings/${MEETING.id}/rsvp/me`)) {
+      if (!request.cancelled) request.flush(null);
+    }
+    expect(fixture.componentInstance.selectedResponse()).toBe('accepted');
+    expect(fixture.componentInstance.responseSaved()).toBe(true);
+
+    user.update((current) => ({ ...current, sub: 'synthetic-b' }));
+    fixture.detectChanges();
+    TestBed.tick();
+    flushRead(null);
+    expect(fixture.componentInstance.selectedResponse()).toBeNull();
+    expect(fixture.componentInstance.responseSaved()).toBe(false);
+  });
+
   it('submits a dialog response when the same date changes from seconds to milliseconds', async () => {
     const fixture = await mount();
     flushRead(null);

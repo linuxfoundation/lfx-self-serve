@@ -97,6 +97,8 @@ export class UserService {
 
 Personal meeting caches use `UserService.viewerUsername`, the canonical-first LFID with an alias-only fallback, as their identity key. Login/logout and impersonation changes tear down upcoming, past, and latest-past replay chains before a new consumer fetches data. The meeting dashboard also reconnects on this identity and clears the previous subject's rows while the replacement request is pending. Lens transitions clear personal rows once when leaving Me, without allowing later inactive personal emissions to erase Foundation/Project results.
 
+Uploaded-avatar resets and confirmed RSVP ownership instead prefer the effective user's stable `sub`, falling back to the canonical-first LFID when absent. A late canonical claim still refreshes personal feeds and ownership comparisons, but does not discard that subject's uploaded avatar or confirmed responses. Login/logout and subject changes keep those values isolated. When a recurring date becomes unresolved, the dashboard filters retained and indexed RSVP candidates to all-date responses before selecting the newest answer, so a newer date-scoped answer cannot hide an older all-date confirmation.
+
 ## 🧩 Component Integration
 
 ### Signal Consumption

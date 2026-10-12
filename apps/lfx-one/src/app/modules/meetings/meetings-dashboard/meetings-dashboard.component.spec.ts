@@ -383,6 +383,35 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     expect(ids(component)).toEqual(['single-date', 'following-dates']);
   });
 
+  it.each(['single', 'this_and_following'] as const)('retains a confirmed all-date answer when a newer %s answer loses its date context', (scope) => {
+    const series = row('series', {
+      recurrence: { type: 1, repeat_interval: 1 },
+      occurrences: [{ occurrence_id: '4071031200', start_time: '2099-01-02T10:00:00Z', duration: 30 }],
+    });
+    const component = mount([series]);
+    component.onRsvpChanged({ ...response('accepted'), meeting_id: series.id, updated_at: '2098-12-31T10:00:00Z' });
+    component.onRsvpChanged({
+      ...response('declined'),
+      meeting_id: series.id,
+      scope,
+      occurrence_id: '4071031200',
+      updated_at: '2098-12-31T11:00:00Z',
+    });
+    respond(component, 'declined');
+    expect(ids(component)).toEqual(['series']);
+
+    users.refreshUserMeetings();
+    http.expectOne('/api/user/meetings').flush([{ ...series, occurrences: [] }]);
+    flush();
+
+    respond(component, 'accepted');
+    expect(ids(component)).toEqual(['series']);
+    expect(component['acceptedCount']()).toBe(1);
+    expect(component['pendingRsvpCount']()).toBe(0);
+    respond(component, 'declined');
+    expect(ids(component)).toEqual([]);
+  });
+
   it('clears the Accepted filter when switching time tabs', () => {
     const component = mount();
     respond(component, 'accepted');
@@ -468,6 +497,31 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     flush();
     expect(ids(component)).toEqual(['series']);
     respond(component, 'pending');
+    expect(ids(component)).toEqual([]);
+  });
+
+  it('retains a confirmed answer across late canonical LFID arrival without sharing it with another subject', () => {
+    users.user.set({ sub: 'synthetic-a', username: 'alias' } as User);
+    flush();
+    const component = mount([pending]);
+    component.onRsvpChanged({ ...response('accepted'), meeting_id: pending.id });
+    respond(component, 'accepted');
+    expect(ids(component)).toEqual([pending.id]);
+
+    users.user.update((user) => ({ ...user!, 'https://sso.linuxfoundation.org/claims/username': 'viewer' }));
+    flush();
+    http.expectOne('/api/user/meetings').flush([pending]);
+    flush();
+    expect(ids(component)).toEqual([pending.id]);
+    respond(component, 'pending');
+    expect(ids(component)).toEqual([]);
+
+    users.user.set({ sub: 'synthetic-b', 'https://sso.linuxfoundation.org/claims/username': 'other-viewer' } as User);
+    flush();
+    http.expectOne('/api/user/meetings').flush([pending]);
+    flush();
+    expect(ids(component)).toEqual([pending.id]);
+    respond(component, 'accepted');
     expect(ids(component)).toEqual([]);
   });
 

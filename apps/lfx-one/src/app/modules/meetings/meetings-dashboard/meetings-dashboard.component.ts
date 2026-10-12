@@ -348,7 +348,7 @@ export class MeetingsDashboardComponent {
   }
   /** Keep a confirmed write visible while the query index catches up. */
   public onRsvpChanged(rsvp: MeetingRsvp): void {
-    const key = `${this.userService.viewerUsername()}\0${rsvp.meeting_id}`;
+    const key = `${this.userService.user()?.sub || this.userService.viewerUsername()}\0${rsvp.meeting_id}`;
     this.confirmedRsvps.update((current) => {
       const next = new Map(current);
       next.set(key, [rsvp, ...(current.get(key) ?? []).filter((saved) => saved.id !== rsvp.id)]);
@@ -735,12 +735,14 @@ export class MeetingsDashboardComponent {
       const meetings = removed.size === 0 ? rows() : rows().filter((meeting) => meeting.organizer || !removed.has(meeting.id));
       const saved = this.confirmedRsvps();
       if (saved.size === 0) return meetings;
-      const viewer = this.userService.viewerUsername();
+      const viewer = this.userService.user()?.sub || this.userService.viewerUsername();
       return meetings.map((meeting) => {
         const confirmed = saved.get(`${viewer}\0${meeting.id}`);
         if (!confirmed) return meeting;
         const candidates = meeting.my_rsvp ? [...confirmed, meeting.my_rsvp] : confirmed;
-        const myRsvp = selectApplicableRsvp(resolveRsvpOccurrenceId(meeting), candidates) ?? selectApplicableRsvp(undefined, candidates);
+        const occurrenceId = resolveRsvpOccurrenceId(meeting);
+        const applicable = meeting.recurrence && !occurrenceId ? candidates.filter((rsvp) => rsvp.scope === 'all') : candidates;
+        const myRsvp = selectApplicableRsvp(occurrenceId, applicable) ?? selectApplicableRsvp(undefined, applicable);
         return { ...meeting, my_rsvp: myRsvp };
       });
     });

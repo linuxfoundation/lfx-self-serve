@@ -90,6 +90,12 @@ export class UserService {
   private userLatestPastMeetings$: Observable<PastMeeting[]> | null = null;
 
   public constructor() {
+    // A late LFID claim changes meeting identity, not the effective subject's uploaded avatar.
+    // Still reset on login/logout and impersonation swaps, including unchanged LFID claims.
+    toObservable(computed(() => this.user()?.sub || this.viewerUsername()))
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
+      .subscribe(() => this.uploadedAvatarUrl.set(null));
+
     // Invalidate cached user-scoped observables when the authenticated user or
     // impersonation changes, so existing subscribers don't see stale data from
     // the previous user. Keyed on the canonical-first meeting identity for both
@@ -98,12 +104,6 @@ export class UserService {
     toObservable(this.viewerUsername)
       .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
       .subscribe(() => {
-        // Drop the previous user's uploaded avatar — impersonation start/stop swaps `user` without
-        // a page reload, and without this reset the new user's sidebar/header would briefly (or
-        // permanently, if they never uploaded one themselves) show the previous user's avatar
-        // until/unless a fresh post-hydration fetch happens to overwrite it (LFXV2-2628).
-        this.uploadedAvatarUrl.set(null);
-
         // Tear down the old chains first — their shareReplay keeps the source alive under
         // refCount:false, so nulling the field alone would leave them subscribed to refresh$.
         this.userMeetingsDestroy$.next();

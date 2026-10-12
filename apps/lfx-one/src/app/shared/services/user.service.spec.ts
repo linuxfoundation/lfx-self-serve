@@ -131,6 +131,30 @@ describe('UserService', () => {
     expect(service.uploadedAvatarUrl()).toBe('https://cdn.example.com/fresh-upload.png');
   });
 
+  it('retains an uploaded avatar when the same subject gains its canonical LFID', async () => {
+    service.user.set({ sub: 'synthetic-subject', username: 'display-alias', picture: 'https://cdn.example.com/claim.png' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+    service.uploadedAvatarUrl.set('https://cdn.example.com/upload.png');
+
+    service.user.update((user) => ({ ...user!, 'https://sso.linuxfoundation.org/claims/username': 'canonical' }));
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(service.viewerUsername()).toBe('canonical');
+    expect(service.effectiveAvatarUrl()).toBe('https://cdn.example.com/upload.png');
+  });
+
+  it('clears the uploaded avatar when the subject changes with unchanged LFID claims', async () => {
+    service.user.set({ sub: 'synthetic-a', username: 'alias', 'https://sso.linuxfoundation.org/claims/username': 'canonical' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+    service.uploadedAvatarUrl.set('https://cdn.example.com/upload.png');
+
+    service.user.update((user) => ({ ...user!, sub: 'synthetic-b', picture: 'https://cdn.example.com/other.png' }));
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(service.uploadedAvatarUrl()).toBeNull();
+    expect(service.effectiveAvatarUrl()).toBe('https://cdn.example.com/other.png');
+  });
+
   it('resets the uploaded avatar when the user changes, so an impersonation swap cannot inherit it', async () => {
     service.user.set({ username: 'alice', picture: 'https://cdn.auth0.com/alice.png' } as User);
     // Flush before setting the upload — otherwise this synchronous test would batch both user.set
