@@ -140,24 +140,11 @@ export class SidebarComponent {
   );
 
   /**
-   * Track keys of the items with `activeAliases` that the current address highlights. Those items
+   * `true` by track key for each item with `activeAliases` that the current address highlights. Those items
    * are highlighted here rather than by `routerLinkActive`, which only knows the item's own link:
    * left to both, `routerLinkActive` would strip the classes this adds on every navigation.
    */
-  protected readonly aliasHighlightedKeys: Signal<ReadonlySet<string>> = computed(() => {
-    this.navigatedUrl();
-    const keys = new Set<string>();
-    const scan = (items: DecoratedSidebarMenuItem[]): void => {
-      for (const item of items) {
-        const links = item.routerLink && item.activeAliases?.length ? [item.routerLink, ...item.activeAliases] : [];
-        if (links.some((link) => this.router.isActive(link, item.activeMatchOptions))) keys.add(item.trackKey);
-        if (item.items) scan(item.items);
-      }
-    };
-    scan(this.itemsWithTestIds());
-    scan(this.footerItemsWithTestIds());
-    return keys;
-  });
+  protected readonly aliasHighlightedKeys: Signal<Readonly<Record<string, boolean>>> = this.initAliasHighlightedKeys();
 
   // Paired with items ref so lens switches auto-reset group expansion without needing an effect().
   private readonly expandedGroupOverrides = signal<{ itemsRef: SidebarMenuItem[]; overrides: Record<string, boolean> }>({
@@ -308,6 +295,23 @@ export class SidebarComponent {
       }
 
       return [toTag(this.personaService.currentPersona())];
+    });
+  }
+
+  private initAliasHighlightedKeys(): Signal<Readonly<Record<string, boolean>>> {
+    return computed(() => {
+      this.navigatedUrl();
+      const keys: Record<string, boolean> = {};
+      const scan = (items: DecoratedSidebarMenuItem[]): void => {
+        for (const item of items) {
+          const links = item.routerLink && item.activeAliases?.length ? [item.routerLink, ...item.activeAliases] : [];
+          if (links.some((link) => this.router.isActive(link, item.activeMatchOptions))) keys[item.trackKey] = true;
+          if (item.items) scan(item.items);
+        }
+      };
+      scan(this.itemsWithTestIds());
+      scan(this.footerItemsWithTestIds());
+      return keys;
     });
   }
 

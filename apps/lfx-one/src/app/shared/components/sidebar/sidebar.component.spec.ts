@@ -138,7 +138,7 @@ describe('SidebarComponent — link-active options (#3358)', () => {
   const peopleOptions = (): IsActiveMatchOptions => decorated[0].activeMatchOptions;
   const easyclaOptions = (): IsActiveMatchOptions | undefined => decorated[1].items?.[0]?.activeMatchOptions;
   const isActive = (link: string, options: IsActiveMatchOptions | undefined): boolean => !!options && router.isActive(link, options);
-  const highlightedByAlias = (item: { trackKey: string } | undefined): boolean => !!item && component['aliasHighlightedKeys']().has(item.trackKey);
+  const highlightedByAlias = (item: { trackKey: string } | undefined): boolean => !!item && !!component['aliasHighlightedKeys']()[item.trackKey];
 
   it('matches exact paths by default and subpaths only for an item that opts in, at any depth', () => {
     expect(peopleOptions()).toEqual({ paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' });
