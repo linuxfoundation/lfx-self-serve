@@ -170,7 +170,7 @@ export class MeetingMaterialsDrawerComponent {
     this.categoryForm.removeControl(this.fileCategoryKey(id));
   }
 
-  /** The form key holding a pending file's category. */
+  /** The form key holding a pending file's category (the template builds the same `file-<id>` key inline). */
   public fileCategoryKey(id: string): string {
     return `file-${id}`;
   }

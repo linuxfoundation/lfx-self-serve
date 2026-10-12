@@ -131,6 +131,30 @@ describe('MeetingMaterialsDrawerComponent categories', () => {
     expect(component.categoryForm.contains(component.fileCategoryKey(kept))).toBe(true);
   });
 
+  // The template's own wiring: each select bound to its control, and every category shown back.
+  it('renders a category select per pending file and shows existing categories', async () => {
+    meetingService['getMeetingAttachments'].mockReturnValue(
+      of([
+        created({ uid: 'f1', type: 'file', name: 'Minutes', file_name: 'minutes.pdf', category: 'Meeting Minutes' }),
+        created({ uid: 'l1', category: 'Presentation' }),
+      ])
+    );
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const body = document.body;
+    expect(body.querySelector('[data-testid="existing-file-category-f1"]')?.textContent?.trim()).toBe('Meeting Minutes');
+    expect(body.querySelector('[data-testid="existing-link-category-l1"]')?.textContent?.trim()).toBe('Presentation');
+    expect(body.querySelector('[data-testid="new-link-category-select"]')).not.toBeNull();
+
+    const id = addFile('agenda.pdf');
+    fixture.detectChanges();
+
+    expect(body.querySelector(`[data-testid="pending-category-${id}"]`)).not.toBeNull();
+  });
+
   it('sends the category to the past-meeting endpoints too', () => {
     fixture.componentRef.setInput('meetingId', undefined);
     fixture.componentRef.setInput('pastMeetingId', 'meeting-1-1700000000000');

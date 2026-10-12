@@ -60,9 +60,9 @@
                 <lfx-select
                   class="ml-auto w-40 flex-shrink-0"
                   [form]="categoryForm"
-                  [control]="fileCategoryKey(attachment.id)"
+                  [control]="'file-' + attachment.id"
                   [options]="categoryOptions"
-                  ariaLabel="Category"
+                  [ariaLabel]="'Category for ' + attachment.fileName"
                   styleClass="w-full"
                   [attr.data-testid]="'pending-category-' + attachment.id" />
                 <button
