@@ -1534,9 +1534,9 @@ export class MeetingJoinComponent implements OnInit {
       if (!rsvp) return null;
       switch (rsvp.response_type) {
         case 'accepted':
-          return 'Yes';
+          return 'Going';
         case 'declined':
-          return 'No';
+          return 'Not going';
         case 'maybe':
           return 'Maybe';
         default:

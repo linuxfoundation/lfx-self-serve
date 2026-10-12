@@ -178,7 +178,8 @@ export function selectApplicableRsvp(occurrenceId: string | null | undefined, us
  */
 export function retainConfirmedRsvp(retained: MeetingRsvp[], rsvp: MeetingRsvp): MeetingRsvp[] {
   const others = retained.filter((saved) => saved.id !== rsvp.id);
-  const newestMs = others.reduce((newest, saved) => {
+  // Include the copy being replaced: an update acknowledgement can reuse its id without a newer timestamp.
+  const newestMs = retained.reduce((newest, saved) => {
     const savedMs = getRsvpTimestampMs(saved);
     return Number.isFinite(savedMs) && savedMs > newest ? savedMs : newest;
   }, -Infinity);

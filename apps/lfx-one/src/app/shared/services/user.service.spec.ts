@@ -84,6 +84,26 @@ describe('UserService', () => {
     previousSubscriptions.forEach((subscription) => subscription.unsubscribe());
   });
 
+  it('isolates past personal feeds when the subject changes without LFID claims', async () => {
+    const feeds = [() => service.getUserPastMeetings(), () => service.getUserLatestPastMeetings()];
+    httpGet.mockImplementation((url: string) => of(url.startsWith('/api/user/') ? [{ id: 'synthetic-a-meeting' }] : { profile: {} }));
+    service.user.set({ sub: 'synthetic-a' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+    feeds.forEach((getFeed) => getFeed().subscribe().unsubscribe());
+
+    httpGet.mockImplementation((url: string) => of(url.startsWith('/api/user/') ? [{ id: 'synthetic-b-meeting' }] : { profile: {} }));
+    service.user.set({ sub: 'synthetic-b' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    for (const getFeed of feeds) {
+      let rows: string[] = [];
+      getFeed()
+        .subscribe((meetings) => (rows = meetings.map((meeting) => meeting.id)))
+        .unsubscribe();
+      expect(rows).toEqual(['synthetic-b-meeting']);
+    }
+  });
+
   it('refetches a primed personal feed on return after an inactive-lens response without fetching while inactive', () => {
     const pending = { id: 'synthetic-meeting', is_invite_responses_enabled: true, my_rsvp: null } as Meeting;
     const accepted = { ...pending, my_rsvp: { response_type: 'accepted', scope: 'all' } } as Meeting;

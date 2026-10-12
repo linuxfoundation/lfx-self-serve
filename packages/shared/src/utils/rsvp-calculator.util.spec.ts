@@ -607,9 +607,13 @@ describe('retainConfirmedRsvp', () => {
     expect(retainConfirmedRsvp([allDates], single)).toEqual([single, allDates]);
   });
 
-  it('replaces an earlier copy of the same response', () => {
+  it('replaces an earlier copy of the same response, stamped after it when the acknowledgement reuses its timestamp', () => {
     const changed = { ...single, response_type: 'declined' as const };
-    expect(retainConfirmedRsvp([single, allDates], changed)).toEqual([changed, allDates]);
+    const retained = retainConfirmedRsvp([single, allDates], changed);
+
+    expect(retained).toEqual([{ ...changed, modified_at: '2026-07-11T00:00:00.001Z' }, allDates]);
+    // The superseded copy can still resurface from the card or roster index; the update must win the tie.
+    expect(selectApplicableRsvp(OCC_AUG_11_SECONDS, [single, ...retained])?.response_type).toBe('declined');
   });
 
   it('lets a new all-dates answer supersede every retained answer, across registrations', () => {

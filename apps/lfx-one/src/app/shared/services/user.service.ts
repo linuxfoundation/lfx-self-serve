@@ -123,10 +123,11 @@ export class UserService {
 
     // Invalidate cached user-scoped observables when the authenticated user or
     // impersonation changes, so existing subscribers don't see stale data from
-    // the previous user. Keyed on the canonical-first meeting identity for both
-    // login/logout and impersonation start/stop. Skip the initial emission since
-    // the caches are lazy-initialized and haven't been populated yet.
-    toObservable(this.viewerUsername)
+    // the previous user. Keyed on both the subject and the canonical-first meeting
+    // identity, so subject swaps without LFID claims and late LFID resolution both
+    // invalidate every personal feed. Skip the initial emission since the caches
+    // are lazy-initialized and haven't been populated yet.
+    toObservable(computed(() => `${this.user()?.sub ?? ''}\0${this.viewerUsername() ?? ''}`))
       .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
       .subscribe(() => {
         // Tear down the old chains first — their shareReplay keeps the source alive under
