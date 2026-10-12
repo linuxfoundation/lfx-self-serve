@@ -119,7 +119,7 @@ export function getCommitteeMailingListLink(
     return {
       commands: getMailingListCommands({ uid: list.uid, is_foundation: committee.is_foundation }),
       queryParams,
-      label: list.title || list.group_name || 'Mailing list',
+      label: list.title || list.group_name || null,
     };
   }
 

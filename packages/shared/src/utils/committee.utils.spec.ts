@@ -660,12 +660,12 @@ describe('getCommitteeMailingListLink', () => {
     ]);
   });
 
-  it('labels with the title, then group name, then a generic fallback', () => {
+  it('labels with the title, then group name, and is null when the name is unknown', () => {
     const label = (ml: { uid: string; group_name: string; title?: string }) =>
       getCommitteeMailingListLink({ uid: 'c1', is_foundation: false, mailing_lists: [ml] })?.label;
     expect(label({ uid: 'ml-1', group_name: 'dev', title: 'Developers' })).toBe('Developers');
     expect(label({ uid: 'ml-1', group_name: 'dev', title: '' })).toBe('dev');
-    expect(label({ uid: 'ml-1', group_name: '' })).toBe('Mailing list');
+    expect(label({ uid: 'ml-1', group_name: '' })).toBeNull();
   });
 
   it('links several lists to the group page', () => {

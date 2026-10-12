@@ -14,8 +14,8 @@ export interface CommitteeMailingListLink {
   commands: string[];
   /** `?project=` for the link — present only when the committee carries a `project_slug`. */
   queryParams: { project: string } | null;
-  /** Link text, e.g. the list name for one list or "N mailing lists" for several. */
-  label: string;
+  /** Tooltip text: the list name for one list or "N mailing lists" for several; `null` when the name is unknown. */
+  label: string | null;
 }
 
 /**
