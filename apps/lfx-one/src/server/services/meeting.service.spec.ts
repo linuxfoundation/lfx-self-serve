@@ -36,6 +36,9 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   maskEmailForLogs: (await vi.importActual<typeof import('@lfx-one/shared/utils/email.utils')>('@lfx-one/shared/utils/email.utils')).maskEmailForLogs,
   buildRecurrenceNeverEndDate: vi.fn(),
   getPastMeetingTranscriptUrl: vi.fn(),
+  // The real measurement, so the recording response is checked with the duration it actually carries.
+  getRecordingDurationSeconds: (await vi.importActual<typeof import('@lfx-one/shared/utils/past-meeting.utils')>('@lfx-one/shared/utils/past-meeting.utils'))
+    .getRecordingDurationSeconds,
   // Intentionally a light behavioral double, not a frozen copy meant to track the real predicate:
   // it only needs to exercise the placeholder-vs-blank branch in this file's dedup tests. The
   // predicate's own placeholder-token coverage lives in meeting.utils.spec.ts — a future token
@@ -296,6 +299,34 @@ describe('MeetingService past-meeting artifacts (E4-01)', () => {
     const upstream = Object.assign(new Error('query service unavailable'), { statusCode: 503 });
     proxyRequest.mockRejectedValueOnce(upstream);
     await expect(service[method](req, 'meeting-1-1700000000000')).rejects.toBe(upstream);
+  });
+});
+
+describe('MeetingService.getPastMeetingRecording duration (E4-02)', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('attaches the measured length of the linked session, or null when it cannot be measured', async () => {
+    const session = { start_time: '2026-07-16T10:00:00Z', share_url: 'https://zoom.example/r', total_size: 9, uuid: 's' };
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        {
+          data: {
+            uid: 'r',
+            sessions: [session],
+            recording_files: [{ file_type: 'MP4', recording_start: '2026-07-16T10:00:00Z', recording_end: '2026-07-16T10:58:24Z' }],
+          },
+        },
+      ],
+    });
+    await expect(service.getPastMeetingRecording(req, 'meeting-1-1700000000000')).resolves.toMatchObject({ duration_seconds: 58 * 60 + 24 });
+
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: { uid: 'r', sessions: [session], recording_files: [] } }] });
+    await expect(service.getPastMeetingRecording(req, 'meeting-1-1700000000000')).resolves.toMatchObject({ duration_seconds: null });
   });
 });
 

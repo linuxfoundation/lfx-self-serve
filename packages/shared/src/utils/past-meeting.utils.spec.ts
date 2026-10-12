@@ -3,8 +3,10 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { EnrichedPastMeetingParticipant, PastMeetingRecording, RecordingSession } from '../interfaces';
+import { EnrichedPastMeetingParticipant, PastMeetingRecording, RecordingFile, RecordingSession } from '../interfaces';
 import {
+  formatRecordingDuration,
+  getRecordingDurationSeconds,
   filterPastMeetingParticipants,
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
@@ -260,5 +262,85 @@ describe('getLargestSessionShareUrl', () => {
   it('returns null when the largest session has an empty share URL, even if a smaller one has one', () => {
     const rec = recording([session({ total_size: 100, share_url: 'https://small.example' }), session({ total_size: 500, share_url: '' })]);
     expect(getLargestSessionShareUrl(rec)).toBeNull();
+  });
+});
+
+describe('getRecordingDurationSeconds', () => {
+  const session = (start: string, size: number): RecordingSession => ({
+    start_time: start,
+    share_url: `https://zoom.example/${size}`,
+    total_size: size,
+    uuid: `s-${size}`,
+  });
+  const file = (type: string, start: string, end: string): RecordingFile => ({
+    id: `${type}-${start}`,
+    download_url: '',
+    play_url: '',
+    file_size: 1,
+    file_type: type,
+    recording_type: 'shared_screen_with_speaker_view',
+    recording_start: start,
+    recording_end: end,
+    status: 'completed',
+    platform_meeting_id: '1',
+  });
+  const recording = (sessions: RecordingSession[], files: RecordingFile[]): PastMeetingRecording =>
+    ({
+      uid: 'r',
+      past_meeting_id: 'p',
+      platform: 'Zoom',
+      platform_meeting_id: '1',
+      recording_count: files.length,
+      recording_files: files,
+      sessions,
+      total_size: 0,
+      created_at: '',
+      updated_at: '',
+    }) as PastMeetingRecording;
+
+  // Two sessions (the meeting was restarted): only the largest, which Watch recording opens, is measured.
+  const multiSession = recording(
+    [session('2026-07-16T09:00:00Z', 100), session('2026-07-16T10:00:00Z', 900)],
+    [
+      file('MP4', '2026-07-16T09:00:05Z', '2026-07-16T09:20:05Z'),
+      file('MP4', '2026-07-16T10:00:10Z', '2026-07-16T10:58:34Z'),
+      file('M4A', '2026-07-16T10:00:00Z', '2026-07-16T10:58:24Z'),
+      file('CHAT', '2026-07-16T10:00:00Z', '2026-07-16T12:00:00Z'),
+      file('TRANSCRIPT', '2026-07-16T10:00:00Z', '2026-07-16T12:00:00Z'),
+    ]
+  );
+
+  it("measures only the largest session's media files, from their earliest start to their latest end", () => {
+    // 10:00:00 (M4A) to 10:58:34 (MP4): chat, transcript and the first session's file are left out.
+    expect(getRecordingDurationSeconds(multiSession)).toBe(58 * 60 + 34);
+  });
+
+  it('measures the first session when it is the largest, ignoring the later one', () => {
+    const firstLargest = recording([session('2026-07-16T09:00:00Z', 900), session('2026-07-16T10:00:00Z', 100)], multiSession.recording_files);
+    expect(getRecordingDurationSeconds(firstLargest)).toBe(20 * 60);
+  });
+
+  it('returns null rather than guessing without media files, times, or sessions', () => {
+    expect(
+      getRecordingDurationSeconds(recording([session('2026-07-16T10:00:00Z', 1)], [file('CHAT', '2026-07-16T10:00:00Z', '2026-07-16T11:00:00Z')]))
+    ).toBeNull();
+    expect(getRecordingDurationSeconds(recording([session('2026-07-16T10:00:00Z', 1)], [file('MP4', 'not a time', '2026-07-16T11:00:00Z')]))).toBeNull();
+    expect(getRecordingDurationSeconds(recording([], []))).toBeNull();
+    expect(getRecordingDurationSeconds(null)).toBeNull();
+  });
+});
+
+describe('formatRecordingDuration', () => {
+  it('reads m:ss under an hour and h:mm:ss from an hour', () => {
+    expect(formatRecordingDuration(58 * 60 + 24)).toBe('58:24');
+    expect(formatRecordingDuration(65)).toBe('1:05');
+    expect(formatRecordingDuration(3600 + 2 * 60 + 3)).toBe('1:02:03');
+    expect(formatRecordingDuration(0)).toBe('0:00');
+  });
+
+  it('returns null for a missing or invalid length', () => {
+    expect(formatRecordingDuration(null)).toBeNull();
+    expect(formatRecordingDuration(undefined)).toBeNull();
+    expect(formatRecordingDuration(-1)).toBeNull();
   });
 });

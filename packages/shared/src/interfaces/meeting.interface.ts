@@ -1543,6 +1543,11 @@ export interface PastMeetingRecording {
   sessions: RecordingSession[];
   /** Total size of all recordings in bytes */
   total_size: number;
+  /**
+   * Length in seconds of the linked (largest) session, derived by the BFF from its media files
+   * (`getRecordingDurationSeconds`, E4-02); `null` when it cannot be measured.
+   */
+  duration_seconds?: number | null;
   /** Creation timestamp */
   created_at: string;
   /** Last update timestamp */

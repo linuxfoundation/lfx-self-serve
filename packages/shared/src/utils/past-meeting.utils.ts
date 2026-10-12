@@ -24,6 +24,64 @@ export function getLargestSessionShareUrl(recording: PastMeetingRecording | null
   return largest.share_url || null;
 }
 
+/** Recording file types that carry the meeting's media, as opposed to chat, transcripts or captions. */
+const RECORDING_MEDIA_FILE_TYPES = new Set(['MP4', 'M4A']);
+
+/**
+ * The length in seconds of the session `getLargestSessionShareUrl` opens (E4-02, #3256): the span from
+ * the earliest start to the latest end of that session's media files (MP4 / M4A).
+ * @description Sessions carry a start but no end, and files carry no session id, so a file belongs to
+ * the session whose start is the latest one at or before the file's own start. A multi-session
+ * recording therefore measures only the linked (largest) session, never the sum of all of them.
+ * `null` rather than a guess when that session has no media file with valid times.
+ */
+export function getRecordingDurationSeconds(recording: PastMeetingRecording | null | undefined): number | null {
+  if (!recording?.sessions?.length) {
+    return null;
+  }
+  const largest = recording.sessions.reduce((a, b) => (b.total_size > a.total_size ? b : a));
+  const sessionStarts = recording.sessions
+    .map((session) => Date.parse(session.start_time))
+    .filter((start) => Number.isFinite(start))
+    .sort((a, b) => a - b);
+  const largestStart = Date.parse(largest.start_time);
+  if (!Number.isFinite(largestStart)) {
+    return null;
+  }
+  const nextStart = sessionStarts.find((start) => start > largestStart) ?? Number.POSITIVE_INFINITY;
+
+  let earliest = Number.POSITIVE_INFINITY;
+  let latest = Number.NEGATIVE_INFINITY;
+  for (const file of recording.recording_files ?? []) {
+    if (!RECORDING_MEDIA_FILE_TYPES.has((file.file_type ?? '').toUpperCase())) {
+      continue;
+    }
+    const start = Date.parse(file.recording_start);
+    const end = Date.parse(file.recording_end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start || start < largestStart || start >= nextStart) {
+      continue;
+    }
+    earliest = Math.min(earliest, start);
+    latest = Math.max(latest, end);
+  }
+  if (!Number.isFinite(earliest) || !Number.isFinite(latest)) {
+    return null;
+  }
+  return Math.round((latest - earliest) / 1000);
+}
+
+/** A recording length as the prototype shows it: `m:ss` under an hour, `h:mm:ss` from an hour. */
+export function formatRecordingDuration(seconds: number | null | undefined): string | null {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds) || seconds < 0) {
+    return null;
+  }
+  const total = Math.round(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = String(total % 60).padStart(2, '0');
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${secs}` : `${minutes}:${secs}`;
+}
+
 // Past-meeting sub-resources are keyed by meeting_and_occurrence_id; project-scoped lists may
 // still expose a distinct id while Me-lens rows normalize id to the composite value.
 export function getPastMeetingResourceId(meeting: Pick<PastMeeting, 'id' | 'meeting_and_occurrence_id'>): string {

@@ -46,6 +46,7 @@ import {
 import {
   buildRecurrenceNeverEndDate,
   getPastMeetingTranscriptUrl,
+  getRecordingDurationSeconds,
   isMeetingAttendeeListShared,
   isShowMeetingAttendeesLocked,
   isUnresolvableParticipantName,
@@ -1503,7 +1504,8 @@ export class MeetingService {
       return null;
     }
 
-    return resources[0].data;
+    // Measured here so every client reads one duration (E4-02); null when it cannot be measured.
+    return { ...resources[0].data, duration_seconds: getRecordingDurationSeconds(resources[0].data) };
   }
 
   /**
