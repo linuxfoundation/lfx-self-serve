@@ -155,6 +155,29 @@ describe('MeetingMaterialsDrawerComponent categories', () => {
     expect(body.querySelector(`[data-testid="pending-category-${id}"]`)).not.toBeNull();
   });
 
+  // drawer-pattern.md § Dialog semantics: a named modal dialog, focus moved in on open and handed back on close.
+  it('opens as a named dialog, focuses its title, and hands focus back on close', async () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const dialog = document.body.querySelector('[role="dialog"][aria-modal="true"]');
+    expect(dialog?.getAttribute('aria-labelledby')).toBe(component.titleId);
+    expect(document.activeElement?.id).toBe(component.titleId);
+
+    component.visible.set(false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(document.activeElement).toBe(trigger);
+    trigger.remove();
+  });
+
   it('sends the category to the past-meeting endpoints too', () => {
     fixture.componentRef.setInput('meetingId', undefined);
     fixture.componentRef.setInput('pastMeetingId', 'meeting-1-1700000000000');

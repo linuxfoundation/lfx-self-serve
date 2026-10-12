@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, model, output, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, ElementRef, inject, input, model, output, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormRecord } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -26,7 +27,7 @@ import { generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayNa
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, from, map, mergeMap, of, skip, switchMap, take, tap, toArray } from 'rxjs';
+import { catchError, filter, from, map, mergeMap, of, skip, switchMap, take, tap, toArray } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting-materials-drawer',
@@ -39,6 +40,13 @@ export class MeetingMaterialsDrawerComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
+  /** Several drawers can share a page (one per meeting card), so each title id is unique. */
+  private static nextTitleId = 0;
+  /** The title: the dialog's `aria-labelledby` target, and where focus lands on open. */
+  private readonly titleRef = viewChild<ElementRef<HTMLHeadingElement>>('drawerTitle');
+  /** What opened the drawer, so every close hands focus back to it. */
+  private drawerTrigger: HTMLElement | null = null;
 
   /** ID of a scheduled meeting. Leave undefined when using pastMeetingId for past-meeting mode. */
   public readonly meetingId = input<string>();
@@ -51,6 +59,12 @@ export class MeetingMaterialsDrawerComponent {
   // === Constants ===
   public readonly acceptString = generateAcceptString();
   public readonly MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_BYTES;
+  public readonly titleId = `meeting-materials-drawer-title-${MeetingMaterialsDrawerComponent.nextTitleId++}`;
+  /**
+   * `p-drawer` announces as an unnamed `complementary` landmark otherwise, even modal
+   * (docs/architecture/frontend/drawer-pattern.md § Dialog semantics).
+   */
+  public readonly drawerPt = { root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': this.titleId } };
   public readonly categoryOptions = MEETING_ATTACHMENT_CATEGORY_OPTIONS;
 
   // === Forms ===
@@ -119,6 +133,23 @@ export class MeetingMaterialsDrawerComponent {
 
   public constructor() {
     this.attachments$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
+    // Hand focus back on every close path: PrimeNG emits `onHide` only for its own Escape and mask
+    // closes, not for the close button or a save, which set `visible` themselves.
+    toObservable(this.visible)
+      .pipe(
+        filter((visible) => !visible),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.restoreFocus());
+  }
+
+  /** `p-drawer` never moves focus in on open: capture the trigger, then land on the title. */
+  public onDrawerShow(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    this.drawerTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    this.titleRef()?.nativeElement.focus();
   }
 
   // === Public Methods ===
@@ -342,6 +373,14 @@ export class MeetingMaterialsDrawerComponent {
   }
 
   // === Private Helpers ===
+  private restoreFocus(): void {
+    const trigger = this.drawerTrigger;
+    this.drawerTrigger = null;
+    if (trigger?.isConnected) {
+      trigger.focus();
+    }
+  }
+
   /** A pending file's chosen category; the default if its control is gone. */
   private fileCategory(id: string): AttachmentCategory {
     return this.categoryForm.controls[this.fileCategoryKey(id)]?.value ?? DEFAULT_MEETING_ATTACHMENT_CATEGORY;
