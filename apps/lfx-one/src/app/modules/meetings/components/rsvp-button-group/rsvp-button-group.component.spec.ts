@@ -78,6 +78,7 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
             refreshUserMeetings: vi.fn(),
             meetingRegistrationGeneration: vi.fn(() => 0),
             recordConfirmedMeetingRsvp: vi.fn(),
+            confirmedMeetingRsvps: vi.fn(() => []),
             isMeetingRsvpCurrent: vi.fn(() => true),
           },
         },
@@ -515,6 +516,18 @@ describe('RsvpButtonGroupComponent — registration lifetime', () => {
     http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush(newResponse);
     expect(remounted.componentInstance.selectedResponse()).toBe('maybe');
     remounted.destroy();
+  });
+
+  it('keeps a saved answer on a recreated control while the index still returns the previous answer', () => {
+    const fixture = mount(meeting, oldResponse);
+    fixture.componentInstance.handleRsvpClick('declined');
+    http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush({ ...oldResponse, response_type: 'declined' });
+    expect(fixture.componentInstance.selectedResponse()).toBe('declined');
+    fixture.destroy();
+
+    const recreated = mount(meeting, oldResponse);
+    expect(recreated.componentInstance.selectedResponse()).toBe('declined');
+    recreated.destroy();
   });
 
   it('shows a successfully saved new-registration answer while supplied and refetched registration metadata is stale', () => {

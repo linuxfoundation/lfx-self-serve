@@ -287,6 +287,11 @@ export class RsvpButtonGroupComponent {
         return null;
       }
       const confirmed = this.confirmedRsvp();
+      // Answers retained across card recreation; outside the personal feed nothing else carries them.
+      const retained = this.userService
+        .confirmedMeetingRsvps(this.meetingUid())
+        .map((rsvp) => this.applicableRsvp(rsvp))
+        .filter((rsvp): rsvp is MeetingRsvp => !!rsvp);
       const supplied = this.applicableRsvp(this.meeting().my_rsvp);
       const fetched = this.fetchedRsvp();
       const occurrenceId = this.resolvedOccurrenceId();
@@ -294,7 +299,7 @@ export class RsvpButtonGroupComponent {
         fetched?.context === this.rsvpContext() && ((!fetched.occurrenceId && !occurrenceId) || isSameOccurrenceId(fetched.occurrenceId, occurrenceId))
           ? this.applicableRsvp(fetched.rsvp)
           : null;
-      const candidates = [confirmed, supplied, fetchedRsvp].filter((rsvp): rsvp is MeetingRsvp => !!rsvp);
+      const candidates = [confirmed, ...retained, supplied, fetchedRsvp].filter((rsvp): rsvp is MeetingRsvp => !!rsvp);
       return selectApplicableRsvp(this.resolvedOccurrenceId(), candidates);
     });
   }

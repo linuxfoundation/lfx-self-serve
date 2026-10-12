@@ -1009,7 +1009,10 @@ export class MeetingCardComponent implements OnInit {
     return computed(() => {
       const meeting = this.rsvpMeeting();
       const supplied = meeting.my_rsvp;
-      const confirmed = this.confirmedRsvps().filter((rsvp) => this.userService.isMeetingRsvpCurrent(rsvp, meeting));
+      // Retained answers outlive this card instance, so a recreated card keeps a successful write too.
+      const confirmed = [...this.confirmedRsvps(), ...this.userService.confirmedMeetingRsvps(meeting.id)].filter((rsvp) =>
+        this.userService.isMeetingRsvpCurrent(rsvp, meeting)
+      );
       return supplied ? [...confirmed, supplied] : confirmed;
     });
   }

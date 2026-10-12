@@ -194,6 +194,7 @@ describe('MeetingJoinComponent', () => {
             meetingRegistrationGeneration: vi.fn(() => 0),
             recordConfirmedMeetingRsvp: vi.fn(),
             clearConfirmedMeetingRsvps: vi.fn(),
+            confirmedMeetingRsvps: vi.fn(() => []),
             isMeetingRsvpCurrent: vi.fn(() => true),
           },
         },

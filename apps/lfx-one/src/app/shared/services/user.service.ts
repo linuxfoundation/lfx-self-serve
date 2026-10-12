@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MessageService } from 'primeng/api';
 import {
   CdpProjectAffiliation,
@@ -99,6 +99,7 @@ export class UserService {
 
   private readonly userMeetingsRefresh$ = new Subject<void>();
   private readonly confirmedMeetingRsvps$ = new BehaviorSubject(new Map<string, MeetingRsvp[]>());
+  private readonly confirmedMeetingRsvpMap = toSignal(this.confirmedMeetingRsvps$, { requireSync: true });
   private readonly endedMeetingRegistrantIds = signal(new Map<string, ReadonlySet<string>>());
   private readonly indexedMeetingRegistrantIds = new Map<string, Set<string>>();
   // Bumped on every successful removal, so a write submitted before it cannot outlive it.
@@ -339,6 +340,15 @@ export class UserService {
     next.set(key, retained);
     this.confirmedMeetingRsvps$.next(next);
     return retained[0];
+  }
+
+  /**
+   * Reactive read of the answers retained for one subject and meeting, newest confirmation first.
+   * Lets surfaces outside the personal feed (recreated cards and controls in Foundation/Project) keep a
+   * successful write while the query index catches up. Callers still filter by registration and date.
+   */
+  public confirmedMeetingRsvps(meetingId: string, subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || ''): MeetingRsvp[] {
+    return (subject && this.confirmedMeetingRsvpMap().get(`${subject}\0${meetingId}`)) || [];
   }
 
   /** End only this subject's registrations after a successful removal, including late write acknowledgements. */

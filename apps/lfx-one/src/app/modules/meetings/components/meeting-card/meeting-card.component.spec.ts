@@ -900,6 +900,22 @@ describe('MeetingCardComponent — RSVP cache freshness', () => {
     }
     if (organizer && success) {
       fixture.destroy();
+      // Recreated in the same lens from a row without `my_rsvp` (as Foundation/Project rows are), while the index is still stale.
+      const sameLens = TestBed.createComponent(MeetingCardComponent);
+      sameLens.componentRef.setInput('meetingInput', meeting);
+      sameLens.detectChanges();
+      for (const block of await sameLens.getDeferBlocks()) {
+        await block.render(DeferBlockState.Complete);
+      }
+      sameLens.detectChanges();
+      for (const request of http.match('/api/meetings/synthetic-rsvp/rsvp/me')) {
+        request.flush(null);
+      }
+      const sameLensButtons = sameLens.debugElement.query(By.directive(RsvpButtonGroupComponent)).componentInstance as RsvpButtonGroupComponent;
+      const sameLensOverview = sameLens.debugElement.query(By.directive(MeetingRsvpDetailsComponent)).componentInstance as MeetingRsvpDetailsComponent;
+      expect(sameLensButtons.selectedResponse()).toBe('accepted');
+      expect(sameLensOverview.acceptedCount()).toBe(1);
+      sameLens.destroy();
       let returningMeeting: Meeting = { ...meeting, my_rsvp: rsvp };
       if (sourceLens !== 'me') {
         subscription.unsubscribe();
