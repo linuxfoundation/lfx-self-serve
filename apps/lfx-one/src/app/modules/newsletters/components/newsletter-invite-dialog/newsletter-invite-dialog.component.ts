@@ -19,8 +19,8 @@ import { map } from 'rxjs';
 
 /**
  * Invite a colleague to a foundation's newsletter (#3483). One field: their company email. Personal
- * mailboxes are caught as you type; whether the domain is a Linux Foundation member's is the
- * server's call. After a send the field clears so the next colleague can be invited right away.
+ * mailboxes are caught as you type; whether the domain belongs to a member of the foundation's
+ * membership (its own, or The Linux Foundation's) is the server's call. After a send the field clears so the next colleague can be invited right away.
  */
 @Component({
   selector: 'lfx-newsletter-invite-dialog',
@@ -39,6 +39,8 @@ export class NewsletterInviteDialogComponent {
   // === Dialog Data ===
   public readonly foundation: MyNewsletterFoundation = (this.config.data as NewsletterInviteDialogData).foundation;
   protected readonly initial = this.foundation.name.charAt(0).toUpperCase();
+  /** Whose member companies can be invited — the card only opens this dialog when the foundation has a newsletter group. */
+  protected readonly membershipName = this.foundation.membership_name ?? this.foundation.name;
 
   // === Forms ===
   public readonly form = this.fb.group({
@@ -98,7 +100,7 @@ export class NewsletterInviteDialogComponent {
   }
 
   // === Private Helpers ===
-  /** Field-level validation messages first (e.g. "acme.example isn't a Linux Foundation member company"), then the envelope. */
+  /** Field-level validation messages first (e.g. "acme.example isn't a member company of The Linux Foundation"), then the envelope. */
   private inviteErrorMessage(error: unknown): string {
     if (error instanceof HttpErrorResponse) {
       const fieldMessage = (error.error as { errors?: { message?: string }[] } | null)?.errors?.[0]?.message;

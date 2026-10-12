@@ -273,6 +273,19 @@ export interface NewsletterFoundationSummary {
   logo_url: string | null;
 }
 
+/**
+ * The project whose active corporate memberships qualify a company for a newsletter's member
+ * benefit: the newsletter's own foundation when it is membership-funded, else The Linux Foundation.
+ */
+export interface NewsletterMembershipScope {
+  /** `project_membership.project_slug` to match. */
+  slug: string;
+  name: string;
+}
+
+/** Why the signed-in user cannot invite from one card. */
+export type MyNewsletterInviteDeniedReason = 'no_company_email' | 'not_member_company' | 'no_newsletter_group' | 'unavailable';
+
 /** One card of the Me-lens My Newsletters grid: a foundation the user receives newsletters from. */
 export interface MyNewsletterFoundation extends NewsletterFoundationSummary {
   /** Sent issues the user received through their current group memberships. */
@@ -280,11 +293,15 @@ export interface MyNewsletterFoundation extends NewsletterFoundationSummary {
   last_sent_at: string | null;
   /** The user's own Newsletter-category group of this foundation, if any — the group invites add to. */
   newsletter_group: NewsletterMemberBenefitGroup | null;
-  /** Inviter is eligible for the member benefit and in this foundation's newsletter group. */
+  /** Inviter is in this foundation's newsletter group and works at a member of {@link membership_name}. */
   can_invite: boolean;
+  /** The organization whose member companies can be invited; null without a newsletter group. */
+  membership_name: string | null;
+  /** Set when `can_invite` is false. */
+  invite_denied_reason?: MyNewsletterInviteDeniedReason;
 }
 
-/** Whether the signed-in user may invite coworkers (needs a verified email at a Linux Foundation member company). */
+/** Whether the signed-in user may invite coworkers from at least one card (each card decides for its own foundation). */
 export interface MyNewsletterInviter {
   eligible: boolean;
   company_name: string | null;
@@ -363,17 +380,24 @@ export interface NewsletterGroupJoinStatus {
   state: NewsletterGroupJoinState;
   group: NewsletterMemberBenefitGroup;
   foundation: NewsletterFoundationSummary;
+  /** The organization the invitee's company must be a member of. */
+  membership_name: string;
   /** `denied` only. */
   denied_reason?: NewsletterMemberBenefitEligibility['denied_reason'];
   /** `eligible` only: the verified work email that will be added. */
   email?: string;
-  /** `eligible` only: the matched Linux Foundation member company. */
+  /** `eligible` only: the matched member company. */
   company_name?: string;
 }
 
-/** A Newsletter-category group the user belongs to, with the foundation it rolls up to (BFF-internal). */
-export interface FoundationNewsletterGroup {
+/** A project resolved to the foundation it rolls up to, with that foundation's membership scope (BFF-internal). */
+export interface ResolvedNewsletterFoundation {
   foundation: NewsletterFoundationSummary;
+  membership: NewsletterMembershipScope;
+}
+
+/** A Newsletter-category group the user belongs to, with the foundation it rolls up to (BFF-internal). */
+export interface FoundationNewsletterGroup extends ResolvedNewsletterFoundation {
   group: NewsletterMemberBenefitGroup;
 }
 

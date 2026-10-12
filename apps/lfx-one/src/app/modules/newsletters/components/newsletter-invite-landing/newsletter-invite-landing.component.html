@@ -53,8 +53,8 @@
                   <h2 class="text-base font-semibold text-gray-900 m-0">Join the {{ join.foundation.name }} newsletter</h2>
                   <p class="text-sm text-gray-600 m-0" data-testid="newsletter-invite-landing-eligible">
                     As an employee of <span class="font-medium text-gray-900">{{ join.company_name }}</span
-                    >, a Linux Foundation member, you can receive the {{ join.foundation.name }} newsletter at no cost. Future issues will be emailed to
-                    <span class="font-medium text-gray-900" data-testid="newsletter-invite-landing-email">{{ join.email }}</span
+                    >, a member of {{ join.membership_name }}, you can receive the {{ join.foundation.name }} newsletter at no cost. Future issues will be
+                    emailed to <span class="font-medium text-gray-900" data-testid="newsletter-invite-landing-email">{{ join.email }}</span
                     >, and every issue includes an unsubscribe link.
                   </p>
                 }
@@ -62,14 +62,14 @@
                   @if (join.denied_reason === 'no_company_email') {
                     <h2 class="text-base font-semibold text-gray-900 m-0">Confirm your company email to join</h2>
                     <p class="text-sm text-gray-600 m-0" data-testid="newsletter-invite-landing-no-company-email">
-                      The {{ join.foundation.name }} newsletter is a benefit for employees of Linux Foundation member companies. Add and verify your company
-                      email address in your profile (it opens in a new tab), then come back here and check again.
+                      The {{ join.foundation.name }} newsletter is a benefit for employees of {{ join.membership_name }} member companies. Add and verify your
+                      company email address in your profile (it opens in a new tab), then come back here and check again.
                     </p>
                   } @else {
-                    <h2 class="text-base font-semibold text-gray-900 m-0">This newsletter is for Linux Foundation member companies</h2>
+                    <h2 class="text-base font-semibold text-gray-900 m-0">This newsletter is for {{ join.membership_name }} member companies</h2>
                     <p class="text-sm text-gray-600 m-0" data-testid="newsletter-invite-landing-not-member">
-                      None of your verified email addresses belongs to a Linux Foundation member company. If you have another company email, add and verify it
-                      in your profile, then check again.
+                      None of your verified email addresses belongs to a member company of {{ join.membership_name }}. If you have another company email, add
+                      and verify it in your profile, then check again.
                     </p>
                   }
                 }

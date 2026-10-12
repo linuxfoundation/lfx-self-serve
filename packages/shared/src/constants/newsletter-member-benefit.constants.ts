@@ -71,6 +71,15 @@ export const IMPERSONATION_READ_ONLY_ERROR_CODE = 'IMPERSONATION_READ_ONLY';
 /** Linux Foundation (TLF) project slug whose corporate memberships make a company's employees eligible. */
 export const MEMBER_BENEFIT_FOUNDATION_SLUG = 'tlf';
 
+/** Display name of {@link MEMBER_BENEFIT_FOUNDATION_SLUG}, used when a newsletter falls back to TLF membership. */
+export const MEMBER_BENEFIT_FOUNDATION_NAME = 'The Linux Foundation';
+
+/** `project.funding_model` entry marking a project whose companies join as members (it has its own roster). */
+export const MEMBER_BENEFIT_MEMBERSHIP_FUNDING_MODEL = 'Membership';
+
+/** `project.legal_entity_type` of internal LF cost centres — never a membership roster of their own. */
+export const MEMBER_BENEFIT_INTERNAL_ALLOCATION_ENTITY_TYPE = 'Internal Allocation';
+
 /** `project_membership.status` values (compared case-insensitively) that count as an active membership. */
 export const MEMBER_BENEFIT_ACTIVE_MEMBERSHIP_STATUSES: ReadonlySet<string> = new Set(['active', 'purchased']);
 

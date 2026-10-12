@@ -6,7 +6,7 @@ import { Component, computed, input, output, Signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
-import { MyNewsletterFoundation, MyNewsletterInviter } from '@lfx-one/shared/interfaces';
+import { MyNewsletterFoundation } from '@lfx-one/shared/interfaces';
 import { TooltipModule } from 'primeng/tooltip';
 
 /**
@@ -21,7 +21,6 @@ import { TooltipModule } from 'primeng/tooltip';
 export class NewsletterFoundationCardComponent {
   // === Inputs ===
   public readonly foundation = input.required<MyNewsletterFoundation>();
-  public readonly inviter = input.required<MyNewsletterInviter>();
 
   // === Outputs ===
   public readonly invite = output<MyNewsletterFoundation>();
@@ -46,11 +45,16 @@ export class NewsletterFoundationCardComponent {
   // === Private Initializers ===
   private initInviteDisabledReason(): Signal<string> {
     return computed(() => {
-      if (this.foundation().can_invite) return '';
-      const inviter = this.inviter();
-      if (inviter.denied_reason === 'unavailable') return "Invites aren't available right now. Please try again later.";
-      if (!inviter.eligible) return 'Invites are available to employees of Linux Foundation member companies, using a verified company email.';
-      return "Invites are available once you're on this foundation's newsletter list.";
+      const foundation = this.foundation();
+      if (foundation.can_invite) return '';
+      switch (foundation.invite_denied_reason) {
+        case 'unavailable':
+          return "Invites aren't available right now. Please try again later.";
+        case 'no_newsletter_group':
+          return "Invites are available once you're on this foundation's newsletter list.";
+        default:
+          return `Invites are available to employees of ${foundation.membership_name ?? foundation.name} member companies, using a verified company email.`;
+      }
     });
   }
 }

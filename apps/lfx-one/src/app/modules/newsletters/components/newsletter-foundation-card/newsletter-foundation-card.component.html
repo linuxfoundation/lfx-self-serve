@@ -46,15 +46,6 @@
           </span>
         }
       </div>
-      @if (foundation().newsletter_group; as group) {
-        <p
-          class="text-xs text-gray-500 truncate m-0"
-          [pTooltip]="'Delivered through ' + group.name"
-          tooltipPosition="top"
-          data-testid="newsletter-foundation-card-group">
-          Delivered through {{ group.name }}
-        </p>
-      }
     </div>
   </a>
 

@@ -78,8 +78,9 @@ import { NewsletterService } from './newsletter.service';
  *    degrades to source 1 instead of denying. A b2b_org hit still needs an active TLF membership.
  */
 export class NewsletterMemberBenefitService {
-  private static domainIndexCache: { value: MemberBenefitDomainIndex; expiresAt: number } | null = null;
-  private static domainIndexInFlight: Promise<MemberBenefitDomainIndex> | null = null;
+  /** Membership slug → cached domain index (TLF for the reader benefit; each invite foundation for invites). */
+  private static readonly domainIndexCache = new Map<string, { value: MemberBenefitDomainIndex; expiresAt: number }>();
+  private static readonly domainIndexInFlight = new Map<string, Promise<MemberBenefitDomainIndex>>();
 
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly emailVerificationService: EmailVerificationService;
@@ -101,10 +102,10 @@ export class NewsletterMemberBenefitService {
     this.committeeService = committeeService ?? new CommitteeService();
   }
 
-  /** Test seam: forget the cached TLF domain index. */
+  /** Test seam: forget every cached membership domain index. */
   public static resetDomainIndexCache(): void {
-    NewsletterMemberBenefitService.domainIndexCache = null;
-    NewsletterMemberBenefitService.domainIndexInFlight = null;
+    NewsletterMemberBenefitService.domainIndexCache.clear();
+    NewsletterMemberBenefitService.domainIndexInFlight.clear();
   }
 
   /** The reader access ladder for one issue (see the class doc). Throws on any lookup outage rather than denying. */
@@ -216,12 +217,17 @@ export class NewsletterMemberBenefitService {
   }
 
   /**
-   * Whether the signed-in user qualifies through a verified email at an active TLF member company.
-   * Emails are tried in auth-service order (primary first); within an email the most specific
-   * domain wins. Throws when the membership index cannot be loaded — an outage must never read as
-   * "not a member".
+   * Whether the signed-in user qualifies through a verified email at a company with an active
+   * membership of `membershipSlug` (TLF unless an invite names its foundation). Emails are tried in
+   * auth-service order (primary first); within an email the most specific domain wins. Throws when
+   * the membership index cannot be loaded — an outage must never read as "not a member".
    */
-  public async resolveEligibility(req: Request, m2mToken: string, verifiedEmails: string[]): Promise<NewsletterMemberBenefitEligibility> {
+  public async resolveEligibility(
+    req: Request,
+    m2mToken: string,
+    verifiedEmails: string[],
+    membershipSlug: string = MEMBER_BENEFIT_FOUNDATION_SLUG
+  ): Promise<NewsletterMemberBenefitEligibility> {
     const companyEmails: { email: string; candidates: string[] }[] = [];
     for (const email of verifiedEmails) {
       const domain = emailDomain(email);
@@ -235,16 +241,17 @@ export class NewsletterMemberBenefitService {
     }
 
     const allCandidates = [...new Set(companyEmails.flatMap((entry) => entry.candidates))].slice(0, MEMBER_BENEFIT_MAX_CANDIDATE_DOMAINS);
-    const [index, b2bMatches] = await Promise.all([this.getDomainIndex(req, m2mToken), this.findB2bOrgMatches(req, m2mToken, allCandidates)]);
+    const [index, b2bMatches] = await Promise.all([this.getDomainIndex(req, m2mToken, membershipSlug), this.findB2bOrgMatches(req, m2mToken, allCandidates)]);
 
     for (const { email, candidates } of companyEmails) {
       for (const candidate of candidates) {
         const company = this.pickCompany(candidate, index, b2bMatches);
         if (company) {
           const match: NewsletterMemberBenefitMatch = { email, b2b_org_uid: company.b2b_org_uid, company_name: company.company_name };
-          logger.debug(req, 'newsletter_member_benefit_eligibility', 'Verified email matched an active TLF member company', {
+          logger.debug(req, 'newsletter_member_benefit_eligibility', 'Verified email matched an active member company', {
             b2b_org_uid: company.b2b_org_uid,
             matched_domain: candidate,
+            membership_slug: membershipSlug,
           });
           return { verified_emails: verifiedEmails, match };
         }
@@ -255,17 +262,23 @@ export class NewsletterMemberBenefitService {
   }
 
   /**
-   * The active TLF member company an arbitrary email's domain belongs to (the newsletter invite
-   * check on the invitee's address), or null for a personal mailbox or a non-member domain. Same
-   * index and matching as {@link resolveEligibility}; throws when the index cannot be loaded.
+   * The active `membershipSlug` member company an arbitrary email's domain belongs to (the
+   * newsletter invite check on the invitee's address), or null for a personal mailbox or a
+   * non-member domain. Same index and matching as {@link resolveEligibility}; throws when the
+   * index cannot be loaded.
    */
-  public async findMemberCompanyForEmail(req: Request, m2mToken: string, email: string): Promise<MemberBenefitCompany | null> {
+  public async findMemberCompanyForEmail(
+    req: Request,
+    m2mToken: string,
+    email: string,
+    membershipSlug: string = MEMBER_BENEFIT_FOUNDATION_SLUG
+  ): Promise<MemberBenefitCompany | null> {
     const domain = emailDomain(email);
     if (!domain || isPersonalEmailDomain(domain)) return null;
     const candidates = candidateMemberDomains(domain).slice(0, MEMBER_BENEFIT_MAX_CANDIDATE_DOMAINS);
     if (candidates.length === 0) return null;
 
-    const [index, b2bMatches] = await Promise.all([this.getDomainIndex(req, m2mToken), this.findB2bOrgMatches(req, m2mToken, candidates)]);
+    const [index, b2bMatches] = await Promise.all([this.getDomainIndex(req, m2mToken, membershipSlug), this.findB2bOrgMatches(req, m2mToken, candidates)]);
     for (const candidate of candidates) {
       const company = this.pickCompany(candidate, index, b2bMatches);
       if (company) return company;
@@ -382,7 +395,7 @@ export class NewsletterMemberBenefitService {
     return colon === -1 ? resourceId : resourceId.substring(colon + 1);
   }
 
-  /** Exact-domain company for a candidate: the TLF membership index first, then b2b_org hits that hold an active TLF membership. */
+  /** Exact-domain company for a candidate: the membership index first, then b2b_org hits that hold an active membership in that index. */
   private pickCompany(candidate: string, index: MemberBenefitDomainIndex, b2bMatches: Map<string, string[]>): MemberBenefitCompany | null {
     const fromMembership = index.by_domain.get(candidate);
     if (fromMembership && fromMembership.length > 0) return fromMembership[0];
@@ -394,25 +407,28 @@ export class NewsletterMemberBenefitService {
     return null;
   }
 
-  /** Cached (per process) index of active TLF memberships; concurrent misses share one load. Failures are never cached. */
-  private async getDomainIndex(req: Request, m2mToken: string): Promise<MemberBenefitDomainIndex> {
-    const cached = NewsletterMemberBenefitService.domainIndexCache;
+  /** Cached (per process, per membership slug) index of active memberships; concurrent misses share one load. Failures are never cached. */
+  private async getDomainIndex(req: Request, m2mToken: string, membershipSlug: string): Promise<MemberBenefitDomainIndex> {
+    const { domainIndexCache, domainIndexInFlight } = NewsletterMemberBenefitService;
+    const cached = domainIndexCache.get(membershipSlug);
     if (cached && Date.now() < cached.expiresAt) return cached.value;
 
-    if (!NewsletterMemberBenefitService.domainIndexInFlight) {
-      NewsletterMemberBenefitService.domainIndexInFlight = this.loadDomainIndex(req, m2mToken)
+    let inFlight = domainIndexInFlight.get(membershipSlug);
+    if (!inFlight) {
+      inFlight = this.loadDomainIndex(req, m2mToken, membershipSlug)
         .then((value) => {
-          NewsletterMemberBenefitService.domainIndexCache = { value, expiresAt: Date.now() + MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS };
+          domainIndexCache.set(membershipSlug, { value, expiresAt: Date.now() + MEMBER_BENEFIT_DOMAIN_INDEX_TTL_MS });
           return value;
         })
         .finally(() => {
-          NewsletterMemberBenefitService.domainIndexInFlight = null;
+          domainIndexInFlight.delete(membershipSlug);
         });
+      domainIndexInFlight.set(membershipSlug, inFlight);
     }
-    return NewsletterMemberBenefitService.domainIndexInFlight;
+    return inFlight;
   }
 
-  private async loadDomainIndex(req: Request, m2mToken: string): Promise<MemberBenefitDomainIndex> {
+  private async loadDomainIndex(req: Request, m2mToken: string, membershipSlug: string): Promise<MemberBenefitDomainIndex> {
     const memberships = await fetchAllQueryResources<ProjectMembershipDoc>(
       req,
       (pageToken) =>
@@ -423,7 +439,7 @@ export class NewsletterMemberBenefitService {
           'GET',
           {
             type: 'project_membership',
-            filters_all: `project_slug:${MEMBER_BENEFIT_FOUNDATION_SLUG}`,
+            filters_all: `project_slug:${membershipSlug}`,
             filters_or: MEMBER_BENEFIT_ACTIVE_STATUS_FILTERS,
             page_size: 1000,
             ...(pageToken && { page_token: pageToken }),
@@ -438,7 +454,7 @@ export class NewsletterMemberBenefitService {
     const byDomain = new Map<string, MemberBenefitCompany[]>();
     const activeOrgUids = new Map<string, string>();
     for (const membership of memberships) {
-      if (membership.project_slug !== MEMBER_BENEFIT_FOUNDATION_SLUG) continue;
+      if (membership.project_slug !== membershipSlug) continue;
       if (!MEMBER_BENEFIT_ACTIVE_MEMBERSHIP_STATUSES.has((membership.status ?? '').toLowerCase())) continue;
       const orgUid = membership.b2b_org_uid;
       if (!orgUid) continue;
@@ -456,8 +472,9 @@ export class NewsletterMemberBenefitService {
     }
 
     // TLF always has active members; an empty index means the read was filtered or broken, and
-    // caching it would silently deny every member for the TTL.
-    if (activeOrgUids.size === 0) {
+    // caching it would silently deny every member for the TTL. Another foundation can genuinely
+    // have none yet (the same M2M read serves TLF, so it is not filtered) — that is "no members".
+    if (activeOrgUids.size === 0 && membershipSlug === MEMBER_BENEFIT_FOUNDATION_SLUG) {
       logger.warning(req, 'newsletter_member_benefit_domain_index', 'TLF membership read returned no active members', { membership_rows: memberships.length });
       throw new MicroserviceError('Linux Foundation membership data is unavailable', 503, 'MEMBER_BENEFIT_INDEX_UNAVAILABLE', {
         operation: 'newsletter_member_benefit_domain_index',
@@ -465,8 +482,8 @@ export class NewsletterMemberBenefitService {
       });
     }
 
-    logger.info(req, 'newsletter_member_benefit_domain_index', 'Loaded TLF member domain index', {
-      foundation_slug: MEMBER_BENEFIT_FOUNDATION_SLUG,
+    logger.info(req, 'newsletter_member_benefit_domain_index', 'Loaded member domain index', {
+      foundation_slug: membershipSlug,
       membership_rows: memberships.length,
       active_orgs: activeOrgUids.size,
       domains: byDomain.size,

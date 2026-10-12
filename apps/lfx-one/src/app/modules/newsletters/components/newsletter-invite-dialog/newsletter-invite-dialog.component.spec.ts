@@ -22,6 +22,7 @@ const FOUNDATION: MyNewsletterFoundation = {
   last_sent_at: null,
   newsletter_group: { uid: 'group-uid', name: 'Acme Foundation Newsletter' },
   can_invite: true,
+  membership_name: 'Agentic AI Foundation (AAIF)',
 };
 
 describe('NewsletterInviteDialogComponent', () => {
@@ -61,6 +62,9 @@ describe('NewsletterInviteDialogComponent', () => {
 
   it('renders the foundation and keeps Send disabled until a valid email is entered', async () => {
     expect(find('newsletter-invite-dialog')?.textContent).toContain('Acme Foundation newsletter');
+    // The membership the invitee's company needs is the foundation's own, named in the subtitle and hint.
+    expect(find('newsletter-invite-dialog')?.textContent).toContain('Member benefit of Agentic AI Foundation (AAIF)');
+    expect(find('newsletter-invite-hint')?.textContent).toContain('Must be a company email at a member organization of Agentic AI Foundation (AAIF).');
     expect(sendButton().disabled).toBe(true);
 
     await type('not-an-email');
@@ -73,7 +77,7 @@ describe('NewsletterInviteDialogComponent', () => {
   it('flags a personal mailbox inline and refuses to send it', async () => {
     await type('pat@gmail.example');
 
-    expect(find('newsletter-invite-personal')?.textContent).toContain('Use their company email');
+    expect(find('newsletter-invite-personal')?.textContent).toContain('a benefit for member companies of Agentic AI Foundation (AAIF)');
     expect(emailInput().getAttribute('aria-invalid')).toBe('true');
     expect(sendButton().disabled).toBe(true);
 

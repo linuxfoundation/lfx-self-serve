@@ -48,6 +48,8 @@ function card(overrides: Partial<MyNewsletterFoundation> = {}): MyNewsletterFoun
     last_sent_at: '2026-08-13T10:00:00Z',
     newsletter_group: { uid: 'group', name: 'Foundation Newsletter' },
     can_invite: false,
+    membership_name: 'Foundation',
+    invite_denied_reason: 'not_member_company',
     ...overrides,
   };
 }
@@ -215,11 +217,18 @@ describe('MyNewslettersComponent', () => {
     expect(gateway.getNewsletterGroupJoinStatus).toHaveBeenCalledWith('group');
 
     // Already on the list: the page already shows that feed, so no reload.
-    status.next({ state: 'already_member', group, foundation });
+    status.next({ state: 'already_member', group, foundation, membership_name: 'Foundation' });
     await settle();
     expect(gateway.getMyNewsletterFoundations).toHaveBeenCalledTimes(1);
 
-    const eligible: NewsletterGroupJoinStatus = { state: 'eligible', group, foundation, email: 'pat@acme-motors.example', company_name: 'Acme Motors' };
+    const eligible: NewsletterGroupJoinStatus = {
+      state: 'eligible',
+      group,
+      foundation,
+      membership_name: 'Foundation',
+      email: 'pat@acme-motors.example',
+      company_name: 'Acme Motors',
+    };
     gateway.getNewsletterGroupJoinStatus.mockReturnValue(of(eligible));
     gateway.joinNewsletterGroupByInvite.mockReturnValue(
       of({ status: 'added', email: 'pat@acme-motors.example', committee_name: 'Foundation Newsletter', company_name: 'Acme Motors' })

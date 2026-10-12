@@ -17,7 +17,7 @@ import { NewsletterInviteDialogComponent } from '../components/newsletter-invite
 /**
  * Me-lens "My Newsletters" (#3483): one card per foundation the user receives newsletters from —
  * logo, name, how many issues they received — with a drill-down to that foundation's issues and,
- * for employees of Linux Foundation member companies on the list, an Invite action that emails a
+ * for employees of a foundation's member companies on its list, an Invite action that emails a
  * colleague the member benefit.
  */
 @Component({

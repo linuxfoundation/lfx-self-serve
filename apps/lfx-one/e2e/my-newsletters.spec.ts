@@ -72,6 +72,7 @@ const MOCK_FOUNDATIONS: MyNewsletterFoundation[] = [
     last_sent_at: '2026-07-15T12:00:00Z',
     newsletter_group: { uid: 'g0000000-0000-0000-0000-000000000004', name: 'Test Foundation Newsletter' },
     can_invite: true,
+    membership_name: 'The Linux Foundation',
   },
   {
     uid: OTHER_FOUNDATION_UID,
@@ -82,6 +83,8 @@ const MOCK_FOUNDATIONS: MyNewsletterFoundation[] = [
     last_sent_at: '2026-05-10T12:00:00Z',
     newsletter_group: null,
     can_invite: false,
+    membership_name: null,
+    invite_denied_reason: 'no_newsletter_group',
   },
 ];
 

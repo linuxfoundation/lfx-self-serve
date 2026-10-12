@@ -10,7 +10,7 @@
       styleClass="w-10 h-10 rounded-lg border border-gray-200 bg-white text-gray-700 [&_img]:object-contain [&_img]:p-1" />
     <div class="flex flex-col min-w-0">
       <span class="text-sm font-semibold text-gray-900 break-words">{{ foundation.name }} newsletter</span>
-      <span class="text-xs text-gray-500">A Linux Foundation member benefit</span>
+      <span class="text-xs text-gray-500">Member benefit of {{ membershipName }}</span>
     </div>
   </div>
 
@@ -36,10 +36,10 @@
         <span class="text-red-600" data-testid="newsletter-invite-error">{{ serverError() }}</span>
       } @else if (personalEmail()) {
         <span class="text-red-600" data-testid="newsletter-invite-personal"
-          >Use their company email — the newsletter is a benefit for Linux Foundation member companies.</span
+          >Use their company email — the newsletter is a benefit for member companies of {{ membershipName }}.</span
         >
       } @else {
-        <span class="text-gray-500">Must be a company email at a Linux Foundation member organization.</span>
+        <span class="text-gray-500" data-testid="newsletter-invite-hint">Must be a company email at a member organization of {{ membershipName }}.</span>
       }
     </p>
   </div>

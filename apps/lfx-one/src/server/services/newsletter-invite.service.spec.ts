@@ -9,8 +9,9 @@ import { ProjectFunding } from '@lfx-one/shared/enums';
 import type { MyNewsletter, Project } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { resolveVerifiedUserEmails, generateM2MToken, getEffectiveName, getEffectiveUsername } = vi.hoisted(() => ({
+const { resolveVerifiedUserEmails, resolveRootProjectUid, generateM2MToken, getEffectiveName, getEffectiveUsername } = vi.hoisted(() => ({
   resolveVerifiedUserEmails: vi.fn(),
+  resolveRootProjectUid: vi.fn(),
   generateM2MToken: vi.fn(),
   getEffectiveName: vi.fn(),
   getEffectiveUsername: vi.fn(),
@@ -23,7 +24,9 @@ vi.mock('./committee.service', () => ({ CommitteeService: class {} }));
 vi.mock('./project.service', () => ({ ProjectService: class {} }));
 vi.mock('./email.service', () => ({ EmailService: class {} }));
 vi.mock('./newsletter-member-benefit.service', () => ({ NewsletterMemberBenefitService: class {} }));
+vi.mock('./nats.service', () => ({ NatsService: class {} }));
 vi.mock('../helpers/user-emails.helper', () => ({ resolveVerifiedUserEmails }));
+vi.mock('../helpers/root-project.helper', () => ({ resolveRootProjectUid }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveName, getEffectiveUsername }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken }));
 vi.mock('./logger.service', () => ({
@@ -50,9 +53,28 @@ const PLAIN_PARENT: Partial<Project> = { uid: 'pp-1', slug: 'plain-parent', name
 const GRANDCHILD: Partial<Project> = { uid: 'gc-1', slug: 'grandchild', name: 'Grandchild', parent_uid: 'pp-1' };
 const CHILD: Partial<Project> = { uid: 'p-1', slug: 'acme-child', name: 'Acme Child', parent_uid: 'f-1' };
 const OTHER_FOUNDATION: Partial<Project> = { uid: 'f-2', slug: 'beta-foundation', name: 'Beta Foundation', logo_url: '', stage: 'Formation' };
+// Top-level projects are parented to the hidden ROOT project, which getProjectsByIds never returns.
+const TLF: Partial<Project> = {
+  uid: 'tlf-1',
+  slug: 'tlf',
+  name: 'The Linux Foundation',
+  parent_uid: 'root-uid',
+  stage: 'Active',
+  funding_model: ['Membership'],
+};
+const LF_PRODUCTS: Partial<Project> = {
+  uid: 'lfp-1',
+  slug: 'lfproducts',
+  name: 'LF Products',
+  parent_uid: 'root-uid',
+  stage: 'Active',
+  legal_entity_type: 'Internal Allocation',
+};
 
 const NEWSLETTER_GROUP = { uid: 'c-news', name: 'Acme Weekly', category: 'Newsletter', project_uid: 'f-1' };
 const BETA_GROUP = { uid: 'c-beta', name: 'Beta Weekly', category: 'Newsletter', project_uid: 'f-2' };
+const TLF_GROUP = { uid: 'c-tlf', name: 'TLF Weekly', category: 'Newsletter', project_uid: 'tlf-1' };
+const LFP_GROUP = { uid: 'c-lfp', name: 'GB', category: 'Newsletter', project_uid: 'lfp-1' };
 const BOARD = { uid: 'c-board', name: 'Acme Board', category: 'Board', project_uid: 'f-1' };
 
 const MATCH = { email: 'jane@acme-motors.example', b2b_org_uid: 'org-1', company_name: 'Acme Motors' };
@@ -96,13 +118,14 @@ describe('NewsletterInviteService', () => {
     committees = [NEWSLETTER_GROUP, BOARD];
 
     generateM2MToken.mockResolvedValue('m2m');
+    resolveRootProjectUid.mockResolvedValue('root-uid');
     resolveVerifiedUserEmails.mockResolvedValue([MATCH.email]);
     getEffectiveName.mockReturnValue('Jane Doe');
     deps.memberBenefitService.resolveEligibility.mockResolvedValue({ verified_emails: [MATCH.email], match: MATCH });
     deps.committeeService.getMyCommitteeUids.mockResolvedValue(new Set(['c-news', 'c-board']));
     deps.newsletterService.getMyNewsletters.mockResolvedValue({ newsletters: [], complete: true });
     deps.projectService.getProjectsByIds.mockImplementation(async (_req: Request, uids: Set<string>) => {
-      const all = [FOUNDATION, CHILD, OTHER_FOUNDATION, PLAIN_PARENT, GRANDCHILD];
+      const all = [FOUNDATION, CHILD, OTHER_FOUNDATION, PLAIN_PARENT, GRANDCHILD, TLF, LF_PRODUCTS];
       return new Map(all.filter((project) => uids.has(project.uid as string)).map((project) => [project.uid, project]));
     });
     // Every query-service committee read: return the committees whose uid tag was asked for.
@@ -184,6 +207,35 @@ describe('NewsletterInviteService', () => {
       expect(result.foundations).toHaveLength(1);
       expect(result.foundations[0]).toMatchObject({ newsletter_group: null, can_invite: false });
     });
+    it('decides each card against its own foundation: own members when membership-funded, else The Linux Foundation', async () => {
+      deps.committeeService.getMyCommitteeUids.mockResolvedValue(new Set(['c-news', 'c-beta', 'c-lfp']));
+      committees = [NEWSLETTER_GROUP, BETA_GROUP, LFP_GROUP];
+      // The user's company is a TLF member but not an Acme Foundation member.
+      deps.memberBenefitService.resolveEligibility.mockImplementation(async (_req: Request, _token: string, emails: string[], slug: string) =>
+        slug === 'tlf' ? { verified_emails: emails, match: MATCH } : { verified_emails: emails, match: null, denied_reason: 'not_member_company' }
+      );
+
+      const result = await service.getMyNewsletterFoundations(req);
+      const byUid = new Map(result.foundations.map((card) => [card.uid, card]));
+
+      expect(byUid.get('f-1')).toMatchObject({ can_invite: false, membership_name: 'Acme Foundation', invite_denied_reason: 'not_member_company' });
+      expect(byUid.get('f-2')).toMatchObject({ can_invite: true, membership_name: 'The Linux Foundation' });
+      expect(byUid.get('lfp-1')).toMatchObject({ can_invite: true, membership_name: 'The Linux Foundation' });
+      expect(byUid.get('lfp-1')).not.toHaveProperty('invite_denied_reason');
+      // One roster read per membership scope, not per card.
+      expect(deps.memberBenefitService.resolveEligibility.mock.calls.map((call) => call[3]).sort()).toEqual(['acme-foundation', 'tlf']);
+      expect(result.inviter).toEqual({ eligible: true, company_name: 'Acme Motors' });
+    });
+
+    it('marks cards without a newsletter group as not invitable', async () => {
+      deps.newsletterService.getMyNewsletters.mockResolvedValue({ newsletters: [feedRow('n-1', '2026-09-01T00:00:00Z', 'f-2')], complete: true });
+      deps.committeeService.getMyCommitteeUids.mockResolvedValue(new Set());
+      committees = [];
+
+      const [card] = (await service.getMyNewsletterFoundations(req)).foundations;
+
+      expect(card).toMatchObject({ uid: 'f-2', can_invite: false, membership_name: null, invite_denied_reason: 'no_newsletter_group' });
+    });
   });
 
   describe('sendInvite', () => {
@@ -224,13 +276,19 @@ describe('NewsletterInviteService', () => {
       await expect(service.sendInvite(req, 'f-1', 'coworker@acme-motors.example')).rejects.toBeInstanceOf(AuthorizationError);
     });
 
-    it('rejects an invitee whose domain is not a Linux Foundation member', async () => {
+    it("rejects an invitee whose company is not a member of the card's foundation", async () => {
       deps.memberBenefitService.findMemberCompanyForEmail.mockResolvedValue(null);
 
       const error = await service.sendInvite(req, 'f-1', 'someone@other-corp.example').catch((caught: unknown) => caught);
 
       expect(error).toBeInstanceOf(ServiceValidationError);
-      expect((error as ServiceValidationError).validationErrors[0]).toMatchObject({ code: 'NEWSLETTER_INVITE_NOT_MEMBER_COMPANY' });
+      expect((error as ServiceValidationError).validationErrors[0]).toMatchObject({
+        code: 'NEWSLETTER_INVITE_NOT_MEMBER_COMPANY',
+        message: "other-corp.example isn't a member company of Acme Foundation",
+      });
+      // Both the sender and the invitee are checked against the foundation's own members.
+      expect(deps.memberBenefitService.resolveEligibility).toHaveBeenCalledWith(req, 'm2m', [MATCH.email], 'acme-foundation');
+      expect(deps.memberBenefitService.findMemberCompanyForEmail).toHaveBeenCalledWith(req, 'm2m', 'someone@other-corp.example', 'acme-foundation');
       expect(deps.emailService.sendEmail).not.toHaveBeenCalled();
     });
 
@@ -309,6 +367,35 @@ describe('NewsletterInviteService', () => {
       await expect(service.sendInvite(req, 'f-1', 'coworker@acme-motors.example')).rejects.toThrow('PCC_BASE_URL');
       expect(deps.emailService.sendEmail).not.toHaveBeenCalled();
     });
+    it('invites to a top-level project parented to ROOT, checking The Linux Foundation members when it has none of its own', async () => {
+      deps.committeeService.getMyCommitteeUids.mockResolvedValue(new Set(['c-tlf', 'c-lfp']));
+      committees = [TLF_GROUP, LFP_GROUP];
+      deps.memberBenefitService.findMemberCompanyForEmail.mockResolvedValue({ b2b_org_uid: 'org-2', company_name: 'Google' });
+
+      await expect(service.sendInvite(req, 'lfp-1', 'test@google.example')).resolves.toEqual({ email: 'test@google.example', foundation_name: 'LF Products' });
+      await expect(service.sendInvite(req, 'tlf-1', 'test@google.example')).resolves.toEqual({
+        email: 'test@google.example',
+        foundation_name: 'The Linux Foundation',
+      });
+
+      expect(deps.memberBenefitService.findMemberCompanyForEmail.mock.calls.map((call) => call[3])).toEqual(['tlf', 'tlf']);
+      expect(deps.emailService.sendEmail).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not let another group's unresolvable project block an invite", async () => {
+      deps.committeeService.getMyCommitteeUids.mockResolvedValue(new Set(['c-news', 'c-orphan']));
+      committees = [NEWSLETTER_GROUP, { uid: 'c-orphan', name: 'Orphan', category: 'Newsletter', project_uid: 'missing-project' }];
+
+      await expect(service.sendInvite(req, 'f-1', 'coworker@acme-motors.example')).resolves.toMatchObject({ foundation_name: 'Acme Foundation' });
+    });
+
+    it('still answers 503 when the ROOT project cannot be identified and the target foundation sits under it', async () => {
+      resolveRootProjectUid.mockResolvedValue(null);
+      deps.committeeService.getMyCommitteeUids.mockResolvedValue(new Set(['c-lfp']));
+      committees = [LFP_GROUP];
+
+      await expect(service.sendInvite(req, 'lfp-1', 'test@google.example')).rejects.toMatchObject({ statusCode: 503 });
+    });
   });
 
   describe('getJoinStatus / joinGroup', () => {
@@ -335,9 +422,22 @@ describe('NewsletterInviteService', () => {
         state: 'eligible',
         group: { uid: 'c-news', name: 'Acme Weekly' },
         foundation: { uid: 'f-1', slug: 'acme-foundation', name: 'Acme Foundation', logo_url: 'https://logos.example/acme.png' },
+        membership_name: 'Acme Foundation',
         email: MATCH.email,
         company_name: 'Acme Motors',
       });
+      expect(deps.memberBenefitService.resolveEligibility).toHaveBeenCalledWith(req, 'm2m', [MATCH.email], 'acme-foundation');
+    });
+
+    it('checks the landing of a ROOT-parented project without its own members against The Linux Foundation', async () => {
+      committees = [LFP_GROUP];
+
+      await expect(service.getJoinStatus(req, 'c-lfp')).resolves.toMatchObject({
+        state: 'eligible',
+        foundation: { uid: 'lfp-1', name: 'LF Products' },
+        membership_name: 'The Linux Foundation',
+      });
+      expect(deps.memberBenefitService.resolveEligibility).toHaveBeenCalledWith(req, 'm2m', [MATCH.email], 'tlf');
     });
 
     it('reports an existing member and a denied user', async () => {

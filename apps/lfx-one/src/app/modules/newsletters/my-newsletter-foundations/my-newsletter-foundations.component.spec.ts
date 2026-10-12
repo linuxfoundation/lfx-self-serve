@@ -25,6 +25,7 @@ function foundation(overrides: Partial<MyNewsletterFoundation> = {}): MyNewslett
     last_sent_at: '2026-08-13T10:00:00Z',
     newsletter_group: { uid: 'acme-group', name: 'Acme Foundation Newsletter' },
     can_invite: true,
+    membership_name: 'The Linux Foundation',
     ...overrides,
   };
 }

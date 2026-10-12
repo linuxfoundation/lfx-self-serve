@@ -14,7 +14,7 @@
       <p class="text-sm text-gray-500 m-0" data-testid="my-newsletters-description">
         Newsletters you receive, by foundation.
         @if (inviter().eligible && inviter().company_name) {
-          As an employee of {{ inviter().company_name }}, you can invite colleagues to them as a Linux Foundation member benefit.
+          As an employee of {{ inviter().company_name }}, you can invite colleagues to the newsletters of foundations your company is a member of.
         }
       </p>
     </div>
@@ -60,7 +60,7 @@
     } @else {
       <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" data-testid="my-newsletters-foundation-grid">
         @for (foundation of foundations(); track foundation.uid) {
-          <lfx-newsletter-foundation-card [foundation]="foundation" [inviter]="inviter()" (invite)="onInvite($event)" />
+          <lfx-newsletter-foundation-card [foundation]="foundation" (invite)="onInvite($event)" />
         }
       </div>
     }

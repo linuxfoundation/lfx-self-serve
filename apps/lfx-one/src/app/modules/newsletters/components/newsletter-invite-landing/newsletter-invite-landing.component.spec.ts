@@ -17,6 +17,7 @@ function status(overrides: Partial<NewsletterGroupJoinStatus> = {}): NewsletterG
     state: 'eligible',
     group: { uid: 'group-uid', name: 'Acme Foundation Newsletter' },
     foundation: { uid: 'foundation-uid', slug: 'acme-foundation', name: 'Acme Foundation', logo_url: null },
+    membership_name: 'Acme Foundation',
     email: 'pat@acme-motors.example',
     company_name: 'Acme Motors',
     ...overrides,
@@ -177,7 +178,7 @@ describe('NewsletterInviteLandingComponent', () => {
 
   it.each([
     ['no_company_email', 'newsletter-invite-landing-no-company-email', 'Confirm your company email to join'],
-    ['not_member_company', 'newsletter-invite-landing-not-member', 'This newsletter is for Linux Foundation member companies'],
+    ['not_member_company', 'newsletter-invite-landing-not-member', 'This newsletter is for Acme Foundation member companies'],
   ] as const)('explains a %s denial and offers to add an email and recheck', async (reason, testId, heading) => {
     newsletterService.getNewsletterGroupJoinStatus.mockReturnValue(
       of(status({ state: 'denied', denied_reason: reason, email: undefined, company_name: undefined }))
