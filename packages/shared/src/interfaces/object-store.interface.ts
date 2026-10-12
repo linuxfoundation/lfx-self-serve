@@ -3,17 +3,20 @@
 
 // The BFF object store: one service, two interchangeable backends. Deployed
 // environments talk to a purpose-keyed S3 bucket; a local run with no bucket
-// configured gets a folder under the app directory with the same list, get,
-// put and metadata behaviour, so hand tests and unit tests persist and
-// restore documents with nothing installed and no credentials.
+// configured for a PRIVATE purpose gets a folder under the app directory with
+// the same list, get, put and metadata behaviour, so hand tests and unit tests
+// persist and restore documents with nothing installed and no credentials.
+// Public, CDN-fronted purposes always need their bucket.
 
 /**
  * Storage purposes — each maps to its own bucket (or, file-backed, its own
  * folder). lfx-one is multi-bucket per the LFX object-store design:
  * - `avatars`: public profile pictures and other CDN-fronted public images.
+ *   Always S3: callers persist the CDN URL, which no local folder can serve.
  * - `marketing-os-artifacts`: private documents for EVERY Marketing OS agent,
  *   key-prefix namespaced per artifact type (dec-brand-kit-storage-v2) — one
- *   bucket, one shared persistence layer (`mktg-artifact.service.ts`).
+ *   bucket, one shared persistence layer (`mktg-artifact.service.ts`). The
+ *   one purpose the file-backed store may serve locally.
  */
 export type ObjectStorePurpose = 'avatars' | 'marketing-os-artifacts';
 

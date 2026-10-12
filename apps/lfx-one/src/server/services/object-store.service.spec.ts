@@ -160,7 +160,7 @@ describe('ObjectStoreService', () => {
       expect(sendMock.mock.calls[0][0].input.Bucket).toBe('marketing-os-artifacts-test');
     });
 
-    it('serves a purpose whose bucket env var is unset from the file-backed store — no S3 client, no S3 call', async () => {
+    it('serves the private marketing-os-artifacts purpose from the file-backed store when its bucket env var is unset — no S3 client, no S3 call', async () => {
       delete process.env['MARKETING_OS_ARTIFACTS_S3_BUCKET'];
       process.env['OBJECT_STORE_LOCAL_DIR'] = localDir;
 
@@ -169,6 +169,15 @@ describe('ObjectStoreService', () => {
       expect(sendMock).not.toHaveBeenCalled();
       expect(s3ClientCtor).not.toHaveBeenCalled();
       await expect(stat(join(localDir, 'marketing-os-artifacts'))).resolves.toMatchObject({ isDirectory: expect.any(Function) });
+    });
+
+    it('keeps S3_BUCKET REQUIRED for the public avatars purpose even outside production — a CDN URL must never point at a file on disk', async () => {
+      delete process.env['S3_BUCKET'];
+      process.env['OBJECT_STORE_LOCAL_DIR'] = localDir;
+
+      await expect(service.ensureBucket()).rejects.toThrow('S3_BUCKET environment variable is required');
+      expect(sendMock).not.toHaveBeenCalled();
+      await expect(stat(join(localDir, 'avatars'))).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
     it('keeps the bucket env var REQUIRED under NODE_ENV=production — deployed environments never fall back to disk', async () => {
@@ -576,7 +585,8 @@ describe('ObjectStoreService', () => {
   });
 
   // The same public surface, served by the folder under the app directory when
-  // no bucket is configured: what a local hand test and these unit tests run on.
+  // the private marketing-os-artifacts bucket is not configured: what a local
+  // hand test and these unit tests run on.
   describe('file-backed store (no bucket configured)', () => {
     const key = 'brand-kit/testorbit/abc.md';
     const body = Buffer.from('# doc');
@@ -677,11 +687,16 @@ describe('ObjectStoreService', () => {
       expect(logger.error).not.toHaveBeenCalled();
     });
 
-    it('stores an avatar under <root>/avatars/<key> and keeps the null-url degraded mode without CDN_URL_PREFIX', async () => {
-      const { url } = await service.uploadProfilePicture(buildReq(), 'User1', Buffer.from('img'), 'image/png');
+    it('never serves the public avatars purpose: with CDN_URL_PREFIX set and no S3_BUCKET, uploads fail instead of storing a URL that points at nothing', async () => {
+      process.env['CDN_URL_PREFIX'] = 'https://cdn.example.com';
 
-      expect(url).toBeNull();
-      await expect(readFile(join(localDir, 'avatars', 'avatars', 'user1'), 'utf8')).resolves.toBe('img');
+      await expect(service.uploadProfilePicture(buildReq(), 'User1', Buffer.from('img'), 'image/png')).rejects.toThrow(
+        'S3_BUCKET environment variable is required'
+      );
+      await expect(service.putPublicImage(buildReq(), 'mentorship-logos/abc.png', Buffer.from('img'), 'image/png')).rejects.toThrow(
+        'S3_BUCKET environment variable is required'
+      );
+      await expect(stat(join(localDir, 'avatars'))).rejects.toMatchObject({ code: 'ENOENT' });
     });
   });
 });

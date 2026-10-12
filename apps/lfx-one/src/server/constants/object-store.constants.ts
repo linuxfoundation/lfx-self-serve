@@ -5,13 +5,29 @@ import type { ObjectStorePurpose } from '@lfx-one/shared/interfaces';
 
 /**
  * Env var naming the S3 bucket for each storage purpose. A purpose whose var
- * is set is served by S3; one whose var is unset falls back to the
- * file-backed store (outside `NODE_ENV=production`, where the var is
- * required — deployed environments keep S3).
+ * is set is served by S3. One whose var is unset falls back to the file-backed
+ * store only when `OBJECT_STORE_PURPOSE_FILE_FALLBACK` allows it and the
+ * server is not under `NODE_ENV=production`; otherwise the var is required.
  */
 export const OBJECT_STORE_PURPOSE_BUCKET_ENV: Record<ObjectStorePurpose, string> = {
   avatars: 'S3_BUCKET',
   'marketing-os-artifacts': 'MARKETING_OS_ARTIFACTS_S3_BUCKET',
+};
+
+/**
+ * Whether a purpose with no bucket configured may be served from the
+ * file-backed store (outside `NODE_ENV=production`, which never falls back).
+ *
+ * Only PRIVATE purposes qualify. `marketing-os-artifacts` documents are read
+ * back through the BFF, so a folder stands in for the bucket completely.
+ * `avatars` objects are public and CDN-fronted: the service stores the
+ * `CDN_URL_PREFIX` URL, not the bytes, so a file on disk would leave a stored
+ * URL pointing at nothing. That purpose keeps its bucket var required, as
+ * before the file backend existed.
+ */
+export const OBJECT_STORE_PURPOSE_FILE_FALLBACK: Record<ObjectStorePurpose, boolean> = {
+  avatars: false,
+  'marketing-os-artifacts': true,
 };
 
 /**

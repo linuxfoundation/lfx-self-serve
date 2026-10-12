@@ -6,7 +6,7 @@ import { ObjectStoreBackend, ObjectStoreListEntry, ObjectStorePurpose, ObjectSto
 import { Request } from 'express';
 import { resolve } from 'node:path';
 
-import { OBJECT_STORE_LOCAL_DEFAULT_DIR, OBJECT_STORE_LOCAL_DIR_ENV, OBJECT_STORE_PURPOSE_BUCKET_ENV } from '../constants';
+import { OBJECT_STORE_LOCAL_DEFAULT_DIR, OBJECT_STORE_LOCAL_DIR_ENV, OBJECT_STORE_PURPOSE_BUCKET_ENV, OBJECT_STORE_PURPOSE_FILE_FALLBACK } from '../constants';
 import { buildAvatarUrl, getAvatarCdnPrefix, toAvatarKeySegment } from '../utils/avatar-url.util';
 import { logger } from './logger.service';
 import { FileObjectStoreBackend } from './object-store-file.backend';
@@ -18,13 +18,16 @@ import { S3ObjectStoreBackend } from './object-store-s3.backend';
  *
  * Purpose-keyed buckets (`ObjectStorePurpose`, env vars in
  * `OBJECT_STORE_PURPOSE_BUCKET_ENV`): a purpose whose bucket env var is set is
- * served by S3 (`S3ObjectStoreBackend`); one whose var is unset is served by a
- * folder under the app directory (`FileObjectStoreBackend`,
- * `apps/lfx-one/.object-store/<purpose>/`) with the same list, get, put and
- * metadata behaviour — so a local run persists and restores documents with
- * nothing installed and no credentials. Under `NODE_ENV=production` the bucket
- * var stays REQUIRED: deployed environments keep S3, and a misconfigured pod
- * must surface the missing var, never quietly write to its own disk.
+ * served by S3 (`S3ObjectStoreBackend`). The private `marketing-os-artifacts`
+ * purpose with its var unset is served by a folder under the app directory
+ * (`FileObjectStoreBackend`, `apps/lfx-one/.object-store/<purpose>/`) with the
+ * same list, get, put and metadata behaviour — so a local run persists and
+ * restores documents with nothing installed and no credentials. The public,
+ * CDN-fronted `avatars` purpose never falls back (`OBJECT_STORE_PURPOSE_FILE_FALLBACK`):
+ * its callers persist a `CDN_URL_PREFIX` URL, which a file on disk could not
+ * serve, so its bucket var stays required as before. Under `NODE_ENV=production`
+ * every bucket var is REQUIRED: deployed environments keep S3, and a
+ * misconfigured pod must surface the missing var, never quietly write to its own disk.
  */
 export class ObjectStoreService {
   private client: S3Client | null = null;
@@ -298,9 +301,12 @@ export class ObjectStoreService {
 
   /**
    * The backend serving a purpose (lazy, memoized per purpose): S3 when its
-   * bucket env var is set, the file-backed folder when it is not — except
-   * under NODE_ENV=production, where the var is required so a deployed
-   * environment never quietly writes documents to its own ephemeral disk.
+   * bucket env var is set; the file-backed folder when it is not, for a
+   * purpose `OBJECT_STORE_PURPOSE_FILE_FALLBACK` allows (private documents
+   * only — a public, CDN-fronted purpose would store a URL pointing at
+   * nothing) and never under NODE_ENV=production, so a deployed environment
+   * never quietly writes documents to its own ephemeral disk. Every other
+   * unset var is a configuration error.
    */
   private getBackend(purpose: ObjectStorePurpose): ObjectStoreBackend {
     const existing = this.backends[purpose];
@@ -310,12 +316,13 @@ export class ObjectStoreService {
 
     const envVar = OBJECT_STORE_PURPOSE_BUCKET_ENV[purpose];
     const bucket = process.env[envVar];
+    const mayFallBack = OBJECT_STORE_PURPOSE_FILE_FALLBACK[purpose] && process.env['NODE_ENV'] !== 'production';
     let backend: ObjectStoreBackend;
     if (bucket) {
       // Region before client: a missing AWS_REGION must fail here, before any client exists.
       const region = this.getRegion();
       backend = new S3ObjectStoreBackend(bucket, this.getClient(), region);
-    } else if (process.env['NODE_ENV'] === 'production') {
+    } else if (!mayFallBack) {
       throw new Error(`${envVar} environment variable is required`);
     } else {
       const directory = resolve(process.env[OBJECT_STORE_LOCAL_DIR_ENV] || OBJECT_STORE_LOCAL_DEFAULT_DIR, purpose);
