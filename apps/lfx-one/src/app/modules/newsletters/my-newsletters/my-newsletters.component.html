@@ -25,13 +25,13 @@
             styleClass="w-14 h-14 rounded-xl border border-gray-200 bg-white text-xl text-gray-700 [&_img]:object-contain [&_img]:p-1.5" />
         }
         <div class="flex flex-col gap-1 min-w-0">
-          <h1 class="font-display font-light text-2xl truncate" data-testid="my-newsletters-title">{{ foundation()?.name ?? 'Newsletters' }}</h1>
+          <h1 class="font-display font-light text-2xl break-words" data-testid="my-newsletters-title">{{ foundation()?.name ?? 'Newsletters' }}</h1>
           <p class="text-sm text-gray-500 m-0" data-testid="my-newsletters-description">Newsletters you've received from this foundation.</p>
         </div>
       </div>
       @if (foundation()?.can_invite) {
         <lfx-button
-          label="Invite a coworker"
+          label="Invite a colleague"
           icon="fa-light fa-user-plus"
           severity="info"
           size="small"

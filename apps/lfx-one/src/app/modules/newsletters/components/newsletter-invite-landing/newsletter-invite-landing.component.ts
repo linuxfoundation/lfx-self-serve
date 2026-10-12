@@ -12,6 +12,7 @@ import { IMPERSONATION_READ_ONLY_ERROR_CODE } from '@lfx-one/shared/constants';
 import { NewsletterGroupJoinStatus, NewsletterInviteLandingState, NewsletterJoinState } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
 import { SkeletonModule } from 'primeng/skeleton';
+import { catchError, map, merge, of, startWith, Subject, switchMap } from 'rxjs';
 
 import { NewsletterMemberBenefitBannerComponent } from '../../newsletter-reader/newsletter-member-benefit-banner/newsletter-member-benefit-banner.component';
 
@@ -30,6 +31,7 @@ export class NewsletterInviteLandingComponent {
   private readonly newsletterService = inject(NewsletterService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly reload$ = new Subject<void>();
 
   // === Inputs ===
   public readonly committeeUid = input.required<string>();
@@ -37,7 +39,7 @@ export class NewsletterInviteLandingComponent {
   public readonly foundationSlug = input.required<string>();
 
   // === Outputs ===
-  /** The user was added (or already on the list): the page reloads its feed. */
+  /** The join POST succeeded (added, or already on the list): the page reloads its feed. */
   public readonly joined = output<void>();
   public readonly dismissed = output<void>();
 
@@ -56,40 +58,33 @@ export class NewsletterInviteLandingComponent {
 
   // === Constructor ===
   public constructor() {
-    // Browser only; re-check whenever the invite changes (`?invite=A` → `?invite=B` keeps this instance).
+    // Browser only. Re-check whenever the invite changes (`?invite=A` → `?invite=B` keeps this
+    // instance) or the user asks to; switchMap drops a late reply for a superseded check.
     if (isPlatformBrowser(this.platformId)) {
-      toObservable(this.committeeUid)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(() => this.loadStatus());
+      merge(toObservable(this.committeeUid), this.reload$)
+        .pipe(
+          map(() => this.committeeUid()),
+          switchMap((committeeUid) =>
+            this.newsletterService.getNewsletterGroupJoinStatus(committeeUid).pipe(
+              map((join) => this.toLandingState(join)),
+              catchError((error: unknown) => {
+                console.error('[NewsletterInviteLanding] Failed to check the invite', error);
+                // 404 `NEWSLETTER_INVITE_INVALID` (not a newsletter group any more) or 400 (malformed uid).
+                const httpStatus = error instanceof HttpErrorResponse ? error.status : 0;
+                return of<NewsletterInviteLandingState>({ status: httpStatus === 404 || httpStatus === 400 ? 'invalid' : 'error' });
+              }),
+              startWith<NewsletterInviteLandingState>({ status: 'loading' })
+            )
+          ),
+          takeUntilDestroyed(this.destroyRef)
+        )
+        .subscribe((state) => this.state.set(state));
     }
   }
 
   // === Protected Methods ===
   protected loadStatus(): void {
-    this.state.set({ status: 'loading' });
-    this.newsletterService
-      .getNewsletterGroupJoinStatus(this.committeeUid())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (join) => {
-          const slug = this.foundationSlug();
-          if (join.foundation.slug !== slug && join.foundation.uid !== slug) {
-            this.state.set({ status: 'invalid' });
-            return;
-          }
-          if (join.state === 'already_member') {
-            this.state.set({ status: 'already_member', join });
-            this.joined.emit();
-            return;
-          }
-          this.state.set({ status: 'ready', join });
-        },
-        error: (error: unknown) => {
-          // 404 `NEWSLETTER_INVITE_INVALID` (not a newsletter group any more) or 400 (malformed uid).
-          const httpStatus = error instanceof HttpErrorResponse ? error.status : 0;
-          this.state.set({ status: httpStatus === 404 || httpStatus === 400 ? 'invalid' : 'error' });
-        },
-      });
+    this.reload$.next();
   }
 
   protected onConfirm(): void {
@@ -132,6 +127,18 @@ export class NewsletterInviteLandingComponent {
   }
 
   // === Private Helpers ===
+  /** An invite for another foundation's group is invalid here; an existing membership needs no confirm (and no reload — the page already shows that feed). */
+  private toLandingState(join: NewsletterGroupJoinStatus): NewsletterInviteLandingState {
+    const slug = this.foundationSlug();
+    if (join.foundation.slug !== slug && join.foundation.uid !== slug) {
+      return { status: 'invalid' };
+    }
+    if (join.state === 'already_member') {
+      return { status: 'already_member', join };
+    }
+    return { status: 'ready', join };
+  }
+
   private errorCode(error: unknown): string {
     if (!(error instanceof HttpErrorResponse)) return '';
     const code = (error.error as { code?: unknown } | null)?.code;

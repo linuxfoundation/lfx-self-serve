@@ -103,14 +103,14 @@ describe('MyNewsletterFoundationsComponent', () => {
     expect(find('my-newsletters-completeness-notice')).toBeNull();
   });
 
-  it('mentions coworker invites only for an eligible inviter', async () => {
+  it('mentions colleague invites only for an eligible inviter', async () => {
     await respond(response());
-    expect(find('my-newsletters-description')?.textContent).toContain('As an employee of Acme Motors, you can invite coworkers');
+    expect(find('my-newsletters-description')?.textContent).toContain('As an employee of Acme Motors, you can invite colleagues');
 
     nextFeed();
     fixture.componentInstance.onRetry();
     await respond(response({ inviter: { eligible: false, company_name: null, denied_reason: 'no_company_email' } }));
-    expect(find('my-newsletters-description')?.textContent).not.toContain('invite coworkers');
+    expect(find('my-newsletters-description')?.textContent).not.toContain('invite colleagues');
   });
 
   it('shows the empty state when the user receives no newsletters', async () => {
@@ -158,7 +158,7 @@ describe('MyNewsletterFoundationsComponent', () => {
     expect(dialogService.open).toHaveBeenCalledTimes(1);
     expect(dialogService.open).toHaveBeenCalledWith(
       NewsletterInviteDialogComponent,
-      expect.objectContaining({ header: 'Invite a coworker', data: { foundation: expect.objectContaining({ uid: 'acme-uid' }) } })
+      expect.objectContaining({ header: 'Invite a colleague', data: { foundation: expect.objectContaining({ uid: 'acme-uid' }) } })
     );
   });
 

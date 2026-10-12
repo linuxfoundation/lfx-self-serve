@@ -46,7 +46,7 @@ export class EmailService {
     }
 
     if (reply.error) {
-      // The reason stays in the server log only — it can name the recipient.
+      // The reason is one of the contract's fixed strings; it stays in the log, not the client response.
       logger.warning(req, 'send_email', 'Email service rejected the email', { reason: reply.error });
       throw new MicroserviceError('The email service rejected the email', 502, 'EMAIL_SEND_FAILED', {
         operation: 'send_email',
@@ -55,9 +55,8 @@ export class EmailService {
     }
 
     if (!reply.email_id) {
-      logger.warning(req, 'send_email', 'Email service accepted the email without sending it (disabled or recipient filtered)', {
-        subject: request.subject,
-      });
+      // No subject or recipient in the log: callers put names in both.
+      logger.warning(req, 'send_email', 'Email service accepted the email without sending it (disabled or recipient filtered)', {});
     } else {
       logger.debug(req, 'send_email', 'Email accepted by email service', { email_id: reply.email_id });
     }

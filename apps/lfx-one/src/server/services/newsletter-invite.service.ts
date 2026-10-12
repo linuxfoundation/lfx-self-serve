@@ -6,8 +6,12 @@ import {
   NEWSLETTER_COMMITTEE_CATEGORY,
   NEWSLETTER_INVITE_FORBIDDEN_ERROR_CODE,
   NEWSLETTER_INVITE_INVALID_ERROR_CODE,
+  NEWSLETTER_INVITE_EMAIL_PATTERN,
+  NEWSLETTER_INVITE_INVITER_NAME_MAX_LENGTH,
   NEWSLETTER_INVITE_NOT_MEMBER_ERROR_CODE,
   NEWSLETTER_INVITE_PERSONAL_EMAIL_ERROR_CODE,
+  NEWSLETTER_INVITE_RECIPIENT_COOLDOWN_MS,
+  NEWSLETTER_MEMBER_BENEFIT_NOT_ELIGIBLE_ERROR_CODE,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
 } from '@lfx-one/shared/constants';
 import {
@@ -26,8 +30,7 @@ import {
   Project,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
-import { emailDomain, isFilterSafeIdentifier, isPersonalEmailDomain } from '@lfx-one/shared/utils';
-import { computeIsFoundation } from '@lfx-one/shared/utils/project.utils';
+import { computeIsFoundation, emailDomain, isFilterSafeIdentifier, isPersonalEmailDomain } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -57,6 +60,12 @@ import { ProjectService } from './project.service';
  *   own verified emails, then confirms; the add is the same M2M group add the reader page uses.
  */
 export class NewsletterInviteService {
+  /**
+   * `<group uid>|<email>` → last invite time. Per pod and in memory, like the route's rate limiter:
+   * it bounds how often one address is emailed about one list, not an exact cluster-wide quota.
+   */
+  private static readonly recentInvites = new Map<string, number>();
+
   private readonly memberBenefitService: NewsletterMemberBenefitService;
   private readonly newsletterService: NewsletterService;
   private readonly committeeService: CommitteeService;
@@ -83,6 +92,11 @@ export class NewsletterInviteService {
     this.emailVerificationService = deps.emailVerificationService ?? new EmailVerificationService();
     this.emailService = deps.emailService ?? new EmailService();
     this.microserviceProxy = deps.microserviceProxy ?? new MicroserviceProxyService();
+  }
+
+  /** Test seam: forget recent invites. */
+  public static resetRecentInvites(): void {
+    NewsletterInviteService.recentInvites.clear();
   }
 
   /** GET /api/newsletters/my-foundations — the card grid and every drill-down's rows in one fan-out. */
@@ -152,18 +166,24 @@ export class NewsletterInviteService {
     }
 
     const result: NewsletterInviteResult = { email, foundation_name: entry.foundation.name };
+    const cooldownKey = `${entry.group.uid}|${email}`;
+    if (this.invitedRecently(cooldownKey)) {
+      logger.info(req, operation, 'Invitee was already emailed about this list recently — not emailed again', { committee_uid: entry.group.uid });
+      return result;
+    }
     if (await this.memberBenefitService.isEmailInGroup(req, m2mToken, entry.group.uid, email)) {
       logger.info(req, operation, 'Invitee is already on the newsletter list — not emailed', { committee_uid: entry.group.uid });
       return result;
     }
 
     const rendered = renderNewsletterInviteEmail({
-      inviter_name: this.singleLine(getEffectiveName(req) || getEffectiveUsername(req) || 'A colleague'),
+      inviter_name: this.inviterName(getEffectiveName(req) || getEffectiveUsername(req) || ''),
       company_name: this.singleLine(inviteeCompany.company_name || eligibility.match.company_name || 'your company'),
       foundation_name: this.singleLine(entry.foundation.name),
       accept_url: buildNewsletterInviteAcceptUrl(this.appBaseUrl(), entry.foundation.slug, entry.group.uid),
     });
     await this.emailService.sendEmail(req, { to: email, ...rendered });
+    NewsletterInviteService.recentInvites.set(cooldownKey, Date.now());
 
     logger.info(req, operation, 'Newsletter invite sent', {
       foundation_uid: foundationUid,
@@ -190,7 +210,7 @@ export class NewsletterInviteService {
       throw new AuthorizationError('Not eligible to join this newsletter', {
         operation: 'join_newsletter_group_by_invite',
         service: 'newsletter_invite',
-        code: 'NEWSLETTER_MEMBER_BENEFIT_NOT_ELIGIBLE',
+        code: NEWSLETTER_MEMBER_BENEFIT_NOT_ELIGIBLE_ERROR_CODE,
       });
     }
 
@@ -303,24 +323,26 @@ export class NewsletterInviteService {
    */
   private async getMyNewsletterGroups(req: Request, committeeUids: Set<string>): Promise<Map<string, FoundationNewsletterGroup>> {
     const uids = [...committeeUids].filter(isFilterSafeIdentifier);
-    const committees: Committee[] = [];
-    for (let i = 0; i < uids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
-      const batch = uids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE);
-      const page = await fetchAllQueryResources<Committee>(
-        req,
-        (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            type: 'committee',
-            tags: batch.map((uid) => `committee_uid:${uid}`),
-            page_size: batch.length,
-            ...(pageToken && { page_token: pageToken }),
-          }),
-        { failOnPartial: true }
-      );
-      committees.push(...page);
-    }
+    const batches: string[][] = [];
+    for (let i = 0; i < uids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) batches.push(uids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    const pages = await Promise.all(
+      batches.map((batch) =>
+        fetchAllQueryResources<Committee>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'committee',
+              tags: batch.map((uid) => `committee_uid:${uid}`),
+              page_size: batch.length,
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        )
+      )
+    );
 
-    const newsletterGroups = committees
+    const newsletterGroups = pages
+      .flat()
       .filter((committee) => committee?.category === NEWSLETTER_COMMITTEE_CATEGORY && committee.uid && committee.project_uid)
       .sort((a, b) => a.name.localeCompare(b.name));
     if (newsletterGroups.length === 0) return new Map();
@@ -384,7 +406,8 @@ export class NewsletterInviteService {
 
   private normalizeInviteEmail(rawEmail: unknown, operation: string): string {
     const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
-    if (!email || email.length > 254 || !EMAIL_REGEX.test(email)) {
+    // EMAIL_REGEX alone admits `,`, `"`, `<`… in the local part; the invite pattern keeps `to` a plain address.
+    if (!email || email.length > 254 || !EMAIL_REGEX.test(email) || !NEWSLETTER_INVITE_EMAIL_PATTERN.test(email)) {
       throw ServiceValidationError.forField('email', 'Enter a valid email address', { operation, service: 'newsletter_invite' });
     }
     const domain = emailDomain(email);
@@ -398,12 +421,38 @@ export class NewsletterInviteService {
     return email;
   }
 
-  /** Strips line breaks so a profile name cannot inject into the email subject. */
+  private invitedRecently(key: string): boolean {
+    const now = Date.now();
+    if (NewsletterInviteService.recentInvites.size > 5000) {
+      for (const [entry, at] of NewsletterInviteService.recentInvites) {
+        if (now - at >= NEWSLETTER_INVITE_RECIPIENT_COOLDOWN_MS) NewsletterInviteService.recentInvites.delete(entry);
+      }
+    }
+    const last = NewsletterInviteService.recentInvites.get(key);
+    return last !== undefined && now - last < NEWSLETTER_INVITE_RECIPIENT_COOLDOWN_MS;
+  }
+
+  /**
+   * The inviter as shown in the email body: one line, no links, capped. A profile name is free text
+   * and the email goes out in LFX branding, so it must not carry a URL or a long pitch.
+   */
+  private inviterName(raw: string): string {
+    const cleaned = this.singleLine(raw.replace(/\b(?:https?:\/\/|www\.)\S+/gi, '').replace(/\s{2,}/g, ' '));
+    if (!cleaned) return 'A colleague';
+    return cleaned.length > NEWSLETTER_INVITE_INVITER_NAME_MAX_LENGTH
+      ? `${cleaned.slice(0, NEWSLETTER_INVITE_INVITER_NAME_MAX_LENGTH - 1).trimEnd()}…`
+      : cleaned;
+  }
+
+  /** Strips line breaks so upstream text cannot fold into a header. */
   private singleLine(value: string): string {
     return value.replace(/[\r\n]+/g, ' ').trim();
   }
 
+  /** The app origin for the accept link; never guessed — a wrong origin would mail out dead links. */
   private appBaseUrl(): string {
-    return process.env['PCC_BASE_URL'] || 'http://localhost:4000';
+    const baseUrl = process.env['PCC_BASE_URL'];
+    if (!baseUrl) throw new Error('PCC_BASE_URL is not configured; cannot build newsletter invite links');
+    return baseUrl;
   }
 }

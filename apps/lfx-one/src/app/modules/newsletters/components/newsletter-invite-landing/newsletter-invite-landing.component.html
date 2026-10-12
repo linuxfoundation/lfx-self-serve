@@ -37,6 +37,7 @@
           [class.border-gray-200]="join.state !== 'eligible'"
           data-testid="newsletter-invite-landing-card">
           <div class="px-5 py-2.5 bg-gradient-to-b from-blue-50 to-white">
+            <!-- 10px matches the dashboard meeting card label/chip size (text-2xs renders 8.75px at the 14px root) -->
             <span class="text-[10px] font-semibold uppercase tracking-wide text-blue-800">You're invited</span>
           </div>
           <div class="flex gap-4 items-start px-5 py-4">
@@ -100,7 +101,7 @@
                 size="small"
                 href="/profile/emails"
                 target="_blank"
-                rel="noopener"
+                rel="noopener noreferrer"
                 data-testid="newsletter-invite-landing-add-email" />
               <lfx-button
                 label="Check again"

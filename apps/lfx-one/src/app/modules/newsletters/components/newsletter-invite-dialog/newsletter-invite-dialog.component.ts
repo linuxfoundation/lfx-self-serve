@@ -18,9 +18,9 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { map } from 'rxjs';
 
 /**
- * Invite a coworker to a foundation's newsletter (#3483). One field: their company email. Personal
+ * Invite a colleague to a foundation's newsletter (#3483). One field: their company email. Personal
  * mailboxes are caught as you type; whether the domain is a Linux Foundation member's is the
- * server's call. After a send the field clears so the next coworker can be invited right away.
+ * server's call. After a send the field clears so the next colleague can be invited right away.
  */
 @Component({
   selector: 'lfx-newsletter-invite-dialog',

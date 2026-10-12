@@ -28,7 +28,7 @@ import {
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { Observable, take } from 'rxjs';
+import { catchError, Observable, take, throwError } from 'rxjs';
 
 /**
  * Angular HTTP client for the newsletter feature.
@@ -130,20 +130,32 @@ export class NewsletterService {
 
   /**
    * Me-lens My Newsletters by foundation (#3483): one card per foundation plus the full feed (tagged
-   * with its foundation) and whether the user may invite coworkers. Errors propagate to the page.
+   * with its foundation) and whether the user may invite colleagues. Errors propagate to the page.
    */
   public getMyNewsletterFoundations(): Observable<MyNewsletterFoundationsResponse> {
-    return this.http.get<MyNewsletterFoundationsResponse>('/api/newsletters/my-foundations').pipe(take(1));
+    return this.http.get<MyNewsletterFoundationsResponse>('/api/newsletters/my-foundations').pipe(
+      take(1),
+      catchError((error) => {
+        console.error('[NewsletterService] Failed to load my newsletter foundations', error);
+        return throwError(() => error);
+      })
+    );
   }
 
-  /** Emails a coworker an invitation to a foundation's newsletter (server checks sender and invitee eligibility). */
+  /** Emails a colleague an invitation to a foundation's newsletter (server checks sender and invitee eligibility). */
   public sendNewsletterInvite(foundationUid: string, email: string): Observable<NewsletterInviteResult> {
     return this.http.post<NewsletterInviteResult>(`/api/newsletters/foundations/${this.enc(foundationUid)}/invites`, { email }).pipe(take(1));
   }
 
   /** Invite landing: whether the signed-in user can join the invite's newsletter group (side-effect free). */
   public getNewsletterGroupJoinStatus(committeeUid: string): Observable<NewsletterGroupJoinStatus> {
-    return this.http.get<NewsletterGroupJoinStatus>(`/api/newsletters/groups/${this.enc(committeeUid)}/join-status`).pipe(take(1));
+    return this.http.get<NewsletterGroupJoinStatus>(`/api/newsletters/groups/${this.enc(committeeUid)}/join-status`).pipe(
+      take(1),
+      catchError((error) => {
+        console.error('[NewsletterService] Failed to check newsletter group join status', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   /** Invite landing: confirm — adds the caller's qualifying work email to the newsletter group. */

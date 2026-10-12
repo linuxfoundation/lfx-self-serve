@@ -116,3 +116,18 @@ export const NEWSLETTER_INVITE_PERSONAL_EMAIL_ERROR_CODE = 'NEWSLETTER_INVITE_PE
 
 /** 400 code of an invite to a domain that is not a Linux Foundation member company. */
 export const NEWSLETTER_INVITE_NOT_MEMBER_ERROR_CODE = 'NEWSLETTER_INVITE_NOT_MEMBER_COMPANY';
+
+/** 403 code of a member-benefit join refused because the caller is not eligible. */
+export const NEWSLETTER_MEMBER_BENEFIT_NOT_ELIGIBLE_ERROR_CODE = 'NEWSLETTER_MEMBER_BENEFIT_NOT_ELIGIBLE';
+
+/** The same address is emailed an invite to the same newsletter group at most once per window (per pod). */
+export const NEWSLETTER_INVITE_RECIPIENT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+/** Longest inviter display name put in an invite email; longer names are cut with an ellipsis. */
+export const NEWSLETTER_INVITE_INVITER_NAME_MAX_LENGTH = 64;
+
+/**
+ * Shape a newsletter invite recipient must have (after lowercasing): a plain dot-atom address, so the
+ * `to` sent to the email service and the `email:` roster filter can only name one ordinary mailbox.
+ */
+export const NEWSLETTER_INVITE_EMAIL_PATTERN = /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/;

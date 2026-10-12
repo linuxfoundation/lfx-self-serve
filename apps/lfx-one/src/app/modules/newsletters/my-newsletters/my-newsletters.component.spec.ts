@@ -198,13 +198,15 @@ describe('MyNewslettersComponent', () => {
     await click('my-newsletters-invite');
     expect(dialog.open).toHaveBeenCalledWith(
       NewsletterInviteDialogComponent,
-      expect.objectContaining({ header: 'Invite a coworker', data: { foundation: expect.objectContaining({ uid: 'foundation', can_invite: true }) } })
+      expect.objectContaining({ header: 'Invite a colleague', data: { foundation: expect.objectContaining({ uid: 'foundation', can_invite: true }) } })
     );
   });
-  it('renders the invite landing for ?invite=, reloads when joined and clears the param when dismissed', async () => {
+  it('renders the invite landing for ?invite=, reloads only after a join and clears the param when dismissed', async () => {
     await respond(feedOf([row()], true));
     expect(find('newsletter-invite-landing')).toBeNull();
 
+    const group = { uid: 'group', name: 'Foundation Newsletter' };
+    const foundation = { uid: 'foundation', slug: 'foundation-slug', name: 'Foundation', logo_url: null };
     const status = new Subject<NewsletterGroupJoinStatus>();
     gateway.getNewsletterGroupJoinStatus.mockReturnValue(status);
     params.next(convertToParamMap({ invite: 'group' }));
@@ -212,25 +214,24 @@ describe('MyNewslettersComponent', () => {
     expect(find('newsletter-invite-landing')).not.toBeNull();
     expect(gateway.getNewsletterGroupJoinStatus).toHaveBeenCalledWith('group');
 
-    nextFeed();
-    status.next({
-      state: 'already_member',
-      group: { uid: 'group', name: 'Foundation Newsletter' },
-      foundation: { uid: 'foundation', slug: 'foundation-slug', name: 'Foundation', logo_url: null },
-    });
+    // Already on the list: the page already shows that feed, so no reload.
+    status.next({ state: 'already_member', group, foundation });
     await settle();
+    expect(gateway.getMyNewsletterFoundations).toHaveBeenCalledTimes(1);
+
+    const eligible: NewsletterGroupJoinStatus = { state: 'eligible', group, foundation, email: 'pat@acme-motors.example', company_name: 'Acme Motors' };
+    gateway.getNewsletterGroupJoinStatus.mockReturnValue(of(eligible));
+    gateway.joinNewsletterGroupByInvite.mockReturnValue(
+      of({ status: 'added', email: 'pat@acme-motors.example', committee_name: 'Foundation Newsletter', company_name: 'Acme Motors' })
+    );
+    params.next(convertToParamMap({ invite: 'group-1' }));
+    await settle();
+    nextFeed();
+    await click('newsletter-invite-landing-confirm');
+    expect(gateway.joinNewsletterGroupByInvite).toHaveBeenCalledWith('group-1');
     expect(gateway.getMyNewsletterFoundations).toHaveBeenCalledTimes(2);
     await respond(feedOf([row()], true));
 
-    gateway.getNewsletterGroupJoinStatus.mockReturnValue(
-      of({
-        state: 'eligible',
-        group: { uid: 'group', name: 'Foundation Newsletter' },
-        foundation: { uid: 'foundation', slug: 'foundation-slug', name: 'Foundation', logo_url: null },
-        email: 'pat@acme-motors.example',
-        company_name: 'Acme Motors',
-      } satisfies NewsletterGroupJoinStatus)
-    );
     params.next(convertToParamMap({}));
     await settle();
     expect(find('newsletter-invite-landing')).toBeNull();

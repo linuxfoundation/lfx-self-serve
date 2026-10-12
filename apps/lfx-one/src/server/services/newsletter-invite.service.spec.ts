@@ -86,6 +86,7 @@ describe('NewsletterInviteService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    NewsletterInviteService.resetRecentInvites();
     process.env['PCC_BASE_URL'] = 'https://app.lfx.example';
     committees = [NEWSLETTER_GROUP, BOARD];
 
@@ -177,7 +178,8 @@ describe('NewsletterInviteService', () => {
       expect(result).toEqual({ email: 'coworker@acme-motors.example', foundation_name: 'Acme Foundation' });
       const sent = deps.emailService.sendEmail.mock.calls[0][1];
       expect(sent.to).toBe('coworker@acme-motors.example');
-      expect(sent.subject).toBe('Jane Doe invited you to the Acme Foundation newsletter');
+      expect(sent.subject).toBe("You're invited to the Acme Foundation newsletter");
+      expect(sent.html).toContain('<strong>Jane Doe</strong>');
       expect(sent.html).toContain(
         `https://app.lfx.example/login?returnTo=${encodeURIComponent('/newsletters/my/acme-foundation?invite=c-news')}`.replace(/&/g, '&amp;')
       );
@@ -185,7 +187,7 @@ describe('NewsletterInviteService', () => {
     });
 
     it('rejects personal mailboxes and malformed addresses before any lookup', async () => {
-      await expect(service.sendInvite(req, 'f-1', 'someone@gmail.com')).rejects.toBeInstanceOf(ServiceValidationError);
+      await expect(service.sendInvite(req, 'f-1', 'someone@gmail.example')).rejects.toBeInstanceOf(ServiceValidationError);
       await expect(service.sendInvite(req, 'f-1', 'not-an-email')).rejects.toBeInstanceOf(ServiceValidationError);
       expect(deps.committeeService.getMyCommitteeUids).not.toHaveBeenCalled();
     });
@@ -220,12 +222,36 @@ describe('NewsletterInviteService', () => {
       expect(deps.emailService.sendEmail).not.toHaveBeenCalled();
     });
 
-    it('keeps line breaks in a profile name out of the subject', async () => {
-      getEffectiveName.mockReturnValue('Jane\r\nBcc: x@evil.example');
+    it('puts a cleaned, capped inviter name in the body and never in the subject', async () => {
+      getEffectiveName.mockReturnValue(`Jane\r\nVerify at https://phish.example/now ${'x'.repeat(100)}`);
 
       await service.sendInvite(req, 'f-1', 'coworker@acme-motors.example');
 
-      expect(deps.emailService.sendEmail.mock.calls[0][1].subject).not.toMatch(/[\r\n]/);
+      const sent = deps.emailService.sendEmail.mock.calls[0][1];
+      expect(sent.subject).toBe("You're invited to the Acme Foundation newsletter");
+      expect(sent.text).not.toContain('phish.example');
+      expect(sent.text).not.toMatch(/Jane\r?\n/);
+      expect(sent.text).toContain('…');
+    });
+
+    it('emails one address about one list at most once per cooldown, with the same answer', async () => {
+      await service.sendInvite(req, 'f-1', 'coworker@acme-motors.example');
+      const again = await service.sendInvite(req, 'f-1', 'coworker@acme-motors.example');
+
+      expect(again).toEqual({ email: 'coworker@acme-motors.example', foundation_name: 'Acme Foundation' });
+      expect(deps.emailService.sendEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects addresses with characters outside the plain address shape', async () => {
+      await expect(service.sendInvite(req, 'f-1', 'a,b@acme-motors.example')).rejects.toBeInstanceOf(ServiceValidationError);
+      await expect(service.sendInvite(req, 'f-1', '"x"@acme-motors.example')).rejects.toBeInstanceOf(ServiceValidationError);
+    });
+
+    it('fails closed instead of mailing a guessed link when the app origin is not configured', async () => {
+      delete process.env['PCC_BASE_URL'];
+
+      await expect(service.sendInvite(req, 'f-1', 'coworker@acme-motors.example')).rejects.toThrow('PCC_BASE_URL');
+      expect(deps.emailService.sendEmail).not.toHaveBeenCalled();
     });
   });
 

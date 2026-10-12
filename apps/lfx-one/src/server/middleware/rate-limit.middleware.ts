@@ -107,6 +107,8 @@ export const newsletterInviteRateLimiter = rateLimit({
   legacyHeaders: false,
   statusCode: 429,
   message: { error: "You've sent the maximum number of invites for today. Try again tomorrow.", code: 'RATE_LIMITED' },
+  // Only sent invites spend the budget — a typo or a non-member domain (4xx) does not.
+  skipFailedRequests: true,
   keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
 });
 

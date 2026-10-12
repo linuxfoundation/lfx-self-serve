@@ -38,7 +38,8 @@ describe('newsletter invite email', () => {
       accept_url: 'https://app.lfx.example/login',
     });
 
-    expect(email.subject).toBe('Jane Doe invited you to the Acme Foundation newsletter');
+    expect(email.subject).toBe("You're invited to the Acme Foundation newsletter");
+    expect(email.subject).not.toContain('Jane Doe');
     for (const part of [email.html, email.text]) {
       expect(part).toContain('Get everything you need to know about open source every week');
       expect(part).toContain('create an LFX account and confirm your company email address');

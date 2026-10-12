@@ -518,6 +518,41 @@ describe('NewsletterMemberBenefitService', () => {
     });
   });
 
+  describe('findMemberCompanyForEmail (invitee check)', () => {
+    it('returns the TLF member company for an address on a member domain or its subdomain', async () => {
+      stubUpstream({ memberships: [ACME_ACTIVE] });
+
+      expect(await service.findMemberCompanyForEmail(req, M2M, 'pat@acme-motors.example')).toEqual({ b2b_org_uid: ORG_A, company_name: 'Acme Motors' });
+      expect(await service.findMemberCompanyForEmail(req, M2M, 'pat@eng.acme-motors.example')).toEqual({ b2b_org_uid: ORG_A, company_name: 'Acme Motors' });
+    });
+
+    it('returns null for a non-member domain and never looks up a personal mailbox', async () => {
+      stubUpstream({ memberships: [ACME_ACTIVE, { ...ACME_ACTIVE, company_domain: 'gmail.example' }] });
+
+      expect(await service.findMemberCompanyForEmail(req, M2M, 'pat@other-corp.example')).toBeNull();
+      proxyRequest.mockClear();
+      expect(await service.findMemberCompanyForEmail(req, M2M, 'pat@gmail.example')).toBeNull();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('isEmailInGroup (invite roster check)', () => {
+    it('checks one address against one group with the M2M token', async () => {
+      stubUpstream({ committeeMembers: (query) => (query['filters_or'] as string[])[0] === 'email:pat@acme-motors.example' });
+
+      expect(await service.isEmailInGroup(req, M2M, 'news-1', 'pat@acme-motors.example')).toBe(true);
+      expect(await service.isEmailInGroup(req, M2M, 'news-1', 'sam@acme-motors.example')).toBe(false);
+      expect(proxyRequest.mock.calls[0][3]).toBe('GET');
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'committee_member', tags: ['committee_uid:news-1'] });
+      expect(proxyRequest.mock.calls[0][7]).toEqual({ bearerToken: M2M });
+    });
+
+    it('answers false without an upstream call for a value unsafe to filter on', async () => {
+      expect(await service.isEmailInGroup(req, M2M, 'news-1', 'a,b@acme-motors.example')).toBe(false);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
   describe('resolveNewsletterGroup', () => {
     it('picks the first Newsletter-category committee in the issue order and never another category', async () => {
       stubUpstream({ committees: { 'board-1': { name: 'Governing Board', category: 'Board' }, ...NEWSLETTER_GROUP } });

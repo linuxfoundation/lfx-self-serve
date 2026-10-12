@@ -28,7 +28,9 @@ export function renderNewsletterInviteEmail(context: NewsletterInviteEmailContex
   const acceptUrl = escapeHtml(context.accept_url);
   const year = now.getUTCFullYear();
 
-  const subject = `${context.inviter_name} invited you to the ${context.foundation_name} newsletter`;
+  // The inviter's name stays out of the subject: it is free profile text, and the subject is the
+  // most trusted-looking line of an LFX-branded email.
+  const subject = `You're invited to the ${context.foundation_name} newsletter`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">

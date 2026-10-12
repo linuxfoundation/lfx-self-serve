@@ -10,6 +10,7 @@ import {
   MEMBER_BENEFIT_FOUNDATION_SLUG,
   MEMBER_BENEFIT_MAX_CANDIDATE_DOMAINS,
   NEWSLETTER_COMMITTEE_CATEGORY,
+  NEWSLETTER_MEMBER_BENEFIT_NOT_ELIGIBLE_ERROR_CODE,
   NEWSLETTER_NOT_SENT_ERROR_CODE,
 } from '@lfx-one/shared/constants';
 import {
@@ -201,7 +202,7 @@ export class NewsletterMemberBenefitService {
       throw new AuthorizationError('Not eligible to join this newsletter', {
         operation: 'join_newsletter_group',
         service: 'newsletter_member_benefit',
-        code: 'NEWSLETTER_MEMBER_BENEFIT_NOT_ELIGIBLE',
+        code: NEWSLETTER_MEMBER_BENEFIT_NOT_ELIGIBLE_ERROR_CODE,
       });
     }
 

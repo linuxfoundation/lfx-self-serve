@@ -9,17 +9,17 @@
       shape="square"
       styleClass="w-10 h-10 rounded-lg border border-gray-200 bg-white text-gray-700 [&_img]:object-contain [&_img]:p-1" />
     <div class="flex flex-col min-w-0">
-      <span class="text-sm font-semibold text-gray-900 truncate">{{ foundation.name }} newsletter</span>
+      <span class="text-sm font-semibold text-gray-900 break-words">{{ foundation.name }} newsletter</span>
       <span class="text-xs text-gray-500">A Linux Foundation member benefit</span>
     </div>
   </div>
 
   <p class="text-sm text-gray-600 m-0">
-    We'll email your coworker an invitation. They sign in or create an LFX account, confirm their company email, and start receiving the newsletter.
+    We'll email them an invitation. They sign in or create an LFX account, confirm their company email, and start receiving the newsletter.
   </p>
 
   <div class="flex flex-col gap-1.5">
-    <label for="newsletter-invite-email" class="text-sm font-medium text-gray-900">Coworker's company email</label>
+    <label for="newsletter-invite-email" class="text-sm font-medium text-gray-900">Their company email</label>
     <lfx-input-text
       [form]="form"
       control="email"

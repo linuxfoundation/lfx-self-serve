@@ -178,7 +178,7 @@ export class MyNewslettersComponent {
     const foundation = this.foundation();
     if (!foundation?.can_invite) return;
     this.dialogService.open(NewsletterInviteDialogComponent, {
-      header: 'Invite a coworker',
+      header: 'Invite a colleague',
       width: '480px',
       modal: true,
       closable: true,

@@ -3,8 +3,10 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { MyNewsletterFoundation, MyNewsletterInviter } from '@lfx-one/shared/interfaces';
+import { Tooltip } from 'primeng/tooltip';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NewsletterFoundationCardComponent } from './newsletter-foundation-card.component';
@@ -27,6 +29,7 @@ describe('NewsletterFoundationCardComponent', () => {
   let fixture: ComponentFixture<NewsletterFoundationCardComponent>;
   const find = (id: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${id}"]`);
   const inviteButton = () => find('newsletter-foundation-card-invite')!.querySelector('button')!;
+  const tooltipOf = (id: string) => fixture.debugElement.query(By.css(`[data-testid="${id}"]`)).injector.get(Tooltip).content;
   const disabledReason = () => (fixture.componentInstance as unknown as { inviteDisabledReason: () => string }).inviteDisabledReason();
 
   beforeEach(async () => {
@@ -51,6 +54,9 @@ describe('NewsletterFoundationCardComponent', () => {
     expect(find('newsletter-foundation-card-count')?.textContent).toContain('3 newsletters received');
     expect(find('newsletter-foundation-card')?.textContent).toContain('Last Aug 13, 2026');
     expect(find('newsletter-foundation-card')?.textContent).toContain('Delivered through Acme Foundation Newsletter');
+    // Truncated text carries its full value in a tooltip.
+    expect(tooltipOf('newsletter-foundation-card-name')).toBe('acme Foundation');
+    expect(tooltipOf('newsletter-foundation-card-group')).toBe('Delivered through Acme Foundation Newsletter');
     expect(find('newsletter-foundation-card')?.getAttribute('aria-label')).toBe('acme Foundation newsletter');
     expect(find('newsletter-foundation-card-view-all')?.getAttribute('href')).toBe('/newsletters/my/acme-foundation');
     expect(find('newsletter-foundation-card-body')?.getAttribute('href')).toBe('/newsletters/my/acme-foundation');
@@ -72,6 +78,11 @@ describe('NewsletterFoundationCardComponent', () => {
 
     expect(inviteButton().disabled).toBe(false);
     expect(disabledReason()).toBe('');
+    const wrapper = find('newsletter-foundation-card-invite-wrapper')!;
+    expect(wrapper.getAttribute('role')).toBeNull();
+    expect(wrapper.getAttribute('aria-label')).toBeNull();
+    expect(wrapper.hasAttribute('tabindex')).toBe(false);
+    expect(inviteButton().getAttribute('aria-label')).toBe('Invite a colleague to the acme Foundation newsletter');
     inviteButton().click();
 
     expect(invite).toHaveBeenCalledTimes(1);
@@ -96,7 +107,10 @@ describe('NewsletterFoundationCardComponent', () => {
     render(foundation({ can_invite: false }), inviter);
 
     expect(disabledReason()).toContain(reason);
-    // The disabled button is wrapped in a focusable span so the tooltip stays reachable by keyboard.
-    expect(inviteButton().closest('span[tabindex]')?.getAttribute('tabindex')).toBe('0');
+    // The disabled button is wrapped in a focusable note so the reason stays reachable by keyboard and AT.
+    const wrapper = find('newsletter-foundation-card-invite-wrapper')!;
+    expect(wrapper.getAttribute('tabindex')).toBe('0');
+    expect(wrapper.getAttribute('role')).toBe('note');
+    expect(wrapper.getAttribute('aria-label')).toBe(disabledReason());
   });
 });

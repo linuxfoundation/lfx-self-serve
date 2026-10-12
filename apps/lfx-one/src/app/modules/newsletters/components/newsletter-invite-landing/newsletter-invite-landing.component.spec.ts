@@ -8,7 +8,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { NewsletterGroupJoinStatus, NewsletterJoinResult } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NewsletterInviteLandingComponent } from './newsletter-invite-landing.component';
 
@@ -57,6 +57,11 @@ describe('NewsletterInviteLandingComponent', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('does not check the invite during SSR', async () => {
@@ -97,6 +102,33 @@ describe('NewsletterInviteLandingComponent', () => {
     expect(newsletterService.getNewsletterGroupJoinStatus).toHaveBeenCalledTimes(2);
   });
 
+  it('ignores a late reply for a superseded invite', async () => {
+    const first = new Subject<NewsletterGroupJoinStatus>();
+    const second = new Subject<NewsletterGroupJoinStatus>();
+    newsletterService.getNewsletterGroupJoinStatus.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    await setup();
+
+    fixture.componentRef.setInput('committeeUid', 'group-uid-2');
+    await fixture.whenStable();
+    expect(newsletterService.getNewsletterGroupJoinStatus).toHaveBeenLastCalledWith('group-uid-2');
+
+    second.next(status({ group: { uid: 'group-uid-2', name: 'Second Newsletter' }, email: 'sam@acme-motors.example' }));
+    await fixture.whenStable();
+    first.next(status({ state: 'denied', denied_reason: 'not_member_company' }));
+    await fixture.whenStable();
+
+    expect(find('newsletter-invite-landing-email')?.textContent).toBe('sam@acme-motors.example');
+    expect(find('newsletter-invite-landing-not-member')).toBeNull();
+  });
+
+  it('logs a failed status check', async () => {
+    const failure = new HttpErrorResponse({ status: 503 });
+    newsletterService.getNewsletterGroupJoinStatus.mockReturnValue(throwError(() => failure));
+    await setup();
+
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('[NewsletterInviteLanding]'), failure);
+  });
+
   it('accepts the foundation uid as the drill-down key', async () => {
     newsletterService.getNewsletterGroupJoinStatus.mockReturnValue(of(status()));
     await setup('browser', 'foundation-uid');
@@ -133,11 +165,12 @@ describe('NewsletterInviteLandingComponent', () => {
     expect(find('newsletter-invite-landing-card')).not.toBeNull();
   });
 
-  it('reports an existing membership as joined without asking to confirm', async () => {
+  it('shows an existing membership without asking to confirm or reloading the page', async () => {
     newsletterService.getNewsletterGroupJoinStatus.mockReturnValue(of(status({ state: 'already_member', email: undefined, company_name: undefined })));
     await setup();
 
-    expect(joined).toHaveBeenCalledTimes(1);
+    // The page already shows that feed; only a successful join POST asks it to reload.
+    expect(joined).not.toHaveBeenCalled();
     expect(find('newsletter-member-benefit-already')).not.toBeNull();
     expect(find('newsletter-invite-landing-card')).toBeNull();
   });
@@ -155,6 +188,7 @@ describe('NewsletterInviteLandingComponent', () => {
     expect(find(testId)).not.toBeNull();
     expect(find('newsletter-invite-landing-confirm')).toBeNull();
     expect(find('newsletter-invite-landing-add-email')?.querySelector('a')?.getAttribute('href')).toBe('/profile/emails');
+    expect(find('newsletter-invite-landing-add-email')?.querySelector('a')?.getAttribute('rel')).toBe('noopener noreferrer');
 
     newsletterService.getNewsletterGroupJoinStatus.mockReturnValue(of(status()));
     await click('newsletter-invite-landing-recheck');
