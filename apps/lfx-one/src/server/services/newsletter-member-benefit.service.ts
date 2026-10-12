@@ -254,6 +254,25 @@ export class NewsletterMemberBenefitService {
   }
 
   /**
+   * The active TLF member company an arbitrary email's domain belongs to (the newsletter invite
+   * check on the invitee's address), or null for a personal mailbox or a non-member domain. Same
+   * index and matching as {@link resolveEligibility}; throws when the index cannot be loaded.
+   */
+  public async findMemberCompanyForEmail(req: Request, m2mToken: string, email: string): Promise<MemberBenefitCompany | null> {
+    const domain = emailDomain(email);
+    if (!domain || isPersonalEmailDomain(domain)) return null;
+    const candidates = candidateMemberDomains(domain).slice(0, MEMBER_BENEFIT_MAX_CANDIDATE_DOMAINS);
+    if (candidates.length === 0) return null;
+
+    const [index, b2bMatches] = await Promise.all([this.getDomainIndex(req, m2mToken), this.findB2bOrgMatches(req, m2mToken, candidates)]);
+    for (const candidate of candidates) {
+      const company = this.pickCompany(candidate, index, b2bMatches);
+      if (company) return company;
+    }
+    return null;
+  }
+
+  /**
    * The first of the newsletter's audience committees that is a Newsletter-category group. Only
    * such a group is ever auto-joined: other audience committees (a board, a TAC) carry real
    * permissions and must never be granted by a domain match. Null when the issue has none.
@@ -305,6 +324,12 @@ export class NewsletterMemberBenefitService {
 
     const results = await Promise.all(lookups);
     return results.some(Boolean);
+  }
+
+  /** Whether one email (not the signed-in user) is already on a group's roster — the invite skip check. */
+  public async isEmailInGroup(req: Request, m2mToken: string, committeeUid: string, email: string): Promise<boolean> {
+    if (!isFilterSafeIdentifier(committeeUid) || !MEMBER_BENEFIT_FILTER_SAFE_EMAIL.test(email)) return false;
+    return this.hasCommitteeMemberRow(req, m2mToken, { tags: [`committee_uid:${committeeUid}`], filters_or: [`email:${email}`] });
   }
 
   /**

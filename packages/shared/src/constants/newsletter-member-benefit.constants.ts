@@ -95,3 +95,24 @@ export const MEMBER_BENEFIT_B2B_ORG_MAX_RESULTS = 200;
 
 /** Email shapes safe to interpolate into an `email:<value>` query-service filter. */
 export const MEMBER_BENEFIT_FILTER_SAFE_EMAIL = /^[^\s:,@]+@[a-z0-9.-]+$/;
+
+/** Invites one user may send per window (per pod — see `newsletterInviteRateLimiter`). */
+export const NEWSLETTER_INVITE_RATE_LIMIT_MAX = 20;
+
+/** Window of the newsletter invite rate limit. */
+export const NEWSLETTER_INVITE_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** Query param on the My Newsletters foundation drill-down that carries an invite's newsletter group uid. */
+export const NEWSLETTER_INVITE_QUERY_PARAM = 'invite';
+
+/** 404 code of an invite whose group is not a Newsletter-category group (or no longer exists). */
+export const NEWSLETTER_INVITE_INVALID_ERROR_CODE = 'NEWSLETTER_INVITE_INVALID';
+
+/** 403 code of an invite refused because the sender may not invite to that foundation. */
+export const NEWSLETTER_INVITE_FORBIDDEN_ERROR_CODE = 'NEWSLETTER_INVITE_FORBIDDEN';
+
+/** 400 code of an invite to a personal mailbox domain. */
+export const NEWSLETTER_INVITE_PERSONAL_EMAIL_ERROR_CODE = 'NEWSLETTER_INVITE_PERSONAL_EMAIL';
+
+/** 400 code of an invite to a domain that is not a Linux Foundation member company. */
+export const NEWSLETTER_INVITE_NOT_MEMBER_ERROR_CODE = 'NEWSLETTER_INVITE_NOT_MEMBER_COMPANY';

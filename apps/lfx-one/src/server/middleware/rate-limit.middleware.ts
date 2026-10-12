@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NEWSLETTER_INVITE_RATE_LIMIT_MAX, NEWSLETTER_INVITE_RATE_LIMIT_WINDOW_MS } from '@lfx-one/shared/constants';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 /**
@@ -88,6 +89,24 @@ export const voteWriteRateLimiter = rateLimit({
   max: 10, // limit each user to 10 vote writes per window
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
+});
+
+/**
+ * Rate limiter for newsletter coworker invites (#3483).
+ *
+ * Applied per-route to `POST /api/newsletters/foundations/:foundationUid/invites`, which sends a
+ * Linux Foundation-branded email to an address the caller types. Keyed on the authenticated user,
+ * with the /56-masked IP key as the anonymous fallback. Per-pod MemoryStore like the limiters
+ * above, so the effective ceiling is `limit × pods` — still far below abuse volumes.
+ */
+export const newsletterInviteRateLimiter = rateLimit({
+  windowMs: NEWSLETTER_INVITE_RATE_LIMIT_WINDOW_MS,
+  max: NEWSLETTER_INVITE_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: { error: "You've sent the maximum number of invites for today. Try again tomorrow.", code: 'RATE_LIMITED' },
   keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
 });
 

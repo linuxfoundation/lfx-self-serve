@@ -249,6 +249,8 @@ export class SidebarNavService {
           label: 'My Newsletters',
           icon: 'fa-light fa-paper-plane',
           routerLink: '/newsletters/my',
+          // Stay highlighted on a foundation drill-down (/newsletters/my/:foundationSlug).
+          activeOnSubpaths: true,
           testId: 'sidebar-my-newsletters',
         },
         {

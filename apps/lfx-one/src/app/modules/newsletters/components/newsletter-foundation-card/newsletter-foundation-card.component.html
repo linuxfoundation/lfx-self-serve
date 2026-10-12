@@ -1,0 +1,72 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<article
+  class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col justify-between hover:border-blue-400 transition-colors h-full"
+  [attr.aria-label]="foundation().name + ' newsletter'"
+  data-testid="newsletter-foundation-card">
+  <!-- Header strip -->
+  <div class="flex items-center justify-between px-4 py-2.5 bg-gradient-to-b from-gray-100 to-white">
+    <span class="text-[10px] font-semibold uppercase tracking-wide text-gray-700">Newsletter</span>
+    <a [routerLink]="detailLink()" class="text-xs text-blue-500 hover:underline" data-testid="newsletter-foundation-card-view-all">View all</a>
+  </div>
+
+  <!-- Body -->
+  <a
+    [routerLink]="detailLink()"
+    class="flex gap-4 items-start px-4 py-3 flex-1 no-underline text-inherit focus-visible:outline-2 focus-visible:outline-blue-500"
+    data-testid="newsletter-foundation-card-body">
+    <lfx-avatar
+      class="shrink-0"
+      [image]="foundation().logo_url ?? ''"
+      [label]="initial()"
+      shape="square"
+      styleClass="w-16 h-16 rounded-xl border border-gray-200 bg-white text-2xl text-gray-700 [&_img]:object-contain [&_img]:p-1.5" />
+
+    <div class="flex flex-col gap-1.5 min-w-0">
+      <h3 class="text-sm font-semibold text-gray-900 truncate m-0" data-testid="newsletter-foundation-card-name">{{ foundation().name }}</h3>
+      <div class="flex flex-wrap gap-1.5">
+        <span
+          class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4"
+          data-testid="newsletter-foundation-card-count">
+          <i class="fa-light fa-paper-plane text-[10px]" aria-hidden="true"></i>{{ receivedLabel() }}
+        </span>
+        @if (foundation().last_sent_at) {
+          <span class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4">
+            <i class="fa-light fa-calendar text-[10px]" aria-hidden="true"></i>Last {{ foundation().last_sent_at | date: 'MMM d, y' }}
+          </span>
+        }
+      </div>
+      @if (foundation().newsletter_group; as group) {
+        <p class="text-xs text-gray-500 truncate m-0">Delivered through {{ group.name }}</p>
+      }
+    </div>
+  </a>
+
+  <!-- Footer actions -->
+  <div class="flex gap-3 px-4 pb-4 pt-3">
+    <lfx-button
+      class="flex-1"
+      size="small"
+      styleClass="w-full"
+      severity="secondary"
+      [outlined]="true"
+      icon="fa-light fa-list text-xs"
+      label="View newsletters"
+      [routerLink]="detailLink()"
+      data-testid="newsletter-foundation-card-view" />
+    <span class="flex-1 inline-flex" [pTooltip]="inviteDisabledReason()" tooltipPosition="top" [attr.tabindex]="foundation().can_invite ? null : 0">
+      <lfx-button
+        class="flex-1"
+        size="small"
+        styleClass="w-full"
+        severity="info"
+        icon="fa-light fa-user-plus text-xs"
+        label="Invite"
+        [disabled]="!foundation().can_invite"
+        [ariaLabel]="'Invite a coworker to the ' + foundation().name + ' newsletter'"
+        (onClick)="onInvite()"
+        data-testid="newsletter-foundation-card-invite" />
+    </span>
+  </div>
+</article>

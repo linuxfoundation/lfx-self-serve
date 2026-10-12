@@ -1,0 +1,128 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section aria-label="Newsletter invitation" data-testid="newsletter-invite-landing">
+  @switch (state().status) {
+    @case ('loading') {
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex gap-4 items-center" data-testid="newsletter-invite-landing-loading">
+        <p-skeleton width="3.5rem" height="3.5rem" borderRadius="0.75rem" />
+        <div class="flex flex-col gap-2 flex-1">
+          <p-skeleton width="40%" height="1rem" />
+          <p-skeleton width="80%" height="0.875rem" />
+        </div>
+      </div>
+    }
+    @case ('invalid') {
+      <lfx-message severity="warn" icon="fa-light fa-envelope-open" title="This invitation is no longer valid" data-testid="newsletter-invite-landing-invalid">
+        <ng-template #content>
+          <p class="m-0 text-sm">The newsletter list it pointed to has changed. Ask the person who invited you to send a new invitation.</p>
+        </ng-template>
+      </lfx-message>
+    }
+    @case ('error') {
+      <lfx-message severity="warn" icon="fa-light fa-triangle-exclamation" data-testid="newsletter-invite-landing-error">
+        <ng-template #content>
+          <p class="m-0 text-sm" role="alert">
+            We couldn't check your invitation right now.
+            <button type="button" class="font-medium underline" (click)="loadStatus()" data-testid="newsletter-invite-landing-retry">Try again</button>
+          </p>
+        </ng-template>
+      </lfx-message>
+    }
+    @case ('ready') {
+      @if (join(); as join) {
+        <div
+          class="bg-white rounded-2xl border shadow-sm overflow-hidden flex flex-col"
+          [class.border-blue-300]="join.state === 'eligible'"
+          [class.border-gray-200]="join.state !== 'eligible'"
+          data-testid="newsletter-invite-landing-card">
+          <div class="px-5 py-2.5 bg-gradient-to-b from-blue-50 to-white">
+            <span class="text-[10px] font-semibold uppercase tracking-wide text-blue-800">You're invited</span>
+          </div>
+          <div class="flex gap-4 items-start px-5 py-4">
+            <lfx-avatar
+              class="shrink-0"
+              [image]="join.foundation.logo_url ?? ''"
+              [label]="initial()"
+              shape="square"
+              styleClass="w-14 h-14 rounded-xl border border-gray-200 bg-white text-xl text-gray-700 [&_img]:object-contain [&_img]:p-1.5" />
+            <div class="flex flex-col gap-2 min-w-0">
+              @switch (join.state) {
+                @case ('eligible') {
+                  <h2 class="text-base font-semibold text-gray-900 m-0">Join the {{ join.foundation.name }} newsletter</h2>
+                  <p class="text-sm text-gray-600 m-0" data-testid="newsletter-invite-landing-eligible">
+                    As an employee of <span class="font-medium text-gray-900">{{ join.company_name }}</span
+                    >, a Linux Foundation member, you can receive the {{ join.foundation.name }} newsletter at no cost. Future issues will be emailed to
+                    <span class="font-medium text-gray-900" data-testid="newsletter-invite-landing-email">{{ join.email }}</span
+                    >, and every issue includes an unsubscribe link.
+                  </p>
+                }
+                @case ('denied') {
+                  @if (join.denied_reason === 'no_company_email') {
+                    <h2 class="text-base font-semibold text-gray-900 m-0">Confirm your company email to join</h2>
+                    <p class="text-sm text-gray-600 m-0" data-testid="newsletter-invite-landing-no-company-email">
+                      The {{ join.foundation.name }} newsletter is a benefit for employees of Linux Foundation member companies. Add and verify your company
+                      email address in your profile (it opens in a new tab), then come back here and check again.
+                    </p>
+                  } @else {
+                    <h2 class="text-base font-semibold text-gray-900 m-0">This newsletter is for Linux Foundation member companies</h2>
+                    <p class="text-sm text-gray-600 m-0" data-testid="newsletter-invite-landing-not-member">
+                      None of your verified email addresses belongs to a Linux Foundation member company. If you have another company email, add and verify it
+                      in your profile, then check again.
+                    </p>
+                  }
+                }
+              }
+            </div>
+          </div>
+          <div class="flex flex-wrap justify-end gap-3 px-5 pb-4">
+            <lfx-button
+              label="Not now"
+              severity="secondary"
+              [outlined]="true"
+              size="small"
+              (onClick)="onDismiss()"
+              data-testid="newsletter-invite-landing-dismiss" />
+            @if (join.state === 'eligible') {
+              <lfx-button
+                label="Confirm and join"
+                icon="fa-light fa-check"
+                severity="info"
+                size="small"
+                (onClick)="onConfirm()"
+                data-testid="newsletter-invite-landing-confirm" />
+            } @else {
+              <lfx-button
+                label="Add company email"
+                icon="fa-light fa-arrow-up-right-from-square"
+                severity="secondary"
+                [outlined]="true"
+                size="small"
+                href="/profile/emails"
+                target="_blank"
+                rel="noopener"
+                data-testid="newsletter-invite-landing-add-email" />
+              <lfx-button
+                label="Check again"
+                icon="fa-light fa-rotate-right"
+                severity="info"
+                size="small"
+                (onClick)="loadStatus()"
+                data-testid="newsletter-invite-landing-recheck" />
+            }
+          </div>
+        </div>
+      }
+    }
+    @default {
+      @if (bannerState(); as banner) {
+        <lfx-newsletter-member-benefit-banner
+          [joinState]="banner"
+          [email]="join()?.email ?? ''"
+          [companyName]="join()?.company_name ?? ''"
+          [groupName]="groupLabel()"
+          (retry)="onConfirm()" />
+      }
+    }
+  }
+</section>
