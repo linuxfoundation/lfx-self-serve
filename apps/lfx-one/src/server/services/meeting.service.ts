@@ -1850,7 +1850,7 @@ export class MeetingService {
   /**
    * Gets all meeting attachments via Query Service
    */
-  public async getMeetingAttachments(req: Request, meetingUid: string): Promise<MeetingAttachment[]> {
+  public async getMeetingAttachments(req: Request, meetingUid: string, options?: ApiRequestOptions): Promise<MeetingAttachment[]> {
     const params = {
       type: 'v1_meeting_attachment',
       parent: `meeting:${meetingUid}`,
@@ -1863,7 +1863,10 @@ export class MeetingService {
       'LFX_V2_SERVICE',
       '/query/resources',
       'GET',
-      params
+      params,
+      undefined,
+      undefined,
+      options
     );
 
     return resources.map((resource) => resource.data);
@@ -1994,14 +1997,23 @@ export class MeetingService {
   /**
    * Gets a presigned download URL for a meeting attachment
    */
-  public async getMeetingAttachmentDownloadUrl(req: Request, meetingUid: string, attachmentUid: string): Promise<AttachmentDownloadUrlResponse> {
+  public async getMeetingAttachmentDownloadUrl(
+    req: Request,
+    meetingUid: string,
+    attachmentUid: string,
+    options?: ApiRequestOptions
+  ): Promise<AttachmentDownloadUrlResponse> {
     logger.debug(req, 'get_meeting_attachment_download_url', 'Getting download URL', { meeting_id: meetingUid, attachment_uid: attachmentUid });
 
     return this.microserviceProxy.proxyRequest<AttachmentDownloadUrlResponse>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${encodePathSegment(meetingUid)}/attachments/${encodePathSegment(attachmentUid)}/download`,
-      'GET'
+      'GET',
+      undefined,
+      undefined,
+      undefined,
+      options
     );
   }
 

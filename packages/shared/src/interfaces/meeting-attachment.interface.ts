@@ -60,6 +60,14 @@ export interface MeetingAttachment {
 }
 
 /**
+ * A meeting attachment as the public meeting page receives it (E3-03, #3252).
+ * @description `MeetingAttachment` without who created or last updated it (names, emails and
+ * usernames) and without `file_url`, the raw storage location: a file is downloaded through the
+ * gated presign route, never from a URL in this list.
+ */
+export type PublicMeetingAttachment = Omit<MeetingAttachment, 'file_url' | 'created_by' | 'updated_by'>;
+
+/**
  * Past meeting attachment entity aligned with ITX proxy API response
  * @description Represents a file or link attached to a past meeting occurrence
  */

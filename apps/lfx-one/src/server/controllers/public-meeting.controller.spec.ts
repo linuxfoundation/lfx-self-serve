@@ -50,6 +50,8 @@ const {
     getPastMeetingParticipants: vi.fn(),
     getPastOccurrencesForMeeting: vi.fn(),
     addMeetingRegistrantSelf: vi.fn(),
+    getMeetingAttachments: vi.fn(),
+    getMeetingAttachmentDownloadUrl: vi.fn(),
   },
   projectSvc: { getProjectById: vi.fn() },
   addInvitedStatusToMeetingMock: vi.fn(),
@@ -959,7 +961,7 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     expect(res.json.mock.calls[0][0].past).toEqual(pastSummaries);
   });
 
-  it('allows an authenticated organizer on a private meeting and restores the M2M token', async () => {
+  it("allows an authenticated organizer on a private meeting, checked with the user's own token", async () => {
     meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue(pastSummaries);
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
     validatePasswordMock.mockReturnValue(false);
@@ -972,6 +974,8 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.json.mock.calls[0][0].past).toEqual(pastSummaries);
+    // The organizer check gets the user's token per call; req.bearerToken is never swapped.
+    expect(addAccessToResourceMock).toHaveBeenCalledWith(req, expect.anything(), 'v1_meeting', 'organizer', { bearerToken: 'user-token' });
     expect(req.bearerToken).toBe('m2m-token');
   });
 
@@ -985,6 +989,194 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
 
     expect(generateM2MTokenMock).toHaveBeenCalledTimes(1);
     expect(req.bearerToken).toBe('m2m-token');
+  });
+});
+
+/**
+ * E3-03 (#3252): the public meeting page's materials, behind getMeetingById's gates and failing as
+ * it does (a 400 on a missing or wrong password), read with the M2M token.
+ */
+describe('PublicMeetingController attachments', () => {
+  let controller: PublicMeetingController;
+
+  const attachment = {
+    uid: 'att-1',
+    meeting_id: MEETING_ID,
+    type: 'file',
+    name: 'Slides',
+    file_name: 'slides.pdf',
+    file_size: 1024,
+    file_url: 'https://storage.example/raw/slides.pdf',
+    file_content_type: 'application/pdf',
+    created_at: '2026-01-01T00:00:00Z',
+    created_by: { username: 'organizer', email: 'organizer@example.com', name: 'Org Anizer' },
+    updated_by: { username: 'organizer', email: 'organizer@example.com', name: 'Org Anizer' },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    validatePasswordMock.mockReturnValue(false);
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: false }));
+    meetingSvc.getMeetingAttachments.mockResolvedValue([attachment]);
+    meetingSvc.getMeetingAttachmentDownloadUrl.mockResolvedValue({ download_url: 'https://storage.example/presigned' });
+  });
+
+  it("lists a public meeting's materials to an anonymous visitor, with the M2M token and without who made them", async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingAttachments).toHaveBeenCalledWith(req, MEETING_ID, { bearerToken: 'm2m-token' });
+    const [listed] = res.json.mock.calls[0][0];
+    expect(listed).toMatchObject({ uid: 'att-1', name: 'Slides', file_name: 'slides.pdf' });
+    expect(listed).not.toHaveProperty('file_url');
+    expect(listed).not.toHaveProperty('created_by');
+    expect(listed).not.toHaveProperty('updated_by');
+    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('organizer@example.com');
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+  });
+
+  it.each([
+    ['private', { visibility: 'private' }],
+    ['restricted', { restricted: true }],
+  ])("refuses a %s meeting to an anonymous visitor without a password, with the meeting endpoint's 400", async (_kind, overrides) => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting(overrides as Partial<Meeting>));
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(400);
+    expect(meetingSvc.getMeetingAttachments).not.toHaveBeenCalled();
+  });
+
+  it("lists a private meeting's materials with its password in the header", async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, password: 'pw' } as Partial<Meeting>));
+    validatePasswordMock.mockImplementation((provided: string, expected: string) => provided === expected);
+    const { req, res, next } = buildReqRes(false);
+    req.headers['x-meeting-password'] = 'pw';
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  it('still accepts the legacy ?password= query, as the meeting endpoint does', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, password: 'pw' } as Partial<Meeting>));
+    validatePasswordMock.mockImplementation((provided: string, expected: string) => provided === expected);
+    const { req, res, next } = buildReqRes(false);
+    req.query['password'] = 'pw';
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a wrong password with the 400', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, password: 'pw' } as Partial<Meeting>));
+    validatePasswordMock.mockImplementation((provided: string, expected: string) => provided === expected);
+    const { req, res, next } = buildReqRes(false);
+    req.headers['x-meeting-password'] = 'wrong';
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(400);
+  });
+
+  it("lists a restricted meeting's materials to a signed-in registrant (M2M email check)", async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true } as Partial<Meeting>));
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ email: 'user@example.com' }]);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsByEmail).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'm2m-token');
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists a private meeting's materials to its organizer, checked with the user's own token", async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
+    addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(addAccessToResourceMock).toHaveBeenCalledWith(req, expect.anything(), 'v1_meeting', 'organizer', { bearerToken: 'user-token' });
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  // Optional auth: a session whose token refresh failed carries no user token, and the M2M identity
+  // must never stand in for the user in the organizer check.
+  it("never runs the organizer check without the user's own token", async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
+    addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
+    const { req, res, next } = buildReqRes(true, false);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(addAccessToResourceMock).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(400);
+  });
+
+  it('passes a failed meeting lookup on, listing nothing', async () => {
+    const lookupError = new Error('itx 404');
+    meetingSvc.getMeetingById.mockRejectedValue(lookupError);
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(lookupError);
+    expect(meetingSvc.getMeetingAttachments).not.toHaveBeenCalled();
+  });
+
+  it("presigns a download of a public meeting's file for an anonymous visitor, with the M2M token", async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    const { req, res, next } = buildReqRes(false);
+    req.params.attachmentId = 'att-1';
+
+    await controller.getMeetingAttachmentDownloadUrl(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingAttachmentDownloadUrl).toHaveBeenCalledWith(req, MEETING_ID, 'att-1', { bearerToken: 'm2m-token' });
+    expect(res.json).toHaveBeenCalledWith({ download_url: 'https://storage.example/presigned' });
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+  });
+
+  it('refuses a download from a private meeting without a password, with the 400', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
+    const { req, res, next } = buildReqRes(false);
+    req.params.attachmentId = 'att-1';
+
+    await controller.getMeetingAttachmentDownloadUrl(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(400);
+    expect(meetingSvc.getMeetingAttachmentDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it('validates the attachment id before anything else', async () => {
+    validateUidParameterMock.mockImplementation((uid: unknown) => uid === MEETING_ID);
+    const { req, res, next } = buildReqRes(false);
+    req.params.attachmentId = '';
+
+    await controller.getMeetingAttachmentDownloadUrl(req, res, next);
+
+    expect(meetingSvc.getMeetingById).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    validateUidParameterMock.mockImplementation(() => true);
   });
 });
 

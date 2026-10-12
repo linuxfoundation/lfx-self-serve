@@ -15,6 +15,8 @@ import {
   MeetingOccurrenceSummary,
   MeetingRegistrant,
   Project,
+  MeetingAttachment,
+  PublicMeetingAttachment,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
   PublicMeetingRegistrationResponse,
@@ -365,6 +367,84 @@ export class PublicMeetingController {
    * Timestamps only — no titles, passwords, or join info. Private/restricted series are
    * gated by the same access chain as getMeetingById (password, registrant, organizer).
    */
+  /**
+   * GET /public/api/meetings/:id/attachments — the meeting's materials for the public meeting page
+   * (E3-03, #3252), so an anonymous visitor to a public meeting sees them too.
+   * @description Behind the same gates as {@link getMeetingById}, and failing the same way: a public,
+   * unrestricted meeting is open; otherwise a registrant or organizer, or the meeting password
+   * (a missing or wrong one is the same 400). The list is read with the M2M token and returned as
+   * {@link PublicMeetingAttachment}, without who made each one or the raw storage URL.
+   */
+  public async getMeetingAttachments(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_public_meeting_attachments', { meeting_id: id });
+
+    // Gated by the passcode header and the session, not the URL — see getMeetingById.
+    res.setHeader('Cache-Control', 'private, no-store');
+
+    try {
+      if (!this.validateMeetingId(id, 'get_public_meeting_attachments', req, next)) {
+        return;
+      }
+
+      const originalToken = req.bearerToken;
+      const m2mToken = await this.setupM2MToken(req);
+      const meeting = await this.fetchMeetingForContent(req, id, m2mToken, 'get_public_meeting_attachments');
+      if (!(await this.authorizeMeetingContent(req, next, meeting, m2mToken, originalToken, 'get_public_meeting_attachments'))) {
+        return;
+      }
+
+      const attachments = await this.meetingService.getMeetingAttachments(req, id, { bearerToken: m2mToken });
+      const response = attachments.map((attachment) => this.toPublicMeetingAttachment(attachment));
+
+      logger.success(req, 'get_public_meeting_attachments', startTime, { meeting_id: id, attachment_count: response.length });
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /public/api/meetings/:id/attachments/:attachmentId/download — a presigned URL for one of the
+   * meeting's files, behind the same gates as {@link getMeetingAttachments}. The upstream route is
+   * scoped to the meeting, so an attachment of another meeting cannot be fetched through this one.
+   */
+  public async getMeetingAttachmentDownloadUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, attachmentId } = req.params;
+    const startTime = logger.startOperation(req, 'get_public_meeting_attachment_download_url', { meeting_id: id, attachment_uid: attachmentId });
+
+    // A presigned URL is a bearer credential for the file: never cached.
+    res.setHeader('Cache-Control', 'private, no-store');
+
+    try {
+      if (!this.validateMeetingId(id, 'get_public_meeting_attachment_download_url', req, next)) {
+        return;
+      }
+      if (
+        !validateUidParameter(attachmentId, req, next, {
+          operation: 'get_public_meeting_attachment_download_url',
+          service: 'public_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const originalToken = req.bearerToken;
+      const m2mToken = await this.setupM2MToken(req);
+      const meeting = await this.fetchMeetingForContent(req, id, m2mToken, 'get_public_meeting_attachment_download_url');
+      if (!(await this.authorizeMeetingContent(req, next, meeting, m2mToken, originalToken, 'get_public_meeting_attachment_download_url'))) {
+        return;
+      }
+
+      const download = await this.meetingService.getMeetingAttachmentDownloadUrl(req, id, attachmentId, { bearerToken: m2mToken });
+
+      logger.success(req, 'get_public_meeting_attachment_download_url', startTime, { meeting_id: id, attachment_uid: attachmentId });
+      res.json(download);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public async getMeetingOccurrences(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
 
@@ -862,13 +942,25 @@ export class PublicMeetingController {
   }
 
   /**
-   * Access gate for the public series-timeline endpoint, mirroring getMeetingById's chain:
-   * public non-restricted series are open; private/restricted series require a valid
-   * password, a registrant record (checked via M2M, matching the invited fallback), or an
-   * organizer relation (checked with the user's own token — never the M2M identity).
-   * Restores the M2M token on req before returning.
+   * Access gate for the public series-timeline endpoint: {@link canViewMeetingContent}.
    */
   private async canViewSeriesTimeline(req: Request, meeting: Meeting, m2mToken: string, originalToken: string | undefined): Promise<boolean> {
+    return this.canViewMeetingContent(req, meeting, m2mToken, originalToken, 'get_public_meeting_occurrences');
+  }
+
+  /**
+   * The public meeting gates as a yes/no, mirroring getMeetingById's chain: public non-restricted
+   * meetings are open; private/restricted ones need a valid password (header only), a registrant
+   * record (checked via M2M, matching the invited fallback), or an organizer relation (checked with
+   * the user's own token, passed per call, never the M2M identity).
+   */
+  private async canViewMeetingContent(
+    req: Request,
+    meeting: Meeting,
+    m2mToken: string,
+    originalToken: string | undefined,
+    operation: string
+  ): Promise<boolean> {
     if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
       return true;
     }
@@ -892,33 +984,85 @@ export class PublicMeetingController {
           return true;
         }
       } catch (error) {
-        logger.warning(req, 'get_public_meeting_occurrences', 'Registrant check failed, continuing to organizer check', {
+        logger.warning(req, operation, 'Registrant check failed, continuing to organizer check', {
           meeting_id: meeting.id,
           err: error,
         });
       }
     }
 
-    // Guard on originalToken, not just isAuthenticated: running the access check while the
-    // M2M token is active would evaluate the application identity and could leak access.
+    // Guard on originalToken, not just isAuthenticated: running the access check with the M2M
+    // identity would evaluate the application, not the user, and could leak access.
     if (originalToken !== undefined) {
-      req.bearerToken = originalToken;
       try {
-        const meetingWithAccess = await this.accessCheckService.addAccessToResource(req, { ...meeting }, 'v1_meeting', 'organizer');
+        const meetingWithAccess = await this.accessCheckService.addAccessToResource(req, { ...meeting }, 'v1_meeting', 'organizer', {
+          bearerToken: originalToken,
+        });
         if (meetingWithAccess.organizer) {
           return true;
         }
       } catch (error) {
-        logger.warning(req, 'get_public_meeting_occurrences', 'Organizer check failed, denying series timeline access', {
+        logger.warning(req, operation, 'Organizer check failed, denying access', {
           meeting_id: meeting.id,
           err: error,
         });
-      } finally {
-        req.bearerToken = m2mToken;
       }
     }
 
     return false;
+  }
+
+  /**
+   * Gates a public meeting's content (materials, downloads) the way {@link getMeetingById} gates the
+   * meeting: past every other gate, the password check, whose 400 a caller gets for a missing or
+   * wrong password (the legacy `?password=` included). True when the caller may proceed; otherwise
+   * the error has already gone to `next`.
+   */
+  private async authorizeMeetingContent(
+    req: Request,
+    next: NextFunction,
+    meeting: Meeting,
+    m2mToken: string,
+    originalToken: string | undefined,
+    operation: string
+  ): Promise<boolean> {
+    if (await this.canViewMeetingContent(req, meeting, m2mToken, originalToken, operation)) {
+      return true;
+    }
+    return this.validateMeetingPassword(this.getRequestMeetingPassword(req), meeting.password as string, operation, req, next);
+  }
+
+  /** The meeting a content route is for, read with the M2M token; a missing one is a 404, as on getMeetingById. */
+  private async fetchMeetingForContent(req: Request, id: string, m2mToken: string, operation: string): Promise<Meeting> {
+    const meeting = await this.fetchMeetingWithM2M(req, id, 'v1_meeting', m2mToken);
+    if (!meeting) {
+      throw new ResourceNotFoundError('Meeting', id, {
+        operation,
+        service: 'public_meeting_controller',
+        path: `/itx/meetings/${id}`,
+      });
+    }
+    return meeting;
+  }
+
+  /** {@link PublicMeetingAttachment}: an explicit allowlist, so a field added upstream is not exposed by default. */
+  private toPublicMeetingAttachment(attachment: MeetingAttachment): PublicMeetingAttachment {
+    return {
+      uid: attachment.uid,
+      meeting_id: attachment.meeting_id,
+      type: attachment.type,
+      category: attachment.category,
+      name: attachment.name,
+      description: attachment.description,
+      link: attachment.link,
+      file_uploaded: attachment.file_uploaded,
+      file_name: attachment.file_name,
+      file_size: attachment.file_size,
+      file_upload_status: attachment.file_upload_status,
+      file_content_type: attachment.file_content_type,
+      created_at: attachment.created_at,
+      updated_at: attachment.updated_at,
+    };
   }
 
   /**

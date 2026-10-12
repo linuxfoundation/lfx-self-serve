@@ -19,6 +19,14 @@ router.get('/past/:id', (req, res, next) => publicMeetingController.getPublicPas
 // GET /public/api/meetings/:id/occurrences - get the series timeline (past + future occurrences) for a meeting (public access, no authentication required)
 router.get('/:id/occurrences', (req, res, next) => publicMeetingController.getMeetingOccurrences(req, res, next));
 
+// GET /public/api/meetings/:id/attachments - the meeting's materials, behind the same gates as GET /:id
+// (public and unrestricted, or invited / organizer, or the meeting password)
+router.get('/:id/attachments', (req, res, next) => publicMeetingController.getMeetingAttachments(req, res, next));
+
+// GET /public/api/meetings/:id/attachments/:attachmentId/download - a presigned download URL for one
+// of those files, behind the same gates
+router.get('/:id/attachments/:attachmentId/download', (req, res, next) => publicMeetingController.getMeetingAttachmentDownloadUrl(req, res, next));
+
 // GET /public/api/meetings/:id - get a single meeting (public access, no authentication required)
 router.get('/:id', (req, res, next) => publicMeetingController.getMeetingById(req, res, next));
 
