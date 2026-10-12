@@ -88,8 +88,9 @@ describe('MeetingRecordingComponent', () => {
 
     expect(meetingService.getPastMeetingRecording).toHaveBeenCalledWith(PAST_ID);
     expect(query('tools-recording-link')?.querySelector('a')?.getAttribute('href')).toBe('https://zoom.example/large');
-    expect(query('tools-recording-poster')?.getAttribute('href')).toBe('https://zoom.example/large');
-    expect(query('tools-recording-poster')?.getAttribute('target')).toBe('_blank');
+    // The still is decorative: not a link, not focusable.
+    expect(query('tools-recording-poster')?.tagName).toBe('DIV');
+    expect(query('tools-recording-poster')?.getAttribute('aria-hidden')).toBe('true');
   });
 
   it("opens V1's transcript modal for the occurrence", async () => {
@@ -121,11 +122,12 @@ describe('MeetingRecordingComponent', () => {
   });
 
   // The artifact routes sit behind the auth middleware: a 401 is an expired session, not a refusal.
-  it('asks a viewer whose session has expired to sign in', async () => {
-    await setup(
-      () => throwError(() => new HttpErrorResponse({ status: 401 })),
-      () => of(transcript(true))
-    );
+  it.each([
+    ['recording', 'transcript'],
+    ['transcript', 'recording'],
+  ])('asks a viewer whose session has expired to sign in (401 on the %s)', async (expired) => {
+    const unauthorized = () => throwError(() => new HttpErrorResponse({ status: 401 }));
+    await setup(expired === 'recording' ? unauthorized : () => of(recording([])), expired === 'transcript' ? unauthorized : () => of(transcript(true)));
 
     expect(query('tools-sign-in-link')).not.toBeNull();
     expect(query('tools-recording-unavailable')).toBeNull();

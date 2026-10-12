@@ -331,7 +331,7 @@ public page shows; until then it has no name here.
 | `tools-recording-link`                      | Recording link                                                  |
 | `tools-summary-btn`                         | AI summary control                                              |
 | `tools-transcript-btn`                      | Transcript control                                              |
-| `tools-recording-poster`                    | The recording's poster (opens it, like the link)                |
+| `tools-recording-poster`                    | The recording's decorative still (not a link)                   |
 | `tools-recording-unavailable[data-reason]`  | No recording to open: `none` (no artifact) or `no-access`       |
 | `tools-transcript-unavailable[data-reason]` | No transcript to open: `none` (no artifact) or `no-access`      |
 | `tools-loading`                             | The artifacts' first load                                       |

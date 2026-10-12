@@ -5,7 +5,6 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { MEETING_ARTIFACT_SESSION_EXPIRED } from '@lfx-one/shared/constants';
 import { MeetingArtifactState, MeetingRecordingSectionState } from '@lfx-one/shared/interfaces';
 import { getLargestSessionShareUrl, getPastMeetingResourceId, getPastMeetingTranscriptUrl, toSafeExternalHref } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
@@ -106,16 +105,14 @@ export class MeetingRecordingComponent {
             return of({ status: req.kind, recording: { status: 'none' }, transcript: { status: 'none' } });
           }
           const recording$ = this.meetingService.getPastMeetingRecording(req.id).pipe(
-            map((recording): MeetingArtifactState | typeof MEETING_ARTIFACT_SESSION_EXPIRED => {
+            map((recording): MeetingArtifactState => {
               const url = toSafeExternalHref(getLargestSessionShareUrl(recording));
               return url ? { status: 'available', url } : { status: 'none' };
             }),
             catchError((error: unknown) => of(this.artifactFailure(error, 'recording')))
           );
           const transcript$ = this.meetingService.getPastMeetingTranscript(req.id).pipe(
-            map((transcript): MeetingArtifactState | typeof MEETING_ARTIFACT_SESSION_EXPIRED =>
-              getPastMeetingTranscriptUrl(transcript) ? { status: 'available' } : { status: 'none' }
-            ),
+            map((transcript): MeetingArtifactState => (getPastMeetingTranscriptUrl(transcript) ? { status: 'available' } : { status: 'none' })),
             catchError((error: unknown) => of(this.artifactFailure(error, 'transcript')))
           );
           return combineLatest([recording$, transcript$]).pipe(
@@ -123,7 +120,7 @@ export class MeetingRecordingComponent {
               ([recording, transcript]): MeetingRecordingSectionState =>
                 // A 401 is an expired session (the routes sit behind the auth middleware), not a refusal:
                 // the way forward is to sign in again, as the materials section does for its past route.
-                recording === MEETING_ARTIFACT_SESSION_EXPIRED || transcript === MEETING_ARTIFACT_SESSION_EXPIRED
+                recording.status === 'session-expired' || transcript.status === 'session-expired'
                   ? { status: 'sign-in', recording: { status: 'none' }, transcript: { status: 'none' } }
                   : { status: 'ready', recording, transcript }
             ),
@@ -140,13 +137,13 @@ export class MeetingRecordingComponent {
    * session expired. 403: the viewer may not open it. Anything else, an upstream failure included:
    * an error, with Try again.
    */
-  private artifactFailure(error: unknown, artifact: string): MeetingArtifactState | typeof MEETING_ARTIFACT_SESSION_EXPIRED {
+  private artifactFailure(error: unknown, artifact: string): MeetingArtifactState {
     const status = error instanceof HttpErrorResponse ? error.status : 0;
     if (status === 404) {
       return { status: 'none' };
     }
     if (status === 401) {
-      return MEETING_ARTIFACT_SESSION_EXPIRED;
+      return { status: 'session-expired' };
     }
     if (status === 403) {
       return { status: 'no-access' };
