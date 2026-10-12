@@ -9,7 +9,7 @@ import { MEETING_ATTACHMENT_CATEGORIES } from '@lfx-one/shared/constants';
 import { MeetingAttachment, PresignAttachmentResponse } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingMaterialsDrawerComponent } from './meeting-materials-drawer.component';
@@ -176,6 +176,29 @@ describe('MeetingMaterialsDrawerComponent categories', () => {
 
     expect(document.activeElement).toBe(trigger);
     trigger.remove();
+  });
+
+  // Closing the drawer mid-save tears down the file controls; the chosen categories must survive it.
+  it("keeps each file's category when the drawer closes while the save is still running", () => {
+    const pendingDelete = new Subject<void>();
+    meetingService['deleteMeetingAttachment'].mockReturnValue(pendingDelete);
+    component.existingAttachments.set([created({ uid: 'old', type: 'file', name: 'Old' })]);
+    component.markForDeletion('old');
+    const notes = addFile('notes.pdf');
+    component.categoryForm.controls[component.fileCategoryKey(notes)].setValue('Notes');
+
+    component.onSave();
+    component.visible.set(true);
+    component.visible.set(false);
+    fixture.detectChanges();
+    pendingDelete.next();
+    pendingDelete.complete();
+
+    expect(meetingService['uploadMeetingFile']).toHaveBeenCalledWith(
+      'meeting-1',
+      expect.any(File),
+      expect.objectContaining({ name: 'notes.pdf', category: 'Notes' })
+    );
   });
 
   it('sends the category to the past-meeting endpoints too', () => {

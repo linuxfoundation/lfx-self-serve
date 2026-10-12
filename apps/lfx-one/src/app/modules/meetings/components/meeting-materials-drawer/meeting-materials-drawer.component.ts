@@ -268,6 +268,9 @@ export class MeetingMaterialsDrawerComponent {
     }
     const deletions = Array.from(this.pendingDeletions());
     const uploads = this.pendingAttachments().filter((a) => !a.uploading && !a.uploadError && !a.uploaded && a.file);
+    // Read now, not as each upload starts: closing the drawer mid-save removes the file controls,
+    // and a later read would fall back to the default.
+    const categories = new Map(uploads.map((a) => [a.id, this.fileCategory(a.id)]));
 
     // Delete first (parallel), then upload (parallel).
     // Each delete returns {uid, ok} so we can identify which succeeded
@@ -297,13 +300,13 @@ export class MeetingMaterialsDrawerComponent {
                     name: attachment.fileName,
                     file_size: attachment.fileSize,
                     file_type: attachment.mimeType,
-                    category: this.fileCategory(attachment.id),
+                    category: categories.get(attachment.id),
                   })
                 : this.meetingService.uploadMeetingFile(id, attachment.file, {
                     name: attachment.fileName,
                     file_size: attachment.fileSize,
                     file_type: attachment.mimeType,
-                    category: this.fileCategory(attachment.id),
+                    category: categories.get(attachment.id),
                   })
               ).pipe(catchError(() => of(null)))
             ),
