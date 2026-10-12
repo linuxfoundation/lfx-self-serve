@@ -60,7 +60,6 @@ export interface OrgLensRoiProjectWarehouseRow {
   PROFIT: number;
   ROI: number | null;
   BCR: number | null;
-  BREAKEVEN_MARKUP: number | null;
   CONTRIBUTION_TYPE: string | null;
   CONTRIBUTION_LABEL: string | null;
   CATEGORY_EXPENDITURE: number | null;

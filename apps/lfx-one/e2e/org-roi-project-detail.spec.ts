@@ -48,7 +48,6 @@ const NO_INVESTMENT_DETAIL = {
     profit: 0,
     roi: null,
     bcr: null,
-    breakevenMarkup: null,
     categories: [],
   },
   hasOrgLensProject: true,

@@ -83,9 +83,9 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     await expect(legend).not.toContainText(QUARRY_STORE.name);
   });
 
-  test('reports the true signed value of a negative net return', async ({ page }) => {
-    // An arc cannot be negative, so the geometry is clamped — but the figure must survive that
-    // clamp intact, or a loss-making project silently reads as costless.
+  test('reports the negative net return as a total in the note, not as a list', async ({ page }) => {
+    // An arc cannot be negative, so the geometry is clamped — but the total must survive that
+    // clamp intact, or a loss-making portfolio silently reads as costless.
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
@@ -98,11 +98,16 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     await expect(note).toContainText(formatCurrency(NEGATIVE_PROJECTS_TOTAL));
     await expect(note).toContainText('cannot be sized as a slice');
 
-    const list = page.getByTestId('org-roi-projects-donut-negative-list');
+    // Loss-making projects are not listed beside the chart; their figures are in the All projects table.
+    await expect(page.getByTestId('org-roi-projects-donut-negative-list')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-projects-donut')).not.toContainText(NEGATIVE_PROJECTS[0].name);
+
+    await page.getByTestId('org-roi-projects-section-tab-table').click();
+    const table = page.getByTestId('org-roi-projects-table');
     for (const project of NEGATIVE_PROJECTS) {
-      await expect(list).toContainText(project.name);
+      await expect(table).toContainText(project.name);
       // The signed figure itself, not just the project's name.
-      await expect(list).toContainText(formatCurrency(project.profit));
+      await expect(table).toContainText(formatCurrency(project.profit));
     }
 
     // The chart still renders, sized by the profitable projects alone.
@@ -129,7 +134,7 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     await expect(page.getByTestId('org-roi-projects-donut-negative-note')).toHaveCount(0);
   });
 
-  test('drops the chart but keeps the figures when no project has a positive net return', async ({ page }) => {
+  test('drops the chart but keeps the total when no project has a positive net return', async ({ page }) => {
     await stubOrgLensContext(page, { projects: ALL_LOSS_MAKING });
     await gotoOrgRoiPage(page);
 
@@ -137,10 +142,14 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
 
     await expect(page.getByTestId('org-roi-projects-donut-no-positive')).toBeVisible();
     await expect(page.getByTestId('org-roi-projects-donut-chart')).toHaveCount(0);
-    // The absence of a drawable magnitude must not take the numbers with it.
-    const list = page.getByTestId('org-roi-projects-donut-negative-list');
-    await expect(list).toContainText(KUBERNETES.name);
-    await expect(list).toContainText(formatCurrency(KUBERNETES.expenditure / 4 - KUBERNETES.expenditure));
+    // The absence of a drawable magnitude must not take the total with it.
+    const note = page.getByTestId('org-roi-projects-donut-negative-note');
+    await expect(note).toContainText(`${ALL_LOSS_MAKING.rows.length} projects have a negative net return`);
+    await expect(note).toContainText(formatCurrency(ALL_LOSS_MAKING.rows.reduce((sum, row) => sum + row.profit, 0)));
+
+    // Each project's own figures are still reported, in the table.
+    await page.getByTestId('org-roi-projects-section-tab-table').click();
+    await expect(page.getByTestId('org-roi-projects-table')).toContainText(formatCurrency(KUBERNETES.expenditure / 4 - KUBERNETES.expenditure));
   });
 
   test('carries the modelled-cost disclosure wherever a figure derives from modelled cost', async ({ page }) => {
@@ -571,5 +580,41 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     await expect(state).toHaveAttribute('data-state', 'section-could-not-verify');
     await expect(state).toContainText('Access could not be verified');
     await expect(state).not.toContainText('You do not have access');
+  });
+});
+
+test.describe('Org Lens ROI Metrics — chart controls', () => {
+  test('lets the viewer choose which bars are drawn, and keeps at least one on', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+
+    const chart = page.getByTestId('org-roi-projects-bar-chart');
+    const investment = page.getByTestId('org-roi-projects-bar-series-investment').getByRole('checkbox');
+    const returned = page.getByTestId('org-roi-projects-bar-series-return').getByRole('checkbox');
+
+    await expect(investment).toBeChecked();
+    await expect(returned).toBeChecked();
+    await expect(chart).toHaveAttribute('aria-label', /comparing modelled investment/);
+
+    await investment.uncheck();
+    await expect(chart).toHaveAttribute('aria-label', /Horizontal bar chart of return/);
+    // Return is now the only bar drawn, so it is locked on rather than able to clear the chart.
+    await expect(returned).toBeDisabled();
+    await expect(page.getByTestId('org-roi-projects-bar-series-hint')).toBeVisible();
+
+    await investment.check();
+    await expect(chart).toHaveAttribute('aria-label', /comparing modelled investment/);
+    await expect(returned).toBeEnabled();
+  });
+
+  test('marks break-even on the efficiency chart for the default selection and says what it means', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+    await page.getByTestId('org-roi-projects-section-tab-bubble').click();
+
+    await expect(page.getByTestId('org-roi-projects-bubble-chart')).toHaveAttribute('aria-label', /A dashed line marks break-even/);
+    const note = page.getByTestId('org-roi-projects-bubble-breakeven-note');
+    await expect(note).toContainText('break-even, where investment equals return');
+    await expect(note).toContainText('both axes share one scale');
   });
 });

@@ -270,6 +270,16 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(page.getByTestId('org-roi-assumptions-method-direct')).toBeVisible();
   });
 
+  test('selects logit by default and lists it first in the assumptions drawer', async ({ page }) => {
+    // A fresh visit stores nothing, so the drawer shows the default; the first option is the first one the drawer renders.
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+
+    await page.getByTestId('org-roi-assumptions-trigger').click();
+    await expect(page.getByTestId('org-roi-assumptions-method-logit')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('[data-testid^="org-roi-assumptions-method-"]').first()).toHaveAttribute('data-testid', 'org-roi-assumptions-method-logit');
+  });
+
   test('exposes the yearly series to assistive technology, not only as a canvas', async ({ page }) => {
     // The chart is a canvas, so without this table the per-year values are unavailable to a screen
     // reader. `sr-only` keeps it out of the visual layout while leaving it in the accessibility

@@ -198,7 +198,6 @@ export class OrgLensRoiService {
           p.PROFIT,
           p.ROI,
           p.BCR,
-          p.BREAKEVEN_MARKUP,
           b.CONTRIBUTION_TYPE,
           b.CONTRIBUTION_LABEL,
           b.EXPENDITURE AS CATEGORY_EXPENDITURE
@@ -253,7 +252,6 @@ export class OrgLensRoiService {
           p.PROFIT,
           p.ROI,
           p.BCR,
-          p.BREAKEVEN_MARKUP,
           b.CONTRIBUTION_TYPE,
           b.CONTRIBUTION_LABEL,
           b.EXPENDITURE AS CATEGORY_EXPENDITURE,
@@ -402,7 +400,6 @@ export class OrgLensRoiService {
           profit: this.toFiniteNumber(row.PROFIT),
           roi: this.toNullableNumber(row.ROI),
           bcr: this.toNullableNumber(row.BCR),
-          breakevenMarkup: this.toNullableNumber(row.BREAKEVEN_MARKUP),
           categories: [],
         };
         byProject.set(row.PROJECT_ID, project);
@@ -583,7 +580,7 @@ export class OrgLensRoiService {
       const entry = row as Record<string, unknown>;
       if (!['projectId', 'projectSlug', 'projectName'].every((key) => typeof entry[key] === 'string')) return false;
       if (!['totalExpenditure', 'totalReturn', 'profit'].every((key) => OrgLensRoiService.isFiniteNumber(entry[key]))) return false;
-      if (!['roi', 'bcr', 'breakevenMarkup'].every((key) => OrgLensRoiService.isNullableNumber(entry, key))) return false;
+      if (!['roi', 'bcr'].every((key) => OrgLensRoiService.isNullableNumber(entry, key))) return false;
       if (!OrgLensRoiService.isCategoryRows(entry['categories'])) return false;
 
       // Same reconciliation the breakdown guard applies, per project: a project's categories sum to

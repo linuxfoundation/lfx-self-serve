@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, Signal } from '@angular/core';
+import { Component, computed, input, Signal, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
 import {
   lfxColors,
@@ -14,11 +15,12 @@ import {
 import type { OrgLensRoiProjectBarRow, OrgLensRoiProjectBarSegment, OrgLensRoiProjectRow } from '@lfx-one/shared/interfaces';
 import { formatCurrency } from '@lfx-one/shared/utils';
 import type { ChartData, ChartOptions } from 'chart.js';
+import { CheckboxModule } from 'primeng/checkbox';
 
 /** Each project's investment, stacked by contribution category, against the return it is associated with. */
 @Component({
   selector: 'lfx-org-roi-projects-bar',
-  imports: [ChartComponent],
+  imports: [ChartComponent, CheckboxModule, FormsModule],
   templateUrl: './org-roi-projects-bar.component.html',
 })
 export class OrgRoiProjectsBarComponent {
@@ -34,6 +36,10 @@ export class OrgRoiProjectsBarComponent {
 
   /** Everything past the ceiling is dropped from the drawing and disclosed, never silently. */
   protected readonly hiddenCount: Signal<number> = computed(() => Math.max(0, this.projects().length - this.maxRows));
+
+  /** Which series are drawn. Both start on; the template keeps at least one of them on. */
+  protected readonly showInvestment = signal(true);
+  protected readonly showReturn = signal(true);
 
   protected readonly rows: Signal<OrgLensRoiProjectBarRow[]> = computed(() =>
     this.projects()
@@ -91,10 +97,14 @@ export class OrgRoiProjectsBarComponent {
 
   protected readonly chartHeight: Signal<string> = computed(() => `${Math.max(240, this.rows().length * 44 + 80)}px`);
 
-  protected readonly chartSummaryLabel: Signal<string> = computed(
-    () =>
-      `Horizontal bar chart comparing modelled investment, stacked by contribution category, against return for ${this.rows().length} projects. The same figures are listed in the table below.`
-  );
+  protected readonly chartSummaryLabel: Signal<string> = computed(() => {
+    const count = this.rows().length;
+    if (!this.showReturn()) {
+      return `Horizontal bar chart of modelled investment, stacked by contribution category, for ${count} projects. The same figures are listed in the table below.`;
+    }
+    if (!this.showInvestment()) return `Horizontal bar chart of return for ${count} projects. The same figures are listed in the table below.`;
+    return `Horizontal bar chart comparing modelled investment, stacked by contribution category, against return for ${count} projects. The same figures are listed in the table below.`;
+  });
 
   /** Column headings for the accessible table: one per category actually drawn, in stack order. */
   protected readonly categoryColumns: Signal<{ type: string; label: string }[]> = computed(() =>
@@ -125,30 +135,36 @@ export class OrgRoiProjectsBarComponent {
 
   protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => {
     const rows = this.rows();
-    const categoryDatasets = this.presentTypes().map((category) => ({
-      label: category.label,
-      // Stacked against each other, so each category contributes its own slice of the same bar.
-      stack: 'investment',
-      xAxisID: 'x',
-      backgroundColor: category.color,
-      borderWidth: 0,
-      data: rows.map((row) => row.segments.find((segment) => segment.type === category.type)?.expenditure ?? 0),
-    }));
+    const categoryDatasets = this.showInvestment()
+      ? this.presentTypes().map((category) => ({
+          label: category.label,
+          // Stacked against each other, so each category contributes its own slice of the same bar.
+          stack: 'investment',
+          xAxisID: 'x',
+          backgroundColor: category.color,
+          borderWidth: 0,
+          data: rows.map((row) => row.segments.find((segment) => segment.type === category.type)?.expenditure ?? 0),
+        }))
+      : [];
 
     return {
       labels: rows.map((row) => row.projectName),
       datasets: [
         ...categoryDatasets,
-        {
-          label: 'Return',
-          // Its own stack, so it sits beside the investment bar rather than on top of it —
-          // return is not another kind of investment.
-          stack: 'return',
-          xAxisID: 'x2',
-          backgroundColor: ORG_LENS_ROI_RETURN_COLOR,
-          borderWidth: 0,
-          data: rows.map((row) => row.totalReturn),
-        },
+        ...(this.showReturn()
+          ? [
+              {
+                label: 'Return',
+                // Its own stack, so it sits beside the investment bar rather than on top of it —
+                // return is not another kind of investment.
+                stack: 'return',
+                xAxisID: 'x2',
+                backgroundColor: ORG_LENS_ROI_RETURN_COLOR,
+                borderWidth: 0,
+                data: rows.map((row) => row.totalReturn),
+              },
+            ]
+          : []),
       ],
     };
   });
@@ -166,6 +182,7 @@ export class OrgRoiProjectsBarComponent {
       // collapse regardless. Separate linear scales keep each bar internally truthful; the
       // disclosure below states that the two are not comparable by length.
       x: {
+        display: this.showInvestment(),
         stacked: true,
         position: 'bottom',
         beginAtZero: true,
@@ -174,6 +191,7 @@ export class OrgRoiProjectsBarComponent {
         grid: { color: lfxColors.gray[200] },
       },
       x2: {
+        display: this.showReturn(),
         stacked: true,
         position: 'top',
         beginAtZero: true,
@@ -197,6 +215,14 @@ export class OrgRoiProjectsBarComponent {
       },
     },
   }));
+
+  public setShowInvestment(shown: boolean): void {
+    this.showInvestment.set(shown);
+  }
+
+  public setShowReturn(shown: boolean): void {
+    this.showReturn.set(shown);
+  }
 
   private toSegments(project: OrgLensRoiProjectRow): OrgLensRoiProjectBarSegment[] {
     return project.categories.map((category) => ({
