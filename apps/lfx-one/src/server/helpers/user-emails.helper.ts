@@ -35,7 +35,12 @@ export async function resolveVerifiedUserEmails(
     return fallback;
   }
 
-  const emailData = await emailVerificationService.getUserEmails(req, userIdentifier);
+  // getUserEmails already maps NATS failures to null; this also covers anything thrown before its
+  // own try (e.g. the codec), so a lookup failure takes exactly one of the two documented paths.
+  const emailData = await emailVerificationService.getUserEmails(req, userIdentifier).catch((error: unknown) => {
+    logger.warning(req, 'resolve_user_emails', 'auth-service email lookup threw', { err: error });
+    return null;
+  });
 
   if (!emailData) {
     if (options.strict) {

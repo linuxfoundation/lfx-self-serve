@@ -68,6 +68,18 @@ describe('resolveVerifiedUserEmails', () => {
     await expect(resolveVerifiedUserEmails(req, svc)).resolves.toEqual(['jane@acme-motors.example']);
   });
 
+  it('falls back when the lookup throws instead of returning null', async () => {
+    getUserEmails.mockRejectedValue(new Error('codec unavailable'));
+
+    await expect(resolveVerifiedUserEmails(req, svc)).resolves.toEqual(['jane@acme-motors.example']);
+  });
+
+  it('answers 503 when the lookup throws and strict', async () => {
+    getUserEmails.mockRejectedValue(new Error('codec unavailable'));
+
+    await expect(resolveVerifiedUserEmails(req, svc, { strict: true })).rejects.toMatchObject({ statusCode: 503 });
+  });
+
   it('throws 503 instead of falling back when strict', async () => {
     getUserEmails.mockResolvedValue(null);
 
