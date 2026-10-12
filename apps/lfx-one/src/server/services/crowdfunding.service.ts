@@ -210,7 +210,8 @@ export class CrowdfundingService {
     const startTime = logger.startOperation(req, 'cf_get_initiative_by_slug', { slug });
 
     // /manage returns the full payload in any status to the creator or a writer on the attributed entity; requires the user's bearer token.
-    // Non-writers are denied at the gateway with 403 (rethrown); 404 only if the gateway is bypassed
+    // Non-writers are denied at the gateway with 403 (rethrown). An unresolvable slug fails the gateway's slug resolver,
+    // which surfaces as 502 (rethrown, not null) — tracked in linuxfoundation/lfx-crowdfunding#363. 404 → null only if the gateway is bypassed
     const raw = await cfFetchNullable<BackendInitiative>(req, 'getInitiativeBySlug', `/crowdfunding/initiatives/${encodeURIComponent(slug)}/manage`);
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_by_slug', 'Initiative not found', { slug });
@@ -470,7 +471,7 @@ export class CrowdfundingService {
 
     // /crowdfunding/me/initiatives/{slug}/my-transactions — donor-scoped endpoint; returns the
     // authenticated caller's own contributions to the (published) initiative, regardless
-    // of who owns it. Unlike the owner-scoped /transactions endpoint, this works for any donor.
+    // of who owns it. Unlike the writer-scoped /manage/transactions endpoint, this works for any donor.
     const raw = await cfFetchNullable<BackendTransactionList>(
       req,
       'getMyInitiativeTransactions',
