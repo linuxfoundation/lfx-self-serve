@@ -331,6 +331,32 @@ describe('MeetingMaterialsComponent', () => {
     expect(query('materials-file-keep')).not.toBeNull();
   });
 
+  // The download route checks a file against the indexed list, so a just-added file cannot download yet.
+  it('holds a just-added file until the list returns it, then lets it download', async () => {
+    let listed = [file('keep')];
+    meetingService.getPublicMeetingAttachmentDownloadUrl.mockReturnValue(of({ download_url: 'https://storage.example/presigned' }));
+    vi.spyOn(window, 'open').mockReturnValue(null);
+    await setup(() => of(listed));
+
+    fixture.componentInstance.onMaterialsChanged({ deletedUids: [], addedAttachments: [], addedMeetingAttachments: [{ ...file('new') }] });
+    fixture.detectChanges();
+
+    const pendingRow = query('materials-file-new') as HTMLButtonElement;
+    expect(pendingRow.disabled).toBe(true);
+    expect(pendingRow.getAttribute('data-pending')).toBe('true');
+    expect(pendingRow.textContent).toContain('Processing…');
+    fixture.componentInstance.download(file('new'));
+    expect(meetingService.getPublicMeetingAttachmentDownloadUrl).not.toHaveBeenCalled();
+
+    listed = [file('keep'), file('new')];
+    fixture.componentInstance.retry();
+    fixture.detectChanges();
+
+    const row = query('materials-file-new') as HTMLButtonElement;
+    expect(row.disabled).toBe(false);
+    expect(row.hasAttribute('data-pending')).toBe(false);
+  });
+
   it("applies the drawer's changes at once, then refetches", async () => {
     vi.useFakeTimers();
     await setup(() => of([file('keep'), file('gone')]));

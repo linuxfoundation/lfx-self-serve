@@ -78,6 +78,11 @@ export class MeetingMaterialsComponent {
   protected readonly materials: Signal<MeetingMaterialsState> = this.initMaterials();
   protected readonly attachments: Signal<PublicMeetingAttachment[]> = this.initAttachments();
   protected readonly files = computed(() => this.attachments().filter((attachment) => attachment.type === 'file'));
+  /**
+   * Files the drawer just added that no fetched list has returned yet: the download route checks
+   * a file against that list, so until it does, a download would fail. Their rows wait.
+   */
+  protected readonly pendingUids = computed(() => new Set(this.addedAttachments().map((attachment) => attachment.uid)));
   protected readonly links: Signal<MeetingMaterialLink[]> = this.initLinks();
   protected readonly visibleFiles = computed(() => (this.showAllFiles() ? this.files() : this.files().slice(0, MEETING_MATERIALS_PREVIEW_LIMIT)));
   protected readonly visibleLinks = computed(() => (this.showAllLinks() ? this.links() : this.links().slice(0, MEETING_MATERIALS_PREVIEW_LIMIT)));
@@ -114,7 +119,7 @@ export class MeetingMaterialsComponent {
 
   public download(attachment: PublicMeetingAttachment): void {
     const request = this.request();
-    if (!request || !isPlatformBrowser(this.platformId)) {
+    if (!request || !isPlatformBrowser(this.platformId) || this.pendingUids().has(attachment.uid)) {
       return;
     }
     const download$ =

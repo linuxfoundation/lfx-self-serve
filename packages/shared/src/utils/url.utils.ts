@@ -991,7 +991,9 @@ export function toSafeExternalHref(link: string | null | undefined): string | nu
   const candidate = hasScheme ? trimmed : `https://${trimmed}`;
   try {
     const parsed = new URL(candidate);
-    if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || !parsed.hostname.includes('.')) {
+    // A recognisable host: a dotted name or an IPv4 address, or a bracketed IPv6 literal.
+    const recognisableHost = parsed.hostname.includes('.') || parsed.hostname.startsWith('[');
+    if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || !recognisableHost) {
       return null;
     }
     // A link must not point at the viewer's own network (a router, an internal service, loopback):

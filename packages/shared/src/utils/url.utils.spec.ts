@@ -793,5 +793,10 @@ describe('toSafeExternalHref', () => {
     expect(toSafeExternalHref('10.0.0.5/dashboard')).toBeNull();
     expect(toSafeExternalHref('http://127.0.0.1:8080')).toBeNull();
     expect(toSafeExternalHref('https://intranet.localhost/x')).toBeNull();
+    expect(toSafeExternalHref('http://[::1]/x')).toBeNull();
+  });
+
+  it('keeps a public IPv6 link', () => {
+    expect(toSafeExternalHref('https://[2606:4700:4700::1111]/docs')).toBe('https://[2606:4700:4700::1111]/docs');
   });
 });
