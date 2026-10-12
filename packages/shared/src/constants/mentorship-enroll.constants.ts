@@ -370,6 +370,7 @@ export const MENTORSHIP_DEFAULT_PREREQUISITES: MentorshipPrerequisite[] = [
     name: 'Resume',
     description: 'Upload the most recent version of your resume.',
     required: false,
+    custom: false,
     requireFile: true,
   },
   {
@@ -377,6 +378,7 @@ export const MENTORSHIP_DEFAULT_PREREQUISITES: MentorshipPrerequisite[] = [
     name: 'Cover Letter',
     description: 'A letter to the program covering the following topics:',
     required: false,
+    custom: false,
     requireFile: true,
   },
   {
@@ -384,6 +386,7 @@ export const MENTORSHIP_DEFAULT_PREREQUISITES: MentorshipPrerequisite[] = [
     name: 'School Enrollment Verification',
     description: 'Students must upload proof of enrollment (college transcript, or copy student ID, or admissions offer if graduating from high school).',
     required: false,
+    custom: false,
     requireFile: false,
   },
   {
@@ -391,6 +394,7 @@ export const MENTORSHIP_DEFAULT_PREREQUISITES: MentorshipPrerequisite[] = [
     name: 'Participation permission from school or employer',
     description: 'By submitting this task, I certify that I have permission from my school or employer to participate in this mentorship program.',
     required: false,
+    custom: false,
     requireFile: false,
   },
   {
@@ -398,6 +402,7 @@ export const MENTORSHIP_DEFAULT_PREREQUISITES: MentorshipPrerequisite[] = [
     name: 'Coding Challenge',
     description: 'Complete a code challenge',
     required: false,
+    custom: false,
     challengeUrl: '',
   },
 ];

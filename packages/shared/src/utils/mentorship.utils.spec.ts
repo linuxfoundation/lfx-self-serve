@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL,
+  createEmptyCustomMentorshipPrerequisite,
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
   MENTORSHIP_ENROLL_LOGO_EMPTY,
@@ -455,21 +456,32 @@ describe('toMentorshipEnrollCreateRequest', () => {
     });
   });
 
-  it('keeps prerequisites in order, appends the challenge URL and nulls an empty due date', () => {
+  it('keeps prerequisites in order, appends the challenge URL, nulls an empty due date and keeps the custom flag', () => {
     const request = toMentorshipEnrollCreateRequest(
       validForm({
         prerequisites: [
-          { id: 'p1', name: ' Resume ', description: ' Upload it. ', required: true, requireFile: true, dueDate: '2027-02-15' },
-          { id: 'p2', name: 'Challenge', description: 'Solve it.', required: false, challengeUrl: ' https://code.example/c ', dueDate: '' },
+          { id: 'p1', name: ' Resume ', description: ' Upload it. ', required: true, requireFile: true, custom: true, dueDate: '2027-02-15' },
+          { id: 'p2', name: 'Challenge', description: 'Solve it.', required: false, custom: false, challengeUrl: ' https://code.example/c ', dueDate: '' },
+          { id: 'p3', name: 'Essay', description: 'Why you.', required: true, dueDate: '' },
         ],
       }),
       project
     );
 
     expect(request.prerequisites).toEqual([
-      { name: 'Resume', description: 'Upload it.', required: true, requireFile: true, dueDate: '2027-02-15' },
-      { name: 'Challenge', description: 'Solve it.\n\nChallenge: https://code.example/c', required: false, requireFile: false, dueDate: null },
+      { name: 'Resume', description: 'Upload it.', required: true, requireFile: true, dueDate: '2027-02-15', custom: true },
+      { name: 'Challenge', description: 'Solve it.\n\nChallenge: https://code.example/c', required: false, requireFile: false, dueDate: null, custom: false },
+      { name: 'Essay', description: 'Why you.', required: true, requireFile: false, dueDate: null, custom: false },
     ]);
+  });
+
+  it('sends custom as false for the standard prerequisites and true for an added card', () => {
+    const standard = createEmptyMentorshipEnrollForm().prerequisites;
+    const prerequisites = [...standard, { ...createEmptyCustomMentorshipPrerequisite(), name: 'Essay', description: 'Why you.' }];
+
+    const request = toMentorshipEnrollCreateRequest(validForm({ prerequisites }), project);
+
+    expect(request.prerequisites.map((item) => [item.name, item.custom])).toEqual([...standard.map((item) => [item.name, false]), ['Essay', true]]);
   });
 
   it('never carries the logo, import or status fields', () => {

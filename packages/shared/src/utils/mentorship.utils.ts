@@ -345,6 +345,7 @@ function toMentorshipEnrollProgramFields(
         required: item.required,
         requireFile: item.requireFile === true,
         dueDate: item.dueDate || null,
+        custom: item.custom === true,
       };
     }),
   };
