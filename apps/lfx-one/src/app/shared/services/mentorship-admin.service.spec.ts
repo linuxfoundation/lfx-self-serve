@@ -149,6 +149,44 @@ describe('MentorshipAdminService', () => {
     expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-name');
   });
 
+  it('exports one tab of mentees by status as a blob, with the full response and the id encoded', () => {
+    const csv = new Blob(['Name\r\nAda'], { type: 'text/csv' });
+    let disposition: string | null = null;
+    let body: Blob | null = null;
+    service.exportProgramMentees('grid flow', 'past', 'pending').subscribe((response) => {
+      disposition = response.headers.get('Content-Disposition');
+      body = response.body;
+    });
+
+    const req = http.expectOne((r) => r.url === '/api/mentorship/admin/programs/grid%20flow/mentees/export');
+    expect(req.request.responseType).toBe('blob');
+    expect(req.request.params.get('type')).toBe('past');
+    expect(req.request.params.get('status')).toBe('pending');
+    req.flush(csv, { headers: { 'Content-Disposition': 'attachment; filename="past-mentees-pending.csv"' } });
+    expect(disposition).toBe('attachment; filename="past-mentees-pending.csv"');
+    expect(body).toBe(csv);
+  });
+
+  it('leaves the status off the export query for All', () => {
+    service.exportProgramMentees('p1', 'current', null).subscribe();
+
+    const req = http.expectOne((r) => r.url === '/api/mentorship/admin/programs/p1/mentees/export');
+    expect(req.request.params.keys()).toEqual(['type']);
+    req.flush(new Blob([]));
+  });
+
+  it('logs an export failure by status and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.exportProgramMentees('p1', 'current', 'accepted').subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http
+      .expectOne((r) => r.url === '/api/mentorship/admin/programs/p1/mentees/export')
+      .flush(new Blob(['forbidden']), { status: 403, statusText: 'Forbidden' });
+    expect(status).toBe(403);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] exportProgramMentees failed', { status: 403, statusText: 'Forbidden' });
+  });
+
   it('reads one page of mentors with the set filters as query params, encoding the id', () => {
     let total = -1;
     service.getProgramMentors('grid flow', { status: 'active', search: 'ada+lfx', offset: 10, limit: 10 }).subscribe((response) => (total = response.total));

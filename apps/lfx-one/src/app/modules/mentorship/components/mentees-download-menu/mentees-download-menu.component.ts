@@ -11,7 +11,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { MentorshipAdminMenteeStatusFilter, MentorshipAdminMenteeTab } from '@lfx-one/shared/interfaces';
 import { MenuItem } from 'primeng/api';
-import { finalize } from 'rxjs';
+import { finalize, take } from 'rxjs';
 
 import { MentorshipMenteesExportService } from '../../services/mentorship-mentees-export.service';
 
@@ -60,7 +60,10 @@ export class MenteesDownloadMenuComponent {
     this.inFlight.set(true);
     this.menteesExport
       .download(this.programId(), this.tab(), status)
-      .pipe(finalize(() => this.inFlight.set(false)))
+      .pipe(
+        take(1),
+        finalize(() => this.inFlight.set(false))
+      )
       .subscribe();
   }
 }
