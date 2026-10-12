@@ -18,7 +18,13 @@
       }
     </div>
     @if (canManage()) {
-      <lfx-button label="Add material" icon="fa-light fa-plus" [styleClass]="pillButtonClass" (onClick)="openDrawer()" data-testid="materials-section-add" />
+      <lfx-button
+        label="Add material"
+        icon="fa-light fa-plus"
+        [styleClass]="pillButtonClass"
+        ariaHaspopup="dialog"
+        (onClick)="openDrawer()"
+        data-testid="materials-section-add" />
     }
   </div>
   <p class="m-0 mb-[16px] text-[12px] leading-[1.5] text-[var(--md-text-muted)]">
