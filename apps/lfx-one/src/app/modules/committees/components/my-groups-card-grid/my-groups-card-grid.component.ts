@@ -77,6 +77,7 @@ export class MyGroupsCardGridComponent {
         const lastActivityLabel = formatRelativeTime(new Date(committee.updated_at));
         const typeDisplay = resolveTypeDisplay(committee);
         const effectiveJoinMode = committee.join_mode ?? 'invite_only';
+        const mailingListLink = getCommitteeMailingListLink(committee);
         return {
           committee,
           roleBadgeSeverity: resolveGroupsCardRoleSeverity(committee.my_role),
@@ -85,12 +86,18 @@ export class MyGroupsCardGridComponent {
           // /foundation vs /project; rows without tier data keep the flat /groups/:uid fallback.
           viewCommands: getGroupCommands(committee) ?? ['/groups', committee.uid],
           viewQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
-          mailingListLink: getCommitteeMailingListLink(committee),
+          mailingListLink,
+          mailingListAriaLabel: mailingListLink ? this.getMailingListAriaLabel(committee.name, mailingListLink.label) : null,
           typeDisplay,
           joinModeSeverity: resolveJoinModeSeverity(effectiveJoinMode),
           joinModeTooltip: JOIN_MODE_TOOLTIPS[effectiveJoinMode],
         };
       })
     );
+  }
+
+  private getMailingListAriaLabel(groupName: string | undefined, listLabel: string | null): string {
+    const base = `Mailing list for ${groupName || 'group'}`;
+    return listLabel ? `${base}: ${listLabel}` : base;
   }
 }

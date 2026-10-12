@@ -208,8 +208,11 @@ describe('CommitteeTableComponent consumer behavior', () => {
     async (chatChannel) => {
       await showRows([group({ chat_channel: chatChannel })]);
       const channels = element('[data-testid="committee-row-synthetic-alpha"] td[data-label="Channels"]');
-      expect(channels.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe(chatChannel);
-      expect(channels.querySelector('a, button, [tabindex]')).toBeNull();
+      const icon = channels.querySelector('[role="img"]');
+      expect(icon?.getAttribute('aria-label')).toBe(chatChannel);
+      // Keyboard-focusable so the tooltip with the channel name can be revealed without a mouse.
+      expect(icon?.getAttribute('tabindex')).toBe('0');
+      expect(channels.querySelector('a, button')).toBeNull();
       expect(channels.textContent).not.toContain('No channels');
     }
   );

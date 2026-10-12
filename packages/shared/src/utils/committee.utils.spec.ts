@@ -650,6 +650,7 @@ describe('getCommitteeMailingListLink', () => {
     expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: false, project_slug: 'synthetic-proj', mailing_lists: [list('ml-1', 'dev')] })).toEqual({
       commands: ['/', 'project', 'mailing-lists', 'ml-1'],
       queryParams: { project: 'synthetic-proj' },
+      target: 'list',
       label: 'dev',
     });
     expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: true, mailing_lists: [list('ml-1', 'dev')] })?.commands).toEqual([
@@ -672,6 +673,7 @@ describe('getCommitteeMailingListLink', () => {
     expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: true, mailing_lists: [list('ml-1', 'a'), list('ml-2', 'b')] })).toEqual({
       commands: ['/', 'foundation', 'groups', 'c1'],
       queryParams: null,
+      target: 'group',
       label: '2 mailing lists',
     });
   });

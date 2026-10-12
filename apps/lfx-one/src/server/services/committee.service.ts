@@ -24,6 +24,7 @@ import {
   CommitteeUser,
   AuditUserProfile,
   CommitteeDocumentQueryResult,
+  CommitteeMailingListRef,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
@@ -32,7 +33,6 @@ import {
   CreateCommitteeMemberRequest,
   GroupsIOMailingList,
   ManagedPendingApplication,
-  CommitteeMailingListRef,
   MyCommittee,
   MyPendingApplication,
   PendingCommitteeInviteForOrg,
@@ -185,9 +185,10 @@ export class CommitteeService {
       total_members: committee.total_members ?? 0,
       // Omit rather than default to false when the lookup was skipped — false means a confirmed
       // absence, and no lookup ran to confirm one.
-      ...(options.skipMailingListEnrichment
-        ? {}
-        : { has_mailing_list: committeesWithMailingList.has(committee.uid), mailing_lists: committeesWithMailingList.get(committee.uid) ?? [] }),
+      // Flag only — never the list refs. This response also feeds the project/foundation All Groups
+      // tables that non-members can view, and a ref would expose a private list's uid/name/title.
+      // `getMyCommittees` attaches the refs because its rows are the caller's own memberships.
+      ...(options.skipMailingListEnrichment ? {} : { has_mailing_list: committeesWithMailingList.has(committee.uid) }),
     }));
 
     // Add writer access field (used by the access filter below and consumed by the UI)
