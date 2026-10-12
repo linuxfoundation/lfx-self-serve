@@ -40,6 +40,9 @@ class AgendaStubComponent {}
 @Component({ selector: 'lfx-meeting-people', template: '<span data-testid="people-stub"></span>' })
 class PeopleStubComponent {}
 
+@Component({ selector: 'lfx-meeting-materials', template: '<span data-testid="materials-stub"></span>' })
+class MaterialsStubComponent {}
+
 describe('MeetingDetailsPageComponent', () => {
   let fixture: ComponentFixture<MeetingDetailsPageComponent>;
   let status: WritableSignal<MeetingDetailsLoadStatus>;
@@ -53,7 +56,7 @@ describe('MeetingDetailsPageComponent', () => {
 
   beforeEach(async () => {
     status = signal<MeetingDetailsLoadStatus>('loading');
-    visibleSections = signal<Partial<MeetingSectionVisibility> | null>({ agenda: true });
+    visibleSections = signal<Partial<MeetingSectionVisibility> | null>({ agenda: true, materials: true });
     rosterRequest = signal<MeetingRosterRequest | null>({ meetingId: 'meeting-1', occurrenceId: undefined });
     refresh = vi.fn();
     retrying = signal(false);
@@ -74,6 +77,7 @@ describe('MeetingDetailsPageComponent', () => {
             HeaderStubComponent,
             IdentityBarStubComponent,
             ImpersonationBannerStubComponent,
+            MaterialsStubComponent,
             OrganizerStubComponent,
             PeopleStubComponent,
             TimeBannerStubComponent,
@@ -128,6 +132,16 @@ describe('MeetingDetailsPageComponent', () => {
     visibleSections.set({ agenda: false });
     fixture.detectChanges();
     expect(query('agenda-stub')).toBeNull();
+  });
+
+  // E3-02: materials follow the page's section visibility (hidden for an ended meeting without access).
+  it('renders the materials only where the section visibility allows them', () => {
+    show('ready');
+    expect(query('materials-stub')).not.toBeNull();
+
+    visibleSections.set({ agenda: true, materials: false });
+    fixture.detectChanges();
+    expect(query('materials-stub')).toBeNull();
   });
 
   // E3-04: the people section renders only for a viewer the state gives a roster to.

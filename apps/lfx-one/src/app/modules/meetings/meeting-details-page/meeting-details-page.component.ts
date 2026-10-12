@@ -14,6 +14,7 @@ import { MeetingActionSlotComponent } from './components/action-slot/action-slot
 import { MeetingAgendaComponent } from './components/agenda/agenda.component';
 import { MeetingOrganizerComponent } from './components/organizer/organizer.component';
 import { MeetingTimeBannerComponent } from './components/time-banner/time-banner.component';
+import { MeetingMaterialsComponent } from './components/materials/materials.component';
 import { MeetingPeopleComponent } from './components/people/people.component';
 import { MeetingDetailsStateService } from './meeting-details-state.service';
 
@@ -37,6 +38,7 @@ import { MeetingDetailsStateService } from './meeting-details-state.service';
     ImpersonationBannerComponent,
     MeetingActionSlotComponent,
     MeetingAgendaComponent,
+    MeetingMaterialsComponent,
     MeetingPeopleComponent,
     MeetingHeaderComponent,
     MeetingIdentityBarComponent,

@@ -1154,3 +1154,9 @@ export const MEETING_PEOPLE_ATTENDANCE_LABELS: Record<RsvpResponse | 'pending', 
 
 /** The people section's row order after the organizers (E3-04): coming, undecided, no reply, declined. */
 export const MEETING_PEOPLE_ATTENDANCE_ORDER: Record<RsvpResponse | 'pending', number> = { accepted: 0, maybe: 1, pending: 2, declined: 3 };
+
+/** Items each materials group shows before "Show N more" (E3-02), as V1's materials card caps its files. */
+export const MEETING_MATERIALS_PREVIEW_LIMIT = 5;
+
+/** How recent an attachment change earns the materials section its "Updated" pill (E3-02), as on V1. */
+export const MEETING_MATERIALS_UPDATED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;

@@ -1,0 +1,228 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { HttpErrorResponse } from '@angular/common/http';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { MEETING_MATERIALS_PREVIEW_LIMIT, MEETING_MATERIALS_UPDATED_WINDOW_MS } from '@lfx-one/shared/constants';
+import { MaterialsChangedEvent, MeetingMaterialsRequest, MeetingMaterialsState, PublicMeetingAttachment } from '@lfx-one/shared/interfaces';
+import { getPastMeetingResourceId, getUrlHostname } from '@lfx-one/shared/utils';
+import { FileSizePipe } from '@pipes/file-size.pipe';
+import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
+import { MeetingService } from '@services/meeting.service';
+import { UserService } from '@services/user.service';
+import { MessageService } from 'primeng/api';
+import { SkeletonModule } from 'primeng/skeleton';
+import { catchError, map, Observable, of, startWith, switchMap, take, timer } from 'rxjs';
+
+import { MeetingMaterialsDrawerComponent } from '../../../components/meeting-materials-drawer/meeting-materials-drawer.component';
+import { MeetingDetailsStateService } from '../../meeting-details-state.service';
+
+/**
+ * The V2 materials section, in the content column after the people section (E3-02, #3251, FR-031).
+ * @description Files ("Primary materials") and links ("Supporting materials"): the split is the
+ * attachment's `type`, as on V1, so the subtitles say what each group holds and claim no editorial
+ * intent the data cannot back (real primary/supporting semantics waits on U-06). Each group shows
+ * five items, then "Show N more"; "Updated" marks a change in the last seven days.
+ *
+ * The page renders it where `visibleSections().materials` allows. An upcoming or live meeting's
+ * list comes from the public route (E3-03), which gates it as the meeting is gated, so an anonymous
+ * visitor to a public meeting sees the materials, and only a refused one is asked to sign in. A page
+ * loaded by a past occurrence's id reads that occurrence's own list, which needs a session.
+ *
+ * Files download through a presigned URL (V1's "Download Failed" toast on failure); links open in a
+ * new tab. An organizer gets Add material, V1's materials drawer, while the meeting is upcoming or
+ * the page is a past occurrence's.
+ */
+@Component({
+  selector: 'lfx-meeting-materials',
+  imports: [SkeletonModule, FileSizePipe, FileTypeDisplayPipe, MeetingMaterialsDrawerComponent],
+  templateUrl: './materials.component.html',
+})
+export class MeetingMaterialsComponent {
+  private readonly state = inject(MeetingDetailsStateService);
+  private readonly meetingService = inject(MeetingService);
+  private readonly userService = inject(UserService);
+  private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
+
+  protected readonly previewLimit = MEETING_MATERIALS_PREVIEW_LIMIT;
+  protected readonly drawerVisible = signal(false);
+  protected readonly showAllFiles = signal(false);
+  protected readonly showAllLinks = signal(false);
+  /** Bumped to refetch the list, e.g. after the drawer changes it. */
+  private readonly refreshCount = signal(0);
+  /** Removals the drawer reported, hidden until the list stops returning them (index lag). */
+  private readonly removedUids = signal<ReadonlySet<string>>(new Set());
+  /** Additions the drawer reported, shown until the list returns them. */
+  private readonly addedAttachments = signal<PublicMeetingAttachment[]>([]);
+
+  protected readonly request: Signal<MeetingMaterialsRequest | null> = this.initRequest();
+  protected readonly materials: Signal<MeetingMaterialsState> = this.initMaterials();
+  protected readonly attachments: Signal<PublicMeetingAttachment[]> = this.initAttachments();
+  protected readonly files = computed(() => this.attachments().filter((attachment) => attachment.type === 'file'));
+  protected readonly links = computed(() => this.attachments().filter((attachment) => attachment.type === 'link'));
+  protected readonly visibleFiles = computed(() => (this.showAllFiles() ? this.files() : this.files().slice(0, MEETING_MATERIALS_PREVIEW_LIMIT)));
+  protected readonly visibleLinks = computed(() => (this.showAllLinks() ? this.links() : this.links().slice(0, MEETING_MATERIALS_PREVIEW_LIMIT)));
+  /** Whether anything was added or changed in the last seven days, on the page's clock. */
+  protected readonly recentlyUpdated = computed(() => {
+    const now = this.state.now().getTime();
+    return this.attachments().some((attachment) => {
+      const changed = Date.parse(attachment.updated_at || attachment.created_at);
+      return Number.isFinite(changed) && now - changed <= MEETING_MATERIALS_UPDATED_WINDOW_MS && changed <= now;
+    });
+  });
+  /** V1's gate: organizers, while the meeting is upcoming, or on a past occurrence's own page. */
+  protected readonly canManage = computed(
+    () => this.state.viewerRole() === 'organizer' && (this.state.timeState() !== 'ended' || this.state.loadedViaPastMeetingId())
+  );
+  protected readonly drawerMeetingId = computed(() => (this.state.loadedViaPastMeetingId() ? undefined : this.state.meeting()?.id));
+  protected readonly drawerPastMeetingId = computed(() => {
+    const meeting = this.state.meeting();
+    return this.state.loadedViaPastMeetingId() && meeting ? getPastMeetingResourceId(meeting) : undefined;
+  });
+  protected readonly signInHref = this.state.signInHref;
+
+  public openDrawer(): void {
+    this.drawerVisible.set(true);
+  }
+
+  public retry(): void {
+    this.refreshCount.update((count) => count + 1);
+  }
+
+  /** The caption under a link: "Link · host", or just "Link" for a URL without one. */
+  public linkCaption(link: string | undefined): string {
+    const host = getUrlHostname(link);
+    return host ? `Link · ${host}` : 'Link';
+  }
+
+  public download(attachment: PublicMeetingAttachment): void {
+    const request = this.request();
+    if (!request || !isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    const download$ =
+      request.mode === 'past'
+        ? this.meetingService.getPastMeetingAttachmentDownloadUrl(request.id, attachment.uid)
+        : this.meetingService.getPublicMeetingAttachmentDownloadUrl(request.id, attachment.uid, request.password);
+
+    download$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (response) => {
+        const opened = window.open(response.download_url, '_blank', 'noopener,noreferrer');
+        if (opened) {
+          opened.opener = null;
+        }
+      },
+      error: () => this.messageService.add({ severity: 'error', summary: 'Download Failed', detail: 'Unable to download the attachment. Please try again.' }),
+    });
+  }
+
+  /**
+   * The drawer changed the list: apply its report at once, then refetch now and once more a second
+   * later, as V1 does, because the query service indexes the change after the write returns.
+   */
+  public onMaterialsChanged(event: MaterialsChangedEvent): void {
+    if (event.deletedUids.length) {
+      this.removedUids.update((removed) => new Set([...removed, ...event.deletedUids]));
+      this.addedAttachments.update((added) => added.filter((attachment) => !event.deletedUids.includes(attachment.uid)));
+    }
+    if (event.addedAttachments.length) {
+      this.addedAttachments.update((added) => [...event.addedAttachments, ...added]);
+    }
+    this.retry();
+    timer(1000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.retry());
+  }
+
+  private initRequest(): Signal<MeetingMaterialsRequest | null> {
+    return computed(
+      () => {
+        const meeting = this.state.meeting();
+        if (!meeting || !this.state.matchesRoute()) {
+          return null;
+        }
+        if (this.state.loadedViaPastMeetingId()) {
+          return { mode: 'past', id: getPastMeetingResourceId(meeting), password: null };
+        }
+        return { mode: 'upcoming', id: meeting.id, password: this.state.password() };
+      },
+      { equal: (a, b) => a?.mode === b?.mode && a?.id === b?.id && a?.password === b?.password }
+    );
+  }
+
+  private initMaterials(): Signal<MeetingMaterialsState> {
+    const trigger = computed(() => ({ request: this.request(), refresh: this.refreshCount(), signedIn: this.userService.authenticated() }));
+    // The last list fetched and what for: a refetch of the same one keeps showing it, and a failed
+    // refetch keeps it rather than replacing the rows with an error.
+    let last: { key: string; attachments: PublicMeetingAttachment[] } | null = null;
+
+    return toSignal(
+      toObservable(trigger).pipe(
+        switchMap(({ request, signedIn }): Observable<MeetingMaterialsState> => {
+          const key = request ? `${request.mode}:${request.id}` : null;
+          const kept = key && last?.key === key ? last.attachments : null;
+          if (!kept) {
+            last = null;
+            this.removedUids.set(new Set());
+            this.addedAttachments.set([]);
+            this.showAllFiles.set(false);
+            this.showAllLinks.set(false);
+          }
+          if (!request || !key) {
+            return of({ status: 'loading', attachments: [] });
+          }
+          // A past occurrence's list is behind a session; there is no public route for it.
+          if (request.mode === 'past' && !signedIn) {
+            return of({ status: 'sign-in', attachments: [] });
+          }
+          const list$: Observable<PublicMeetingAttachment[]> =
+            request.mode === 'past'
+              ? this.meetingService.getPastMeetingAttachments(request.id)
+              : this.meetingService.getPublicMeetingAttachments(request.id, request.password);
+          return list$.pipe(
+            map((attachments): MeetingMaterialsState => {
+              last = { key, attachments };
+              this.settleOptimistic(attachments);
+              return { status: 'ready', attachments };
+            }),
+            catchError((error: unknown) => {
+              if (kept) {
+                return of<MeetingMaterialsState>({ status: 'ready', attachments: kept });
+              }
+              // The public route refuses as the meeting route does: an anonymous viewer is asked to
+              // sign in; anything else is a failure to load.
+              const refused = error instanceof HttpErrorResponse && (error.status === 400 || error.status === 401 || error.status === 403);
+              if (refused && !signedIn) {
+                return of<MeetingMaterialsState>({ status: 'sign-in', attachments: [] });
+              }
+              console.error('Failed to load the meeting materials', error);
+              return of<MeetingMaterialsState>({ status: 'error', attachments: [] });
+            }),
+            startWith<MeetingMaterialsState>(kept ? { status: 'ready', attachments: kept } : { status: 'loading', attachments: [] })
+          );
+        })
+      ),
+      { initialValue: { status: 'loading', attachments: [] } }
+    );
+  }
+
+  private initAttachments(): Signal<PublicMeetingAttachment[]> {
+    return computed(() => {
+      const removed = this.removedUids();
+      const fetched = this.materials().attachments.filter((attachment) => !removed.has(attachment.uid));
+      const fetchedUids = new Set(fetched.map((attachment) => attachment.uid));
+      return [...this.addedAttachments().filter((attachment) => !fetchedUids.has(attachment.uid)), ...fetched];
+    });
+  }
+
+  /** Drops the drawer's reports once the fetched list reflects them. */
+  private settleOptimistic(attachments: PublicMeetingAttachment[]): void {
+    const uids = new Set(attachments.map((attachment) => attachment.uid));
+    this.removedUids.update((removed) => new Set([...removed].filter((uid) => uids.has(uid))));
+    this.addedAttachments.update((added) => added.filter((attachment) => !uids.has(attachment.uid)));
+  }
+}

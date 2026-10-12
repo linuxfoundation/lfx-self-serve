@@ -106,7 +106,7 @@ own namespace; the two never share a value.
 | `meeting-occurrence-edit-button`            | Organizer's "Edit this occurrence" control                                                                            |
 | `meeting-occurrence-cancel-button`          | Organizer's "Cancel this occurrence" control                                                                          |
 
-`meeting-section-placeholder-${section}` (`occurrences`, `materials`, `discover`) marks
+`meeting-section-placeholder-${section}` (`occurrences`, `discover`) marks
 the shell's stand-in for a section not built yet (E1-01). Each is temporary: the PR that builds the
 section deletes its placeholder and its row here. A test must never assert on one.
 
@@ -235,15 +235,26 @@ data-state: idle | loading | ready | error
 
 ## Agenda and materials
 
-| `data-testid`                | Element                                                     |
-| ---------------------------- | ----------------------------------------------------------- |
-| `agenda-section`             | Agenda section                                              |
-| `agenda-section-description` | The description, links made clickable, collapsed past 200px |
-| `agenda-section-empty`       | Shown when the meeting has no description                   |
-| `agenda-section-edit`        | The organizer's Edit agenda link to the meeting's edit page |
-| `materials-section`          | Materials section                                           |
-| `materials-file-${uid}`      | One attached file                                           |
-| `materials-link-${uid}`      | One attached link                                           |
+| `data-testid`                    | Element                                                          |
+| -------------------------------- | ---------------------------------------------------------------- |
+| `agenda-section`                 | Agenda section                                                   |
+| `agenda-section-description`     | The description, links made clickable, collapsed past 200px      |
+| `agenda-section-empty`           | Shown when the meeting has no description                        |
+| `agenda-section-edit`            | The organizer's Edit agenda link to the meeting's edit page      |
+| `materials-section`              | Materials section                                                |
+| `materials-file-${uid}`          | One attached file                                                |
+| `materials-link-${uid}`          | One attached link                                                |
+| `materials-section-add`          | Add material (organizers; upcoming, or a past occurrence's page) |
+| `materials-section-updated`      | The "Updated" pill: a change in the last seven days              |
+| `materials-section-loading`      | The list's first load                                            |
+| `materials-section-sign-in`      | Sign in to view the materials (anonymous and refused)            |
+| `materials-section-error`        | The list failed to load, with nothing to fall back on            |
+| `materials-section-retry`        | Its Try again                                                    |
+| `materials-section-empty`        | None attached                                                    |
+| `materials-section-files`        | The files group ("Primary materials")                            |
+| `materials-section-links`        | The links group ("Supporting materials")                         |
+| `materials-section-files-toggle` | Show N more / Show less for files                                |
+| `materials-section-links-toggle` | Show N more / Show less for links                                |
 
 Files and links are separate prefixes rather than one `materials-item-${uid}` because E3-05 groups
 attachments by category, and a test for the grouping needs to assert on type without first reading

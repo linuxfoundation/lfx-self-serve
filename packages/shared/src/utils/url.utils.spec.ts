@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  getUrlHostname,
   canonicalHttpUrl,
   extractUrls,
   isHttpsUrl,
@@ -751,5 +752,18 @@ describe('canonicalHttpUrl — port policy, shared with the fetch path', () => {
     // the connection. A `buttonUrl` or body anchor is clicked by a RECIPIENT; refusing `http://`
     // would drop a legitimate sponsor or documentation link.
     expect(canonicalHttpUrl('http://events.linuxfoundation.org/x')).toBe('http://events.linuxfoundation.org/x');
+  });
+});
+
+describe('getUrlHostname', () => {
+  it("gives an http(s) URL's host without www", () => {
+    expect(getUrlHostname('https://www.github.example/org/repo')).toBe('github.example');
+    expect(getUrlHostname('http://docs.vendor-corp.example/page?x=1')).toBe('docs.vendor-corp.example');
+  });
+
+  it('gives null for anything else', () => {
+    expect(getUrlHostname('javascript:alert(1)')).toBeNull();
+    expect(getUrlHostname('not a url')).toBeNull();
+    expect(getUrlHostname(undefined)).toBeNull();
   });
 });

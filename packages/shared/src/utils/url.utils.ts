@@ -954,3 +954,22 @@ export function isMentorshipMentorInvitePath(url: string): boolean {
   const normalized = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
   return normalized === '/mentorship/mentor/invites';
 }
+
+/**
+ * The hostname of an absolute http(s) URL without a leading `www.`, for a link's caption (e.g. the
+ * materials section's "Link · github.com"); `null` for anything else.
+ */
+export function getUrlHostname(url: string | null | undefined): string | null {
+  if (!url) {
+    return null;
+  }
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    return parsed.hostname.replace(/^www\./, '') || null;
+  } catch {
+    return null;
+  }
+}
