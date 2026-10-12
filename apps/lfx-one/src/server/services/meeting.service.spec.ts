@@ -203,6 +203,66 @@ describe('MeetingService.resolveCreatedByForMeetings', () => {
   });
 });
 
+describe('MeetingService public attachments (E3-03)', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  // An allowlist: who made each attachment, the raw storage URL and any field added upstream later
+  // stay out of what the public route returns.
+  it('projects attachments onto the public allowlist, with the given identity', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        {
+          data: {
+            uid: 'att-1',
+            meeting_id: 'meeting-abc',
+            type: 'file',
+            name: 'Slides',
+            file_name: 'slides.pdf',
+            file_size: 1024,
+            file_url: 'https://storage.example/raw/slides.pdf',
+            created_at: '2026-01-01T00:00:00Z',
+            created_by: { username: 'organizer', email: 'organizer@example.com', name: 'Org Anizer' },
+            updated_by: { username: 'organizer', email: 'organizer@example.com', name: 'Org Anizer' },
+            future_upstream_field: 'not for the public',
+          },
+        },
+      ],
+    });
+
+    const [attachment] = await service.getPublicMeetingAttachments(req, 'meeting-abc', { bearerToken: 'm2m-token' });
+
+    expect(attachment).toMatchObject({ uid: 'att-1', name: 'Slides', file_name: 'slides.pdf', file_size: 1024 });
+    expect(attachment).not.toHaveProperty('file_url');
+    expect(attachment).not.toHaveProperty('created_by');
+    expect(attachment).not.toHaveProperty('updated_by');
+    expect(attachment).not.toHaveProperty('future_upstream_field');
+    expect(proxyRequest.mock.calls[0][7]).toEqual({ bearerToken: 'm2m-token' });
+  });
+
+  it('presigns a download with the given identity', async () => {
+    proxyRequest.mockResolvedValueOnce({ download_url: 'https://storage.example/presigned' });
+
+    await service.getMeetingAttachmentDownloadUrl(req, 'meeting-abc', 'att-1', { bearerToken: 'm2m-token' });
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/meeting-abc/attachments/att-1/download');
+    expect(proxyRequest.mock.calls[0][7]).toEqual({ bearerToken: 'm2m-token' });
+  });
+
+  it('reads a meeting with the given identity rather than the request token', async () => {
+    proxyRequest.mockResolvedValueOnce({ project_uid: 'p1' });
+
+    await service.getMeetingById(req, 'meeting-abc', 'v1_meeting', { access: false, bearerToken: 'm2m-token' });
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/meeting-abc');
+    expect(proxyRequest.mock.calls[0][7]).toEqual({ bearerToken: 'm2m-token' });
+  });
+});
+
 describe('MeetingService.getMeetingHostKey', () => {
   let service: MeetingService;
 

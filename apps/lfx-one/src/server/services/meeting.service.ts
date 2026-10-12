@@ -26,6 +26,7 @@ import {
   PaginatedResponse,
   PastMeeting,
   PastMeetingAttachment,
+  PublicMeetingAttachment,
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
@@ -207,9 +208,12 @@ export class MeetingService {
     req: Request,
     meetingUid: string,
     meetingType: QueryServiceMeetingType = 'v1_meeting',
-    options: { access?: boolean; includeProject?: boolean } = {}
+    options: { access?: boolean; includeProject?: boolean; bearerToken?: string } = {}
   ): Promise<Meeting> {
-    const { access = true, includeProject = false } = options;
+    const { access = true, includeProject = false, bearerToken } = options;
+    // An explicit identity for every upstream call below (e.g. a public route's M2M token), so the
+    // caller never has to put it on the shared `req.bearerToken`; absent, they use the request's own.
+    const apiOptions: ApiRequestOptions | undefined = bearerToken ? { bearerToken } : undefined;
     logger.debug(req, 'get_meeting_by_id', 'Fetching meeting by ID', {
       meeting_id: meetingUid,
       type: meetingType,
@@ -217,7 +221,16 @@ export class MeetingService {
 
     // All meetings are now ITX-managed, use the ITX endpoint
     const meeting = normalizeIndexedMeetingInviteResponses(
-      await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}`, 'GET')
+      await this.microserviceProxy.proxyRequest<Meeting>(
+        req,
+        'LFX_V2_SERVICE',
+        `/itx/meetings/${encodePathSegment(meetingUid)}`,
+        'GET',
+        undefined,
+        undefined,
+        undefined,
+        apiOptions
+      )
     );
 
     // Set the meeting ID from the URL param
@@ -246,7 +259,7 @@ export class MeetingService {
       includeProject
         ? fetchEntityProject(req, this.projectService, meeting.project_uid, { operation: 'get_meeting_by_id', meeting_id: meeting.id })
         : Promise.resolve(null),
-      committees ? this.getCommitteeNameMap(req, [meeting]) : Promise.resolve(null),
+      committees ? this.getCommitteeNameMap(req, [meeting], apiOptions) : Promise.resolve(null),
     ]);
     if (project) {
       Object.assign(meeting, toEntityProjectFields(project));
@@ -265,7 +278,7 @@ export class MeetingService {
         meeting_id: meetingUid,
       });
       // Add writer access field to the meeting
-      return await this.accessCheckService.addAccessToResource(req, meeting, meetingType, 'organizer');
+      return await this.accessCheckService.addAccessToResource(req, meeting, meetingType, 'organizer', apiOptions);
     }
 
     logger.debug(req, 'get_meeting_by_id', 'Completed meeting fetch', {
@@ -1995,6 +2008,33 @@ export class MeetingService {
   }
 
   /**
+   * A meeting's attachments as the public meeting page may see them (E3-03): {@link getMeetingAttachments}
+   * projected onto {@link PublicMeetingAttachment}, an explicit allowlist, so the creator/updater
+   * identities, the raw storage URL and any field added upstream later stay out of the response.
+   */
+  public async getPublicMeetingAttachments(req: Request, meetingUid: string, options?: ApiRequestOptions): Promise<PublicMeetingAttachment[]> {
+    const attachments = await this.getMeetingAttachments(req, meetingUid, options);
+    return attachments.map(
+      (attachment): PublicMeetingAttachment => ({
+        uid: attachment.uid,
+        meeting_id: attachment.meeting_id,
+        type: attachment.type,
+        category: attachment.category,
+        name: attachment.name,
+        description: attachment.description,
+        link: attachment.link,
+        file_uploaded: attachment.file_uploaded,
+        file_name: attachment.file_name,
+        file_size: attachment.file_size,
+        file_upload_status: attachment.file_upload_status,
+        file_content_type: attachment.file_content_type,
+        created_at: attachment.created_at,
+        updated_at: attachment.updated_at,
+      })
+    );
+  }
+
+  /**
    * Gets a presigned download URL for a meeting attachment
    */
   public async getMeetingAttachmentDownloadUrl(
@@ -2284,7 +2324,7 @@ export class MeetingService {
    * Fetches committee names for all unique committees referenced in meetings.
    * Returns a Map of committee UID -> committee name for merging into meeting data.
    */
-  private async getCommitteeNameMap(req: Request, meetings: Meeting[]): Promise<Map<string, string>> {
+  private async getCommitteeNameMap(req: Request, meetings: Meeting[], options?: ApiRequestOptions): Promise<Map<string, string>> {
     const uniqueCommitteeUids = [
       ...new Set(
         meetings
@@ -2317,11 +2357,20 @@ export class MeetingService {
         fetchAllQueryResources<Committee>(
           req,
           (pageToken) =>
-            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-              type: 'committee',
-              filters_or: batch.map((uid) => `uid:${uid}`),
-              ...(pageToken && { page_token: pageToken }),
-            }),
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(
+              req,
+              'LFX_V2_SERVICE',
+              '/query/resources',
+              'GET',
+              {
+                type: 'committee',
+                filters_or: batch.map((uid) => `uid:${uid}`),
+                ...(pageToken && { page_token: pageToken }),
+              },
+              undefined,
+              undefined,
+              options
+            ),
           { failOnPartial: true }
         )
       )
