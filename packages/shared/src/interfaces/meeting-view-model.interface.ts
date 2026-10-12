@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { MeetingVisibility } from '../enums';
-import type { MeetingRegistrant, RsvpResponse } from './meeting.interface';
+import type { MeetingRegistrant, PastMeetingSummary, RsvpResponse } from './meeting.interface';
 
 /**
  * Where the viewer sits relative to the meeting's schedule.
@@ -325,4 +325,6 @@ export interface MeetingSummaryArtifactState {
   /** The summary's markdown (edited content first), when `available`. */
   content?: string;
   approval?: PastMeetingSummaryApprovalState;
+  /** The record behind `available`, for the full-summary modal. */
+  record?: PastMeetingSummary;
 }

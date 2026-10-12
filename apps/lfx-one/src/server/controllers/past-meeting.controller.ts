@@ -18,6 +18,7 @@ import {
   PresignAttachmentResponse,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
+import { isPastMeetingSummaryAwaitingApproval } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, ServiceValidationError } from '../errors';
@@ -585,16 +586,21 @@ export class PastMeetingController {
         return;
       }
 
+      // A summary awaiting approval is the organizer's to review: everyone else gets the record
+      // without its text, so the UI can say it is awaiting review without the text leaving the BFF.
+      const withheld = isPastMeetingSummaryAwaitingApproval(summary) && !(await this.canReviewPastMeetingSummary(req, uid));
+
       // Log the success
       logger.success(req, 'get_past_meeting_summary', startTime, {
         past_meeting_id: uid,
         summary_uid: summary.uid,
         approved: summary.approved,
         requires_approval: summary.requires_approval,
+        content_withheld: withheld,
       });
 
       // Send the summary data to the client
-      res.json(summary);
+      res.json(withheld ? { ...summary, summary_data: { ...summary.summary_data, content: '', edited_content: '' } } : summary);
     } catch (error) {
       next(error);
     }
@@ -1044,6 +1050,19 @@ export class PastMeetingController {
         past_meeting_id: uid,
         err: error,
       });
+      return false;
+    }
+  }
+
+  /**
+   * Whether the requesting user may read a summary still awaiting approval: only the past meeting's
+   * organizer. Fails closed when the past meeting cannot be loaded, as the organizer check does.
+   */
+  private async canReviewPastMeetingSummary(req: Request, uid: string): Promise<boolean> {
+    try {
+      const pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
+      return await this.isPastMeetingOrganizer(req, pastMeeting, uid);
+    } catch {
       return false;
     }
   }

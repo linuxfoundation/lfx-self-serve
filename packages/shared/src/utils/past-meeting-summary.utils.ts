@@ -56,10 +56,10 @@ export function getPastMeetingSummaryApprovalState(summary: SummaryApprovalFlags
 }
 
 /**
- * A summary's markdown: the organizer's edit first, else the generated content (`||`, not `??`: an
- * unedited summary's `edited_content` is `''`). `''` when both are blank, so an empty-but-present
- * record surfaces no affordance.
+ * A summary's markdown: the organizer's edit first, else the generated content. Each is trimmed
+ * before the fallback, so an unedited (`''`) or blanked (whitespace-only) edit falls back to the
+ * generated text. `''` when both are blank, so an empty-but-present record surfaces no affordance.
  */
 export function getPastMeetingSummaryContent(summary: Pick<PastMeetingSummary, 'summary_data'> | null | undefined): string {
-  return (summary?.summary_data?.edited_content || summary?.summary_data?.content || '').trim();
+  return summary?.summary_data?.edited_content?.trim() || summary?.summary_data?.content?.trim() || '';
 }

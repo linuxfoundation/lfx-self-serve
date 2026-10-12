@@ -69,7 +69,6 @@ export class MeetingRecordingComponent {
   protected readonly summaryCollapsedHeight = MEETING_AGENDA_COLLAPSED_HEIGHT_PX;
   protected readonly approvalLabels = PAST_MEETING_SUMMARY_APPROVAL_LABELS;
   /** The summary the modal opens, kept from the last read. */
-  private summaryRecord: PastMeetingSummary | null = null;
   /** Bumped to read the artifacts again after a read error. */
   private readonly refreshCount = signal(0);
   protected readonly section: Signal<MeetingRecordingSectionState> = this.initSection();
@@ -89,7 +88,7 @@ export class MeetingRecordingComponent {
   }
 
   public openSummary(): void {
-    const summary = this.summaryRecord;
+    const summary = this.section().summary.record;
     if (!summary) {
       return;
     }
@@ -168,19 +167,16 @@ export class MeetingRecordingComponent {
           const organizer = this.state.viewerRole() === 'organizer';
           const summary$ = this.meetingService.getPastMeetingSummary(req.id).pipe(
             map((summary): MeetingSummaryArtifactState => {
-              this.summaryRecord = summary;
-              const content = getPastMeetingSummaryContent(summary);
-              if (!content) {
-                return { status: 'none' };
-              }
               const approval = getPastMeetingSummaryApprovalState(summary);
               // Approval required and not given: only organizers see the text (isPastMeetingSummaryVisible).
-              return approval === 'pending' && !organizer ? { status: 'awaiting-review' } : { status: 'available', content, approval };
+              // Checked before the content, since the BFF withholds the text from everyone else.
+              if (approval === 'pending' && !organizer) {
+                return { status: 'awaiting-review' };
+              }
+              const content = getPastMeetingSummaryContent(summary);
+              return content ? { status: 'available', content, approval, record: summary } : { status: 'none' };
             }),
-            catchError((error: unknown) => {
-              this.summaryRecord = null;
-              return of(this.artifactFailure(error, 'AI summary'));
-            })
+            catchError((error: unknown) => of(this.artifactFailure(error, 'AI summary')))
           );
           return combineLatest([recording$, transcript$, summary$]).pipe(
             map(

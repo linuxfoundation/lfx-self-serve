@@ -11,6 +11,7 @@ const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParam
     getPastMeetingById: vi.fn(),
     getPastMeetingParticipants: vi.fn(),
     canViewPastMeetingParticipants: vi.fn(),
+    getPastMeetingSummary: vi.fn(),
   },
   reconciliationSvc: {
     reconcilePastMeetingParticipants: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('@lfx-one/shared/interfaces', async (importOriginal) => importOriginal()
 vi.mock('@lfx-one/shared/utils', () => ({
   resolveMeetingOrganizer: vi.fn(() => null),
   resolveMeetingOwner: vi.fn(() => null),
+  isPastMeetingSummaryAwaitingApproval: (summary: { approved: boolean; requires_approval: boolean }) => summary.requires_approval && !summary.approved,
 }));
 
 vi.mock('../helpers/validation.helper', () => ({
@@ -179,6 +181,73 @@ describe('PastMeetingController.getPastMeetingParticipants — visibility gate (
     await controller.getPastMeetingParticipants(buildReq(true), res, next);
 
     expect(res.json).toHaveBeenCalledWith([]);
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('PastMeetingController.getPastMeetingSummary — approval gate (E4-03)', () => {
+  let controller: PastMeetingController;
+  const buildSummary = (approved: boolean, requiresApproval: boolean): any => ({
+    uid: 'sum-1',
+    approved,
+    requires_approval: requiresApproval,
+    summary_data: { title: 'Summary', content: 'Generated text', edited_content: 'Edited text' },
+  });
+  const withheld = (summary: any): any => ({ ...summary, summary_data: { ...summary.summary_data, content: '', edited_content: '' } });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    validateUidParameterMock.mockReturnValue(true);
+    controller = new PastMeetingController();
+    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting());
+  });
+
+  it.each([
+    ['approved', true, true],
+    ['never required approval', false, false],
+  ])('returns the full text of a summary that is %s, without an organizer check', async (_label, approved, requiresApproval) => {
+    const summary = buildSummary(approved, requiresApproval);
+    meetingSvc.getPastMeetingSummary.mockResolvedValue(summary);
+    const res = buildRes();
+
+    await controller.getPastMeetingSummary(buildReq(true), res, vi.fn());
+
+    expect(addAccessToResourceMock).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(summary);
+  });
+
+  it('returns the full text of a pending summary to the organizer', async () => {
+    const summary = buildSummary(false, true);
+    meetingSvc.getPastMeetingSummary.mockResolvedValue(summary);
+    addAccessToResourceMock.mockResolvedValue({ ...buildPastMeeting(), organizer: true });
+    const res = buildRes();
+
+    await controller.getPastMeetingSummary(buildReq(true), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith(summary);
+  });
+
+  it('withholds the text of a pending summary from a non-organizer but keeps the approval flags', async () => {
+    const summary = buildSummary(false, true);
+    meetingSvc.getPastMeetingSummary.mockResolvedValue(summary);
+    addAccessToResourceMock.mockResolvedValue({ ...buildPastMeeting(), organizer: false });
+    const res = buildRes();
+
+    await controller.getPastMeetingSummary(buildReq(true), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith(withheld(summary));
+  });
+
+  it('withholds the text when the past meeting cannot be loaded (fails closed)', async () => {
+    const summary = buildSummary(false, true);
+    meetingSvc.getPastMeetingSummary.mockResolvedValue(summary);
+    meetingSvc.getPastMeetingById.mockRejectedValue(new Error('upstream unavailable'));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getPastMeetingSummary(buildReq(true), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(withheld(summary));
     expect(next).not.toHaveBeenCalled();
   });
 });

@@ -29,6 +29,10 @@ describe('getPastMeetingSummaryContent', () => {
     expect(getPastMeetingSummaryContent(withContent('Generated', ''))).toBe('Generated');
   });
 
+  it('falls back to the generated content when the edit is only whitespace', () => {
+    expect(getPastMeetingSummaryContent(withContent('Generated', '  \n'))).toBe('Generated');
+  });
+
   it('is empty for a record with no content, so it surfaces no affordance', () => {
     expect(getPastMeetingSummaryContent(withContent('  ', ''))).toBe('');
     expect(getPastMeetingSummaryContent(null)).toBe('');
