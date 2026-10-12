@@ -357,6 +357,25 @@ describe('MeetingMaterialsComponent', () => {
     expect(row.hasAttribute('data-pending')).toBe(false);
   });
 
+  // A refetch that keeps failing must not leave a just-added file stuck on Processing.
+  it('releases a just-added file after the pending window even if no refetch succeeds', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let calls = 0;
+    await setup(() => (++calls === 1 ? of([file('keep')]) : throwError(() => new HttpErrorResponse({ status: 500 }))));
+
+    fixture.componentInstance.onMaterialsChanged({ deletedUids: [], addedAttachments: [], addedMeetingAttachments: [{ ...file('new') }] });
+    fixture.detectChanges();
+    expect((query('materials-file-new') as HTMLButtonElement).disabled).toBe(true);
+
+    vi.advanceTimersByTime(30_000);
+    fixture.detectChanges();
+
+    expect((query('materials-file-new') as HTMLButtonElement).disabled).toBe(false);
+    expect(query('materials-file-keep')).not.toBeNull();
+    vi.useRealTimers();
+  });
+
   it("applies the drawer's changes at once, then refetches", async () => {
     vi.useFakeTimers();
     await setup(() => of([file('keep'), file('gone')]));
@@ -372,6 +391,10 @@ describe('MeetingMaterialsComponent', () => {
     vi.advanceTimersByTime(1000);
     fixture.detectChanges();
     expect(meetingService.getPublicMeetingAttachments).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(14000);
+    fixture.detectChanges();
+    expect(meetingService.getPublicMeetingAttachments).toHaveBeenCalledTimes(4);
     vi.useRealTimers();
   });
 });

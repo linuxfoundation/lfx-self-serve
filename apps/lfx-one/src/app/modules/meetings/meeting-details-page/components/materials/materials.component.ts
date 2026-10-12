@@ -5,7 +5,12 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { MEETING_MATERIALS_PREVIEW_LIMIT, MEETING_MATERIALS_UPDATED_WINDOW_MS } from '@lfx-one/shared/constants';
+import {
+  MEETING_MATERIALS_PENDING_MAX_MS,
+  MEETING_MATERIALS_PREVIEW_LIMIT,
+  MEETING_MATERIALS_REFETCH_DELAYS_MS,
+  MEETING_MATERIALS_UPDATED_WINDOW_MS,
+} from '@lfx-one/shared/constants';
 import {
   MaterialsChangedEvent,
   MeetingMaterialLink,
@@ -71,6 +76,8 @@ export class MeetingMaterialsComponent {
   private readonly refreshCount = signal(0);
   /** Removals the drawer reported, hidden until the list stops returning them (index lag). */
   private readonly removedUids = signal<ReadonlySet<string>>(new Set());
+  /** Additions that have waited `MEETING_MATERIALS_PENDING_MAX_MS` and are no longer held as pending. */
+  private readonly expiredPendingUids = signal<ReadonlySet<string>>(new Set());
   /** Additions the drawer reported, shown until the list returns them. */
   private readonly addedAttachments = signal<PublicMeetingAttachment[]>([]);
 
@@ -80,9 +87,17 @@ export class MeetingMaterialsComponent {
   protected readonly files = computed(() => this.attachments().filter((attachment) => attachment.type === 'file'));
   /**
    * Files the drawer just added that no fetched list has returned yet: the download route checks
-   * a file against that list, so until it does, a download would fail. Their rows wait.
+   * a file against that list, so until it does, a download would fail. Their rows wait, for at most
+   * `MEETING_MATERIALS_PENDING_MAX_MS`, so a refetch that keeps failing cannot leave one stuck.
    */
-  protected readonly pendingUids = computed(() => new Set(this.addedAttachments().map((attachment) => attachment.uid)));
+  protected readonly pendingUids = computed(() => {
+    const expired = this.expiredPendingUids();
+    return new Set(
+      this.addedAttachments()
+        .filter((attachment) => !expired.has(attachment.uid))
+        .map((attachment) => attachment.uid)
+    );
+  });
   protected readonly links: Signal<MeetingMaterialLink[]> = this.initLinks();
   protected readonly visibleFiles = computed(() => (this.showAllFiles() ? this.files() : this.files().slice(0, MEETING_MATERIALS_PREVIEW_LIMIT)));
   protected readonly visibleLinks = computed(() => (this.showAllLinks() ? this.links() : this.links().slice(0, MEETING_MATERIALS_PREVIEW_LIMIT)));
@@ -142,8 +157,9 @@ export class MeetingMaterialsComponent {
   }
 
   /**
-   * The drawer changed the list: apply its report at once, then refetch now and once more a second
-   * later, as V1 does, because the query service indexes the change after the write returns.
+   * The drawer changed the list: apply its report at once, then refetch now and again after each
+   * of `MEETING_MATERIALS_REFETCH_DELAYS_MS` (V1 retries once, after a second), because the query
+   * service indexes the change some time after the write returns.
    */
   public onMaterialsChanged(event: MaterialsChangedEvent): void {
     if (event.deletedUids.length) {
@@ -154,11 +170,17 @@ export class MeetingMaterialsComponent {
     const reported: PublicMeetingAttachment[] = [...event.addedAttachments, ...(event.addedMeetingAttachments ?? [])];
     if (reported.length) {
       this.addedAttachments.update((added) => [...reported, ...added]);
+      const uids = reported.map((attachment) => attachment.uid);
+      timer(MEETING_MATERIALS_PENDING_MAX_MS)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => this.expiredPendingUids.update((expired) => new Set([...expired, ...uids])));
     }
     this.retry();
-    timer(1000)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.retry());
+    for (const delay of MEETING_MATERIALS_REFETCH_DELAYS_MS) {
+      timer(delay)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => this.retry());
+    }
   }
 
   private initRequest(): Signal<MeetingMaterialsRequest | null> {

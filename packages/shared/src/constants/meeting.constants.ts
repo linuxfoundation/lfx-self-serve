@@ -1160,3 +1160,16 @@ export const MEETING_MATERIALS_PREVIEW_LIMIT = 5;
 
 /** How recent an attachment change earns the materials section its "Updated" pill (E3-02), as on V1. */
 export const MEETING_MATERIALS_UPDATED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * When the V2 materials section refetches after the drawer changes the list (E3-02): at once, then
+ * after each of these delays, since the query service indexes a change some time after the write.
+ */
+export const MEETING_MATERIALS_REFETCH_DELAYS_MS: readonly number[] = [1000, 5000, 15000];
+
+/**
+ * How long a just-added file's row waits (Processing, no download) for the list to return it. Past
+ * this the row is released, so a failed refetch cannot leave it stuck; a download then still works
+ * once the index has it, and otherwise shows the usual failure toast.
+ */
+export const MEETING_MATERIALS_PENDING_MAX_MS = 30_000;
