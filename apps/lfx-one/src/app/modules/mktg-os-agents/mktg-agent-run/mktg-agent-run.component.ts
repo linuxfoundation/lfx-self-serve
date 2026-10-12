@@ -564,8 +564,9 @@ export class MktgAgentRunComponent {
       const messages: Record<string, string> = {};
       for (const field of this.intake?.fields ?? []) {
         const error = this.intakeForm.controls[field.key]?.errors?.['githubRepoUrl'] as GithubRepoUrlError | undefined;
-        if (field.format && error) {
-          messages[field.key] = MKTG_INTAKE_FORMAT_ERRORS[field.format][error.reason];
+        const message = field.format && error ? MKTG_INTAKE_FORMAT_ERRORS[field.format][error.reason] : undefined;
+        if (message) {
+          messages[field.key] = message;
         }
       }
       return messages;
@@ -597,6 +598,10 @@ export class MktgAgentRunComponent {
       const validators = field.optional ? [] : [trimmedRequired()];
       if (field.format === 'github-repo-url') {
         validators.push(githubRepoUrlValidator());
+      } else if (field.format === 'github-url') {
+        // The Brand Kit's rule: a GitHub organization URL is a usable answer;
+        // only a value that is not a GitHub URL at all is refused.
+        validators.push(githubRepoUrlValidator({ acceptOwner: true }));
       }
       controls[field.key] = new FormControl('', { nonNullable: true, validators });
     }

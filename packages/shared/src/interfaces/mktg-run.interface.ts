@@ -27,8 +27,15 @@ export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'proje
  * collection UI REFUSES a value that provably cannot do what the field is for:
  * the field shows why and submission stays disabled until it is corrected.
  * Product ruling; the question wording itself is still quoted verbatim.
+ *
+ * - `github-repo-url`: must name one repository (`github.com/<owner>/<repo>`).
+ *   For the intakes whose BFF fetches that repository's README.
+ * - `github-url`: a repository OR an account URL (`github.com/<owner>`, e.g.
+ *   a GitHub organization). For the Brand Kit, whose BFF sends the URL to
+ *   the agent as text and fetches nothing, so an organization URL is a usable
+ *   answer to "the project's GitHub repo or README" (hand test, 2026-10-12).
  */
-export type MktgIntakeFieldFormat = 'github-repo-url';
+export type MktgIntakeFieldFormat = 'github-repo-url' | 'github-url';
 
 /**
  * Where a README the BFF fetched for an agent came from: the repository the

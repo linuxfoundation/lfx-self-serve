@@ -24,9 +24,12 @@ import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_
  */
 const BRAND_KIT_FIELD_PRESENTATION: Record<(typeof BRAND_KIT_INTAKE_QUESTIONS)[number]['key'], Omit<MktgIntakeField, 'key' | 'question'>> = {
   project_name: { kind: 'text', prefill: 'project-name' },
-  // Q2 asks for the repo or README URL, and an account URL answers
-  // neither — refused here rather than accepted and quietly under-used.
-  github_url: { kind: 'text', prefill: 'repository-url', format: 'github-repo-url' },
+  // Q2 asks for the repo or README URL. The Brand Kit BFF passes the answer
+  // to the agent as text and fetches no README from it, so a GitHub
+  // organization URL (e.g. https://github.com/opensearch-project) is a usable
+  // answer too — accepted here (hand test, 2026-10-12); only a value that is
+  // not a GitHub URL at all is refused.
+  github_url: { kind: 'text', prefill: 'repository-url', format: 'github-url' },
   one_line_description: {
     kind: 'text',
     prefill: 'project-description',
@@ -262,15 +265,21 @@ export const MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH = 16;
  * Blocking field-error copy for an intake value that fails its `format` rule.
  * Keyed by the rule and by what the value turned out to be, so the message
  * names the ACTUAL problem instead of a generic "invalid" — an account
- * URL and a typo are different mistakes with different fixes.
+ * URL and a typo are different mistakes with different fixes. A rule only
+ * lists the reasons its validator can raise: `github-url` accepts an account
+ * URL, so it has no `owner` message.
  */
-export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Record<GithubRepoUrlErrorReason, string>> = {
+export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Partial<Record<GithubRepoUrlErrorReason, string>>> = {
   'github-repo-url': {
     // Neutral about WHAT the account is: `github.com/<owner>` is an
     // organization or a personal profile and the URL cannot say which, so
     // naming it an organization would be a guess told to the user as a fact.
     owner: 'That’s a GitHub account URL, not a repository — there’s no repository README behind it. Enter a repository URL, e.g. https://github.com/org/repo.',
     unrecognized: 'That doesn’t look like a GitHub repository URL. Enter one like https://github.com/org/repo so the agent can read the repository’s README.',
+  },
+  'github-url': {
+    unrecognized:
+      'That doesn’t look like a GitHub URL. Enter the project’s repository or organization URL, e.g. https://github.com/org/repo or https://github.com/org.',
   },
 };
 

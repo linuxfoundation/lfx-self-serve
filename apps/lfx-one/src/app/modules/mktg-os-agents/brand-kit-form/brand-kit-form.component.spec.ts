@@ -89,9 +89,9 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
   function submitGenerationForm(): void {
     const form = (fixture.componentInstance as unknown as { intakeForm: { get(key: string): { setValue(v: string): void } | null } }).intakeForm;
     for (const question of BRAND_KIT_INTAKE_QUESTIONS) {
-      // github_url carries a blocking format rule (it must resolve to a
-      // repository), so a placeholder there would leave the form invalid and
-      // the submit button inert.
+      // github_url carries a blocking format rule (it must be a GitHub
+      // repository or account URL), so a placeholder there would leave the
+      // form invalid and the submit button inert.
       form.get(question.key)?.setValue(question.key === 'github_url' ? VALID_REPO_URL : 'An answer');
     }
     fixture.detectChanges();
@@ -132,10 +132,13 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
   });
 
   /**
-   * Both surfaces that collect a repo URL enforce the same rule, from the same
-   * shared intake definition — a URL refused on the run shell must not sail
-   * through here. Blocking is a UI decision: the agent's own contract still
-   * takes free text and tolerates a missing README.
+   * Both surfaces that collect the Brand Kit's GitHub URL enforce the same
+   * rule, from the same shared intake definition — a URL refused on the run
+   * shell must not sail through here. The Brand Kit's rule accepts a
+   * repository OR an account URL (hand test, 2026-10-12: an organization URL
+   * answers "the project's GitHub repo or README", and the BFF fetches no
+   * README from it); only a non-GitHub value is refused.
+   * Blocking is a UI decision: the agent's own contract still takes free text.
    */
   describe('github_url format rule — blocking, shared with the run shell', () => {
     const fillAll = (githubUrl: string): void => {
@@ -148,26 +151,31 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
     const submitButton = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('button[type="submit"]');
     const fieldError = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="brand-kit-form-field-error-github_url"]');
 
-    it('disables submit and names the problem for a bare account URL', () => {
-      fillAll('https://github.com/aaif');
+    it('accepts a GitHub organization URL and submits it as answered', () => {
+      // Hand test (2026-10-12): the Brand Kit asks for the repo or README
+      // URL, and an organization URL is a usable answer to that.
+      fillAll('https://github.com/opensearch-project');
 
-      expect(fieldError()?.textContent).toContain('GitHub account URL');
-      expect(fieldError()?.textContent).not.toContain('organization');
+      expect(fieldError()).toBeNull();
+      expect(submitButton()?.disabled).toBe(false);
+      submitButton()?.click();
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(generate).toHaveBeenCalledWith(expect.objectContaining({ github_url: 'https://github.com/opensearch-project' }));
+    });
+
+    it('disables submit for a URL that is not a GitHub URL at all, and offers both shapes', () => {
+      fillAll('https://gitlab.com/example-org/example-repo');
+
+      expect(fieldError()?.textContent).toContain('doesn’t look like a GitHub URL');
+      expect(fieldError()?.textContent).toContain('https://github.com/org/repo or https://github.com/org');
       expect(submitButton()?.disabled).toBe(true);
 
       submitButton()?.click();
       expect(generate).not.toHaveBeenCalled();
     });
 
-    it('disables submit for a URL that is not a GitHub repository at all', () => {
-      fillAll('https://gitlab.com/example-org/example-repo');
-
-      expect(fieldError()?.textContent).toContain('doesn’t look like a GitHub repository URL');
-      expect(submitButton()?.disabled).toBe(true);
-    });
-
     it('enables submit once a real repository URL is entered', () => {
-      fillAll('https://github.com/aaif');
+      fillAll('https://gitlab.com/example-org/example-repo');
       expect(submitButton()?.disabled).toBe(true);
 
       fillAll(VALID_REPO_URL);
@@ -183,7 +191,7 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
       // `orgs/<org>` and reach the BFF as a guaranteed 404.
       fillAll('https://github.com/orgs/aaif/repositories');
 
-      expect(fieldError()?.textContent).toContain('doesn’t look like a GitHub repository URL');
+      expect(fieldError()?.textContent).toContain('doesn’t look like a GitHub URL');
       expect(submitButton()?.disabled).toBe(true);
     });
 
@@ -225,7 +233,7 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
     // reader was told the field was fine for the whole interval a sighted user
     // was looking at a blocking error.
     it('marks the field invalid for assistive tech as soon as the error is visible, without waiting for a blur', () => {
-      fillAll('https://github.com/aaif');
+      fillAll('https://gitlab.com/example-org/example-repo');
       const control = fixture.nativeElement.querySelector('[data-test="brand-kit-form-answer-github_url"]');
 
       expect(fieldError()).not.toBeNull();
@@ -424,9 +432,9 @@ describe('BrandKitFormComponent — persistence retry polling', () => {
   function submitForm(): void {
     const form = (fixture.componentInstance as unknown as { intakeForm: { get(key: string): { setValue(v: string): void } | null } }).intakeForm;
     for (const question of BRAND_KIT_INTAKE_QUESTIONS) {
-      // github_url carries a blocking format rule (it must resolve to a
-      // repository), so a placeholder there would leave the form invalid and
-      // the submit button inert.
+      // github_url carries a blocking format rule (it must be a GitHub
+      // repository or account URL), so a placeholder there would leave the
+      // form invalid and the submit button inert.
       form.get(question.key)?.setValue(question.key === 'github_url' ? VALID_REPO_URL : 'An answer');
     }
     fixture.detectChanges();

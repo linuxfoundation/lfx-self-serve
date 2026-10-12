@@ -520,6 +520,52 @@ describe('MktgAgentRunComponent', () => {
     });
   });
 
+  /**
+   * The Brand Kit's `github_url` rule differs from the README-fed intakes'
+   * (hand test, 2026-10-12): its answer reaches the agent as text and no
+   * README is fetched from it, so a GitHub organization URL is a usable
+   * answer to "the project's GitHub repo or README". Only a value that is not a
+   * GitHub URL at all is refused. The Message Foundation block below keeps
+   * refusing the same account URL, because its BFF needs a repository README.
+   */
+  describe('Brand Kit — github_url accepts an organization URL', () => {
+    beforeEach(async () => configure());
+
+    const fillAll = (githubUrl: string): void => {
+      for (const [key, control] of Object.entries(component['intakeForm'].controls)) {
+        control.setValue(key === 'github_url' ? githubUrl : `answer for ${key}`);
+      }
+    };
+
+    it('accepts an organization URL and submits it as answered', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      fillAll('https://github.com/opensearch-project');
+      await fixture.whenStable();
+
+      expect(fieldError('github_url')).toBeNull();
+      expect(component['submitDisabled']()).toBe(false);
+      component['onSubmit']();
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect((generate.mock.calls[0][0] as MktgGenerateRequest).answers).toMatchObject({ github_url: 'https://github.com/opensearch-project' });
+    });
+
+    it('still blocks a URL that is not a GitHub URL at all, offering both shapes', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      fillAll('https://gitlab.com/example-org/example-repo');
+      await fixture.whenStable();
+
+      expect(fieldError('github_url')?.textContent).toContain('doesn’t look like a GitHub URL');
+      expect(fieldError('github_url')?.textContent).toContain('https://github.com/org/repo or https://github.com/org');
+      expect(component['submitDisabled']()).toBe(true);
+      component['onSubmit']();
+      expect(generate).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Message Foundation — dependency auto-attach (dec-agent-dependency-gating)', () => {
     /** Fills the two always-required base fields. */
     const fillBase = (): void => {
