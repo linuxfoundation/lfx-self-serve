@@ -214,19 +214,31 @@
           <!-- Maintainer View Row -->
           <!-- Name Column -->
           <td>
-            @if (isBoardMember()) {
-              <span class="text-sm font-medium" [attr.data-testid]="'mailing-list-title-' + mailingList.uid">
-                {{ mailingList.title || mailingList.group_name || '-' }}
-              </span>
-            } @else {
-              <a
-                [routerLink]="mailingList.viewCommands"
-                [queryParams]="mailingList.linkQueryParams"
-                class="lfx-table-name-link text-sm"
-                [attr.data-testid]="'mailing-list-title-' + mailingList.uid">
-                {{ mailingList.title || mailingList.group_name || '-' }}
-              </a>
-            }
+            <div class="flex items-center gap-2">
+              @if (isBoardMember()) {
+                <span class="text-sm font-medium" [attr.data-testid]="'mailing-list-title-' + mailingList.uid">
+                  {{ mailingList.title || mailingList.group_name || '-' }}
+                </span>
+              } @else {
+                <a
+                  [routerLink]="mailingList.viewCommands"
+                  [queryParams]="mailingList.linkQueryParams"
+                  class="lfx-table-name-link text-sm"
+                  [attr.data-testid]="'mailing-list-title-' + mailingList.uid">
+                  {{ mailingList.title || mailingList.group_name || '-' }}
+                </a>
+              }
+              @if (mailingList.isMember) {
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700"
+                  pTooltip="You are a member of this mailing list"
+                  tooltipPosition="top"
+                  [attr.data-testid]="'mailing-list-member-badge-' + mailingList.uid">
+                  <i class="fa-solid fa-circle-check text-[9px]" aria-hidden="true"></i>
+                  Member
+                </span>
+              }
+            </div>
           </td>
 
           <!-- List Email Column -->
@@ -302,15 +314,27 @@
           <!-- Mailing List Column -->
           <td>
             <div class="flex flex-col gap-1">
-              @if (isBoardMember()) {
-                <span class="text-sm font-medium">
-                  {{ mailingList.title || mailingList.group_name || '-' }}
-                </span>
-              } @else {
-                <a [routerLink]="mailingList.viewCommands" [queryParams]="mailingList.linkQueryParams" class="lfx-table-name-link text-sm">
-                  {{ mailingList.title || mailingList.group_name || '-' }}
-                </a>
-              }
+              <div class="flex items-center gap-2">
+                @if (isBoardMember()) {
+                  <span class="text-sm font-medium">
+                    {{ mailingList.title || mailingList.group_name || '-' }}
+                  </span>
+                } @else {
+                  <a [routerLink]="mailingList.viewCommands" [queryParams]="mailingList.linkQueryParams" class="lfx-table-name-link text-sm">
+                    {{ mailingList.title || mailingList.group_name || '-' }}
+                  </a>
+                }
+                @if (mailingList.isMember) {
+                  <span
+                    class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700"
+                    pTooltip="You are a member of this mailing list"
+                    tooltipPosition="top"
+                    [attr.data-testid]="'mailing-list-member-badge-' + mailingList.uid">
+                    <i class="fa-solid fa-circle-check text-[9px]" aria-hidden="true"></i>
+                    Member
+                  </span>
+                }
+              </div>
               <span class="text-xs text-gray-500">{{ mailingList | groupEmail }}</span>
             </div>
           </td>
