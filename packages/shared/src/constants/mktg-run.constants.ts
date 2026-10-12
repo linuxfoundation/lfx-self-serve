@@ -292,6 +292,36 @@ export const MKTG_README_SKIP_NOTES: Record<MktgReadmeSkipReason, string> = {
 /** Running-phase stage checklist labels, in order. */
 export const MKTG_RUN_STAGES = ['Submitting your intake', 'Agent drafting the document', 'Validating required sections'] as const;
 
+/**
+ * Paul's document review-status labels, as the re-pinned agents write them
+ * inside `document_markdown` — on the cover and on the line above the Review
+ * Sheet table (dec-documents-use-paul-s-newer-review-labels; marketing-os-agents
+ * `input-doc-mapping.md` §5): `Draft — pre-filled`, `Draft — from your
+ * documents`, `Draft — from your answers` (the Brand Kit's no-document first
+ * draft), the classic `Draft v1 — for review` (the Message Foundation's) and
+ * `ED-reviewed — [name], [date]`. The envelope carries no status field —
+ * "there is no gate; the status is information" — so the result page reads
+ * the first label out of the document itself (`findMktgDocumentStatus`).
+ *
+ * Group 1 is the label: its opening word, the separator (em/en dash, or a
+ * spaced hyphen), then the phrase up to a table cell, emphasis or code
+ * delimiter, a `·` separator, or the end of the line. Case-insensitive, so
+ * Paul's own `DRAFT — pre-filled, awaiting ED review` variant also matches.
+ */
+export const MKTG_DOCUMENT_STATUS_LABEL_REGEX = /((?:Draft(?: v\d+)?|ED-reviewed)(?:\s*[—–]\s*|\s+-\s+)[^|*_`·\n]+)/i;
+
+/**
+ * What may precede a status label on its line for the match to count: only
+ * Markdown decoration (heading marks, blockquote, table pipe, emphasis,
+ * list dash, whitespace) — or a prefix naming the status, e.g. `Status:` or
+ * `| Status |`. Prose that merely contains "draft —" mid-sentence is not a
+ * status line.
+ */
+export const MKTG_DOCUMENT_STATUS_LEAD_REGEX = /^(?:[\s#>|*_-]*|.*\bstatus\b.*)$/i;
+
+/** Prefix of Paul's reviewed label — the one status that is no longer a draft. */
+export const MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX = 'ED-reviewed';
+
 /** localStorage key prefix for stored runs; full key is `<prefix>:<projectUid>:<agentId>`. */
 export const MKTG_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-agent-run';
 

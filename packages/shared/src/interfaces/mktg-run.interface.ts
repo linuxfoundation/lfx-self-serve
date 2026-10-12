@@ -183,6 +183,21 @@ export interface MktgAttachmentChip {
   iconClass: string;
 }
 
+/**
+ * The document's review-status chip on the result card — Paul's label as it
+ * appears inside the document (`Draft — pre-filled`, `Draft — from your
+ * documents`, `ED-reviewed — [name], [date]`, …), with the styling that
+ * tells a reviewed document from a draft. Precomputed in the component
+ * because the reviewed/draft decision drives the class, and the repo
+ * prohibits the conditional a template-side derivation would need.
+ */
+export interface MktgDocumentStatusChip {
+  /** The status label verbatim from the document. */
+  label: string;
+  /** Tailwind colour classes for the chip. */
+  chipClass: string;
+}
+
 /** One word-count-locked derivative surfaced as a copyable chip on the result. */
 export interface MktgIntakeDerivativeChip {
   /** Derivative key in the agent's envelope `derivatives` record. */

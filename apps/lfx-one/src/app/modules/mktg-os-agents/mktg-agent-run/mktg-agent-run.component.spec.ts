@@ -442,6 +442,44 @@ describe('MktgAgentRunComponent', () => {
     });
   });
 
+  describe('document status chip — Paul’s review label read from the document', () => {
+    beforeEach(async () => configure());
+
+    it('shows a draft label from the Review Sheet status line, styled as a draft', async () => {
+      const doc =
+        '# Project One Brand Kit\n\n## Review Sheet\n\nStatus: Draft — from your documents · 9 of 14 fields from your documents\n\n## 1. Project Definition';
+      storedRuns = { 'proj-1': storedRun('proj-1', doc, {}) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      const chip = query('mktg-agent-run-doc-status');
+      expect(chip?.textContent?.trim()).toBe('Draft — from your documents');
+      expect(chip?.className).toContain('amber');
+      // The version chip is unchanged — the status is a second, separate label.
+      expect(query('mktg-agent-run-doc-version')?.textContent).toContain('v1');
+    });
+
+    it('shows an ED-reviewed label styled as reviewed', async () => {
+      const doc = '# Project One Brand Kit\n\n| Project | Project One |\n| Status | ED-reviewed — Jane Doe, 2026-10-12 |\n\n## Review Sheet';
+      storedRuns = { 'proj-1': storedRun('proj-1', doc, {}) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      const chip = query('mktg-agent-run-doc-status');
+      expect(chip?.textContent?.trim()).toBe('ED-reviewed — Jane Doe, 2026-10-12');
+      expect(chip?.className).toContain('emerald');
+    });
+
+    it('renders no status chip when the document states no status', async () => {
+      storedRuns = { 'proj-1': storedRun('proj-1', '# Doc\n\nThis first draft — built from your answers — has no status line.', {}) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(query('mktg-agent-run-result')).not.toBeNull();
+      expect(query('mktg-agent-run-doc-status')).toBeNull();
+    });
+  });
+
   describe('resetForContext — an active-context switch never bleeds state across projects', () => {
     beforeEach(async () => configure());
 

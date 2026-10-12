@@ -82,6 +82,7 @@ export * from './brand-kit.utils';
 export * from './foundation-message.utils';
 export * from './icp.utils';
 export * from './mktg-artifact.utils';
+export * from './mktg-document.utils';
 export * from './mktg-envelope.utils';
 export * from './newsletter.utils';
 export * from './event.utils';
