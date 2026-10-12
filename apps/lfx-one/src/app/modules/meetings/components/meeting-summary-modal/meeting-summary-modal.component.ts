@@ -6,6 +6,7 @@ import { Component, inject } from '@angular/core';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { PastMeetingSummary, PastMeetingSummaryApprovalState, SummarySection } from '@lfx-one/shared/interfaces';
 import { getPastMeetingSummaryApprovalState, getPastMeetingSummaryContent } from '@lfx-one/shared/utils';
+import { PAST_MEETING_SUMMARY_APPROVAL_LABELS } from '@lfx-one/shared/constants';
 import { DynamicDialogConfig } from 'primeng/dynamicdialog';
 
 @Component({
@@ -23,6 +24,8 @@ export class MeetingSummaryModalComponent {
   public readonly content: string = getPastMeetingSummaryContent(this.summary);
   /** The shared approval state (E4-03): a summary that never required approval shows no status. */
   public readonly approval: PastMeetingSummaryApprovalState = getPastMeetingSummaryApprovalState(this.summary);
+  /** The shared wording for each state, so the modal and the page read alike. */
+  protected readonly approvalLabels = PAST_MEETING_SUMMARY_APPROVAL_LABELS;
   public readonly sections: SummarySection[] = this.parseSections(this.content);
   public readonly isStructured: boolean = this.sections.length > 0;
 

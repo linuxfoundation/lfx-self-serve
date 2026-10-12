@@ -73,7 +73,7 @@ export class MeetingRecordingComponent {
   /** Bumped to read the artifacts again after a read error. */
   private readonly refreshCount = signal(0);
   protected readonly section: Signal<MeetingRecordingSectionState> = this.initSection();
-  /** What failed to load, for the error line: the recording, the transcript, or both. */
+  /** What failed to load, for the error line: any of the recording, the transcript and the AI summary. */
   protected readonly failedArtifacts = computed(() => {
     const { recording, transcript, summary } = this.section();
     const failed = [

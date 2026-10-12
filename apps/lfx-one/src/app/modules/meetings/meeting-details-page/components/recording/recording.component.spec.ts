@@ -298,6 +298,7 @@ describe('MeetingRecordingComponent', () => {
     );
 
     expect(query('tools-error')?.textContent).toContain("We couldn't load the recording, transcript and AI summary.");
+    expect(query('tools-summary-unavailable')?.getAttribute('data-reason')).toBe('error');
   });
 
   it('shows an error with a retry that reads the artifacts again', async () => {

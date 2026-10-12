@@ -140,6 +140,11 @@
                 No AI summary for this meeting
               </p>
             }
+            @case ('error') {
+              <p class="m-0 text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-summary-unavailable" data-reason="error">
+                The AI summary could not be loaded.
+              </p>
+            }
           }
         </div>
         @if (recording.status === 'error' || transcript.status === 'error' || summary.status === 'error') {
