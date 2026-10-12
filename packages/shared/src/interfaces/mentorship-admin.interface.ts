@@ -353,6 +353,12 @@ export interface MentorshipAdminMenteesQuery {
   limit?: number;
 }
 
+/** What the BFF builds for `GET /api/mentorship/admin/programs/:programId/mentees/export`: the CSV text and its data row count. */
+export interface MentorshipAdminMenteesExport {
+  csv: string;
+  count: number;
+}
+
 /**
  * Body of `GET /mentorship/v1/programs/{id}/header`. `program.status` is the program's own status, which the
  * page shows once it is grouped with the program's terms (`mapMentorshipAdminHeaderProgram`).

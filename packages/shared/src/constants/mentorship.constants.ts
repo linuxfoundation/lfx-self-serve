@@ -136,6 +136,30 @@ export const MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES = {
 export const MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE = "The change couldn't be saved. Please try again.";
 export const MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE = 'Another change is still being saved. Try again in a moment.';
 
+/**
+ * Download by Status on Current and Past Mentees: one CSV of the tab's applications (open terms for Current, closed
+ * for Past), for one status or all. The header row, in column order; the BFF writes each row in the same order.
+ */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_COLUMNS = ['Name', 'Email', 'Status', 'Term', 'Tasks Submitted', 'Applied On', 'Updated On'] as const;
+/** The menu entry that downloads every status. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_ALL_LABEL = 'All';
+/** File name stem per tab; the BFF adds the status (or `all`) and `.csv`. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_FILE_PREFIXES: Record<MentorshipAdminMenteeTab, string> = {
+  current: 'current-mentees',
+  past: 'past-mentees',
+};
+/** Saved under this name when the response names no file; the BFF always sends one. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_FALLBACK_NAME = 'mentees.csv';
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_EMPTY_SUMMARY = 'Nothing to download';
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_EMPTY_MESSAGES: Record<MentorshipAdminMenteeTab, string> = {
+  current: 'No current mentees have this status.',
+  past: 'No past mentees have this status.',
+};
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_ERROR_SUMMARY = "Couldn't download mentees";
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_ERROR_MESSAGE = 'The download failed. Please try again.';
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_FORBIDDEN_MESSAGE = "You don't have access to this program's mentees.";
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_TOAST_LIFE = 5000;
+
 /** Copy of the reviewer-note save toasts on Current Mentees. */
 export const MENTORSHIP_ADMIN_NOTE_SAVE_SUCCESS_SUMMARY = 'Note saved';
 export const MENTORSHIP_ADMIN_NOTE_CLEAR_SUCCESS_SUMMARY = 'Note cleared';
@@ -506,6 +530,12 @@ export const MENTORSHIP_APPLICANT_STATUS_LABELS: Record<MentorshipApplicantDispl
 export const MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS: Record<MentorshipAdminMenteeTab, readonly MentorshipAdminMenteeStatusFilter[]> = {
   current: MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
   past: MENTORSHIP_MENTEE_STATUSES,
+};
+
+/** The label of every admin mentee status filter, as its tab's badge reads it. */
+export const MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_LABELS: Record<MentorshipAdminMenteeStatusFilter, string> = {
+  ...MENTORSHIP_MENTEE_STATUS_LABELS,
+  ...MENTORSHIP_APPLICANT_STATUS_LABELS,
 };
 
 /** The shared statuses reuse the mentee classes so the two palettes can't drift apart. */

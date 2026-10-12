@@ -3,6 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import {
@@ -27,6 +28,8 @@ import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeNoteDialogComponent } from '../../../../components/mentee-note-dialog/mentee-note-dialog.component';
+import { MenteesDownloadMenuComponent } from '../../../../components/mentees-download-menu/mentees-download-menu.component';
+import { MentorshipMenteesExportService } from '../../../../services/mentorship-mentees-export.service';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 import { MentorshipTaskFileService } from '../../../../services/mentorship-task-file.service';
 import { CurrentMenteesTabComponent } from './current-mentees-tab.component';
@@ -98,6 +101,7 @@ describe('CurrentMenteesTabComponent', () => {
   /** What the stubbed dialog service closes with: an attendance type for Accept, a term for Decline by Term, a note. */
   let dialogResult: unknown;
   let dialogOpen: ReturnType<typeof vi.fn>;
+  let exportDownload: ReturnType<typeof vi.fn>;
 
   /** Runs the effects that start a read, then renders what it wrote. */
   const settle = (): void => {
@@ -118,6 +122,7 @@ describe('CurrentMenteesTabComponent', () => {
     createTasks = vi.fn().mockReturnValue(of({ created: ['app_4'], failed: [] }));
     dialogResult = undefined;
     dialogOpen = vi.fn().mockImplementation(() => ({ onClose: of(dialogResult) }));
+    exportDownload = vi.fn().mockReturnValue(of(undefined));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -143,6 +148,7 @@ describe('CurrentMenteesTabComponent', () => {
         // and so we can assert on the exact assignee payload the tab hands off.
         { provide: MentorshipTaskDialogService, useValue: { openCreate, openEdit } },
         { provide: MentorshipTaskFileService, useValue: { download: vi.fn() } },
+        { provide: MentorshipMenteesExportService, useValue: { download: exportDownload } },
       ],
     });
 
@@ -943,6 +949,25 @@ describe('CurrentMenteesTabComponent', () => {
 
     it('offers no Create task on a pending row', () => {
       expect(labelsFor('app_1')).not.toContain('Create task');
+    });
+  });
+
+  describe('Download By Status', () => {
+    it('renders the download menu for Current Mentees of this program', () => {
+      const menu = fixture.debugElement.query(By.directive(MenteesDownloadMenuComponent))?.componentInstance as MenteesDownloadMenuComponent | undefined;
+
+      expect(menu?.programId()).toBe('prog_1');
+      expect(menu?.tab()).toBe('current');
+    });
+
+    it('no longer shows the coming-soon toast', () => {
+      const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+
+      element().querySelector<HTMLElement>('[data-testid="mentorship-current-mentees-download"]')?.querySelector<HTMLButtonElement>('button')?.click();
+      settle();
+
+      expect(add).not.toHaveBeenCalled();
+      expect(exportDownload).not.toHaveBeenCalled();
     });
   });
 
