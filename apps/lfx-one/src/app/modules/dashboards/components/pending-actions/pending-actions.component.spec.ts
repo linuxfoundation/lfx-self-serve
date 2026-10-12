@@ -65,6 +65,7 @@ async function render(actions: PendingActionItem[], flagEnabled = true): Promise
           user: signal(null),
           authenticated: signal(false),
           viewerUsername: signal(null),
+          meetingRegistrationGeneration: vi.fn(() => 0),
           recordConfirmedMeetingRsvp: vi.fn(),
           isMeetingRsvpCurrent: vi.fn(() => true),
         },

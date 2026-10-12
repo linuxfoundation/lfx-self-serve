@@ -28,6 +28,7 @@ import {
   isSameOccurrenceId,
   occurrenceIdToMs,
   occurrenceIdToSeconds,
+  retainConfirmedRsvp,
   selectApplicableRsvp,
 } from './rsvp-calculator.util';
 
@@ -589,5 +590,24 @@ describe('buildAttendeePreviewFromRsvps', () => {
       { key: 'reg-2', name: 'Grace Hopper', avatarUrl: null },
       { key: 'reg-1', name: 'Ada Lovelace', avatarUrl: null },
     ]);
+  });
+});
+
+describe('retainConfirmedRsvp', () => {
+  const allDates = rsvp({ id: 'rsvp-all', registrant_id: 'reg-1', scope: 'all' });
+  const single = rsvp({ id: 'rsvp-single', registrant_id: 'reg-2', scope: 'single', occurrence_id: OCC_AUG_11_SECONDS });
+
+  it('keeps answers from other registrations when a scoped answer is confirmed', () => {
+    expect(retainConfirmedRsvp([allDates], single)).toEqual([single, allDates]);
+  });
+
+  it('replaces an earlier copy of the same response', () => {
+    const changed = { ...single, response_type: 'declined' as const };
+    expect(retainConfirmedRsvp([single, allDates], changed)).toEqual([changed, allDates]);
+  });
+
+  it('lets a new all-dates answer supersede every retained answer, across registrations', () => {
+    const newAll = rsvp({ id: 'rsvp-new-all', registrant_id: 'reg-2', scope: 'all' });
+    expect(retainConfirmedRsvp([single, allDates], newAll)).toEqual([newAll]);
   });
 });

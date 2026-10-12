@@ -73,7 +73,7 @@ import {
   resolveOccurrenceRecurrence,
   TagSeverity,
 } from '@lfx-one/shared';
-import { isMeetingAttendeeListShared, isMeetingInviteResponsesEnabled, isSameOccurrenceId } from '@lfx-one/shared/utils';
+import { isMeetingAttendeeListShared, isMeetingInviteResponsesEnabled, isSameOccurrenceId, retainConfirmedRsvp } from '@lfx-one/shared/utils';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
 import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
@@ -362,7 +362,7 @@ export class MeetingCardComponent implements OnInit {
 
   public onRsvpChanged(rsvp: MeetingRsvp): void {
     if (!this.userService.isMeetingRsvpCurrent(rsvp, this.meetingInput())) return;
-    this.confirmedRsvps.update((responses) => [rsvp, ...responses.filter((saved) => saved.registrant_id === rsvp.registrant_id && saved.id !== rsvp.id)]);
+    this.confirmedRsvps.update((responses) => retainConfirmedRsvp(responses, rsvp));
   }
 
   /**

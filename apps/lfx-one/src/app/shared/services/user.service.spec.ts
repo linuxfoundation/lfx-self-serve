@@ -263,6 +263,38 @@ describe('UserService', () => {
       subscription.unsubscribe();
     });
 
+    it('keeps an all-dates answer from another live registration when a single date is answered through a second one', () => {
+      const firstDate = String(Date.parse('2099-01-01T10:00:00Z') / 1000);
+      const secondDate = String(Date.parse('2099-01-08T10:00:00Z') / 1000);
+      indexed = {
+        ...indexed,
+        recurrence: { type: 2, repeat_interval: 1 },
+        occurrences: [
+          { occurrence_id: firstDate, start_time: '2099-01-01T10:00:00Z', duration: 60 },
+          { occurrence_id: secondDate, start_time: '2099-01-08T10:00:00Z', duration: 60 },
+        ],
+        my_registrant_ids: ['synthetic-old-registration', 'synthetic-new-registration'],
+      };
+      const allDates = response();
+      const singleDecline = response({
+        id: 'synthetic-single-response',
+        registrant_id: 'synthetic-new-registration',
+        scope: 'single',
+        occurrence_id: secondDate,
+        response_type: 'declined',
+        created_at: '2026-10-12T11:00:00Z',
+      });
+      service.recordConfirmedMeetingRsvp(allDates);
+      service.recordConfirmedMeetingRsvp(singleDecline);
+      let rows: Meeting[] = [];
+      const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      expect(rows[0].my_rsvp).toEqual(allDates);
+      indexed = { ...indexed, occurrences: indexed.occurrences?.slice(1) };
+      service.refreshUserMeetings();
+      expect(rows[0].my_rsvp).toEqual(singleDecline);
+      subscription.unsubscribe();
+    });
+
     it('keeps newer applicable indexed responses and occurrence-specific precedence on the same registration', () => {
       const occurrenceId = String(Date.parse('2099-01-01T10:00:00Z') / 1000);
       indexed = {

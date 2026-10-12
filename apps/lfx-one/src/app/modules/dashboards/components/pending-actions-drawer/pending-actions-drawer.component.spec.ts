@@ -250,6 +250,7 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
             user: signal(null),
             authenticated: signal(false),
             viewerUsername: signal(null),
+            meetingRegistrationGeneration: vi.fn(() => 0),
             recordConfirmedMeetingRsvp: vi.fn(),
             isMeetingRsvpCurrent: vi.fn(() => true),
           },

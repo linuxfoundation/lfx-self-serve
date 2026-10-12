@@ -163,6 +163,23 @@ export function selectApplicableRsvp(occurrenceId: string | null | undefined, us
 }
 
 /**
+ * Add a newly confirmed RSVP to one viewer's retained answers for a meeting, newest first.
+ *
+ * A viewer can hold several live registrations for one meeting, so answers saved through
+ * another registration stay retained: an older all-dates answer keeps covering the dates a
+ * newer single-date answer does not. A new `all` answer covers every date, so it supersedes
+ * every retained answer — including one whose stored timestamp is later than this
+ * acknowledgement's. Ended registrations are filtered by callers, not here.
+ *
+ * @param retained Previously confirmed answers for the same viewer and meeting.
+ * @param rsvp The newly confirmed answer.
+ */
+export function retainConfirmedRsvp(retained: MeetingRsvp[], rsvp: MeetingRsvp): MeetingRsvp[] {
+  if (rsvp.scope === 'all') return [rsvp];
+  return [rsvp, ...retained.filter((saved) => saved.id !== rsvp.id)];
+}
+
+/**
  * Calculate RSVP counts for a specific occurrence.
  *
  * Groups RSVPs by registrant, resolves each user's applicable RSVP for the

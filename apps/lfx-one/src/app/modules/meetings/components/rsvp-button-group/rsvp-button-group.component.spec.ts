@@ -76,6 +76,7 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
             viewerUsername: computed(() => user()['https://sso.linuxfoundation.org/claims/username'] || user().username || null),
             authenticated: signal(true),
             refreshUserMeetings: vi.fn(),
+            meetingRegistrationGeneration: vi.fn(() => 0),
             recordConfirmedMeetingRsvp: vi.fn(),
             isMeetingRsvpCurrent: vi.fn(() => true),
           },
@@ -555,6 +556,28 @@ describe('RsvpButtonGroupComponent — registration lifetime', () => {
     let rows: Meeting[] = [];
     const subscription = users.getUserMeetings().subscribe((meetings) => (rows = meetings));
     http.expectOne('/api/user/meetings').flush([{ ...meeting, my_rsvp: null, my_registrant_ids: undefined }]);
+    expect(rows[0].my_rsvp).toBeNull();
+    subscription.unsubscribe();
+    fixture.destroy();
+  });
+
+  it('ends an in-flight first response whose registration the removal could not name', () => {
+    const publicMeeting = { ...meeting, my_registrant_ids: undefined };
+    const fixture = mount(publicMeeting);
+    const changed = vi.fn();
+    fixture.componentInstance.rsvpChanged.subscribe(changed);
+    fixture.componentInstance.handleRsvpClick('accepted');
+    const write = http.expectOne(`/api/meetings/${MEETING.id}/rsvp`);
+
+    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-a');
+    write.flush(oldResponse);
+
+    expect(changed).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.selectedResponse()).toBeNull();
+    expect(users.isMeetingRsvpCurrent(oldResponse, publicMeeting, 'synthetic-a')).toBe(false);
+    let rows: Meeting[] = [];
+    const subscription = users.getUserMeetings().subscribe((meetings) => (rows = meetings));
+    http.expectOne('/api/user/meetings').flush([{ ...publicMeeting, my_rsvp: null }]);
     expect(rows[0].my_rsvp).toBeNull();
     subscription.unsubscribe();
     fixture.destroy();

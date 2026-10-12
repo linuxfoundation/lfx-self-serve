@@ -35,7 +35,7 @@ import {
   WorkExperienceCreateUpdateBody,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { resolveRsvpOccurrenceId, selectApplicableRsvp } from '@lfx-one/shared/utils';
+import { resolveRsvpOccurrenceId, retainConfirmedRsvp, selectApplicableRsvp } from '@lfx-one/shared/utils';
 import {
   BehaviorSubject,
   catchError,
@@ -95,6 +95,8 @@ export class UserService {
   private readonly confirmedMeetingRsvps$ = new BehaviorSubject(new Map<string, MeetingRsvp[]>());
   private readonly endedMeetingRegistrantIds = signal(new Map<string, ReadonlySet<string>>());
   private readonly indexedMeetingRegistrantIds = new Map<string, Set<string>>();
+  // Bumped on every successful removal, so a write submitted before it cannot outlive it.
+  private readonly meetingRegistrationGenerations = new Map<string, number>();
   private readonly userPastMeetingsRefresh$ = new Subject<void>();
   // Shared identities refresh trigger — tab and shell each run their own getIdentities() fetch off
   // this so the shell's GitHub handle / dots update after a link/verify/add/remove (LFXV2-2767).
@@ -299,14 +301,37 @@ export class UserService {
     return this.http.get<DeveloperTokenInfo>('/api/profile/developer').pipe(take(1));
   }
 
-  /** Retain a successful write beyond the route that submitted it, under its captured effective subject. */
-  public recordConfirmedMeetingRsvp(rsvp: MeetingRsvp, subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || ''): void {
+  /** Capture before submitting a write; a removal that succeeds in the meantime makes that write's acknowledgement stale. */
+  public meetingRegistrationGeneration(meetingId: string, subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || ''): number {
+    return this.meetingRegistrationGenerations.get(`${subject}\0${meetingId}`) ?? 0;
+  }
+
+  /**
+   * Retain a successful write beyond the route that submitted it, under its captured effective subject.
+   * Pass the generation captured at submit time: an acknowledgement that arrives after a removal ends its registration instead.
+   */
+  public recordConfirmedMeetingRsvp(
+    rsvp: MeetingRsvp,
+    subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '',
+    generation?: number
+  ): void {
     if (!subject || !rsvp.registrant_id) return;
     const key = `${subject}\0${rsvp.meeting_id}`;
-    if (this.endedMeetingRegistrantIds().get(key)?.has(rsvp.registrant_id)) return;
+    if (generation !== undefined && generation !== this.meetingRegistrationGeneration(rsvp.meeting_id, subject)) {
+      this.endMeetingRegistrants(key, [rsvp.registrant_id]);
+      return;
+    }
+    const ended = this.endedMeetingRegistrantIds().get(key);
+    if (ended?.has(rsvp.registrant_id)) return;
     const current = this.confirmedMeetingRsvps$.value;
     const next = new Map(current);
-    next.set(key, [rsvp, ...(current.get(key) ?? []).filter((saved) => saved.registrant_id === rsvp.registrant_id && saved.id !== rsvp.id)]);
+    next.set(
+      key,
+      retainConfirmedRsvp(
+        (current.get(key) ?? []).filter((saved) => !ended?.has(saved.registrant_id)),
+        rsvp
+      )
+    );
     this.confirmedMeetingRsvps$.next(next);
   }
 
@@ -319,6 +344,7 @@ export class UserService {
     if (!subject) return;
     const key = `${subject}\0${meetingId}`;
     const current = this.confirmedMeetingRsvps$.value;
+    this.meetingRegistrationGenerations.set(key, (this.meetingRegistrationGenerations.get(key) ?? 0) + 1);
     this.endMeetingRegistrants(key, [...registrantIds, ...(current.get(key) ?? []).map((rsvp) => rsvp.registrant_id)]);
     const next = new Map(current);
     next.delete(key);

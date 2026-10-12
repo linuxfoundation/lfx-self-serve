@@ -137,6 +137,7 @@ export class RsvpButtonGroupComponent {
     const meetingUid = this.meetingUid();
     const meeting = this.meeting();
     const context = this.rsvpContext();
+    const generation = this.userService.meetingRegistrationGeneration(meeting.id, subject);
     const scopedOccurrenceId = scope === 'all' ? undefined : (occurrenceIdToSeconds(occurrenceId) ?? undefined);
     if (scope !== 'all' && !scopedOccurrenceId) {
       this.reportFailure('This meeting date could not be resolved. Please reload the meeting and try again.');
@@ -166,7 +167,7 @@ export class RsvpButtonGroupComponent {
             // Creation time may predate a changed answer; use confirmation time without a modification timestamp.
             updated_at: rsvp.updated_at || rsvp.modified_at || new Date().toISOString(),
           };
-          this.userService.recordConfirmedMeetingRsvp(savedRsvp, subject);
+          this.userService.recordConfirmedMeetingRsvp(savedRsvp, subject, generation);
           if (!this.userService.isMeetingRsvpCurrent(savedRsvp, meeting, subject)) return;
           // The successful POST is authoritative. Never replace it with a stale/null
           // query-service refetch while the new response is still being indexed.
