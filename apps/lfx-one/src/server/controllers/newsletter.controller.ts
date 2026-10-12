@@ -23,6 +23,7 @@ import { NextFunction, Request, Response } from 'express';
 import { ServiceValidationError } from '../errors';
 import { AiService } from '../services/ai.service';
 import { logger } from '../services/logger.service';
+import { NewsletterMemberBenefitService } from '../services/newsletter-member-benefit.service';
 import { NewsletterService } from '../services/newsletter.service';
 
 const COMMITTEE_LIMIT = 50;
@@ -39,6 +40,7 @@ const CONTEXT_NAME_MAX_LENGTH = 200;
 export class NewsletterController {
   private newsletterService: NewsletterService = new NewsletterService();
   private aiService: AiService = new AiService();
+  private memberBenefitService: NewsletterMemberBenefitService = new NewsletterMemberBenefitService();
 
   /**
    * POST /api/projects/:projectUid/newsletters/recipient-count
@@ -193,7 +195,9 @@ export class NewsletterController {
     const startTime = logger.startOperation(req, 'newsletter_get', { project_uid: projectUid, newsletter_id: newsletterUid });
 
     try {
-      const newsletter = await this.newsletterService.getNewsletter(req, projectUid, newsletterUid);
+      // Same access ladder as the permalink reader (#3469): drafts for managers only, and the
+      // members-only gate for everyone else, so this route cannot bypass the reader.
+      const newsletter = await this.memberBenefitService.getReadableNewsletter(req, projectUid, newsletterUid);
       logger.success(req, 'newsletter_get', startTime, { newsletter_id: newsletter.id, version: newsletter.version });
       res.json(newsletter);
     } catch (error) {

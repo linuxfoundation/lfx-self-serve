@@ -7,6 +7,11 @@
  * company lists that domain — label-based so regional variants match too (`outlook.jp`,
  * `yahoo.co.in`, `gmx.de`). Mirrors lf-dbt `consumer_freemail_labels()`
  * (`macros/company_email_domains.sql`).
+ *
+ * Deliberate trade-off: matching on the label is coarse, so a member company whose own registrable
+ * domain starts with a generic label here (e.g. `mail.*`, `inbox.*`, `zoho.com`) is treated as
+ * personal and its employees are denied. That fails closed — it never grants access — and keeps
+ * parity with the data team's definition; add an explicit override only when a real member hits it.
  */
 export const PERSONAL_EMAIL_PROVIDER_LABELS: ReadonlySet<string> = new Set([
   'outlook',

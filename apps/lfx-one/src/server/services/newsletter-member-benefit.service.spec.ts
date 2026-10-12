@@ -214,6 +214,34 @@ describe('NewsletterMemberBenefitService', () => {
     });
   });
 
+  describe('getReadableNewsletter (project-scoped GET)', () => {
+    it('returns drafts to managers', async () => {
+      checkAccessStrict.mockResolvedValue(grant({ writer: true }));
+      getNewsletter.mockResolvedValue(makeNewsletter({ status: 'draft' }));
+
+      await expect(service.getReadableNewsletter(req, PROJECT_UID, NEWSLETTER_UID)).resolves.toMatchObject({ status: 'draft' });
+    });
+
+    it('404s drafts for everyone else', async () => {
+      getNewsletter.mockResolvedValue(makeNewsletter({ status: 'draft' }));
+
+      await expect(service.getReadableNewsletter(req, PROJECT_UID, NEWSLETTER_UID)).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it('returns a sent issue to group members', async () => {
+      stubUpstream({ committeeMembers: () => true });
+
+      await expect(service.getReadableNewsletter(req, PROJECT_UID, NEWSLETTER_UID)).resolves.toMatchObject({ id: NEWSLETTER_UID });
+    });
+
+    it('refuses (403) a denied caller instead of returning the body', async () => {
+      stubUpstream({ memberships: [ACME_ACTIVE] });
+      resolveVerifiedUserEmails.mockResolvedValue(['jane@vendor-corp.example']);
+
+      await expect(service.getReadableNewsletter(req, PROJECT_UID, NEWSLETTER_UID)).rejects.toMatchObject({ statusCode: 403, code: 'NEWSLETTER_MEMBERS_ONLY' });
+    });
+  });
+
   describe('joinNewsletterGroup', () => {
     it('re-checks eligibility and adds the work email with the member company, invite suppressed, via M2M', async () => {
       stubUpstream({ memberships: [ACME_ACTIVE], committees: NEWSLETTER_GROUP });
@@ -345,6 +373,20 @@ describe('NewsletterMemberBenefitService', () => {
       const result = await service.resolveEligibility(req, M2M, ['jane@acme-motors.example']);
 
       expect(result.match?.b2b_org_uid).toBe(ORG_A);
+    });
+
+    it('never treats a partially paged b2b_org result as complete', async () => {
+      proxyRequest.mockImplementation(async (_req: Request, _svc: string, _path: string, _method: string, query: Record<string, unknown>) => {
+        if (query['type'] === 'project_membership') {
+          return { resources: [{ type: 'project_membership', id: ORG_A, data: { project_slug: 'tlf', ...ACME_ACTIVE } }] };
+        }
+        if (query['type'] === 'b2b_org' && !query['page_token']) {
+          return { resources: [{ type: 'b2b_org', id: ORG_A, data: { uid: ORG_A, domain_aliases: ['acme-labs.example'] } }], page_token: 'next' };
+        }
+        throw new MicroserviceError('page 2 failed', 502, 'BAD_GATEWAY');
+      });
+
+      await expect(service.resolveEligibility(req, M2M, ['jane@acme-labs.example'])).resolves.toMatchObject({ match: null });
     });
 
     it('sends lowercased candidate domains to the b2b_org query with the M2M token', async () => {

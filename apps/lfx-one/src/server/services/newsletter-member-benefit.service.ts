@@ -61,8 +61,9 @@ import { NewsletterService } from './newsletter.service';
  *    group → `eligible`
  * 6. otherwise → `denied`
  *
- * This ladder governs the reader page and the benefit join. It is not the authorization boundary
- * of the issue itself: upstream `GET /projects/{uid}/newsletters/{id}` remains `project#viewer`.
+ * The ladder gates every BFF read of a single issue — the reader endpoint and the project-scoped
+ * GET ({@link getReadableNewsletter}) — and the benefit join. Upstream newsletter-service still
+ * authorizes `GET /projects/{uid}/newsletters/{id}` on `project#viewer` alone.
  *
  * Facts the signed-in user cannot read with their own token — TLF memberships, member-company
  * domains, group rosters — and the single group add use the app's M2M token, scoped per call
@@ -145,6 +146,23 @@ export class NewsletterMemberBenefitService {
     }
 
     return { level: 'eligible', newsletter, match: eligibility.match, group };
+  }
+
+  /**
+   * The issue for the project-scoped single GET (`/api/projects/:projectUid/newsletters/:id`),
+   * behind the same ladder as the reader so that route cannot bypass it: managers get drafts,
+   * other callers get sent issues only when not `denied` (403 `NEWSLETTER_MEMBERS_ONLY`).
+   */
+  public async getReadableNewsletter(req: Request, projectUid: string, newsletterUid: string): Promise<Newsletter> {
+    const evaluation = await this.evaluateReaderAccess(req, projectUid, newsletterUid);
+    if (evaluation.level === 'denied') {
+      throw new AuthorizationError('This newsletter is available to its group and to Linux Foundation member companies', {
+        operation: 'get_readable_newsletter',
+        service: 'newsletter_member_benefit',
+        code: 'NEWSLETTER_MEMBERS_ONLY',
+      });
+    }
+    return evaluation.newsletter;
   }
 
   /**
@@ -406,7 +424,7 @@ export class NewsletterMemberBenefitService {
   /**
    * Member companies whose `primary_domain` or `domain_aliases` exactly equal a candidate domain,
    * keyed by that domain. Query-service matching is exact and case-sensitive, so candidates are
-   * lowercased and every returned record is re-checked. Fail-soft: any failure (including the M2M
+   * lowercased and every returned record is re-checked. All-or-nothing: a failed later page discards the earlier ones rather than passing a partial set off as every alias hit. Fail-soft: any failure (including the M2M
    * client lacking `b2b_org` read access, which shows as an empty result) yields no matches.
    */
   private async findB2bOrgMatches(req: Request, m2mToken: string, domains: string[]): Promise<Map<string, string[]>> {
@@ -434,7 +452,7 @@ export class NewsletterMemberBenefitService {
             undefined,
             { bearerToken: m2mToken }
           ),
-        { maxResults: MEMBER_BENEFIT_B2B_ORG_MAX_RESULTS }
+        { maxResults: MEMBER_BENEFIT_B2B_ORG_MAX_RESULTS, failOnPartial: true }
       );
 
       const wanted = new Set(domains);

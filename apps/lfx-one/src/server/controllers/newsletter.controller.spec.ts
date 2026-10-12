@@ -3,14 +3,16 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getMyNewsletters, listNewsletters, createNewsletter, updateNewsletter, scheduleNewsletter, cancelScheduleNewsletter } = vi.hoisted(() => ({
-  getMyNewsletters: vi.fn(),
-  listNewsletters: vi.fn(),
-  createNewsletter: vi.fn(),
-  updateNewsletter: vi.fn(),
-  scheduleNewsletter: vi.fn(),
-  cancelScheduleNewsletter: vi.fn(),
-}));
+const { getMyNewsletters, listNewsletters, createNewsletter, updateNewsletter, scheduleNewsletter, cancelScheduleNewsletter, getReadableNewsletter } =
+  vi.hoisted(() => ({
+    getReadableNewsletter: vi.fn(),
+    getMyNewsletters: vi.fn(),
+    listNewsletters: vi.fn(),
+    createNewsletter: vi.fn(),
+    updateNewsletter: vi.fn(),
+    scheduleNewsletter: vi.fn(),
+    cancelScheduleNewsletter: vi.fn(),
+  }));
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest
 // config — mock the barrels the controller imports from directly, same as
@@ -35,6 +37,11 @@ vi.mock('../services/newsletter.service', () => ({
   },
 }));
 vi.mock('../services/ai.service', () => ({ AiService: class {} }));
+vi.mock('../services/newsletter-member-benefit.service', () => ({
+  NewsletterMemberBenefitService: class {
+    public getReadableNewsletter = getReadableNewsletter;
+  },
+}));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -84,6 +91,35 @@ describe('NewsletterController.getMyNewsletters', () => {
       expect(logger.error).not.toHaveBeenCalled();
     }
   );
+});
+
+describe('NewsletterController.getNewsletter — reader ladder (#3469)', () => {
+  const PROJECT_UID = '11111111-1111-4111-8111-111111111111';
+  const NEWSLETTER_UID = '22222222-2222-4222-8222-222222222222';
+
+  it('returns the issue only through the member-benefit ladder', async () => {
+    const newsletter = { id: NEWSLETTER_UID, version: 1 };
+    getReadableNewsletter.mockResolvedValue(newsletter);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new NewsletterController().getNewsletter({ params: { projectUid: PROJECT_UID, newsletterUid: NEWSLETTER_UID }, path: '/' } as any, res, next);
+
+    expect(getReadableNewsletter).toHaveBeenCalledWith(expect.anything(), PROJECT_UID, NEWSLETTER_UID);
+    expect(res.json).toHaveBeenCalledWith(newsletter);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('passes a members-only refusal to the error handler instead of the issue', async () => {
+    getReadableNewsletter.mockRejectedValue(Object.assign(new Error('members only'), { statusCode: 403, code: 'NEWSLETTER_MEMBERS_ONLY' }));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new NewsletterController().getNewsletter({ params: { projectUid: PROJECT_UID, newsletterUid: NEWSLETTER_UID }, path: '/' } as any, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+  });
 });
 
 describe('NewsletterController.listNewsletters — status allowlist', () => {
