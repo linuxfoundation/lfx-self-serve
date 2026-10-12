@@ -48,25 +48,26 @@ export function getRecordingDurationSeconds(recording: PastMeetingRecording | nu
   if (!recording || !largest) {
     return null;
   }
-  const sessionStarts = recording.sessions.map((session) => Date.parse(session.start_time));
-  if (sessionStarts.some((start) => !Number.isFinite(start))) {
+  // firstValidTimestampMs, not Date.parse: the upstream converter emits Go's zero time
+  // (0001-01-01T00:00:00Z) for a timestamp it could not read, which Date.parse accepts.
+  const sessionStarts = recording.sessions.map((session) => firstValidTimestampMs(session.start_time));
+  if (sessionStarts.some((start) => start === null)) {
     return null;
   }
-  const largestStart = Date.parse(largest.start_time);
-  const nextStart = Math.min(...sessionStarts.filter((start) => start > largestStart), Number.POSITIVE_INFINITY);
-  const from = largestStart - MEETING_RECORDING_SESSION_TOLERANCE_MS;
-  const until = nextStart - MEETING_RECORDING_SESSION_TOLERANCE_MS;
+  const starts = sessionStarts as number[];
+  const largestIndex = recording.sessions.indexOf(largest);
 
   const intervals: [number, number][] = [];
   for (const file of recording.recording_files ?? []) {
     if (!MEETING_RECORDING_MEDIA_FILE_TYPES.includes((file.file_type ?? '').toUpperCase())) {
       continue;
     }
-    const start = Date.parse(file.recording_start);
-    const end = Date.parse(file.recording_end);
-    if (Number.isFinite(start) && Number.isFinite(end) && end > start && start >= from && start < until) {
-      intervals.push([start, end]);
+    const start = firstValidTimestampMs(file.recording_start);
+    const end = firstValidTimestampMs(file.recording_end);
+    if (start === null || end === null || end <= start || sessionIndexOf(starts, start) !== largestIndex) {
+      continue;
     }
+    intervals.push([start, end]);
   }
 
   intervals.sort((a, b) => a[0] - b[0]);
@@ -87,6 +88,29 @@ export function getRecordingDurationSeconds(recording: PastMeetingRecording | nu
   }
   const seconds = Math.round(totalMs / 1000);
   return seconds > 0 ? seconds : null;
+}
+
+/**
+ * Which session a file starting at `fileStart` belongs to, by index into `sessionStarts`: the latest
+ * session that started at or before it; or, when none had, the earliest that starts within
+ * `MEETING_RECORDING_SESSION_TOLERANCE_MS` after it (its file opened a moment early). `-1` for neither.
+ */
+function sessionIndexOf(sessionStarts: number[], fileStart: number): number {
+  let index = -1;
+  sessionStarts.forEach((start, i) => {
+    if (start <= fileStart && (index === -1 || start > sessionStarts[index])) {
+      index = i;
+    }
+  });
+  if (index !== -1) {
+    return index;
+  }
+  sessionStarts.forEach((start, i) => {
+    if (start > fileStart && start - fileStart <= MEETING_RECORDING_SESSION_TOLERANCE_MS && (index === -1 || start < sessionStarts[index])) {
+      index = i;
+    }
+  });
+  return index;
 }
 
 /** A recording length as the prototype shows it: `m:ss` under an hour, `h:mm:ss` from an hour. */

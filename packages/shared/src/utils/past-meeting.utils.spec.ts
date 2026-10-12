@@ -5,13 +5,13 @@ import { describe, expect, it } from 'vitest';
 
 import { EnrichedPastMeetingParticipant, PastMeetingRecording, RecordingFile, RecordingSession } from '../interfaces';
 import {
+  filterPastMeetingParticipants,
   formatRecordingDuration,
   formatRecordingDurationSpoken,
-  getRecordingDurationSeconds,
-  filterPastMeetingParticipants,
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
+  getRecordingDurationSeconds,
   isPastMeetingCalendarRow,
 } from './past-meeting.utils';
 
@@ -311,6 +311,16 @@ describe('getRecordingDurationSeconds', () => {
     expect(getRecordingDurationSeconds(recording([session({ start_time: '2026-07-16T10:00:00Z', total_size: 1 })], early))).toBe(30 * 60 + 1);
   });
 
+  // Two sessions starting less than the tolerance apart: each keeps its own files.
+  it('keeps close-together sessions apart', () => {
+    const close = [
+      session({ start_time: '2026-07-16T10:00:00Z', total_size: 100, uuid: 'a' }),
+      session({ start_time: '2026-07-16T10:00:30Z', total_size: 900, uuid: 'b' }),
+    ];
+    const closeFiles = [mediaFile('MP4', '2026-07-16T10:00:00Z', '2026-07-16T10:00:20Z'), mediaFile('MP4', '2026-07-16T10:00:30Z', '2026-07-16T10:30:30Z')];
+    expect(getRecordingDurationSeconds(recording(close, closeFiles))).toBe(30 * 60);
+  });
+
   it('returns null rather than guessing', () => {
     const one = [session({ start_time: '2026-07-16T10:00:00Z', total_size: 1 })];
     // No media file, only chat.
@@ -322,6 +332,10 @@ describe('getRecordingDurationSeconds', () => {
     // Another session's start is unreadable, so which files are the largest session's is unknown.
     const unreadable = [session({ start_time: '2026-07-16T10:00:00Z', total_size: 9 }), session({ start_time: 'garbage', total_size: 1, uuid: 'x' })];
     expect(getRecordingDurationSeconds(recording(unreadable, [mediaFile('MP4', '2026-07-16T10:00:00Z', '2026-07-16T11:00:00Z')]))).toBeNull();
+    // Go's zero time, which the upstream converter emits for a time it could not read.
+    const zero = [session({ start_time: '0001-01-01T00:00:00Z', total_size: 9 })];
+    expect(getRecordingDurationSeconds(recording(zero, [mediaFile('MP4', '2026-07-16T10:00:00Z', '2026-07-16T11:00:00Z')]))).toBeNull();
+    expect(getRecordingDurationSeconds(recording(one, [mediaFile('MP4', '0001-01-01T00:00:00Z', '2026-07-16T11:00:00Z')]))).toBeNull();
     expect(getRecordingDurationSeconds(recording([], []))).toBeNull();
     expect(getRecordingDurationSeconds(null)).toBeNull();
   });
