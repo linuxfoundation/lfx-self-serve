@@ -18,15 +18,13 @@
       }
     </div>
     @if (canManage()) {
-      <button
-        type="button"
-        class="inline-flex h-[30px] flex-none cursor-pointer items-center gap-[6px] rounded-full border border-[var(--md-border-strong)] bg-[var(--md-surface-card)] px-[12px] text-[12.5px] font-semibold text-[var(--md-text-heading)] hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-        aria-haspopup="dialog"
-        (click)="openDrawer()"
-        data-testid="materials-section-add">
-        <i class="fa-light fa-plus" aria-hidden="true"></i>
-        Add material
-      </button>
+      <lfx-button
+        label="Add material"
+        icon="fa-light fa-plus"
+        [styleClass]="pillButtonClass"
+        ariaHaspopup="dialog"
+        (onClick)="openDrawer()"
+        data-testid="materials-section-add" />
     }
   </div>
   <p class="m-0 mb-[16px] text-[12px] leading-[1.5] text-[var(--md-text-muted)]">
@@ -53,13 +51,7 @@
     @case ('error') {
       <div class="flex flex-wrap items-center justify-between gap-[12px]" role="alert" data-testid="materials-section-error">
         <p class="m-0 text-[14px] text-[var(--md-text-body)]">We couldn't load the materials.</p>
-        <button
-          type="button"
-          class="inline-flex h-[30px] cursor-pointer items-center rounded-full border border-[var(--md-border-strong)] bg-[var(--md-surface-card)] px-[12px] text-[12.5px] font-semibold text-[var(--md-text-heading)] hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-          (click)="retry()"
-          data-testid="materials-section-retry">
-          Try again
-        </button>
+        <lfx-button label="Try again" [styleClass]="pillButtonClass" (onClick)="retry()" data-testid="materials-section-retry" />
       </div>
     }
     @default {
@@ -105,14 +97,14 @@
                 }
               </ul>
               @if (files().length > previewLimit) {
-                <button
-                  type="button"
-                  class="cursor-pointer self-start border-0 bg-transparent p-0 text-[13px] font-semibold text-[var(--md-accent-ink)] hover:underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-                  [attr.aria-expanded]="showAllFiles()"
-                  (click)="showAllFiles.set(!showAllFiles())"
-                  data-testid="materials-section-files-toggle">
-                  {{ showAllFiles() ? 'Show less' : 'Show ' + (files().length - previewLimit) + ' more' }}
-                </button>
+                <lfx-button
+                  class="self-start"
+                  [label]="showAllFiles() ? 'Show less' : 'Show ' + (files().length - previewLimit) + ' more'"
+                  [text]="true"
+                  [styleClass]="toggleButtonClass"
+                  [ariaExpanded]="showAllFiles()"
+                  (onClick)="showAllFiles.set(!showAllFiles())"
+                  data-testid="materials-section-files-toggle" />
               }
             </div>
           }
@@ -148,14 +140,14 @@
                 }
               </ul>
               @if (links().length > previewLimit) {
-                <button
-                  type="button"
-                  class="cursor-pointer self-start border-0 bg-transparent p-0 text-[13px] font-semibold text-[var(--md-accent-ink)] hover:underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-                  [attr.aria-expanded]="showAllLinks()"
-                  (click)="showAllLinks.set(!showAllLinks())"
-                  data-testid="materials-section-links-toggle">
-                  {{ showAllLinks() ? 'Show less' : 'Show ' + (links().length - previewLimit) + ' more' }}
-                </button>
+                <lfx-button
+                  class="self-start"
+                  [label]="showAllLinks() ? 'Show less' : 'Show ' + (links().length - previewLimit) + ' more'"
+                  [text]="true"
+                  [styleClass]="toggleButtonClass"
+                  [ariaExpanded]="showAllLinks()"
+                  (onClick)="showAllLinks.set(!showAllLinks())"
+                  data-testid="materials-section-links-toggle" />
               }
             </div>
           }

@@ -20,6 +20,7 @@ import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
+import { ButtonComponent } from '@components/button/button.component';
 import { catchError, map, Observable, of, startWith, switchMap, take, timer } from 'rxjs';
 
 import { MeetingMaterialsDrawerComponent } from '../../../components/meeting-materials-drawer/meeting-materials-drawer.component';
@@ -33,9 +34,11 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * five items, then "Show N more"; "Updated" marks a change in the last seven days.
  *
  * The page renders it where `visibleSections().materials` allows. An upcoming or live meeting's
- * list comes from the public route (E3-03), which gates it as the meeting is gated, so an anonymous
- * visitor to a public meeting sees the materials, and only a refused one is asked to sign in. A page
- * loaded by a past occurrence's id reads that occurrence's own list, which needs a session.
+ * list comes from the public route (E3-03), which gates it as the meeting is gated, and only a
+ * viewer it refuses is asked to sign in. The V2 page serves signed-in viewers only until rollout
+ * stage 5 (`rollout.md`); the public route is what lets this section serve anonymous visitors to a
+ * public meeting from then on, unchanged. A page loaded by a past occurrence's id reads that
+ * occurrence's own list, which needs a session.
  *
  * Files download through a presigned URL (V1's "Download Failed" toast on failure); links open in a
  * new tab. An organizer gets Add material, V1's materials drawer, while the meeting is upcoming or
@@ -43,7 +46,7 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  */
 @Component({
   selector: 'lfx-meeting-materials',
-  imports: [NgTemplateOutlet, SkeletonModule, FileSizePipe, FileTypeDisplayPipe, MeetingMaterialsDrawerComponent],
+  imports: [NgTemplateOutlet, SkeletonModule, ButtonComponent, FileSizePipe, FileTypeDisplayPipe, MeetingMaterialsDrawerComponent],
   templateUrl: './materials.component.html',
 })
 export class MeetingMaterialsComponent {
@@ -55,6 +58,12 @@ export class MeetingMaterialsComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly previewLimit = MEETING_MATERIALS_PREVIEW_LIMIT;
+  /** `lfx-button` in the prototype's 30px pill (Add material, Try again), as the action slot styles its buttons. */
+  protected readonly pillButtonClass =
+    '!h-[30px] !gap-[6px] !rounded-full !border-[var(--md-border-strong)] !bg-[var(--md-surface-card)] !px-[12px] !py-0 !text-[12.5px] !font-semibold !text-[var(--md-text-heading)] hover:!bg-[var(--md-surface-hover)] focus-visible:!shadow-[var(--md-shadow-focus)]';
+  /** `lfx-button` as the prototype's inline text toggle (Show N more / Show less). */
+  protected readonly toggleButtonClass =
+    '!h-auto !border-0 !bg-transparent !p-0 !text-[13px] !font-semibold !text-[var(--md-accent-ink)] hover:!underline focus-visible:!shadow-[var(--md-shadow-focus)]';
   protected readonly drawerVisible = signal(false);
   protected readonly showAllFiles = signal(false);
   protected readonly showAllLinks = signal(false);

@@ -161,7 +161,7 @@ describe('MeetingMaterialsComponent', () => {
     expect(fixture.nativeElement.querySelectorAll('[data-testid^="materials-file-"]').length).toBe(5);
     expect(text('materials-section-files-toggle')).toBe('Show 2 more');
 
-    query('materials-section-files-toggle')?.click();
+    query('materials-section-files-toggle')?.querySelector('button')?.click();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelectorAll('[data-testid^="materials-file-"]').length).toBe(7);
@@ -200,7 +200,7 @@ describe('MeetingMaterialsComponent', () => {
     await setup(() => (++calls === 1 ? throwError(() => new HttpErrorResponse({ status: 500 })) : of([file('f1')])));
     expect(query('materials-section-error')).not.toBeNull();
 
-    query('materials-section-retry')?.click();
+    query('materials-section-retry')?.querySelector('button')?.click();
     fixture.detectChanges();
 
     expect(query('materials-section-error')).toBeNull();
