@@ -44,10 +44,21 @@ export interface ObjectStorePutInput {
 }
 
 /**
+ * On-disk shape of the file backend's `<key>.meta.json` sidecar — the headers
+ * S3 keeps on the object itself (content type, cache control, user metadata).
+ */
+export interface ObjectStoreFileSidecar {
+  contentType: string;
+  cacheControl: string;
+  metadata: Record<string, string>;
+}
+
+/**
  * The primitive operations the object-store service orchestrates, bound to
  * ONE purpose (one bucket or one folder). Both backends honour the same
- * contract, which is what lets every caller — avatar upload, the shared
- * Marketing OS artifact layer — run unchanged against either:
+ * contract, so the shared Marketing OS artifact layer — the one caller whose
+ * purpose may fall back to the folder — runs unchanged against either; the
+ * public `avatars` purpose is always S3 (see `OBJECT_STORE_PURPOSE_FILE_FALLBACK`):
  *
  * - `headObject` / `getObject` return `null` ONLY on a confirmed missing
  *   object; any other failure (403, timeout, 5xx, EACCES) throws and is never

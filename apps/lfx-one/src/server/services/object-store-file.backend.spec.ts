@@ -7,6 +7,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { ServiceValidationError } from '../errors';
 import { FileObjectStoreBackend } from './object-store-file.backend';
 
 describe('FileObjectStoreBackend', () => {
@@ -136,18 +137,27 @@ describe('FileObjectStoreBackend', () => {
   });
 
   describe('key safety', () => {
+    // A refused key is the project's typed 400 on the `key` field, never a raw Error: a
+    // caller-built key (a project uid carrying `..`) must reach apiErrorHandler with structured
+    // metadata instead of surfacing as an untyped 500.
+    const refusedKey = (detail: RegExp) => ({
+      statusCode: 400,
+      code: 'VALIDATION_ERROR',
+      validationErrors: [{ field: 'key', message: expect.stringMatching(detail), code: 'FIELD_VALIDATION_ERROR' }],
+    });
+
     it.each(['../escape.md', 'brand-kit/../../escape.md', '/etc/passwd', ''])('refuses a key that would leave the folder: %j', async (key) => {
-      await expect(backend.putObject(key, { body: Buffer.from('x'), contentType: 'text/plain', cacheControl: 'private' })).rejects.toThrow(
-        /file-backed object store/
-      );
-      await expect(backend.getObject(key)).rejects.toThrow(/file-backed object store/);
-      await expect(backend.headObject(key)).rejects.toThrow(/file-backed object store/);
+      const put = backend.putObject(key, { body: Buffer.from('x'), contentType: 'text/plain', cacheControl: 'private' });
+      await expect(put).rejects.toBeInstanceOf(ServiceValidationError);
+      await expect(put).rejects.toMatchObject(refusedKey(/file-backed object store/));
+      await expect(backend.getObject(key)).rejects.toMatchObject(refusedKey(/file-backed object store/));
+      await expect(backend.headObject(key)).rejects.toMatchObject(refusedKey(/file-backed object store/));
     });
 
     it('refuses a key that would collide with a sidecar', async () => {
-      await expect(
-        backend.putObject('brand-kit/x.md.meta.json', { body: Buffer.from('x'), contentType: 'text/plain', cacheControl: 'private' })
-      ).rejects.toThrow(/not storable/);
+      const put = backend.putObject('brand-kit/x.md.meta.json', { body: Buffer.from('x'), contentType: 'text/plain', cacheControl: 'private' });
+      await expect(put).rejects.toBeInstanceOf(ServiceValidationError);
+      await expect(put).rejects.toMatchObject(refusedKey(/not storable/));
     });
 
     it('keeps the stored key byte-exact for the characters avatar keys carry (@, %, dots)', async () => {

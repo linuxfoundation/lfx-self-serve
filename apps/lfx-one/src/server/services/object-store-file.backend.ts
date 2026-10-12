@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ObjectStoreBackend, ObjectStoreListEntry, ObjectStorePutInput, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
+import { ObjectStoreBackend, ObjectStoreFileSidecar, ObjectStoreListEntry, ObjectStorePutInput, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
 import { access, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { OBJECT_STORE_FILE_METADATA_SUFFIX } from '../constants';
+import { ServiceValidationError } from '../errors';
 
 /**
  * The file-backed backend of the object store — one folder per purpose,
@@ -73,7 +74,7 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
   public async putObject(key: string, input: ObjectStorePutInput): Promise<void> {
     const bodyPath = this.resolveKey(key);
     await mkdir(dirname(bodyPath), { recursive: true });
-    const sidecar: FileObjectSidecar = {
+    const sidecar: ObjectStoreFileSidecar = {
       contentType: input.contentType,
       cacheControl: input.cacheControl,
       metadata: input.metadata ?? {},
@@ -130,24 +131,31 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
    * `listObjects` as the same string — an empty, `.` or `..` segment (so a
    * leading, trailing or doubled `/`) — or that would collide with a sidecar,
    * and then checks the resolved path still sits inside the purpose folder as
-   * defense in depth.
+   * defense in depth. A refused key is a typed 400 (`ServiceValidationError`
+   * on the `key` field), so a caller-built key — say a project uid carrying
+   * `..` — reaches `apiErrorHandler` with structured metadata, not as an
+   * untyped 500.
    */
   private resolveKey(key: string): string {
     const segments = key.split('/');
     if (!key || key.endsWith(OBJECT_STORE_FILE_METADATA_SUFFIX) || segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
-      throw new Error(`Object key is not storable in the file-backed object store: "${key}"`);
+      throw ServiceValidationError.forField('key', `Object key is not storable in the file-backed object store: "${key}"`, {
+        operation: 'object_store_resolve_key',
+      });
     }
     const bodyPath = resolve(this.root, ...segments);
     const inside = relative(this.root, bodyPath);
     if (!inside || inside.startsWith('..') || isAbsolute(inside)) {
-      throw new Error(`Object key escapes the file-backed object store folder: "${key}"`);
+      throw ServiceValidationError.forField('key', `Object key escapes the file-backed object store folder: "${key}"`, {
+        operation: 'object_store_resolve_key',
+      });
     }
     return bodyPath;
   }
 
   /** The sidecar next to a body — or empty labels when it was never written or is unreadable as JSON. */
-  private async readSidecar(bodyPath: string): Promise<FileObjectSidecar> {
-    const empty: FileObjectSidecar = { contentType: '', cacheControl: '', metadata: {} };
+  private async readSidecar(bodyPath: string): Promise<ObjectStoreFileSidecar> {
+    const empty: ObjectStoreFileSidecar = { contentType: '', cacheControl: '', metadata: {} };
     let raw: string;
     try {
       raw = await readFile(`${bodyPath}${OBJECT_STORE_FILE_METADATA_SUFFIX}`, 'utf8');
@@ -158,7 +166,7 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
       throw error;
     }
     try {
-      const parsed = JSON.parse(raw) as Partial<FileObjectSidecar>;
+      const parsed = JSON.parse(raw) as Partial<ObjectStoreFileSidecar>;
       return {
         contentType: typeof parsed.contentType === 'string' ? parsed.contentType : '',
         cacheControl: typeof parsed.cacheControl === 'string' ? parsed.cacheControl : '',
@@ -168,13 +176,6 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
       return empty;
     }
   }
-}
-
-/** On-disk shape of the `<key>.meta.json` sidecar — the headers S3 would keep on the object. */
-interface FileObjectSidecar {
-  contentType: string;
-  cacheControl: string;
-  metadata: Record<string, string>;
 }
 
 /** True for ENOENT (and ENOTDIR, when a key segment names a file) — the file-system "confirmed missing". */
