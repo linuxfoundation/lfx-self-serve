@@ -1015,6 +1015,21 @@ export const RECONCILIATION_BOT_NAME_PATTERN =
 export const NOTES_ATTACHMENT_CATEGORY: AttachmentCategory = 'Notes';
 
 /**
+ * Every `AttachmentCategory`, as the materials drawer offers them (E3-05, #3254). Before this the
+ * drawer hard-coded `Other` for links and sent nothing for files, so the other three were
+ * unreachable from the meetings UI.
+ */
+export const MEETING_ATTACHMENT_CATEGORIES: readonly AttachmentCategory[] = ['Meeting Minutes', 'Notes', 'Presentation', 'Other'];
+
+/** The category a new attachment starts with in the materials drawer: what links always had. */
+export const DEFAULT_MEETING_ATTACHMENT_CATEGORY: AttachmentCategory = 'Other';
+
+/** `MEETING_ATTACHMENT_CATEGORIES` as select options (label and value are the same string). */
+export const MEETING_ATTACHMENT_CATEGORY_OPTIONS: { label: AttachmentCategory; value: AttachmentCategory }[] = MEETING_ATTACHMENT_CATEGORIES.map(
+  (category) => ({ label: category, value: category })
+);
+
+/**
  * Display label for each meeting status on the meeting details V2 page
  * @description Shared by the status pill (E1-05) and the sticky identity bar's subtitle (E1-02), so
  * the two never disagree about what a meeting is called. Resolve the status with

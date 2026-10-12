@@ -57,6 +57,14 @@
                   <i class="fa-light fa-file-lines text-blue-500 flex-shrink-0"></i>
                   <span class="text-sm text-gray-700 truncate">{{ attachment.fileName }}</span>
                 </div>
+                <lfx-select
+                  class="ml-auto w-40 flex-shrink-0"
+                  [form]="categoryForm"
+                  [control]="fileCategoryKey(attachment.id)"
+                  [options]="categoryOptions"
+                  ariaLabel="Category"
+                  styleClass="w-full"
+                  [attr.data-testid]="'pending-category-' + attachment.id" />
                 <button
                   type="button"
                   class="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
@@ -83,6 +91,11 @@
                   <span class="text-sm truncate" [class]="pendingDeletions().has(attachment.uid) ? 'text-red-600 line-through' : 'text-gray-700'">
                     {{ attachment.name }}
                   </span>
+                  @if (attachment.category) {
+                    <span class="flex-shrink-0 text-xs text-gray-400" [attr.data-testid]="'existing-file-category-' + attachment.uid">{{
+                      attachment.category
+                    }}</span>
+                  }
                 </div>
                 @if (pendingDeletions().has(attachment.uid)) {
                   <button
@@ -125,6 +138,14 @@
               placeholder="https://example.com"
               class="flex-1 h-10 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-300"
               data-testid="new-link-url-input" />
+            <lfx-select
+              class="w-40 flex-shrink-0"
+              [form]="categoryForm"
+              control="link"
+              [options]="categoryOptions"
+              ariaLabel="Link category"
+              styleClass="w-full"
+              data-testid="new-link-category-select" />
             <lfx-button
               icon="fa-light fa-plus"
               size="small"
@@ -152,6 +173,9 @@
                     </span>
                     @if (attachment.link) {
                       <span class="text-xs text-gray-400 truncate">{{ attachment.link }}</span>
+                    }
+                    @if (attachment.category) {
+                      <span class="text-xs text-gray-400" [attr.data-testid]="'existing-link-category-' + attachment.uid">{{ attachment.category }}</span>
                     }
                   </div>
                 </div>

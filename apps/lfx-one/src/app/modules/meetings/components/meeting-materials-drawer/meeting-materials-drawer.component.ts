@@ -3,10 +3,25 @@
 
 import { Component, computed, DestroyRef, inject, input, model, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { FormControl, FormRecord } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
-import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-one/shared/constants';
-import { MaterialsChangedEvent, MeetingAttachment, PastMeetingAttachment, PendingAttachment, PresignAttachmentResponse } from '@lfx-one/shared/interfaces';
+import { SelectComponent } from '@components/select/select.component';
+import {
+  ALLOWED_FILE_TYPES,
+  DEFAULT_MEETING_ATTACHMENT_CATEGORY,
+  MAX_FILE_SIZE_BYTES,
+  MAX_FILE_SIZE_MB,
+  MEETING_ATTACHMENT_CATEGORY_OPTIONS,
+} from '@lfx-one/shared/constants';
+import {
+  AttachmentCategory,
+  MaterialsChangedEvent,
+  MeetingAttachment,
+  PastMeetingAttachment,
+  PendingAttachment,
+  PresignAttachmentResponse,
+} from '@lfx-one/shared/interfaces';
 import { generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -15,7 +30,7 @@ import { catchError, from, map, mergeMap, of, skip, switchMap, take, tap, toArra
 
 @Component({
   selector: 'lfx-meeting-materials-drawer',
-  imports: [DrawerModule, FileUploadComponent, ButtonComponent],
+  imports: [DrawerModule, FileUploadComponent, ButtonComponent, SelectComponent],
   templateUrl: './meeting-materials-drawer.component.html',
   styleUrl: './meeting-materials-drawer.component.scss',
 })
@@ -36,6 +51,16 @@ export class MeetingMaterialsDrawerComponent {
   // === Constants ===
   public readonly acceptString = generateAcceptString();
   public readonly MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_BYTES;
+  public readonly categoryOptions = MEETING_ATTACHMENT_CATEGORY_OPTIONS;
+
+  // === Forms ===
+  /**
+   * Each new attachment's category (E3-05): `link` for the link being added, and `file-<id>` for
+   * each pending file, added and removed with it. Every value is one of the four categories.
+   */
+  public readonly categoryForm = new FormRecord<FormControl<AttachmentCategory>>({
+    link: this.categoryControl(),
+  });
 
   // === Writable Signals ===
   public loading = signal(false);
@@ -83,6 +108,8 @@ export class MeetingMaterialsDrawerComponent {
     }),
     tap((attachments) => {
       this.existingAttachments.set(attachments as MeetingAttachment[]);
+      this.pendingAttachments().forEach((pending) => this.categoryForm.removeControl(this.fileCategoryKey(pending.id)));
+      this.categoryForm.controls['link'].reset();
       this.pendingAttachments.set([]);
       this.pendingDeletions.set(new Set());
       this.newLinkTitle.set('');
@@ -134,11 +161,18 @@ export class MeetingMaterialsDrawerComponent {
       })
       .filter(Boolean) as PendingAttachment[];
 
+    newAttachments.forEach((pending) => this.categoryForm.addControl(this.fileCategoryKey(pending.id), this.categoryControl()));
     this.pendingAttachments.update((current) => [...current, ...newAttachments]);
   }
 
   public removePendingAttachment(id: string): void {
     this.pendingAttachments.update((current) => current.filter((f) => f.id !== id));
+    this.categoryForm.removeControl(this.fileCategoryKey(id));
+  }
+
+  /** The form key holding a pending file's category. */
+  public fileCategoryKey(id: string): string {
+    return `file-${id}`;
   }
 
   public markForDeletion(uid: string): void {
@@ -161,6 +195,7 @@ export class MeetingMaterialsDrawerComponent {
     const title = this.newLinkTitle().trim();
     const url = this.newLinkUrl().trim();
     if (!title || !url) return;
+    const category = this.categoryForm.controls['link'].value;
 
     this.saving.set(true);
     const isPast = this.isPastMode();
@@ -170,14 +205,15 @@ export class MeetingMaterialsDrawerComponent {
       return;
     }
     const create$ = isPast
-      ? this.meetingService.createPastMeetingAttachment(id, { type: 'link', category: 'Other', name: title, link: url })
-      : this.meetingService.createMeetingAttachment(id, { type: 'link', category: 'Other', name: title, link: url });
+      ? this.meetingService.createPastMeetingAttachment(id, { type: 'link', category, name: title, link: url })
+      : this.meetingService.createMeetingAttachment(id, { type: 'link', category, name: title, link: url });
 
     create$.pipe(take(1)).subscribe({
       next: (attachment) => {
         this.existingAttachments.update((current) => [...current, attachment as MeetingAttachment]);
         this.newLinkTitle.set('');
         this.newLinkUrl.set('');
+        this.categoryForm.controls['link'].reset();
         this.saving.set(false);
         this.messageService.add({ severity: 'success', summary: 'Link Added', detail: `"${title}" has been added.` });
         const addedAttachments: PastMeetingAttachment[] = isPast ? [attachment as PastMeetingAttachment] : [];
@@ -230,11 +266,13 @@ export class MeetingMaterialsDrawerComponent {
                     name: attachment.fileName,
                     file_size: attachment.fileSize,
                     file_type: attachment.mimeType,
+                    category: this.fileCategory(attachment.id),
                   })
                 : this.meetingService.uploadMeetingFile(id, attachment.file, {
                     name: attachment.fileName,
                     file_size: attachment.fileSize,
                     file_type: attachment.mimeType,
+                    category: this.fileCategory(attachment.id),
                   })
               ).pipe(catchError(() => of(null)))
             ),
@@ -304,6 +342,16 @@ export class MeetingMaterialsDrawerComponent {
   }
 
   // === Private Helpers ===
+  /** A pending file's chosen category; the default if its control is gone. */
+  private fileCategory(id: string): AttachmentCategory {
+    return this.categoryForm.controls[this.fileCategoryKey(id)]?.value ?? DEFAULT_MEETING_ATTACHMENT_CATEGORY;
+  }
+
+  /** A category control: never empty, and reset returns it to the default. */
+  private categoryControl(): FormControl<AttachmentCategory> {
+    return new FormControl<AttachmentCategory>(DEFAULT_MEETING_ATTACHMENT_CATEGORY, { nonNullable: true });
+  }
+
   private validateFile(file: File): string | null {
     if (file.size > MAX_FILE_SIZE_BYTES) {
       return `File "${file.name}" is too large. Maximum size is ${MAX_FILE_SIZE_MB}MB.`;
