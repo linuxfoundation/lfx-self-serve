@@ -118,13 +118,21 @@ export class AutocompleteComponent {
     // AutoComplete instance, and writing into external/child state from an effect risks
     // ExpressionChangedAfterItHasBeenCheckedError under zoneless change detection (see the same
     // reasoning in user-search.component.ts).
+    // Respect autoOptionFocus rather than always forcing -1: PrimeNG's own suggestions setter
+    // already recomputes focusedOptionIndex via findFirstFocusedOptionIndex() when autoOptionFocus
+    // is on, but only while its internal `loading` flag is set (i.e. during its own debounced
+    // search cycle). A blanket -1 here would stomp that freshly-computed index whenever this
+    // subscriber's effect flushes after PrimeNG's own synchronous setter logic runs.
     toObservable(this.suggestions)
       .pipe(takeUntilDestroyed())
       .subscribe(() => {
         const instance = this.autoComplete();
-        if (instance?.overlayVisible) {
-          instance.focusedOptionIndex.set(-1);
+        if (!instance?.overlayVisible) {
+          return;
         }
+
+        const focusedOptionIndex = this.autoOptionFocus() ? instance.findFirstFocusedOptionIndex() : -1;
+        instance.focusedOptionIndex.set(focusedOptionIndex);
       });
   }
 

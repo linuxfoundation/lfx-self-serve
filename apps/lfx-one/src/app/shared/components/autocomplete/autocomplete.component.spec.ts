@@ -96,4 +96,31 @@ describe('AutocompleteComponent', () => {
 
     expect(form.get('org')?.value).toBe('Alliander');
   });
+
+  // copilot (PR #3462): a blanket -1 would undo PrimeNG's own autoOptionFocus behavior — when that
+  // input is on, a suggestions change should focus the first valid option, not clear focus.
+  it('focuses the first valid option instead of -1 when autoOptionFocus is enabled', async () => {
+    const form = new FormGroup({ org: new FormControl<string | null>(null) });
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [AutocompleteComponent],
+      providers: [provideNoopAnimations()],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(AutocompleteComponent);
+    fixture.componentRef.setInput('form', form);
+    fixture.componentRef.setInput('control', 'org');
+    fixture.componentRef.setInput('suggestions', ['Alliander']);
+    fixture.componentRef.setInput('autoOptionFocus', true);
+    await fixture.whenStable();
+
+    const autoComplete = queryAutoComplete();
+    autoComplete.overlayVisible = true;
+    autoComplete.focusedOptionIndex.set(5);
+
+    fixture.componentRef.setInput('suggestions', ['Alliander Tippiq']);
+    await fixture.whenStable();
+
+    expect(autoComplete.focusedOptionIndex()).toBe(0);
+  });
 });
