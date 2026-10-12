@@ -386,6 +386,24 @@ describe('MeetingMaterialsComponent', () => {
     vi.useRealTimers();
   });
 
+  // The section stays mounted across in-app meeting changes: a change's follow-up must not act on the next meeting.
+  it("cancels a change's follow-up refetches when the section moves to another meeting", async () => {
+    vi.useFakeTimers();
+    await setup(() => of([file('keep')]));
+    fixture.componentInstance.onMaterialsChanged({ deletedUids: [], addedAttachments: [], addedMeetingAttachments: [] });
+    fixture.detectChanges();
+
+    meeting.set({ id: 'meeting-2', project: {} } as unknown as LoadedMeeting);
+    fixture.detectChanges();
+    meetingService.getPublicMeetingAttachments.mockClear();
+
+    vi.advanceTimersByTime(30_000);
+    fixture.detectChanges();
+
+    expect(meetingService.getPublicMeetingAttachments).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   it("applies the drawer's changes at once, then refetches", async () => {
     vi.useFakeTimers();
     await setup(() => of([file('keep'), file('gone')]));

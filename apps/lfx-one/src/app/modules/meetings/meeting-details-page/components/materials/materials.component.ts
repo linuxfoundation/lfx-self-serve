@@ -26,7 +26,7 @@ import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ButtonComponent } from '@components/button/button.component';
-import { catchError, map, Observable, of, startWith, switchMap, take, timer } from 'rxjs';
+import { catchError, map, Observable, of, startWith, Subject, switchMap, take, takeUntil, timer } from 'rxjs';
 
 import { MeetingMaterialsDrawerComponent } from '../../../components/meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
@@ -76,6 +76,8 @@ export class MeetingMaterialsComponent {
   private readonly refreshCount = signal(0);
   /** Removals the drawer reported, hidden until the list stops returning them (index lag). */
   private readonly removedUids = signal<ReadonlySet<string>>(new Set());
+  /** Emits when the section moves to another meeting (or none), cancelling the last change's follow-up timers. */
+  private readonly viewChanged$ = new Subject<void>();
   /** Additions that have waited `MEETING_MATERIALS_PENDING_MAX_MS` and are no longer held as pending. */
   private readonly expiredPendingUids = signal<ReadonlySet<string>>(new Set());
   /** Additions the drawer reported, shown until the list returns them. */
@@ -178,13 +180,13 @@ export class MeetingMaterialsComponent {
       this.addedAttachments.update((added) => [...reported, ...added]);
       const uids = reported.map((attachment) => attachment.uid);
       timer(MEETING_MATERIALS_PENDING_MAX_MS)
-        .pipe(takeUntilDestroyed(this.destroyRef))
+        .pipe(takeUntil(this.viewChanged$), takeUntilDestroyed(this.destroyRef))
         .subscribe(() => this.expiredPendingUids.update((expired) => new Set([...expired, ...uids])));
     }
     this.retry();
     for (const delay of MEETING_MATERIALS_REFETCH_DELAYS_MS) {
       timer(delay)
-        .pipe(takeUntilDestroyed(this.destroyRef))
+        .pipe(takeUntil(this.viewChanged$), takeUntilDestroyed(this.destroyRef))
         .subscribe(() => this.retry());
     }
   }
@@ -218,6 +220,10 @@ export class MeetingMaterialsComponent {
           const kept = key && last?.key === key ? last.attachments : null;
           if (!kept) {
             last = null;
+            // The last change's follow-up belongs to the previous meeting: cancel its refetches
+            // and pending expiry, which would otherwise act on this one.
+            this.viewChanged$.next();
+            this.expiredPendingUids.set(new Set());
             // Another meeting (or none yet): a drawer opened for the previous one closes.
             this.drawerVisible.set(false);
             this.removedUids.set(new Set());
