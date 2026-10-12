@@ -608,12 +608,17 @@ export function mentorshipDateOnlyFloor(today = new Date()): string {
   return toMentorshipDateOnly(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1));
 }
 
+/**
+ * Date rules for one term. A saved term being edited (`original`) skips the not-before-today and current-month floors,
+ * since an admin may edit a term that is already under way; the ordering rules still apply.
+ */
 export function getMentorshipTermDateErrors(
   term: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>,
   today = new Date(),
   original?: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
 ): MentorshipTermDateErrors {
   const errors: MentorshipTermDateErrors = {};
+  const checkFloors = original === undefined;
   const todayFloor = mentorshipDateOnlyFloor(today);
   const floorDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
   const currentMonthStart = `${floorDate.getFullYear()}-${String(floorDate.getMonth() + 1).padStart(2, '0')}-01`;
@@ -624,7 +629,7 @@ export function getMentorshipTermDateErrors(
 
   if (!startValid) {
     errors.startDate = MENTORSHIP_ISO_DATE_ERROR;
-  } else if (term.startDate < currentMonthStart && term.startDate !== original?.startDate) {
+  } else if (checkFloors && term.startDate < currentMonthStart) {
     errors.startDate = 'Start month should be greater than or equal to current month.';
   }
   if (!endValid) {
@@ -634,14 +639,14 @@ export function getMentorshipTermDateErrors(
   }
   if (!appStartValid) {
     errors.applicationStartDate = MENTORSHIP_ISO_DATE_ERROR;
-  } else if (term.applicationStartDate < todayFloor && term.applicationStartDate !== original?.applicationStartDate) {
+  } else if (checkFloors && term.applicationStartDate < todayFloor) {
     errors.applicationStartDate = 'Application start date cannot be before today.';
   } else if (startValid && term.applicationStartDate >= term.startDate) {
     errors.applicationStartDate = 'Application start date must be before the term start month.';
   }
   if (!appEndValid) {
     errors.applicationEndDate = MENTORSHIP_ISO_DATE_ERROR;
-  } else if (term.applicationEndDate < todayFloor && term.applicationEndDate !== original?.applicationEndDate) {
+  } else if (checkFloors && term.applicationEndDate < todayFloor) {
     errors.applicationEndDate = 'Application end date cannot be before today.';
   } else if (appStartValid && term.applicationEndDate < term.applicationStartDate) {
     errors.applicationEndDate = 'Application end date must be on or after the application start date.';

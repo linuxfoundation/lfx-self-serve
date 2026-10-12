@@ -706,12 +706,27 @@ describe('formFromMentorshipEnrollEdit', () => {
     expect(getMentorshipEnrollStepErrors('setup', form, { terms: [oneDay], prerequisites: [] }).terms).toBeUndefined();
   });
 
-  it('still checks a past date the admin changed', () => {
+  it('lets the admin move a saved term to a past date', () => {
     const form = formFromMentorshipEnrollEdit(data, [term]);
     const edit = { terms: [term], prerequisites: [] };
     const changed = { ...term, applicationStartDate: '2020-01-02' };
 
-    expect(getMentorshipEnrollStepErrors('setup', { ...form, terms: [changed] }, edit).terms).toBe('Application start date cannot be before today.');
+    expect(getMentorshipEnrollStepErrors('setup', { ...form, terms: [changed] }, edit).terms).toBeUndefined();
+  });
+
+  it('still checks a past date on a term the admin added', () => {
+    const form = formFromMentorshipEnrollEdit(data, [term]);
+    const edit = { terms: [term], prerequisites: [] };
+    const added = {
+      id: 'term-new-1',
+      name: 'Fall',
+      startDate: '2099-09-01',
+      endDate: '2099-11-01',
+      applicationStartDate: '2020-01-02',
+      applicationEndDate: '2099-08-01',
+    };
+
+    expect(getMentorshipEnrollStepErrors('setup', { ...form, terms: [term, added] }, edit).terms).toBe('Application start date cannot be before today.');
   });
 });
 
@@ -880,6 +895,27 @@ describe('getMentorshipTermDateErrors', () => {
     };
 
     expect(getMentorshipTermDateErrors(original, new Date(2026, 8, 7), original)).toEqual({});
+  });
+
+  it('lets an edited saved term take past dates but keeps the ordering rules', () => {
+    const original = {
+      startDate: '2026-09-01',
+      endDate: '2026-12-01',
+      applicationStartDate: '2026-07-01',
+      applicationEndDate: '2026-08-31',
+    };
+    const today = new Date(2026, 8, 7);
+
+    expect(
+      getMentorshipTermDateErrors(
+        { ...original, startDate: '2026-08-01', applicationStartDate: '2026-06-01', applicationEndDate: '2026-07-15' },
+        today,
+        original
+      )
+    ).toEqual({});
+    expect(getMentorshipTermDateErrors({ ...original, applicationEndDate: '2026-06-15' }, today, original)).toEqual({
+      applicationEndDate: 'Application end date must be on or after the application start date.',
+    });
   });
 
   it('rejects a past application start when no original term is supplied', () => {

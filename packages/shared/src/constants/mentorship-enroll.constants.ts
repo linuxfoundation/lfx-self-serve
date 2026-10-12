@@ -29,6 +29,8 @@ export const MENTORSHIP_RICH_TEXT_RAW_MAX = MENTORSHIP_ENROLL_DESCRIPTION_MAX * 
  */
 export const MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE = 'This text is too long or has too much formatting. Shorten it or remove some links or styling.';
 export const MENTORSHIP_TERM_NAME_MAX = 50;
+/** Id prefix the term dialog stamps on a term the wizard has added but upstream has not saved yet. */
+export const MENTORSHIP_NEW_TERM_ID_PREFIX = 'term-new-';
 export const MENTORSHIP_MAX_OPEN_TERMS = 4;
 export const MENTORSHIP_CUSTOM_PREREQ_NAME_MAX = 20;
 export const MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX = 500;
