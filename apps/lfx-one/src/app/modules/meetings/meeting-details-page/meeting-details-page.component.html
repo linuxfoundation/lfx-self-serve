@@ -73,6 +73,11 @@
       @if (state.visibleSections()?.agenda) {
         <lfx-meeting-agenda />
       }
+      <!-- E3-04: only for a viewer with a roster (state.rosterRequest): upcoming or live, an organizer or a
+           registrant of a meeting whose guest list is shared. -->
+      @if (state.rosterRequest()) {
+        <lfx-meeting-people />
+      }
       <p-skeleton height="280px" aria-hidden="true" data-testid="meeting-section-placeholder-materials" />
       <p-skeleton height="280px" aria-hidden="true" data-testid="meeting-section-placeholder-discover" />
     </div>

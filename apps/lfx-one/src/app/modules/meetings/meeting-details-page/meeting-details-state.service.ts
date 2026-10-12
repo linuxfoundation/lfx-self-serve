@@ -14,6 +14,7 @@ import {
   MeetingJoinPageState,
   MeetingOccurrence,
   MeetingPrivacyState,
+  MeetingRosterRequest,
   MeetingRsvp,
   MeetingSectionVisibility,
   MeetingStatusKind,
@@ -26,6 +27,7 @@ import {
 import {
   getActiveOccurrences,
   getCurrentOrNextOccurrence,
+  isMeetingAttendeeListShared,
   isMeetingInviteResponsesEnabled,
   isPastMeetingCompositeId,
   resolveActionSlot,
@@ -215,6 +217,11 @@ export class MeetingDetailsStateService {
    */
   public readonly visibleSections: Signal<MeetingSectionVisibility | null> = this.initVisibleSections();
   /**
+   * What the people section's roster is fetched for (E3-04, FR-032); `null` when this viewer gets no
+   * roster, and the section is then absent. See {@link initRosterRequest}.
+   */
+  public readonly rosterRequest: Signal<MeetingRosterRequest | null> = this.initRosterRequest();
+  /**
    * Whether this viewer will be offered a way in once the join window opens (`join` or
    * `guest-join`), so the slot can state the early-join rule before then.
    */
@@ -375,6 +382,35 @@ export class MeetingDetailsStateService {
         viewerRole,
       });
     });
+  }
+
+  /**
+   * The upcoming roster's gate, V1's (`canViewGuests` and `!isPastMeeting`): the section's
+   * `people` flag, narrowed to an organizer, or a registrant (an optimistic one included) of a
+   * meeting whose organizer shares the guest list (`isMeetingAttendeeListShared`, which the BFF also
+   * enforces by returning `[]`). Never on an ended meeting: the past roster is N-02's. Every other
+   * viewer has no roster, and so no count source either (GH-1731), so the section is absent rather
+   * than showing a number it cannot back.
+   */
+  private initRosterRequest(): Signal<MeetingRosterRequest | null> {
+    return computed(
+      () => {
+        const meeting = this.meeting();
+        const role = this.viewerRole();
+        const allowed =
+          !!meeting &&
+          this.matchesRoute() &&
+          this.visibleSections()?.people === true &&
+          this.timeState() !== 'ended' &&
+          !this.loadedViaPastMeetingId() &&
+          (role === 'organizer' || (role === 'registrant' && isMeetingAttendeeListShared(meeting)));
+        if (!allowed || !meeting) {
+          return null;
+        }
+        return { meetingId: meeting.id, occurrenceId: resolveRsvpOccurrenceId(meeting, { occurrence: this.selectedOccurrence() }) };
+      },
+      { equal: (a, b) => a?.meetingId === b?.meetingId && a?.occurrenceId === b?.occurrenceId }
+    );
   }
 
   private initJoinsInWindow(): Signal<boolean> {
