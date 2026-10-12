@@ -1304,6 +1304,42 @@ describe('MeetingJoinComponent', () => {
       expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
     });
 
+    it('recovers a fresh-load survivor answer in join controls, page status, and the active personal feed', async () => {
+      const removed = organizerAnswer({ registrant_id: 'synthetic-removed-registration', created_at: '2026-10-12T12:00:00Z' });
+      const survivor = organizerAnswer({ id: 'synthetic-survivor-answer', registrant_id: 'synthetic-survivor-registration', response_type: 'maybe' });
+      const meeting = buildMeeting({
+        organizer: false,
+        invited: true,
+        is_invite_responses_enabled: true,
+        my_rsvp: removed,
+        my_registrant_ids: [removed.registrant_id, survivor.registrant_id],
+      });
+      useRealUserService(meeting);
+      getMeetingRsvpForCurrentUser.mockReturnValue(of(removed));
+      removeMyMeetingRegistration.mockReturnValue(
+        of({ removed_registrant_ids: [removed.registrant_id], remaining_registrant_ids: [survivor.registrant_id], remaining_rsvps: [survivor] })
+      );
+      TestBed.overrideComponent(MeetingJoinComponent, {
+        set: { template: '@if (meeting(); as currentMeeting) { <lfx-rsvp-button-group [meeting]="currentMeeting" /> }', imports: [RsvpButtonGroupComponent] },
+      });
+      const fixture = await createFixture(meeting);
+      const buttons = fixture.debugElement.query(By.directive(RsvpButtonGroupComponent)).componentInstance as RsvpButtonGroupComponent;
+      const users = TestBed.inject(UserService);
+      let rows: Meeting[] = [];
+      const subscription = users.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      expect(buttons.selectedResponse()).toBe('accepted');
+      expect(users.confirmedMeetingRsvps(MEETING_ID)).toEqual([]);
+
+      await confirmAndAccept(fixture);
+
+      expect(fixture.componentInstance.currentUserRsvp()).toEqual(survivor);
+      expect(fixture.componentInstance.overviewConfirmedRsvps()).toContainEqual(survivor);
+      expect(buttons.selectedResponse()).toBe('maybe');
+      expect(rows[0].my_rsvp).toEqual(survivor);
+      expect(fixture.componentInstance.effectivelyInvited()).toBe(true);
+      subscription.unsubscribe();
+    });
+
     it('keeps a late removal attached to its dispatch subject rather than clearing the new viewer', async () => {
       const meeting = buildMeeting({ organizer: false, invited: true });
       useRealUserService(meeting);

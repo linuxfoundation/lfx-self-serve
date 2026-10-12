@@ -755,6 +755,46 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
   });
 
+  it('restores a fresh-load survivor response in the card controls and active personal feed after partial removal', async () => {
+    const removed = {
+      id: 'synthetic-removed-answer',
+      meeting_id: INVITEE.id,
+      registrant_id: 'synthetic-removed-registration',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-10-12T12:00:00Z',
+    } as MeetingRsvp;
+    const survivor = {
+      ...removed,
+      id: 'synthetic-survivor-answer',
+      registrant_id: 'synthetic-survivor-registration',
+      response_type: 'maybe',
+      created_at: '2026-10-12T10:00:00Z',
+    } as MeetingRsvp;
+    removeMyMeetingRegistration.mockReturnValue(
+      of({ removed_registrant_ids: [removed.registrant_id], remaining_registrant_ids: [survivor.registrant_id], remaining_rsvps: [survivor] })
+    );
+    const component = await mount(
+      { ...INVITEE, is_invite_responses_enabled: true, my_rsvp: removed, my_registrant_ids: [removed.registrant_id, survivor.registrant_id] },
+      { fetchedRsvp: removed }
+    );
+    const users = TestBed.inject(UserService);
+    let rows: Meeting[] = [];
+    const subscription = users.getUserMeetings().subscribe((meetings) => (rows = meetings));
+    expect(rsvpButtons?.selectedResponse()).toBe('accepted');
+    expect(users.confirmedMeetingRsvps(INVITEE.id)).toEqual([]);
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(rows[0].my_rsvp).toEqual(survivor);
+    expect(rsvpButtons?.selectedResponse()).toBe('maybe');
+    expect(component.overviewConfirmedRsvps()).toContainEqual(survivor);
+    expect(component.canLeaveMeeting()).toBe(true);
+    subscription.unsubscribe();
+  });
+
   it('does not clear another effective subject when an earlier removal completes late', async () => {
     const removal$ = new Subject<MeetingRegistrationRemovalResult>();
     removeMyMeetingRegistration.mockReturnValue(removal$);

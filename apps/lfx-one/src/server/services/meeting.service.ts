@@ -1277,6 +1277,17 @@ export class MeetingService {
         failed_count: failures.length,
         err: failures[0].reason,
       });
+      try {
+        const rsvps = await this.getRawMeetingRsvps(req, meetingUid, undefined, true);
+        const remainingIds = new Set(result.remaining_registrant_ids);
+        // Filter raw history before any response selection: deleted rows may still be indexed.
+        result.remaining_rsvps = rsvps.filter((rsvp) => rsvp.meeting_id === meetingUid && remainingIds.has(rsvp.registrant_id));
+      } catch (error) {
+        logger.warning(req, 'remove_meeting_registrant_self', 'Failed to fetch remaining registration RSVP history after partial removal', {
+          meeting_id: meetingUid,
+          err: error,
+        });
+      }
     }
 
     return result;

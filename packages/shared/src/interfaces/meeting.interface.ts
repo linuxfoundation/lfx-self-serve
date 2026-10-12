@@ -675,6 +675,8 @@ export interface MeetingRegistrationRemovalResult {
   removed_registrant_ids: string[];
   /** Registrant IDs whose upstream deletes failed and remain invited. */
   remaining_registrant_ids: string[];
+  /** Raw RSVP history for server-confirmed remaining IDs after partial removal. Omitted when unavailable; [] means no history. */
+  remaining_rsvps?: MeetingRsvp[];
 }
 
 /**

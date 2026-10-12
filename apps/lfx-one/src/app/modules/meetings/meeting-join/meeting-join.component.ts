@@ -15,7 +15,6 @@ import {
   signal,
   Signal,
   TransferState,
-  viewChild,
   WritableSignal,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -79,6 +78,7 @@ import {
   isMeetingInviteResponsesEnabled,
   isPastMeetingCompositeId,
   reconcileOptimisticPad,
+  selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
@@ -175,7 +175,6 @@ export class MeetingJoinComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly transferState = inject(TransferState);
-  private readonly rsvpControls = viewChild(RsvpButtonGroupComponent);
 
   // Persists the SSR-resolved meeting so the client's first paint matches the server DOM instead
   // of tearing it down at hydration (GH-2041) — see `MeetingJoinPageState` for why the meeting
@@ -1783,8 +1782,13 @@ export class MeetingJoinComponent implements OnInit {
           const currentSubject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
           if (this.meeting().id !== meetingId || currentSubject !== subject) return;
           if (result.remaining_registrant_ids.length > 0) {
+            const meeting = this.meeting();
+            const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.currentOccurrence() });
             const currentRsvp = this.currentUserRsvp();
-            if (currentRsvp && result.removed_registrant_ids.includes(currentRsvp.registrant_id)) this.rsvpUpdateTrigger$.next(null);
+            const candidates = [...this.userService.confirmedMeetingRsvps(meetingId), ...(currentRsvp ? [currentRsvp] : [])].filter(
+              (rsvp) => this.userService.isMeetingRsvpCurrent(rsvp, meeting) && (!meeting.recurrence || !!occurrenceId || rsvp.scope === 'all')
+            );
+            this.rsvpUpdateTrigger$.next(selectApplicableRsvp(occurrenceId, candidates));
             this.optimisticInvited.set(true);
             this.messageService.add({
               severity: 'warn',

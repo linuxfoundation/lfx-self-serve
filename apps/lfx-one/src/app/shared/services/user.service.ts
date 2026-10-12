@@ -344,7 +344,7 @@ export class UserService {
   }
 
   /**
-   * Reactive read of the answers retained for one subject and meeting, newest confirmation first.
+   * Reactive read of retained answers for one subject and meeting, including recovered survivor history.
    * Lets surfaces outside the personal feed (recreated cards and controls in Foundation/Project) keep a
    * successful write while the query index catches up. Callers still filter by registration and date.
    */
@@ -360,7 +360,20 @@ export class UserService {
     const complete = result.remaining_registrant_ids.length === 0;
     if (complete) this.meetingRegistrationGenerations.set(key, (this.meetingRegistrationGenerations.get(key) ?? 0) + 1);
     this.endMeetingRegistrants(key, result.removed_registrant_ids);
-    const retained = complete ? [] : (current.get(key) ?? []).filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id));
+    const surviving = complete ? [] : (current.get(key) ?? []).filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id));
+    const recovered = complete
+      ? []
+      : (result.remaining_rsvps ?? []).filter(
+          (rsvp) =>
+            rsvp.meeting_id === meetingId &&
+            result.remaining_registrant_ids.includes(rsvp.registrant_id) &&
+            !this.endedMeetingRegistrantIds().get(key)?.has(rsvp.registrant_id)
+        );
+    // History is not a new write: keep its timestamps and prefer a newer local copy of the same row.
+    const retained = [
+      ...surviving.filter((saved) => !recovered.some((indexed) => indexed.id === saved.id && isRsvpSupersededBy(saved, indexed))),
+      ...recovered.filter((indexed) => !surviving.some((saved) => saved.id === indexed.id && !isRsvpSupersededBy(saved, indexed))),
+    ];
     const next = new Map(current);
     if (retained.length > 0) next.set(key, retained);
     else next.delete(key);

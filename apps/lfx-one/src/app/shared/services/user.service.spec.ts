@@ -319,6 +319,62 @@ describe('UserService', () => {
       }
     );
 
+    it.each([false, true])('recovers fresh-load survivor history immediately without changing its timestamps (recurring=%s)', (recurring) => {
+      const removed = response({ registrant_id: 'synthetic-removed-registration', created_at: '2026-10-12T12:00:00Z' });
+      const allDates = response({ id: 'synthetic-survivor-all', registrant_id: 'synthetic-survivor', response_type: 'accepted' });
+      const scoped = response({
+        ...allDates,
+        id: 'synthetic-survivor-single',
+        response_type: 'maybe',
+        scope: 'single',
+        occurrence_id: '4070944800',
+        created_at: '2026-10-12T11:00:00Z',
+      });
+      indexed = {
+        ...indexed,
+        my_rsvp: removed,
+        my_registrant_ids: [removed.registrant_id, allDates.registrant_id],
+        ...(recurring ? { recurrence: { type: 2, repeat_interval: 1 }, occurrences: [] } : {}),
+      };
+      let rows: Meeting[] = [];
+      const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      expect(rows[0].my_rsvp).toEqual(removed);
+      const requestsBefore = httpGet.mock.calls.length;
+
+      service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-subject', {
+        removed_registrant_ids: [removed.registrant_id],
+        remaining_registrant_ids: [allDates.registrant_id],
+        remaining_rsvps: [scoped, allDates],
+      });
+
+      expect(rows[0].my_rsvp).toEqual(recurring ? allDates : scoped);
+      expect(httpGet.mock.calls.length).toBe(requestsBefore);
+      expect(service.confirmedMeetingRsvps(indexed.id)).toEqual([scoped, allDates]);
+      expect(service.isMeetingRsvpCurrent(removed, indexed)).toBe(false);
+      subscription.unsubscribe();
+    });
+
+    it.each([false, true])('keeps the newer same-row answer when recovering survivor history (indexedNewer=%s)', (indexedNewer) => {
+      const survivor = response({ registrant_id: 'synthetic-survivor', response_type: 'maybe' });
+      const newer = { ...survivor, response_type: 'declined' as const, modified_at: '2026-10-12T13:00:00Z' };
+      const confirmed = indexedNewer ? survivor : newer;
+      const recovered = indexedNewer ? newer : survivor;
+      indexed = { ...indexed, my_registrant_ids: [survivor.registrant_id] };
+      service.recordConfirmedMeetingRsvp(confirmed);
+      let rows: Meeting[] = [];
+      const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+
+      service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-subject', {
+        removed_registrant_ids: ['synthetic-deleted-registration'],
+        remaining_registrant_ids: [survivor.registrant_id],
+        remaining_rsvps: [recovered],
+      });
+
+      expect(rows[0].my_rsvp).toEqual(newer);
+      expect(service.confirmedMeetingRsvps(indexed.id)).toEqual([newer]);
+      subscription.unsubscribe();
+    });
+
     it('retains survivor confirmations and pending acknowledgements after partial removal, but rejects deleted registrations', () => {
       const removed = response({ scope: 'single', occurrence_id: '4070944800' });
       const survivor = response({ id: 'synthetic-survivor-response', registrant_id: 'synthetic-survivor-registration' });

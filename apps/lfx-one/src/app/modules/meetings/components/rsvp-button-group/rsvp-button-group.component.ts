@@ -3,7 +3,21 @@
 
 import { NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, input, InputSignal, output, OutputEmitterRef, Signal, signal, WritableSignal } from '@angular/core';
+import {
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  input,
+  InputSignal,
+  output,
+  OutputEmitterRef,
+  Signal,
+  signal,
+  viewChildren,
+  WritableSignal,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RsvpScopeModalComponent } from '@app/modules/meetings/components/rsvp-scope-modal/rsvp-scope-modal.component';
 import { CreateMeetingRsvpRequest, Meeting, MeetingRsvp, RsvpResponse, RsvpScope, User } from '@lfx-one/shared';
@@ -64,6 +78,7 @@ export class RsvpButtonGroupComponent {
   public isLoading: WritableSignal<boolean> = signal(false);
   private readonly confirmedRsvps = signal<MeetingRsvp[]>([]);
   private readonly confirmedContext = signal<string | null>(null);
+  private readonly responseButtons = viewChildren<ElementRef<HTMLButtonElement>>('responseButton');
 
   // Computed values
   public readonly meetingUid: Signal<string> = this.initializeMeetingUid();
@@ -96,6 +111,15 @@ export class RsvpButtonGroupComponent {
 
     // For non-recurring meetings, submit directly with 'all' scope
     this.submitRsvp(response, 'all');
+  }
+
+  protected focusSelectedResponse(): void {
+    if (this.isLoading() || this.disabled() || !this.inviteResponsesEnabled() || !this.selectedResponse()) {
+      return;
+    }
+    this.responseButtons()
+      .find((button) => button.nativeElement.getAttribute('aria-pressed') === 'true')
+      ?.nativeElement.focus();
   }
 
   private showScopeModal(response: RsvpResponse): void {

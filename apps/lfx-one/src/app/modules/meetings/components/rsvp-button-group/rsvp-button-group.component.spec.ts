@@ -113,6 +113,82 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
     read.flush(rsvp);
   }
 
+  describe.each([false, true])('Change response shortcut (compact=%s)', (compact) => {
+    it.each([
+      ['accepted', 'yes'],
+      ['maybe', 'maybe'],
+      ['declined', 'no'],
+    ] as const)('focuses the selected %s control without saving or opening the scope dialog', async (answer, buttonName) => {
+      const current = response(answer, 'single', FIRST_DATE);
+      const fixture = await mount({ ...MEETING, my_rsvp: current }, { compact, showHeader: false });
+      flushRead(current);
+      fixture.detectChanges();
+      const component = fixture.componentInstance;
+      const changed = vi.fn();
+      component.rsvpChanged.subscribe(changed);
+      const host = fixture.nativeElement as HTMLElement;
+      document.body.appendChild(host);
+      const shortcut = host.querySelector<HTMLButtonElement>('[data-testid="meeting-rsvp-change-response"]')!;
+      const selected = host.querySelector<HTMLButtonElement>(`[data-testid="meeting-rsvp-button-${buttonName}"]`)!;
+      expect(shortcut.closest('[aria-live]')).toBeNull();
+      shortcut.focus();
+      shortcut.click();
+
+      expect(document.activeElement).toBe(selected);
+      expect(component.currentRsvp()).toEqual(current);
+      expect(component.responseSaved()).toBe(false);
+      expect(changed).not.toHaveBeenCalled();
+      expect(dialogOpen).not.toHaveBeenCalled();
+      expect(toastAdd).not.toHaveBeenCalled();
+      http.expectNone(`/api/meetings/${MEETING.id}/rsvp`);
+      fixture.destroy();
+      host.remove();
+    });
+
+    it('does not show a shortcut before a response exists', async () => {
+      const fixture = await mount(MEETING, { compact });
+      flushRead(null);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-rsvp-change-response"]')).toBeNull();
+      fixture.destroy();
+    });
+
+    it('does not offer changing a response when RSVP is disabled', async () => {
+      const current = response('accepted', 'all');
+      const fixture = await mount({ ...MEETING, my_rsvp: current }, { compact });
+      flushRead(current);
+      fixture.componentRef.setInput('disabled', true);
+      fixture.detectChanges();
+      TestBed.tick();
+      expect(fixture.nativeElement.querySelector('[data-testid="meeting-rsvp-change-response"]')).toBeNull();
+      const controls = fixture.nativeElement.querySelectorAll('[data-testid^="meeting-rsvp-button-"]') as NodeListOf<HTMLButtonElement>;
+      for (const control of controls) expect(control.disabled).toBe(true);
+      http.expectNone(`/api/meetings/${MEETING.id}/rsvp`);
+      fixture.destroy();
+    });
+
+    it('does not focus or change a response while saving', async () => {
+      const current = response('accepted', 'all');
+      const fixture = await mount({ ...MEETING, my_rsvp: current }, { compact });
+      flushRead(current);
+      fixture.componentInstance.isLoading.set(true);
+      fixture.detectChanges();
+      TestBed.tick();
+      const host = fixture.nativeElement as HTMLElement;
+      const shortcut = host.querySelector<HTMLButtonElement>('[data-testid="meeting-rsvp-change-response"]')!;
+      const selected = host.querySelector<HTMLButtonElement>('[data-testid="meeting-rsvp-button-yes"]')!;
+      const focus = vi.spyOn(selected, 'focus');
+      expect(shortcut.disabled).toBe(true);
+      shortcut.click();
+      shortcut.dispatchEvent(new MouseEvent('click'));
+      expect(focus).not.toHaveBeenCalled();
+      expect(dialogOpen).not.toHaveBeenCalled();
+      expect(toastAdd).not.toHaveBeenCalled();
+      http.expectNone(`/api/meetings/${MEETING.id}/rsvp`);
+      fixture.destroy();
+    });
+  });
+
   it.each(['single', 'this_and_following'] as const)('resolves the actual card date for a %s write when no occurrence input was supplied', async (scope) => {
     const fixture = await mount();
     flushRead(null);

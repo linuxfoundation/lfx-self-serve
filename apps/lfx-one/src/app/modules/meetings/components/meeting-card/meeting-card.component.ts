@@ -17,7 +17,6 @@ import {
   runInInjectionContext,
   signal,
   Signal,
-  viewChild,
   WritableSignal,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -141,7 +140,6 @@ export class MeetingCardComponent implements OnInit {
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly refreshAttachments$ = new BehaviorSubject<void>(undefined);
-  private readonly rsvpControls = viewChild(RsvpButtonGroupComponent);
 
   public readonly meetingInput = input.required<Meeting | PastMeeting>();
   public readonly occurrenceInput = input<MeetingOccurrence | null>(null);

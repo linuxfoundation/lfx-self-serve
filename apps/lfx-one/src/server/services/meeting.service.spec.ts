@@ -470,31 +470,101 @@ describe('MeetingService.removeMeetingRegistrantSelf', () => {
     } else {
       proxyRequest.mockRejectedValueOnce(new Error('upstream down')).mockResolvedValueOnce(undefined);
     }
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
 
     const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
 
     expect(result).toEqual({
       removed_registrant_ids: [firstSucceeds ? 'reg-1' : 'reg-2'],
       remaining_registrant_ids: [firstSucceeds ? 'reg-2' : 'reg-1'],
+      remaining_rsvps: [],
     });
-    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('recovers only the surviving registration raw history using the user-token query path', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct'), registrantRow('reg-2', 'direct')]);
+    const survivor = {
+      id: 'survivor-all',
+      meeting_id: 'mtg-1',
+      registrant_id: 'reg-2',
+      username: 'alice',
+      email: 'alice@example.com',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-01-01T00:00:00Z',
+      modified_at: '2026-01-02T00:00:00Z',
+    } as MeetingRsvp;
+    const scoped = {
+      ...survivor,
+      id: 'survivor-single',
+      response_type: 'declined',
+      scope: 'single',
+      occurrence_id: '1791930600',
+      created_at: '2026-02-01T00:00:00Z',
+      modified_at: '2026-02-02T00:00:00Z',
+    } as MeetingRsvp;
+    const staleDeleted = { ...survivor, id: 'deleted-newest', registrant_id: 'reg-1', modified_at: '2026-03-01T00:00:00Z' };
+    const otherPerson = { ...survivor, id: 'other-person', registrant_id: 'reg-other', username: 'bob', email: 'bob@example.com' };
+    const otherMeeting = { ...survivor, id: 'other-meeting', meeting_id: 'mtg-other' };
+    proxyRequest
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('delete failed'))
+      .mockResolvedValueOnce({ resources: [staleDeleted, survivor, scoped, otherPerson, otherMeeting].map((rsvp) => ({ id: rsvp.id, data: rsvp })) });
+    const history = vi.spyOn(service, 'getRawMeetingRsvps');
+
+    const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+
+    expect(result).toEqual({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: ['reg-2'], remaining_rsvps: [survivor, scoped] });
+    expect(history).toHaveBeenCalledWith(req, 'mtg-1', undefined, true);
+    expect(proxyRequest.mock.calls[2]).toEqual([
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      { tags: 'meeting_id:mtg-1', type: 'v1_meeting_rsvp', page_size: 1000 },
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('preserves partial deletion outcomes and omits history when the history query fails', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct'), registrantRow('reg-2', 'direct')]);
+    const historyError = new Error('history unavailable');
+    proxyRequest.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('delete failed')).mockRejectedValueOnce(historyError);
+
+    const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+
+    expect(result).toEqual({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: ['reg-2'] });
+    expect(result).not.toHaveProperty('remaining_rsvps');
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'remove_meeting_registrant_self',
+      'Failed to fetch remaining registration RSVP history after partial removal',
+      { meeting_id: 'mtg-1', err: historyError }
+    );
   });
 
   it('returns all successful registrant IDs when multiple registrations are removed', async () => {
     vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct'), registrantRow('reg-2', 'direct')]);
     proxyRequest.mockResolvedValue(undefined);
+    const history = vi.spyOn(service, 'getRawMeetingRsvps');
 
     const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
 
     expect(result).toEqual({ removed_registrant_ids: ['reg-1', 'reg-2'], remaining_registrant_ids: [] });
+    expect(history).not.toHaveBeenCalled();
   });
 
   it('fails when none of the rows could be removed', async () => {
     vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct'), registrantRow('reg-2', 'direct')]);
     proxyRequest.mockRejectedValue(new Error('upstream down'));
+    const history = vi.spyOn(service, 'getRawMeetingRsvps');
 
     await expect(service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token')).rejects.toThrow('upstream down');
     expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(history).not.toHaveBeenCalled();
   });
 
   it('rejects when the only registration came from a committee, without calling upstream', async () => {

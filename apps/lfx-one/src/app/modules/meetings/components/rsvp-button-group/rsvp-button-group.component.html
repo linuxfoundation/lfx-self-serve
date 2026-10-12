@@ -13,6 +13,16 @@
         <span>Will you attend?</span>
       }
     </div>
+    @if (selectedResponse()) {
+      <button
+        type="button"
+        (click)="focusSelectedResponse()"
+        [disabled]="isLoading() || disabled()"
+        class="self-start text-xs font-medium text-blue-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+        data-testid="meeting-rsvp-change-response">
+        Change response
+      </button>
+    }
   }
   @if (compact()) {
     <!-- Compact mode: bare outlined CTA buttons with colored icon + label per response (no surrounding container). -->
@@ -23,6 +33,7 @@
   -->
     <div class="flex items-center gap-2" [attr.data-testid]="'meeting-rsvp-buttons-compact'">
       <button
+        #responseButton
         type="button"
         (click)="handleRsvpClick('accepted')"
         [disabled]="isLoading() || disabled()"
@@ -38,6 +49,7 @@
         <span>Yes</span>
       </button>
       <button
+        #responseButton
         type="button"
         (click)="handleRsvpClick('maybe')"
         [disabled]="isLoading() || disabled()"
@@ -53,6 +65,7 @@
         <span>Maybe</span>
       </button>
       <button
+        #responseButton
         type="button"
         (click)="handleRsvpClick('declined')"
         [disabled]="isLoading() || disabled()"
@@ -119,10 +132,21 @@
           }
         }
       </div>
+      @if (selectedResponse()) {
+        <button
+          type="button"
+          (click)="focusSelectedResponse()"
+          [disabled]="isLoading() || disabled()"
+          class="self-start text-xs font-medium text-blue-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+          data-testid="meeting-rsvp-change-response">
+          Change response
+        </button>
+      }
       <!-- RSVP Buttons -->
       <div class="flex gap-[7px]" [attr.data-testid]="'meeting-rsvp-buttons'">
         <!-- Yes Button -->
         <button
+          #responseButton
           type="button"
           (click)="handleRsvpClick('accepted')"
           [disabled]="isLoading() || disabled()"
@@ -141,6 +165,7 @@
 
         <!-- Maybe Button -->
         <button
+          #responseButton
           type="button"
           (click)="handleRsvpClick('maybe')"
           [disabled]="isLoading() || disabled()"
@@ -158,6 +183,7 @@
         </button>
         <!-- No Button -->
         <button
+          #responseButton
           type="button"
           (click)="handleRsvpClick('declined')"
           [disabled]="isLoading() || disabled()"
