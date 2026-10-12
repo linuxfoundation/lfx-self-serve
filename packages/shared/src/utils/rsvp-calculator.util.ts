@@ -167,24 +167,23 @@ export function selectApplicableRsvp(occurrenceId: string | null | undefined, us
  *
  * A viewer can hold several live registrations for one meeting, so answers saved through
  * another registration stay retained: an older all-dates answer keeps covering the dates a
- * newer single-date answer does not. A new `all` answer covers every date, so it supersedes
- * every retained answer — including one whose stored timestamp is later than this
- * acknowledgement's. A scoped answer whose stored timestamp is not later than every retained
- * answer is stamped just after the newest one, so {@link selectApplicableRsvp} keeps
- * confirmation order. Ended registrations are filtered by callers, not here.
+ * newer single-date answer does not. An answer whose stored timestamp is not later than every
+ * retained answer is stamped just after the newest one, so {@link selectApplicableRsvp} keeps
+ * confirmation order against those answers wherever they resurface (the card's `my_rsvp`, the
+ * roster index). A new `all` answer covers every date, so after stamping it supersedes every
+ * retained answer. Ended registrations are filtered by callers, not here.
  *
  * @param retained Previously confirmed answers for the same viewer and meeting.
  * @param rsvp The newly confirmed answer; read the stored copy from the head of the result.
  */
 export function retainConfirmedRsvp(retained: MeetingRsvp[], rsvp: MeetingRsvp): MeetingRsvp[] {
-  if (rsvp.scope === 'all') return [rsvp];
   const others = retained.filter((saved) => saved.id !== rsvp.id);
   const newestMs = others.reduce((newest, saved) => {
     const savedMs = getRsvpTimestampMs(saved);
     return Number.isFinite(savedMs) && savedMs > newest ? savedMs : newest;
   }, -Infinity);
   const confirmed = newestMs === -Infinity || getRsvpTimestampMs(rsvp) > newestMs ? rsvp : { ...rsvp, modified_at: new Date(newestMs + 1).toISOString() };
-  return [confirmed, ...others];
+  return confirmed.scope === 'all' ? [confirmed] : [confirmed, ...others];
 }
 
 /**

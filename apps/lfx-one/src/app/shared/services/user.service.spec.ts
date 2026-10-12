@@ -256,10 +256,12 @@ describe('UserService', () => {
       indexed = { ...indexed, my_registrant_ids: undefined };
       service.recordConfirmedMeetingRsvp(response({ created_at: '2026-10-12T12:00:00Z' }));
       const newResponse = response({ id: 'synthetic-new-response', registrant_id: 'synthetic-new-registration', response_type: 'declined' });
-      service.recordConfirmedMeetingRsvp(newResponse);
+      const saved = service.recordConfirmedMeetingRsvp(newResponse);
       let rows: Meeting[] = [];
       const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
-      expect(rows[0].my_rsvp).toEqual(newResponse);
+      // Stamped after the earlier confirmation so the new answer keeps winning wherever the older one resurfaces.
+      expect(saved).toEqual({ ...newResponse, modified_at: '2026-10-12T12:00:00.001Z' });
+      expect(rows[0].my_rsvp).toEqual(saved);
       subscription.unsubscribe();
     });
 

@@ -282,6 +282,38 @@ describe('MeetingRsvpDetailsComponent', () => {
     expect(fixture.componentInstance.rsvpCounts()).toEqual({ accepted: 0, declined: 1, maybe: 1, total: 2 });
   });
 
+  it('refetches the roster when the displayed date changes so an older all-dates answer returns', async () => {
+    const firstDate = { occurrence_id: '4071031200', start_time: '2099-01-02T10:00:00Z', duration: 30 };
+    const secondDate = { occurrence_id: '4071636000', start_time: '2099-01-09T10:00:00Z', duration: 30 };
+    const all = { id: 'all', registrant_id: 'guest', response_type: 'accepted', scope: 'all', modified_at: '2026-01-01T00:00:00Z' } as MeetingRsvp;
+    const single = {
+      ...all,
+      id: 'single',
+      scope: 'single',
+      response_type: 'declined',
+      occurrence_id: firstDate.occurrence_id,
+      modified_at: '2026-02-01T00:00:00Z',
+    };
+    const roster = [buildRegistrant({ uid: 'guest' })];
+    getMeetingRegistrants.mockImplementation((_id, _includeRsvp, occurrenceId, _partial, _committee, _enrich, allDatesOnly) =>
+      of(attachRsvpsToRegistrants(roster, [all, single as MeetingRsvp], occurrenceId, allDatesOnly))
+    );
+    const fixture = createComponent();
+    fixture.componentRef.setInput(
+      'meeting',
+      buildMeeting({ is_invite_responses_enabled: true, recurrence: { type: 2, repeat_interval: 1 }, occurrences: [firstDate, secondDate] })
+    );
+    fixture.componentRef.setInput('currentOccurrence', firstDate);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.rsvpCounts()).toEqual({ accepted: 0, declined: 1, maybe: 0, total: 1 });
+
+    fixture.componentRef.setInput('currentOccurrence', secondDate);
+    await fixture.whenStable();
+
+    expect(getMeetingRegistrants).toHaveBeenLastCalledWith(MEETING_ID, true, secondDate.occurrence_id, false, undefined, false, false);
+    expect(fixture.componentInstance.rsvpCounts()).toEqual({ accepted: 1, declined: 0, maybe: 0, total: 1 });
+  });
+
   describe.each(['roster', 'supplied', 'rsvps'] as const)('unresolved recurring dates with %s data', (source) => {
     it.each([
       ['confirmed', 'single'],

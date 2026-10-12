@@ -614,7 +614,7 @@ describe('retainConfirmedRsvp', () => {
 
   it('lets a new all-dates answer supersede every retained answer, across registrations', () => {
     const newAll = rsvp({ id: 'rsvp-new-all', registrant_id: 'reg-2', scope: 'all' });
-    expect(retainConfirmedRsvp([single, allDates], newAll)).toEqual([newAll]);
+    expect(retainConfirmedRsvp([single, allDates], newAll)).toEqual([{ ...newAll, modified_at: '2026-07-11T00:00:00.001Z' }]);
   });
 
   it('stamps a scoped answer with a stale timestamp after the retained all-dates answer it follows', () => {
@@ -633,6 +633,17 @@ describe('retainConfirmedRsvp', () => {
     expect(retained).toEqual([{ ...staleSingle, modified_at: '2026-07-12T00:00:00.001Z' }, laterAll]);
     expect(selectApplicableRsvp(OCC_AUG_11_SECONDS, retained)?.id).toBe('rsvp-single');
     expect(selectApplicableRsvp(OCC_AUG_18_SECONDS, retained)?.id).toBe('rsvp-all');
+  });
+
+  it('stamps an all-dates answer with a stale timestamp after the date-specific answer it replaces', () => {
+    const laterSingle = { ...single, registrant_id: 'reg-1', modified_at: '2026-07-12T00:00:00Z' };
+    const staleAll = rsvp({ id: 'rsvp-all', registrant_id: 'reg-1', response_type: 'declined', scope: 'all', modified_at: '2026-07-11T00:00:00Z' });
+
+    const retained = retainConfirmedRsvp([laterSingle], staleAll);
+
+    expect(retained).toEqual([{ ...staleAll, modified_at: '2026-07-12T00:00:00.001Z' }]);
+    // The replaced answer can still resurface from the card or roster index; the new answer must win there too.
+    expect(selectApplicableRsvp(OCC_AUG_11_SECONDS, [...retained, laterSingle])?.id).toBe('rsvp-all');
   });
 
   it('ignores unparseable retained timestamps when ordering a scoped answer', () => {

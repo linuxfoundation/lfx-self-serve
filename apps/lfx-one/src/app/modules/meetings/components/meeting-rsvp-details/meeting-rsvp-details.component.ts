@@ -135,12 +135,14 @@ export class MeetingRsvpDetailsComponent {
   }
 
   private initializeUpcomingData(): Signal<{ rsvps: MeetingRsvp[]; registrants: MeetingRegistrant[] }> {
+    // The roster carries one answer per guest for the requested date, so a date change must refetch it.
+    const source = computed(() => ({ meeting: this.meeting(), occurrenceId: this.resolvedOccurrenceId() }));
     return toSignal(
-      toObservable(this.meeting).pipe(
+      toObservable(source).pipe(
         tap(() => {
           if (!this.pastMeeting()) this.internalLoading.set(true);
         }),
-        switchMap((meeting) => {
+        switchMap(({ meeting, occurrenceId }) => {
           if (this.pastMeeting() || this.externallyManaged()) {
             return of({ rsvps: [] as MeetingRsvp[], registrants: [] as MeetingRegistrant[] });
           }
@@ -155,7 +157,6 @@ export class MeetingRsvpDetailsComponent {
             // Resolve RSVPs against the target occurrence so a `single` decline for a
             // future date doesn't overwrite the current occurrence's per-registrant
             // chip (LFXV2-2864). Skip attaching RSVPs when tracking is disabled (GH-1951).
-            const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.currentOccurrence() });
             const allDatesOnly = inviteResponsesEnabled && !!meeting.recurrence && !occurrenceId;
             return this.meetingService.getMeetingRegistrants(meeting.id, inviteResponsesEnabled, occurrenceId, false, undefined, false, allDatesOnly).pipe(
               map((registrants) => ({
