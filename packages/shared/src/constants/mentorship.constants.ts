@@ -158,6 +158,12 @@ export const MENTORSHIP_ADMIN_MENTEES_EXPORT_EMPTY_MESSAGES: Record<MentorshipAd
 export const MENTORSHIP_ADMIN_MENTEES_EXPORT_ERROR_SUMMARY = "Couldn't download mentees";
 export const MENTORSHIP_ADMIN_MENTEES_EXPORT_ERROR_MESSAGE = 'The download failed. Please try again.';
 export const MENTORSHIP_ADMIN_MENTEES_EXPORT_FORBIDDEN_MESSAGE = "You don't have access to this program's mentees.";
+/** Set by the BFF, to the number of rows the file holds, when the export stopped at its page cap with more mentees left out. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_HEADER = 'X-Export-Truncated';
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_SUMMARY = 'Download incomplete';
+/** `{count}` is the number of rows the file holds. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_TEMPLATE =
+  'The file holds only the first {count} mentees: this program has more than one download can include.';
 export const MENTORSHIP_ADMIN_MENTEES_EXPORT_TOAST_LIFE = 5000;
 
 /** Copy of the reviewer-note save toasts on Current Mentees. */

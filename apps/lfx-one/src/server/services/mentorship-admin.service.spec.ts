@@ -450,14 +450,25 @@ describe('MentorshipAdminService.exportProgramMentees', () => {
 
   it('returns only the header when nothing matches, or when the caller has no mentorship record', async () => {
     stubProgramReads({ [`${PROGRAM_PATH}/applications`]: { data: [], meta: { total: 0, limit: 50, offset: 0 } } });
-    expect(await service.exportProgramMentees(buildReq(), PROGRAM_ID, 'past', 'graduated')).toEqual({ csv: header, count: 0 });
+    expect(await service.exportProgramMentees(buildReq(), PROGRAM_ID, 'past', 'graduated')).toEqual({ csv: header, count: 0, truncated: false });
 
     vi.restoreAllMocks();
     stubProgramReads({
       '/mentorship/v1/me': {},
       [`${PROGRAM_PATH}/applications`]: new MicroserviceError('Unauthorized', 401, 'UNAUTHORIZED', { errorBody: { error: 'local user is not provisioned' } }),
     });
-    expect(await service.exportProgramMentees(buildReq(), PROGRAM_ID, 'current', undefined)).toEqual({ csv: header, count: 0 });
+    expect(await service.exportProgramMentees(buildReq(), PROGRAM_ID, 'current', undefined)).toEqual({ csv: header, count: 0, truncated: false });
+  });
+
+  it('says the export is truncated when upstream still has rows after the page cap', async () => {
+    const page = Array.from({ length: 50 }, (_, i) => applicationRow(`a${i}`));
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ data: page, meta: { total: 3000, limit: 50, offset: 0 } } as never);
+
+    const result = await service.exportProgramMentees(buildReq(), PROGRAM_ID, 'past', undefined);
+
+    expect(result.count).toBe(2500);
+    expect(result.truncated).toBe(true);
+    expect(result.csv.split('\r\n')).toHaveLength(2501);
   });
 
   it('passes a 403 from a caller who does not manage the program on', async () => {

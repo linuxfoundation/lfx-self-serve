@@ -11,6 +11,7 @@ import {
   MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS,
   MENTORSHIP_ADMIN_MENTEE_TABS,
   MENTORSHIP_ADMIN_MENTEES_EXPORT_FILE_PREFIXES,
+  MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_HEADER,
   MENTORSHIP_ADMIN_MENTEES_MAX_LIMIT,
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTOR_STATUSES,
@@ -160,8 +161,9 @@ export class MentorshipAdminController {
   // GET /api/mentorship/admin/programs/:programId/mentees/export?type&status -> text/csv attachment, or 204 when no mentee matches
   // Auth: logged-in user required (401 otherwise). Open while impersonating, since it is a read. `type` is the tab
   // (`current` or `past`) and `status` one of that tab's status filters, or absent for all of them, as on the read
-  // (400 otherwise). Upstream's 403 for a caller who does not manage the program passes through. Only the program id,
-  // the tab, the status and the row count are logged, never a mentee.
+  // (400 otherwise). Upstream's 403 for a caller who does not manage the program passes through. An export that stopped at
+  // the page cap still sends the rows it read, with `X-Export-Truncated` set to their count so the page can warn. Only
+  // the program id, the tab, the status and the row count are logged, never a mentee.
   public async exportProgramMentees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'export_mentorship_admin_program_mentees';
     const startTime = logger.startOperation(req, operation);
@@ -174,9 +176,9 @@ export class MentorshipAdminController {
       const programId = this.requireUuidParam(req, 'programId', operation);
 
       const { type, status } = this.parseMenteeTabAndStatus(req, operation);
-      const { csv, count } = await this.mentorshipAdminService.exportProgramMentees(req, programId, type, status);
+      const { csv, count, truncated } = await this.mentorshipAdminService.exportProgramMentees(req, programId, type, status);
 
-      logger.success(req, operation, startTime, { programId, type, status, result_count: count });
+      logger.success(req, operation, startTime, { programId, type, status, result_count: count, truncated });
       res.setHeader('Cache-Control', 'private, no-store');
       if (count === 0) {
         res.status(204).end();
@@ -185,6 +187,7 @@ export class MentorshipAdminController {
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', contentDispositionAttachment(`${MENTORSHIP_ADMIN_MENTEES_EXPORT_FILE_PREFIXES[type]}-${status ?? 'all'}.csv`));
       res.setHeader('X-Content-Type-Options', 'nosniff');
+      if (truncated) res.setHeader(MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_HEADER, String(count));
       // The byte order mark lets Excel read the names as UTF-8.
       res.send(`\ufeff${csv}`);
     } catch (error) {

@@ -353,10 +353,14 @@ export interface MentorshipAdminMenteesQuery {
   limit?: number;
 }
 
-/** What the BFF builds for `GET /api/mentorship/admin/programs/:programId/mentees/export`: the CSV text and its data row count. */
+/**
+ * What the BFF builds for `GET /api/mentorship/admin/programs/:programId/mentees/export`: the CSV text, its data row
+ * count, and whether the read stopped at the page cap with more mentees left out.
+ */
 export interface MentorshipAdminMenteesExport {
   csv: string;
   count: number;
+  truncated: boolean;
 }
 
 /**

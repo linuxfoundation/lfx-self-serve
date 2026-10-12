@@ -12,6 +12,8 @@ import {
   MENTORSHIP_ADMIN_MENTEES_EXPORT_FALLBACK_NAME,
   MENTORSHIP_ADMIN_MENTEES_EXPORT_FORBIDDEN_MESSAGE,
   MENTORSHIP_ADMIN_MENTEES_EXPORT_TOAST_LIFE,
+  MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_HEADER,
+  MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_SUMMARY,
 } from '@lfx-one/shared/constants';
 import { MentorshipAdminMenteeStatusFilter, MentorshipAdminMenteeTab } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
@@ -35,12 +37,12 @@ describe('MentorshipMenteesExportService', () => {
   const originalCreateObjectURL = URL.createObjectURL;
   const originalRevokeObjectURL = URL.revokeObjectURL;
 
-  const responseWith = (body: Blob | null, options: { status?: number; disposition?: string } = {}) =>
-    new HttpResponse<Blob>({
-      body,
-      status: options.status ?? 200,
-      headers: options.disposition ? new HttpHeaders({ 'Content-Disposition': options.disposition }) : new HttpHeaders(),
-    });
+  const responseWith = (body: Blob | null, options: { status?: number; disposition?: string; truncatedAt?: string } = {}) => {
+    let headers = new HttpHeaders();
+    if (options.disposition) headers = headers.set('Content-Disposition', options.disposition);
+    if (options.truncatedAt) headers = headers.set(MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_HEADER, options.truncatedAt);
+    return new HttpResponse<Blob>({ body, status: options.status ?? 200, headers });
+  };
 
   const configure = (platformId: 'browser' | 'server' = 'browser') => {
     TestBed.resetTestingModule();
@@ -102,6 +104,22 @@ describe('MentorshipMenteesExportService', () => {
     vi.runAllTimers();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:http://example.com/mentees-1');
     expect(add).not.toHaveBeenCalled();
+    expect(seen).toEqual({ emitted: 1, completed: true, errored: false });
+  });
+
+  it('still saves a cut-short file, then warns that it holds only the first rows', () => {
+    const blob = new Blob(['Name\r\nAda'], { type: 'text/csv' });
+    exportProgramMentees.mockReturnValueOnce(of(responseWith(blob, { disposition: 'attachment; filename="past-mentees-all.csv"', truncatedAt: '2500' })));
+
+    const seen = run(null, 'past');
+
+    expect(savedAs).toEqual(['past-mentees-all.csv']);
+    expect(add).toHaveBeenCalledWith({
+      severity: 'warn',
+      summary: MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_SUMMARY,
+      detail: 'The file holds only the first 2,500 mentees: this program has more than one download can include.',
+      life: MENTORSHIP_ADMIN_MENTEES_EXPORT_TOAST_LIFE,
+    });
     expect(seen).toEqual({ emitted: 1, completed: true, errored: false });
   });
 

@@ -285,7 +285,7 @@ describe('MentorshipAdminController', () => {
       };
 
     it('sends the CSV as a private, named attachment with a byte order mark', async () => {
-      const read = vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValue({ csv: 'csv-body', count: 1 });
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValue({ csv: 'csv-body', count: 1, truncated: false });
       const out = exportRes();
 
       await controller.exportProgramMentees(buildReq({ type: 'current', status: 'accepted' }, { programId: PROGRAM_ID }), out, next);
@@ -299,7 +299,7 @@ describe('MentorshipAdminController', () => {
     });
 
     it('exports every status as <tab>-mentees-all.csv when no status is given', async () => {
-      const read = vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValue({ csv: 'csv-body', count: 1 });
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValue({ csv: 'csv-body', count: 1, truncated: false });
       const out = exportRes();
 
       await controller.exportProgramMentees(buildReq({ type: 'current' }, { programId: PROGRAM_ID }), out, next);
@@ -309,7 +309,7 @@ describe('MentorshipAdminController', () => {
     });
 
     it('exports Past Mentees on their wire status as past-mentees-<status>.csv', async () => {
-      const read = vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValue({ csv: 'csv-body', count: 1 });
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValue({ csv: 'csv-body', count: 1, truncated: false });
       const out = exportRes();
 
       await controller.exportProgramMentees(buildReq({ type: 'past', status: 'pending' }, { programId: PROGRAM_ID }), out, next);
@@ -319,8 +319,25 @@ describe('MentorshipAdminController', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
+    it('sends a cut-short export with X-Export-Truncated set to its row count, and none when complete', async () => {
+      vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValueOnce({ csv: 'csv-body', count: 2500, truncated: true });
+      const out = exportRes();
+
+      await controller.exportProgramMentees(buildReq({ type: 'past' }, { programId: PROGRAM_ID }), out, next);
+
+      expect(out.setHeader).toHaveBeenCalledWith('X-Export-Truncated', '2500');
+      expect(out.send).toHaveBeenCalledWith('\ufeffcsv-body');
+
+      vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValueOnce({ csv: 'csv-body', count: 1, truncated: false });
+      const complete = exportRes();
+
+      await controller.exportProgramMentees(buildReq({ type: 'past' }, { programId: PROGRAM_ID }), complete, next);
+
+      expect(complete.setHeader).not.toHaveBeenCalledWith('X-Export-Truncated', expect.anything());
+    });
+
     it('answers 204 with no body when no mentee matches', async () => {
-      vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValue({ csv: 'Name', count: 0 });
+      vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValue({ csv: 'Name', count: 0, truncated: false });
       const out = exportRes();
 
       await controller.exportProgramMentees(buildReq({ type: 'past', status: 'graduated' }, { programId: PROGRAM_ID }), out, next);
