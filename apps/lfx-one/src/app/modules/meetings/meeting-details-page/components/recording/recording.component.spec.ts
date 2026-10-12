@@ -120,6 +120,34 @@ describe('MeetingRecordingComponent', () => {
     expect(query('tools-transcript-btn')).toBeNull();
   });
 
+  // The artifact routes sit behind the auth middleware: a 401 is an expired session, not a refusal.
+  it('asks a viewer whose session has expired to sign in', async () => {
+    await setup(
+      () => throwError(() => new HttpErrorResponse({ status: 401 })),
+      () => of(transcript(true))
+    );
+
+    expect(query('tools-sign-in-link')).not.toBeNull();
+    expect(query('tools-recording-unavailable')).toBeNull();
+  });
+
+  it('reads the new meeting when the page moves to another one, never showing the last one', async () => {
+    await setup(
+      () => of(recording([{ share_url: 'https://zoom.example/one', total_size: 1 }])),
+      () => of(transcript(true))
+    );
+    expect(query('tools-recording-link')?.querySelector('a')?.getAttribute('href')).toBe('https://zoom.example/one');
+
+    meetingService.getPastMeetingRecording.mockImplementation(() => of(recording([{ share_url: 'https://zoom.example/two', total_size: 1 }])));
+    meeting.set({ id: 'meeting-2', meeting_and_occurrence_id: 'meeting-2-1700000000000', title: 'Other', project: {} } as unknown as LoadedMeeting);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(meetingService.getPastMeetingRecording).toHaveBeenLastCalledWith('meeting-2-1700000000000');
+    expect(query('tools-recording-link')?.querySelector('a')?.getAttribute('href')).toBe('https://zoom.example/two');
+  });
+
   it('reads a recording without sessions, and a transcript without a transcript file, as none', async () => {
     await setup(
       () => of(recording([])),

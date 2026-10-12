@@ -1480,36 +1480,30 @@ export class MeetingService {
       past_meeting_id: pastMeetingUid,
     });
 
-    try {
-      const params = {
-        type: 'v1_past_meeting_recording',
-        tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
-      };
+    // Failures propagate (the controller hands them to the error handler, so a viewer sees an error
+    // rather than "no recording"); only an empty result means there is no recording.
+    const params = {
+      type: 'v1_past_meeting_recording',
+      tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
+    };
 
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingRecording>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        params
-      );
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingRecording>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params
+    );
 
-      if (!resources || resources.length === 0) {
-        logger.warning(req, 'get_past_meeting_recording', 'No recording found for past meeting', {
-          past_meeting_id: pastMeetingUid,
-          type: params.type,
-        });
-        return null;
-      }
-
-      return resources[0].data;
-    } catch (error) {
-      logger.warning(req, 'get_past_meeting_recording', 'Failed to fetch past meeting recording, returning null', {
+    if (!resources || resources.length === 0) {
+      logger.warning(req, 'get_past_meeting_recording', 'No recording found for past meeting', {
         past_meeting_id: pastMeetingUid,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        type: params.type,
       });
       return null;
     }
+
+    return resources[0].data;
   }
 
   /**
@@ -1524,36 +1518,30 @@ export class MeetingService {
       past_meeting_id: pastMeetingUid,
     });
 
-    try {
-      const params = {
-        type: 'v1_past_meeting_transcript',
-        tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
-      };
+    // Failures propagate (the controller hands them to the error handler, so a viewer sees an error
+    // rather than "no transcript"); only an empty result means there is no transcript.
+    const params = {
+      type: 'v1_past_meeting_transcript',
+      tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
+    };
 
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingTranscript>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        params
-      );
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingTranscript>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params
+    );
 
-      if (!resources || resources.length === 0) {
-        logger.warning(req, 'get_past_meeting_transcript', 'No transcript found for past meeting', {
-          past_meeting_id: pastMeetingUid,
-          type: params.type,
-        });
-        return null;
-      }
-
-      return resources[0].data;
-    } catch (error) {
-      logger.warning(req, 'get_past_meeting_transcript', 'Failed to fetch past meeting transcript, returning null', {
+    if (!resources || resources.length === 0) {
+      logger.warning(req, 'get_past_meeting_transcript', 'No transcript found for past meeting', {
         past_meeting_id: pastMeetingUid,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        type: params.type,
       });
       return null;
     }
+
+    return resources[0].data;
   }
 
   /**

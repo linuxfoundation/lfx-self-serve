@@ -279,6 +279,26 @@ describe('MeetingService public attachments (E3-03)', () => {
   });
 });
 
+describe('MeetingService past-meeting artifacts (E4-01)', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  // Only an empty result is "none"; an upstream failure reaches the error handler, so the page can
+  // say it could not load rather than that there is nothing.
+  it.each(['getPastMeetingRecording', 'getPastMeetingTranscript'] as const)('%s: an empty result is null, a failure propagates', async (method) => {
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+    await expect(service[method](req, 'meeting-1-1700000000000')).resolves.toBeNull();
+
+    const upstream = Object.assign(new Error('query service unavailable'), { statusCode: 503 });
+    proxyRequest.mockRejectedValueOnce(upstream);
+    await expect(service[method](req, 'meeting-1-1700000000000')).rejects.toBe(upstream);
+  });
+});
+
 describe('MeetingService.getMeetingHostKey', () => {
   let service: MeetingService;
 

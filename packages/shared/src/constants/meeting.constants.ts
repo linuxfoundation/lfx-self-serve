@@ -1196,3 +1196,9 @@ export const MEETING_MATERIALS_REFETCH_DELAYS_MS: readonly number[] = [1000, 500
  * once the index has it, and otherwise shows the usual failure toast.
  */
 export const MEETING_MATERIALS_PENDING_MAX_MS = 30_000;
+
+/**
+ * What the V2 Recording & Transcript section reads an artifact's 401 as (E4-01): the session expired
+ * behind the auth middleware, which sends the whole section to its sign-in state.
+ */
+export const MEETING_ARTIFACT_SESSION_EXPIRED = 'session-expired' as const;

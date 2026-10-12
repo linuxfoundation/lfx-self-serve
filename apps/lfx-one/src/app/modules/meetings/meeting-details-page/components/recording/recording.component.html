@@ -29,17 +29,19 @@
       @let transcript = section().transcript;
       <div class="overflow-hidden rounded-[14px] border border-[var(--md-border)] bg-[var(--md-surface-card)]">
         @if (recording.status === 'available' && recording.url) {
+          <!-- A pointer shortcut to the same URL as Watch recording below, which is the accessible
+               control: so the poster is out of the tab order and the accessibility tree. -->
           <a
-            class="relative flex h-[172px] items-center justify-center bg-[linear-gradient(135deg,var(--md-video-still-from),var(--md-video-still-to))] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+            class="relative flex h-[172px] items-center justify-center bg-[linear-gradient(135deg,var(--md-video-still-from),var(--md-video-still-to))]"
             [href]="recording.url"
             target="_blank"
             rel="noopener noreferrer"
-            aria-label="Watch the recording (opens in a new tab)"
+            tabindex="-1"
+            aria-hidden="true"
             data-testid="tools-recording-poster">
             <span
-              class="flex h-[60px] w-[60px] items-center justify-center rounded-full border-[1.5px] border-white/50 bg-white/15 backdrop-blur-sm"
-              aria-hidden="true">
-              <i class="fa-solid fa-play text-[22px] text-white"></i>
+              class="flex h-[60px] w-[60px] items-center justify-center rounded-full border-[1.5px] border-[var(--md-video-still-disc-border)] bg-[var(--md-video-still-disc)] backdrop-blur-sm">
+              <i class="fa-solid fa-play text-[22px] text-[var(--md-video-still-glyph)]"></i>
             </span>
           </a>
         }
@@ -48,6 +50,7 @@
             @case ('available') {
               <lfx-button
                 label="Watch recording"
+                ariaLabel="Watch recording (opens in a new tab)"
                 icon="fa-light fa-play"
                 [href]="recording.url"
                 target="_blank"
