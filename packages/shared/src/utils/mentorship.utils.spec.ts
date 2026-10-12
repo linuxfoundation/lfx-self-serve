@@ -4,7 +4,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  createDefaultMentorshipTerm,
   MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL,
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
@@ -176,16 +175,16 @@ describe('getMentorshipEnrollStepErrors', () => {
     expect(errors.logoFileName).toBe('Logo is required.');
   });
 
-  it('gives a new enroll form a term that still passes setup date checks', () => {
+  it('starts a new enroll form with no terms, so the admin adds one before the setup step passes', () => {
     const form = createEmptyMentorshipEnrollForm();
     form.skills = ['GO'];
 
-    expect(getMentorshipEnrollStepErrors('setup', form).terms).toBeUndefined();
+    expect(form.terms).toEqual([]);
+    expect(getMentorshipEnrollStepErrors('setup', form).terms).toBe('Add at least one program term.');
   });
 
   it('requires at least one skill, term, required prerequisite, and accepted terms', () => {
     const form = createEmptyMentorshipEnrollForm();
-    form.terms = [];
 
     expect(getMentorshipEnrollStepErrors('setup', form).skills).toBe('Add at least one skill.');
     expect(getMentorshipEnrollStepErrors('setup', form).terms).toBe('Add at least one program term.');
@@ -614,11 +613,10 @@ describe('formFromMentorshipEnrollImport', () => {
     expect(form.prerequisites.at(-1)).not.toBe(imported.prerequisites[1]);
   });
 
-  it('starts with one default term, no logo and the terms not accepted', () => {
+  it('starts with no terms, no logo and the terms not accepted', () => {
     const form = formFromMentorshipEnrollImport('mp_1', imported);
 
-    expect(form.terms).toHaveLength(1);
-    expect(form.terms[0]).toEqual(createDefaultMentorshipTerm());
+    expect(form.terms).toEqual([]);
     expect(form.logoFileName).toBe('');
     expect(form.logoPreviewUrl).toBe('');
     expect(form.termsAccepted).toBe(false);
@@ -769,6 +767,7 @@ describe('toMentorshipEnrollUpdateRequest', () => {
       repositoryUrl: 'https://repo.example',
       skills: ['Go'],
       technologies: ['Go', 'Rust'],
+      terms: [term('term-new-1', 'Spring')],
     });
 
   it('is the create body without terms acceptance when no term is saved yet', () => {
@@ -929,24 +928,10 @@ describe('getMentorshipTermDateErrors', () => {
     expect(getMentorshipTermDateErrors(term, new Date(2026, 11, 2)).applicationStartDate).toBe('Application start date cannot be before today.');
   });
 
-  it('builds a default enroll term that stays valid on the given day', () => {
-    const today = new Date(2026, 8, 8);
-    const term = createDefaultMentorshipTerm(today);
-
-    expect(getMentorshipTermDateErrors(term, today)).toEqual({});
-    expect(term.startDate).toBe('2026-12-01');
-    expect(term.endDate).toBe('2027-02-01');
-    expect(term.applicationStartDate).toBe('2026-09-09');
-    expect(term.applicationEndDate).toBe('2026-11-30');
-  });
-
   it('accepts a client-local today when the host calendar is one day ahead', () => {
-    const clientToday = new Date(2026, 8, 7);
     const serverToday = new Date(2026, 8, 8);
-    const term = createDefaultMentorshipTerm(clientToday);
 
     expect(mentorshipDateOnlyFloor(serverToday)).toBe('2026-09-07');
-    expect(getMentorshipTermDateErrors(term, serverToday)).toEqual({});
     expect(
       getMentorshipTermDateErrors(
         {

@@ -1,8 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MentorshipEnrollForm, MentorshipEnrollStep, MentorshipPrerequisite, MentorshipProgramTerm } from '../interfaces/mentorship.interface';
-import { toLocalDateOnlyString } from '../utils/date-time.utils';
+import type { MentorshipEnrollForm, MentorshipEnrollStep, MentorshipPrerequisite } from '../interfaces/mentorship.interface';
 
 export const MENTORSHIP_ENROLL_STEPS_ORDER: MentorshipEnrollStep[] = ['details', 'setup', 'prerequisites'];
 
@@ -365,27 +364,6 @@ export const MENTORSHIP_SKILL_OPTIONS: readonly string[] = [
   'XML',
 ];
 
-/**
- * A term whose application window and start month stay valid on `today` and on a
- * UTC host one civil day ahead. Application start is tomorrow so an untouched
- * default is never "already past" on the BFF.
- */
-export function createDefaultMentorshipTerm(today = new Date()): MentorshipProgramTerm {
-  const start = new Date(today.getFullYear(), today.getMonth() + 3, 1);
-  const end = new Date(today.getFullYear(), today.getMonth() + 5, 1);
-  const applicationEnd = new Date(start.getFullYear(), start.getMonth(), 0);
-  const applicationStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-  const year = start.getFullYear();
-  return {
-    id: `term-1-${year}`,
-    name: `Term 1 - ${year}`,
-    startDate: toLocalDateOnlyString(start),
-    endDate: toLocalDateOnlyString(end),
-    applicationStartDate: toLocalDateOnlyString(applicationStart),
-    applicationEndDate: toLocalDateOnlyString(applicationEnd),
-  };
-}
-
 export const MENTORSHIP_DEFAULT_PREREQUISITES: MentorshipPrerequisite[] = [
   {
     id: 'prereq-resume',
@@ -454,7 +432,7 @@ export function createEmptyMentorshipEnrollForm(): MentorshipEnrollForm {
     logoFileName: '',
     logoPreviewUrl: '',
     skills: [],
-    terms: [createDefaultMentorshipTerm()],
+    terms: [],
     prerequisites: clonePrerequisites(),
     termsAccepted: false,
   };

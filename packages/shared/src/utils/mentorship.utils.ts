@@ -7,7 +7,6 @@ import {
   MENTORSHIP_CHALLENGE_URL_REQUIRED,
   MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX,
   MENTORSHIP_CUSTOM_PREREQ_NAME_MAX,
-  createDefaultMentorshipTerm,
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
@@ -394,7 +393,7 @@ export function isSameMentorshipTerm(before: MentorshipProgramTerm | undefined, 
 
 /**
  * The wizard form for an imported program. The template's details and prerequisites are copied; the terms are not, so the
- * form gets one default term, and the logo is not, so the admin picks one. `termsAccepted` starts over as `false`.
+ * form starts with no terms, and the logo is not, so the admin picks one. `termsAccepted` starts over as `false`.
  */
 export function formFromMentorshipEnrollImport(importProgramId: string, data: MentorshipEnrollImport): MentorshipEnrollForm {
   return {
@@ -409,7 +408,6 @@ export function formFromMentorshipEnrollImport(importProgramId: string, data: Me
     ciiProjectId: data.ciiProjectId,
     codeOfConductUrl: data.codeOfConductUrl,
     skills: [...data.skills],
-    terms: [createDefaultMentorshipTerm()],
     prerequisites: mergeImportedMentorshipPrerequisites(data.prerequisites),
   };
 }

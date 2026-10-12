@@ -122,7 +122,7 @@ export type MentorshipMenteePageTab = 'overview' | 'tasks' | 'profile';
  * NOTE: These are the stored `tasks.status` values plus `pending`, the status
  * dropdown's To Do option. They intentionally differ from
  * `MentorshipApplicantTaskStatus` (the kebab-case admin/mentor vocabulary:
- * `pending` / `in-progress` / `submitted` / `completed`), which still reads mocks.
+ * `pending` / `in-progress` / `submitted` / `completed`), which the BFF maps to and from the stored values.
  */
 export type MentorshipMenteeTaskStatus = 'pending' | 'incomplete' | 'in_progress' | 'submitted' | 'complete';
 
