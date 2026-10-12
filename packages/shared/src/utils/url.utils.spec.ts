@@ -796,6 +796,12 @@ describe('toSafeExternalHref', () => {
     expect(toSafeExternalHref('http://[::1]/x')).toBeNull();
   });
 
+  it('refuses an email address and any link with userinfo', () => {
+    expect(toSafeExternalHref('someone@vendor-corp.example')).toBeNull();
+    expect(toSafeExternalHref('https://trusted.example@evil.example/login')).toBeNull();
+    expect(toSafeExternalHref('https://user:pass@docs.vendor-corp.example')).toBeNull();
+  });
+
   it('keeps a public IPv6 link', () => {
     expect(toSafeExternalHref('https://[2606:4700:4700::1111]/docs')).toBe('https://[2606:4700:4700::1111]/docs');
   });

@@ -996,6 +996,11 @@ export function toSafeExternalHref(link: string | null | undefined): string | nu
     if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || !recognisableHost) {
       return null;
     }
+    // No userinfo: a bare email (`someone@vendor.example`) is not a link, and `https://trusted@evil.example`
+    // is a link that hides where it goes.
+    if (parsed.username || parsed.password) {
+      return null;
+    }
     // A link must not point at the viewer's own network (a router, an internal service, loopback):
     // the click would carry that service's ambient credentials. Same guard as the app's other
     // outbound URLs (`isPrivateHost`).
