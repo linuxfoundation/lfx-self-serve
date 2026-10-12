@@ -55,6 +55,7 @@ describe('MeetingMaterialsComponent', () => {
   let viewerRole: WritableSignal<MeetingViewerRole | null>;
   let timeState: WritableSignal<MeetingTimeState | null>;
   let authenticated: WritableSignal<boolean>;
+  let matchesRoute: WritableSignal<boolean>;
   let meetingService: {
     getPublicMeetingAttachments: ReturnType<typeof vi.fn>;
     getPastMeetingAttachments: ReturnType<typeof vi.fn>;
@@ -73,7 +74,7 @@ describe('MeetingMaterialsComponent', () => {
           provide: MeetingDetailsStateService,
           useValue: {
             meeting,
-            matchesRoute: signal(true),
+            matchesRoute,
             loadedViaPastMeetingId,
             password,
             viewerRole,
@@ -104,6 +105,7 @@ describe('MeetingMaterialsComponent', () => {
     viewerRole = signal<MeetingViewerRole | null>('visitor');
     timeState = signal<MeetingTimeState | null>('before');
     authenticated = signal(false);
+    matchesRoute = signal(true);
     meetingService = {
       getPublicMeetingAttachments: vi.fn(),
       getPastMeetingAttachments: vi.fn(),
@@ -288,6 +290,21 @@ describe('MeetingMaterialsComponent', () => {
     viewerRole.set('registrant');
     fixture.detectChanges();
     expect(query('materials-section-add')).toBeNull();
+  });
+
+  // An in-app navigation holds the previous meeting until the next one loads: nothing may write to it.
+  it('withdraws Add material and its drawer while the route has moved to another meeting', async () => {
+    viewerRole.set('organizer');
+    await setup(() => of([]));
+    query('materials-section-add')?.querySelector('button')?.click();
+    fixture.detectChanges();
+    expect(drawer()?.visible()).toBe(true);
+
+    matchesRoute.set(false);
+    fixture.detectChanges();
+
+    expect(query('materials-section-add')).toBeNull();
+    expect(drawer()).toBeUndefined();
   });
 
   it("offers Add material on a past occurrence's own page, with the drawer on that occurrence", async () => {

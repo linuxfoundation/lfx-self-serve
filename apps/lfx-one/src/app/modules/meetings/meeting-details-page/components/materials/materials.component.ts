@@ -89,9 +89,13 @@ export class MeetingMaterialsComponent {
       return Number.isFinite(changed) && now - changed <= MEETING_MATERIALS_UPDATED_WINDOW_MS && changed <= now;
     });
   });
-  /** V1's gate: organizers, while the meeting is upcoming, or on a past occurrence's own page. */
+  /**
+   * V1's gate: organizers, while the meeting is upcoming, or on a past occurrence's own page. Never
+   * while the route has moved on to another meeting the state has not loaded yet: the held meeting
+   * is the previous one, and Add material (with the drawer it opens) must not write to it.
+   */
   protected readonly canManage = computed(
-    () => this.state.viewerRole() === 'organizer' && (this.state.timeState() !== 'ended' || this.state.loadedViaPastMeetingId())
+    () => this.state.matchesRoute() && this.state.viewerRole() === 'organizer' && (this.state.timeState() !== 'ended' || this.state.loadedViaPastMeetingId())
   );
   protected readonly drawerMeetingId = computed(() => (this.state.loadedViaPastMeetingId() ? undefined : this.state.meeting()?.id));
   protected readonly drawerPastMeetingId = computed(() => {
@@ -181,6 +185,8 @@ export class MeetingMaterialsComponent {
           const kept = key && last?.key === key ? last.attachments : null;
           if (!kept) {
             last = null;
+            // Another meeting (or none yet): a drawer opened for the previous one closes.
+            this.drawerVisible.set(false);
             this.removedUids.set(new Set());
             this.addedAttachments.set([]);
             this.showAllFiles.set(false);
