@@ -961,7 +961,7 @@ export class PublicMeetingController {
   /**
    * The public meeting gates as a yes/no, mirroring getMeetingById's chain: public non-restricted
    * meetings are open; private/restricted ones need a valid password (header only), a registrant
-   * record (by email or username, via M2M, as the invited check matches), or an organizer relation (checked with
+   * record (by email or username, then by email directly, via M2M, as getMeetingById checks), or an organizer relation (checked with
    * the user's own token, passed per call, never the M2M identity).
    */
   private async canViewMeetingContent(
@@ -986,17 +986,32 @@ export class PublicMeetingController {
       return false;
     }
 
-    // By email or username, as getMeetingById's invited check matches: a registrant's meeting email
-    // can differ from their sign-in email.
+    // The registrant gate as getMeetingById runs it: by email or username first (a registrant's meeting
+    // email can differ from their sign-in email), then a direct email lookup, which catches a false
+    // negative from the OR lookup.
+    const email = getEffectiveEmail(req);
     try {
-      if (await isUserInvitedToMeeting(req, meeting.id, getEffectiveEmail(req) || '', m2mToken)) {
+      if (await isUserInvitedToMeeting(req, meeting.id, email || '', m2mToken)) {
         return true;
       }
     } catch (error) {
-      logger.warning(req, operation, 'Registrant check failed, continuing to organizer check', {
+      logger.warning(req, operation, 'Registrant check failed, trying the direct email lookup', {
         meeting_id: meeting.id,
         err: error,
       });
+    }
+    if (email) {
+      try {
+        const registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, meeting.id, email, m2mToken);
+        if (registrants.length > 0) {
+          return true;
+        }
+      } catch (error) {
+        logger.warning(req, operation, 'Direct email registrant check failed, continuing to organizer check', {
+          meeting_id: meeting.id,
+          err: error,
+        });
+      }
     }
 
     // Guard on originalToken, not just isAuthenticated: running the access check with the M2M

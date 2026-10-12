@@ -972,6 +972,7 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     validatePasswordMock.mockReturnValue(false);
     getEffectiveEmailMock.mockReturnValue('user@example.com');
     meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
     addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
     const { req, res, next } = buildReqRes(true);
 
@@ -1014,6 +1015,7 @@ describe('PublicMeetingController attachments', () => {
     getEffectiveEmailMock.mockReturnValue('user@example.com');
     getUsernameFromAuthMock.mockResolvedValue('user');
     meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
     addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: false }));
     meetingSvc.getPublicMeetingAttachments.mockResolvedValue(listed);
     meetingSvc.getMeetingAttachments.mockResolvedValue([{ ...listed[0], file_url: 'https://storage.example/raw/slides.pdf' }]);
@@ -1110,6 +1112,20 @@ describe('PublicMeetingController attachments', () => {
     await controller.getMeetingAttachments(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  // getMeetingById retries a direct email lookup when the email-or-username lookup misses; so must this.
+  it('falls back to the direct email lookup when the email-or-username lookup misses', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true } as Partial<Meeting>));
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ email: 'user@example.com' }]);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsByEmail).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'm2m-token');
     expect(res.json).toHaveBeenCalledTimes(1);
   });
 
