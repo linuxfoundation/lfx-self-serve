@@ -1030,28 +1030,25 @@ export class ProjectController {
       const query = { tags: `project_uid:${id}` };
 
       // Fetch all pages — first-page-only would silently drop meetings beyond the default page size.
-      const [upcoming, past, calname] = await Promise.all([
+      const [upcoming, past, project] = await Promise.all([
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_meeting', false)),
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
-        this.projectService
-          .getProjectById(req, id, false)
-          .then((project) => project.name)
-          .catch((error) => {
-            logger.warning(req, 'get_project_calendar', 'Failed to resolve project name for X-WR-CALNAME', { project_id: id, err: error });
-            return undefined;
-          }),
+        this.projectService.getPubliclyDiscoverableProject(req, id),
       ]);
 
-      // Filter PRIVATE meetings from the public feed. Restricted (invited-guests-only) public meetings are
-      // still listed so their existence is discoverable; join authorization is enforced separately at join time.
-      const allMeetings = [...upcoming, ...past].filter((m) => m.visibility === MeetingVisibility.PUBLIC);
+      // A project that is not publicly discoverable (or could not be confirmed as such) gets the same empty,
+      // unnamed calendar an unknown UID gets, so the feed reveals neither its name nor its meetings (issue-437).
+      // Otherwise, filter PRIVATE meetings from the public feed. Restricted (invited-guests-only) public meetings
+      // are still listed so their existence is discoverable; join authorization is enforced separately at join time.
+      const allMeetings = project ? [...upcoming, ...past].filter((m) => m.visibility === MeetingVisibility.PUBLIC) : [];
       const events = meetingsToVEvents(allMeetings);
-      const ics = buildVCalendar(events, '-//LFX//Project Calendar//EN', calname);
+      const ics = buildVCalendar(events, '-//LFX//Project Calendar//EN', project?.name);
 
       logger.success(req, 'get_project_calendar', startTime, {
         project_id: id,
         event_count: events.length,
         filtered_out: upcoming.length + past.length - allMeetings.length,
+        discoverable: !!project,
       });
 
       res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
@@ -1094,17 +1091,27 @@ export class ProjectController {
       const [upcoming, past, project, publicCommitteeUids] = await Promise.all([
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_meeting', false)),
         fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
-        // Project metadata only feeds the page header — degrade gracefully rather than failing the whole
-        // feed on a transient project-service error, matching the X-WR-CALNAME fallback in getProjectCalendar.
-        this.projectService.getProjectById(req, projectUid, false).catch((error) => {
-          logger.warning(req, 'get_project_meetings', 'Failed to resolve project metadata for the calendar header', {
-            project_id: projectUid,
-            err: error,
-          });
-          return undefined;
-        }),
+        // Fails closed: null when the project is not publicly discoverable or the lookup errored (issue-437).
+        this.projectService.getPubliclyDiscoverableProject(req, projectUid),
         this.getPublicCommitteeUids(req, projectUid),
       ]);
+
+      // A hidden project is answered exactly like an unknown identifier: a slug gets the same not-found error
+      // resolveProjectIdentifier throws, and a UID gets the same empty, unnamed feed a non-existent UID yields.
+      if (!project) {
+        if (!isUuid(id)) {
+          throw this.projectNotFoundError(id);
+        }
+        logger.success(req, 'get_project_meetings', startTime, {
+          project_id: id,
+          committee_uid: committeeUid,
+          meeting_count: 0,
+          discoverable: false,
+        });
+        res.setHeader('Cache-Control', 'public, max-age=300');
+        res.json({ meetings: [], total: 0, project: { uid: projectUid, name: '' } } satisfies PublicProjectMeetingsResponse);
+        return;
+      }
 
       // A committee the public directory does not list is not a valid filter here. Serving it would let an
       // anonymous caller confirm which meetings belong to a non-public group, which is the correlation the
@@ -1117,7 +1124,7 @@ export class ProjectController {
           rejected_non_public_committee: true,
         });
         res.setHeader('Cache-Control', 'public, max-age=300');
-        res.json({ meetings: [], total: 0, project: { uid: projectUid, name: project?.name ?? '' } } satisfies PublicProjectMeetingsResponse);
+        res.json({ meetings: [], total: 0, project: { uid: projectUid, name: project.name } } satisfies PublicProjectMeetingsResponse);
         return;
       }
 
@@ -1132,7 +1139,7 @@ export class ProjectController {
       const response: PublicProjectMeetingsResponse = {
         meetings,
         total: meetings.length,
-        project: { uid: projectUid, name: project?.name ?? '' },
+        project: { uid: projectUid, name: project.name },
       };
 
       logger.success(req, 'get_project_meetings', startTime, {
@@ -1157,7 +1164,8 @@ export class ProjectController {
    * foundation project lands on /foundation/<resource> and a non-foundation on
    * /project/<resource>. `:resource` is allowlisted (LENS_REDIRECT_RESOURCES) so it can never
    * become an arbitrary/open redirect. Falls back to the flat /<resource> route when the slug
-   * is unresolvable or the fetch fails. Anonymous access — no user session; M2M upstream.
+   * is unresolvable, the project is not publicly discoverable (issue-437), or the fetch fails.
+   * Anonymous access — no user session; M2M upstream.
    */
   public async getLensRedirect(req: Request, res: Response, next: NextFunction): Promise<void> {
     const slug = req.params['slug'] ?? '';
@@ -1187,7 +1195,15 @@ export class ProjectController {
         return;
       }
 
-      const project = await this.projectService.getProjectById(req, slugToId.uid, false);
+      // A hidden project takes the unknown-slug path, so the redirect gives no foundation-vs-project signal.
+      const project = await this.projectService.getPubliclyDiscoverableProject(req, slugToId.uid);
+      if (!project) {
+        logger.success(req, 'get_lens_redirect', startTime, { project_slug: slug, resource, fallback: 'not_discoverable' });
+        res.setHeader('Cache-Control', 'no-store');
+        res.redirect(302, `/${resource}?project=${encodeURIComponent(slug)}`);
+        return;
+      }
+
       const lens = computeIsFoundation(project) ? 'foundation' : 'project';
 
       logger.success(req, 'get_lens_redirect', startTime, { project_slug: slug, resource, lens });
@@ -1215,13 +1231,18 @@ export class ProjectController {
     }
     const result = await this.projectService.getProjectIdBySlug(req, identifier);
     if (!result.exists || !result.uid) {
-      throw new ResourceNotFoundError('Project', identifier, {
-        operation: 'resolve_project_identifier',
-        service: 'project_controller',
-        path: `/projects/${identifier}`,
-      });
+      throw this.projectNotFoundError(identifier);
     }
     return result.uid;
+  }
+
+  /** The not-found error for an unknown project identifier — also thrown for a hidden one, so the two are indistinguishable. */
+  private projectNotFoundError(identifier: string): ResourceNotFoundError {
+    return new ResourceNotFoundError('Project', identifier, {
+      operation: 'resolve_project_identifier',
+      service: 'project_controller',
+      path: `/projects/${identifier}`,
+    });
   }
 
   /**

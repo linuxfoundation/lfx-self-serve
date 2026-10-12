@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ProjectStage } from '../enums/project-stage.enum';
-import { isFormationStageGate, isPostFormationStage } from './project-stage.utils';
+import { isFormationStageGate, isPostFormationStage, isPubliclyDiscoverableProject } from './project-stage.utils';
 
 describe('isFormationStageGate', () => {
   it.each([ProjectStage.FormationExploratory, ProjectStage.FormationEngaged, ProjectStage.FormationOnHold, ProjectStage.FormationConfidential])(
@@ -69,5 +69,39 @@ describe('isPostFormationStage', () => {
   it('accepts a bare string backed by the enum value', () => {
     expect(isPostFormationStage('Active')).toBe(true);
     expect(isPostFormationStage('Archived')).toBe(true);
+  });
+});
+
+describe('isPubliclyDiscoverableProject', () => {
+  it('returns true for a public Active project', () => {
+    expect(isPubliclyDiscoverableProject({ public: true, stage: ProjectStage.Active })).toBe(true);
+  });
+
+  // issue-437: only Confidential is hidden among Formation sub-stages; Archived stays discoverable when public.
+  it.each([
+    ProjectStage.FormationExploratory,
+    ProjectStage.FormationEngaged,
+    ProjectStage.FormationOnHold,
+    ProjectStage.FormationDisengaged,
+    ProjectStage.Archived,
+  ])('returns true for a public project in %s', (stage) => {
+    expect(isPubliclyDiscoverableProject({ public: true, stage })).toBe(true);
+  });
+
+  it('returns false for a non-public project', () => {
+    expect(isPubliclyDiscoverableProject({ public: false, stage: ProjectStage.Active })).toBe(false);
+  });
+
+  it('returns false when public is missing (strict === true)', () => {
+    expect(isPubliclyDiscoverableProject({ stage: ProjectStage.Active } as { public: boolean; stage: string })).toBe(false);
+  });
+
+  it('returns false for a public Formation - Confidential project', () => {
+    expect(isPubliclyDiscoverableProject({ public: true, stage: ProjectStage.FormationConfidential })).toBe(false);
+  });
+
+  it('returns false for null/undefined', () => {
+    expect(isPubliclyDiscoverableProject(null)).toBe(false);
+    expect(isPubliclyDiscoverableProject(undefined)).toBe(false);
   });
 });

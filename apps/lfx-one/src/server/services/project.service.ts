@@ -188,6 +188,7 @@ import {
   formatCurrency,
   formatNumber,
   getDefaultMarketingImpactMonth,
+  isPubliclyDiscoverableProject,
   maskEmailForLogs,
   maskIdentifierForLogs,
   normalizeHealthScoreCategoryV2,
@@ -458,6 +459,23 @@ export class ProjectService {
     }
 
     return project;
+  }
+
+  /**
+   * Fetches a project for an anonymous `/public/api` surface and returns it only when it is publicly
+   * discoverable (`isPubliclyDiscoverableProject`). Fails closed: a lookup error is logged and
+   * treated as not discoverable, so callers answer exactly as they would for an unknown project
+   * rather than leaking a hidden project's name or existence (issue-437).
+   */
+  public async getPubliclyDiscoverableProject(req: Request, uid: string): Promise<Project | null> {
+    let project: Project;
+    try {
+      project = await this.getProjectById(req, uid, false);
+    } catch (error) {
+      logger.warning(req, 'get_publicly_discoverable_project', 'Project lookup failed; treating as not discoverable', { project_uid: uid, err: error });
+      return null;
+    }
+    return isPubliclyDiscoverableProject(project) ? project : null;
   }
 
   /**

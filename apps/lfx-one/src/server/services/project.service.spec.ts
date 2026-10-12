@@ -188,8 +188,14 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const numberUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/number.utils')>(
     '../../../../../packages/shared/src/utils/number.utils'
   );
+  // The real isPubliclyDiscoverableProject, not a stub: getPubliclyDiscoverableProject's tests assert the
+  // public/Confidential gate itself. project-stage.utils only imports the enum file, so deep-importing is safe.
+  const projectStageUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/project-stage.utils')>(
+    '../../../../../packages/shared/src/utils/project-stage.utils'
+  );
   return {
     computeIsFoundation: actual.computeIsFoundation,
+    isPubliclyDiscoverableProject: projectStageUtils.isPubliclyDiscoverableProject,
     summarizeWriterGrants: actual.summarizeWriterGrants,
     maskEmailForLogs: emailUtils.maskEmailForLogs,
     maskIdentifierForLogs: emailUtils.maskIdentifierForLogs,
@@ -3450,5 +3456,43 @@ describe('ProjectService — directory lookup failure classification', () => {
       code: 'SERVICE_UNAVAILABLE',
       transportFailure: true,
     });
+  });
+});
+
+describe('ProjectService — getPubliclyDiscoverableProject', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    warning.mockReset();
+    service = new ProjectService();
+  });
+
+  it('returns the project when it is public and Active', async () => {
+    const project = { uid: 'p1', slug: 'p1', name: 'Visible', public: true, stage: 'Active' } as Project;
+    proxyRequest.mockResolvedValueOnce(project);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toEqual(project);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/p1', 'GET');
+  });
+
+  it('returns null for a non-public project', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', name: 'Hidden', public: false, stage: 'Active' } as Project);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toBeNull();
+  });
+
+  it('returns null for a Formation - Confidential project even when public', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', name: 'Secret', public: true, stage: 'Formation - Confidential' } as Project);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toBeNull();
+  });
+
+  it('fails closed (null) and logs a warning when the upstream lookup rejects', async () => {
+    const err = new Error('upstream unavailable');
+    proxyRequest.mockRejectedValueOnce(err);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toBeNull();
+    expect(warning).toHaveBeenCalledWith(req, 'get_publicly_discoverable_project', expect.any(String), { project_uid: 'p1', err });
   });
 });

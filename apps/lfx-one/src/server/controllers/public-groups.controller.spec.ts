@@ -10,7 +10,8 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 // objects every time (same pattern as public-profile.controller.spec.ts).
 const {
   getFoundationProjectUidsMock,
-  getProjectByIdMock,
+  getPubliclyDiscoverableProjectMock,
+  getProjectIdBySlugMock,
   getCommitteesMock,
   resolveCommitteeUidMock,
   getCommitteeByIdMock,
@@ -19,7 +20,8 @@ const {
   proxyRequestMock,
 } = vi.hoisted(() => ({
   getFoundationProjectUidsMock: vi.fn(),
-  getProjectByIdMock: vi.fn(),
+  getPubliclyDiscoverableProjectMock: vi.fn(),
+  getProjectIdBySlugMock: vi.fn(),
   getCommitteesMock: vi.fn(),
   resolveCommitteeUidMock: vi.fn(),
   getCommitteeByIdMock: vi.fn(),
@@ -32,8 +34,8 @@ vi.mock('../services/project.service', () => ({
   ProjectService: vi.fn(function () {
     return {
       getFoundationProjectUids: getFoundationProjectUidsMock,
-      getProjectById: getProjectByIdMock,
-      getProjectIdBySlug: vi.fn(),
+      getPubliclyDiscoverableProject: getPubliclyDiscoverableProjectMock,
+      getProjectIdBySlug: getProjectIdBySlugMock,
     };
   }),
 }));
@@ -85,7 +87,33 @@ vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
+import { ResourceNotFoundError } from '../errors';
 import { PublicGroupsController } from './public-groups.controller';
+
+const FOUNDATION_UID = '11111111-1111-4111-8111-111111111111';
+const PROJECT_UID = '22222222-2222-4222-8222-222222222222';
+const PARENT_UID = '33333333-3333-4333-8333-333333333333';
+
+/** A discoverable project fixture whose name/slug/logo are derived from its UID, so leaks are easy to spot. */
+function discoverable(uid: string, overrides: Record<string, unknown> = {}) {
+  return { uid, name: `name-${uid}`, slug: `slug-${uid}`, logo_url: `logo-${uid}`, public: true, stage: 'Active', parent_uid: '', ...overrides };
+}
+
+/** Asserts `hidden` was answered with the same not-found error as `unknown`, with no response body. */
+function expectSameNotFound(
+  hidden: { res: Response & { json: Mock }; next: NextFunction & Mock },
+  unknown: { res: Response & { json: Mock }; next: NextFunction & Mock }
+): void {
+  expect(hidden.res.json).not.toHaveBeenCalled();
+  expect(unknown.res.json).not.toHaveBeenCalled();
+  const [hiddenError] = hidden.next.mock.calls[0];
+  const [unknownError] = unknown.next.mock.calls[0];
+  expect(hiddenError).toBeInstanceOf(ResourceNotFoundError);
+  expect(unknownError).toBeInstanceOf(ResourceNotFoundError);
+  expect(hiddenError.statusCode).toBe(404);
+  expect(hiddenError.message).toBe(unknownError.message);
+  expect(hiddenError.toResponse()).toEqual(unknownError.toResponse());
+}
 
 function buildReqRes(identifier: string): { req: Request; res: Response & { json: Mock }; next: NextFunction & Mock } {
   const req = { params: { identifier }, path: `/public/api/foundations/${identifier}/groups`, log: {} } as unknown as Request;
@@ -104,7 +132,7 @@ describe('PublicGroupsController.getPublicGroupsByFoundation — fan-out cap', (
   beforeEach(() => {
     vi.clearAllMocks();
     controller = new PublicGroupsController();
-    getProjectByIdMock.mockImplementation(async (_req: Request, uid: string) => ({ uid, name: uid, slug: uid }));
+    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => discoverable(uid));
     getCommitteesMock.mockResolvedValue([]);
   });
 
@@ -167,6 +195,155 @@ describe('PublicGroupsController.getPublicGroupsByFoundation — fan-out cap', (
   });
 });
 
+describe('PublicGroupsController.getPublicGroupsByFoundation — discoverability (issue-437)', () => {
+  let controller: PublicGroupsController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicGroupsController();
+    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => discoverable(uid));
+    getFoundationProjectUidsMock.mockResolvedValue([FOUNDATION_UID, 'child-visible', 'child-hidden']);
+    getCommitteesMock.mockImplementation(async (_req: Request, params: { tags: string }) => {
+      const uid = params.tags.replace('project_uid:', '');
+      return [committee(`committee-of-${uid}`, uid)];
+    });
+  });
+
+  it('answers a hidden foundation slug exactly like an unknown slug, before any fan-out', async () => {
+    getProjectIdBySlugMock.mockResolvedValueOnce({ uid: '', slug: 'secret', exists: false });
+    const unknown = buildReqRes('secret');
+    await controller.getPublicGroupsByFoundation(unknown.req, unknown.res, unknown.next);
+
+    getProjectIdBySlugMock.mockResolvedValueOnce({ uid: FOUNDATION_UID, slug: 'secret', exists: true });
+    getPubliclyDiscoverableProjectMock.mockResolvedValueOnce(null);
+    const hidden = buildReqRes('secret');
+    await controller.getPublicGroupsByFoundation(hidden.req, hidden.res, hidden.next);
+
+    expectSameNotFound(hidden, unknown);
+    expect(getFoundationProjectUidsMock).not.toHaveBeenCalled();
+    expect(getCommitteesMock).not.toHaveBeenCalled();
+  });
+
+  it('returns a 404 not-found error for a hidden foundation UID', async () => {
+    getPubliclyDiscoverableProjectMock.mockResolvedValueOnce(null);
+    const { req, res, next } = buildReqRes(FOUNDATION_UID);
+
+    await controller.getPublicGroupsByFoundation(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ResourceNotFoundError);
+    expect(next.mock.calls[0][0].statusCode).toBe(404);
+  });
+
+  it("excludes a hidden child project's committees and counts only what remains", async () => {
+    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => (uid === 'child-hidden' ? null : discoverable(uid)));
+    const { req, res, next } = buildReqRes(FOUNDATION_UID);
+
+    await controller.getPublicGroupsByFoundation(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const response = res.json.mock.calls[0][0];
+    expect(response.groups.map((g: { uid: string }) => g.uid).sort()).toEqual([`committee-of-${FOUNDATION_UID}`, 'committee-of-child-visible'].sort());
+    expect(response.total).toBe(2);
+    const serialized = JSON.stringify(response);
+    expect(serialized).not.toContain('child-hidden');
+  });
+
+  it("keeps the foundation's own committees even when its context lookup is unconfirmed", async () => {
+    // First call is the gate on the foundation itself; later calls are resolveContextProjects.
+    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => (uid === 'child-visible' ? discoverable(uid) : null));
+    getPubliclyDiscoverableProjectMock.mockResolvedValueOnce(discoverable(FOUNDATION_UID));
+    const { req, res, next } = buildReqRes(FOUNDATION_UID);
+
+    await controller.getPublicGroupsByFoundation(req, res, next);
+
+    const response = res.json.mock.calls[0][0];
+    expect(response.groups.map((g: { uid: string }) => g.uid)).toContain(`committee-of-${FOUNDATION_UID}`);
+    expect(response.total).toBe(2);
+  });
+});
+
+describe('PublicGroupsController.getPublicGroupsByProject — discoverability (issue-437)', () => {
+  let controller: PublicGroupsController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicGroupsController();
+    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => discoverable(uid));
+    getCommitteesMock.mockResolvedValue([committee('tsc', PROJECT_UID), { ...committee('private-wg', PROJECT_UID), public: false }]);
+  });
+
+  it('answers a hidden project slug exactly like an unknown slug', async () => {
+    getProjectIdBySlugMock.mockResolvedValueOnce({ uid: '', slug: 'secret', exists: false });
+    const unknown = buildReqRes('secret');
+    await controller.getPublicGroupsByProject(unknown.req, unknown.res, unknown.next);
+
+    getProjectIdBySlugMock.mockResolvedValueOnce({ uid: PROJECT_UID, slug: 'secret', exists: true });
+    getPubliclyDiscoverableProjectMock.mockResolvedValueOnce(null);
+    const hidden = buildReqRes('secret');
+    await controller.getPublicGroupsByProject(hidden.req, hidden.res, hidden.next);
+
+    expectSameNotFound(hidden, unknown);
+    expect(getCommitteesMock).not.toHaveBeenCalled();
+  });
+
+  it('returns a 404 not-found error, with no project fields, for a hidden project UID', async () => {
+    getPubliclyDiscoverableProjectMock.mockResolvedValueOnce(null);
+    const { req, res, next } = buildReqRes(PROJECT_UID);
+
+    await controller.getPublicGroupsByProject(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ResourceNotFoundError);
+    expect(next.mock.calls[0][0].statusCode).toBe(404);
+  });
+
+  it('treats a project whose parent foundation is hidden as top-level, leaking no parent name/slug/logo', async () => {
+    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) =>
+      uid === PARENT_UID ? null : discoverable(uid, { parent_uid: PARENT_UID })
+    );
+    const { req, res, next } = buildReqRes(PROJECT_UID);
+
+    await controller.getPublicGroupsByProject(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getPubliclyDiscoverableProjectMock).toHaveBeenCalledWith(req, PARENT_UID);
+    const response = res.json.mock.calls[0][0];
+    expect(response.groups[0].context).toMatchObject({ scope: 'foundation', foundation_uid: PROJECT_UID, foundation_name: `name-${PROJECT_UID}` });
+    const serialized = JSON.stringify(response);
+    for (const leaked of [`name-${PARENT_UID}`, `slug-${PARENT_UID}`, `logo-${PARENT_UID}`]) {
+      expect(serialized).not.toContain(leaked);
+    }
+  });
+
+  it('nests the project under a discoverable parent foundation', async () => {
+    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) =>
+      uid === PARENT_UID ? discoverable(uid) : discoverable(uid, { parent_uid: PARENT_UID })
+    );
+    const { req, res, next } = buildReqRes(PROJECT_UID);
+
+    await controller.getPublicGroupsByProject(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].groups[0].context).toMatchObject({
+      scope: 'project',
+      foundation_uid: PARENT_UID,
+      foundation_name: `name-${PARENT_UID}`,
+      project_uid: PROJECT_UID,
+    });
+  });
+
+  it('still excludes non-public committees (AC-5)', async () => {
+    const { req, res, next } = buildReqRes(PROJECT_UID);
+
+    await controller.getPublicGroupsByProject(req, res, next);
+
+    const response = res.json.mock.calls[0][0];
+    expect(response.groups.map((g: { uid: string }) => g.uid)).toEqual(['tsc']);
+    expect(response.total).toBe(1);
+  });
+});
+
 describe('PublicGroupsController.getPublicGroupById — chairs and member_visibility', () => {
   const GROUP_UID = 'c0000000-0000-0000-0000-000000000010';
   const MEMBERS = [
@@ -187,7 +364,7 @@ describe('PublicGroupsController.getPublicGroupById — chairs and member_visibi
     controller = new PublicGroupsController();
     resolveCommitteeUidMock.mockResolvedValue(GROUP_UID);
     getCommitteeMembersMock.mockResolvedValue(MEMBERS);
-    getProjectByIdMock.mockResolvedValue({ uid: 'p1', name: 'Project', slug: 'project' });
+    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => discoverable(uid));
     getMeetingsMock.mockResolvedValue({ data: [] });
     proxyRequestMock.mockResolvedValue({ resources: [] });
   });
@@ -216,5 +393,88 @@ describe('PublicGroupsController.getPublicGroupById — chairs and member_visibi
 
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ member_visibility: 'hidden', chairs: [] }));
+  });
+});
+
+describe('PublicGroupsController.getPublicGroupById — discoverability (issue-437)', () => {
+  const GROUP_UID = 'c0000000-0000-0000-0000-000000000020';
+  let controller: PublicGroupsController;
+
+  function buildGroupReqRes(): { req: Request; res: Response & { json: Mock }; next: NextFunction & Mock } {
+    const req = { params: { id: GROUP_UID }, path: `/public/api/groups/${GROUP_UID}`, log: {} } as unknown as Request;
+    const res = { json: vi.fn() } as unknown as Response & { json: Mock };
+    const next = vi.fn() as unknown as NextFunction & Mock;
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicGroupsController();
+    resolveCommitteeUidMock.mockResolvedValue(GROUP_UID);
+    getCommitteeByIdMock.mockResolvedValue({ uid: GROUP_UID, name: 'TSC', public: true, project_uid: PROJECT_UID });
+    getCommitteeMembersMock.mockResolvedValue([]);
+    getMeetingsMock.mockResolvedValue({ data: [] });
+    proxyRequestMock.mockResolvedValue({ resources: [] });
+  });
+
+  it('answers a public group under a hidden project exactly like an unknown group', async () => {
+    getPubliclyDiscoverableProjectMock.mockResolvedValue(null);
+    const { req, res, next } = buildGroupReqRes();
+
+    await controller.getPublicGroupById(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    const [error] = next.mock.calls[0];
+    // The same error resolveCommitteeUid throws for an unknown group identifier on this route.
+    const unknown = new ResourceNotFoundError('Group', GROUP_UID, {
+      operation: 'get_public_group_by_id',
+      service: 'public_groups_controller',
+      path: `/groups/${GROUP_UID}`,
+    });
+    expect(error).toBeInstanceOf(ResourceNotFoundError);
+    expect(error.statusCode).toBe(404);
+    expect(error.toResponse()).toEqual(unknown.toResponse());
+  });
+
+  it('treats a project whose parent foundation is hidden as top-level, leaking no parent name/slug/logo', async () => {
+    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) =>
+      uid === PARENT_UID ? null : discoverable(uid, { parent_uid: PARENT_UID })
+    );
+    const { req, res, next } = buildGroupReqRes();
+
+    await controller.getPublicGroupById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getPubliclyDiscoverableProjectMock).toHaveBeenCalledWith(req, PARENT_UID);
+    const detail = res.json.mock.calls[0][0];
+    expect(detail.context).toEqual({
+      scope: 'foundation',
+      foundation_uid: PROJECT_UID,
+      foundation_name: `name-${PROJECT_UID}`,
+      foundation_slug: `slug-${PROJECT_UID}`,
+      foundation_logo_url: `logo-${PROJECT_UID}`,
+    });
+    const serialized = JSON.stringify(detail);
+    for (const leaked of [PARENT_UID, `name-${PARENT_UID}`, `slug-${PARENT_UID}`, `logo-${PARENT_UID}`]) {
+      expect(serialized).not.toContain(leaked);
+    }
+  });
+
+  it('nests the project under a discoverable parent foundation', async () => {
+    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) =>
+      uid === PARENT_UID ? discoverable(uid) : discoverable(uid, { parent_uid: PARENT_UID })
+    );
+    const { req, res, next } = buildGroupReqRes();
+
+    await controller.getPublicGroupById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].context).toMatchObject({
+      scope: 'project',
+      foundation_uid: PARENT_UID,
+      foundation_name: `name-${PARENT_UID}`,
+      project_uid: PROJECT_UID,
+      project_name: `name-${PROJECT_UID}`,
+    });
   });
 });

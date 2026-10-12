@@ -74,7 +74,8 @@ export class PublicGroupsController {
 
       const [members, project, meetingsResponse, mailingListsResponse] = await Promise.all([
         this.committeeService.getCommitteeMembers(req, committeeUid),
-        this.projectService.getProjectById(req, committee.project_uid, false),
+        // Fails closed: null when the owning project is not publicly discoverable or the lookup errored (issue-437).
+        this.projectService.getPubliclyDiscoverableProject(req, committee.project_uid),
         this.meetingService.getMeetings(req, { tags: `committee_uid:${committeeUid}` }, 'v1_meeting', false),
         this.microserviceProxy
           .proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
@@ -83,6 +84,12 @@ export class PublicGroupsController {
           })
           .catch(() => ({ resources: [] })),
       ]);
+
+      // A group under a hidden project is answered exactly like an unknown group, so a committee UID handed
+      // out by a public directory can never reveal that project's name, slug, or logo (issue-437).
+      if (!project) {
+        throw new ResourceNotFoundError('Group', id, { operation: 'get_public_group_by_id', service: 'public_groups_controller', path: `/groups/${id}` });
+      }
 
       const hasPublicMailingList = mailingListsResponse.resources.some((r) => r.data.public);
 
@@ -118,18 +125,16 @@ export class PublicGroupsController {
           })
         );
 
-      let parentProject = project;
-      if (project?.parent_uid) {
-        parentProject = await this.projectService.getProjectById(req, project.parent_uid, false);
-      }
+      // A hidden parent, or a failed lookup (the helper fails closed and logs it), leaves the project top-level.
+      const parentProject = project.parent_uid ? await this.projectService.getPubliclyDiscoverableProject(req, project.parent_uid) : null;
 
       const context: PublicGroupContext = {
-        scope: project?.parent_uid ? 'project' : 'foundation',
-        foundation_uid: parentProject?.uid || project?.uid || committee.project_uid,
-        foundation_name: parentProject?.name || project?.name || '',
-        foundation_slug: parentProject?.slug || project?.slug || '',
-        foundation_logo_url: parentProject?.logo_url || project?.logo_url || undefined,
-        ...(project?.parent_uid && {
+        scope: parentProject ? 'project' : 'foundation',
+        foundation_uid: parentProject?.uid || project.uid || committee.project_uid,
+        foundation_name: parentProject?.name || project.name || '',
+        foundation_slug: parentProject?.slug || project.slug || '',
+        foundation_logo_url: parentProject?.logo_url || project.logo_url || undefined,
+        ...(parentProject && {
           project_uid: project.uid,
           project_name: project.name,
           project_slug: project.slug,
@@ -213,10 +218,13 @@ export class PublicGroupsController {
       req.bearerToken = m2mToken;
 
       const foundationUid = await this.resolveProjectIdentifier(req, identifier);
-      const [foundation, childUids] = await Promise.all([
-        this.projectService.getProjectById(req, foundationUid, false),
-        this.projectService.getFoundationProjectUids(req, foundationUid),
-      ]);
+      // A foundation that is not publicly discoverable (or cannot be confirmed as such) is answered exactly
+      // like an unknown identifier, before any fan-out, so neither its name nor its groups leak (issue-437).
+      const foundation = await this.projectService.getPubliclyDiscoverableProject(req, foundationUid);
+      if (!foundation) {
+        throw this.projectNotFoundError(identifier);
+      }
+      const childUids = await this.projectService.getFoundationProjectUids(req, foundationUid);
 
       // KNOWN LIMITATION: getFoundationProjectUids now resolves the full nested sub-foundation tree
       // (GH-2382), so childUids can legitimately number in the hundreds for a large umbrella
@@ -252,7 +260,11 @@ export class PublicGroupsController {
       const allCommittees = await this.fetchPublicCommitteesForProjects(req, scopedUids);
       const projects = await this.resolveContextProjects(req, allCommittees);
 
-      const groups = allCommittees.map((c) => this.buildGroupSummary(c, projects, foundation, null));
+      // Drop committees whose owning child project is hidden or unconfirmed, so a confidential child
+      // project's name can never surface as group context (issue-437).
+      const groups = allCommittees
+        .filter((c) => c.project_uid === foundationUid || projects.get(c.project_uid))
+        .map((c) => this.buildGroupSummary(c, projects, foundation, null));
 
       const response: PublicGroupDirectoryResponse = { groups, total: groups.length, ...(truncated ? { truncated: true } : {}) };
 
@@ -277,22 +289,20 @@ export class PublicGroupsController {
       req.bearerToken = m2mToken;
 
       const projectUid = await this.resolveProjectIdentifier(req, identifier);
-      const project = await this.projectService.getProjectById(req, projectUid, false);
+      // A project that is not publicly discoverable (or cannot be confirmed as such) is answered exactly
+      // like an unknown identifier — no name, UID, parent, or logo (issue-437).
+      const project = await this.projectService.getPubliclyDiscoverableProject(req, projectUid);
+      if (!project) {
+        throw this.projectNotFoundError(identifier);
+      }
 
       let parentFoundation = null;
       if (project.parent_uid) {
-        try {
-          const candidate = await this.projectService.getProjectById(req, project.parent_uid, false);
-          // ROOT is an administrative pseudo-project — treat its children as top-level foundations
-          if (candidate?.slug !== 'ROOT') {
-            parentFoundation = candidate;
-          }
-        } catch (error) {
-          logger.warning(req, 'get_public_groups_by_project', 'Parent foundation lookup failed, treating project as top-level', {
-            project_uid: projectUid,
-            parent_uid: project.parent_uid,
-            error: error instanceof Error ? error.message : String(error),
-          });
+        // A hidden parent, or a failed lookup (the helper fails closed and logs it), leaves the project top-level.
+        const candidate = await this.projectService.getPubliclyDiscoverableProject(req, project.parent_uid);
+        // ROOT is an administrative pseudo-project — treat its children as top-level foundations
+        if (candidate && candidate.slug !== 'ROOT') {
+          parentFoundation = candidate;
         }
       }
 
@@ -323,13 +333,18 @@ export class PublicGroupsController {
     }
     const result = await this.projectService.getProjectIdBySlug(req, identifier);
     if (!result.exists || !result.uid) {
-      throw new ResourceNotFoundError('Project', identifier, {
-        operation: 'resolve_project_identifier',
-        service: 'public_groups_controller',
-        path: `/projects/${identifier}`,
-      });
+      throw this.projectNotFoundError(identifier);
     }
     return result.uid;
+  }
+
+  /** The not-found error for an unknown project identifier — also thrown for a hidden one, so the two are indistinguishable. */
+  private projectNotFoundError(identifier: string): ResourceNotFoundError {
+    return new ResourceNotFoundError('Project', identifier, {
+      operation: 'resolve_project_identifier',
+      service: 'public_groups_controller',
+      path: `/projects/${identifier}`,
+    });
   }
 
   private async fetchPublicCommitteesForProjects(req: Request, projectUids: string[]): Promise<Committee[]> {
@@ -381,15 +396,8 @@ export class PublicGroupsController {
     for (let i = 0; i < uids.length; i += BATCH_SIZE) {
       const batch = uids.slice(i, i + BATCH_SIZE);
       const projects = await Promise.all(
-        batch.map((uid) =>
-          this.projectService.getProjectById(req, uid, false).catch((error) => {
-            logger.warning(req, 'resolve_context_projects', 'getProjectById failed for project, context will be incomplete', {
-              project_uid: uid,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            return null;
-          })
-        )
+        // null for a hidden project or a failed lookup — the helper fails closed and logs the failure itself.
+        batch.map((uid) => this.projectService.getPubliclyDiscoverableProject(req, uid))
       );
       for (let j = 0; j < batch.length; j++) {
         map.set(batch[j], projects[j]);
