@@ -321,6 +321,16 @@ describe('getRecordingDurationSeconds', () => {
     expect(getRecordingDurationSeconds(recording(close, closeFiles))).toBe(30 * 60);
   });
 
+  // A later session's file that opens a moment before that session's stored start is still its own.
+  it("credits a later session's early-opening file to that session, not the earlier one", () => {
+    const sessions = [
+      session({ start_time: '2026-07-16T09:00:00Z', total_size: 100, uuid: 'a' }),
+      session({ start_time: '2026-07-16T10:00:00Z', total_size: 900, uuid: 'b' }),
+    ];
+    const early = [mediaFile('MP4', '2026-07-16T09:00:00Z', '2026-07-16T09:20:00Z'), mediaFile('MP4', '2026-07-16T09:59:58Z', '2026-07-16T10:30:00Z')];
+    expect(getRecordingDurationSeconds(recording(sessions, early))).toBe(30 * 60 + 2);
+  });
+
   it('returns null rather than guessing', () => {
     const one = [session({ start_time: '2026-07-16T10:00:00Z', total_size: 1 })];
     // No media file, only chat.

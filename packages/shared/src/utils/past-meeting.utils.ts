@@ -91,22 +91,20 @@ export function getRecordingDurationSeconds(recording: PastMeetingRecording | nu
 }
 
 /**
- * Which session a file starting at `fileStart` belongs to, by index into `sessionStarts`: the latest
- * session that started at or before it; or, when none had, the earliest that starts within
- * `MEETING_RECORDING_SESSION_TOLERANCE_MS` after it (its file opened a moment early). `-1` for neither.
+ * Which session a file starting at `fileStart` belongs to, by index into `sessionStarts`: the session
+ * whose start is nearest to it, among those that started no later than
+ * `MEETING_RECORDING_SESSION_TOLERANCE_MS` after it. A file usually opens at or just after its
+ * session's start, sometimes a moment before (the two come from different sources), so the nearest
+ * start wins either way, and sessions starting close together each keep their own files. `-1` when
+ * no session qualifies.
  */
 function sessionIndexOf(sessionStarts: number[], fileStart: number): number {
   let index = -1;
   sessionStarts.forEach((start, i) => {
-    if (start <= fileStart && (index === -1 || start > sessionStarts[index])) {
-      index = i;
+    if (start - fileStart > MEETING_RECORDING_SESSION_TOLERANCE_MS) {
+      return;
     }
-  });
-  if (index !== -1) {
-    return index;
-  }
-  sessionStarts.forEach((start, i) => {
-    if (start > fileStart && start - fileStart <= MEETING_RECORDING_SESSION_TOLERANCE_MS && (index === -1 || start < sessionStarts[index])) {
+    if (index === -1 || Math.abs(start - fileStart) < Math.abs(sessionStarts[index] - fileStart)) {
       index = i;
     }
   });
