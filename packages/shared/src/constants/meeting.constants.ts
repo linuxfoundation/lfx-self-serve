@@ -9,6 +9,7 @@ import type {
   MeetingComposerPreviewFeature,
   MeetingStatusKind,
   MeetingTypeConfig,
+  PastMeetingSummaryApprovalState,
   RsvpResponse,
   ShowMeetingAttendeesLockOptions,
 } from '../interfaces';
@@ -1206,3 +1207,10 @@ export const MEETING_RECORDING_MEDIA_FILE_TYPES: readonly string[] = ['MP4', 'M4
  * at second precision, so a file can open a moment earlier.
  */
 export const MEETING_RECORDING_SESSION_TOLERANCE_MS = 60_000;
+
+/** What each summary approval state reads as (E4-03); `not-required` shows no status. */
+export const PAST_MEETING_SUMMARY_APPROVAL_LABELS: Record<PastMeetingSummaryApprovalState, string | null> = {
+  approved: 'Approved',
+  pending: 'Pending review',
+  'not-required': null,
+};

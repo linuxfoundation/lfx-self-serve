@@ -4,13 +4,14 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Meeting, PastMeetingRecording, PastMeetingTranscript, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingViewerRole, PastMeetingRecording, PastMeetingSummary, PastMeetingTranscript, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingSummaryModalComponent } from '../../../components/meeting-summary-modal/meeting-summary-modal.component';
 import { TranscriptModalComponent } from '../../../components/transcript-modal/transcript-modal.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingRecordingComponent } from './recording.component';
@@ -27,6 +28,18 @@ const recording = (sessions: { share_url: string; total_size: number }[]): PastM
     recording_files: [],
   }) as unknown as PastMeetingRecording;
 
+const summaryRecord = (overrides: { approved?: boolean; requires_approval?: boolean; content?: string; edited_content?: string } = {}): PastMeetingSummary =>
+  ({
+    uid: 'sum-1',
+    approved: overrides.approved ?? true,
+    requires_approval: overrides.requires_approval ?? true,
+    summary_data: {
+      title: 'Weekly Sync summary',
+      content: overrides.content ?? '- Agreed the roadmap\n- Shipped the beta',
+      edited_content: overrides.edited_content ?? '',
+    },
+  }) as unknown as PastMeetingSummary;
+
 const transcript = (withFile: boolean): PastMeetingTranscript =>
   ({ recording_files: withFile ? [{ file_type: 'TRANSCRIPT', download_url: 'https://storage.example/t.vtt' }] : [] }) as unknown as PastMeetingTranscript;
 
@@ -35,7 +48,12 @@ describe('MeetingRecordingComponent', () => {
   let meeting: WritableSignal<LoadedMeeting | undefined>;
   let loadedViaPastMeetingId: WritableSignal<boolean>;
   let authenticated: WritableSignal<boolean>;
-  let meetingService: { getPastMeetingRecording: ReturnType<typeof vi.fn>; getPastMeetingTranscript: ReturnType<typeof vi.fn> };
+  let viewerRole: WritableSignal<MeetingViewerRole | null>;
+  let meetingService: {
+    getPastMeetingRecording: ReturnType<typeof vi.fn>;
+    getPastMeetingTranscript: ReturnType<typeof vi.fn>;
+    getPastMeetingSummary: ReturnType<typeof vi.fn>;
+  };
   let dialogService: { open: ReturnType<typeof vi.fn> };
 
   const setup = async (rec: () => Observable<PastMeetingRecording>, tx: () => Observable<PastMeetingTranscript>): Promise<void> => {
@@ -46,7 +64,7 @@ describe('MeetingRecordingComponent', () => {
       providers: [
         {
           provide: MeetingDetailsStateService,
-          useValue: { meeting, matchesRoute: signal(true), loadedViaPastMeetingId, signInHref: signal('/login?returnTo=x') },
+          useValue: { meeting, matchesRoute: signal(true), loadedViaPastMeetingId, viewerRole, signInHref: signal('/login?returnTo=x') },
         },
         { provide: MeetingService, useValue: meetingService },
         { provide: UserService, useValue: { authenticated } },
@@ -68,7 +86,13 @@ describe('MeetingRecordingComponent', () => {
     } as unknown as LoadedMeeting);
     loadedViaPastMeetingId = signal(true);
     authenticated = signal(true);
-    meetingService = { getPastMeetingRecording: vi.fn(), getPastMeetingTranscript: vi.fn() };
+    viewerRole = signal<MeetingViewerRole | null>('registrant');
+    meetingService = {
+      getPastMeetingRecording: vi.fn(),
+      getPastMeetingTranscript: vi.fn(),
+      // Default: no summary (the BFF answers 404 for an empty result).
+      getPastMeetingSummary: vi.fn(() => throwError(() => new HttpErrorResponse({ status: 404 }))),
+    };
     dialogService = { open: vi.fn() };
   });
 
@@ -185,6 +209,95 @@ describe('MeetingRecordingComponent', () => {
 
     expect(query('tools-recording-unavailable')?.getAttribute('data-reason')).toBe('none');
     expect(query('tools-transcript-unavailable')?.getAttribute('data-reason')).toBe('none');
+  });
+
+  // E4-03: the summary inline, from its markdown, with the full text in V1's modal.
+  it('renders an approved summary inline and opens the full text in the summary modal', async () => {
+    meetingService.getPastMeetingSummary.mockReturnValue(of(summaryRecord()));
+    await setup(
+      () => of(recording([])),
+      () => of(transcript(false))
+    );
+
+    expect(query('tools-summary-content')?.querySelectorAll('li').length).toBe(2);
+    expect(query('tools-summary-btn')?.getAttribute('data-approval')).toBe('approved');
+    expect(query('tools-summary-pending')).toBeNull();
+
+    query('tools-summary-btn')?.querySelector('button')?.click();
+    expect(dialogService.open).toHaveBeenCalledWith(
+      MeetingSummaryModalComponent,
+      expect.objectContaining({ header: 'Weekly Sync summary', data: { summary: expect.objectContaining({ uid: 'sum-1' }) } })
+    );
+  });
+
+  it('prefers the organizer-edited text', async () => {
+    meetingService.getPastMeetingSummary.mockReturnValue(of(summaryRecord({ edited_content: '- Edited point' })));
+    await setup(
+      () => of(recording([])),
+      () => of(transcript(false))
+    );
+
+    expect(query('tools-summary-content')?.textContent).toContain('Edited point');
+    expect(query('tools-summary-content')?.textContent).not.toContain('Agreed the roadmap');
+  });
+
+  it('marks a summary that never required approval not-required, with no pending pill', async () => {
+    meetingService.getPastMeetingSummary.mockReturnValue(of(summaryRecord({ approved: false, requires_approval: false })));
+    await setup(
+      () => of(recording([])),
+      () => of(transcript(false))
+    );
+
+    expect(query('tools-summary-btn')?.getAttribute('data-approval')).toBe('not-required');
+    expect(query('tools-summary-pending')).toBeNull();
+  });
+
+  // The user's decision (E4-03): an unapproved summary is the organizer's to review, not everyone's to read.
+  it('shows an unapproved summary to organizers only, marked Pending review', async () => {
+    viewerRole.set('organizer');
+    meetingService.getPastMeetingSummary.mockReturnValue(of(summaryRecord({ approved: false, requires_approval: true })));
+    await setup(
+      () => of(recording([])),
+      () => of(transcript(false))
+    );
+
+    expect(query('tools-summary-pending')?.textContent?.trim()).toBe('Pending review');
+    expect(query('tools-summary-btn')?.getAttribute('data-approval')).toBe('pending');
+  });
+
+  it('tells anyone else an unapproved summary is awaiting review, without its text', async () => {
+    meetingService.getPastMeetingSummary.mockReturnValue(of(summaryRecord({ approved: false, requires_approval: true })));
+    await setup(
+      () => of(recording([])),
+      () => of(transcript(false))
+    );
+
+    expect(query('tools-summary-unavailable')?.getAttribute('data-reason')).toBe('awaiting-review');
+    expect(query('tools-summary-content')).toBeNull();
+    expect(query('tools-summary-btn')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Agreed the roadmap');
+  });
+
+  it('surfaces no affordance for a summary record without content', async () => {
+    meetingService.getPastMeetingSummary.mockReturnValue(of(summaryRecord({ content: '  ', edited_content: '' })));
+    await setup(
+      () => of(recording([])),
+      () => of(transcript(false))
+    );
+
+    expect(query('tools-summary-unavailable')?.getAttribute('data-reason')).toBe('none');
+    expect(query('tools-summary-btn')).toBeNull();
+  });
+
+  it('names every artifact that failed to load', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    meetingService.getPastMeetingSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    await setup(
+      () => throwError(() => new HttpErrorResponse({ status: 500 })),
+      () => throwError(() => new HttpErrorResponse({ status: 500 }))
+    );
+
+    expect(query('tools-error')?.textContent).toContain("We couldn't load the recording, transcript and AI summary.");
   });
 
   it('shows an error with a retry that reads the artifacts again', async () => {

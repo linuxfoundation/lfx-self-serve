@@ -330,6 +330,25 @@ describe('MeetingService.getPastMeetingRecording duration (E4-02)', () => {
   });
 });
 
+describe('MeetingService.getPastMeetingSummary failures (E4-03)', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  // Only an empty result is "no summary"; an upstream failure reaches the error handler.
+  it('returns null for no summary and lets a failure propagate', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+    await expect(service.getPastMeetingSummary(req, 'meeting-1-1700000000000')).resolves.toBeNull();
+
+    const upstream = Object.assign(new Error('query service unavailable'), { statusCode: 503 });
+    proxyRequest.mockRejectedValueOnce(upstream);
+    await expect(service.getPastMeetingSummary(req, 'meeting-1-1700000000000')).rejects.toBe(upstream);
+  });
+});
+
 describe('MeetingService.getMeetingHostKey', () => {
   let service: MeetingService;
 

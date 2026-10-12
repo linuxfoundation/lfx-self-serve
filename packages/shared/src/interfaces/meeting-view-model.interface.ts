@@ -304,4 +304,25 @@ export interface MeetingRecordingSectionState {
   status: 'loading' | 'ready' | 'sign-in' | 'pending';
   recording: MeetingArtifactState;
   transcript: MeetingArtifactState;
+  /** The AI summary (E4-03): `available` only with content this viewer may read. */
+  summary: MeetingSummaryArtifactState;
+}
+
+/**
+ * The one approval state of a past-meeting AI summary, shared by the page, the summary modal and the
+ * card (E4-03): `approved`, `pending` (requires approval and is not approved yet), or `not-required`
+ * (the meeting never required approval). It is also the `data-approval` attribute (testid contract).
+ */
+export type PastMeetingSummaryApprovalState = 'approved' | 'pending' | 'not-required';
+
+/**
+ * The AI summary as the V2 Recording & Transcript section knows it (E4-03). `awaiting-review` is an
+ * unapproved summary held back from a viewer who is not an organizer: they learn it exists, not what
+ * it says. `available` carries the markdown and its approval state.
+ */
+export interface MeetingSummaryArtifactState {
+  status: MeetingArtifactState['status'] | 'awaiting-review';
+  /** The summary's markdown (edited content first), when `available`. */
+  content?: string;
+  approval?: PastMeetingSummaryApprovalState;
 }

@@ -5,12 +5,17 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { MeetingArtifactState, MeetingRecordingSectionState } from '@lfx-one/shared/interfaces';
+import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
+import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
+import { MEETING_AGENDA_COLLAPSED_HEIGHT_PX, PAST_MEETING_SUMMARY_APPROVAL_LABELS } from '@lfx-one/shared/constants';
+import { MeetingArtifactState, MeetingRecordingSectionState, MeetingSummaryArtifactState, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 import {
   formatRecordingDuration,
   formatRecordingDurationSpoken,
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
+  getPastMeetingSummaryApprovalState,
+  getPastMeetingSummaryContent,
   getPastMeetingTranscriptUrl,
   toSafeExternalHref,
 } from '@lfx-one/shared/utils';
@@ -20,6 +25,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, map, Observable, of, startWith, switchMap } from 'rxjs';
 
+import { MeetingSummaryModalComponent } from '../../../components/meeting-summary-modal/meeting-summary-modal.component';
 import { TranscriptModalComponent } from '../../../components/transcript-modal/transcript-modal.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 
@@ -34,12 +40,17 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * The artifact routes need a session and an occurrence record, so an anonymous viewer is asked to
  * sign in (until the public artifact routes, E4-04), and an ended meeting opened by its series id,
  * which has no occurrence record yet, says its recording appears once it is ready. The recording's
- * length (E4-02) shows on the still when the BFF could measure it. The AI summary (E4-03) joins
- * this section later.
+ * length (E4-02) shows on the still when the BFF could measure it.
+ *
+ * The AI summary (E4-03) sits under the actions, rendered from its markdown (no new parser) and
+ * collapsed past the agenda's height, with Read full summary opening V1's summary modal. An
+ * unapproved summary (`pending`) is shown only to organizers, marked Pending review; anyone else
+ * learns it is awaiting review, not what it says (`isPastMeetingSummaryVisible`, as the card applies
+ * it). A summary record with no content surfaces no affordance: it reads as no summary.
  */
 @Component({
   selector: 'lfx-meeting-recording',
-  imports: [ButtonComponent, SkeletonModule],
+  imports: [ButtonComponent, ExpandableTextComponent, MarkdownRendererComponent, SkeletonModule],
   templateUrl: './recording.component.html',
 })
 export class MeetingRecordingComponent {
@@ -55,18 +66,41 @@ export class MeetingRecordingComponent {
     '!h-[38px] !gap-[8px] !rounded-full !border-[var(--md-border-strong)] !bg-[var(--md-surface-card)] !px-[16px] !py-0 !text-[13.5px] !font-semibold !text-[var(--md-text-heading)] hover:!bg-[var(--md-surface-hover)] focus-visible:!shadow-[var(--md-shadow-focus)]';
 
   protected readonly signInHref = this.state.signInHref;
+  protected readonly summaryCollapsedHeight = MEETING_AGENDA_COLLAPSED_HEIGHT_PX;
+  protected readonly approvalLabels = PAST_MEETING_SUMMARY_APPROVAL_LABELS;
+  /** The summary the modal opens, kept from the last read. */
+  private summaryRecord: PastMeetingSummary | null = null;
   /** Bumped to read the artifacts again after a read error. */
   private readonly refreshCount = signal(0);
   protected readonly section: Signal<MeetingRecordingSectionState> = this.initSection();
   /** What failed to load, for the error line: the recording, the transcript, or both. */
   protected readonly failedArtifacts = computed(() => {
-    const { recording, transcript } = this.section();
-    const failed = [recording.status === 'error' && 'recording', transcript.status === 'error' && 'transcript'].filter(Boolean);
-    return failed.join(' and ');
+    const { recording, transcript, summary } = this.section();
+    const failed = [
+      recording.status === 'error' && 'recording',
+      transcript.status === 'error' && 'transcript',
+      summary.status === 'error' && 'AI summary',
+    ].filter((name): name is string => !!name);
+    return failed.length > 1 ? `${failed.slice(0, -1).join(', ')} and ${failed[failed.length - 1]}` : (failed[0] ?? '');
   });
 
   public retry(): void {
     this.refreshCount.update((count) => count + 1);
+  }
+
+  public openSummary(): void {
+    const summary = this.summaryRecord;
+    if (!summary) {
+      return;
+    }
+    this.dialogService.open(MeetingSummaryModalComponent, {
+      header: summary.summary_data?.title || 'AI Summary',
+      width: '700px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { summary },
+    });
   }
 
   public openTranscript(): void {
@@ -101,7 +135,12 @@ export class MeetingRecordingComponent {
       },
       { equal: (a, b) => a?.kind === b?.kind && (a?.kind !== 'fetch' || (b?.kind === 'fetch' && a.id === b.id && a.refresh === b.refresh)) }
     );
-    const loading: MeetingRecordingSectionState = { status: 'loading', recording: { status: 'none' }, transcript: { status: 'none' } };
+    const loading: MeetingRecordingSectionState = {
+      status: 'loading',
+      recording: { status: 'none' },
+      transcript: { status: 'none' },
+      summary: { status: 'none' },
+    };
 
     return toSignal(
       toObservable(request).pipe(
@@ -110,7 +149,7 @@ export class MeetingRecordingComponent {
             return of(loading);
           }
           if (req.kind !== 'fetch') {
-            return of({ status: req.kind, recording: { status: 'none' }, transcript: { status: 'none' } });
+            return of({ status: req.kind, recording: { status: 'none' }, transcript: { status: 'none' }, summary: { status: 'none' } });
           }
           const recording$ = this.meetingService.getPastMeetingRecording(req.id).pipe(
             map((recording): MeetingArtifactState => {
@@ -126,14 +165,31 @@ export class MeetingRecordingComponent {
             map((transcript): MeetingArtifactState => (getPastMeetingTranscriptUrl(transcript) ? { status: 'available' } : { status: 'none' })),
             catchError((error: unknown) => of(this.artifactFailure(error, 'transcript')))
           );
-          return combineLatest([recording$, transcript$]).pipe(
+          const organizer = this.state.viewerRole() === 'organizer';
+          const summary$ = this.meetingService.getPastMeetingSummary(req.id).pipe(
+            map((summary): MeetingSummaryArtifactState => {
+              this.summaryRecord = summary;
+              const content = getPastMeetingSummaryContent(summary);
+              if (!content) {
+                return { status: 'none' };
+              }
+              const approval = getPastMeetingSummaryApprovalState(summary);
+              // Approval required and not given: only organizers see the text (isPastMeetingSummaryVisible).
+              return approval === 'pending' && !organizer ? { status: 'awaiting-review' } : { status: 'available', content, approval };
+            }),
+            catchError((error: unknown) => {
+              this.summaryRecord = null;
+              return of(this.artifactFailure(error, 'AI summary'));
+            })
+          );
+          return combineLatest([recording$, transcript$, summary$]).pipe(
             map(
-              ([recording, transcript]): MeetingRecordingSectionState =>
+              ([recording, transcript, summary]): MeetingRecordingSectionState =>
                 // A 401 is an expired session (the routes sit behind the auth middleware), not a refusal:
                 // the way forward is to sign in again, as the materials section does for its past route.
-                recording.status === 'session-expired' || transcript.status === 'session-expired'
-                  ? { status: 'sign-in', recording: { status: 'none' }, transcript: { status: 'none' } }
-                  : { status: 'ready', recording, transcript }
+                [recording, transcript, summary].some((artifact) => artifact.status === 'session-expired')
+                  ? { status: 'sign-in', recording: { status: 'none' }, transcript: { status: 'none' }, summary: { status: 'none' } }
+                  : { status: 'ready', recording, transcript, summary }
             ),
             startWith(loading)
           );

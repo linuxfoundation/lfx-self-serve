@@ -1638,46 +1638,40 @@ export class MeetingService {
       past_meeting_id: pastMeetingUid,
     });
 
-    try {
-      const params = {
-        type: 'v1_past_meeting_summary',
-        tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
-      };
+    // Failures propagate (the controller hands them to the error handler, so a viewer sees an error
+    // rather than "no summary"); only an empty result means there is no summary.
+    const params = {
+      type: 'v1_past_meeting_summary',
+      tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
+    };
 
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingSummary>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        params
-      );
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingSummary>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params
+    );
 
-      if (!resources || resources.length === 0) {
-        logger.warning(req, 'get_past_meeting_summary', 'No summary found for past meeting', {
-          past_meeting_id: pastMeetingUid,
-          type: params.type,
-        });
-        return null;
-      }
-
-      const summary = selectPrimaryPastMeetingSummary(resources);
-
-      if (summary && resources.length > 1) {
-        logger.info(req, 'get_past_meeting_summary', 'Selected summary among multiple', {
-          past_meeting_id: pastMeetingUid,
-          total: resources.length,
-          selected_uid: summary.uid,
-        });
-      }
-
-      return summary;
-    } catch (error) {
-      logger.warning(req, 'get_past_meeting_summary', 'Failed to fetch past meeting summary, returning null', {
+    if (!resources || resources.length === 0) {
+      logger.warning(req, 'get_past_meeting_summary', 'No summary found for past meeting', {
         past_meeting_id: pastMeetingUid,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        type: params.type,
       });
       return null;
     }
+
+    const summary = selectPrimaryPastMeetingSummary(resources);
+
+    if (summary && resources.length > 1) {
+      logger.info(req, 'get_past_meeting_summary', 'Selected summary among multiple', {
+        past_meeting_id: pastMeetingUid,
+        total: resources.length,
+        selected_uid: summary.uid,
+      });
+    }
+
+    return summary;
   }
 
   /**

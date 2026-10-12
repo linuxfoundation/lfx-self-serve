@@ -95,7 +95,54 @@
             }
           }
         </div>
-        @if (recording.status === 'error' || transcript.status === 'error') {
+        @let summary = section().summary;
+        <!-- E4-03: the AI summary, under the actions as in the prototype. -->
+        <div class="flex flex-col gap-[12px] border-t border-[var(--md-divider)] px-[18px] py-[16px]" data-testid="tools-summary">
+          <div class="flex items-center gap-[8px]">
+            <i class="fa-light fa-sparkles text-[15px] text-[var(--md-feature-ai)]" aria-hidden="true"></i>
+            <h3 class="m-0 text-[12px] font-bold uppercase tracking-[.03em] text-[var(--md-text-muted)]">AI summary</h3>
+            @if (summary.status === 'available' && summary.approval === 'pending') {
+              <span
+                class="rounded-full bg-[var(--md-status-warn-bg)] px-[9px] py-[2px] text-[11.5px] font-semibold text-[var(--md-text-heading)]"
+                data-testid="tools-summary-pending"
+                >{{ approvalLabels.pending }}</span
+              >
+            }
+          </div>
+          @switch (summary.status) {
+            @case ('available') {
+              <lfx-expandable-text [maxHeight]="summaryCollapsedHeight">
+                <div class="text-[14px] leading-[1.55] text-[var(--md-text-body)]" data-testid="tools-summary-content">
+                  <lfx-markdown-renderer [content]="summary.content ?? ''" [restricted]="true" />
+                </div>
+              </lfx-expandable-text>
+              <lfx-button
+                class="self-start"
+                label="Read full summary"
+                [styleClass]="secondaryButtonClass"
+                ariaHaspopup="dialog"
+                (onClick)="openSummary()"
+                [attr.data-approval]="summary.approval"
+                data-testid="tools-summary-btn" />
+            }
+            @case ('awaiting-review') {
+              <p class="m-0 text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-summary-unavailable" data-reason="awaiting-review">
+                The AI summary is awaiting the organizer's review.
+              </p>
+            }
+            @case ('no-access') {
+              <p class="m-0 text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-summary-unavailable" data-reason="no-access">
+                <i class="fa-light fa-lock mr-[6px]" aria-hidden="true"></i>You don't have access to the AI summary
+              </p>
+            }
+            @case ('none') {
+              <p class="m-0 text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-summary-unavailable" data-reason="none">
+                No AI summary for this meeting
+              </p>
+            }
+          }
+        </div>
+        @if (recording.status === 'error' || transcript.status === 'error' || summary.status === 'error') {
           <div
             class="flex flex-wrap items-center justify-between gap-[12px] border-t border-[var(--md-divider)] px-[18px] py-[14px]"
             role="alert"
