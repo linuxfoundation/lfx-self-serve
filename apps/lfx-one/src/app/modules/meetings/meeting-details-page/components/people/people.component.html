@@ -11,10 +11,11 @@
       <h2 id="meeting-people-heading" class="m-0 text-[16px] font-bold text-[var(--md-text-heading)]">Who's coming</h2>
     </div>
     <div class="flex items-center gap-[12px]">
-      @if (roster().status !== 'loading' && rows().length > 0) {
-        <span class="text-[13px] text-[var(--md-text-muted)]" data-testid="people-section-count">{{ rows().length }} invited</span>
+      @if (roster().status === 'ready' && invitedCount() > 0) {
+        <span class="text-[13px] text-[var(--md-text-muted)]" data-testid="people-section-count">{{ invitedCount() }} invited</span>
       }
-      @if (organizer()) {
+      <!-- Only over a loaded roster: the drawer opened over a failed one would read as an empty list. -->
+      @if (organizer() && roster().status === 'ready') {
         <button
           type="button"
           class="inline-flex h-[30px] flex-none cursor-pointer items-center gap-[6px] rounded-full border border-[var(--md-border-strong)] bg-[var(--md-surface-card)] px-[12px] text-[12.5px] font-semibold text-[var(--md-text-heading)] hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
@@ -128,7 +129,7 @@
               (click)="openDrawer(false)"
               data-testid="people-section-view-all">
               @if (overflowCount() > 0) {
-                View all {{ rows().length }} {{ committeeMeeting() ? 'members' : 'guests' }}
+                View all {{ invitedCount() }} {{ committeeMeeting() ? 'members' : 'guests' }}
               } @else {
                 {{ committeeMeeting() ? 'Open the member list' : 'Open the guest list' }}
               }
@@ -155,13 +156,18 @@
         <h2 class="m-0 text-[18px] font-bold text-[var(--md-text-heading)]" data-testid="people-drawer-title">
           {{ committeeMeeting() ? 'Meeting Members' : 'Meeting Guests' }}
         </h2>
-        <span class="text-[13px] text-[var(--md-text-muted)]">{{ rows().length }} {{ committeeMeeting() ? 'members' : 'guests' }}</span>
+        @if (roster().status === 'ready') {
+          <span class="text-[13px] text-[var(--md-text-muted)]" data-testid="people-drawer-count"
+            >{{ invitedCount() }} {{ committeeMeeting() ? 'members' : 'guests' }}</span
+          >
+        }
       </div>
       <button
         type="button"
         class="cursor-pointer p-[8px] text-[var(--md-text-muted)] hover:text-[var(--md-text-heading)]"
         (click)="closeDrawer()"
-        aria-label="Close panel">
+        aria-label="Close panel"
+        data-testid="people-drawer-close">
         <i class="fa-light fa-xmark text-[20px]" aria-hidden="true"></i>
       </button>
     </div>
@@ -173,9 +179,9 @@
       [openAddFormOnShow]="drawerOpensAddForm()"
       [occurrence]="occurrence()"
       [myMeetingRegistrants]="true"
-      [initialRegistrants]="roster().registrants"
+      [initialRegistrants]="roster().status === 'error' ? null : roster().registrants"
       [initialRegistrantsLoading]="roster().status === 'loading'"
       [visible]="drawerVisible()"
-      (refreshRequested)="onRosterChanged()" />
+      (refreshRequested)="onRosterChanged($event)" />
   }
 </p-drawer>

@@ -7,7 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { MEETING_ATTENDEE_PREVIEW_LIMIT, MEETING_PEOPLE_ATTENDANCE_LABELS } from '@lfx-one/shared/constants';
 import { MeetingPeopleRow, MeetingPeopleTallies, MeetingRegistrant, MeetingRosterRequest, MeetingRosterState, RsvpResponse } from '@lfx-one/shared/interfaces';
-import { buildMeetingPeopleRows, countMeetingPeopleTallies } from '@lfx-one/shared/utils';
+import { buildMeetingPeopleRows, countMeetingPeopleTallies, reconcileOptimisticPad } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -55,6 +55,16 @@ export class MeetingPeopleComponent {
   protected readonly drawerOpensAddForm = signal(false);
   /** Bumped to refetch the roster for the same meeting and occurrence, e.g. after guests are added. */
   private readonly refreshCount = signal(0);
+  /**
+   * Guests the organizer added that the roster does not show yet: the query service indexes them
+   * after the add returns, so the refetch right after it usually misses them. V1's join page pads its
+   * count the same way (`reconcileOptimisticPad`); the pad drains as fetches catch up.
+   */
+  private readonly addedPad = signal(0);
+  /** The confirmed roster length the pad is measured from; `null` without one. */
+  private readonly addedPadBaseline = signal<number | null>(null);
+  /** The last roster fetched, and what for. */
+  private lastFetched: { key: MeetingRosterRequest; registrants: MeetingRegistrant[] } | null = null;
 
   protected readonly organizer = computed(() => this.state.viewerRole() === 'organizer');
   protected readonly roster: Signal<MeetingRosterState> = this.initRoster();
@@ -68,6 +78,8 @@ export class MeetingPeopleComponent {
   protected readonly showRsvpChips = computed(() => this.state.visibleSections()?.rsvpAvatarBadges === true);
   /** A committee meeting's roster is its members, as V1's drawer titles it; otherwise its guests. */
   protected readonly committeeMeeting = computed(() => !!this.meeting()?.committees?.length);
+  /** Everyone invited: the roster's rows plus any added guests it has not caught up with. */
+  protected readonly invitedCount = computed(() => this.rows().length + this.addedPad());
 
   public openDrawer(addForm: boolean): void {
     this.drawerOpensAddForm.set(addForm);
@@ -82,33 +94,51 @@ export class MeetingPeopleComponent {
     this.refreshCount.update((count) => count + 1);
   }
 
-  /** The drawer reports guests added (a positive count) or removed (negative): refetch the roster. */
-  public onRosterChanged(): void {
+  /**
+   * The drawer reports guests added (a positive count) or removed (negative): refetch the roster, and
+   * count added guests until the roster includes them. The baseline is only a roster confirmed for
+   * this meeting and occurrence; anything else would read as guests already absorbed.
+   */
+  public onRosterChanged(delta: number): void {
+    if (delta > 0) {
+      const key = this.state.rosterRequest();
+      const confirmed = !!key && this.isLastFetched(key) && this.roster().status === 'ready';
+      this.addedPadBaseline.set(confirmed && this.lastFetched ? this.lastFetched.registrants.length : null);
+      this.addedPad.update((pad) => pad + delta);
+    }
     this.retry();
   }
 
   private initRoster(): Signal<MeetingRosterState> {
     const request = computed(() => ({ key: this.state.rosterRequest(), refresh: this.refreshCount() }));
-    // The last roster fetched, and what for: a refresh or a failed refetch of the same meeting and
-    // occurrence keeps showing it rather than flashing a skeleton or an error over the rows.
-    let last: { key: MeetingRosterRequest; registrants: MeetingRegistrant[] } | null = null;
-    const sameAsLast = (key: MeetingRosterRequest): boolean => !!last && last.key.meetingId === key.meetingId && last.key.occurrenceId === key.occurrenceId;
 
     return toSignal(
       toObservable(request).pipe(
         switchMap(({ key }): Observable<MeetingRosterState> => {
+          // A refresh or a failed refetch of the same meeting and occurrence keeps showing the last
+          // roster rather than flashing a skeleton or an error over the rows; another view starts over.
+          const kept = key && this.isLastFetched(key) && this.lastFetched ? this.lastFetched.registrants : null;
+          if (!kept) {
+            this.lastFetched = null;
+            this.addedPad.set(0);
+            this.addedPadBaseline.set(null);
+          }
           if (!key) {
-            last = null;
             return of({ status: 'ready', registrants: [] });
           }
-          const kept = sameAsLast(key) && last ? last.registrants : null;
           return this.meetingService.getMyMeetingRegistrants(key.meetingId, true, key.occurrenceId).pipe(
             map((registrants): MeetingRosterState => {
-              last = { key, registrants };
+              this.lastFetched = { key, registrants };
+              const next = reconcileOptimisticPad({ pad: this.addedPad(), before: this.addedPadBaseline(), current: registrants.length });
+              this.addedPad.set(next.pad);
+              this.addedPadBaseline.set(next.before);
               return { status: 'ready', registrants };
             }),
-            // A failure with nothing to fall back on shows the section's error state, with Retry.
-            catchError(() => of<MeetingRosterState>(kept ? { status: 'ready', registrants: kept } : { status: 'error', registrants: [] })),
+            catchError((error: unknown) => {
+              console.error('Failed to load the meeting roster', error);
+              // With nothing to fall back on, the section shows its error state, with Try again.
+              return of<MeetingRosterState>(kept ? { status: 'ready', registrants: kept } : { status: 'error', registrants: [] });
+            }),
             startWith<MeetingRosterState>(kept ? { status: 'ready', registrants: kept } : { status: 'loading', registrants: [] })
           );
         })
@@ -126,5 +156,9 @@ export class MeetingPeopleComponent {
         viewerRsvp: this.state.myRsvp() ?? null,
       })
     );
+  }
+
+  private isLastFetched(key: MeetingRosterRequest): boolean {
+    return !!this.lastFetched && this.lastFetched.key.meetingId === key.meetingId && this.lastFetched.key.occurrenceId === key.occurrenceId;
   }
 }

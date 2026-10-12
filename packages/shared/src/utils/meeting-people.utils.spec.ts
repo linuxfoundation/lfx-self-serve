@@ -3,25 +3,43 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { MeetingRegistrant } from '../interfaces';
+import type { MeetingRegistrant, MeetingRsvp, RsvpResponse } from '../interfaces';
 import { buildMeetingPeopleRows, countMeetingPeopleTallies, formatMeetingRegistrantRole, getMeetingRegistrantDisplayName } from './meeting-people.utils';
 
-const registrant = (overrides: Partial<MeetingRegistrant>): MeetingRegistrant =>
-  ({
-    uid: 'r1',
-    email: 'r1@vendor-corp.example',
-    first_name: 'Ada',
-    last_name: 'Lovelace',
-    username: 'ada',
-    host: false,
-    job_title: null,
-    org_name: null,
-    avatar_url: null,
-    type: 'direct',
-    invite_accepted: null,
-    rsvp: null,
-    ...overrides,
-  }) as MeetingRegistrant;
+const registrant = (overrides: Partial<MeetingRegistrant>): MeetingRegistrant => ({
+  uid: 'r1',
+  meeting_id: 'meeting-1',
+  email: 'r1@vendor-corp.example',
+  first_name: 'Ada',
+  last_name: 'Lovelace',
+  host: false,
+  job_title: null,
+  org_name: null,
+  occurrence_id: null,
+  org_is_member: false,
+  org_is_project_member: false,
+  avatar_url: null,
+  username: 'ada',
+  linkedin_profile: null,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  type: 'direct',
+  invite_accepted: null,
+  attended: null,
+  rsvp: null,
+  ...overrides,
+});
+
+const rsvp = (response_type: RsvpResponse): MeetingRsvp => ({
+  id: 'rsvp-1',
+  meeting_id: 'meeting-1',
+  registrant_id: 'r1',
+  username: 'ada',
+  email: 'r1@vendor-corp.example',
+  response_type,
+  scope: 'single',
+  created_at: '2026-01-01T00:00:00Z',
+});
 
 describe('buildMeetingPeopleRows', () => {
   it('lists organizers first, then by RSVP, then by name', () => {
@@ -30,7 +48,7 @@ describe('buildMeetingPeopleRows', () => {
         registrant({ uid: 'declined', first_name: 'Dee', invite_accepted: false }),
         registrant({ uid: 'pending', first_name: 'Pat' }),
         registrant({ uid: 'host', first_name: 'Hal', host: true, invite_accepted: false }),
-        registrant({ uid: 'maybe', first_name: 'May', rsvp: { response_type: 'maybe' } as MeetingRegistrant['rsvp'] }),
+        registrant({ uid: 'maybe', first_name: 'May', rsvp: rsvp('maybe') }),
         registrant({ uid: 'accepted-b', first_name: 'Bea', invite_accepted: true }),
         registrant({ uid: 'accepted-a', first_name: 'Abe', invite_accepted: true }),
       ],

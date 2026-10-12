@@ -8,6 +8,7 @@ import {
   Meeting,
   MeetingRegistrant,
   MeetingRosterRequest,
+  MeetingRsvp,
   MeetingSectionVisibility,
   MeetingViewerRole,
   PublicMeetingProject,
@@ -37,22 +38,40 @@ class RegistrantsDisplayStubComponent {
 
 type LoadedMeeting = Meeting & { project: PublicMeetingProject };
 
-const registrant = (uid: string, overrides: Partial<MeetingRegistrant> = {}): MeetingRegistrant =>
-  ({
-    uid,
-    email: `${uid}@vendor-corp.example`,
-    first_name: uid.toUpperCase(),
-    last_name: 'Person',
-    username: uid,
-    host: false,
-    job_title: 'Engineer',
-    org_name: 'Vendor Corp',
-    avatar_url: null,
-    type: 'direct',
-    invite_accepted: null,
-    rsvp: null,
-    ...overrides,
-  }) as MeetingRegistrant;
+const registrant = (uid: string, overrides: Partial<MeetingRegistrant> = {}): MeetingRegistrant => ({
+  uid,
+  meeting_id: 'meeting-1',
+  email: `${uid}@vendor-corp.example`,
+  first_name: uid.toUpperCase(),
+  last_name: 'Person',
+  host: false,
+  job_title: 'Engineer',
+  org_name: 'Vendor Corp',
+  occurrence_id: null,
+  org_is_member: false,
+  org_is_project_member: false,
+  avatar_url: null,
+  username: uid,
+  linkedin_profile: null,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  type: 'direct',
+  invite_accepted: null,
+  attended: null,
+  rsvp: null,
+  ...overrides,
+});
+
+const maybeRsvp: MeetingRsvp = {
+  id: 'rsvp-1',
+  meeting_id: 'meeting-1',
+  registrant_id: 'b',
+  username: 'b',
+  email: 'b@vendor-corp.example',
+  response_type: 'maybe',
+  scope: 'single',
+  created_at: '2026-01-01T00:00:00Z',
+};
 
 describe('MeetingPeopleComponent', () => {
   let fixture: ComponentFixture<MeetingPeopleComponent>;
@@ -104,11 +123,7 @@ describe('MeetingPeopleComponent', () => {
 
   it('lists each row with its role, RSVP chip and state attributes', async () => {
     await setup(() =>
-      of([
-        registrant('host', { host: true }),
-        registrant('a', { invite_accepted: true }),
-        registrant('b', { type: 'committee', rsvp: { response_type: 'maybe' } as MeetingRegistrant['rsvp'] }),
-      ])
+      of([registrant('host', { host: true }), registrant('a', { invite_accepted: true }), registrant('b', { type: 'committee', rsvp: maybeRsvp })])
     );
 
     const row = query('participant-row-a');
@@ -191,7 +206,7 @@ describe('MeetingPeopleComponent', () => {
       return calls === 1 ? of([registrant('a')]) : throwError(() => new Error('boom'));
     });
 
-    fixture.componentInstance.onRosterChanged();
+    fixture.componentInstance.onRosterChanged(-1);
     fixture.detectChanges();
 
     expect(query('people-section-error')).toBeNull();
@@ -228,9 +243,33 @@ describe('MeetingPeopleComponent', () => {
     await setup(() => of([registrant('a')]));
     getMyMeetingRegistrants.mockClear();
 
-    fixture.componentInstance.onRosterChanged();
+    fixture.componentInstance.onRosterChanged(-1);
     fixture.detectChanges();
 
     expect(getMyMeetingRegistrants).toHaveBeenCalledTimes(1);
+  });
+
+  // The query service indexes added guests after the add returns, as V1's join page pads for.
+  it('counts added guests until the roster catches up with them', async () => {
+    let roster = [registrant('a'), registrant('b')];
+    await setup(() => of(roster));
+    expect(text('people-section-count')).toBe('2 invited');
+
+    fixture.componentInstance.onRosterChanged(2);
+    fixture.detectChanges();
+    expect(text('people-section-count')).toBe('4 invited');
+
+    roster = [registrant('a'), registrant('b'), registrant('c'), registrant('d')];
+    fixture.componentInstance.retry();
+    fixture.detectChanges();
+    expect(text('people-section-count')).toBe('4 invited');
+  });
+
+  it('offers no Add guest over a roster that failed to load', async () => {
+    viewerRole.set('organizer');
+    await setup(() => throwError(() => new Error('boom')));
+
+    expect(query('people-section-error')).not.toBeNull();
+    expect(query('people-section-add')).toBeNull();
   });
 });

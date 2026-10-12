@@ -267,6 +267,8 @@ the row's contents.
 | `people-section-view-all`        | Opens the full list                                                |
 | `people-drawer`                  | The full list's drawer (V1's guest list inside)                    |
 | `people-drawer-title`            | Its title: Meeting Members (a committee meeting) or Meeting Guests |
+| `people-drawer-count`            | Its "{n} guests" / "{n} members" (a loaded roster only)            |
+| `people-drawer-close`            | Its close button                                                   |
 
 Upcoming and past rows come from different data, so they carry different state attributes. An
 upcoming row is a `MeetingRegistrant`; a past row is a `PastMeetingParticipant`, which has no RSVP
