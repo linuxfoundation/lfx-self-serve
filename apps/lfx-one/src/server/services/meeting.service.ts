@@ -22,6 +22,7 @@ import {
   MeetingJoinURL,
   MeetingRecurrence,
   MeetingRegistrant,
+  MeetingRegistrationRemovalResult,
   MeetingRsvp,
   PaginatedResponse,
   PastMeeting,
@@ -1219,8 +1220,8 @@ export class MeetingService {
    * rows would leave them invited while reporting success.
    * The lookup must be complete, since a partial page walk would delete only a prefix of the caller's rows.
    * Every matching row is attempted; the call fails only when none could be removed, and a partial result is
-   * logged rather than reported as a failure, since the rows already deleted stay deleted.
-   * @returns the number of registrant records removed
+   * returned to the client and logged rather than reported as a failure, since the rows already deleted stay deleted.
+   * @returns the exact registrant IDs removed and those whose deletes failed
    */
   public async removeMeetingRegistrantSelf(
     req: Request,
@@ -1228,7 +1229,7 @@ export class MeetingService {
     email: string | undefined,
     username: string | undefined,
     m2mToken: string
-  ): Promise<number> {
+  ): Promise<MeetingRegistrationRemovalResult> {
     const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken, true);
 
     if (registrants.length === 0) {
@@ -1259,22 +1260,26 @@ export class MeetingService {
     );
 
     const failures = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected');
-    const removedCount = outcomes.length - failures.length;
+    const result: MeetingRegistrationRemovalResult = { removed_registrant_ids: [], remaining_registrant_ids: [] };
+    outcomes.forEach((outcome, index) => {
+      const ids = outcome.status === 'fulfilled' ? result.removed_registrant_ids : result.remaining_registrant_ids;
+      ids.push(registrants[index].uid);
+    });
 
-    if (removedCount === 0) {
+    if (result.removed_registrant_ids.length === 0) {
       throw failures[0].reason;
     }
 
     if (failures.length > 0) {
       logger.warning(req, 'remove_meeting_registrant_self', 'Removed some but not all of the caller registrations', {
         meeting_id: meetingUid,
-        removed_count: removedCount,
+        removed_count: result.removed_registrant_ids.length,
         failed_count: failures.length,
         err: failures[0].reason,
       });
     }
 
-    return removedCount;
+    return result;
   }
 
   /**

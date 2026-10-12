@@ -227,7 +227,12 @@ describe('UserService', () => {
       service.recordConfirmedMeetingRsvp(oldResponse);
       let rows: Meeting[] = [];
       const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
-      service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-subject', indexed.my_registrant_ids);
+      const generation = service.meetingRegistrationGeneration(indexed.id, 'synthetic-subject');
+      service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-subject', {
+        removed_registrant_ids: [oldResponse.registrant_id],
+        remaining_registrant_ids: [],
+      });
+      expect(service.meetingRegistrationGeneration(indexed.id, 'synthetic-subject')).toBe(generation + 1);
       expect(rows[0].my_rsvp).toBeNull();
       service.recordConfirmedMeetingRsvp({ ...oldResponse, id: 'synthetic-late-acknowledgement' });
       expect(rows[0].my_rsvp).toBeNull();
@@ -251,7 +256,10 @@ describe('UserService', () => {
         service.recordConfirmedMeetingRsvp(oldResponse);
         let rows: Meeting[] = [];
         const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
-        service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-subject', [oldResponse.registrant_id]);
+        service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-subject', {
+          removed_registrant_ids: [oldResponse.registrant_id],
+          remaining_registrant_ids: [],
+        });
         indexed = { ...indexed, my_rsvp: oldResponse, my_registrant_ids: registrantIds };
         service.refreshUserMeetings();
         const newResponse = response({ id: 'synthetic-new-response', registrant_id: 'synthetic-new-registration', response_type: 'maybe' });
@@ -271,6 +279,85 @@ describe('UserService', () => {
         subscription.unsubscribe();
       }
     );
+
+    it.each(['single', 'this_and_following'] as const)(
+      'retains a confirmed %s answer from reg-A when reg-B indexes the same date, including an enrichment outage',
+      (scope) => {
+        const occurrenceId = String(Date.parse('2099-01-01T10:00:00Z') / 1000);
+        const confirmed = response({ registrant_id: 'reg-A', scope, occurrence_id: occurrenceId });
+        const newerIndexed = response({
+          id: 'synthetic-reg-B-response',
+          registrant_id: 'reg-B',
+          scope,
+          occurrence_id: `${occurrenceId}000`,
+          response_type: 'declined',
+          created_at: '2026-10-12T11:00:00Z',
+        });
+        indexed = {
+          ...indexed,
+          recurrence: { type: 2, repeat_interval: 1 },
+          occurrences: [{ occurrence_id: occurrenceId, start_time: '2099-01-01T10:00:00Z', duration: 60 }],
+          my_registrant_ids: ['reg-A', 'reg-B'],
+        };
+        service.recordConfirmedMeetingRsvp(confirmed);
+        let rows: Meeting[] = [];
+        const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+        expect(rows[0].my_rsvp).toEqual(confirmed);
+
+        indexed = { ...indexed, my_rsvp: newerIndexed };
+        service.refreshUserMeetings();
+        expect(rows[0].my_rsvp).toEqual(newerIndexed);
+        // Organizer overview consumes these retained answers separately from the feed's newest applicable answer.
+        expect(service.confirmedMeetingRsvps(indexed.id)).toEqual([confirmed]);
+        expect(service.isMeetingRsvpCurrent(confirmed, indexed)).toBe(true);
+
+        indexed = { ...indexed, my_rsvp: undefined, my_registrant_ids: undefined };
+        service.refreshUserMeetings();
+        expect(service.confirmedMeetingRsvps(indexed.id)).toEqual([confirmed]);
+        expect(rows[0].my_rsvp).toEqual(confirmed);
+        subscription.unsubscribe();
+      }
+    );
+
+    it('retains survivor confirmations and pending acknowledgements after partial removal, but rejects deleted registrations', () => {
+      const removed = response({ scope: 'single', occurrence_id: '4070944800' });
+      const survivor = response({ id: 'synthetic-survivor-response', registrant_id: 'synthetic-survivor-registration' });
+      indexed = { ...indexed, my_registrant_ids: [removed.registrant_id, survivor.registrant_id] };
+      service.recordConfirmedMeetingRsvp(survivor);
+      service.recordConfirmedMeetingRsvp(removed);
+      let rows: Meeting[] = [];
+      const subscription = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      const generation = service.meetingRegistrationGeneration(indexed.id, 'synthetic-subject');
+
+      service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-subject', {
+        removed_registrant_ids: [removed.registrant_id],
+        remaining_registrant_ids: [survivor.registrant_id],
+      });
+      expect(service.meetingRegistrationGeneration(indexed.id, 'synthetic-subject')).toBe(generation);
+      expect(service.confirmedMeetingRsvps(indexed.id)).toEqual([survivor]);
+      expect(rows[0].my_rsvp).toEqual(survivor);
+      expect(service.isMeetingRsvpCurrent(removed, indexed)).toBe(false);
+      expect(service.isMeetingRsvpCurrent(survivor, indexed)).toBe(true);
+
+      const survivorAck = { ...survivor, response_type: 'maybe' as const, modified_at: '2026-10-12T12:00:00Z' };
+      expect(service.recordConfirmedMeetingRsvp(survivorAck, 'synthetic-subject', generation)).toEqual(survivorAck);
+      expect(service.recordConfirmedMeetingRsvp({ ...removed, id: 'synthetic-deleted-late-ack' }, 'synthetic-subject', generation)).toBeNull();
+      expect(service.confirmedMeetingRsvps(indexed.id)).toEqual([survivorAck]);
+      expect(rows[0].my_rsvp).toEqual(survivorAck);
+
+      indexed = { ...indexed, my_rsvp: undefined, my_registrant_ids: undefined };
+      service.refreshUserMeetings();
+      expect(rows[0].my_rsvp).toEqual(survivorAck);
+      service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-subject', {
+        removed_registrant_ids: [survivor.registrant_id],
+        remaining_registrant_ids: [],
+      });
+      expect(service.meetingRegistrationGeneration(indexed.id, 'synthetic-subject')).toBe(generation + 1);
+      expect(service.confirmedMeetingRsvps(indexed.id)).toEqual([]);
+      expect(service.recordConfirmedMeetingRsvp({ ...survivorAck, id: 'synthetic-survivor-late-ack' }, 'synthetic-subject', generation)).toBeNull();
+      expect(service.confirmedMeetingRsvps(indexed.id)).toEqual([]);
+      subscription.unsubscribe();
+    });
 
     it('does not let a retained answer from another registration beat a newly confirmed response during an enrichment outage', () => {
       indexed = { ...indexed, my_registrant_ids: undefined };
@@ -387,7 +474,10 @@ describe('UserService', () => {
       await TestBed.inject(ApplicationRef).whenStable();
       let rows: Meeting[] = [];
       const other = service.getUserMeetings().subscribe((meetings) => (rows = meetings));
-      service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-a', ['synthetic-old-registration']);
+      service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-a', {
+        removed_registrant_ids: ['synthetic-old-registration'],
+        remaining_registrant_ids: [],
+      });
       expect(rows[0].my_rsvp?.response_type).toBe('maybe');
       other.unsubscribe();
 

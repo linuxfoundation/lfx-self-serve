@@ -838,11 +838,6 @@ export class MeetingCardComponent implements OnInit {
   private leaveMeeting(): void {
     const meetingId = this.meeting().id;
     const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
-    const input = this.meetingInput();
-    const registrantIds = [...(input.my_registrant_ids ?? []), ...this.confirmedRsvps().map((rsvp) => rsvp.registrant_id)];
-    if (input.my_rsvp) registrantIds.push(input.my_rsvp.registrant_id);
-    const fetchedRsvp = this.rsvpControls()?.currentRsvp();
-    if (fetchedRsvp) registrantIds.push(fetchedRsvp.registrant_id);
     this.leavingMeeting.set(true);
 
     this.meetingService
@@ -852,10 +847,22 @@ export class MeetingCardComponent implements OnInit {
         finalize(() => this.leavingMeeting.set(false))
       )
       .subscribe({
-        next: () => {
-          this.userService.clearConfirmedMeetingRsvps(meetingId, subject, registrantIds);
+        next: (result) => {
+          this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
           const currentSubject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
           if (this.meeting().id !== meetingId || currentSubject !== subject) return;
+          if (result.remaining_registrant_ids.length > 0) {
+            this.confirmedRsvps.update((responses) => responses.filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id)));
+            this.optimisticInvited.set(true);
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Removal incomplete',
+              detail: 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.',
+            });
+            this.userService.refreshUserMeetings(false);
+            this.refreshMeeting();
+            return;
+          }
           this.confirmedRsvps.set([]);
           this.optimisticInvited.set(false);
           this.meetingService.markRegistrationRemoved(meetingId);

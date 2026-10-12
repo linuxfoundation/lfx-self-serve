@@ -439,7 +439,7 @@ describe('MeetingService.removeMeetingRegistrantSelf', () => {
 
     const removed = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
 
-    expect(removed).toBe(1);
+    expect(removed).toEqual({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: [] });
     expect(proxyRequest).toHaveBeenCalledTimes(1);
     const [, , path, method, query] = proxyRequest.mock.calls[0];
     expect(path).toBe('/itx/meetings/mtg-1/registrants/self');
@@ -463,14 +463,30 @@ describe('MeetingService.removeMeetingRegistrantSelf', () => {
     expect(proxyRequest).not.toHaveBeenCalled();
   });
 
-  it('attempts every row and reports the number removed when one of them fails', async () => {
+  it.each([true, false])('returns exact removed and remaining IDs when the first delete succeeds: %s', async (firstSucceeds) => {
     vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct'), registrantRow('reg-2', 'direct')]);
-    proxyRequest.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('upstream down'));
+    if (firstSucceeds) {
+      proxyRequest.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('upstream down'));
+    } else {
+      proxyRequest.mockRejectedValueOnce(new Error('upstream down')).mockResolvedValueOnce(undefined);
+    }
 
-    const removed = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+    const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
 
-    expect(removed).toBe(1);
+    expect(result).toEqual({
+      removed_registrant_ids: [firstSucceeds ? 'reg-1' : 'reg-2'],
+      remaining_registrant_ids: [firstSucceeds ? 'reg-2' : 'reg-1'],
+    });
     expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns all successful registrant IDs when multiple registrations are removed', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct'), registrantRow('reg-2', 'direct')]);
+    proxyRequest.mockResolvedValue(undefined);
+
+    const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+
+    expect(result).toEqual({ removed_registrant_ids: ['reg-1', 'reg-2'], remaining_registrant_ids: [] });
   });
 
   it('fails when none of the rows could be removed', async () => {

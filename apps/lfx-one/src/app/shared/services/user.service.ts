@@ -20,6 +20,7 @@ import {
   LinuxAliasData,
   Meeting,
   MeetingInviteEmail,
+  MeetingRegistrationRemovalResult,
   MeetingRsvp,
   PastMeeting,
   ProfileAuthStatus,
@@ -351,19 +352,18 @@ export class UserService {
     return (subject && this.confirmedMeetingRsvpMap().get(`${subject}\0${meetingId}`)) || [];
   }
 
-  /** End only this subject's registrations after a successful removal, including late write acknowledgements. */
-  public clearConfirmedMeetingRsvps(
-    meetingId: string,
-    subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '',
-    registrantIds: string[] = []
-  ): void {
+  /** End confirmed deletions only; a partial removal leaves surviving registrations and their in-flight writes live. */
+  public clearConfirmedMeetingRsvps(meetingId: string, subject: string, result: MeetingRegistrationRemovalResult): void {
     if (!subject) return;
     const key = `${subject}\0${meetingId}`;
     const current = this.confirmedMeetingRsvps$.value;
-    this.meetingRegistrationGenerations.set(key, (this.meetingRegistrationGenerations.get(key) ?? 0) + 1);
-    this.endMeetingRegistrants(key, [...registrantIds, ...(current.get(key) ?? []).map((rsvp) => rsvp.registrant_id)]);
+    const complete = result.remaining_registrant_ids.length === 0;
+    if (complete) this.meetingRegistrationGenerations.set(key, (this.meetingRegistrationGenerations.get(key) ?? 0) + 1);
+    this.endMeetingRegistrants(key, result.removed_registrant_ids);
+    const retained = complete ? [] : (current.get(key) ?? []).filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id));
     const next = new Map(current);
-    next.delete(key);
+    if (retained.length > 0) next.set(key, retained);
+    else next.delete(key);
     this.confirmedMeetingRsvps$.next(next);
   }
 

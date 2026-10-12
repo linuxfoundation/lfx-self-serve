@@ -7,7 +7,7 @@ import { ApplicationRef, Component, input, output, signal } from '@angular/core'
 import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
-import { Meeting, MeetingOccurrence, MeetingRegistrant, MeetingRsvp, User } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingOccurrence, MeetingRegistrant, MeetingRegistrationRemovalResult, MeetingRsvp, User } from '@lfx-one/shared/interfaces';
 import { MeetingInviteeAttendeesComponent } from '@app/modules/meetings/components/meeting-invitee-attendees/meeting-invitee-attendees.component';
 import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
@@ -578,7 +578,7 @@ describe('MeetingCardComponent — remove myself', () => {
   beforeEach(() => {
     toastAdd = vi.fn();
     confirm = vi.fn();
-    removeMyMeetingRegistration = vi.fn().mockReturnValue(of(undefined));
+    removeMyMeetingRegistration = vi.fn().mockReturnValue(of({ removed_registrant_ids: [], remaining_registrant_ids: [] }));
     removedIds = signal<ReadonlySet<string>>(new Set());
     registrationClose$ = new Subject<{ registered: boolean }>();
     rsvpButtons = undefined;
@@ -683,6 +683,7 @@ describe('MeetingCardComponent — remove myself', () => {
       created_at: '2026-10-12T10:00:00Z',
     } as MeetingRsvp;
     const supplied = { ...INVITEE, visibility: 'public', my_rsvp: rsvp, my_registrant_ids: [rsvp.registrant_id] } as Meeting;
+    if (success) removeMyMeetingRegistration.mockReturnValue(of({ removed_registrant_ids: [rsvp.registrant_id], remaining_registrant_ids: [] }));
     if (!success) removeMyMeetingRegistration.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
     const component = await mount(supplied);
     const userService = TestBed.inject(UserService);
@@ -717,8 +718,45 @@ describe('MeetingCardComponent — remove myself', () => {
     subscription.unsubscribe();
   });
 
+  it('keeps the surviving registration and its response after partial removal without removing the card', async () => {
+    const removed = {
+      id: 'synthetic-removed-answer',
+      meeting_id: INVITEE.id,
+      registrant_id: 'synthetic-removed-registration',
+      response_type: 'accepted',
+      scope: 'single',
+      occurrence_id: '4099766400',
+      created_at: '2026-10-12T10:00:00Z',
+    } as MeetingRsvp;
+    const survivor = { ...removed, id: 'synthetic-surviving-answer', registrant_id: 'synthetic-surviving-registration', response_type: 'maybe' } as MeetingRsvp;
+    removeMyMeetingRegistration.mockReturnValue(of({ removed_registrant_ids: [removed.registrant_id], remaining_registrant_ids: [survivor.registrant_id] }));
+    const component = await mount({ ...INVITEE, my_rsvp: removed, my_registrant_ids: [removed.registrant_id, survivor.registrant_id] });
+    const users = TestBed.inject(UserService);
+    users.recordConfirmedMeetingRsvp(removed);
+    const savedSurvivor = users.recordConfirmedMeetingRsvp(survivor)!;
+    component.onRsvpChanged(removed);
+    component.onRsvpChanged(savedSurvivor);
+    const deleted = vi.fn();
+    component.meetingDeleted.subscribe(deleted);
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(removedIds()).toEqual(new Set());
+    expect(deleted).not.toHaveBeenCalled();
+    expect(component.confirmedRsvps()).toEqual([savedSurvivor]);
+    expect(users.confirmedMeetingRsvps(INVITEE.id)).toEqual([savedSurvivor]);
+    expect(component.overviewConfirmedRsvps()).toContainEqual(savedSurvivor);
+    expect(component.overviewConfirmedRsvps()).not.toContainEqual(removed);
+    expect(users.isMeetingRsvpCurrent(removed, component.meeting())).toBe(false);
+    expect(users.isMeetingRsvpCurrent(savedSurvivor, component.meeting())).toBe(true);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+    expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+  });
+
   it('does not clear another effective subject when an earlier removal completes late', async () => {
-    const removal$ = new Subject<void>();
+    const removal$ = new Subject<MeetingRegistrationRemovalResult>();
     removeMyMeetingRegistration.mockReturnValue(removal$);
     const component = await mount();
     const userService = TestBed.inject(UserService);
@@ -738,7 +776,7 @@ describe('MeetingCardComponent — remove myself', () => {
     let rows: Meeting[] = [];
     const subscription = userService.getUserMeetings().subscribe((meetings) => (rows = meetings));
 
-    removal$.next();
+    removal$.next({ removed_registrant_ids: [rsvp.registrant_id], remaining_registrant_ids: [] });
 
     expect(rows[0].my_rsvp?.response_type).toBe('maybe');
     expect(component.canLeaveMeeting()).toBe(true);
@@ -755,6 +793,7 @@ describe('MeetingCardComponent — remove myself', () => {
       scope: 'all',
       created_at: '2026-10-12T10:00:00Z',
     } as MeetingRsvp;
+    removeMyMeetingRegistration.mockReturnValue(of({ removed_registrant_ids: [rsvp.registrant_id], remaining_registrant_ids: [] }));
     const component = await mount({ ...INVITEE, visibility: 'public', is_invite_responses_enabled: true } as Meeting, { fetchedRsvp: rsvp });
     expect(rsvpButtons?.selectedResponse()).toBe('accepted');
 

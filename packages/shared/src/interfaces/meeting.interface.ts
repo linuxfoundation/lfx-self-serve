@@ -669,6 +669,14 @@ export interface MeetingRegistrant {
   rsvp?: MeetingRsvp | null;
 }
 
+/** Server-resolved outcomes of removing the authenticated user's meeting registrations. */
+export interface MeetingRegistrationRemovalResult {
+  /** Registrant IDs whose upstream deletes succeeded. */
+  removed_registrant_ids: string[];
+  /** Registrant IDs whose upstream deletes failed and remain invited. */
+  remaining_registrant_ids: string[];
+}
+
 /**
  * What a public self-registration (`POST /public/api/meetings/register`) actually returns.
  * @description Narrower than `MeetingRegistrant`. The route is mounted on the optional-auth `/public/api`

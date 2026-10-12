@@ -666,9 +666,18 @@ describe('isRsvpSupersededBy', () => {
     expect(isRsvpSupersededBy(single, later({ id: 'rsvp-single', scope: 'this_and_following', occurrence_id: OCC_JUL_28_SECONDS }))).toBe(true);
   });
 
-  it('matches the same scope and date across second and millisecond ids', () => {
+  it('matches the same registration, scope and date across second and millisecond ids', () => {
     expect(isRsvpSupersededBy(single, later({ scope: 'single', occurrence_id: `${OCC_AUG_11_SECONDS}000` }))).toBe(true);
     expect(isRsvpSupersededBy(single, later({ scope: 'single', occurrence_id: OCC_AUG_18_SECONDS }))).toBe(false);
+  });
+
+  it.each(['single', 'this_and_following'] as const)('keeps a %s answer when another registration answers the same normalized date', (scope) => {
+    const older = { ...single, scope, registrant_id: 'reg-A' };
+    const newer = later({ scope, registrant_id: 'reg-B', occurrence_id: `${OCC_AUG_11_SECONDS}000` });
+
+    expect(isRsvpSupersededBy(older, newer)).toBe(false);
+    expect([older].filter((saved) => !isRsvpSupersededBy(saved, newer))).toEqual([older]);
+    expect(isRsvpSupersededBy(older, { ...newer, registrant_id: 'reg-A' })).toBe(true);
   });
 
   it('keeps an answer that a newer one only partly covers, or that is not strictly older', () => {

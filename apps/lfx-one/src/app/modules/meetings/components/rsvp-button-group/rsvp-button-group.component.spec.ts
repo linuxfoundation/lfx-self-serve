@@ -498,7 +498,7 @@ describe('RsvpButtonGroupComponent — registration lifetime', () => {
     http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush(oldResponse);
     expect(component.selectedResponse()).toBe('accepted');
 
-    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-a', ['synthetic-registrant']);
+    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-a', { removed_registrant_ids: ['synthetic-registrant'], remaining_registrant_ids: [] });
     expect(component.selectedResponse()).toBeNull();
     expect(component.responseSaved()).toBe(false);
     const rejoined = { ...meeting, my_rsvp: oldResponse, my_registrant_ids: ['synthetic-new-registration'] };
@@ -532,7 +532,7 @@ describe('RsvpButtonGroupComponent — registration lifetime', () => {
 
   it('shows a successfully saved new-registration answer while supplied and refetched registration metadata is stale', () => {
     const fixture = mount({ ...meeting, my_rsvp: oldResponse }, oldResponse);
-    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-a', ['synthetic-registrant']);
+    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-a', { removed_registrant_ids: ['synthetic-registrant'], remaining_registrant_ids: [] });
     const newResponse = { ...oldResponse, id: 'synthetic-new-response', registrant_id: 'synthetic-new-registration', response_type: 'maybe' as const };
     fixture.componentInstance.handleRsvpClick('maybe');
     http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush(newResponse);
@@ -553,7 +553,7 @@ describe('RsvpButtonGroupComponent — registration lifetime', () => {
     fixture.componentInstance.handleRsvpClick('accepted');
     const write = http.expectOne(`/api/meetings/${MEETING.id}/rsvp`);
 
-    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-a', ['synthetic-registrant']);
+    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-a', { removed_registrant_ids: ['synthetic-registrant'], remaining_registrant_ids: [] });
     write.flush(oldResponse);
 
     expect(changed).not.toHaveBeenCalled();
@@ -576,7 +576,7 @@ describe('RsvpButtonGroupComponent — registration lifetime', () => {
     fixture.componentInstance.handleRsvpClick('accepted');
     const write = http.expectOne(`/api/meetings/${MEETING.id}/rsvp`);
 
-    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-a');
+    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-a', { removed_registrant_ids: [], remaining_registrant_ids: [] });
     write.flush(oldResponse);
 
     expect(changed).not.toHaveBeenCalled();
@@ -597,7 +597,7 @@ describe('RsvpButtonGroupComponent — registration lifetime', () => {
     fixture.componentInstance.handleRsvpClick('accepted');
     const write = http.expectOne(`/api/meetings/${MEETING.id}/rsvp`);
     users.user.set({ sub: 'synthetic-b', username: 'synthetic-viewer', email: 'synthetic@example.com' } as User);
-    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-b', ['synthetic-registrant']);
+    users.clearConfirmedMeetingRsvps(MEETING.id, 'synthetic-b', { removed_registrant_ids: ['synthetic-registrant'], remaining_registrant_ids: [] });
     fixture.detectChanges();
     TestBed.tick();
     http.expectOne(`/api/meetings/${MEETING.id}/rsvp/me`).flush(null);

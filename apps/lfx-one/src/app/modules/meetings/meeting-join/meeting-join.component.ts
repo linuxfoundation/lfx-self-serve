@@ -1769,12 +1769,6 @@ export class MeetingJoinComponent implements OnInit {
   private leaveMeeting(): void {
     const meetingId = this.meeting().id;
     const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
-    const meeting = this.meeting();
-    // Name every registration this page knows; `clearConfirmedMeetingRsvps` adds the retained ones.
-    const registrantIds = [...(meeting.my_registrant_ids ?? [])];
-    for (const rsvp of [this.currentUserRsvp(), this.rsvpControls()?.currentRsvp(), meeting.my_rsvp]) {
-      if (rsvp) registrantIds.push(rsvp.registrant_id);
-    }
     this.leavingMeeting.set(true);
 
     this.meetingService
@@ -1784,18 +1778,30 @@ export class MeetingJoinComponent implements OnInit {
         finalize(() => this.leavingMeeting.set(false))
       )
       .subscribe({
-        next: () => {
-          this.userService.clearConfirmedMeetingRsvps(meetingId, subject, registrantIds);
+        next: (result) => {
+          this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
           const currentSubject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
           if (this.meeting().id !== meetingId || currentSubject !== subject) return;
-          this.rsvpUpdateTrigger$.next(null);
-          this.optimisticInvited.set(false);
-          this.meetingService.markRegistrationRemoved(meetingId);
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Removed',
-            detail: 'You have been removed from this meeting.',
-          });
+          if (result.remaining_registrant_ids.length > 0) {
+            const currentRsvp = this.currentUserRsvp();
+            if (currentRsvp && result.removed_registrant_ids.includes(currentRsvp.registrant_id)) this.rsvpUpdateTrigger$.next(null);
+            this.optimisticInvited.set(true);
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Removal incomplete',
+              detail: 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.',
+            });
+            this.userService.refreshUserMeetings(false);
+          } else {
+            this.rsvpUpdateTrigger$.next(null);
+            this.optimisticInvited.set(false);
+            this.meetingService.markRegistrationRemoved(meetingId);
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Removed',
+              detail: 'You have been removed from this meeting.',
+            });
+          }
           this.registrantsRefresh$.next();
           this.refreshTrigger$.next();
         },

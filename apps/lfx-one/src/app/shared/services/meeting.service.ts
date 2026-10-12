@@ -28,6 +28,7 @@ import {
   MeetingAttachment,
   MeetingJoinURL,
   MeetingRegistrant,
+  MeetingRegistrationRemovalResult,
   MeetingRegistrantWithState,
   MeetingRsvp,
   PaginatedResponse,
@@ -673,8 +674,8 @@ export class MeetingService {
     });
   }
 
-  public removeMyMeetingRegistration(meetingUid: string): Observable<void> {
-    return this.http.delete<void>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self`).pipe(
+  public removeMyMeetingRegistration(meetingUid: string): Observable<MeetingRegistrationRemovalResult> {
+    return this.http.delete<MeetingRegistrationRemovalResult>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self`).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to remove current user from meeting ${meetingUid}:`, error);

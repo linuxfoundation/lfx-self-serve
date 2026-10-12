@@ -1082,11 +1082,15 @@ export class MeetingController {
       }
 
       const m2mToken = await generateM2MToken(req);
-      const removedCount = await this.meetingService.removeMeetingRegistrantSelf(req, uid, userEmail, username, m2mToken);
+      const result = await this.meetingService.removeMeetingRegistrantSelf(req, uid, userEmail, username, m2mToken);
 
-      logger.success(req, 'remove_my_meeting_registration', startTime, { meeting_id: uid, removed_count: removedCount });
+      logger.success(req, 'remove_my_meeting_registration', startTime, {
+        meeting_id: uid,
+        removed_count: result.removed_registrant_ids.length,
+        remaining_count: result.remaining_registrant_ids.length,
+      });
 
-      res.status(204).send();
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

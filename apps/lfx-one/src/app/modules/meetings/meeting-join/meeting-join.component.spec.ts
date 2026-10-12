@@ -9,7 +9,16 @@ import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
-import { Meeting, MeetingJoinPageState, MeetingOccurrence, MeetingRegistrant, MeetingRsvp, PublicMeetingProject, User } from '@lfx-one/shared/interfaces';
+import {
+  Meeting,
+  MeetingJoinPageState,
+  MeetingOccurrence,
+  MeetingRegistrant,
+  MeetingRegistrationRemovalResult,
+  MeetingRsvp,
+  PublicMeetingProject,
+  User,
+} from '@lfx-one/shared/interfaces';
 import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { LensService } from '@services/lens.service';
@@ -120,7 +129,7 @@ describe('MeetingJoinComponent', () => {
     getPastMeetingParticipants = vi.fn().mockReturnValue(of([]));
     getPastMeetingTranscript = vi.fn().mockReturnValue(of(null));
     getPublicMeetingOccurrences = vi.fn().mockReturnValue(of({ past: [], future: [] }));
-    removeMyMeetingRegistration = vi.fn().mockReturnValue(of(undefined));
+    removeMyMeetingRegistration = vi.fn().mockReturnValue(of({ removed_registrant_ids: [], remaining_registrant_ids: [] }));
     getMeetingRsvpForCurrentUser = vi.fn().mockReturnValue(of(null));
     removedIds = signal<ReadonlySet<string>>(new Set());
     toastAdd = vi.fn();
@@ -196,6 +205,7 @@ describe('MeetingJoinComponent', () => {
             recordConfirmedMeetingRsvp: vi.fn(),
             clearConfirmedMeetingRsvps: vi.fn(),
             confirmedMeetingRsvps: vi.fn(() => []),
+            refreshUserMeetings: vi.fn(),
             isMeetingRsvpCurrent: vi.fn(() => true),
           },
         },
@@ -1161,20 +1171,6 @@ describe('MeetingJoinComponent', () => {
       expect(overview.confirmedRsvps()).toEqual([retained]);
     });
 
-    it('names every registration the page knows when leaving, not only the first answer found', async () => {
-      const indexedAnswer = organizerAnswer({ id: 'synthetic-indexed-response', registrant_id: 'synthetic-indexed-registration' });
-      const fixture = await createFixture(buildMeeting({ organizer: false, invited: true, my_rsvp: indexedAnswer }));
-      fixture.componentInstance.onRsvpChanged(organizerAnswer({ registrant_id: 'synthetic-confirmed-registration' }));
-
-      await confirmAndAccept(fixture);
-
-      expect(TestBed.inject(UserService).clearConfirmedMeetingRsvps).toHaveBeenCalledWith(
-        MEETING_ID,
-        expect.any(String),
-        expect.arrayContaining(['synthetic-confirmed-registration', 'synthetic-indexed-registration'])
-      );
-    });
-
     it('refetches the organizer answer when the viewer identity changes in place', async () => {
       const fixture = await createFixture(buildMeeting({ organizer: true, invited: true, is_invite_responses_enabled: true }));
       const callsBefore = getMeetingRsvpForCurrentUser.mock.calls.length;
@@ -1238,6 +1234,7 @@ describe('MeetingJoinComponent', () => {
       } as MeetingRsvp;
       const meeting = buildMeeting({ organizer: false, invited: true, my_rsvp: rsvp, my_registrant_ids: [rsvp.registrant_id] });
       useRealUserService(meeting);
+      if (success) removeMyMeetingRegistration.mockReturnValue(of({ removed_registrant_ids: [rsvp.registrant_id], remaining_registrant_ids: [] }));
       if (!success) removeMyMeetingRegistration.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
       const fixture = await createFixture(meeting);
       const component = fixture.componentInstance;
@@ -1273,10 +1270,44 @@ describe('MeetingJoinComponent', () => {
       subscription.unsubscribe();
     });
 
+    it('keeps the survivor invited and retains its answer when only another registration was removed', async () => {
+      const removed = organizerAnswer({ registrant_id: 'synthetic-removed-registration', scope: 'single', occurrence_id: '4099766400' });
+      const survivor = organizerAnswer({
+        id: 'synthetic-surviving-answer',
+        registrant_id: 'synthetic-surviving-registration',
+        scope: 'single',
+        occurrence_id: '4099766400',
+        response_type: 'maybe',
+      });
+      const meeting = buildMeeting({ organizer: false, invited: true, my_rsvp: removed, my_registrant_ids: [removed.registrant_id, survivor.registrant_id] });
+      useRealUserService(meeting);
+      removeMyMeetingRegistration.mockReturnValue(of({ removed_registrant_ids: [removed.registrant_id], remaining_registrant_ids: [survivor.registrant_id] }));
+      const fixture = await createFixture(meeting);
+      const users = TestBed.inject(UserService);
+      users.recordConfirmedMeetingRsvp(removed);
+      const savedSurvivor = users.recordConfirmedMeetingRsvp(survivor)!;
+      fixture.componentInstance.onRsvpChanged(savedSurvivor);
+
+      await confirmAndAccept(fixture);
+
+      expect(fixture.componentInstance.effectivelyInvited()).toBe(true);
+      expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).not.toBeNull();
+      expect(fixture.nativeElement.querySelector(REGISTER_BUTTON)).toBeNull();
+      expect(removedIds()).toEqual(new Set());
+      expect(users.confirmedMeetingRsvps(MEETING_ID)).toEqual([savedSurvivor]);
+      expect(fixture.componentInstance.currentUserRsvp()).toEqual(savedSurvivor);
+      expect(fixture.componentInstance.overviewConfirmedRsvps()).toContainEqual(savedSurvivor);
+      expect(fixture.componentInstance.overviewConfirmedRsvps()).not.toContainEqual(removed);
+      expect(users.isMeetingRsvpCurrent(removed, meeting)).toBe(false);
+      expect(users.isMeetingRsvpCurrent(savedSurvivor, meeting)).toBe(true);
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+      expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    });
+
     it('keeps a late removal attached to its dispatch subject rather than clearing the new viewer', async () => {
       const meeting = buildMeeting({ organizer: false, invited: true });
       useRealUserService(meeting);
-      const removal$ = new Subject<void>();
+      const removal$ = new Subject<MeetingRegistrationRemovalResult>();
       removeMyMeetingRegistration.mockReturnValue(removal$);
       const fixture = await createFixture(meeting);
       const userService = TestBed.inject(UserService);
@@ -1295,7 +1326,7 @@ describe('MeetingJoinComponent', () => {
       let rows: Meeting[] = [];
       const subscription = userService.getUserMeetings().subscribe((meetings) => (rows = meetings));
 
-      removal$.next();
+      removal$.next({ removed_registrant_ids: [rsvp.registrant_id], remaining_registrant_ids: [] });
 
       expect(rows[0].my_rsvp?.response_type).toBe('maybe');
       expect(fixture.componentInstance.canLeaveMeeting()).toBe(true);
@@ -1313,6 +1344,7 @@ describe('MeetingJoinComponent', () => {
         created_at: '2026-10-12T10:00:00Z',
       } as MeetingRsvp;
       const meeting = buildMeeting({ organizer: false, invited: true, is_invite_responses_enabled: true });
+      removeMyMeetingRegistration.mockReturnValue(of({ removed_registrant_ids: [rsvp.registrant_id], remaining_registrant_ids: [] }));
       useRealUserService(meeting);
       getMeetingRsvpForCurrentUser.mockReturnValue(of(rsvp));
       TestBed.overrideComponent(MeetingJoinComponent, {
