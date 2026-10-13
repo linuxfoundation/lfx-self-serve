@@ -645,7 +645,7 @@ export class MeetingsDashboardComponent {
 
         this.pastMeetingsLoading.set(true);
         const filters = this.buildMeetingTypeFilters(meetingType);
-        return this.meetingService.getPastMeetingsByProjectPaginated(project.uid, undefined, searchQuery || undefined, filters).pipe(
+        return this.meetingService.getPastMeetingsByProjectPaginated(project.uid, undefined, searchQuery || undefined, filters, true).pipe(
           map((r): PageResult<PastMeeting> => ({ ...r, reset: true })),
           catchError(() => of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: true })),
           finalize(() => this.pastMeetingsLoading.set(false))
@@ -663,7 +663,7 @@ export class MeetingsDashboardComponent {
         this.loadingMore.set(true);
         const searchName = this.debouncedSearchQuery() || undefined;
         const filters = this.buildMeetingTypeFilters(this.meetingTypeFilter());
-        return this.meetingService.getPastMeetingsByProjectPaginated(projectUid, pageToken, searchName, filters).pipe(
+        return this.meetingService.getPastMeetingsByProjectPaginated(projectUid, pageToken, searchName, filters, true).pipe(
           map((r): PageResult<PastMeeting> => ({ ...r, reset: false })),
           catchError(() => of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: false })),
           finalize(() => this.loadingMore.set(false))
