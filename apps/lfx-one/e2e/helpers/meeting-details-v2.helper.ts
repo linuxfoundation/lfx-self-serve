@@ -175,7 +175,9 @@ export async function openMeetingSignedIn(page: Page, meetingId: string, stubs: 
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
-  await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  // The shell's main column, not the sidebar: the sidebar is `hidden lg:flex`, so under mobile-chrome
+  // (Pixel 5) it never shows, and these suites run at each project's own viewport.
+  await expect(page.getByTestId('main-content')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
   await stubMeetingDetails(page, stubs);
 
   await page.evaluate(

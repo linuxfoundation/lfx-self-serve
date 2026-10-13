@@ -30,7 +30,6 @@ import {
 } from './helpers/meeting-details-v2.helper';
 
 test.describe('Meeting details V2 — signed-in presets', () => {
-  // The boot check reads the app shell's sidebar, which is hidden below lg (as in meetings-v2-flag-gate.spec.ts).
   test.beforeEach(() => skipWithoutCredentials(test.skip));
 
   test('3 · a registrant before the meeting answers the RSVP card and sees the answer confirmed', async ({ page }) => {
