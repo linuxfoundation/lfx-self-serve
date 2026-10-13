@@ -16,7 +16,7 @@
 
 ## Build pipeline
 
-The pipeline is plain Node.js, lives under [`apps/lfx-one/scripts/`](../../../apps/lfx-one/scripts/), and is chained directly into `start`, `build*`, `watch`, and `test` via `&&` in `apps/lfx-one/package.json`:
+The pipeline is plain Node.js, lives under [`apps/lfx-one/scripts/`](../../../apps/lfx-one/scripts/), and is chained directly into `start`, `build*`, `watch`, `test`, and `check-types` via `&&` in `apps/lfx-one/package.json`. Type checking generates the gitignored manifest before invoking TypeScript, so it works on a clean checkout:
 
 ```text
 docs/user/**/index.md
