@@ -418,7 +418,8 @@
               [attr.data-testid]="'participant-row-' + p.uid"
               [attr.data-attended]="p.is_attended"
               [attr.data-invited]="p.is_invited"
-              [attr.data-identity-tier]="p.identity_tier">
+              [attr.data-identity-tier]="p.identity_tier"
+              [attr.data-notetaker-bot]="p.is_notetaker_bot || null">
               <td>
                 <div class="flex items-center gap-2.5">
                   <div class="relative flex-shrink-0">
@@ -451,6 +452,9 @@
                           styleClass="text-xs"
                           data-testid="participant-identity-tier"
                           [attr.data-identity-tier]="p.identity_tier"></lfx-tag>
+                      } @else if (p.is_notetaker_bot) {
+                        <!-- Reconciliation never queues a bot (#2253), so it is not shown as needing review. -->
+                        <lfx-tag [value]="p.identity_label" severity="secondary" styleClass="text-xs" data-testid="participant-notetaker-bot"></lfx-tag>
                       }
                     </div>
                     @if (p.identity_names.matchedTo) {

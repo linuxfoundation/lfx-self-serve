@@ -1234,9 +1234,12 @@ export interface EnrichedPastMeetingParticipant extends PastMeetingParticipant {
  * (`toPastMeetingParticipantRow`).
  */
 export interface PastMeetingParticipantRow extends EnrichedPastMeetingParticipant {
+  /** Null for someone who did not attend, and for a notetaker bot nobody matched. */
   identity_tier: PastMeetingIdentityTier | null;
   identity_label: string | null;
   identity_names: PastMeetingIdentityNames;
+  /** A notetaker or recording bot (#2253): never queued for review, so never shown as needing one. */
+  is_notetaker_bot: boolean;
 }
 
 /**

@@ -339,7 +339,9 @@ no-show from an uninvited attendee. Both are on every past row. The public page 
 The admin participant list (`/meetings/:id/details`, outside this page) carries the full tiering on
 the same row testid: `participant-row-${uid}[data-attended][data-invited][data-identity-tier]`, with
 `data-identity-tier` one of `verified | auto-matched | ai-reconciled | unverified`
-(`PastMeetingIdentityTier`) and absent for someone who did not attend. Inside the row,
+(`PastMeetingIdentityTier`) and absent for someone who did not attend. An unmatched notetaker bot
+has no tier either: it carries `data-notetaker-bot="true"` and a `participant-notetaker-bot` badge
+instead, because reconciliation never queues a bot for review (#2253). Inside the row,
 `participant-identity-tier` is the tier badge, and `participant-joined-as` / `participant-matched-to`
 show the Zoom display name and the matched invitee where they differ from the row's name.
 `attendance-unverified` sits beside the attended count. N-02, FR-033.

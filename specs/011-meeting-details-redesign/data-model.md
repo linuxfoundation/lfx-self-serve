@@ -118,7 +118,11 @@ confirmed gives `ai-reconciled`, then the automatic exact email or username matc
 attendee (and invitees who did not attend) without the tier, and counts the `unverified` ones. The
 admin list shows every tier. `countPastMeetingAttendance` adds `unverified_attended_count`, notetaker
 bots aside, which the admin page's attendance figures show as "N unverified". An attendee an
-organizer left unknown stays in that count: nobody knows who they are.
+organizer left unknown stays in that count: nobody knows who they are. A notetaker bot
+(`isPastMeetingNotetakerBot`, #2253) is never queued for review, so it is neither listed publicly nor
+counted as unverified or unidentified, and the admin list labels it a bot instead of a tier. When the
+BFF merges one person's duplicate attendee records, it keeps the best-identified one
+(`PAST_MEETING_IDENTITY_TIER_RANK`), so the tier does not depend on the order the records arrive in.
 
 ## Not in the model yet
 

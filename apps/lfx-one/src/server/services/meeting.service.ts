@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPORT_REGISTRANTS_MAX, QUERY_SERVICE_MAX_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { IMPORT_REGISTRANTS_MAX, PAST_MEETING_IDENTITY_TIER_RANK, QUERY_SERVICE_MAX_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiRequestOptions,
@@ -45,6 +45,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildRecurrenceNeverEndDate,
+  getPastMeetingIdentityTier,
   getPastMeetingTranscriptUrl,
   getRecordingDurationSeconds,
   isMeetingAttendeeListShared,
@@ -2663,9 +2664,26 @@ export class MeetingService {
   }
 
   /** Folds a connected group of identity-matched participant records into one merged record. */
+  /**
+   * Whether `candidate` should supply a merged participant's record over `current`: an attended
+   * record over one that did not attend, and between two attended records the better-identified
+   * one (`PAST_MEETING_IDENTITY_TIER_RANK`, N-02), so the identity flags and names the merge keeps
+   * do not depend on the order the query returns the duplicates in. A tie keeps `current`.
+   */
+  private isPreferredPastMeetingRecord(candidate: PastMeetingParticipant, current: PastMeetingParticipant): boolean {
+    if (candidate.is_attended !== current.is_attended) {
+      return candidate.is_attended;
+    }
+    if (!candidate.is_attended) {
+      return false;
+    }
+    const rank = (participant: PastMeetingParticipant): number => PAST_MEETING_IDENTITY_TIER_RANK[getPastMeetingIdentityTier(participant) ?? 'unverified'];
+    return rank(candidate) > rank(current);
+  }
+
   private mergePastMeetingParticipantGroup(group: PastMeetingParticipant[]): PastMeetingParticipant {
     const merged = group.reduce((merged, participant) => {
-      const preferred = participant.is_attended && !merged.is_attended ? participant : merged;
+      const preferred = this.isPreferredPastMeetingRecord(participant, merged) ? participant : merged;
       const other = preferred === participant ? merged : participant;
       return {
         ...preferred,

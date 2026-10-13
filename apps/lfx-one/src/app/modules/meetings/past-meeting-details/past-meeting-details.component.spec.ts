@@ -62,6 +62,7 @@ const ROWS: PastMeetingParticipant[] = [
   }),
   participant({ uid: 'unknown', first_name: 'Zoom', last_name: 'Caller', is_attended: true, is_unknown: true }),
   participant({ uid: 'absent', first_name: 'Barbara', last_name: 'Liskov', is_invited: true }),
+  participant({ uid: 'bot', first_name: 'Fireflies.ai', last_name: 'Notetaker', is_attended: true }),
 ];
 
 describe('PastMeetingDetailsComponent participant identity (N-02)', () => {
@@ -131,6 +132,15 @@ describe('PastMeetingDetailsComponent participant identity (N-02)', () => {
     expect(label('ai')).toBe('AI-matched');
     expect(label('unknown')).toBe('Unknown');
     expect(row('absent')?.querySelector('[data-testid="participant-identity-tier"]')).toBeNull();
+  });
+
+  // #2253: reconciliation never queues a bot, so the row never asks for a review.
+  it('labels an unmatched notetaker bot as a bot, with no tier', () => {
+    expect(row('bot')?.hasAttribute('data-identity-tier')).toBe(false);
+    expect(row('bot')?.getAttribute('data-notetaker-bot')).toBe('true');
+    expect(row('bot')?.querySelector('[data-testid="participant-notetaker-bot"]')?.textContent?.trim()).toBe('Notetaker bot');
+    expect(row('bot')?.querySelector('[data-testid="participant-identity-tier"]')).toBeNull();
+    expect(row('unknown')?.hasAttribute('data-notetaker-bot')).toBe(false);
   });
 
   it('shows the Zoom name and the matched invitee only where they differ from the row', () => {

@@ -572,6 +572,20 @@ export const PAST_MEETING_IDENTITY_TIER_LABELS: Record<PastMeetingIdentityTier, 
 /** The label of an `unverified` attendee that reconciliation left unknown (N-02). */
 export const PAST_MEETING_IDENTITY_UNKNOWN_LABEL = 'Unknown';
 
+/** The label of an attendee that is a notetaker or recording bot (#2253), in place of a tier (N-02). */
+export const PAST_MEETING_NOTETAKER_BOT_LABEL = 'Notetaker bot';
+
+/**
+ * How strongly each identity tier identifies an attendee (N-02), so the BFF keeps the best-identified
+ * record when it merges one person's duplicate attendee records, whatever order they arrive in.
+ */
+export const PAST_MEETING_IDENTITY_TIER_RANK: Record<PastMeetingIdentityTier, number> = {
+  unverified: 0,
+  'auto-matched': 1,
+  'ai-reconciled': 2,
+  verified: 3,
+};
+
 /** The V2 past roster's invitation filter (E4-05), worded as the admin page's cells ("Not invited"). */
 export const PAST_ROSTER_INVITATION_FILTER_OPTIONS: PastRosterFilterOption<PastRosterInvitationFilter>[] = [
   { value: 'all', label: 'All' },

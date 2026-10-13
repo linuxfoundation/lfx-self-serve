@@ -8,6 +8,7 @@ import {
   PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS,
   PAST_MEETING_IDENTITY_TIER_LABELS,
   PAST_MEETING_IDENTITY_UNKNOWN_LABEL,
+  PAST_MEETING_NOTETAKER_BOT_LABEL,
   RECONCILIATION_BOT_NAME_PATTERN,
 } from '../constants/meeting.constants';
 import { ArtifactVisibility, MeetingVisibility } from '../enums';
@@ -287,16 +288,22 @@ export function getPastMeetingIdentityNames(
 
 /**
  * An admin participant-list row (N-02): the participant with its identity tier, the tier's label
- * (`PAST_MEETING_IDENTITY_TIER_LABELS`, or `PAST_MEETING_IDENTITY_UNKNOWN_LABEL` for an unverified attendee left unknown), and the
- * names behind the row.
+ * (`PAST_MEETING_IDENTITY_TIER_LABELS`, or `PAST_MEETING_IDENTITY_UNKNOWN_LABEL` for an unverified
+ * attendee left unknown), and the names behind the row. An unmatched notetaker bot gets
+ * `PAST_MEETING_NOTETAKER_BOT_LABEL` and no tier.
  */
 export function toPastMeetingParticipantRow(participant: EnrichedPastMeetingParticipant): PastMeetingParticipantRow {
+  const identity_names = getPastMeetingIdentityNames(participant);
   const tier = getPastMeetingIdentityTier(participant);
+  // An unmatched bot never reaches the review queue (#2253): it is labelled a bot, with no tier.
+  if (tier === 'unverified' && isPastMeetingNotetakerBot(participant)) {
+    return { ...participant, identity_tier: null, identity_label: PAST_MEETING_NOTETAKER_BOT_LABEL, identity_names, is_notetaker_bot: true };
+  }
   let label: string | null = null;
   if (tier) {
     label = tier === 'unverified' && participant.is_unknown ? PAST_MEETING_IDENTITY_UNKNOWN_LABEL : PAST_MEETING_IDENTITY_TIER_LABELS[tier];
   }
-  return { ...participant, identity_tier: tier, identity_label: label, identity_names: getPastMeetingIdentityNames(participant) };
+  return { ...participant, identity_tier: tier, identity_label: label, identity_names, is_notetaker_bot: false };
 }
 
 /**
@@ -316,7 +323,21 @@ export function isPastMeetingNotetakerBot(participant: Partial<Pick<PastMeetingP
  * match, an AI match one an organizer confirmed). Unverified attendees are only counted.
  */
 function isPublicRosterIdentity(participant: PastMeetingParticipant): boolean {
-  return participant.is_attended ? getPastMeetingIdentityTier(participant) !== 'unverified' : participant.is_invited;
+  if (!participant.is_attended) {
+    return participant.is_invited;
+  }
+  return getPastMeetingIdentityTier(participant) !== 'unverified' && !isPastMeetingNotetakerBot(participant);
+}
+
+/**
+ * An attendee in the `unverified` tier who is not a notetaker bot (N-02): someone nobody has
+ * identified. Reconciliation never queues a bot, so a bot is neither listed nor counted as one.
+ */
+export function isPastMeetingUnverifiedAttendee(
+  participant: Pick<PastMeetingParticipant, 'is_attended'> &
+    Partial<Pick<PastMeetingParticipant, 'is_verified' | 'is_unknown' | 'is_ai_reconciled' | 'is_auto_matched' | 'first_name' | 'last_name' | 'zoom_user_name'>>
+): boolean {
+  return getPastMeetingIdentityTier(participant) === 'unverified' && !isPastMeetingNotetakerBot(participant);
 }
 
 /**
@@ -336,7 +357,7 @@ export function toPublicPastMeetingRoster(participants: PastMeetingParticipant[]
       is_attended,
       is_invited,
     })),
-    unidentified_attendees: participants.filter((participant) => participant.is_attended && !isPublicRosterIdentity(participant)).length,
+    unidentified_attendees: participants.filter(isPastMeetingUnverifiedAttendee).length,
     attendance: countPastMeetingAttendance(participants),
   };
 }
@@ -423,9 +444,7 @@ export function countPastMeetingAttendance(
     participant_count: participants.length,
     attended_count: participants.filter((participant) => participant.is_attended).length,
     individual_registrants_count: participants.filter((participant) => participant.is_invited).length,
-    unverified_attended_count: participants.filter(
-      (participant) => getPastMeetingIdentityTier(participant) === 'unverified' && !isPastMeetingNotetakerBot(participant)
-    ).length,
+    unverified_attended_count: participants.filter(isPastMeetingUnverifiedAttendee).length,
   };
 }
 

@@ -22,6 +22,7 @@ import {
   getPastMeetingIdentityNames,
   getPastMeetingIdentityTier,
   isPastMeetingNotetakerBot,
+  isPastMeetingUnverifiedAttendee,
   toPastMeetingParticipantRow,
   toPublicPastMeetingRecording,
   toPublicPastMeetingRoster,
@@ -609,6 +610,20 @@ describe('participant identity tiers (N-02)', () => {
     expect(toPastMeetingParticipantRow(participant({ is_attended: true })).identity_label).toBe('Needs review');
     expect(toPastMeetingParticipantRow(participant({ is_attended: true, is_unknown: true })).identity_label).toBe('Unknown');
     expect(toPastMeetingParticipantRow(participant({ is_invited: true }))).toMatchObject({ identity_tier: null, identity_label: null });
+  });
+
+  // #2253: reconciliation never queues a bot, so no surface treats one as awaiting review.
+  it('treats an unmatched notetaker bot as a bot everywhere: no tier, not unverified, not listed', () => {
+    const bot = participant({ uid: 'bot', is_attended: true, zoom_user_name: "Libby's Notetaker (Otter.ai)" });
+
+    expect(toPastMeetingParticipantRow(bot)).toMatchObject({ identity_tier: null, identity_label: 'Notetaker bot', is_notetaker_bot: true });
+    expect(toPastMeetingParticipantRow(participant({ is_attended: true }))).toMatchObject({ identity_tier: 'unverified', is_notetaker_bot: false });
+    expect(isPastMeetingUnverifiedAttendee(bot)).toBe(false);
+
+    const roster = toPublicPastMeetingRoster([bot, participant({ uid: 'unknown', is_attended: true, is_unknown: true })]);
+    expect(roster.participants).toEqual([]);
+    expect(roster.unidentified_attendees).toBe(1);
+    expect(roster.attendance.unverified_attended_count).toBe(1);
   });
 
   it('tells a notetaker bot by its Zoom name, else its first and last name', () => {
