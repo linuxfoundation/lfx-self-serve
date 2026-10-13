@@ -206,6 +206,6 @@ export class MeetingPeopleComponent {
   }
 
   private isLastFetched(key: MeetingRosterRequest): boolean {
-    return !!this.lastFetched && this.lastFetched.key.meetingId === key.meetingId && this.lastFetched.key.occurrenceId === key.occurrenceId;
+    return this.isSameRequest(key, this.lastFetched?.key ?? null);
   }
 }

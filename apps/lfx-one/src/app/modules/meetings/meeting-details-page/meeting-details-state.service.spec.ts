@@ -1102,17 +1102,20 @@ describe('MeetingDetailsStateService', () => {
       expect(state.meeting()?.title).toBe('Weekly Sync');
     });
 
-    it('restores a seeded past branch: ended, its tools, and the past-id flag through the refetch', async () => {
+    it('restores a seeded past branch, and holds it while the hydration refetch is in flight', async () => {
       seed = { meeting: { ...ended(), project }, loadedViaPastMeetingId: true, pastMeetingFullAccess: true, meetingLoadFailed: false };
-      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 404 })));
-      getPublicPastMeeting.mockReturnValue(of({ meeting: ended(), project, full_access: true }));
+      // Held open: only the seed can be setting the flags while the refetch is pending.
+      getPublicMeeting.mockReturnValue(new Subject().asObservable());
       const state = create();
 
+      expect(state.loadedViaPastMeetingId()).toBe(true);
+      expect(state.pastMeetingFullAccess()).toBe(true);
       expect(state.timeState()).toBe('ended');
       expect(state.actionSlot()).toBe('tools');
 
       await settle();
 
+      expect(getPublicMeeting).toHaveBeenCalledTimes(1);
       expect(state.loadedViaPastMeetingId()).toBe(true);
       expect(state.pastMeetingFullAccess()).toBe(true);
       expect(state.actionSlot()).toBe('tools');
@@ -1142,7 +1145,7 @@ describe('MeetingDetailsStateService', () => {
       });
     });
 
-    it('writes a terminal error without redirecting', async () => {
+    it('does not redirect on a terminal error on the server', async () => {
       getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
       create('server');
       await settle();
