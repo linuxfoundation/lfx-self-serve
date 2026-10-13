@@ -3461,14 +3461,17 @@ export function adaptJobPollResponse(response: CampaignServiceJobPollResponse): 
   // claim from "the job reported nothing yet"; the poller reaches here for terminal states
   // that legitimately carry no result (a job that failed before dispatch). The component
   // coalesces to `[]` at the point of rendering, where the distinction no longer matters.
-  const platformResults: CampaignPlatformResult[] | undefined = response.result?.map((r) => ({
-    platform: r.platform,
-    ok: r.ok,
-    campaignId: r.campaign_id,
-    hubspotUrl: r.hubspot_url,
-    ...(cleanWarnings(r.warnings).length > 0 ? { warnings: cleanWarnings(r.warnings) } : {}),
-    error: r.error,
-  }));
+  const platformResults: CampaignPlatformResult[] | undefined = response.result?.map((r) => {
+    const warnings = cleanWarnings(r.warnings);
+    return {
+      platform: r.platform,
+      ok: r.ok,
+      campaignId: r.campaign_id,
+      hubspotUrl: r.hubspot_url,
+      ...(warnings.length > 0 ? { warnings } : {}),
+      error: r.error,
+    };
+  });
 
   switch (response.status) {
     case 'queued':
