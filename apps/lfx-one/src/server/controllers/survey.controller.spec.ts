@@ -5,11 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const VALID_UID = '11111111-1111-1111-1111-111111111111';
 
-// Hoisted, per-test-controllable mocks. The `@lfx-one/shared/*` path alias isn't wired
-// into vitest (see vitest.config.ts), so the shared barrels the controller imports at
-// module load are stubbed here.
-const { isUuidMock, surveySvc } = vi.hoisted(() => ({
-  isUuidMock: vi.fn(),
+// Hoisted, per-test-controllable mocks for the controller's other collaborators.
+const { surveySvc } = vi.hoisted(() => ({
   surveySvc: {
     getSurveyById: vi.fn(),
     getSurveyResponses: vi.fn(),
@@ -17,9 +14,13 @@ const { isUuidMock, surveySvc } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@lfx-one/shared/utils', () => ({
-  isUuid: isUuidMock,
-}));
+// Deep-import the real `isUuid` (mirrors insights-tokens.controller.spec.ts) so these
+// security regression tests fail if UUID validation itself becomes permissive, rather
+// than only proving the controller calls some uid guard.
+vi.mock('@lfx-one/shared/utils', async () => {
+  const actual = await import('../../../../../packages/shared/src/utils/string.utils');
+  return { isUuid: actual.isUuid };
+});
 vi.mock('../services/survey.service', () => ({
   SurveyService: vi.fn(function () {
     return surveySvc;
@@ -58,13 +59,12 @@ describe('SurveyController uid validation (linuxfoundation/lfx-self-serve-ops#43
 
   beforeEach(() => {
     vi.clearAllMocks();
-    isUuidMock.mockImplementation((value: string) => value === VALID_UID);
     controller = new SurveyController();
   });
 
   describe('getSurveyById', () => {
-    it('rejects a non-UUID uid without calling the service', async () => {
-      const { req, res, next } = buildReqRes('../../etc/passwd');
+    it.each(['../../etc/passwd', 'abc?x=1', 'abc#frag', '%2e%2e'])('rejects a non-UUID uid %s without calling the service', async (uid) => {
+      const { req, res, next } = buildReqRes(uid);
 
       await controller.getSurveyById(req, res, next);
 
@@ -88,8 +88,8 @@ describe('SurveyController uid validation (linuxfoundation/lfx-self-serve-ops#43
   });
 
   describe('getSurveyResponses', () => {
-    it('rejects a non-UUID uid without calling the service', async () => {
-      const { req, res, next } = buildReqRes('../../etc/passwd');
+    it.each(['../../etc/passwd', 'abc?x=1', 'abc#frag', '%2e%2e'])('rejects a non-UUID uid %s without calling the service', async (uid) => {
+      const { req, res, next } = buildReqRes(uid);
 
       await controller.getSurveyResponses(req, res, next);
 
@@ -113,8 +113,8 @@ describe('SurveyController uid validation (linuxfoundation/lfx-self-serve-ops#43
   });
 
   describe('deleteSurvey', () => {
-    it('rejects a non-UUID uid without calling the service', async () => {
-      const { req, res, next } = buildReqRes('../../etc/passwd');
+    it.each(['../../etc/passwd', 'abc?x=1', 'abc#frag', '%2e%2e'])('rejects a non-UUID uid %s without calling the service', async (uid) => {
+      const { req, res, next } = buildReqRes(uid);
 
       await controller.deleteSurvey(req, res, next);
 
