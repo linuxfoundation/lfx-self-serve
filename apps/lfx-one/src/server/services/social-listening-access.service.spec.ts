@@ -116,6 +116,13 @@ describe('SocialListeningAccessService.getAccess', () => {
     expect(canBoardMemberViewSocialListening).toHaveBeenCalledTimes(2);
   });
 
+  it('does not remember a slug that failed to resolve (the NATS lookup reports failures as not found)', async () => {
+    getProjectIdBySlug.mockResolvedValueOnce({ uid: '', slug: 'tlf', exists: false });
+
+    await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: false, reason: 'none' });
+    await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'board' });
+  });
+
   it('fails closed on an upstream error and does not remember the failure', async () => {
     canBoardMemberViewSocialListening.mockRejectedValueOnce(new Error('query service down'));
 

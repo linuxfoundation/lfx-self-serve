@@ -293,5 +293,5 @@ export const EMPTY_READ_STATE: ReadStateData = { readBeforeTs: null, readIds: []
 /** How long the BFF remembers a Board member's Social Listening access per foundation — the page fans out ~15 parallel calls, and a Board removal or setting change takes effect within this window. */
 export const SOCIAL_LISTENING_BOARD_ACCESS_CACHE_TTL_MS = 60_000;
 
-/** Expired entries in that cache are swept once it holds this many user/foundation keys. */
+/** Size bound for that cache: at this many user/foundation keys, expired entries are swept and, if none expired, the oldest is evicted. */
 export const SOCIAL_LISTENING_BOARD_ACCESS_CACHE_SWEEP_THRESHOLD = 1_000;

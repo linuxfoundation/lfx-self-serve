@@ -13,9 +13,9 @@ import { SocialListeningService } from '../services/social-listening.service';
  * Route guard for the foundation Social Listening page: the executive-dashboard audience (ED, LF Staff)
  * plus Board members of the foundation when its Board group has opted in (lfx-self-serve-ops#387).
  *
- * The ED fast path mirrors `dashboardAccessGuard`. Everyone else is checked against the foundation in
- * `?project=` (falling back to the selected foundation) via `/api/social-listening/access` — the same
- * policy the API enforces, so the guard never admits someone the page's data calls would 403.
+ * The ED fast path mirrors `dashboardAccessGuard`: it trusts the persona cookie and leaves per-foundation
+ * ED scope to the API. Everyone else is checked against the foundation in `?project=` (falling back to the
+ * selected foundation) via `/api/social-listening/access`, the same policy the API enforces.
  */
 export const socialListeningAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   const personaService = inject(PersonaService);

@@ -1441,12 +1441,16 @@ export class CommitteeService {
       return false;
     }
 
-    const memberships = await fetchAllQueryResources<CommitteeMember>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'committee_member',
-        tags_all: [`username:${username}`, `committee_category:${COMMITTEE_CATEGORY_BOARD}`, `project_uid:${foundationUid}`],
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const memberships = await fetchAllQueryResources<CommitteeMember>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee_member',
+          tags_all: [`username:${username}`, `committee_category:${COMMITTEE_CATEGORY_BOARD}`, `project_uid:${foundationUid}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      // A partial membership list must not be remembered as a definite answer.
+      { failOnPartial: true }
     );
 
     const boardUids = [...new Set(memberships.map((m) => m.committee_uid).filter((uid): uid is string => Boolean(uid)))];
@@ -1455,7 +1459,9 @@ export class CommitteeService {
     }
 
     const m2mToken = await generateM2MToken(req);
-    const settings = await Promise.all(
+    // allSettled: one Board group's failed read must not hide another group that opted in. If none
+    // succeeds with the flag on, the caller is denied — and when a read failed, the error surfaces.
+    const results = await Promise.allSettled(
       boardUids.map((uid) =>
         this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
           req,
@@ -1472,7 +1478,15 @@ export class CommitteeService {
       )
     );
 
-    return settings.some((s) => s?.members_can_view_social_listening === true);
+    if (results.some((result) => result.status === 'fulfilled' && result.value?.members_can_view_social_listening === true)) {
+      return true;
+    }
+
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failure) {
+      throw failure.reason;
+    }
+    return false;
   }
 
   // ── My Committees ─────────────────────────────────────────────────────────

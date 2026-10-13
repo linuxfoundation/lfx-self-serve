@@ -1705,6 +1705,25 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
     });
 
+    it("still allows when another Board group's settings read fails", async () => {
+      proxyRequest
+        .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'board-1' } }, { data: { committee_uid: 'board-2' } }] })
+        .mockRejectedValueOnce(new Error('settings read failed'))
+        .mockResolvedValueOnce({ members_can_view_social_listening: true });
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
+    });
+
+    it('surfaces a settings read failure when no Board group grants access, so the caller fails closed without caching', async () => {
+      const error = new Error('settings read failed');
+      proxyRequest
+        .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'board-1' } }, { data: { committee_uid: 'board-2' } }] })
+        .mockRejectedValueOnce(error)
+        .mockResolvedValueOnce({ members_can_view_social_listening: false });
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).rejects.toBe(error);
+    });
+
     it('denies without reading settings when the user sits on no Board group of the foundation', async () => {
       proxyRequest.mockResolvedValueOnce({ resources: [] });
 

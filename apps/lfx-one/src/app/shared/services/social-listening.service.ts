@@ -45,9 +45,12 @@ export class SocialListeningService {
 
   /** Whether the current user can view Social Listening for `foundationSlug`; any failure reads as no access. */
   public getAccess(foundationSlug: string): Observable<SocialListeningAccessResponse> {
-    return this.http
-      .get<SocialListeningAccessResponse>(`${this.baseUrl}/access`, { params: { foundationSlug } })
-      .pipe(catchError(() => of<SocialListeningAccessResponse>({ canView: false, reason: 'none' })));
+    return this.http.get<SocialListeningAccessResponse>(`${this.baseUrl}/access`, { params: { foundationSlug } }).pipe(
+      catchError((error) => {
+        console.error('Failed to load Social Listening access', error);
+        return of<SocialListeningAccessResponse>({ canView: false, reason: 'none' });
+      })
+    );
   }
 
   /** One window of mentions for a foundation, newest first. */

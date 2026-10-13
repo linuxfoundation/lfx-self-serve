@@ -62,8 +62,13 @@ export class SocialListeningAccessService {
 
     return singleFlight(`social-listening-board-access:${cacheKey}`, async () => {
       try {
+        // getProjectIdBySlug also answers `exists: false` when the NATS lookup itself fails, so an
+        // unresolved slug denies without being remembered — a transient blip must not lock a member out.
         const project = await this.projectService.getProjectIdBySlug(req, foundationSlug);
-        const canView = project.exists ? await this.committeeService.canBoardMemberViewSocialListening(req, project.uid) : false;
+        if (!project.exists) {
+          return false;
+        }
+        const canView = await this.committeeService.canBoardMemberViewSocialListening(req, project.uid);
         this.remember(cacheKey, canView);
         return canView;
       } catch (error) {
@@ -83,6 +88,11 @@ export class SocialListeningAccessService {
         if (entry.expiresAt <= now) {
           this.boardAccessCache.delete(key);
         }
+      }
+      // Still full of live entries: evict the oldest (Map iterates in insertion order) so the cache stays bounded.
+      const oldest = this.boardAccessCache.keys().next();
+      if (this.boardAccessCache.size >= SOCIAL_LISTENING_BOARD_ACCESS_CACHE_SWEEP_THRESHOLD && !oldest.done) {
+        this.boardAccessCache.delete(oldest.value);
       }
     }
     this.boardAccessCache.set(cacheKey, { canView, expiresAt: now + SOCIAL_LISTENING_BOARD_ACCESS_CACHE_TTL_MS });

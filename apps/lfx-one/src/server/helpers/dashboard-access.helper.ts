@@ -1,12 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { PersonaApiResponse, PersonaType, SocialListeningAccessReason } from '@lfx-one/shared/interfaces';
+import { EXECUTIVE_DIRECTOR_PERSONA as ED } from '@lfx-one/shared/constants';
+import type { PersonaApiResponse, SocialListeningAccessReason } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { personaDetectionService } from '../utils/persona-helper';
-
-const ED: PersonaType = 'executive-director';
 
 /**
  * Who the executive-dashboard policy admits for `requestedSlug`: EDs and LF Staff, from server-verified
