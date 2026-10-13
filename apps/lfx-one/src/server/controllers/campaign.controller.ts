@@ -2119,7 +2119,11 @@ export class CampaignController {
 
     try {
       const data = await this.campaignServiceClient.getHubSpotAccountMonitor(req, projectSlug, days);
-      logger.success(req, operation, startTime, { emails: data.emails.length, actionItems: data.action_items.length, truncated: data.emails_truncated });
+      logger.success(req, operation, startTime, {
+        emails: data.emails?.length ?? 0,
+        actionItems: data.action_items?.length ?? 0,
+        truncated: data.emails_truncated,
+      });
       res.json(data);
     } catch (error) {
       next(toAccountMonitorClientError(error, 'HubSpot', operation));
@@ -2810,8 +2814,8 @@ export class CampaignController {
       const data = opts.toResponse(payload);
       logger.success(req, opts.operation, startTime, {
         viaCampaignService: true,
-        campaigns: payload.campaigns.length,
-        fetchFailed: payload.campaigns.filter((c) => c.fetch_failed).length,
+        campaigns: payload.campaigns?.length ?? 0,
+        fetchFailed: (payload.campaigns ?? []).filter((c) => c.fetch_failed).length,
       });
       res.json(data);
     } catch (error) {
@@ -2856,7 +2860,7 @@ export class CampaignController {
     try {
       const data = await opts.read(projectSlug, accountId, days);
       logger.success(req, opts.operation, startTime, {
-        campaigns: data.campaigns.length,
+        campaigns: data.campaigns?.length ?? 0,
         metricsAsOf: data.metrics_as_of,
         metricsPending: data.metrics_pending,
       });

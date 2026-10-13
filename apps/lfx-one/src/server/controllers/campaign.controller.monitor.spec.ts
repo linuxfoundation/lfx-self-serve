@@ -290,3 +290,45 @@ describe('CampaignController.getHubSpotMonitor', () => {
     expect(error.toResponse()['error']).toBe('HubSpot metrics are temporarily unavailable. Please try again shortly.');
   });
 });
+
+// Upstream declares these arrays required, but the success log must not be what turns a malformed
+// body into a 500: the mapper already tolerates an absent array, so the log has to as well.
+describe('CampaignController monitor success logs tolerate null upstream arrays', () => {
+  it.each([
+    ['getMetaMonitor', svcMeta, { accountKey: META_ACCOUNT, project: 'tlf' }],
+    ['getRedditMonitor', svcReddit, { accountKey: REDDIT_ACCOUNT, project: 'tlf' }],
+    ['getMicrosoftMonitor', svcMicrosoft, { accountKey: '187654321', project: 'tlf' }],
+    ['getTwitterMonitor', svcTwitter, { accountKey: '18ce54d4x5t', project: 'tlf' }],
+  ] as const)('%s answers 200 when campaigns is null', async (name, svc, query) => {
+    flag(true);
+    svc.mockResolvedValueOnce(monitorPayload({ campaigns: null as unknown as [] }));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController()[name](buildReq(query), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  it('getHubSpotMonitor answers 200 when emails and action_items are null', async () => {
+    flag(true);
+    svcHubSpot.mockResolvedValueOnce({
+      days: 30,
+      emails: null,
+      action_items: null,
+      totals: {},
+      emails_checked: 0,
+      emails_not_sent_in_window: 0,
+      emails_unattributable: 0,
+      emails_truncated: false,
+    });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController().getHubSpotMonitor(buildReq({ project: 'tlf' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+});
