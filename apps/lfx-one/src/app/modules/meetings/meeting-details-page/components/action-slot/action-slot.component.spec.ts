@@ -292,6 +292,16 @@ describe('MeetingActionSlotComponent', () => {
       expect(document.activeElement).toBe(register);
     });
 
+    // #3260: Register leaves the slot once registered, so focus moves to the slot's new first control.
+    it('moves focus into the slot once registered, since Register is gone', async () => {
+      query('meeting-action-register-button')?.querySelector('button')?.click();
+      dialogClose.next({ registered: true });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(fixture.nativeElement.contains(document.activeElement)).toBe(true);
+    });
+
     it('keeps the open dialog when PrimeNG refuses a duplicate', () => {
       openDialog.mockReturnValue(null);
 

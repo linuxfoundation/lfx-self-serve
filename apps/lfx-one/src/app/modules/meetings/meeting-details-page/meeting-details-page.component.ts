@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { afterRenderEffect, Component, computed, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
@@ -67,10 +67,22 @@ export class MeetingDetailsPageComponent {
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
   private readonly bar = viewChild('identityBar', { read: ElementRef });
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
 
   public constructor() {
     // The browser tab and history name the meeting, not just "Meeting" (#3260, WCAG 2.4.2).
     bindLfxDocumentTitle(computed(() => this.state.meeting()?.title));
+    // #3260 (WCAG 2.4.11): the identity bar is sticky, so a control scrolled into view by focus must clear
+    // it rather than land underneath. The scroll root's padding does that for every control on the page
+    // while it is mounted: 100px clears the 83px bar, 142px with the 42px impersonation banner above it.
+    afterRenderEffect((onCleanup) => {
+      if (!isPlatformBrowser(this.platformId)) {
+        return;
+      }
+      const root = this.document.documentElement;
+      root.style.scrollPaddingTop = this.userService.impersonating() ? '142px' : '100px';
+      onCleanup(() => root.style.removeProperty('scroll-padding-top'));
+    });
     // An IntersectionObserver rather than a scroll listener, re-attached whenever the header element
     // changes (it exists only in the `ready` branch). `afterRenderEffect` never runs on the server.
     afterRenderEffect((onCleanup) => {

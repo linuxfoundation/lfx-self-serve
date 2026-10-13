@@ -156,6 +156,15 @@ describe('MeetingDetailsPageComponent', () => {
     expect(document.getElementById(rail?.getAttribute('aria-labelledby') ?? '')?.textContent?.trim()).toBe('Meeting actions');
   });
 
+  // #3260 (WCAG 2.4.11): focused controls scroll clear of the sticky identity bar, only while the page is up.
+  it('pads the scroll root under the sticky bar while mounted', () => {
+    show('ready');
+    expect(document.documentElement.style.scrollPaddingTop).toBe('100px');
+
+    fixture.destroy();
+    expect(document.documentElement.style.scrollPaddingTop).toBe('');
+  });
+
   it('gives every state the one h1', () => {
     show('error');
     expect(fixture.nativeElement.querySelectorAll('h1')).toHaveLength(1);

@@ -16,9 +16,10 @@
         @case ('error') {
           <!-- A 5xx or network failure. 400 / 403 / 404 never get here: the state service sends them to
                /meetings/not-found. A later background refresh failing on a working page does not either. -->
+          <!-- Every state has the page's one h1 (#3260), outside the live region so it is not read with
+               each announcement; the loaded header supplies its own. -->
+          <h1 class="sr-only">Meeting</h1>
           <div class="flex flex-col items-center gap-3 py-24 text-center" role="alert" data-testid="meeting-error-state">
-            <!-- Every state has the page's one h1 (#3260); the loaded header supplies its own. -->
-            <h1 class="sr-only">Meeting</h1>
             <i class="fa-light fa-triangle-exclamation text-4xl text-[var(--md-text-muted)]" aria-hidden="true"></i>
             <!-- The copy changes after a failed retry, so the alert is announced again rather than
                  staying silent when nothing new appears to happen. -->
@@ -48,8 +49,8 @@
           }
         }
         @default {
+          <h1 class="sr-only">Meeting</h1>
           <div role="status" aria-live="polite" data-testid="meeting-skeleton">
-            <h1 class="sr-only">Meeting</h1>
             <span class="sr-only">Loading meeting details…</span>
             <div class="flex flex-col gap-3" aria-hidden="true">
               <p-skeleton height="16px" width="160px" />

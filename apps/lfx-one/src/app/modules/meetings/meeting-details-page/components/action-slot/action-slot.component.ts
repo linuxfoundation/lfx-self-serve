@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, DestroyRef, inject, Signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { environment } from '@environments/environment';
@@ -46,6 +46,8 @@ export class MeetingActionSlotComponent {
   protected readonly state = inject(MeetingDetailsStateService);
   private readonly userService = inject(UserService);
   private readonly document = inject(DOCUMENT);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -108,6 +110,9 @@ export class MeetingActionSlotComponent {
     dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
         this.state.markRegistered(meeting.id);
+        // Register is gone from the slot now, so focus has nowhere to return to: hand it to the slot's
+        // new first control once it renders (#3260, WCAG 2.4.3).
+        afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>('button, a[href]')?.focus(), { injector: this.injector });
       }
     });
   }
