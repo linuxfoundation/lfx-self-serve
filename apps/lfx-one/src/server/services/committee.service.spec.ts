@@ -54,6 +54,7 @@ const {
 vi.mock('@lfx-one/shared/enums', () => ({
   CommitteeMemberRole: {},
   CommitteeMemberVisibility: { HIDDEN: 'hidden', BASIC_PROFILE: 'basic_profile' },
+  CommitteeMemberStatus: { ACTIVE: 'Active', INACTIVE: 'Inactive' },
 }));
 vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -1695,15 +1696,30 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
           settingsError?: Error;
           emptyBase?: boolean;
           emptySettings?: boolean;
+          /** Live seat as the members endpoint returns it; defaults to an Active seat of the caller. */
+          seat?: { status?: string; username?: string; committeeUid?: string } | 'deleted';
+          /** Status on the indexed membership row. */
+          indexedStatus?: string;
         }
       >
     ): void {
       proxyRequest.mockImplementation((_req: unknown, _svc: string, path: string) => {
         if (path === '/query/resources') {
-          return Promise.resolve({ resources: memberships.map((uid) => ({ data: { committee_uid: uid } })) });
+          return Promise.resolve({
+            resources: memberships.map((uid) => ({ data: { uid: `seat-${uid}`, committee_uid: uid, status: committees[uid]?.indexedStatus } })),
+          });
         }
-        const [, , uid, sub] = path.split('/');
+        const [, , uid, sub, memberUid] = path.split('/');
         const committee = committees[uid];
+        if (sub === 'members') {
+          if (committee.seat === 'deleted') return Promise.reject(Object.assign(new Error('not found'), { statusCode: 404 }));
+          return Promise.resolve({
+            uid: memberUid,
+            committee_uid: committee.seat?.committeeUid ?? uid,
+            username: committee.seat?.username ?? 'synthetic-user',
+            status: committee.seat?.status ?? 'Active',
+          });
+        }
         if (sub === 'settings') {
           if (committee.settingsError) return Promise.reject(committee.settingsError);
           const enabled = committee.enabledSequence ? (committee.enabledSequence.shift() ?? committee.enabled) : committee.enabled;
@@ -1731,9 +1747,15 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
         type: 'committee_member',
         tags_all: ['username:synthetic-user', 'committee_category:Board', `project_uid:${FOUNDATION_UID}`],
       });
-      // Settings, then the live category, then settings again — so the pair read can't mix states that never coexisted.
+      // Settings, then the live committee and seat, then settings again — so the reads can't mix states that never coexisted.
       const reads = proxyRequest.mock.calls.slice(1).map((call) => call[2]);
-      expect(reads).toEqual(['/committees/board-1/settings', '/committees/board-1', '/committees/board-1/settings']);
+      expect(reads).toEqual([
+        '/committees/board-1/settings',
+        '/committees/board-1',
+        '/committees/board-1/members/seat-board-1',
+        '/committees/board-1/settings',
+      ]);
+      expect(proxyRequest.mock.calls.find((call) => call[2] === '/committees/board-1/members/seat-board-1')?.[7]).toEqual({ bearerToken: 'm2m-token' });
       const settingsCalls = proxyRequest.mock.calls.filter((call) => call[2] === '/committees/board-1/settings');
       expect(settingsCalls.every((call) => call[7]?.bearerToken === 'm2m-token')).toBe(true);
       // The base read stays on the user's own token.
@@ -1751,6 +1773,24 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
       upstream(['board-1'], { 'board-1': { category: 'Board', enabled: true, etagSequence: ['settings-rev-1', 'settings-rev-3'] } });
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+    });
+
+    it.each([
+      ['an inactive live seat', { seat: { status: 'Inactive' } }],
+      ['a deleted seat the index still lists', { seat: 'deleted' as const }],
+      ['a seat now held by someone else', { seat: { username: 'someone-else' } }],
+      ['a seat moved to another committee', { seat: { committeeUid: 'other-committee' } }],
+    ])('denies %s', async (_case, seatOverrides) => {
+      upstream(['board-1'], { 'board-1': { category: 'Board', enabled: true, ...seatOverrides } });
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+    });
+
+    it('skips a membership row the index already marks Inactive without reading anything else', async () => {
+      upstream(['board-1'], { 'board-1': { category: 'Board', enabled: true, indexedStatus: 'Inactive' } });
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
     });
 
     it('denies a Board group that has moved to another project while the membership index still tags the foundation', async () => {

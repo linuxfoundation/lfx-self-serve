@@ -11,7 +11,7 @@ import {
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   UUID_REGEX,
 } from '@lfx-one/shared/constants';
-import { CommitteeMemberRole } from '@lfx-one/shared/enums';
+import { CommitteeMemberRole, CommitteeMemberStatus } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
   ApiRequestOptions,
@@ -1454,7 +1454,16 @@ export class CommitteeService {
       { failOnPartial: true }
     );
 
-    const boardUids = [...new Set(memberships.map((m) => m.committee_uid).filter((uid): uid is string => Boolean(uid)))];
+    // Candidate seats per Board group. Rows the index already marks Inactive are skipped; every other
+    // seat is re-read live below, since the index and FGA converge asynchronously after a removal.
+    const seatsByCommittee = new Map<string, string[]>();
+    for (const membership of memberships) {
+      if (!membership.committee_uid || !membership.uid || membership.status === CommitteeMemberStatus.INACTIVE) {
+        continue;
+      }
+      seatsByCommittee.set(membership.committee_uid, [...(seatsByCommittee.get(membership.committee_uid) ?? []), membership.uid]);
+    }
+    const boardUids = [...seatsByCommittee.keys()];
     if (boardUids.length === 0) {
       return false;
     }
@@ -1480,6 +1489,9 @@ export class CommitteeService {
           throw new Error(`Empty committee or settings response for Board group ${uid}`);
         }
         if (committee.project_uid !== foundationUid || !isBoardCategory(committee.category)) {
+          return false;
+        }
+        if (!(await this.hasActiveSeat(req, uid, seatsByCommittee.get(uid) ?? [], username, m2mToken))) {
           return false;
         }
         const after = await this.readSocialListeningFlag(req, uid, m2mToken);
@@ -2534,6 +2546,39 @@ export class CommitteeService {
       throw new Error(`Empty committee or settings response for Board group ${committeeUid}`);
     }
     return { enabled: response.data.members_can_view_social_listening === true, etag: String(etag) };
+  }
+
+  /**
+   * Whether any of the caller's indexed seats on a Board group is still live: present on that committee,
+   * held by the same username, and Active. A deleted seat (404) simply doesn't count; any other failure
+   * throws so the caller fails closed without caching. Read with M2M, like the settings, since member
+   * reads aren't guaranteed for every seat holder.
+   */
+  private async hasActiveSeat(req: Request, committeeUid: string, memberUids: string[], username: string, m2mToken: string): Promise<boolean> {
+    for (const memberUid of memberUids) {
+      let member: CommitteeMember | null;
+      try {
+        member = await this.microserviceProxy.proxyRequest<CommitteeMember | null>(
+          req,
+          'LFX_V2_SERVICE',
+          `/committees/${committeeUid}/members/${memberUid}`,
+          'GET',
+          undefined,
+          undefined,
+          undefined,
+          { bearerToken: m2mToken }
+        );
+      } catch (error) {
+        if ((error as MicroserviceError).statusCode === 404) {
+          continue;
+        }
+        throw error;
+      }
+      if (member?.committee_uid === committeeUid && member.username === username && member.status === CommitteeMemberStatus.ACTIVE) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
