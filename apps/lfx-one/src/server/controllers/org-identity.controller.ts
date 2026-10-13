@@ -21,7 +21,7 @@ import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
-import { claOnlyEntryApplies, OrgClaOnlyOrgsService } from '../services/org-cla-only-orgs.service';
+import { OrgClaOnlyOrgsService } from '../services/org-cla-only-orgs.service';
 import { OrgLensAddressesService } from '../services/org-lens-addresses.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
@@ -60,7 +60,7 @@ export class OrgIdentityController {
       // Spec 053: the viewer's explicit Retry asks for a recompute — skip the cache read, still write.
       const bypassCache = req.query[ORG_ROLE_GRANTS_REFRESH_PARAM] === '1';
       const grants: RoleGrantsResponse = await this.orgRoleGrantsService.getRoleGrants(req, username, bypassCache);
-      const result: RoleGrantsResponse = { ...grants, claManagerOrgs: await this.claManagerOrgsFor(req, grants) };
+      const result: RoleGrantsResponse = { ...grants, claManagerOrgs: await this.claOnlyOrgs.getRoleGrantOrgUids(req, grants) };
 
       logger.success(req, 'get_org_role_grants', startTime, {
         writer_count: result.writers.length,
@@ -399,24 +399,6 @@ export class OrgIdentityController {
       logger.warning(req, 'get_org_addresses', 'Address warehouse lookup failed; returning empty', { err: error, uid, sfid });
       res.setHeader('Cache-Control', 'no-store');
       res.json(emptyResponse);
-    }
-  }
-
-  /**
-   * The caller's CLA-only organizations, added outside the cached grant computation so the grant
-   * cache never holds an ACS answer. Asked only when Org Lens granted nothing; an unreadable scope
-   * list is logged and answered as none, leaving the grant arrays — the authoritative part — intact.
-   */
-  private async claManagerOrgsFor(req: Request, grants: RoleGrantsResponse): Promise<string[]> {
-    const grantedOrgCount = grants.writers.length + grants.auditors.length + grants.cascadingWriters.length + grants.cascadingAuditors.length;
-    if (!claOnlyEntryApplies(grants.isStaff, grantedOrgCount)) return [];
-    try {
-      return await this.claOnlyOrgs.getOrgUids(req);
-    } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'CLA manager scopes lookup failed; reporting no CLA-only organizations', {
-        err: error instanceof Error ? error.message : String(error),
-      });
-      return [];
     }
   }
 

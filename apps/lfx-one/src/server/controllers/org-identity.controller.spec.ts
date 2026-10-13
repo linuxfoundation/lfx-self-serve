@@ -29,11 +29,9 @@ vi.mock('../services/org-slug-resolver.service', () => ({
     public resolveSegment = resolveSegment;
   },
 }));
-// The real predicate is pinned in org-cla-only-orgs.service.spec.ts.
 vi.mock('../services/org-cla-only-orgs.service', () => ({
-  claOnlyEntryApplies: (isStaff: boolean, grantedOrgCount: number) => !isStaff && grantedOrgCount === 0,
   OrgClaOnlyOrgsService: class {
-    public getOrgUids = getClaManagerOrgUids;
+    public getRoleGrantOrgUids = getClaManagerOrgUids;
   },
 }));
 vi.mock('../services/logger.service', () => ({
@@ -304,40 +302,15 @@ describe('OrgIdentityController.getRoleGrants', () => {
   describe('CLA-only organizations', () => {
     const COMPANY_A = '001A000000AAAAAAAA';
 
-    it('adds the caller’s CLA-manager companies when Org Lens granted nothing', async () => {
+    it('adds the CLA-only organizations the service answers for the computed grants', async () => {
       getClaManagerOrgUids.mockResolvedValueOnce([COMPANY_A]);
       const res = buildRes();
+      const req = request();
 
-      await new OrgIdentityController().getRoleGrants(request(), res, vi.fn());
+      await new OrgIdentityController().getRoleGrants(req, res, vi.fn());
 
+      expect(getClaManagerOrgUids).toHaveBeenCalledWith(req, grants);
       expect(res.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [COMPANY_A] });
-    });
-
-    it.each([
-      ['a writer grant', { writers: [VALID_UID] }],
-      ['an auditor grant', { auditors: [VALID_UID] }],
-      ['a cascading writer grant', { cascadingWriters: [{ uid: VALID_UID, parentUid: VALID_UID, parentName: 'Parent' }] }],
-      ['a cascading auditor grant', { cascadingAuditors: [{ uid: VALID_UID, parentUid: VALID_UID, parentName: 'Parent' }] }],
-      ['staff', { isStaff: true }],
-    ])('never asks user-service for a caller with %s', async (_label, overrides) => {
-      getRoleGrants.mockResolvedValueOnce({ ...grants, ...overrides });
-      const res = buildRes();
-
-      await new OrgIdentityController().getRoleGrants(request(), res, vi.fn());
-
-      expect(getClaManagerOrgUids).not.toHaveBeenCalled();
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ claManagerOrgs: [] }));
-    });
-
-    it('answers none, with the grant arrays intact, when the scopes cannot be read', async () => {
-      getClaManagerOrgUids.mockRejectedValueOnce(new Error('user-service down'));
-      const res = buildRes();
-      const next = vi.fn();
-
-      await new OrgIdentityController().getRoleGrants(request(), res, next);
-
-      expect(next).not.toHaveBeenCalled();
-      expect(res.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [] });
     });
   });
 });

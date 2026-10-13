@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_CLA_ONLY_ORGS_MAX } from '@lfx-one/shared/constants';
-import { OrgResolveResponse } from '@lfx-one/shared/interfaces';
+import { OrgResolveResponse, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -55,6 +55,24 @@ export class OrgClaOnlyOrgsService {
   /** The caller's CLA-manager company SFIDs, sorted. Throws when user-service cannot answer. */
   public async getOrgUids(req: Request): Promise<string[]> {
     return [...(await this.scopes.getCompanySfids(req))].sort();
+  }
+
+  /**
+   * The caller's CLA-only organizations, added outside the cached grant computation so the grant
+   * cache never holds an ACS answer. Asked only when Org Lens granted nothing; an unreadable scope
+   * list is logged and answered as none, leaving the grant arrays — the authoritative part — intact.
+   */
+  public async getRoleGrantOrgUids(req: Request, grants: RoleGrantsResponse): Promise<string[]> {
+    const grantedOrgCount = grants.writers.length + grants.auditors.length + grants.cascadingWriters.length + grants.cascadingAuditors.length;
+    if (!claOnlyEntryApplies(grants.isStaff, grantedOrgCount)) return [];
+    try {
+      return await this.getOrgUids(req);
+    } catch (error) {
+      logger.warning(req, 'get_org_role_grants', 'CLA manager scopes lookup failed; reporting no CLA-only organizations', {
+        err: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
   }
 
   /**

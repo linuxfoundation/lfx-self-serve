@@ -131,6 +131,43 @@ describe('OrgClaOnlyOrgsService.listOrgs', () => {
   });
 });
 
+describe('OrgClaOnlyOrgsService.getRoleGrantOrgUids', () => {
+  const grants = {
+    writers: [],
+    auditors: [],
+    cascadingWriters: [],
+    cascadingAuditors: [],
+    isStaff: false,
+    username: 'contributor',
+    loaded_at: '2026-01-01T00:00:00.000Z',
+    degraded: false,
+  };
+  const cascading = [{ uid: COMPANY_C, parentUid: COMPANY_C, parentName: 'Parent' }];
+
+  it('answers the caller’s CLA-manager companies, sorted, when Org Lens granted nothing', async () => {
+    expect(await service(scopesOf(COMPANY_A, COMPANY_B)).getRoleGrantOrgUids(req(), grants)).toEqual([COMPANY_B, COMPANY_A]);
+  });
+
+  it.each([
+    ['a writer grant', { writers: [COMPANY_C] }],
+    ['an auditor grant', { auditors: [COMPANY_C] }],
+    ['a cascading writer grant', { cascadingWriters: cascading }],
+    ['a cascading auditor grant', { cascadingAuditors: cascading }],
+    ['staff', { isStaff: true }],
+  ])('never asks user-service for a caller with %s', async (_label, overrides) => {
+    const scopes = scopesOf(COMPANY_A);
+
+    expect(await service(scopes).getRoleGrantOrgUids(req(), { ...grants, ...overrides })).toEqual([]);
+    expect(scopes.getCompanySfids).not.toHaveBeenCalled();
+  });
+
+  it('answers none when the scopes cannot be read', async () => {
+    const scopes = { getCompanySfids: vi.fn().mockRejectedValue(new Error('user-service down')) };
+
+    expect(await service(scopes).getRoleGrantOrgUids(req(), grants)).toEqual([]);
+  });
+});
+
 describe('OrgClaOnlyOrgsService.resolveOrg', () => {
   it('resolves a managed company as a CLA-only organization with no slug', async () => {
     gatewayFetch.mockResolvedValue(company(COMPANY_A, 'Acme Corp'));
