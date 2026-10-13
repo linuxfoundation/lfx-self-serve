@@ -27,8 +27,15 @@ export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'proje
  * collection UI REFUSES a value that provably cannot do what the field is for:
  * the field shows why and submission stays disabled until it is corrected.
  * Product ruling; the question wording itself is still quoted verbatim.
+ *
+ * - `github-repo-url`: must name one repository (`github.com/<owner>/<repo>`).
+ *   For the intakes whose BFF fetches that repository's README.
+ * - `github-url`: a repository OR an account URL (`github.com/<owner>`, e.g.
+ *   a GitHub organization). For the Brand Kit, whose BFF sends the URL to
+ *   the agent as text and fetches nothing, so an organization URL is a usable
+ *   answer to "the project's GitHub repo or README" (hand test, 2026-10-12).
  */
-export type MktgIntakeFieldFormat = 'github-repo-url';
+export type MktgIntakeFieldFormat = 'github-repo-url' | 'github-url';
 
 /**
  * Where a README the BFF fetched for an agent came from: the repository the
@@ -181,6 +188,21 @@ export interface MktgAttachmentChip {
   chipClass: string;
   /** Font Awesome icon class for the chip. */
   iconClass: string;
+}
+
+/**
+ * The document's review-status chip on the result card — the label as it
+ * appears inside the document (`Draft — pre-filled`, `Draft — from your
+ * documents`, `ED-reviewed — [name], [date]`, …), with the styling that
+ * tells a reviewed document from a draft. Precomputed in the component
+ * because the reviewed/draft decision drives the class, and the repo
+ * prohibits the conditional a template-side derivation would need.
+ */
+export interface MktgDocumentStatusChip {
+  /** The status label verbatim from the document. */
+  label: string;
+  /** Tailwind colour classes for the chip. */
+  chipClass: string;
 }
 
 /** One word-count-locked derivative surfaced as a copyable chip on the result. */

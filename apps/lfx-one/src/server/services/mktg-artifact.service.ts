@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_ARTIFACT_CONTENT_TYPE, MKTG_ARTIFACT_DEFAULT_DRAFT_VERSION, MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants';
+import {
+  MKTG_ARTIFACT_CONTENT_TYPE,
+  MKTG_ARTIFACT_DEFAULT_DRAFT_VERSION,
+  MKTG_ARTIFACT_INTAKE_MODES,
+  MKTG_ARTIFACT_PARTITION_REGEX,
+} from '@lfx-one/shared/constants';
 import {
   MktgArtifactEnvelope,
   MktgArtifactIntakeMode,
@@ -223,7 +228,8 @@ export class MktgArtifactService {
           continue;
         }
 
-        const intakeMode: MktgArtifactIntakeMode = object.metadata['intake-mode'] === 'conversational' ? 'conversational' : 'form';
+        const storedMode = object.metadata['intake-mode'] as MktgArtifactIntakeMode;
+        const intakeMode: MktgArtifactIntakeMode = MKTG_ARTIFACT_INTAKE_MODES.includes(storedMode) ? storedMode : 'form';
 
         logger.success(req, operation, startTime, { project: projectUid, key: candidate.key });
         return {

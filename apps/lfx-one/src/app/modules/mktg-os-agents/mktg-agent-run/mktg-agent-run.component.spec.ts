@@ -442,6 +442,58 @@ describe('MktgAgentRunComponent', () => {
     });
   });
 
+  describe('document status chip — the review label read from the document', () => {
+    beforeEach(async () => configure());
+
+    it('shows a draft label from the Review Sheet status line, styled as a draft', async () => {
+      const doc =
+        '# Project One Brand Kit\n\n## Review Sheet\n\nStatus: Draft — from your documents · 9 of 14 fields from your documents\n\n## 1. Project Definition';
+      storedRuns = { 'proj-1': storedRun('proj-1', doc, {}) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      const chip = query('mktg-agent-run-doc-status');
+      expect(chip?.textContent?.trim()).toBe('Draft — from your documents');
+      expect(chip?.className).toContain('amber');
+      // The version chip is unchanged — the status is a second, separate label.
+      expect(query('mktg-agent-run-doc-version')?.textContent).toContain('v1');
+    });
+
+    it('shows an ED-reviewed label styled as reviewed', async () => {
+      const doc = '# Project One Brand Kit\n\n| Project | Project One |\n| Status | ED-reviewed — Jane Doe, 2026-10-12 |\n\n## Review Sheet';
+      storedRuns = { 'proj-1': storedRun('proj-1', doc, {}) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      const chip = query('mktg-agent-run-doc-status');
+      expect(chip?.textContent?.trim()).toBe('ED-reviewed — Jane Doe, 2026-10-12');
+      expect(chip?.className).toContain('emerald');
+    });
+
+    it('keeps the full label visible to every user — it wraps rather than truncating behind a hover-only tooltip', async () => {
+      const doc = '# Project One Brand Kit\n\n| Status | ED-reviewed — A Very Long Executive Director Name, 12 October 2026 |\n\n## Review Sheet';
+      storedRuns = { 'proj-1': storedRun('proj-1', doc, {}) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      const chip = query('mktg-agent-run-doc-status');
+      // No `title`: a tooltip on a non-focusable span is mouse-only. The text is
+      // the single exposure of the label, so it must never be clipped.
+      expect(chip?.hasAttribute('title')).toBe(false);
+      expect(chip?.className).not.toContain('truncate');
+      expect(chip?.className).not.toContain('whitespace-nowrap');
+    });
+
+    it('renders no status chip when the document states no status', async () => {
+      storedRuns = { 'proj-1': storedRun('proj-1', '# Doc\n\nThis first draft — built from your answers — has no status line.', {}) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(query('mktg-agent-run-result')).not.toBeNull();
+      expect(query('mktg-agent-run-doc-status')).toBeNull();
+    });
+  });
+
   describe('resetForContext — an active-context switch never bleeds state across projects', () => {
     beforeEach(async () => configure());
 
@@ -465,6 +517,52 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-agent-run-form')).not.toBeNull();
       expect(component['intakeForm'].getRawValue()).toMatchObject({ project_name: 'Project Two' });
       expect(fromLfxChip('project_name')).not.toBeNull();
+    });
+  });
+
+  /**
+   * The Brand Kit's `github_url` rule differs from the README-fed intakes'
+   * (hand test, 2026-10-12): its answer reaches the agent as text and no
+   * README is fetched from it, so a GitHub organization URL is a usable
+   * answer to "the project's GitHub repo or README". Only a value that is not a
+   * GitHub URL at all is refused. The Message Foundation block below keeps
+   * refusing the same account URL, because its BFF needs a repository README.
+   */
+  describe('Brand Kit — github_url accepts an organization URL', () => {
+    beforeEach(async () => configure());
+
+    const fillAll = (githubUrl: string): void => {
+      for (const [key, control] of Object.entries(component['intakeForm'].controls)) {
+        control.setValue(key === 'github_url' ? githubUrl : `answer for ${key}`);
+      }
+    };
+
+    it('accepts an organization URL and submits it as answered', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      fillAll('https://github.com/opensearch-project');
+      await fixture.whenStable();
+
+      expect(fieldError('github_url')).toBeNull();
+      expect(component['submitDisabled']()).toBe(false);
+      component['onSubmit']();
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect((generate.mock.calls[0][0] as MktgGenerateRequest).answers).toMatchObject({ github_url: 'https://github.com/opensearch-project' });
+    });
+
+    it('still blocks a URL that is not a GitHub URL at all, offering both shapes', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      fillAll('https://gitlab.com/example-org/example-repo');
+      await fixture.whenStable();
+
+      expect(fieldError('github_url')?.textContent).toContain('doesn’t look like a GitHub URL');
+      expect(fieldError('github_url')?.textContent).toContain('https://github.com/org/repo or https://github.com/org');
+      expect(component['submitDisabled']()).toBe(true);
+      component['onSubmit']();
+      expect(generate).not.toHaveBeenCalled();
     });
   });
 
