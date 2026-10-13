@@ -69,13 +69,20 @@ import {
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 import type {
+  CampaignAdoptRequest,
   CampaignAudiencePlatform,
   CampaignRefPlatform,
+  CampaignServiceCampaign,
   CampaignServiceCampaignResolution,
   CampaignServiceKeywordTargeting,
+  CampaignServiceKeywordTargetingRemovals,
   CampaignServiceMetaAdSets,
+  CampaignServiceMetaAdSetStatusChange,
   CampaignServicePlatformAudienceMap,
   CampaignServiceSettingsReadback,
+  KeywordTargetingRemovalsRequest,
+  MetaAdSetStatusParams,
+  MetaAdSetStatusRequest,
   RedditKeywordMetricsResponse,
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
@@ -708,10 +715,40 @@ export class CampaignService {
     return this.http.get<CampaignServiceMetaAdSets>(`/api/campaigns/${encodeURIComponent(campaignId)}/meta-ad-sets`, { params });
   }
 
+  /**
+   * Pause or resume one Meta ad set. `etag` is the campaign ROW's and goes upstream as `If-Match`;
+   * the answer's etag is the row's version unchanged. `ALREADY_IN_STATE` means nothing was sent.
+   */
+  public updateMetaAdSetStatus(params: MetaAdSetStatusParams): Observable<CampaignServiceMetaAdSetStatusChange> {
+    const { projectSlug, campaignId, adSetId, briefId, status, etag } = params;
+    const body: MetaAdSetStatusRequest = { briefId, status, etag };
+    return this.http.post<CampaignServiceMetaAdSetStatusChange>(
+      `/api/campaigns/${encodeURIComponent(campaignId)}/meta-ad-sets/${encodeURIComponent(adSetId)}/status`,
+      body,
+      { params: new HttpParams().set('project', projectSlug) }
+    );
+  }
+
+  /** Bind a campaign that already exists on its ad platform to a brief. Creates nothing upstream. */
+  public adoptCampaign(projectSlug: string, request: CampaignAdoptRequest): Observable<CampaignServiceCampaign> {
+    return this.http.post<CampaignServiceCampaign>('/api/campaigns/adopt', request, { params: new HttpParams().set('project', projectSlug) });
+  }
+
   /** A Reddit or X campaign's keyword targeting. Reddit's `revision` must be sent back with a removal. */
   public getKeywordTargeting(projectSlug: string, briefId: string, campaignId: string): Observable<CampaignServiceKeywordTargeting> {
     const params = new HttpParams().set('project', projectSlug).set('briefId', briefId);
     return this.http.get<CampaignServiceKeywordTargeting>(`/api/campaigns/${encodeURIComponent(campaignId)}/keyword-targeting`, { params });
+  }
+
+  /** Remove keywords from a Reddit or X campaign's targeting. POSITIONAL: `results[i]` answers `keywords[i]`. */
+  public removeKeywordTargeting(
+    projectSlug: string,
+    campaignId: string,
+    request: KeywordTargetingRemovalsRequest
+  ): Observable<CampaignServiceKeywordTargetingRemovals> {
+    return this.http.post<CampaignServiceKeywordTargetingRemovals>(`/api/campaigns/${encodeURIComponent(campaignId)}/keyword-targeting/removals`, request, {
+      params: new HttpParams().set('project', projectSlug),
+    });
   }
 
   /** The BFF's per-platform route segment for a campaign-service platform id (`meta-ads` -> `meta`). */

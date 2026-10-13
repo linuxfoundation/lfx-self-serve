@@ -64,7 +64,7 @@ router.patch('/:campaignId/bid', (req, res, next) => campaignController.updateCa
 // campaign-service only. Positional response: results[i] answers negativeKeywords[i].
 router.post('/:campaignId/negative-keywords', (req, res, next) => campaignController.addNegativeKeywords(req, res, next));
 
-// --- Optimize: campaign-service reads ------------------------------
+// --- Optimize: campaign-service reads and levers ------------------------------
 //
 // campaign-service only, no legacy arm, so ungated like the budget and bid levers above, EXCEPT
 // the reads whose upstream endpoints are not on campaign-service main yet (Reddit and LinkedIn
@@ -83,9 +83,15 @@ router.get('/twitter/campaign-ref', (req, res, next) => optimizeController.resol
 router.get('/linkedin/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'linkedin-ads'));
 // Pending upstream (flag-gated). Takes `?window=` like the Microsoft keyword read.
 router.get('/reddit/keywords', (req, res, next) => optimizeController.getRedditKeywords(req, res, next));
+// Binds a campaign that already exists on its platform to a brief; creates nothing upstream.
+router.post('/adopt', (req, res, next) => optimizeController.adoptCampaign(req, res, next));
 router.get('/:campaignId/settings', (req, res, next) => optimizeController.getCampaignSettings(req, res, next));
 router.get('/:campaignId/meta-ad-sets', (req, res, next) => optimizeController.listMetaAdSets(req, res, next));
+// If-Match from the body's etag. A 503 that may have reached Meta answers code META_AD_SET_STATUS_UNCONFIRMED.
+router.post('/:campaignId/meta-ad-sets/:adSetId/status', (req, res, next) => optimizeController.updateMetaAdSetStatus(req, res, next));
 router.get('/:campaignId/keyword-targeting', (req, res, next) => optimizeController.getKeywordTargeting(req, res, next));
+// Positional response: results[i] answers keywords[i]. Reddit requires the read's revision.
+router.post('/:campaignId/keyword-targeting/removals', (req, res, next) => optimizeController.removeKeywordTargeting(req, res, next));
 
 // --- Audience Builder ------------------------------------------------------
 //

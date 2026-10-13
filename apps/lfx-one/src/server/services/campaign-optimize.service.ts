@@ -1,35 +1,60 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CAMPAIGN_AUDIENCE_WINDOWS, CAMPAIGN_REF_ID_PATTERNS } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_AUDIENCE_WINDOWS,
+  CAMPAIGN_ETAG_REQUIRED_CODE,
+  CAMPAIGN_ETAG_REQUIRED_MESSAGE,
+  CAMPAIGN_ETAG_STALE_CODE,
+  CAMPAIGN_ETAG_STALE_MESSAGE,
+  CAMPAIGN_REF_ID_PATTERNS,
+  KEYWORD_TARGETING_REMOVAL_OUTCOME_UNCONFIRMED,
+  KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_CODE,
+  KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_OUTCOME,
+  META_AD_SET_STATUS_UNCONFIRMED_OUTCOME,
+} from '@lfx-one/shared/constants';
 import type {
+  CampaignAdoptPlatform,
   CampaignAudiencePlatform,
+  CampaignLeverUnconfirmedOutcome,
   CampaignMetricsWindow,
   CampaignRefPlatform,
+  CampaignServiceCampaign,
   CampaignServiceCampaignResolution,
   CampaignServiceCampaignTarget,
   CampaignServiceKeywordTargeting,
+  CampaignServiceKeywordTargetingRemovals,
   CampaignServiceMetaAdSets,
+  CampaignServiceMetaAdSetStatusChange,
   CampaignServicePlatformAudienceMap,
   CampaignServiceRedditKeywords,
   CampaignServiceSettingsReadback,
+  KeywordTargetingRemovalItem,
+  MetaAdSetStatus,
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
+import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { encodePathSegment } from '../helpers/url-validation';
+import { upstreamAnswered } from './campaign-keyword-actions';
+import { asUnconfirmedWriteFailure, readEtag } from './campaign-service.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
- * Proxies the Optimize tab's campaign-service reads that the BFF did not reach before: per-platform
- * audience reads, campaign-ref resolves, the Reddit keyword read, the campaign settings readback,
- * Meta ad sets and keyword targeting (Reddit and X).
+ * Proxies the Optimize tab's campaign-service reads and levers that the BFF did not reach before:
+ * per-platform audience reads, campaign-ref resolves, the Reddit keyword read, the campaign
+ * settings readback, Meta ad sets (list and status), keyword targeting (read and remove, Reddit
+ * and X) and campaign adoption.
  *
  * Kept apart from `CampaignServiceClient` so it can grow without colliding with the monitor
- * cutover's edits there. Every call runs on the caller's own bearer token, every path segment is
- * encoded with `encodePathSegment`, and a window or id travels as a QUERY parameter (fifth argument).
+ * cutover's edits there; it reuses that client's ETag and unconfirmed-write helpers rather than
+ * restating them. Every call runs on the caller's own bearer token. Every path segment is encoded
+ * with `encodePathSegment`; a body is always the SIXTH argument of the proxy call, after an
+ * explicit `undefined` query, because a body passed one position early is sent as a query string.
  */
 export class CampaignOptimizeService {
   private readonly microserviceProxy = new MicroserviceProxyService();
@@ -145,6 +170,76 @@ export class CampaignOptimizeService {
     );
   }
 
+  /**
+   * Pause or resume ONE ad set of a Meta campaign.
+   *
+   * A dispatching write on a live paid campaign, guarded like the campaign status toggle: `If-Match`
+   * carries the campaign ROW's ETag (upstream answers 428 without it and 412 when it is stale). The
+   * ETag in the answer is the row's version UNCHANGED, because an ad set's status is not stored on
+   * the row; it is taken off the response header, which the contract guarantees, as for the toggle.
+   *
+   * Failures are classified by `asLeverFailure`: 412/428 get their own codes and fixed messages; a
+   * 503 that says the change is unconfirmed, and any failure nobody answered, become
+   * `META_AD_SET_STATUS_UNCONFIRMED`; a 409 (including "the status WAS changed on Meta, but the
+   * campaign changed meanwhile") passes through with campaign-service's own fixed sentence.
+   */
+  public async updateMetaAdSetStatus(
+    req: Request,
+    params: CampaignServiceCampaignTarget & { adSetId: string; status: MetaAdSetStatus; etag: string }
+  ): Promise<CampaignServiceMetaAdSetStatusChange> {
+    const path = `${campaignPath(params)}/meta-ad-sets/${encodePathSegment(params.adSetId)}/status`;
+    logger.debug(req, 'update_meta_ad_set_status', 'Sending ad set status change to campaign-service', {
+      campaign_id: params.campaignId,
+      ad_set_id: params.adSetId,
+      status: params.status,
+    });
+
+    try {
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceMetaAdSetStatusChange>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        path,
+        'POST',
+        undefined,
+        { status: params.status },
+        { 'If-Match': params.etag }
+      );
+      return { ...response.data, etag: readEtag(response) ?? response.data.etag };
+    } catch (error) {
+      throw asLeverFailure(error, 'update_meta_ad_set_status', META_AD_SET_STATUS_UNCONFIRMED_OUTCOME);
+    }
+  }
+
+  /**
+   * Bind a campaign that already exists on its ad platform to a brief. Nothing is created on the
+   * platform; upstream reads the campaign under the project's own connection and writes the row.
+   * Answers 201 with the new row and its ETag (header).
+   *
+   * Upstream's refusals (400 malformed or unsupported, 404 proven absent, 409 already bound or a
+   * foreign account, 503 not verifiable) pass through with its fixed sentences. A failure nobody
+   * answered may still have written the row, so it is reported as `CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED`.
+   */
+  public async adoptCampaign(
+    req: Request,
+    params: { projectSlug: string; briefId: string; platform: CampaignAdoptPlatform; platformCampaignId: string }
+  ): Promise<CampaignServiceCampaign> {
+    const path = `/projects/${encodePathSegment(params.projectSlug)}/briefs/${encodePathSegment(params.briefId)}/campaigns/adopt`;
+    logger.debug(req, 'adopt_campaign', 'Sending campaign adoption to campaign-service', {
+      brief_id: params.briefId,
+      platform: params.platform,
+    });
+
+    try {
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceCampaign>(req, 'LFX_V2_CAMPAIGN_SERVICE', path, 'POST', undefined, {
+        platform: params.platform,
+        platform_campaign_id: params.platformCampaignId,
+      });
+      return { ...response.data, etag: readEtag(response) ?? response.data.etag };
+    } catch (error) {
+      throw asUnconfirmedWriteFailure(error, 'adopt_campaign', CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED);
+    }
+  }
+
   /** The positive keywords of a Reddit ad group or X line item, read live. Any other platform is upstream's 400. */
   public async getKeywordTargeting(req: Request, ref: CampaignServiceCampaignTarget): Promise<CampaignServiceKeywordTargeting> {
     logger.debug(req, 'get_keyword_targeting', 'Reading keyword targeting from campaign-service', { campaign_id: ref.campaignId });
@@ -155,9 +250,117 @@ export class CampaignOptimizeService {
       'GET'
     );
   }
+
+  /**
+   * Remove keywords from a Reddit or X campaign's keyword targeting.
+   *
+   * No `If-Match`: upstream persists nothing for this lever. Reddit instead requires the `revision`
+   * the read returned and refuses (409) when the targeting changed since. The answer is POSITIONAL
+   * (`results[i]` answers `keywords[i]`); one that cannot be read that way (another campaign's id, a
+   * different number of results) is refused as unconfirmed rather than passed on, because the
+   * removals may have happened and nothing in such a body says which.
+   */
+  public async removeKeywordTargeting(
+    req: Request,
+    params: CampaignServiceCampaignTarget & { keywords: KeywordTargetingRemovalItem[]; revision?: string }
+  ): Promise<CampaignServiceKeywordTargetingRemovals> {
+    const path = `${campaignPath(params)}/keyword-targeting/removals`;
+    const body: { keywords: { keyword?: string; criterion_id?: string }[]; revision?: string } = {
+      keywords: params.keywords.map((item) => (item.criterionId !== undefined ? { criterion_id: item.criterionId } : { keyword: item.keyword })),
+    };
+    if (params.revision !== undefined) {
+      body.revision = params.revision;
+    }
+    logger.debug(req, 'remove_keyword_targeting', 'Sending keyword targeting removals to campaign-service', {
+      campaign_id: params.campaignId,
+      count: params.keywords.length,
+    });
+
+    let response: CampaignServiceKeywordTargetingRemovals;
+    try {
+      response = await this.microserviceProxy.proxyRequest<CampaignServiceKeywordTargetingRemovals>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        path,
+        'POST',
+        undefined,
+        body
+      );
+    } catch (error) {
+      throw asLeverFailure(error, 'remove_keyword_targeting', KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_OUTCOME);
+    }
+
+    const readable = response?.campaign_id === params.campaignId && Array.isArray(response.results) && response.results.length === params.keywords.length;
+    if (!readable) {
+      logger.warning(req, 'remove_keyword_targeting', 'Upstream answered with a result set that cannot be read positionally', {
+        campaign_id: params.campaignId,
+        echoed_campaign_id: response?.campaign_id,
+        requested: params.keywords.length,
+        returned: Array.isArray(response?.results) ? response.results.length : null,
+      });
+      throw new MicroserviceError('Keyword targeting removal confirmation did not match the request', 502, KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_CODE, {
+        operation: 'remove_keyword_targeting',
+        service: 'campaign_optimize_service',
+        path,
+        clientMessage: KEYWORD_TARGETING_REMOVAL_OUTCOME_UNCONFIRMED,
+      });
+    }
+    return response;
+  }
 }
 
 /** `/projects/{p}/briefs/{b}/campaigns/{c}`, every segment encoded. */
 function campaignPath(ref: CampaignServiceCampaignTarget): string {
   return `/projects/${encodePathSegment(ref.projectSlug)}/briefs/${encodePathSegment(ref.briefId)}/campaigns/${encodePathSegment(ref.campaignId)}`;
+}
+
+/**
+ * The error a failed lever write should surface, so the UI can branch on `code` alone.
+ *
+ * - 412 (stale ETag) and 428 (no ETag) get their own codes and a fixed "nothing was changed"
+ *   message; `getCodeForStatus` would otherwise collapse both to `CLIENT_ERROR`.
+ * - An ANSWERED 503 whose message matches the lever's unconfirmed marker gets the lever's
+ *   UNCONFIRMED code and message. campaign-service answers 503 for both a definite and an
+ *   unconfirmed failure and tells them apart only in the message (see `campaign-keyword-actions.ts`).
+ * - A failure nobody answered (transport, timeout, a gateway 5xx, 408) may have reached the platform,
+ *   so it is UNCONFIRMED too. A 4xx other than 408 never dispatched and passes through.
+ * - Every other answer, a definite 503 included, passes through with campaign-service's own fixed
+ *   sentence; its service code never puts platform text in a client message.
+ *
+ * `message` keeps the original cause for the log; only the client-facing text is replaced.
+ */
+export function asLeverFailure(error: unknown, operation: string, unconfirmed: CampaignLeverUnconfirmedOutcome): unknown {
+  if (!(error instanceof MicroserviceError)) {
+    return error;
+  }
+  if (error.statusCode === 412) {
+    return rewrap(error, operation, CAMPAIGN_ETAG_STALE_CODE, CAMPAIGN_ETAG_STALE_MESSAGE);
+  }
+  if (error.statusCode === 428) {
+    return rewrap(error, operation, CAMPAIGN_ETAG_REQUIRED_CODE, CAMPAIGN_ETAG_REQUIRED_MESSAGE);
+  }
+  if (upstreamAnswered(error)) {
+    const upstreamMessage = (error.errorBody as { message?: unknown } | undefined)?.message;
+    if (error.statusCode === 503 && typeof upstreamMessage === 'string' && unconfirmed.marker.test(upstreamMessage)) {
+      return rewrap(error, operation, unconfirmed.code, unconfirmed.message);
+    }
+    return error;
+  }
+  if (error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408) {
+    return error;
+  }
+  return rewrap(error, operation, unconfirmed.code, unconfirmed.message);
+}
+
+function rewrap(error: MicroserviceError, operation: string, code: string, clientMessage: string): MicroserviceError {
+  return new MicroserviceError(error.message, error.statusCode, code, {
+    operation,
+    service: error.service,
+    path: error.path,
+    errorBody: error.errorBody,
+    originalMessage: error.originalMessage,
+    originalError: error,
+    transportFailure: error.transportFailure,
+    clientMessage,
+  });
 }

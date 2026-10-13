@@ -4,6 +4,8 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MAX_KEYWORD_TARGETING_REMOVALS } from '@lfx-one/shared/constants';
+
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 
 const {
@@ -12,7 +14,10 @@ const {
   getRedditAdsKeywords,
   getCampaignSettings,
   listMetaAdSets,
+  updateMetaAdSetStatus,
+  adoptCampaign,
   getKeywordTargeting,
+  removeKeywordTargeting,
   isServerFeatureEnabled,
   logger,
 } = vi.hoisted(() => ({
@@ -21,7 +26,10 @@ const {
   getRedditAdsKeywords: vi.fn(),
   getCampaignSettings: vi.fn(),
   listMetaAdSets: vi.fn(),
+  updateMetaAdSetStatus: vi.fn(),
+  adoptCampaign: vi.fn(),
   getKeywordTargeting: vi.fn(),
+  removeKeywordTargeting: vi.fn(),
   isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => false),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -33,7 +41,10 @@ vi.mock('../services/campaign-optimize.service', () => ({
     public getRedditAdsKeywords = getRedditAdsKeywords;
     public getCampaignSettings = getCampaignSettings;
     public listMetaAdSets = listMetaAdSets;
+    public updateMetaAdSetStatus = updateMetaAdSetStatus;
+    public adoptCampaign = adoptCampaign;
     public getKeywordTargeting = getKeywordTargeting;
+    public removeKeywordTargeting = removeKeywordTargeting;
   },
 }));
 vi.mock('../helpers/server-feature-flag.helper', async (importOriginal) => {
@@ -211,5 +222,120 @@ describe('CampaignOptimizeController per-campaign reads', () => {
 
     await controller.listMetaAdSets(buildReq({ params: { campaignId: CAMPAIGN }, query: { project: 'tlf', briefId: BRIEF, window: 'forever' } }), res, next);
     expectFieldError(next, 'window');
+  });
+});
+
+describe('CampaignOptimizeController.updateMetaAdSetStatus', () => {
+  const params = { campaignId: CAMPAIGN, adSetId: '120210000000000888' };
+  const body = { briefId: BRIEF, status: 'PAUSED', etag: '"4"' };
+
+  it('passes the etag through for If-Match and answers the upstream result', async () => {
+    updateMetaAdSetStatus.mockResolvedValue({ outcome: 'APPLIED', etag: '"4"' });
+
+    await controller.updateMetaAdSetStatus(buildReq({ params, body }), res, next);
+
+    expect(updateMetaAdSetStatus).toHaveBeenCalledWith(expect.anything(), {
+      projectSlug: 'tlf',
+      briefId: BRIEF,
+      campaignId: CAMPAIGN,
+      adSetId: '120210000000000888',
+      status: 'PAUSED',
+      etag: '"4"',
+    });
+    expect(res.json).toHaveBeenCalledWith({ outcome: 'APPLIED', etag: '"4"' });
+  });
+
+  it.each([
+    ['adSetId', { ...params, adSetId: '0123' }, body],
+    ['adSetId', { ...params, adSetId: '1/2' }, body],
+    ['status', params, { ...body, status: 'paused' }],
+    ['etag', params, { ...body, etag: '' }],
+    ['etag', params, { ...body, etag: '"4"\r\nX: y' }],
+    ['briefId', params, { ...body, briefId: 'b-1' }],
+    ['body', params, [body]],
+  ])('refuses a bad %s before any round trip', async (field, p, b) => {
+    await controller.updateMetaAdSetStatus(buildReq({ params: p, body: b }), res, next);
+
+    expectFieldError(next, field);
+    expect(updateMetaAdSetStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignOptimizeController.adoptCampaign', () => {
+  const body = { briefId: BRIEF, platform: 'reddit-ads', platformCampaignId: 't2_abc123' };
+
+  it('answers 201 with the adopted row', async () => {
+    adoptCampaign.mockResolvedValue({ id: CAMPAIGN, etag: '"1"' });
+
+    await controller.adoptCampaign(buildReq({ body }), res, next);
+
+    expect(adoptCampaign).toHaveBeenCalledWith(expect.anything(), {
+      projectSlug: 'tlf',
+      briefId: BRIEF,
+      platform: 'reddit-ads',
+      platformCampaignId: 't2_abc123',
+    });
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith({ id: CAMPAIGN, etag: '"1"' });
+  });
+
+  it.each([
+    ['platform', { ...body, platform: 'google-ads' }],
+    ['platform', { ...body, platform: 'hubspot' }],
+    ['platformCampaignId', { ...body, platformCampaignId: ' 123' }],
+    ['platformCampaignId', { ...body, platformCampaignId: 'x'.repeat(65) }],
+  ])('refuses a bad %s', async (field, b) => {
+    await controller.adoptCampaign(buildReq({ body: b }), res, next);
+
+    expectFieldError(next, field);
+    expect(adoptCampaign).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignOptimizeController.removeKeywordTargeting', () => {
+  const params = { campaignId: CAMPAIGN };
+
+  it('sends Reddit keywords verbatim with the revision', async () => {
+    removeKeywordTargeting.mockResolvedValue({ applied_count: 1 });
+
+    await controller.removeKeywordTargeting(
+      buildReq({ params, body: { briefId: BRIEF, keywords: [{ keyword: ' Cloud ' }], revision: 'sha256:abc' } }),
+      res,
+      next
+    );
+
+    expect(removeKeywordTargeting).toHaveBeenCalledWith(expect.anything(), {
+      projectSlug: 'tlf',
+      briefId: BRIEF,
+      campaignId: CAMPAIGN,
+      keywords: [{ keyword: ' Cloud ' }],
+      revision: 'sha256:abc',
+    });
+  });
+
+  it('sends X criterion ids with no revision', async () => {
+    removeKeywordTargeting.mockResolvedValue({ applied_count: 1 });
+
+    await controller.removeKeywordTargeting(buildReq({ params, body: { briefId: BRIEF, keywords: [{ criterionId: '2kzxf' }] } }), res, next);
+
+    expect(removeKeywordTargeting).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ keywords: [{ criterionId: '2kzxf' }], revision: undefined })
+    );
+  });
+
+  it.each([
+    ['keywords', { briefId: BRIEF, keywords: [] }],
+    ['keywords', { briefId: BRIEF, keywords: Array.from({ length: MAX_KEYWORD_TARGETING_REMOVALS + 1 }, () => ({ keyword: 'k' })) }],
+    ['keywords[0]', { briefId: BRIEF, keywords: [{ keyword: 'k', criterionId: '1' }] }],
+    ['keywords[0]', { briefId: BRIEF, keywords: [{ keyword: '   ' }] }],
+    ['keywords[0]', { briefId: BRIEF, keywords: [{ criterionId: '../x' }] }],
+    ['keywords[1]', { briefId: BRIEF, keywords: [{ keyword: 'k' }, { criterionId: '1' }] }],
+    ['revision', { briefId: BRIEF, keywords: [{ keyword: 'k' }], revision: '' }],
+  ])('refuses a bad %s before any round trip', async (field, body) => {
+    await controller.removeKeywordTargeting(buildReq({ params, body }), res, next);
+
+    expectFieldError(next, field);
+    expect(removeKeywordTargeting).not.toHaveBeenCalled();
   });
 });

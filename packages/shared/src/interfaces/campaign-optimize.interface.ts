@@ -172,6 +172,9 @@ export interface CampaignServiceSettingsReadback {
   unknown_count: number;
 }
 
+/** A Meta ad set's status in Meta's vocabulary, as `toggle-meta-ad-set-status` accepts it. */
+export type MetaAdSetStatus = 'ACTIVE' | 'PAUSED';
+
 /** One Meta ad set (`meta-ad-set`). */
 export interface CampaignServiceMetaAdSet {
   id: string;
@@ -205,6 +208,46 @@ export interface CampaignServiceMetaAdSets {
   ad_set_count: number;
 }
 
+/**
+ * `meta-ad-set-status-change`. `etag` is the campaign row's version, UNCHANGED: an ad set's status
+ * is not stored on the row. The BFF fills it from the `ETag` response header.
+ */
+export interface CampaignServiceMetaAdSetStatusChange {
+  campaign_id: string;
+  ad_set_id: string;
+  requested_status: MetaAdSetStatus;
+  previous_status?: string;
+  /** ALREADY_IN_STATE means NOTHING was sent to Meta. */
+  outcome: 'APPLIED' | 'ALREADY_IN_STATE';
+  etag?: string;
+}
+
+/** Body of `POST /api/campaigns/:campaignId/meta-ad-sets/:adSetId/status?project=`. */
+export interface MetaAdSetStatusRequest {
+  briefId: string;
+  status: MetaAdSetStatus;
+  /** The campaign row's ETag, sent upstream as `If-Match`. */
+  etag: string;
+}
+
+/** Arguments of `CampaignService.updateMetaAdSetStatus` on the client. */
+export interface MetaAdSetStatusParams extends MetaAdSetStatusRequest {
+  projectSlug: string;
+  campaignId: string;
+  adSetId: string;
+}
+
+/** A platform `adopt-campaign` may be asked for through the BFF (Google Ads is excluded). */
+export type CampaignAdoptPlatform = 'microsoft-ads' | 'meta-ads' | 'reddit-ads' | 'twitter-ads';
+
+/** Body of `POST /api/campaigns/adopt?project=`. */
+export interface CampaignAdoptRequest {
+  briefId: string;
+  platform: CampaignAdoptPlatform;
+  /** The ad platform's own id for the existing campaign. */
+  platformCampaignId: string;
+}
+
 /** One keyword in a Reddit or X campaign's targeting (`keyword-targeting-entry`). */
 export interface CampaignServiceKeywordTargetingEntry {
   keyword: string;
@@ -224,6 +267,36 @@ export interface CampaignServiceKeywordTargeting {
   revision?: string;
 }
 
+/** One keyword to remove: `keyword` on Reddit, `criterionId` on X — exactly one of the two. */
+export interface KeywordTargetingRemovalItem {
+  keyword?: string;
+  criterionId?: string;
+}
+
+/** Body of `POST /api/campaigns/:campaignId/keyword-targeting/removals?project=`. */
+export interface KeywordTargetingRemovalsRequest {
+  briefId: string;
+  keywords: KeywordTargetingRemovalItem[];
+  /** Reddit: the `revision` the read returned. Must be absent on X. */
+  revision?: string;
+}
+
+/** One removal's outcome (`keyword-targeting-removal-result`); `results[i]` answers `keywords[i]`. */
+export interface CampaignServiceKeywordTargetingRemovalResult {
+  keyword?: string;
+  criterion_id?: string;
+  /** UNCONFIRMED means it may have been removed: read the targeting again before retrying. */
+  outcome: 'APPLIED' | 'FAILED' | 'UNCONFIRMED';
+  error_code?: string;
+}
+
+/** `keyword-targeting-removals`. */
+export interface CampaignServiceKeywordTargetingRemovals {
+  campaign_id: string;
+  results: CampaignServiceKeywordTargetingRemovalResult[];
+  applied_count: number;
+}
+
 /** A platform whose campaign-ref resolve the BFF exposes (`linkedin-ads` is pending upstream). */
 export type CampaignRefPlatform = 'meta-ads' | 'reddit-ads' | 'twitter-ads' | 'linkedin-ads';
 
@@ -239,3 +312,11 @@ export type CampaignServiceRedditKeywords = CampaignServiceMicrosoftKeywords;
 
 /** Response of `GET /api/campaigns/reddit/keywords`: the Microsoft keyword table's shape. */
 export type RedditKeywordMetricsResponse = MicrosoftKeywordMetricsResponse;
+
+/** How a lever reports an outcome it cannot confirm: its own error code and fixed client message. */
+export interface CampaignLeverUnconfirmedOutcome {
+  code: string;
+  message: string;
+  /** Matched against an ANSWERED 503's message; a match means the write may have reached the platform. */
+  marker: RegExp;
+}
