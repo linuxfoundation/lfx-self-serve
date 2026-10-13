@@ -77,7 +77,25 @@ export interface MeetingStubs {
   past?: { meeting: Record<string, unknown>; fullAccess: boolean };
   /** A status for the upcoming lookup instead of a meeting (the error path). */
   lookupStatus?: number;
+  /**
+   * The meeting's password. When set, the upcoming lookup and the join URL answer 400 unless the
+   * request carries it in `x-meeting-password`, as the BFF does for a non-open meeting a visitor or
+   * outsider opens (`state-matrix.md` § Reachability). Open such a meeting with the same password.
+   */
+  password?: string;
+  /** Collects every join-URL request the page makes: its body and the password header it carried. */
+  joinUrlCalls?: { body: Record<string, unknown> | null; password: string | undefined }[];
 }
+
+export interface OpenMeetingOptions {
+  /** The invite link's `?password=`. */
+  password?: string;
+  /** The page is expected to route away (a reachability case): do not wait for the V2 tree. */
+  expectRedirect?: boolean;
+}
+
+/** The invite-link password the restricted presets use. */
+export const INVITE_PASSWORD = 'e2e-invite';
 
 function json(route: Route, body: unknown, status = 200): Promise<void> {
   // A request the page already aborted (V1's lookup, destroyed by the gate's latch) rejects here.
@@ -96,6 +114,8 @@ export async function stubMeetingDetails(page: Page, stubs: MeetingStubs): Promi
     async (route) => {
       const { pathname } = new URL(route.request().url());
       const method = route.request().method();
+      const password = route.request().headers()['x-meeting-password'];
+      const passwordRejected = !!stubs.password && password !== stubs.password;
 
       if (pathname === `/public/api/meetings/past/${PAST_ID}`) {
         return stubs.past ? json(route, { meeting: stubs.past.meeting, project: PROJECT, full_access: stubs.past.fullAccess }) : json(route, {}, 404);
@@ -104,10 +124,14 @@ export async function stubMeetingDetails(page: Page, stubs: MeetingStubs): Promi
         if (stubs.lookupStatus) {
           return json(route, { message: 'upstream failure' }, stubs.lookupStatus);
         }
+        if (passwordRejected) {
+          return json(route, { message: 'Invalid password' }, 400);
+        }
         return stubs.meeting ? json(route, { meeting: stubs.meeting, project: PROJECT }) : json(route, {}, 404);
       }
       if (pathname.endsWith('/join-url')) {
-        return json(route, { link: 'https://zoom.example/j/123' });
+        stubs.joinUrlCalls?.push({ body: (route.request().postDataJSON() as Record<string, unknown> | null) ?? null, password });
+        return passwordRejected ? json(route, { message: 'Invalid password' }, 400) : json(route, { link: 'https://zoom.example/j/123' });
       }
       if (pathname.endsWith('/rsvp/me')) {
         return json(route, null);
@@ -146,7 +170,7 @@ export async function stubMeetingDetails(page: Page, stubs: MeetingStubs): Promi
  * Boots the app signed in with the V2 flag on and the stubs in place, then SPA-navigates to the
  * meeting. `zoom_redirect=false` keeps the join slot from auto-opening Zoom in a popup.
  */
-export async function openMeetingSignedIn(page: Page, meetingId: string, stubs: MeetingStubs): Promise<void> {
+export async function openMeetingSignedIn(page: Page, meetingId: string, stubs: MeetingStubs, options: OpenMeetingOptions = {}): Promise<void> {
   await stubMeetingsV2Flag(page, true);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -154,12 +178,17 @@ export async function openMeetingSignedIn(page: Page, meetingId: string, stubs: 
   await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
   await stubMeetingDetails(page, stubs);
 
-  await page.evaluate((url) => {
-    window.history.pushState({}, '', url);
-    window.dispatchEvent(new PopStateEvent('popstate'));
-  }, `/meetings/${meetingId}?zoom_redirect=false`);
+  await page.evaluate(
+    (url) => {
+      window.history.pushState({}, '', url);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    },
+    meetingUrl(meetingId, { zoom_redirect: 'false', password: options.password })
+  );
 
-  await expect(page.getByTestId('meeting-details-gate-v2')).toBeAttached({ timeout: PAGE_LOAD_TIMEOUT });
+  if (!options.expectRedirect) {
+    await expect(page.getByTestId('meeting-details-gate-v2')).toBeAttached({ timeout: PAGE_LOAD_TIMEOUT });
+  }
 }
 
 /** The page has loaded its meeting: the header's h1 shows the title. */
@@ -185,15 +214,24 @@ export function skipWithoutCredentials(skip: (condition: boolean, reason: string
 }
 
 /** Boots an anonymous browser on a public page (`/` would redirect to Auth0) and SPA-navigates to the meeting. */
-export async function openMeetingAnonymously(page: Page, meetingId: string, stubs: MeetingStubs): Promise<void> {
+export async function openMeetingAnonymously(page: Page, meetingId: string, stubs: MeetingStubs, options: OpenMeetingOptions = {}): Promise<void> {
   await stubMeetingsV2Flag(page, true);
 
   await page.goto('/meetings/not-found', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('meeting-not-found-card')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
   await stubMeetingDetails(page, stubs);
 
-  await page.evaluate((url) => {
-    window.history.pushState({}, '', url);
-    window.dispatchEvent(new PopStateEvent('popstate'));
-  }, `/meetings/${meetingId}`);
+  await page.evaluate(
+    (url) => {
+      window.history.pushState({}, '', url);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    },
+    meetingUrl(meetingId, { password: options.password })
+  );
+}
+
+/** `/meetings/:id` with the given query params; an invite link carries `?password=`. */
+function meetingUrl(meetingId: string, params: Record<string, string | undefined>): string {
+  const query = new URLSearchParams(Object.entries(params).filter((entry): entry is [string, string] => !!entry[1])).toString();
+  return `/meetings/${meetingId}${query ? `?${query}` : ''}`;
 }

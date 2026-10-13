@@ -13,13 +13,23 @@ which is not in this repo).
 | 2     | anonymous visitor    | public, live                               | `guest-join`              | guest form                                      |
 | 3     | signed-in registrant | before, RSVP tracking on                   | `rsvp`                    | answering confirms it                           |
 | 4     | signed-in registrant | live                                       | `join`                    | Join links to the meeting                       |
-| 5     | signed-in outsider   | restricted, before                         | `invitation-required`     | the invited-guests copy                         |
+| 5     | signed-in outsider   | restricted, before, via its invite link    | `invitation-required`     | the invited-guests copy                         |
 | 6     | signed-in organizer  | ended, opened by its composite id          | `tools`                   | recording, AI summary, Who attended, Admin view |
 | 7     | anonymous visitor    | ended public meeting with public artifacts | `tools`                   | public recording and summary                    |
 | 8     | signed-in viewer     | ended, no artifact access                  | `no-access`               | "details are private", no tools or roster       |
 | error | signed-in viewer     | lookup fails (5xx)                         | —                         | alert, Try again, the second-failure copy       |
 
-**Anonymous presets (1, 2, 7) are `fixme` until rollout stage 5.** The V2 gate gives every anonymous
+Two more cases cover the requirements the presets alone do not:
+
+- **Reachability (SC-002).** An outsider or visitor on a restricted meeting with no invite-link
+  password lands on `/meetings/not-found` (robust spec). The stub router enforces the password as the
+  BFF does: with `MeetingStubs.password` set, the lookup and the join URL answer 400 unless the
+  request carries it in `x-meeting-password`. Preset 5 opens with it, the only way it is reachable.
+- **Invitee guest join (SC-003).** An invitee with no session opens the invite link to a restricted
+  live meeting, fills the guest form and gets a ready Join link fetched for the typed email (content
+  spec).
+
+**Anonymous presets (1, 2, 7) and the anonymous SC-002 and SC-003 cases are `fixme` until rollout stage 5.** The V2 gate gives every anonymous
 viewer V1 until then (`rollout.md`), and stage 5 is to be validated by these presets. The suite pins
 today's behaviour (anonymous viewers get V1) in a test that runs now.
 

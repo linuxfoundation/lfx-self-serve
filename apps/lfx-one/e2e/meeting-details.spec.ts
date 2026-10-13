@@ -18,6 +18,8 @@ import {
   buildMeeting,
   buildPastMeeting,
   ELEMENT_TIMEOUT,
+  INVITE_PASSWORD,
+  MeetingStubs,
   openMeetingAnonymously,
   openMeetingSignedIn,
   PAGE_LOAD_TIMEOUT,
@@ -60,7 +62,13 @@ test.describe('Meeting details V2 — signed-in presets', () => {
   });
 
   test('5 · a signed-in outsider on a restricted meeting is told an invitation is required', async ({ page }) => {
-    await openMeetingSignedIn(page, UPCOMING_ID, { meeting: buildMeeting('before', { restricted: true }) });
+    // Reachable only through the invite link: without `?password=` the lookup 400s (see the robust spec).
+    await openMeetingSignedIn(
+      page,
+      UPCOMING_ID,
+      { meeting: buildMeeting('before', { restricted: true }), password: INVITE_PASSWORD },
+      { password: INVITE_PASSWORD }
+    );
     await waitForMeeting(page);
 
     await expect(page.getByTestId('meeting-invitation-required-state')).toContainText('This meeting is limited to invited guests.');
@@ -122,6 +130,29 @@ test.describe('Meeting details V2 — anonymous presets', () => {
     await expect(form.getByLabel('Email')).toBeVisible();
     await expect(form.getByLabel('Organization')).toBeVisible();
     await expect(page.getByTestId('meeting-guest-join-button')).toContainText('Join as guest');
+  });
+
+  test.fixme('SC-003 · an invitee with no session joins a restricted meeting through the guest form (stage 5)', async ({ page }) => {
+    const joinUrlCalls: NonNullable<MeetingStubs['joinUrlCalls']> = [];
+    await openMeetingAnonymously(
+      page,
+      UPCOMING_ID,
+      { meeting: buildMeeting('live', { restricted: true }), password: INVITE_PASSWORD, joinUrlCalls },
+      { password: INVITE_PASSWORD }
+    );
+    await waitForMeeting(page);
+
+    const form = page.getByTestId('meeting-guest-join-form');
+    await form.getByLabel('Full name').fill('Grace Hopper');
+    await form.getByLabel('Email').fill('grace@invitee.example');
+
+    const join = page.getByTestId('meeting-guest-join-button');
+    await expect(join).toHaveAttribute('data-state', 'ready', { timeout: ELEMENT_TIMEOUT });
+    const href = new URL((await join.locator('a').getAttribute('href')) ?? '');
+    expect(`${href.origin}${href.pathname}`).toBe('https://zoom.example/j/123');
+    expect(href.searchParams.get('uname')).toBe('Grace Hopper');
+    // The link was fetched for the typed email, with the invite link's password.
+    expect(joinUrlCalls.at(-1)).toMatchObject({ body: { email: 'grace@invitee.example' }, password: INVITE_PASSWORD });
   });
 
   test.fixme('7 · a visitor to an ended public meeting reads its public summary (stage 5)', async ({ page }) => {
