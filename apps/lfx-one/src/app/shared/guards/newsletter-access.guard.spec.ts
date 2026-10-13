@@ -210,14 +210,52 @@ describe('newsletterAccessGuard', () => {
     expect(getProject).not.toHaveBeenCalled();
   });
 
+  it.each([0, 408, 429, 500, 503])('allows the route-project writer when a UID HTTP %s retry recovers', async (status) => {
+    vi.useFakeTimers();
+    activeContext.set({ uid: 'uid-stale', slug: 'stale-slug', name: 'Stale Project' });
+    const request = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status })))
+      .mockReturnValueOnce(of({ slug: 'route-project', writer: true }));
+    getProjectStrict.mockReturnValue(defer(request));
+
+    const result = runGuard(route({ params: { projectUid: 'uid-a' }, query: { project: 'stale-slug' } }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+
+    expect(await result).toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(getProject).not.toHaveBeenCalled();
+    expect(router.createUrlTree).not.toHaveBeenCalled();
+  });
+
+  it('denies access to the resolved route project when the UID retry recovers a non-writer', async () => {
+    vi.useFakeTimers();
+    const request = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
+      .mockReturnValueOnce(of({ slug: 'route-project', writer: false }));
+    getProjectStrict.mockReturnValue(defer(request));
+
+    const result = runGuard(route({ params: { projectUid: 'uid-a' }, query: { project: 'stale-slug' } }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+
+    expect(await result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'route-project', _notice: 'access' } } });
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(getProject).not.toHaveBeenCalled();
+  });
+
   it.each([0, 408, 429, 500, 503])('explains a UID HTTP %s outage without consulting or serializing a stale writable project', async (status) => {
+    vi.useFakeTimers();
     activeContext.set({ uid: 'uid-stale', slug: 'stale-slug', name: 'Stale Project' });
     projectsByKey = { 'stale-slug': { slug: 'stale-slug', writer: true } };
-    getProjectStrict.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    const request = vi.fn(() => throwError(() => new HttpErrorResponse({ status })));
+    getProjectStrict.mockReturnValue(defer(request));
 
-    const result = await runGuard(route({ params: { projectUid: 'uid-a', id: 'n1' }, query: { project: 'stale-slug' } }));
+    const result = runGuard(route({ params: { projectUid: 'uid-a', id: 'n1' }, query: { project: 'stale-slug' } }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
 
-    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { _notice: 'error' } } });
+    expect(await result).toEqual({ denied: '/project/overview', opts: { queryParams: { _notice: 'error' } } });
+    expect(request).toHaveBeenCalledTimes(2);
     expect(getProjectStrict).toHaveBeenCalledExactlyOnceWith('uid-a');
     expect(getProject).not.toHaveBeenCalled();
     expect(router.parseUrl).not.toHaveBeenCalled();
@@ -230,13 +268,15 @@ describe('newsletterAccessGuard', () => {
     { lens: 'project' as const, platform: 'browser', uidOwner: 'child' },
     { lens: 'project' as const, platform: 'server', uidOwner: 'route' },
   ])('carries the error notice for $lens/$platform with a $uidOwner-owned UID', async ({ lens, platform, uidOwner }) => {
+    vi.useFakeTimers();
     TestBed.overrideProvider(PLATFORM_ID, { useValue: platform });
     getProjectStrict.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     const params = { projectUid: 'uid-a', id: 'n1' };
 
-    const result = await runGuard(route({ lens, ...(uidOwner === 'route' ? { params } : { childParams: params }) }));
+    const result = runGuard(route({ lens, ...(uidOwner === 'route' ? { params } : { childParams: params }) }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
 
-    expect(result).toEqual({ denied: `/${lens}/overview`, opts: { queryParams: { _notice: 'error' } } });
+    expect(await result).toEqual({ denied: `/${lens}/overview`, opts: { queryParams: { _notice: 'error' } } });
     expect(getProjectStrict).toHaveBeenCalledExactlyOnceWith('uid-a');
     expect(getProject).not.toHaveBeenCalled();
     expect(router.parseUrl).not.toHaveBeenCalled();
@@ -245,11 +285,13 @@ describe('newsletterAccessGuard', () => {
   it.each([401, 403])('keeps the plain fail-closed redirect for UID HTTP %s without consulting stale context', async (status) => {
     activeContext.set({ uid: 'uid-stale', slug: 'stale-slug', name: 'Stale Project' });
     projectsByKey = { 'stale-slug': { slug: 'stale-slug', writer: true } };
-    getProjectStrict.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    const request = vi.fn(() => throwError(() => new HttpErrorResponse({ status })));
+    getProjectStrict.mockReturnValue(defer(request));
 
     const result = await runGuard(route({ params: { projectUid: 'uid-a' }, query: { project: 'stale-slug' } }));
 
     expect(result).toEqual({ redirect: '/project/overview' });
+    expect(request).toHaveBeenCalledTimes(1);
     expect(getProjectStrict).toHaveBeenCalledExactlyOnceWith('uid-a');
     expect(getProject).not.toHaveBeenCalled();
     expect(router.createUrlTree).not.toHaveBeenCalled();

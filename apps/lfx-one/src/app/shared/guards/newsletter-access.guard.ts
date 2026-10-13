@@ -12,7 +12,7 @@ import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
 import { ProjectRecoveryService } from '../services/project-recovery.service';
 import { ProjectService } from '../services/project.service';
-import { isTransientHttpError } from '../utils/http-error.utils';
+import { isTransientHttpError, retryTransientHttpError } from '../utils/http-error.utils';
 
 /**
  * Route guard for the newsletters feature.
@@ -33,8 +33,8 @@ import { isTransientHttpError } from '../utils/http-error.utils';
  *   2. The URL's `?project=<slug>` query param, then the active context's
  *      slug — the legacy chain, used by the list/create routes and as the
  *      fallback only when the uid lookup confirms the project is gone
- *      (400/404); a transient lookup failure fails closed with an error notice
- *      instead of re-checking writer access against a possibly-stale context.
+ *      (400/404); a transient lookup failure retries once, then fails closed with
+ *      an error notice instead of checking access against a possibly-stale context.
  *
  * Redirects to the lens-appropriate overview on denial to preserve
  * the active project context without triggering a lens switch.
@@ -149,6 +149,7 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
     // shareReplay-cached, so this guard's mount- and child-route invocations and
     // reconcileRouteProjectContext share the one request per deep link.
     return projectService.getProjectStrict(projectUid).pipe(
+      retryTransientHttpError(),
       map((resolved): boolean | UrlTree => {
         // The uid lookup already returned the project entity, so check writer
         // directly on it; the resolved slug is only needed for the denial redirect.
