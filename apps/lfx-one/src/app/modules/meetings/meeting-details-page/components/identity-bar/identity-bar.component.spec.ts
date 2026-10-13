@@ -167,6 +167,13 @@ describe('MeetingIdentityBarComponent', () => {
       expect(identity?.getAttribute('aria-hidden')).toBe('false');
     });
 
+    // #3260: the cross-fade is skipped for viewers who ask for reduced motion.
+    it('cross-fades only when motion is not reduced', async () => {
+      await create();
+
+      expect(query('meeting-identity-bar-meeting')?.classList).toContain('motion-reduce:transition-none');
+    });
+
     it('shows the title and a "{group} · {status}" subtitle, each with its full text as a tooltip', async () => {
       await create();
 

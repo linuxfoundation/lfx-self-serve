@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, DestroyRef, inject, Signal } from '@angular/core';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { environment } from '@environments/environment';
@@ -11,6 +11,7 @@ import { ActionSlotKind, MeetingViewerRole } from '@lfx-one/shared/interfaces';
 import { buildMeetingOrganizerMailto, formatMeetingMailtoDate, resolveMeetingOrganizer } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
+import { restoreFocusOnDialogClose } from '@shared/utils/restore-dialog-focus.util';
 import { DialogService } from 'primeng/dynamicdialog';
 import { take } from 'rxjs';
 
@@ -44,6 +45,9 @@ import { MeetingRsvpCardComponent } from '../rsvp-card/rsvp-card.component';
 export class MeetingActionSlotComponent {
   protected readonly state = inject(MeetingDetailsStateService);
   private readonly userService = inject(UserService);
+  private readonly document = inject(DOCUMENT);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -88,7 +92,8 @@ export class MeetingActionSlotComponent {
       return;
     }
     // `open` returns null when this dialog is already open (PrimeNG blocks the duplicate), so a quick
-    // second click leaves the open dialog alone.
+    // second click leaves the open dialog alone. Focus goes back to Register on close (#3260).
+    const trigger = this.document.activeElement;
     const dialogRef = this.dialogService.open(PublicRegistrationModalComponent, {
       header: 'Register for Meeting',
       width: '500px',
@@ -98,11 +103,20 @@ export class MeetingActionSlotComponent {
       data: { meetingId: meeting.id, meetingTitle: meeting.title, user: this.userService.user() },
     });
 
+    restoreFocusOnDialogClose(dialogRef, trigger);
+
     // Torn down with the slot, and keyed to this meeting: a registration that completes after the
     // page has moved on to another meeting must not mark that one as invited.
     dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
         this.state.markRegistered(meeting.id);
+        // Register is gone from the slot now, so focus has nowhere to return to: hand it to the slot's
+        // new first control once it renders, or to the slot itself when the new state has none (e.g.
+        // `rsvp-unavailable`, plain text), so it never falls to <body> (#3260, WCAG 2.4.3). Only on the
+        // meeting the registration was for: a late result after the page moved on changes nothing here.
+        if (this.state.meeting()?.id === meeting.id) {
+          afterNextRender(() => this.focusSlot(), { injector: this.injector });
+        }
       }
     });
   }
@@ -133,5 +147,17 @@ export class MeetingActionSlotComponent {
       const minutes = meeting.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME;
       return `You can join up to ${minutes} minutes before the start time.`;
     });
+  }
+
+  /** Focuses the slot's first control, or the slot itself (made programmatically focusable) when it has none. */
+  private focusSlot(): void {
+    const host = this.host.nativeElement;
+    const control = host.querySelector<HTMLElement>('button, a[href]');
+    if (control) {
+      control.focus();
+      return;
+    }
+    host.tabIndex = -1;
+    host.focus();
   }
 }

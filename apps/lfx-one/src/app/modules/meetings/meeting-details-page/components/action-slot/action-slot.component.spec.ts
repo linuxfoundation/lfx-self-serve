@@ -68,7 +68,7 @@ describe('MeetingActionSlotComponent', () => {
     pastAccessKnown = signal(true);
     markRegistered = vi.fn();
     dialogClose = new Subject();
-    openDialog = vi.fn().mockReturnValue({ onClose: dialogClose.asObservable() });
+    openDialog = vi.fn().mockReturnValue({ onClose: dialogClose.asObservable(), onDestroy: dialogClose.asObservable() });
     add = vi.fn();
     selectedOccurrence = signal<MeetingOccurrence | null>(null);
 
@@ -278,6 +278,37 @@ describe('MeetingActionSlotComponent', () => {
       expect(markRegistered).toHaveBeenCalledWith('meeting-1');
     });
 
+    // #3260: PrimeNG's dialog does not restore focus; the slot hands it back to Register on close.
+    it('returns focus to Register once its dialog is gone', () => {
+      const destroyed = new Subject<void>();
+      openDialog.mockReturnValue({ onClose: dialogClose.asObservable(), onDestroy: destroyed.asObservable() });
+      const register = query('meeting-action-register-button')?.querySelector('button') as HTMLButtonElement;
+      register.focus();
+      register.click();
+      register.blur();
+
+      destroyed.next();
+
+      expect(document.activeElement).toBe(register);
+    });
+
+    // #3260: Register leaves the slot once registered, so focus moves to the slot's new first control.
+    it.each([
+      ['its new first control', 'rsvp' as ActionSlotKind],
+      // RSVP tracking off: the new state is plain text, so the slot itself takes focus.
+      ['the slot itself when the new state has no control', 'rsvp-unavailable' as ActionSlotKind],
+    ])('moves focus to %s once registered, since Register is gone', async (_label, next) => {
+      markRegistered.mockImplementation(() => actionSlot.set(next));
+      query('meeting-action-register-button')?.querySelector('button')?.click();
+      dialogClose.next({ registered: true });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query('meeting-action-register-button')).toBeNull();
+      expect(document.activeElement).not.toBe(document.body);
+      expect(fixture.nativeElement.contains(document.activeElement) || document.activeElement === fixture.nativeElement).toBe(true);
+    });
+
     it('keeps the open dialog when PrimeNG refuses a duplicate', () => {
       openDialog.mockReturnValue(null);
 
@@ -290,6 +321,21 @@ describe('MeetingActionSlotComponent', () => {
       dialogClose.next({ registered: true });
 
       expect(markRegistered).not.toHaveBeenCalled();
+    });
+
+    it('moves no focus for a registration that completes after the page moved to another meeting', async () => {
+      query('meeting-action-register-button')?.querySelector('button')?.click();
+      const elsewhere = document.createElement('button');
+      document.body.append(elsewhere);
+      elsewhere.focus();
+      meeting.set({ id: 'meeting-2' } as Meeting);
+
+      dialogClose.next({ registered: true });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(document.activeElement).toBe(elsewhere);
+      elsewhere.remove();
     });
 
     it('leaves the page alone when the dialog closes without registering', () => {

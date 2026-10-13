@@ -33,8 +33,8 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
 export class MeetingIdentityBarComponent {
   protected readonly state = inject(MeetingDetailsStateService);
   protected readonly userService = inject(UserService);
-  private readonly lensService = inject(LensService);
   private readonly router = inject(Router);
+  private readonly lensService = inject(LensService);
 
   /** True once the page header has scrolled out of view; the bar then shows the meeting's identity. */
   public readonly condensed = input(false);

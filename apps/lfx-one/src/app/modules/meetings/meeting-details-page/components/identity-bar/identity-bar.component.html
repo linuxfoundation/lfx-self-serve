@@ -28,7 +28,7 @@
              assistive tech until then: it repeats the page's own heading. -->
         @if (meeting(); as meeting) {
           <div
-            class="flex min-w-0 items-center gap-[14px] transition-opacity duration-200"
+            class="flex min-w-0 items-center gap-[14px] transition-opacity duration-200 motion-reduce:transition-none"
             [class.opacity-0]="!condensed()"
             [class.pointer-events-none]="!condensed()"
             [attr.aria-hidden]="!condensed()"
@@ -62,6 +62,8 @@
 
       <div class="flex flex-none items-center gap-[12px]">
         @if (userService.authenticated()) {
+          <!-- A button, not a link: it must set the Me lens before navigating, and a link opened in a new
+               tab would skip that and land on another lens's meetings (#3260 review). -->
           <button
             type="button"
             (click)="navigateToMyMeetings()"
@@ -97,7 +99,7 @@
             (onHide)="accountMenuOpen.set(false)" />
         } @else {
           <span
-            class="mr-[4px] hidden whitespace-nowrap text-[12px] text-[var(--md-text-muted)] transition-opacity duration-200 min-[641px]:inline"
+            class="mr-[4px] hidden whitespace-nowrap text-[12px] text-[var(--md-text-muted)] transition-opacity duration-200 motion-reduce:transition-none min-[641px]:inline"
             [class.opacity-0]="condensed()"
             [attr.aria-hidden]="condensed()"
             data-testid="meeting-identity-bar-visitor-prompt">

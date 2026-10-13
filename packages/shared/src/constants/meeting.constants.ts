@@ -1245,3 +1245,10 @@ export const PAST_MEETING_SUMMARY_APPROVAL_LABELS: Record<PastMeetingSummaryAppr
   pending: 'Pending review',
   'not-required': null,
 };
+
+/**
+ * The V2 details page's scroll padding under its sticky identity bar (#3260, WCAG 2.4.11), in px: the
+ * 83px bar plus a margin, and the same with the 42px impersonation banner above it. Keep in step with
+ * the bar's and the banner's heights.
+ */
+export const MEETING_DETAILS_SCROLL_PADDING_PX = { default: 100, impersonating: 142 } as const;

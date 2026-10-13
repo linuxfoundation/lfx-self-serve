@@ -23,13 +23,15 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * "pending" is the absence of one.
  *
  * It saves as V1's `lfx-rsvp-button-group` does (same request, `occurrence_id` for `single` and
- * `this_and_following`, same toasts and 404 copy) and hands the saved RSVP to the state service
+ * `this_and_following`, same 404 copy) and hands the saved RSVP to the state service
  * (`setMyRsvp`), so the pill and the card show it at once, ahead of the indexer. The card also keeps
  * the answer it saved: the state service only loads an invitee's own answer, and an organizer gets
  * this card too, invited or not.
  *
  * Each step swaps what is on screen, so focus moves to the step's control, and a save is announced
- * through one live region that stays mounted. The step state resets when the page moves to another
+ * once (#3260): through one live region that stays mounted (and the inline alert for a failure) while
+ * the card still shows that meeting, or as a toast, V1's, only when the page has moved on and nothing
+ * else would say the save landed. The step state resets when the page moves to another
  * meeting or occurrence.
  *
  * The scope question is a step inside the card, not V1's dialog: that dialog is shared with V1 and
@@ -186,13 +188,15 @@ export class MeetingRsvpCardComponent {
         next: (rsvp: MeetingRsvp) => {
           // Guards itself against a meeting or occurrence the page has left.
           this.state.setMyRsvp(meeting.id, occurrenceId, rsvp);
-          this.messageService.add({
-            severity: 'success',
-            summary: 'RSVP Updated',
-            detail: `You have responded "${this.responseWord(response)}" for this meeting.`,
-            life: 3000,
-          });
+          // Announced once (#3260): inline (the confirmation and its status line) while the card still shows
+          // this meeting; a toast only when the page has moved on and nothing else would say it landed.
           if (!current()) {
+            this.messageService.add({
+              severity: 'success',
+              summary: 'RSVP Updated',
+              detail: `You have responded "${this.responseWord(response)}" for this meeting.`,
+              life: 3000,
+            });
             return;
           }
           this.savedResponse.set(rsvp.response_type);
@@ -204,9 +208,11 @@ export class MeetingRsvpCardComponent {
         },
         error: (error: HttpErrorResponse) => {
           const message = this.errorMessage(error);
-          this.messageService.add({ severity: 'error', summary: 'RSVP Failed', detail: message, life: 5000 });
+          // Once, as for success: the inline alert while the card shows this meeting, else a toast.
           if (current()) {
             this.error.set(message);
+          } else {
+            this.messageService.add({ severity: 'error', summary: 'RSVP Failed', detail: message, life: 5000 });
           }
         },
       });

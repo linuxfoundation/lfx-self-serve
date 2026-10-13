@@ -150,7 +150,34 @@ describe('MeetingDetailsPageComponent', () => {
     expect(query('meeting-skeleton')).toBeNull();
     expect(query('meeting-header-section')?.querySelector('lfx-meeting-header')).not.toBeNull();
     expect(query('meeting-content-column')).not.toBeNull();
-    expect(query('meeting-rail')?.getAttribute('aria-label')).toBe('Meeting actions');
+    // #3260: a labelled region (not an <aside> inside <main>), with its own sr-only h2 once loaded.
+    const rail = query('meeting-rail');
+    expect(rail?.tagName).toBe('SECTION');
+    expect(rail?.getAttribute('aria-label')).toBe('Meeting actions');
+    expect(rail?.querySelector('h2')?.textContent?.trim()).toBe('Meeting actions');
+  });
+
+  // #3260 (WCAG 2.4.11): focused controls scroll clear of the sticky identity bar, only while the page is up.
+  it('pads the scroll root under the sticky bar while mounted', () => {
+    show('ready');
+    expect(document.documentElement.style.scrollPaddingTop).toBe('100px');
+
+    fixture.destroy();
+    expect(document.documentElement.style.scrollPaddingTop).toBe('');
+  });
+
+  // The skeleton projects the columns into its polite live region: no heading may be read out with it.
+  it('keeps the rail heading out of the loading live region', () => {
+    show('loading');
+    expect(query('meeting-skeleton')?.querySelector('h2')).toBeNull();
+  });
+
+  it('gives every state the one h1', () => {
+    show('error');
+    expect(fixture.nativeElement.querySelectorAll('h1')).toHaveLength(1);
+
+    show('loading');
+    expect(fixture.nativeElement.querySelectorAll('h1')).toHaveLength(1);
   });
 
   // E3-01: the agenda follows the page's section visibility (hidden for an ended meeting without access).
