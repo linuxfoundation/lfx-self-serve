@@ -141,9 +141,9 @@ export class PastMeetingDetailsComponent {
     return [...result].sort((a, b) => compareMeetingPeopleByHostThenName(a, b));
   });
   public meetingTypeBadge = this.initMeetingTypeBadge();
-  /** One source of truth with the public page (E4-05): the BFF's counts, through the shared helper. Null while unknown. */
+  /** The BFF's counts through the shared figures helper (E4-05), the one place they are worked out. Null while unknown. */
   public attendanceFigures: Signal<PastMeetingAttendanceFigures | null> = computed(() => getPastMeetingAttendanceFigures(this.meeting()));
-  /** The rate bar's colour per band (`PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS`); the public page maps the same bands to its tokens. */
+  /** The rate bar's colour per band (`PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS`). */
   protected readonly attendanceBarClass: Record<PastMeetingAttendanceTone, string> = { low: 'bg-amber-500', medium: 'bg-blue-500', high: 'bg-emerald-500' };
   public hasRecording = this.initHasRecording();
   public hasTranscript = this.initHasTranscript();

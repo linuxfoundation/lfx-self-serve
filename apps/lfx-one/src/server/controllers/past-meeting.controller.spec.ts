@@ -26,7 +26,7 @@ vi.mock('@lfx-one/shared/interfaces', async (importOriginal) => importOriginal()
 vi.mock('@lfx-one/shared/utils', async () => ({
   resolveMeetingOrganizer: vi.fn(() => null),
   resolveMeetingOwner: vi.fn(() => null),
-  countPastMeetingAttendance: (await import('../../../../../packages/shared/src/utils/past-meeting.utils')).countPastMeetingAttendance,
+  countPastMeetingAttendance: (await import('@lfx-one/shared/utils/past-meeting.utils')).countPastMeetingAttendance,
 }));
 
 vi.mock('../helpers/validation.helper', () => ({

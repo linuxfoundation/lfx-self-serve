@@ -130,9 +130,9 @@ rows, invited or attended, matched by email or username. Everyone else gets `[]`
 already held. Counts stay intact: `GET /api/past-meetings/:uid` computes them before the gate, and
 the public past-meeting response adds `participant_count`, `attended_count`, and
 `individual_registrants_count` for full-access viewers who are not organizers. Both count with the
-shared `countPastMeetingAttendance` over a full read (a partial page walk fails it), and both pages
-derive rate, attended and absent from those counts with `getPastMeetingAttendanceFigures`, so they
-cannot disagree (E4-05). `GET /api/past-meetings/:uid` leaves the counts out when the participants
+shared `countPastMeetingAttendance` over a full read (a partial page walk fails it). The admin page
+derives rate, attended and absent from those counts with `getPastMeetingAttendanceFigures` (E4-05,
+#3259), the one place they are worked out. `GET /api/past-meetings/:uid` leaves the counts out when the participants
 cannot all be read, so a page shows them as unknown rather than as a meeting nobody attended.
 
 ---

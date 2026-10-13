@@ -1014,7 +1014,7 @@ export class PastMeetingController {
     } catch (error) {
       // The meeting still loads; its counts are left out, so a page shows them as unknown rather than
       // as a real zero (E4-05).
-      logger.warning(req, 'add_participant_counts', 'Participant counts unavailable', { past_meeting_id: pastMeetingUid, err: error });
+      logger.error(req, 'add_participant_counts', startTime, error, { past_meeting_id: pastMeetingUid });
       return null;
     }
   }
