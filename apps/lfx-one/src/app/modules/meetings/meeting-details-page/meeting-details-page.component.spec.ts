@@ -5,7 +5,14 @@ import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { Component, input, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ButtonComponent } from '@components/button/button.component';
-import { Meeting, MeetingDetailsLoadStatus, MeetingRosterRequest, MeetingSectionVisibility, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import {
+  Meeting,
+  MeetingDetailsLoadStatus,
+  MeetingRosterRequest,
+  MeetingSectionVisibility,
+  MeetingTimeState,
+  PublicMeetingProject,
+} from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -40,6 +47,9 @@ class AgendaStubComponent {}
 @Component({ selector: 'lfx-meeting-people', template: '<span data-testid="people-stub"></span>' })
 class PeopleStubComponent {}
 
+@Component({ selector: 'lfx-meeting-past-people', template: '<span data-testid="past-people-stub"></span>' })
+class PastPeopleStubComponent {}
+
 @Component({ selector: 'lfx-meeting-materials', template: '<span data-testid="materials-stub"></span>' })
 class MaterialsStubComponent {}
 
@@ -54,6 +64,8 @@ describe('MeetingDetailsPageComponent', () => {
   let refresh: ReturnType<typeof vi.fn>;
   let retrying: WritableSignal<boolean>;
   let failureCount: WritableSignal<number>;
+  let timeState: WritableSignal<MeetingTimeState | null>;
+  let loadedViaPastMeetingId: WritableSignal<boolean>;
 
   const meeting = { id: 'meeting-1', title: 'Weekly Sync', project: {} as PublicMeetingProject } as unknown as Meeting & { project: PublicMeetingProject };
 
@@ -64,6 +76,8 @@ describe('MeetingDetailsPageComponent', () => {
     refresh = vi.fn();
     retrying = signal(false);
     failureCount = signal(1);
+    timeState = signal<MeetingTimeState | null>('before');
+    loadedViaPastMeetingId = signal(false);
 
     await TestBed.configureTestingModule({
       imports: [MeetingDetailsPageComponent],
@@ -83,6 +97,7 @@ describe('MeetingDetailsPageComponent', () => {
             MaterialsStubComponent,
             OrganizerStubComponent,
             PeopleStubComponent,
+            PastPeopleStubComponent,
             RecordingStubComponent,
             TimeBannerStubComponent,
             SkeletonModule,
@@ -90,7 +105,17 @@ describe('MeetingDetailsPageComponent', () => {
           providers: [
             {
               provide: MeetingDetailsStateService,
-              useValue: { status, meeting: signal(meeting), refresh, retrying, failureCount, visibleSections, rosterRequest },
+              useValue: {
+                status,
+                meeting: signal(meeting),
+                refresh,
+                retrying,
+                failureCount,
+                visibleSections,
+                rosterRequest,
+                timeState,
+                loadedViaPastMeetingId,
+              },
             },
           ],
         },
@@ -166,6 +191,26 @@ describe('MeetingDetailsPageComponent', () => {
     rosterRequest.set(null);
     fixture.detectChanges();
     expect(query('people-stub')).toBeNull();
+  });
+
+  // E4-05: an ended meeting's past roster, where visibleSections().people allows, once the occurrence is loaded.
+  it("renders the past roster for an ended meeting's occurrence where the viewer may see it", () => {
+    rosterRequest.set(null);
+    timeState.set('ended');
+    loadedViaPastMeetingId.set(true);
+    visibleSections.set({ people: true });
+    show('ready');
+    expect(query('past-people-stub')).not.toBeNull();
+    expect(query('people-stub')).toBeNull();
+
+    visibleSections.set({ people: false });
+    fixture.detectChanges();
+    expect(query('past-people-stub')).toBeNull();
+
+    visibleSections.set({ people: true });
+    loadedViaPastMeetingId.set(false);
+    fixture.detectChanges();
+    expect(query('past-people-stub')).toBeNull();
   });
 
   // Placeholder testids are temporary (testid-contract.md), so this asserts on whatever skeleton
