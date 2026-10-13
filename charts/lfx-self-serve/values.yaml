@@ -842,14 +842,15 @@ environment:
     value: "false"
 
   # Serves the account monitors from campaign-service's account-monitor endpoints (#2519):
-  # /api/campaigns/meta/monitor and /reddit/monitor switch backend, and the campaign-service-only
-  # /microsoft/monitor, /twitter/monitor and /hubspot/monitor answer at all (404 while off). Google
-  # (/monitor) and LinkedIn (/linkedin/monitor) are not affected.
+  # /api/campaigns/linkedin/monitor, /meta/monitor and /reddit/monitor switch backend, and the
+  # campaign-service-only /microsoft/monitor, /twitter/monitor and /hubspot/monitor answer at all
+  # (404 while off). Google (/monitor) is not affected.
   #
   # Campaign-service reads with the PROJECT'S OWN connection, never the LF system fallback: a
-  # foundation with no Meta/Reddit connection of its own gets a 404 on those tabs, and one whose
-  # connection is bound to a different account than the picker offers gets a 400. The numbers also
-  # change on purpose -- campaign-service fixed the ported Reddit rule-engine bugs (#3018-#3022).
+  # foundation with no LinkedIn/Meta/Reddit connection of its own gets a 404 on those tabs, and one
+  # whose connection is bound to a different account than the picker offers gets a 400. The numbers
+  # also change on purpose -- campaign-service fixed the ported LinkedIn and Reddit rule-engine bugs
+  # (#3018-#3022) -- and LinkedIn loses its creative breakdown (not read by campaign-service).
   # Reads only, so turning it back off strands nothing.
   LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR:
     value: "false"

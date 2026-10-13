@@ -6,6 +6,7 @@ import type {
   AccountMonitorConflictReason,
   CampaignServiceAccountMonitor,
   CampaignServiceAccountMonitorCampaign,
+  LinkedInMonitorResponse,
   MetaMonitorResponse,
   RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
@@ -92,6 +93,41 @@ export function toRedditMonitorResponse(payload: CampaignServiceAccountMonitor, 
 /** campaign-service's Meta account monitor as the Meta Monitor/Optimize panels consume it. */
 export function toMetaMonitorResponse(payload: CampaignServiceAccountMonitor, accountLabel: string, pulledAt: string): MetaMonitorResponse {
   return { accountLabel, pulledAt, ...toLegacyMonitorBody(payload) };
+}
+
+/**
+ * campaign-service's LinkedIn account monitor as the LinkedIn Monitor/Optimize panels consume it.
+ *
+ * Three LinkedIn-only differences from the Meta/Reddit mapping:
+ * - `pacingPct` is NOT rounded. The legacy LinkedIn engine never rounded it, and campaign-service
+ *   keeps it unrounded deliberately (its `monitor_linkedin.go`), so rounding here would move a
+ *   campaign at 90.4% across the band the label already reports.
+ * - `eventName` is derived from the campaign name exactly as the legacy engine derived it (the
+ *   second ` | ` segment, else the whole name), because the panel shows it as the row title.
+ * - `creatives` is always EMPTY: campaign-service does not read LinkedIn creative analytics. Each row
+ *   therefore carries `creativesMeasured: false`, so the panel shows the count as not read rather than
+ *   0, and the legacy HIGH "no ad creatives" item is never produced.
+ */
+export function toLinkedInMonitorResponse(payload: CampaignServiceAccountMonitor, accountLabel: string, pulledAt: string): LinkedInMonitorResponse {
+  const body = toLegacyMonitorBody(payload);
+  // Positional: `body.campaigns[i]` IS `payload.campaigns[i]` mapped, so no join on an id is needed.
+  const rows = payload.campaigns ?? [];
+  return {
+    accountLabel,
+    pulledAt,
+    ...body,
+    campaigns: body.campaigns.map((campaign, i) => {
+      const row = rows[i];
+      const pacingTrusted = !row.pacing_unknown && !row.fetch_failed;
+      return {
+        ...campaign,
+        eventName: campaign.campaignName.split(' | ')[1] ?? campaign.campaignName,
+        pacingPct: pacingTrusted ? row.pacing_pct : 0,
+        creatives: [],
+        creativesMeasured: false,
+      };
+    }),
+  };
 }
 
 function isConflictReason(value: unknown): value is AccountMonitorConflictReason {

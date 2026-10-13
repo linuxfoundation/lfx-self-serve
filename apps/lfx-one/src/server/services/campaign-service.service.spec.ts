@@ -4785,6 +4785,7 @@ describe('CampaignServiceClient account monitors', () => {
   });
 
   it.each([
+    ['getLinkedInAdsAccountMonitor', 'linkedin-ads', '512345678'],
     ['getMetaAdsAccountMonitor', 'meta-ads', 'act_100000000000001'],
     ['getRedditAdsAccountMonitor', 'reddit-ads', 't2_abc123'],
     ['getMicrosoftAdsAccountMonitor', 'microsoft-ads', '187654321'],
@@ -4808,6 +4809,17 @@ describe('CampaignServiceClient account monitors', () => {
     await new CampaignServiceClient().getRedditAdsAccountMonitor(req, 'a b/c', 't2_abc123', 30);
 
     expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b%2Fc/connection-reddit-ads/account-monitor');
+  });
+
+  it('encodes the project for the LinkedIn monitor and refuses an empty account', async () => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient().getLinkedInAdsAccountMonitor(req, 'lf/ai', '512345678', 7);
+    const caught = await new CampaignServiceClient().getLinkedInAdsAccountMonitor(req, 'tlf', '', 7).catch((e: unknown) => e);
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/lf%2Fai/connection-linkedin-ads/account-monitor');
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(caught).toBeInstanceOf(ServiceValidationError);
   });
 
   it('refuses a path-climbing project without calling the proxy', async () => {

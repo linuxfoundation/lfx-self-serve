@@ -2274,13 +2274,13 @@ export interface CampaignServiceAudience {
 // campaign-service account monitors (`GET /projects/{id}/connection-*/account-monitor`)
 //
 // campaign-service's WIRE shapes, in its vocabulary (snake_case, currency amounts in the account's
-// currency, `ctr` as a PERCENTAGE). The Meta and Reddit routes map these onto the legacy
-// `MetaMonitorResponse` / `RedditMonitorResponse`; the Microsoft, X and HubSpot routes have no
+// currency, `ctr` as a PERCENTAGE). The LinkedIn, Meta and Reddit routes map these onto the legacy
+// `LinkedInMonitorResponse` / `MetaMonitorResponse` / `RedditMonitorResponse`; the Microsoft, X and HubSpot routes have no
 // legacy shape and return these unchanged.
 // ---------------------------------------------------------------------------
 
-/** The ad platforms with an account-scoped monitor this app proxies (Google and LinkedIn are not routed here). */
-export type CampaignServiceMonitorProvider = 'meta-ads' | 'reddit-ads' | 'microsoft-ads' | 'twitter-ads';
+/** The ad platforms with an account-scoped monitor this app proxies (Google is not routed here). */
+export type CampaignServiceMonitorProvider = 'linkedin-ads' | 'meta-ads' | 'reddit-ads' | 'microsoft-ads' | 'twitter-ads';
 
 export type CampaignServiceMonitorPacingLabel = 'normal' | 'underspending' | 'constrained' | 'overspending';
 
@@ -2572,10 +2572,24 @@ export interface LinkedInCampaignMetrics {
   ctr: number;
   conversions: number;
   pacingPct: number;
-  pacingLabel: LinkedInPacingLabel;
+  /** ABSENT only on the campaign-service path, when `pacingUnknown` or `fetchFailed` is set — see `RedditCampaignMetrics`. */
+  pacingLabel?: LinkedInPacingLabel;
   creatives: LinkedInCreativeMetrics[];
   startDate: string;
   endDate: string;
+  /**
+   * Set ONLY by the campaign-service monitor path (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`); see
+   * `RedditCampaignMetrics` for their meaning. On that path `creatives` is always empty —
+   * campaign-service does not read LinkedIn creative analytics.
+   */
+  pacingUnknown?: boolean;
+  fetchFailed?: boolean;
+  conversionsMeasured?: boolean;
+  /**
+   * Campaign-service path only: `false` because campaign-service does not read LinkedIn creative
+   * analytics, so the empty `creatives` is not a count of zero. Absent on the legacy path.
+   */
+  creativesMeasured?: boolean;
 }
 
 export interface LinkedInAccountTotals {
@@ -2584,6 +2598,8 @@ export interface LinkedInAccountTotals {
   clicks: number;
   conversions: number;
   campaignCount: number;
+  /** Campaign-service path only: false when no row measured conversions, so `conversions` is a 0 placeholder. */
+  conversionsMeasured?: boolean;
 }
 
 export interface LinkedInActionItem {
