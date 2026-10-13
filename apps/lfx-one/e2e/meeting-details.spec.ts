@@ -58,6 +58,24 @@ test.describe('Meeting details V2 — signed-in presets', () => {
     expect(href.searchParams.get('un')).toBe(Buffer.from(uname, 'utf8').toString('base64'));
   });
 
+  test("6 · an ended meeting's organizer opens the transcript and the full summary", async ({ page }) => {
+    await openMeetingSignedIn(page, PAST_ID, { past: { meeting: buildPastMeeting({ organizer: true }), fullAccess: true } });
+    await waitForMeeting(page);
+
+    await page.getByTestId('tools-transcript-btn').click();
+    const transcript = page.getByRole('dialog').filter({ has: page.getByTestId('transcript-modal-container') });
+    await expect(transcript.getByTestId('transcript-content')).toContainText('Welcome to the roadmap review.', { timeout: ELEMENT_TIMEOUT });
+    await expect(transcript.getByTestId('transcript-content')).toContainText('Ada Lovelace');
+    await page.keyboard.press('Escape');
+    await expect(transcript).toHaveCount(0);
+
+    await page.getByTestId('tools-summary-btn').click();
+    const summary = page.getByRole('dialog').filter({ has: page.getByTestId('summary-content') });
+    await expect(summary.getByTestId('summary-content')).toContainText('Agreed the roadmap', { timeout: ELEMENT_TIMEOUT });
+    await page.keyboard.press('Escape');
+    await expect(summary).toHaveCount(0);
+  });
+
   test('5 · a signed-in outsider on a restricted meeting is told an invitation is required', async ({ page }) => {
     // Reachable only through the invite link: without `?password=` the lookup 400s (see the robust spec).
     await openMeetingSignedIn(

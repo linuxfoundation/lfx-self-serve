@@ -150,6 +150,9 @@ export async function stubMeetingDetails(page: Page, stubs: MeetingStubs): Promi
       if (pathname === `/api/past-meetings/${PAST_ID}/transcript` || pathname === `/public/api/meetings/past/${PAST_ID}/transcript`) {
         return json(route, { recording_files: [{ file_type: 'TRANSCRIPT', download_url: 'https://zoom.example/t.vtt' }] });
       }
+      if (pathname === `/api/past-meetings/${PAST_ID}/transcript/content` || pathname === `/public/api/meetings/past/${PAST_ID}/transcript/content`) {
+        return json(route, { content: 'WEBVTT\n\n1\n00:00:01.000 --> 00:00:04.000\nAda Lovelace: Welcome to the roadmap review.\n' });
+      }
       if (pathname === `/api/past-meetings/${PAST_ID}/summary` || pathname === `/public/api/meetings/past/${PAST_ID}/summary`) {
         return json(route, { summary_data: { title: 'AI Summary', content: '## Notes\n\n- Agreed the roadmap' }, requires_approval: false, approved: true });
       }

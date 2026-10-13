@@ -21,10 +21,13 @@ which is not in this repo).
 
 Two more cases cover the requirements the presets alone do not:
 
-- **Reachability (SC-002).** An outsider or visitor on a restricted meeting with no invite-link
+- **Reachability (SC-002).** Every illegal row of the matrix (an outsider or visitor on a
+  `public-restricted`, `private-open` or `private-restricted` meeting, before or live, with no invite-link
   password lands on `/meetings/not-found` (robust spec). The stub router enforces the password as the
   BFF does: with `MeetingStubs.password` set, the lookup and the join URL answer 400 unless the
   request carries it in `x-meeting-password`. Preset 5 opens with it, the only way it is reachable.
+- **Dialogs.** Preset 6 also opens the transcript and the full AI summary and checks their content
+  (content spec).
 - **Invitee guest join (SC-003).** An invitee with no session opens the invite link to a restricted
   live meeting, fills the guest form and gets a ready Join link fetched for the typed email (content
   spec).

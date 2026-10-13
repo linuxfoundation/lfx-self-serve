@@ -127,6 +127,15 @@ const ANONYMOUS_PRESETS: Preset[] = [
   },
 ];
 
+/** The non-open privacy shapes, before and live: without the password, each is illegal for a visitor or outsider. */
+const ILLEGAL_REACHABILITY: { time: 'before' | 'live'; privacy: string; overrides: Record<string, unknown> }[] = (['before', 'live'] as const).flatMap(
+  (time) => [
+    { time, privacy: 'public-restricted', overrides: { visibility: 'public', restricted: true } },
+    { time, privacy: 'private-open', overrides: { visibility: 'private', restricted: false } },
+    { time, privacy: 'private-restricted', overrides: { visibility: 'private', restricted: true } },
+  ]
+);
+
 async function assertPreset(page: Page, preset: Preset): Promise<void> {
   await expect(page.getByTestId('meeting-action-slot')).toHaveAttribute('data-kind', preset.kind, { timeout: ELEMENT_TIMEOUT });
   await expect(page.getByTestId('meeting-status-pill')).toHaveAttribute('data-state', preset.state);
@@ -162,20 +171,18 @@ test.describe('Meeting details V2 — structure and accessibility', () => {
     }
   });
 
-  // SC-002: an outsider on a non-open meeting without the invite link's password is routed away,
-  // never shown a page (`state-matrix.md` § Reachability).
+  // SC-002: every illegal combination of the matrix (`state-matrix.md` § Reachability) — an outsider
+  // on a non-open meeting, before or live, with no invite-link password — is routed to not-found and
+  // never shown a page. The visitor rows are below, fixme until stage 5.
   test.describe('reachability', () => {
-    test('a signed-in outsider on a restricted meeting with no password lands on not-found', async ({ page }) => {
-      await openMeetingSignedIn(
-        page,
-        UPCOMING_ID,
-        { meeting: buildMeeting('before', { restricted: true }), password: INVITE_PASSWORD },
-        { expectRedirect: true }
-      );
+    for (const { time, privacy, overrides } of ILLEGAL_REACHABILITY) {
+      test(`a signed-in outsider, ${privacy}, ${time}, no password lands on not-found`, async ({ page }) => {
+        await openMeetingSignedIn(page, UPCOMING_ID, { meeting: buildMeeting(time, overrides), password: INVITE_PASSWORD }, { expectRedirect: true });
 
-      await expect(page).toHaveURL(/\/meetings\/not-found$/, { timeout: PAGE_LOAD_TIMEOUT });
-      await expect(page.getByTestId('meeting-not-found-card')).toBeVisible();
-    });
+        await expect(page).toHaveURL(/\/meetings\/not-found$/, { timeout: PAGE_LOAD_TIMEOUT });
+        await expect(page.getByTestId('meeting-not-found-card')).toBeVisible();
+      });
+    }
   });
 
   test.describe('roster and error states', () => {
@@ -214,10 +221,12 @@ test.describe('Meeting details V2 — anonymous structure and accessibility', ()
     });
   }
 
-  test.fixme('SC-002 · a visitor on a restricted meeting with no password lands on not-found (stage 5)', async ({ page }) => {
-    await openMeetingAnonymously(page, UPCOMING_ID, { meeting: buildMeeting('before', { restricted: true }), password: INVITE_PASSWORD });
+  for (const { time, privacy, overrides } of ILLEGAL_REACHABILITY) {
+    test.fixme(`SC-002 · a visitor, ${privacy}, ${time}, no password lands on not-found (stage 5)`, async ({ page }) => {
+      await openMeetingAnonymously(page, UPCOMING_ID, { meeting: buildMeeting(time, overrides), password: INVITE_PASSWORD }, { expectRedirect: true });
 
-    await expect(page).toHaveURL(/\/meetings\/not-found$/, { timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page.getByTestId('meeting-not-found-card')).toBeVisible();
-  });
+      await expect(page).toHaveURL(/\/meetings\/not-found$/, { timeout: PAGE_LOAD_TIMEOUT });
+      await expect(page.getByTestId('meeting-not-found-card')).toBeVisible();
+    });
+  }
 });
