@@ -323,6 +323,21 @@ describe('MeetingActionSlotComponent', () => {
       expect(markRegistered).not.toHaveBeenCalled();
     });
 
+    it('moves no focus for a registration that completes after the page moved to another meeting', async () => {
+      query('meeting-action-register-button')?.querySelector('button')?.click();
+      const elsewhere = document.createElement('button');
+      document.body.append(elsewhere);
+      elsewhere.focus();
+      meeting.set({ id: 'meeting-2' } as Meeting);
+
+      dialogClose.next({ registered: true });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(document.activeElement).toBe(elsewhere);
+      elsewhere.remove();
+    });
+
     it('leaves the page alone when the dialog closes without registering', () => {
       query('meeting-action-register-button')?.querySelector('button')?.click();
       dialogClose.next(undefined);
