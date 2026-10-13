@@ -1142,6 +1142,24 @@ export interface PublicPastMeetingParticipant {
 /** How well a past meeting was attended, by its rate (E4-05): the band its rate bar is coloured by. */
 export type PastMeetingAttendanceTone = 'low' | 'medium' | 'high';
 
+/**
+ * How an attendee's identity was established (N-02, FR-033), from the reconciliation flags
+ * (`getPastMeetingIdentityTier`): `verified` (matched to a known person), `auto-matched` (matched
+ * by name automatically), `ai-reconciled` (matched through AI reconciliation), or `unverified`
+ * (left unknown, or still needing review). Only attendees have one.
+ */
+export type PastMeetingIdentityTier = 'verified' | 'auto-matched' | 'ai-reconciled' | 'unverified';
+
+/**
+ * The names behind an attendee's row besides the one it shows (N-02, `getPastMeetingIdentityNames`),
+ * each null unless it differs from that name: what they joined Zoom as, and the invitee
+ * reconciliation matched them to.
+ */
+export interface PastMeetingIdentityNames {
+  joinedAs: string | null;
+  matchedTo: string | null;
+}
+
 /** The participant counts a past meeting carries, as the BFF counts them (`countPastMeetingAttendance`). */
 export interface PastMeetingAttendanceCounts {
   /** Every participant record: each was invited, attended, or both. */
@@ -1149,6 +1167,11 @@ export interface PastMeetingAttendanceCounts {
   attended_count: number;
   /** Participants who were invited. */
   individual_registrants_count: number;
+  /**
+   * Attendees in the `unverified` identity tier (N-02): counted in `attended_count`, but nobody has
+   * established who they are. Notetaker bots are left out, as reconciliation leaves them out.
+   */
+  unverified_attended_count?: number;
 }
 
 /**
@@ -1164,12 +1187,14 @@ export interface PastMeetingAttendanceFigures {
   /** Attended as a whole percentage of `total`. */
   rate: number | null;
   tone: PastMeetingAttendanceTone | null;
+  /** How many of `attended` are unverified (N-02), so a page can say so; null when not counted. */
+  unverified: number | null;
 }
 
 /**
- * The public past-meeting roster: the verified identities (invitees, and attendees whose identity is
- * verified), plus how many attendees are not verified (unknown, needs review, auto-matched or
- * AI-reconciled: the identity-tier aggregate, N-02), who are counted but never listed.
+ * The public past-meeting roster: the verified identities (invitees, and attendees in the `verified`
+ * identity tier), plus how many other attendees there are (`unverified`, `auto-matched` or
+ * `ai-reconciled`: the identity-tier aggregate, N-02), who are counted but never listed.
  */
 export interface PublicPastMeetingRoster {
   participants: PublicPastMeetingParticipant[];
@@ -1199,6 +1224,17 @@ export interface EnrichedPastMeetingParticipant extends PastMeetingParticipant {
   committee_voting_status?: string | null;
   /** Committee category (from committee member data) */
   committee_category?: string | null;
+}
+
+/**
+ * A row of the admin participant list (N-02): the enriched participant plus its identity tier, the
+ * tier's label (null for someone who did not attend), and the names behind the row
+ * (`toPastMeetingParticipantRow`).
+ */
+export interface PastMeetingParticipantRow extends EnrichedPastMeetingParticipant {
+  identity_tier: PastMeetingIdentityTier | null;
+  identity_label: string | null;
+  identity_names: PastMeetingIdentityNames;
 }
 
 /**

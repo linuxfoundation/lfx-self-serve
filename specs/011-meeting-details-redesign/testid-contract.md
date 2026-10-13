@@ -295,6 +295,7 @@ the row's contents.
 | `people-past-status`                     | Past roster: the screen-reader status line ("Showing n of m people." / no match)                |
 | `people-past-filter-empty`               | Nobody matches the filters                                                                      |
 | `people-past-unidentified`               | Attendees counted but not listed (identity not verified, N-02)                                  |
+| `people-past-unverified`                 | "{n} unverified": attended, but in the `unverified` identity tier (N-02); only when n > 0       |
 
 Upcoming and past rows come from different data, so they carry different state attributes. An
 upcoming row is a `MeetingRegistrant`; a past row is a `PastMeetingParticipant`, which has no RSVP
@@ -335,6 +336,14 @@ They mirror `PastMeetingParticipant.is_attended` and `.is_invited`, so a test ca
 no-show from an uninvited attendee. Both are on every past row. The public page lists only verified
 identities (an invitee who did not attend, or a verified attendee) and counts the rest
 (`people-past-unidentified`), so a past row carries no identity-tier attribute (E4-05, N-02).
+
+The admin participant list (`/meetings/:id/details`, outside this page) carries the full tiering on
+the same row testid: `participant-row-${uid}[data-attended][data-invited][data-identity-tier]`, with
+`data-identity-tier` one of `verified | auto-matched | ai-reconciled | unverified`
+(`PastMeetingIdentityTier`) and absent for someone who did not attend. Inside the row,
+`participant-identity-tier` is the tier badge, and `participant-joined-as` / `participant-matched-to`
+show the Zoom display name and the matched invitee where they differ from the row's name.
+`attendance-unverified` sits beside the attended count. N-02, FR-033.
 
 ## Tools, join details and discovery
 

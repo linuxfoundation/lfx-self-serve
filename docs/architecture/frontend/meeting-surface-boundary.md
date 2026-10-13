@@ -71,15 +71,19 @@ On an ended public-open meeting, `full_access` is true for every signed-in viewe
 Axis D), so the public roster reaches any signed-in LFX user. It therefore carries less than the
 admin table:
 
-| Field                   | Public roster         | Admin table |
-| ----------------------- | --------------------- | ----------- |
-| Name and avatar         | yes                   | yes         |
-| Organization            | yes                   | yes         |
-| Attended / invited      | yes                   | yes         |
-| Identity tier           | aggregate only (N-02) | full        |
-| Email                   | **no**                | yes         |
-| Job title               | **no**                | yes         |
-| Committee voting status | **no**                | yes         |
+| Field              | Public roster         | Admin table |
+| ------------------ | --------------------- | ----------- |
+| Name and avatar    | yes                   | yes         |
+| Organization       | yes                   | yes         |
+| Attended / invited | yes                   | yes         |
+| Identity tier      | aggregate only (N-02) | full        |
+
+The public roster names an attendee only in the `verified` tier (`getPastMeetingIdentityTier`). An
+automatic or AI match also sets `is_verified`, so `is_verified` alone is not enough: those attendees
+are counted, with the unverified ones, not named.
+| Email | **no** | yes |
+| Job title | **no** | yes |
+| Committee voting status | **no** | yes |
 
 V1's past participant list shows email today (`meeting-registrants-display`). V2 does not carry that
 over; V1 is unchanged until it retires. E4-05 and N-02 implement this table, not the admin row as

@@ -167,6 +167,19 @@ describe('MeetingPastPeopleComponent', () => {
     expect(query('people-past-unidentified')?.textContent).toContain('2 other attendees');
   });
 
+  // N-02: the rate counts unverified attendees, so the figures say how many there are.
+  it('says how many of the attendees are unverified, and nothing when none are or the count is absent', async () => {
+    await setup(() => of(roster({ attendance: { participant_count: 4, attended_count: 3, individual_registrants_count: 2, unverified_attended_count: 2 } })));
+    expect(query('people-past-unverified')?.textContent).toContain('2 unverified');
+  });
+
+  it.each([0, undefined])('shows no unverified line for a count of %s', async (unverified) => {
+    await setup(() =>
+      of(roster({ attendance: { participant_count: 4, attended_count: 3, individual_registrants_count: 2, unverified_attended_count: unverified } }))
+    );
+    expect(query('people-past-unverified')).toBeNull();
+  });
+
   it.each([
     [403, 'people-section-no-access'],
     [401, 'people-section-sign-in'],

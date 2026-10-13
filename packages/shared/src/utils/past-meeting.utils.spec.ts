@@ -19,6 +19,10 @@ import {
   filterPublicPastMeetingRoster,
   getPastMeetingAttendanceFigures,
   getPastMeetingAttendanceTone,
+  getPastMeetingIdentityNames,
+  getPastMeetingIdentityTier,
+  isPastMeetingNotetakerBot,
+  toPastMeetingParticipantRow,
   toPublicPastMeetingRecording,
   toPublicPastMeetingRoster,
   toPublicPastMeetingTranscript,
@@ -43,6 +47,8 @@ function participant(partial: Partial<EnrichedPastMeetingParticipant>): Enriched
     is_verified: partial.is_verified,
     is_auto_matched: partial.is_auto_matched,
     is_ai_reconciled: partial.is_ai_reconciled,
+    zoom_user_name: partial.zoom_user_name,
+    mapped_invitee_name: partial.mapped_invitee_name,
     org_is_member: partial.org_is_member ?? false,
     org_is_project_member: partial.org_is_project_member ?? false,
     avatar_url: partial.avatar_url,
@@ -443,14 +449,15 @@ describe('toPublicPastMeetingRoster', () => {
       participant({ uid: 'invitee', is_invited: true }),
       participant({ uid: 'unknown', is_attended: true, is_unknown: true }),
       participant({ uid: 'needs-review', is_attended: true }),
-      participant({ uid: 'auto-matched', is_attended: true, is_invited: true, is_auto_matched: true }),
-      participant({ uid: 'ai-reconciled', is_attended: true, is_ai_reconciled: true }),
+      // Reconciliation sets is_verified on every match it makes (N-02), automatic or AI.
+      participant({ uid: 'auto-matched', is_attended: true, is_invited: true, is_verified: true, is_auto_matched: true }),
+      participant({ uid: 'ai-reconciled', is_attended: true, is_verified: true, is_ai_reconciled: true }),
     ]);
 
     expect(roster.participants.map((row) => row.uid)).toEqual(['verified', 'invitee']);
     expect(roster.unidentified_attendees).toBe(4);
     // E4-05: the counts cover every participant, listed or not, so the figures match the admin page's.
-    expect(roster.attendance).toEqual({ participant_count: 6, attended_count: 5, individual_registrants_count: 2 });
+    expect(roster.attendance).toEqual({ participant_count: 6, attended_count: 5, individual_registrants_count: 2, unverified_attended_count: 2 });
   });
 });
 
@@ -511,7 +518,20 @@ describe('past-meeting attendance figures (E4-05)', () => {
         { is_attended: true, is_invited: false },
         { is_attended: false, is_invited: true },
       ])
-    ).toEqual({ participant_count: 3, attended_count: 2, individual_registrants_count: 2 });
+    ).toEqual({ participant_count: 3, attended_count: 2, individual_registrants_count: 2, unverified_attended_count: 2 });
+  });
+
+  it('counts unverified attendees, leaving out notetaker bots (N-02)', () => {
+    const counts = countPastMeetingAttendance([
+      participant({ is_attended: true, is_verified: true }),
+      participant({ is_attended: true, is_unknown: true }),
+      participant({ is_attended: true }),
+      participant({ is_attended: true, zoom_user_name: "Libby's Notetaker (Otter.ai)" }),
+      participant({ is_invited: true }),
+    ]);
+
+    expect(counts.attended_count).toBe(4);
+    expect(counts.unverified_attended_count).toBe(2);
   });
 
   it.each([
@@ -526,17 +546,74 @@ describe('past-meeting attendance figures (E4-05)', () => {
   });
 
   it('derives total, attended, absent, rate and tone from the counts', () => {
-    expect(getPastMeetingAttendanceFigures({ participant_count: 8, attended_count: 6 })).toEqual({ total: 8, attended: 6, absent: 2, rate: 75, tone: 'high' });
+    expect(getPastMeetingAttendanceFigures({ participant_count: 8, attended_count: 6, unverified_attended_count: 2 })).toEqual({
+      total: 8,
+      attended: 6,
+      absent: 2,
+      rate: 75,
+      tone: 'high',
+      unverified: 2,
+    });
+  });
+
+  it('leaves unverified null when the counts predate it, and never above attended', () => {
+    expect(getPastMeetingAttendanceFigures({ participant_count: 8, attended_count: 6 })?.unverified).toBeNull();
+    expect(getPastMeetingAttendanceFigures({ participant_count: 8, attended_count: 3, unverified_attended_count: 5 })?.unverified).toBe(3);
   });
 
   // The admin page used to hide its whole stats row here.
   it('gives zero figures with no rate for a meeting with no participants', () => {
-    expect(getPastMeetingAttendanceFigures({ participant_count: 0, attended_count: 0 })).toEqual({ total: 0, attended: 0, absent: 0, rate: null, tone: null });
+    expect(getPastMeetingAttendanceFigures({ participant_count: 0, attended_count: 0 })).toEqual({
+      total: 0,
+      attended: 0,
+      absent: 0,
+      rate: null,
+      tone: null,
+      unverified: null,
+    });
   });
 
   it('is null when the counts are unknown, so unknown never reads as zero', () => {
     expect(getPastMeetingAttendanceFigures(undefined)).toBeNull();
     expect(getPastMeetingAttendanceFigures({ participant_count: 5 })).toBeNull();
+  });
+});
+
+describe('participant identity tiers (N-02)', () => {
+  it.each([
+    ['nobody who did not attend', { is_invited: true, is_verified: true }, null],
+    ['an attendee left unknown', { is_attended: true, is_unknown: true, is_verified: true }, 'unverified'],
+    ['an attendee nobody has verified', { is_attended: true }, 'unverified'],
+    ['an AI match, though verified', { is_attended: true, is_verified: true, is_ai_reconciled: true, is_auto_matched: true }, 'ai-reconciled'],
+    ['an automatic name match, though verified', { is_attended: true, is_verified: true, is_auto_matched: true }, 'auto-matched'],
+    ['a verified match with neither flag', { is_attended: true, is_verified: true }, 'verified'],
+  ] as const)('gives %s its tier', (_, flags, tier) => {
+    expect(getPastMeetingIdentityTier(participant(flags))).toBe(tier);
+  });
+
+  it('names what they joined Zoom as and who they were matched to, only where it differs from the row', () => {
+    expect(
+      getPastMeetingIdentityNames(participant({ first_name: 'Ada', last_name: 'Lovelace', zoom_user_name: 'ada-mbp', mapped_invitee_name: 'Ada King' }))
+    ).toEqual({ joinedAs: 'ada-mbp', matchedTo: 'Ada King' });
+    expect(
+      getPastMeetingIdentityNames(
+        participant({ first_name: 'Ada', last_name: 'Lovelace', zoom_user_name: ' ada  LOVELACE ', mapped_invitee_name: 'Ada Lovelace' })
+      )
+    ).toEqual({ joinedAs: null, matchedTo: null });
+    expect(getPastMeetingIdentityNames(participant({ first_name: 'Ada', last_name: 'Lovelace' }))).toEqual({ joinedAs: null, matchedTo: null });
+  });
+
+  it('labels a row by its tier, and an unverified attendee left unknown as Unknown', () => {
+    expect(toPastMeetingParticipantRow(participant({ is_attended: true, is_verified: true, is_auto_matched: true })).identity_label).toBe('Auto-matched');
+    expect(toPastMeetingParticipantRow(participant({ is_attended: true })).identity_label).toBe('Needs review');
+    expect(toPastMeetingParticipantRow(participant({ is_attended: true, is_unknown: true })).identity_label).toBe('Unknown');
+    expect(toPastMeetingParticipantRow(participant({ is_invited: true }))).toMatchObject({ identity_tier: null, identity_label: null });
+  });
+
+  it('tells a notetaker bot by its Zoom name, else its first and last name', () => {
+    expect(isPastMeetingNotetakerBot({ zoom_user_name: 'Fireflies.ai Notetaker' })).toBe(true);
+    expect(isPastMeetingNotetakerBot({ first_name: 'Read', last_name: 'AI Notetaker' })).toBe(true);
+    expect(isPastMeetingNotetakerBot({ first_name: 'Grain', last_name: 'Adeyemi' })).toBe(false);
   });
 });
 

@@ -68,6 +68,12 @@
               <span class="text-[var(--md-text-muted)]" data-testid="people-past-absent"
                 ><span class="font-semibold tabular-nums">{{ f.absent }}</span> absent</span
               >
+              @if (f.unverified) {
+                <!-- Counted as attended, but nobody has established who they are (N-02). -->
+                <span class="text-[var(--md-status-warn)]" data-testid="people-past-unverified"
+                  ><span class="font-semibold tabular-nums">{{ f.unverified }}</span> unverified</span
+                >
+              }
             </div>
             <div class="h-[6px] w-full overflow-hidden rounded-full bg-[var(--md-surface-hover)]" aria-hidden="true">
               @if (f.tone) {

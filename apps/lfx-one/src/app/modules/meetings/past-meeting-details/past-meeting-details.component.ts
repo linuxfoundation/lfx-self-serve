@@ -29,11 +29,14 @@ import {
   PastMeetingAttachment,
   PastMeetingAttendanceFigures,
   PastMeetingAttendanceTone,
+  PastMeetingIdentityTier,
   PastMeetingParticipant,
+  PastMeetingParticipantRow,
   PastMeetingRecording,
   PastMeetingSummary,
   PastMeetingTranscript,
   TagSeverity,
+  toPastMeetingParticipantRow,
 } from '@lfx-one/shared';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -126,7 +129,7 @@ export class PastMeetingDetailsComponent {
     const meeting = this.meeting();
     return meeting?.committees?.some((c) => c.allowed_voting_statuses && c.allowed_voting_statuses.length > 0) ?? false;
   });
-  public filteredParticipants: Signal<EnrichedPastMeetingParticipant[]> = computed(() => {
+  public filteredParticipants: Signal<PastMeetingParticipantRow[]> = computed(() => {
     let result = this.participants();
     const invitation = this.invitationFilter();
     if (invitation === 'invited') result = result.filter((p) => p.is_invited);
@@ -138,13 +141,20 @@ export class PastMeetingDetailsComponent {
       result = result.filter((p) => p.committee_voting_status === 'Voting Rep' || p.committee_voting_status === 'Alternate Voting Rep');
     }
     // Organizers (hosts) float to the top; unresolvable "[unknown]" rows sink to the bottom.
-    return [...result].sort((a, b) => compareMeetingPeopleByHostThenName(a, b));
+    return [...result].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)).map(toPastMeetingParticipantRow);
   });
   public meetingTypeBadge = this.initMeetingTypeBadge();
   /** The BFF's counts through the shared figures helper (E4-05), the one place they are worked out. Null while unknown. */
   public attendanceFigures: Signal<PastMeetingAttendanceFigures | null> = computed(() => getPastMeetingAttendanceFigures(this.meeting()));
   /** The rate bar's colour per band (`PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS`). */
   protected readonly attendanceBarClass: Record<PastMeetingAttendanceTone, string> = { low: 'bg-amber-500', medium: 'bg-blue-500', high: 'bg-emerald-500' };
+  /** Each identity tier's badge colour (N-02): verified green, the two automatic matches blue and violet, unverified amber. */
+  protected readonly identityTierSeverity: Record<PastMeetingIdentityTier, TagSeverity> = {
+    verified: 'success',
+    'auto-matched': 'info',
+    'ai-reconciled': 'accent',
+    unverified: 'warn',
+  };
   public hasRecording = this.initHasRecording();
   public hasTranscript = this.initHasTranscript();
   public recordingShareUrl = this.initRecordingShareUrl();
@@ -235,6 +245,12 @@ export class PastMeetingDetailsComponent {
     if (url && typeof window !== 'undefined') {
       window.open(url, '_blank', 'noopener,noreferrer');
     }
+  }
+
+  // Protected methods
+  /** The tier badge's colour (`identityTierSeverity`); the table hands its row template an untyped row. */
+  protected identityTierSeverityOf(tier: PastMeetingIdentityTier): TagSeverity {
+    return this.identityTierSeverity[tier];
   }
 
   // Private init functions
