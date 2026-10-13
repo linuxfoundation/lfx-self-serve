@@ -1,8 +1,25 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MEETING_RECORDING_MEDIA_FILE_TYPES, MEETING_RECORDING_SESSION_TOLERANCE_MS } from '../constants/meeting.constants';
-import { EnrichedPastMeetingParticipant, Meeting, PastMeeting, PastMeetingRecording, PastParticipantFilters, RecordingSession } from '../interfaces';
+import {
+  MEETING_RECORDING_MEDIA_FILE_TYPES,
+  MEETING_RECORDING_SESSION_TOLERANCE_MS,
+  PAST_MEETING_ARTIFACT_ACCESS_FIELDS,
+} from '../constants/meeting.constants';
+import { ArtifactVisibility, MeetingVisibility } from '../enums';
+import {
+  EnrichedPastMeetingParticipant,
+  Meeting,
+  PastMeeting,
+  PastMeetingArtifactKind,
+  PastMeetingParticipant,
+  PastMeetingRecording,
+  PastMeetingTranscript,
+  PastParticipantFilters,
+  PublicPastMeetingRoster,
+  RecordingFile,
+  RecordingSession,
+} from '../interfaces';
 import { firstValidTimestampMs } from './iso-timestamp.utils';
 
 // scheduled_start_time can be absent or a Go zero-date depending on the row's source — fall back to
@@ -145,6 +162,106 @@ export function formatRecordingDurationSpoken(seconds: number | null | undefined
 // still expose a distinct id while Me-lens rows normalize id to the composite value.
 export function getPastMeetingResourceId(meeting: Pick<PastMeeting, 'id' | 'meeting_and_occurrence_id'>): string {
   return meeting.meeting_and_occurrence_id ?? meeting.id;
+}
+
+/**
+ * Whether a viewer with no session may read one artifact of a past meeting (E4-04): only when the
+ * meeting is public and unrestricted and the artifact's own access level is `public`. An unset or
+ * unrecognised level is never public, as upstream FGA treats it (host-only). Anyone signed in reads
+ * with their own token, and upstream decides.
+ */
+export function isPastMeetingArtifactPublic(
+  meeting: Pick<PastMeeting, 'visibility' | 'restricted' | 'recording_access' | 'transcript_access' | 'ai_summary_access'>,
+  kind: PastMeetingArtifactKind
+): boolean {
+  return (
+    meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted && meeting[PAST_MEETING_ARTIFACT_ACCESS_FIELDS[kind]] === ArtifactVisibility.PUBLIC
+  );
+}
+
+/** A recording file with only the fields a viewer needs, for the public routes (E4-04). */
+function toPublicRecordingFile(file: RecordingFile): RecordingFile {
+  return {
+    id: file.id,
+    download_url: file.download_url,
+    play_url: file.play_url,
+    file_size: file.file_size,
+    file_type: file.file_type,
+    recording_type: file.recording_type,
+    recording_start: file.recording_start,
+    recording_end: file.recording_end,
+    status: file.status,
+    platform_meeting_id: file.platform_meeting_id,
+  };
+}
+
+/** A recording session with only the fields a viewer needs, for the public routes (E4-04). */
+function toPublicRecordingSession(session: RecordingSession): RecordingSession {
+  return { start_time: session.start_time, share_url: session.share_url, total_size: session.total_size, uuid: session.uuid };
+}
+
+/**
+ * A recording as the public past-meeting route gives it to a caller with no session (E4-04): an
+ * allowlist of what the page plays and measures, so nothing upstream adds to the document (host
+ * identity, audit users) reaches an anonymous caller.
+ */
+export function toPublicPastMeetingRecording(recording: PastMeetingRecording): PastMeetingRecording {
+  return {
+    uid: recording.uid,
+    past_meeting_id: recording.past_meeting_id,
+    platform: recording.platform,
+    platform_meeting_id: recording.platform_meeting_id,
+    recording_count: recording.recording_count,
+    recording_files: (recording.recording_files ?? []).map(toPublicRecordingFile),
+    sessions: (recording.sessions ?? []).map(toPublicRecordingSession),
+    total_size: recording.total_size,
+    duration_seconds: recording.duration_seconds,
+    created_at: recording.created_at,
+    updated_at: recording.updated_at,
+  };
+}
+
+/** A transcript record as the public route gives it to a caller with no session (E4-04): an allowlist, as for the recording. */
+export function toPublicPastMeetingTranscript(transcript: PastMeetingTranscript): PastMeetingTranscript {
+  return {
+    id: transcript.id,
+    meeting_id: transcript.meeting_id,
+    meeting_and_occurrence_id: transcript.meeting_and_occurrence_id,
+    title: transcript.title,
+    recording_files: transcript.recording_files?.map(toPublicRecordingFile),
+    sessions: transcript.sessions?.map(toPublicRecordingSession),
+  };
+}
+
+/**
+ * Whether a past participant may be named on the public roster (N-02 / `meeting-surface-boundary.md`
+ * § Public roster fields): an invitee who did not attend (a registrant, so a known identity), or an
+ * attendee whose identity is verified. Every other attendee (unknown, needs review, auto-matched or
+ * AI-reconciled) is only counted.
+ */
+function isPublicRosterIdentity(participant: PastMeetingParticipant): boolean {
+  return participant.is_attended ? !!participant.is_verified : participant.is_invited;
+}
+
+/**
+ * The public roster of a past meeting (`meeting-surface-boundary.md` § Public roster fields): name,
+ * avatar, organization and attended / invited for each verified identity, and a count of the
+ * attendees whose identity is not verified. Never email, job title or committee standing.
+ */
+export function toPublicPastMeetingRoster(participants: PastMeetingParticipant[]): PublicPastMeetingRoster {
+  const identified = participants.filter(isPublicRosterIdentity);
+  return {
+    participants: identified.map(({ uid, first_name, last_name, avatar_url, org_name, is_attended, is_invited }) => ({
+      uid,
+      first_name,
+      last_name,
+      avatar_url,
+      org_name,
+      is_attended,
+      is_invited,
+    })),
+    unidentified_attendees: participants.filter((participant) => participant.is_attended && !isPublicRosterIdentity(participant)).length,
+  };
 }
 
 /** Past-meeting list rows carry scheduled_start_time and/or past-only identity fields. */

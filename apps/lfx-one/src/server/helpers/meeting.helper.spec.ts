@@ -11,10 +11,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AccessCheckService } from '../services/access-check.service';
 
-const { resolveCreatedByForMeetings, getMeetingRegistrantsForUser } = vi.hoisted(() => ({
-  resolveCreatedByForMeetings: vi.fn<(req: unknown, uids: string[]) => Promise<Map<string, Pick<Meeting, 'created_by' | 'owner'>>>>(),
-  getMeetingRegistrantsForUser: vi.fn(),
-}));
+const { resolveCreatedByForMeetings, getMeetingRegistrantsForUser, isUserPastMeetingParticipant, getCommitteeMembers, getEffectiveEmail, getUsernameFromAuth } =
+  vi.hoisted(() => ({
+    resolveCreatedByForMeetings: vi.fn<(req: unknown, uids: string[]) => Promise<Map<string, Pick<Meeting, 'created_by' | 'owner'>>>>(),
+    getMeetingRegistrantsForUser: vi.fn(),
+    isUserPastMeetingParticipant: vi.fn(),
+    getCommitteeMembers: vi.fn(),
+    getEffectiveEmail: vi.fn(),
+    getUsernameFromAuth: vi.fn(),
+  }));
 
 // This app's vitest config resolves plain Node modules only — the `@lfx-one/shared/*` tsconfig
 // path alias isn't wired here, so runtime shared subpaths must be mocked (mirrors
@@ -38,6 +43,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // Real, so the host-key gate suites run the actual window check. Deep import — the barrel
   // itself pulls in Angular-tainted modules this environment can't load without the compiler.
   isWithinHostKeyWindow: (await import('@lfx-one/shared/utils/meeting-privacy.utils')).isWithinHostKeyWindow,
+  getPastMeetingResourceId: (meeting: { id: string; meeting_and_occurrence_id?: string }) => meeting.meeting_and_occurrence_id ?? meeting.id,
 }));
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
 // The deep-imported shared meeting-privacy module reads HOST_KEY_* from this barrel; stub it so
@@ -52,18 +58,24 @@ vi.mock('../services/meeting.service', () => ({
   MeetingService: class {
     public resolveCreatedByForMeetings = resolveCreatedByForMeetings;
     public getMeetingRegistrantsForUser = getMeetingRegistrantsForUser;
+    public isUserPastMeetingParticipant = isUserPastMeetingParticipant;
   },
 }));
-vi.mock('../services/committee.service', () => ({ CommitteeService: class {} }));
+vi.mock('../services/committee.service', () => ({
+  CommitteeService: class {
+    public getCommitteeMembers = getCommitteeMembers;
+  },
+}));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(), getUsernameFromAuth: vi.fn() }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail, getUsernameFromAuth }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn() }));
 
 import {
   addInvitedStatusToMeeting,
   applyOrganizerAndHostKeyResult,
+  checkPastMeetingAccess,
   enrichMeetingsWithCreatedBy,
   resolveOrganizerAndHostKey,
   stripHostKey,
@@ -397,5 +409,38 @@ describe('addInvitedStatusToMeeting', () => {
     const result = await addInvitedStatusToMeeting(req, meeting, 'user@example.com', 'm2m-token');
 
     expect(result).toMatchObject({ invited: false, invited_via_committee: false });
+  });
+});
+
+describe('checkPastMeetingAccess membership checks', () => {
+  const signedIn = { oidc: { isAuthenticated: () => true }, bearerToken: 'user-token' } as unknown as Request;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getEffectiveEmail.mockReturnValue('ada@example.com');
+    getUsernameFromAuth.mockResolvedValue('alovelace');
+    getMeetingRegistrantsForUser.mockResolvedValue([]);
+    isUserPastMeetingParticipant.mockResolvedValue(false);
+    getCommitteeMembers.mockResolvedValue([]);
+  });
+
+  // Participant rows are tagged with the composite meeting_and_occurrence_id, not the past meeting's uid.
+  it('checks participation by the composite id, with the M2M token passed per call', async () => {
+    isUserPastMeetingParticipant.mockResolvedValue(true);
+    const meeting = pastMeeting({ visibility: 'private' as PastMeeting['visibility'], meeting_and_occurrence_id: 'live-1-1700000000000' });
+
+    await expect(checkPastMeetingAccess(signedIn, meeting, 'm2m-token', false)).resolves.toBe(true);
+
+    expect(isUserPastMeetingParticipant).toHaveBeenCalledWith(signedIn, 'live-1-1700000000000', 'ada@example.com', 'alovelace', { bearerToken: 'm2m-token' });
+    expect(signedIn.bearerToken).toBe('user-token');
+  });
+
+  it('checks committee membership with the M2M token passed per call', async () => {
+    getCommitteeMembers.mockResolvedValue([{ uid: 'm1' }]);
+    const meeting = pastMeeting({ visibility: 'private' as PastMeeting['visibility'], committees: [{ uid: 'c1', name: 'TSC' }] as PastMeeting['committees'] });
+
+    await expect(checkPastMeetingAccess(signedIn, meeting, 'm2m-token', false)).resolves.toBe(true);
+
+    expect(getCommitteeMembers).toHaveBeenCalledWith(signedIn, 'c1', { tags_all: ['username:alovelace'] }, {}, { bearerToken: 'm2m-token' });
   });
 });

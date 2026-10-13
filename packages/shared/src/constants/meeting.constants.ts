@@ -9,6 +9,7 @@ import type {
   MeetingComposerPreviewFeature,
   MeetingStatusKind,
   MeetingTypeConfig,
+  PastMeetingArtifactKind,
   PastMeetingSummaryApprovalState,
   RsvpResponse,
   ShowMeetingAttendeesLockOptions,
@@ -549,6 +550,13 @@ export const DEFAULT_MEETING_TOOL = 'Zoom';
  * @description Who can access meeting artifacts (recordings, transcripts, AI summaries) by default
  */
 export const DEFAULT_ARTIFACT_VISIBILITY = 'meeting_participants';
+
+/** The past-meeting field holding each artifact's own access level (E4-04). */
+export const PAST_MEETING_ARTIFACT_ACCESS_FIELDS: Record<PastMeetingArtifactKind, 'recording_access' | 'transcript_access' | 'ai_summary_access'> = {
+  recording: 'recording_access',
+  transcript: 'transcript_access',
+  summary: 'ai_summary_access',
+};
 
 /**
  * Default repeat interval for recurring meetings

@@ -3,7 +3,7 @@
 
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, MeetingRegistrant, PastMeeting } from '@lfx-one/shared/interfaces';
-import { isWithinHostKeyWindow, resolveMeetingOrganizer, resolveMeetingOwner } from '@lfx-one/shared/utils';
+import { getPastMeetingResourceId, isWithinHostKeyWindow, resolveMeetingOrganizer, resolveMeetingOwner } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { AccessCheckService } from '../services/access-check.service';
@@ -279,16 +279,19 @@ export async function checkPastMeetingAccess(req: Request, meeting: PastMeeting,
     committee_count: meeting.committees?.length ?? 0,
   });
 
-  // Run registrant, participant, and committee checks in parallel
+  // Run registrant, participant, and committee checks in parallel, each with the M2M token passed per
+  // call. Participant rows are keyed by the composite meeting_and_occurrence_id, not the past meeting's
+  // own uid, so the participant check must use getPastMeetingResourceId.
+  const m2mOptions = { bearerToken: m2mToken };
   const registrantCheck = isUserInvitedToMeeting(req, meeting.meeting_id, email, m2mToken);
-  const participantCheck = meetingService.isUserPastMeetingParticipant(req, meeting.id, email, username ?? undefined);
+  const participantCheck = meetingService.isUserPastMeetingParticipant(req, getPastMeetingResourceId(meeting), email, username ?? undefined, m2mOptions);
 
   const committeeChecks: Promise<boolean>[] = [];
   if (username && meeting.committees?.length) {
     for (const committee of meeting.committees) {
       committeeChecks.push(
         committeeService
-          .getCommitteeMembers(req, committee.uid, { tags_all: [`username:${username}`] })
+          .getCommitteeMembers(req, committee.uid, { tags_all: [`username:${username}`] }, {}, m2mOptions)
           .then((members) => members.length > 0)
           .catch(() => false)
       );

@@ -329,9 +329,16 @@ export class MeetingService {
    * fields (`project_slug`, `project_name`, `is_foundation`) so clients can reconcile project
    * context from the past meeting itself — mirrors `getMeetingById`'s `includeProject` option.
    * Opt-in because most callers (e.g. the past-meetings list) only need the raw ITX payload.
+   * @param options.bearerToken - Reads with this token instead of `req.bearerToken` (e.g. the M2M
+   * token on a public route), for the past meeting and its committee names alike.
    */
-  public async getPastMeetingById(req: Request, pastMeetingUid: string, options: { includeProject?: boolean } = {}): Promise<PastMeeting> {
-    const { includeProject = false } = options;
+  public async getPastMeetingById(
+    req: Request,
+    pastMeetingUid: string,
+    options: { includeProject?: boolean; bearerToken?: string } = {}
+  ): Promise<PastMeeting> {
+    const { includeProject = false, bearerToken } = options;
+    const apiOptions: ApiRequestOptions | undefined = bearerToken ? { bearerToken } : undefined;
     logger.debug(req, 'get_past_meeting_by_id', 'Fetching past meeting by ID', {
       past_meeting_id: pastMeetingUid,
     });
@@ -340,7 +347,11 @@ export class MeetingService {
       req,
       'LFX_V2_SERVICE',
       `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}`,
-      'GET'
+      'GET',
+      undefined,
+      undefined,
+      undefined,
+      apiOptions
     );
 
     if (!meeting) {
@@ -358,7 +369,7 @@ export class MeetingService {
         past_meeting_id: pastMeetingUid,
         committee_count: meeting.committees.length,
       });
-      const committeeNameMap = await this.getCommitteeNameMap(req, [meeting]);
+      const committeeNameMap = await this.getCommitteeNameMap(req, [meeting], apiOptions);
       meeting.committees = meeting.committees.map((c) => ({
         uid: c.uid,
         name: committeeNameMap.get(c.uid) || c.name,
@@ -1340,7 +1351,12 @@ export class MeetingService {
    * through a "bridge" record B (e.g. A and B share an email, B and C share a username), and a
    * one-pass merge would miss that A and C belong to the same person depending on encounter order.
    */
-  public async getPastMeetingParticipants(req: Request, pastMeetingUid: string, failOnPartial: boolean = false): Promise<PastMeetingParticipant[]> {
+  public async getPastMeetingParticipants(
+    req: Request,
+    pastMeetingUid: string,
+    failOnPartial: boolean = false,
+    options?: ApiRequestOptions
+  ): Promise<PastMeetingParticipant[]> {
     logger.debug(req, 'get_past_meeting_participants', 'Fetching past meeting participants', {
       past_meeting_id: pastMeetingUid,
     });
@@ -1353,10 +1369,19 @@ export class MeetingService {
     const raw = await fetchAllQueryResources<PastMeetingParticipant>(
       req,
       (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          ...params,
-          ...(pageToken && { page_token: pageToken }),
-        }),
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            ...params,
+            ...(pageToken && { page_token: pageToken }),
+          },
+          undefined,
+          undefined,
+          options
+        ),
       { failOnPartial }
     );
 
@@ -1436,7 +1461,13 @@ export class MeetingService {
    * match in a single query. `tags_all` can't be used here because `username` is not synthesized
    * into the participant record's indexed tags — username-only matches silently failed before.
    */
-  public async isUserPastMeetingParticipant(req: Request, pastMeetingUid: string, email: string, username?: string): Promise<boolean> {
+  public async isUserPastMeetingParticipant(
+    req: Request,
+    pastMeetingUid: string,
+    email: string,
+    username?: string,
+    options?: ApiRequestOptions
+  ): Promise<boolean> {
     logger.debug(req, 'is_user_past_meeting_participant', 'Checking if user was a past meeting participant', {
       past_meeting_id: pastMeetingUid,
       email,
@@ -1460,7 +1491,10 @@ export class MeetingService {
         type: 'v1_past_meeting_participant',
         filters: [`meeting_and_occurrence_id:${pastMeetingUid}`],
         filters_or: filtersOr,
-      }
+      },
+      undefined,
+      undefined,
+      options
     );
 
     const matched = resources.length > 0;
@@ -1474,9 +1508,41 @@ export class MeetingService {
   }
 
   /**
+   * A past meeting's per-artifact access levels (E4-04), from its `v1_past_meeting` query-service
+   * document. The ITX past-meeting read does not carry them (only `artifact_visibility`, which is the
+   * recording's level), while the index document holds all three, each as upstream FGA enforces it.
+   * Null when no document with this id is found, which the caller must treat as not public.
+   */
+  public async getPastMeetingArtifactAccessLevels(
+    req: Request,
+    pastMeetingUid: string,
+    options?: ApiRequestOptions
+  ): Promise<Pick<PastMeeting, 'recording_access' | 'transcript_access' | 'ai_summary_access'> | null> {
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeeting>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      { type: 'v1_past_meeting', tags: `past_meeting_id:${pastMeetingUid}` },
+      undefined,
+      undefined,
+      options
+    );
+
+    // Only the document of this past meeting: its levels decide what an anonymous caller may read, so
+    // a tag match that returned any other document fails closed rather than lending its levels.
+    const record = resources?.find((resource) => resource.data?.id === pastMeetingUid)?.data;
+    if (!record) {
+      logger.debug(req, 'get_past_meeting_artifact_access_levels', 'No past meeting document found', { past_meeting_id: pastMeetingUid });
+      return null;
+    }
+    return { recording_access: record.recording_access, transcript_access: record.transcript_access, ai_summary_access: record.ai_summary_access };
+  }
+
+  /**
    * Fetches past meeting recording by past meeting UID
    */
-  public async getPastMeetingRecording(req: Request, pastMeetingUid: string): Promise<PastMeetingRecording | null> {
+  public async getPastMeetingRecording(req: Request, pastMeetingUid: string, options?: ApiRequestOptions): Promise<PastMeetingRecording | null> {
     logger.debug(req, 'get_past_meeting_recording', 'Fetching past meeting recording', {
       past_meeting_id: pastMeetingUid,
     });
@@ -1493,7 +1559,10 @@ export class MeetingService {
       'LFX_V2_SERVICE',
       '/query/resources',
       'GET',
-      params
+      params,
+      undefined,
+      undefined,
+      options
     );
 
     if (!resources || resources.length === 0) {
@@ -1515,7 +1584,7 @@ export class MeetingService {
    * from recordings — they are NOT included in the recording's recording_files,
    * so they must be fetched independently.
    */
-  public async getPastMeetingTranscript(req: Request, pastMeetingUid: string): Promise<PastMeetingTranscript | null> {
+  public async getPastMeetingTranscript(req: Request, pastMeetingUid: string, options?: ApiRequestOptions): Promise<PastMeetingTranscript | null> {
     logger.debug(req, 'get_past_meeting_transcript', 'Fetching past meeting transcript', {
       past_meeting_id: pastMeetingUid,
     });
@@ -1532,7 +1601,10 @@ export class MeetingService {
       'LFX_V2_SERVICE',
       '/query/resources',
       'GET',
-      params
+      params,
+      undefined,
+      undefined,
+      options
     );
 
     if (!resources || resources.length === 0) {
@@ -1554,8 +1626,12 @@ export class MeetingService {
    * as an attachment, so the browser cannot render it directly — the BFF fetches
    * the bytes and returns the text.
    */
-  public async getPastMeetingTranscriptContent(req: Request, pastMeetingUid: string): Promise<PastMeetingTranscriptContent | null> {
-    const transcript = await this.getPastMeetingTranscript(req, pastMeetingUid);
+  public async getPastMeetingTranscriptContent(
+    req: Request,
+    pastMeetingUid: string,
+    options?: ApiRequestOptions
+  ): Promise<PastMeetingTranscriptContent | null> {
+    const transcript = await this.getPastMeetingTranscript(req, pastMeetingUid, options);
     const url = getPastMeetingTranscriptUrl(transcript);
 
     if (!url) {
@@ -1633,7 +1709,7 @@ export class MeetingService {
   /**
    * Fetches past meeting summary by past meeting UID
    */
-  public async getPastMeetingSummary(req: Request, pastMeetingUid: string): Promise<PastMeetingSummary | null> {
+  public async getPastMeetingSummary(req: Request, pastMeetingUid: string, options?: ApiRequestOptions): Promise<PastMeetingSummary | null> {
     logger.debug(req, 'get_past_meeting_summary', 'Fetching past meeting summary', {
       past_meeting_id: pastMeetingUid,
     });
@@ -1650,7 +1726,10 @@ export class MeetingService {
       'LFX_V2_SERVICE',
       '/query/resources',
       'GET',
-      params
+      params,
+      undefined,
+      undefined,
+      options
     );
 
     if (!resources || resources.length === 0) {
