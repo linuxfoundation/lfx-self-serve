@@ -50,6 +50,8 @@ import {
   CampaignNegativeKeywordsRequest,
   CampaignNegativeKeywordsResult,
   CampaignSSEEventType,
+  CampaignServiceAccountMonitor,
+  CampaignServiceHubSpotEmailMonitor,
   CampaignStatusToggleParams,
   CampaignStatusUpdateResult,
   GenerateEmailCopyResult,
@@ -319,6 +321,27 @@ export class CampaignService {
 
   public getMetaMonitorData(projectSlug: string, accountKey: string, days: number = 30): Observable<MetaMonitorResponse> {
     return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', { params: { project: projectSlug, days, accountKey } });
+  }
+
+  /**
+   * Microsoft Advertising account monitor, served by campaign-service in its own (snake_case) shape.
+   *
+   * 404 while the server's monitor cutover flag is off. Report-backed: `metrics_as_of`,
+   * `metrics_pending` and `metrics_window_*` say how fresh the figures are, and on the first read
+   * every campaign is `fetch_failed` while the report builds. No panel renders this yet.
+   */
+  public getMicrosoftMonitorData(projectSlug: string, accountId: string, days: number = 30): Observable<CampaignServiceAccountMonitor> {
+    return this.http.get<CampaignServiceAccountMonitor>('/api/campaigns/microsoft/monitor', { params: { project: projectSlug, days, accountKey: accountId } });
+  }
+
+  /** X (Twitter) Ads account monitor — the Microsoft one's sibling, plus a 409 for an account it cannot monitor. */
+  public getTwitterMonitorData(projectSlug: string, accountId: string, days: number = 30): Observable<CampaignServiceAccountMonitor> {
+    return this.http.get<CampaignServiceAccountMonitor>('/api/campaigns/twitter/monitor', { params: { project: projectSlug, days, accountKey: accountId } });
+  }
+
+  /** HubSpot email monitor: project-scoped, so no account. 404 while the server's monitor cutover flag is off. */
+  public getHubSpotMonitorData(projectSlug: string, days: number = 30): Observable<CampaignServiceHubSpotEmailMonitor> {
+    return this.http.get<CampaignServiceHubSpotEmailMonitor>('/api/campaigns/hubspot/monitor', { params: { project: projectSlug, days } });
   }
 
   public getKeywords(projectSlug: string, days: number = 30): Observable<KeywordMetricsResponse> {

@@ -875,6 +875,33 @@ export const MICROSOFT_MAX_CPC_BID = 1000;
 export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
 
 /**
+ * Account-id shapes campaign-service's report-backed account monitors accept
+ * (`monitor-microsoft-ads-account` / `monitor-twitter-ads-account` in its `design/connection.go`).
+ *
+ * Checked in the BFF so a malformed id is a named 400 here rather than a Goa pattern error from
+ * upstream. Microsoft's is a positive int64 with no leading zero; X's is the connection's own
+ * alphanumeric handle rule, at most 64 characters.
+ */
+export const MICROSOFT_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[1-9][0-9]{0,17}$/;
+export const TWITTER_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[A-Za-z0-9]{1,64}$/;
+
+/**
+ * The account monitors' trailing-days bounds, inclusive. Campaign-service REJECTS a value outside
+ * them with a 400 rather than clamping, so the BFF clamps first — the behaviour the legacy Meta and
+ * Reddit monitor routes already had.
+ */
+export const ACCOUNT_MONITOR_MIN_DAYS = 7;
+export const ACCOUNT_MONITOR_MAX_DAYS = 90;
+export const ACCOUNT_MONITOR_DEFAULT_DAYS = 30;
+
+/**
+ * The `reason` values campaign-service's X account monitor answers its 409 with — a closed enum
+ * upstream (`AccountMonitorConflictError`). The BFF forwards a reason only when it is one of these,
+ * so no other upstream text reaches the client.
+ */
+export const ACCOUNT_MONITOR_CONFLICT_REASONS = ['account_too_many_active_campaigns', 'account_timezone_unsupported'] as const;
+
+/**
  * Zero-padded `YYYY-MM-DD` shape for a campaign flight date.
  *
  * Shape only — it says nothing about whether the day named actually exists, so a caller that is

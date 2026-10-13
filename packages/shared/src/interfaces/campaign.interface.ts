@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  ACCOUNT_MONITOR_CONFLICT_REASONS,
   CAMPAIGN_EMAIL_SEGMENTS,
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
@@ -1329,6 +1330,17 @@ export interface MetaCampaignMetrics {
   pacingLabel: MetaPacingLabel;
   startDate: string;
   endDate: string;
+  /**
+   * Set ONLY by the campaign-service monitor path (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`); the
+   * legacy path never sets them. `pacingUnknown`: pacing could not be computed (no flight dates
+   * or no usable budget), so `pacingPct` is a 0 placeholder. `fetchFailed`: this row's upstream
+   * metrics could not be trusted, so its numbers are zero placeholders. `conversionsMeasured`:
+   * false when the platform did not measure conversions, so `conversions` is a 0 placeholder,
+   * not a measured zero.
+   */
+  pacingUnknown?: boolean;
+  fetchFailed?: boolean;
+  conversionsMeasured?: boolean;
 }
 
 export interface MetaAccountTotals {
@@ -1337,6 +1349,8 @@ export interface MetaAccountTotals {
   clicks: number;
   conversions: number;
   campaignCount: number;
+  /** Campaign-service path only: false when no row measured conversions, so `conversions` is a 0 placeholder. */
+  conversionsMeasured?: boolean;
 }
 
 export interface MetaActionItem {
@@ -2253,6 +2267,154 @@ export interface CampaignServiceAudience {
 }
 
 // ---------------------------------------------------------------------------
+// campaign-service account monitors (`GET /projects/{id}/connection-*/account-monitor`)
+//
+// campaign-service's WIRE shapes, in its vocabulary (snake_case, currency amounts in the account's
+// currency, `ctr` as a PERCENTAGE). The Meta and Reddit routes map these onto the legacy
+// `MetaMonitorResponse` / `RedditMonitorResponse`; the Microsoft, X and HubSpot routes have no
+// legacy shape and return these unchanged.
+// ---------------------------------------------------------------------------
+
+/** The ad platforms with an account-scoped monitor this app proxies (Google and LinkedIn are not routed here). */
+export type CampaignServiceMonitorProvider = 'meta-ads' | 'reddit-ads' | 'microsoft-ads' | 'twitter-ads';
+
+export type CampaignServiceMonitorPacingLabel = 'normal' | 'underspending' | 'constrained' | 'overspending';
+
+export type CampaignServiceMonitorPriority = 'HIGH' | 'MED' | 'LOW';
+
+/** The X monitor's 409 `reason`, forwarded to the client as `upstreamCode`. */
+export type AccountMonitorConflictReason = (typeof ACCOUNT_MONITOR_CONFLICT_REASONS)[number];
+
+/** campaign-service `account-monitor-campaign`. */
+export interface CampaignServiceAccountMonitorCampaign {
+  platform_campaign_id: string;
+  name: string;
+  /** The platform's own status string, verbatim. */
+  status: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  /** clicks / impressions * 100 — a percentage, 0 with no impressions. */
+  ctr: number;
+  /** ABSENT when the platform/row could not measure conversions — not a measured 0. */
+  conversions?: number;
+  budget_day: number;
+  total_budget: number;
+  /** `YYYY-MM-DD`, empty when the platform reported none. */
+  start_date: string;
+  end_date: string;
+  /** When true, `pacing_pct` is meaningless. */
+  pacing_unknown: boolean;
+  is_search_channel: boolean;
+  /** When true, the row's numbers are placeholders and it was excluded from the rules. */
+  fetch_failed: boolean;
+  pacing_pct: number;
+  /** A placeholder `normal` when `pacing_unknown` or `fetch_failed` is true. */
+  pacing_label: CampaignServiceMonitorPacingLabel;
+  campaign_url?: string;
+}
+
+/** campaign-service `account-monitor-action-item`, shared by the ad monitors and the HubSpot one. */
+export interface CampaignServiceAccountMonitorActionItem {
+  /** Platform campaign id on the ad monitors; campaign-service's campaign UUID on HubSpot. Empty for an account-wide item. */
+  campaign_id?: string;
+  /** HubSpot monitor only: the email the item is about. */
+  email_id?: string;
+  campaign_name?: string;
+  priority: CampaignServiceMonitorPriority;
+  issue: string;
+  action: string;
+}
+
+/** campaign-service `account-monitor-totals`: always the sum of the `campaigns` beside it. */
+export interface CampaignServiceAccountMonitorTotals {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  /** ABSENT when no row measured conversions. */
+  conversions?: number;
+  campaign_count: number;
+}
+
+/** campaign-service `account-monitor`. */
+export interface CampaignServiceAccountMonitor {
+  account_id: string;
+  /** The REQUESTED window, echoed. */
+  days: number;
+  campaigns: CampaignServiceAccountMonitorCampaign[];
+  action_items: CampaignServiceAccountMonitorActionItem[];
+  totals: CampaignServiceAccountMonitorTotals;
+  /**
+   * Report-backed platforms (Microsoft Ads, X) only: when the served report was requested
+   * (RFC 3339). ABSENT before the first report finishes, when every campaign is `fetch_failed`.
+   */
+  metrics_as_of?: string;
+  /** Report-backed platforms only: first/last calendar day (inclusive) the metrics cover. */
+  metrics_window_start?: string;
+  metrics_window_end?: string;
+  /** Report-backed platforms only: a newer report is building. */
+  metrics_pending?: boolean;
+}
+
+/** campaign-service `hubspot-email-monitor-email`. Rates are FRACTIONS, absent on a zero denominator. */
+export interface CampaignServiceHubSpotEmailMonitorEmail {
+  campaign_id: string;
+  email_id: string;
+  name: string;
+  ab_variant: boolean;
+  deleted: boolean;
+  sent: number;
+  delivered: number;
+  opens: number;
+  clicks: number;
+  bounces: number;
+  unsubscribes: number;
+  spam_reports: number;
+  open_rate?: number;
+  click_rate?: number;
+  bounce_rate?: number;
+  unsubscribe_rate?: number;
+  spam_rate?: number;
+}
+
+/** campaign-service `hubspot-email-monitor-totals`: the sum of the emails, rates from the sums. */
+export interface CampaignServiceHubSpotEmailMonitorTotals {
+  email_count: number;
+  sent: number;
+  delivered: number;
+  opens: number;
+  clicks: number;
+  bounces: number;
+  unsubscribes: number;
+  spam_reports: number;
+  open_rate?: number;
+  click_rate?: number;
+  bounce_rate?: number;
+  unsubscribe_rate?: number;
+  spam_rate?: number;
+}
+
+/**
+ * campaign-service `hubspot-email-monitor`: PROJECT-scoped (no account id) — the marketing emails
+ * campaign-service itself recorded for the project and HubSpot reports as sent in the window.
+ */
+export interface CampaignServiceHubSpotEmailMonitor {
+  days: number;
+  emails: CampaignServiceHubSpotEmailMonitorEmail[];
+  action_items: CampaignServiceAccountMonitorActionItem[];
+  totals: CampaignServiceHubSpotEmailMonitorTotals;
+  /** ABSENT when HubSpot was not called because the project has recorded no HubSpot email. */
+  metrics_as_of?: string;
+  metrics_window_start?: string;
+  metrics_window_end?: string;
+  emails_checked: number;
+  emails_not_sent_in_window: number;
+  emails_unattributable: number;
+  /** True when only the 50 most recently recorded campaigns were checked. */
+  emails_truncated: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Optimization Insights
 // ---------------------------------------------------------------------------
 
@@ -2458,6 +2620,17 @@ export interface RedditCampaignMetrics {
   pacingLabel: RedditPacingLabel;
   startDate: string;
   endDate: string;
+  /**
+   * Set ONLY by the campaign-service monitor path (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`); the
+   * legacy path never sets them. `pacingUnknown`: pacing could not be computed (no flight dates
+   * or no usable budget), so `pacingPct` is a 0 placeholder. `fetchFailed`: this row's upstream
+   * metrics could not be trusted, so its numbers are zero placeholders. `conversionsMeasured`:
+   * false when the platform did not measure conversions, so `conversions` is a 0 placeholder,
+   * not a measured zero.
+   */
+  pacingUnknown?: boolean;
+  fetchFailed?: boolean;
+  conversionsMeasured?: boolean;
 }
 
 export interface RedditAccountTotals {
@@ -2466,6 +2639,8 @@ export interface RedditAccountTotals {
   clicks: number;
   conversions: number;
   campaignCount: number;
+  /** Campaign-service path only: false when no row measured conversions, so `conversions` is a 0 placeholder. */
+  conversionsMeasured?: boolean;
 }
 
 export interface RedditActionItem {

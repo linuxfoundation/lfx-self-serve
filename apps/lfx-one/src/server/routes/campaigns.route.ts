@@ -44,6 +44,11 @@ router.get('/reddit/accounts', (req, res) => campaignController.getRedditAccount
 router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMonitor(req, res, next));
 router.get('/meta/accounts', (req, res) => campaignController.getMetaAccounts(req, res));
 router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonitor(req, res, next));
+// campaign-service only (#2519), behind LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off.
+// Microsoft and X take the platform account id as `?accountKey=`; HubSpot is project-scoped and takes none.
+router.get('/microsoft/monitor', (req, res, next) => campaignController.getMicrosoftMonitor(req, res, next));
+router.get('/twitter/monitor', (req, res, next) => campaignController.getTwitterMonitor(req, res, next));
+router.get('/hubspot/monitor', (req, res, next) => campaignController.getHubSpotMonitor(req, res, next));
 router.get('/keywords', (req, res, next) => campaignController.getKeywords(req, res, next));
 // campaign-service only, from its saved Microsoft keyword reports: takes `?window=`, not `?days=`.
 router.get('/microsoft/keywords', (req, res, next) => campaignController.getMicrosoftKeywords(req, res, next));
