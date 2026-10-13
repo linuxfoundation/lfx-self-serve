@@ -4,7 +4,7 @@
 /**
  * Meeting details V2 — structural E2E (#3262): the testid contract, `data-kind` / `data-state`
  * values and section presence for each preset in `specs/011-meeting-details-redesign/e2e-presets.md`,
- * and an axe scan (WCAG 2.2 AA) of each (#3260). The content twin is `meeting-details.spec.ts`.
+ * and an axe scan (WCAG 2.2 AA) of each (#3260). The anonymous presets are fixme until rollout stage 5. The content twin is `meeting-details.spec.ts`.
  *
  * Not a CI merge gate: `quality-check.yml` has the E2E job commented out (H-08).
  */
@@ -17,6 +17,7 @@ import {
   buildPastMeeting,
   ELEMENT_TIMEOUT,
   MeetingStubs,
+  openMeetingAnonymously,
   openMeetingSignedIn,
   PAGE_LOAD_TIMEOUT,
   PAST_ID,
@@ -84,6 +85,44 @@ const PRESETS: Preset[] = [
   },
 ];
 
+/**
+ * The anonymous presets. The V2 gate gives anonymous viewers V1 until rollout stage 5 (`rollout.md`),
+ * so these are fixme until then, like their content twins; the scan is written now so stage 5 turns
+ * on structure and axe together.
+ */
+const ANONYMOUS_PRESETS: Preset[] = [
+  {
+    name: '1 · visitor, public, before',
+    id: UPCOMING_ID,
+    stubs: () => ({ meeting: buildMeeting('before') }),
+    kind: 'register',
+    state: 'before',
+    present: ['meeting-action-sign-in', 'meeting-time-banner'],
+    absent: ['meeting-rsvp-card', 'tools-section', 'meeting-header-admin-link'],
+  },
+  {
+    name: '2 · visitor, public, live',
+    id: UPCOMING_ID,
+    stubs: () => ({ meeting: buildMeeting('live') }),
+    kind: 'guest-join',
+    state: 'live',
+    present: ['meeting-guest-join-form'],
+    absent: ['meeting-rsvp-card', 'tools-section', 'meeting-header-admin-link'],
+  },
+  {
+    name: '7 · visitor, ended public meeting with public artifacts',
+    id: PAST_ID,
+    stubs: () => ({
+      past: { meeting: buildPastMeeting({ recording_access: 'public', transcript_access: 'public', ai_summary_access: 'public' }), fullAccess: true },
+    }),
+    kind: 'tools',
+    state: 'ended',
+    present: ['tools-section', 'tools-summary'],
+    // The roster needs a session (E4-04), and a visitor is never the organizer.
+    absent: ['people-section', 'meeting-header-admin-link'],
+  },
+];
+
 async function assertPreset(page: Page, preset: Preset): Promise<void> {
   await expect(page.getByTestId('meeting-action-slot')).toHaveAttribute('data-kind', preset.kind, { timeout: ELEMENT_TIMEOUT });
   await expect(page.getByTestId('meeting-status-pill')).toHaveAttribute('data-state', preset.state);
@@ -137,4 +176,18 @@ test.describe('Meeting details V2 — structure and accessibility', () => {
       expect(await axeViolations(page)).toEqual([]);
     });
   });
+});
+
+test.describe('Meeting details V2 — anonymous structure and accessibility', () => {
+  test.use({ viewport: { width: 1440, height: 900 }, storageState: { cookies: [], origins: [] } });
+
+  for (const preset of ANONYMOUS_PRESETS) {
+    test.fixme(`${preset.name}: contract and axe (stage 5)`, async ({ page }) => {
+      await openMeetingAnonymously(page, preset.id, preset.stubs());
+      await waitForMeeting(page);
+
+      await assertPreset(page, preset);
+      expect(await axeViolations(page)).toEqual([]);
+    });
+  }
 });
