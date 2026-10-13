@@ -8,13 +8,16 @@ import '@angular/compiler';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getPersonas, checkProjectWriter, getProjectIdBySlug, canBoardMemberViewSocialListening, getUsernameFromAuth } = vi.hoisted(() => ({
-  getPersonas: vi.fn(),
-  checkProjectWriter: vi.fn(),
-  getProjectIdBySlug: vi.fn(),
-  canBoardMemberViewSocialListening: vi.fn(),
-  getUsernameFromAuth: vi.fn(),
-}));
+const { getPersonas, checkProjectWriter, getProjectIdBySlug, getProjectById, canBoardMemberViewSocialListening, getUsernameFromAuth, computeIsFoundation } =
+  vi.hoisted(() => ({
+    getPersonas: vi.fn(),
+    checkProjectWriter: vi.fn(),
+    getProjectIdBySlug: vi.fn(),
+    getProjectById: vi.fn(),
+    computeIsFoundation: vi.fn(),
+    canBoardMemberViewSocialListening: vi.fn(),
+    getUsernameFromAuth: vi.fn(),
+  }));
 
 vi.mock('../utils/persona-helper', () => ({
   personaDetectionService: { getPersonas: () => getPersonas(), checkProjectWriter: (...args: unknown[]) => checkProjectWriter(...args) },
@@ -23,6 +26,7 @@ vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth: () => getUsernameF
 vi.mock('./project.service', () => ({
   ProjectService: class {
     public getProjectIdBySlug = getProjectIdBySlug;
+    public getProjectById = getProjectById;
   },
 }));
 vi.mock('./committee.service', () => ({
@@ -30,6 +34,7 @@ vi.mock('./committee.service', () => ({
     public canBoardMemberViewSocialListening = canBoardMemberViewSocialListening;
   },
 }));
+vi.mock('@lfx-one/shared/utils', () => ({ computeIsFoundation: (...args: unknown[]) => computeIsFoundation(...args) }));
 vi.mock('./logger.service', () => ({ logger: { warning: vi.fn(), debug: vi.fn() } }));
 
 const { SocialListeningAccessService } = await import('./social-listening-access.service');
@@ -47,6 +52,8 @@ describe('SocialListeningAccessService.getAccess', () => {
     getPersonas.mockReset().mockResolvedValue(personas());
     checkProjectWriter.mockReset().mockResolvedValue(false);
     getProjectIdBySlug.mockReset().mockResolvedValue({ uid: 'tlf-uid', slug: 'tlf', exists: true });
+    getProjectById.mockReset().mockResolvedValue({ uid: 'tlf-uid', slug: 'tlf' });
+    computeIsFoundation.mockReset().mockReturnValue(true);
     canBoardMemberViewSocialListening.mockReset().mockResolvedValue(true);
     getUsernameFromAuth.mockReset().mockResolvedValue('board-user');
     service = new SocialListeningAccessService();
@@ -96,6 +103,16 @@ describe('SocialListeningAccessService.getAccess', () => {
   it('denies a malformed slug without looking it up', async () => {
     await expect(service.getAccess(req, 'tlf;drop')).resolves.toEqual({ canView: false, reason: 'none' });
     expect(getProjectIdBySlug).not.toHaveBeenCalled();
+  });
+
+  it("denies a child project's slug even when its Board opted in — only a foundation's own Board grants access", async () => {
+    getProjectIdBySlug.mockResolvedValue({ uid: 'child-uid', slug: 'child', exists: true });
+    getProjectById.mockResolvedValue({ uid: 'child-uid', slug: 'child', parent_uid: 'tlf-uid' });
+    computeIsFoundation.mockReturnValue(false);
+
+    await expect(service.getAccess(req, 'child')).resolves.toEqual({ canView: false, reason: 'none' });
+    expect(getProjectById).toHaveBeenCalledWith(req, 'child-uid', false);
+    expect(canBoardMemberViewSocialListening).not.toHaveBeenCalled();
   });
 
   it('denies an unknown foundation', async () => {

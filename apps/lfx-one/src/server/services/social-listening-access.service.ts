@@ -3,6 +3,7 @@
 
 import { SOCIAL_LISTENING_BOARD_ACCESS_CACHE_SWEEP_THRESHOLD, SOCIAL_LISTENING_BOARD_ACCESS_CACHE_TTL_MS } from '@lfx-one/shared/constants';
 import type { SocialListeningAccessResponse } from '@lfx-one/shared/interfaces';
+import { computeIsFoundation } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { getDashboardAccessReason } from '../helpers/dashboard-access.helper';
@@ -68,7 +69,10 @@ export class SocialListeningAccessService {
         if (!project.exists) {
           return false;
         }
-        const canView = await this.committeeService.canBoardMemberViewSocialListening(req, project.uid);
+        // foundationSlug is caller-supplied: only a foundation's own Board grants access, so a child
+        // project's opted-in Board must not pass by naming the child's slug.
+        const isFoundation = computeIsFoundation(await this.projectService.getProjectById(req, project.uid, false));
+        const canView = isFoundation && (await this.committeeService.canBoardMemberViewSocialListening(req, project.uid));
         this.remember(cacheKey, canView);
         return canView;
       } catch (error) {
