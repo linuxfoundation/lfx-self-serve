@@ -2046,7 +2046,7 @@ export interface PublicProjectMeetingsResponse {
   meetings: PublicCalendarMeeting[];
   /** Number of entries in `meetings` */
   total: number;
-  /** Slim project envelope for the page header; `name` is empty when project lookup fails */
+  /** Slim project envelope; `name` is empty for an unknown or non-discoverable UID. Transient UID lookup failures return an error, not this envelope. */
   project: { uid: string; name: string };
 }
 
