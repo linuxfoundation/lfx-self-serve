@@ -3465,6 +3465,7 @@ describe('ProjectService — getPubliclyDiscoverableProject', () => {
   beforeEach(() => {
     proxyRequest.mockReset();
     warning.mockReset();
+    debug.mockReset();
     service = new ProjectService();
   });
 
@@ -3488,11 +3489,31 @@ describe('ProjectService — getPubliclyDiscoverableProject', () => {
     await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toBeNull();
   });
 
-  it('fails closed (null) and logs a warning when the upstream lookup rejects', async () => {
-    const err = new Error('upstream unavailable');
-    proxyRequest.mockRejectedValueOnce(err);
+  // Upstream rejected the identifier itself — a definitive "not found / not visible" answer, so null, logged at
+  // DEBUG because the identifier is caller-controlled on these anonymous routes.
+  it.each([400, 403, 404])('returns null and logs at DEBUG (not WARN) when upstream answers %i', async (status) => {
+    proxyRequest.mockRejectedValueOnce(new MicroserviceError('rejected', status, 'UPSTREAM'));
 
     await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toBeNull();
-    expect(warning).toHaveBeenCalledWith(req, 'get_publicly_discoverable_project', expect.any(String), { project_uid: 'p1', err });
+    expect(debug).toHaveBeenCalledWith(req, 'get_publicly_discoverable_project', expect.any(String), { project_uid: 'p1', status_code: status });
+    expect(warning).not.toHaveBeenCalled();
+  });
+
+  it('returns null when upstream returns an empty body (getProjectById throws ResourceNotFoundError)', async () => {
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toBeNull();
+  });
+
+  // A transient failure says nothing about the project — rethrow so callers surface an error rather than a
+  // cacheable empty response (an empty ICS feed would be synced over subscribers' calendars).
+  it.each([
+    ['a 503', new MicroserviceError('unavailable', 503, 'SERVICE_UNAVAILABLE')],
+    ['a timeout', new MicroserviceError('timeout', 408, 'TIMEOUT')],
+    ['a non-API error', new Error('socket hang up')],
+  ])('rethrows %s instead of treating the project as hidden', async (_label, err) => {
+    proxyRequest.mockRejectedValueOnce(err);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).rejects.toBe(err);
   });
 });

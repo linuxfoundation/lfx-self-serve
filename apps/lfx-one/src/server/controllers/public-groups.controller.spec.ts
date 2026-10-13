@@ -87,7 +87,7 @@ vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
-import { ResourceNotFoundError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { PublicGroupsController } from './public-groups.controller';
 
 const FOUNDATION_UID = '11111111-1111-4111-8111-111111111111';
@@ -113,11 +113,13 @@ function expectSameNotFound(
   expect(hiddenError.statusCode).toBe(404);
   expect(hiddenError.message).toBe(unknownError.message);
   expect(hiddenError.toResponse()).toEqual(unknownError.toResponse());
+  expect(vi.mocked(hidden.res.setHeader).mock.calls).toEqual(vi.mocked(unknown.res.setHeader).mock.calls);
+  expect(hidden.res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
 }
 
 function buildReqRes(identifier: string): { req: Request; res: Response & { json: Mock }; next: NextFunction & Mock } {
   const req = { params: { identifier }, path: `/public/api/foundations/${identifier}/groups`, log: {} } as unknown as Request;
-  const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as unknown as Response & { json: Mock };
+  const res = { json: vi.fn(), status: vi.fn().mockReturnThis(), setHeader: vi.fn() } as unknown as Response & { json: Mock };
   const next = vi.fn() as unknown as NextFunction & Mock;
   return { req, res, next };
 }
@@ -195,7 +197,7 @@ describe('PublicGroupsController.getPublicGroupsByFoundation — fan-out cap', (
   });
 });
 
-describe('PublicGroupsController.getPublicGroupsByFoundation — discoverability (issue-437)', () => {
+describe('PublicGroupsController.getPublicGroupsByFoundation — discoverability (lfx-self-serve-ops#437)', () => {
   let controller: PublicGroupsController;
 
   beforeEach(() => {
@@ -249,6 +251,47 @@ describe('PublicGroupsController.getPublicGroupsByFoundation — discoverability
     expect(serialized).not.toContain('child-hidden');
   });
 
+  it("drops a child project's committees when its context lookup fails transiently", async () => {
+    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => {
+      if (uid === 'child-hidden') {
+        throw new Error('upstream 503');
+      }
+      return discoverable(uid);
+    });
+    const { req, res, next } = buildReqRes(FOUNDATION_UID);
+
+    await controller.getPublicGroupsByFoundation(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const response = res.json.mock.calls[0][0];
+    expect(response.groups.map((g: { uid: string }) => g.uid).sort()).toEqual([`committee-of-${FOUNDATION_UID}`, 'committee-of-child-visible'].sort());
+    expect(response.total).toBe(2);
+  });
+
+  it('passes a transient foundation lookup failure to next() before any fan-out', async () => {
+    const boom = new Error('upstream 503');
+    getPubliclyDiscoverableProjectMock.mockRejectedValueOnce(boom);
+    const { req, res, next } = buildReqRes(FOUNDATION_UID);
+
+    await controller.getPublicGroupsByFoundation(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(boom);
+    expect(getFoundationProjectUidsMock).not.toHaveBeenCalled();
+  });
+
+  it('answers a foundation slug metadata outage exactly like an unknown slug without caching the refusal', async () => {
+    getProjectIdBySlugMock.mockResolvedValueOnce({ uid: '', slug: 'secret', exists: false });
+    const unknown = buildReqRes('secret');
+    await controller.getPublicGroupsByFoundation(unknown.req, unknown.res, unknown.next);
+
+    getProjectIdBySlugMock.mockResolvedValueOnce({ uid: FOUNDATION_UID, slug: 'secret', exists: true });
+    getPubliclyDiscoverableProjectMock.mockRejectedValueOnce(new Error('upstream 503'));
+    const unavailable = buildReqRes('secret');
+    await controller.getPublicGroupsByFoundation(unavailable.req, unavailable.res, unavailable.next);
+
+    expectSameNotFound(unavailable, unknown);
+  });
+
   it("keeps the foundation's own committees even when its context lookup is unconfirmed", async () => {
     // First call is the gate on the foundation itself; later calls are resolveContextProjects.
     getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => (uid === 'child-visible' ? discoverable(uid) : null));
@@ -263,7 +306,7 @@ describe('PublicGroupsController.getPublicGroupsByFoundation — discoverability
   });
 });
 
-describe('PublicGroupsController.getPublicGroupsByProject — discoverability (issue-437)', () => {
+describe('PublicGroupsController.getPublicGroupsByProject — discoverability (lfx-self-serve-ops#437)', () => {
   let controller: PublicGroupsController;
 
   beforeEach(() => {
@@ -316,6 +359,45 @@ describe('PublicGroupsController.getPublicGroupsByProject — discoverability (i
     }
   });
 
+  it('treats the project as top-level when its parent lookup fails transiently', async () => {
+    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => {
+      if (uid === PARENT_UID) {
+        throw new Error('upstream 503');
+      }
+      return discoverable(uid, { parent_uid: PARENT_UID });
+    });
+    const { req, res, next } = buildReqRes(PROJECT_UID);
+
+    await controller.getPublicGroupsByProject(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].groups[0].context).toMatchObject({ scope: 'foundation', foundation_uid: PROJECT_UID });
+  });
+
+  it('passes a transient lookup failure for the project itself to next() rather than answering not-found', async () => {
+    const boom = new Error('upstream 503');
+    getPubliclyDiscoverableProjectMock.mockRejectedValueOnce(boom);
+    const { req, res, next } = buildReqRes(PROJECT_UID);
+
+    await controller.getPublicGroupsByProject(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(boom);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('answers a project slug metadata outage exactly like an unknown slug without caching the refusal', async () => {
+    getProjectIdBySlugMock.mockResolvedValueOnce({ uid: '', slug: 'secret', exists: false });
+    const unknown = buildReqRes('secret');
+    await controller.getPublicGroupsByProject(unknown.req, unknown.res, unknown.next);
+
+    getProjectIdBySlugMock.mockResolvedValueOnce({ uid: PROJECT_UID, slug: 'secret', exists: true });
+    getPubliclyDiscoverableProjectMock.mockRejectedValueOnce(new Error('upstream 503'));
+    const unavailable = buildReqRes('secret');
+    await controller.getPublicGroupsByProject(unavailable.req, unavailable.res, unavailable.next);
+
+    expectSameNotFound(unavailable, unknown);
+  });
+
   it('nests the project under a discoverable parent foundation', async () => {
     getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) =>
       uid === PARENT_UID ? discoverable(uid) : discoverable(uid, { parent_uid: PARENT_UID })
@@ -354,7 +436,7 @@ describe('PublicGroupsController.getPublicGroupById — chairs and member_visibi
 
   function buildGroupReqRes(): { req: Request; res: Response & { json: Mock }; next: NextFunction & Mock } {
     const req = { params: { id: GROUP_UID }, path: `/public/api/groups/${GROUP_UID}`, log: {} } as unknown as Request;
-    const res = { json: vi.fn() } as unknown as Response & { json: Mock };
+    const res = { json: vi.fn(), setHeader: vi.fn() } as unknown as Response & { json: Mock };
     const next = vi.fn() as unknown as NextFunction & Mock;
     return { req, res, next };
   }
@@ -396,13 +478,13 @@ describe('PublicGroupsController.getPublicGroupById — chairs and member_visibi
   });
 });
 
-describe('PublicGroupsController.getPublicGroupById — discoverability (issue-437)', () => {
+describe('PublicGroupsController.getPublicGroupById — discoverability (lfx-self-serve-ops#437)', () => {
   const GROUP_UID = 'c0000000-0000-0000-0000-000000000020';
   let controller: PublicGroupsController;
 
-  function buildGroupReqRes(): { req: Request; res: Response & { json: Mock }; next: NextFunction & Mock } {
-    const req = { params: { id: GROUP_UID }, path: `/public/api/groups/${GROUP_UID}`, log: {} } as unknown as Request;
-    const res = { json: vi.fn() } as unknown as Response & { json: Mock };
+  function buildGroupReqRes(id: string = GROUP_UID): { req: Request; res: Response & { json: Mock }; next: NextFunction & Mock } {
+    const req = { params: { id }, path: `/public/api/groups/${id}`, log: {} } as unknown as Request;
+    const res = { json: vi.fn(), setHeader: vi.fn() } as unknown as Response & { json: Mock };
     const next = vi.fn() as unknown as NextFunction & Mock;
     return { req, res, next };
   }
@@ -476,5 +558,77 @@ describe('PublicGroupsController.getPublicGroupById — discoverability (issue-4
       project_uid: PROJECT_UID,
       project_name: `name-${PROJECT_UID}`,
     });
+  });
+  it('answers an unknown group UUID and a group under a hidden project with the same not-found error', async () => {
+    getCommitteeByIdMock.mockRejectedValueOnce(new MicroserviceError('committee not found', 404, 'NOT_FOUND'));
+    const unknown = buildGroupReqRes();
+    await controller.getPublicGroupById(unknown.req, unknown.res, unknown.next);
+
+    getPubliclyDiscoverableProjectMock.mockResolvedValueOnce(null);
+    const hidden = buildGroupReqRes();
+    await controller.getPublicGroupById(hidden.req, hidden.res, hidden.next);
+
+    const [unknownError] = unknown.next.mock.calls[0];
+    const [hiddenError] = hidden.next.mock.calls[0];
+    expect(unknownError).toBeInstanceOf(ResourceNotFoundError);
+    expect(hiddenError).toBeInstanceOf(ResourceNotFoundError);
+    expect(hiddenError.toResponse()).toEqual(unknownError.toResponse());
+    expect(unknown.res.json).not.toHaveBeenCalled();
+    expect(hidden.res.json).not.toHaveBeenCalled();
+  });
+
+  it('passes a non-404 committee lookup failure through unchanged', async () => {
+    const boom = new MicroserviceError('unavailable', 503, 'SERVICE_UNAVAILABLE');
+    getCommitteeByIdMock.mockRejectedValueOnce(boom);
+    const { req, res, next } = buildGroupReqRes();
+
+    await controller.getPublicGroupById(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(boom);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('gates on the owning project before fetching members, meetings, or mailing lists', async () => {
+    getPubliclyDiscoverableProjectMock.mockResolvedValue(null);
+    const { req, res, next } = buildGroupReqRes();
+
+    await controller.getPublicGroupById(req, res, next);
+
+    expect(getCommitteeMembersMock).not.toHaveBeenCalled();
+    expect(getMeetingsMock).not.toHaveBeenCalled();
+    expect(proxyRequestMock).not.toHaveBeenCalled();
+  });
+
+  it.each([GROUP_UID, 'secret-group'])('answers an owning-project outage exactly like an unknown group for %s', async (id) => {
+    if (id === GROUP_UID) {
+      getCommitteeByIdMock.mockRejectedValueOnce(new MicroserviceError('committee not found', 404, 'NOT_FOUND'));
+    } else {
+      resolveCommitteeUidMock.mockRejectedValueOnce(
+        new ResourceNotFoundError('Group', id, { operation: 'get_public_group_by_id', service: 'public_groups_controller', path: `/groups/${id}` })
+      );
+    }
+    const unknown = buildGroupReqRes(id);
+    await controller.getPublicGroupById(unknown.req, unknown.res, unknown.next);
+
+    getPubliclyDiscoverableProjectMock.mockRejectedValueOnce(new Error('upstream 503'));
+    const unavailable = buildGroupReqRes(id);
+    await controller.getPublicGroupById(unavailable.req, unavailable.res, unavailable.next);
+
+    expectSameNotFound(unavailable, unknown);
+  });
+
+  it('treats a project as top-level when its parent lookup fails transiently', async () => {
+    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => {
+      if (uid === PARENT_UID) {
+        throw new Error('upstream 503');
+      }
+      return discoverable(uid, { parent_uid: PARENT_UID });
+    });
+    const { req, res, next } = buildGroupReqRes();
+
+    await controller.getPublicGroupById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].context).toMatchObject({ scope: 'foundation', foundation_uid: PROJECT_UID });
   });
 });

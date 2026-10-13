@@ -1027,20 +1027,24 @@ export class ProjectController {
         req.bearerToken = await generateM2MToken(req);
       }
 
+      // Gate before any meeting fetch. Hidden and unknown UIDs get an empty, unnamed calendar without
+      // fetching meetings (lfx-self-serve-ops#437). A transient lookup failure throws instead: an empty
+      // 200 would be cached and synced over subscribers' calendars until their client's next poll.
+      const project = await this.projectService.getPubliclyDiscoverableProject(req, id);
+
       const query = { tags: `project_uid:${id}` };
 
       // Fetch all pages — first-page-only would silently drop meetings beyond the default page size.
-      const [upcoming, past, project] = await Promise.all([
-        fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_meeting', false)),
-        fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
-        this.projectService.getPubliclyDiscoverableProject(req, id),
-      ]);
+      const [upcoming, past] = project
+        ? await Promise.all([
+            fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_meeting', false)),
+            fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
+          ])
+        : [[], []];
 
-      // A project that is not publicly discoverable (or could not be confirmed as such) gets the same empty,
-      // unnamed calendar an unknown UID gets, so the feed reveals neither its name nor its meetings (issue-437).
-      // Otherwise, filter PRIVATE meetings from the public feed. Restricted (invited-guests-only) public meetings
-      // are still listed so their existence is discoverable; join authorization is enforced separately at join time.
-      const allMeetings = project ? [...upcoming, ...past].filter((m) => m.visibility === MeetingVisibility.PUBLIC) : [];
+      // Filter PRIVATE meetings from the public feed. Restricted (invited-guests-only) public meetings are
+      // still listed so their existence is discoverable; join authorization is enforced separately at join time.
+      const allMeetings = [...upcoming, ...past].filter((m) => m.visibility === MeetingVisibility.PUBLIC);
       const events = meetingsToVEvents(allMeetings);
       const ics = buildVCalendar(events, '-//LFX//Project Calendar//EN', project?.name);
 
@@ -1085,21 +1089,25 @@ export class ProjectController {
         req.bearerToken = await generateM2MToken(req);
       }
 
+      const isProjectUid = isUuid(id);
+      if (!isProjectUid) {
+        // Unknown, hidden, and temporarily unresolvable slugs share a non-cacheable not-found response.
+        res.setHeader('Cache-Control', 'no-store');
+      }
+
       const projectUid = await this.resolveProjectIdentifier(req, id);
-      const query = committeeUid ? { tags_all: [`project_uid:${projectUid}`, `committee_uid:${committeeUid}`] } : { tags: `project_uid:${projectUid}` };
 
-      const [upcoming, past, project, publicCommitteeUids] = await Promise.all([
-        fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_meeting', false)),
-        fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
-        // Fails closed: null when the project is not publicly discoverable or the lookup errored (issue-437).
-        this.projectService.getPubliclyDiscoverableProject(req, projectUid),
-        this.getPublicCommitteeUids(req, projectUid),
-      ]);
-
-      // A hidden project is answered exactly like an unknown identifier: a slug gets the same not-found error
-      // resolveProjectIdentifier throws, and a UID gets the same empty, unnamed feed a non-existent UID yields.
+      // Gate before fan-out. A slug metadata failure must not differ from an unknown slug; UID failures
+      // still propagate rather than serving a cacheable empty feed (lfx-self-serve-ops#437).
+      const project = await this.projectService.getPubliclyDiscoverableProject(req, projectUid).catch((error: unknown) => {
+        if (isProjectUid) {
+          throw error;
+        }
+        logger.warning(req, 'get_project_meetings', 'Project lookup failed; answering slug as not found', { project_uid: projectUid, err: error });
+        return null;
+      });
       if (!project) {
-        if (!isUuid(id)) {
+        if (!isProjectUid) {
           throw this.projectNotFoundError(id);
         }
         logger.success(req, 'get_project_meetings', startTime, {
@@ -1112,6 +1120,14 @@ export class ProjectController {
         res.json({ meetings: [], total: 0, project: { uid: projectUid, name: '' } } satisfies PublicProjectMeetingsResponse);
         return;
       }
+
+      const query = committeeUid ? { tags_all: [`project_uid:${projectUid}`, `committee_uid:${committeeUid}`] } : { tags: `project_uid:${projectUid}` };
+
+      const [upcoming, past, publicCommitteeUids] = await Promise.all([
+        fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_meeting', false)),
+        fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
+        this.getPublicCommitteeUids(req, projectUid),
+      ]);
 
       // A committee the public directory does not list is not a valid filter here. Serving it would let an
       // anonymous caller confirm which meetings belong to a non-public group, which is the correlation the
@@ -1164,7 +1180,7 @@ export class ProjectController {
    * foundation project lands on /foundation/<resource> and a non-foundation on
    * /project/<resource>. `:resource` is allowlisted (LENS_REDIRECT_RESOURCES) so it can never
    * become an arbitrary/open redirect. Falls back to the flat /<resource> route when the slug
-   * is unresolvable, the project is not publicly discoverable (issue-437), or the fetch fails.
+   * is unresolvable, the project is not publicly discoverable (lfx-self-serve-ops#437), or the fetch fails.
    * Anonymous access — no user session; M2M upstream.
    */
   public async getLensRedirect(req: Request, res: Response, next: NextFunction): Promise<void> {

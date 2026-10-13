@@ -202,7 +202,7 @@ import { Request } from 'express';
 import FormData from 'form-data';
 
 import { QUERY_SERVICE_PAGE_SIZE } from '../constants';
-import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, ConflictError, isBaseApiError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -463,17 +463,28 @@ export class ProjectService {
 
   /**
    * Fetches a project for an anonymous `/public/api` surface and returns it only when it is publicly
-   * discoverable (`isPubliclyDiscoverableProject`). Fails closed: a lookup error is logged and
-   * treated as not discoverable, so callers answer exactly as they would for an unknown project
-   * rather than leaking a hidden project's name or existence (issue-437).
+   * discoverable (`isPubliclyDiscoverableProject`), so callers answer a hidden project exactly as they
+   * would an unknown one rather than leaking its name or existence (lfx-self-serve-ops#437).
+   *
+   * Returns `null` only for a definitive answer: the project is hidden, or upstream rejected the
+   * identifier (400/403/404 — unknown, malformed, or not visible to the caller). Any other failure
+   * (timeout, 5xx, network) is rethrown so each caller applies its safe outage policy: UID feeds return
+   * an error instead of a cacheable empty response; slug/group gates mask it as a non-cacheable refusal.
    */
   public async getPubliclyDiscoverableProject(req: Request, uid: string): Promise<Project | null> {
     let project: Project;
     try {
       project = await this.getProjectById(req, uid, false);
     } catch (error) {
-      logger.warning(req, 'get_publicly_discoverable_project', 'Project lookup failed; treating as not discoverable', { project_uid: uid, err: error });
-      return null;
+      if (isBaseApiError(error) && (error.statusCode === 400 || error.statusCode === 403 || error.statusCode === 404)) {
+        // DEBUG, not WARN: the identifier comes straight from an anonymous request, so misses are caller-controlled.
+        logger.debug(req, 'get_publicly_discoverable_project', 'Project not found upstream; treating as not discoverable', {
+          project_uid: uid,
+          status_code: error.statusCode,
+        });
+        return null;
+      }
+      throw error;
     }
     return isPubliclyDiscoverableProject(project) ? project : null;
   }

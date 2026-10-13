@@ -274,8 +274,21 @@ describe('ProjectController.getLensRedirect', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  // issue-437: a hidden project (and a failed lookup, which the helper reports as hidden) must redirect
-  // exactly like an unknown slug, so the response carries no foundation-vs-project signal.
+  it('falls back to the flat resource route when the discoverability lookup throws', async () => {
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: SLUG, exists: true });
+    projectSvc.getPubliclyDiscoverableProject.mockRejectedValue(new Error('upstream 503'));
+    const { req, res, next } = buildReqRes();
+
+    await controller.getLensRedirect(req, res, next);
+
+    expect(res.redirect).toHaveBeenCalledWith(302, '/votes?project=cncf');
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(computeIsFoundationMock).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // lfx-self-serve-ops#437: a hidden project must redirect exactly like an unknown slug, so the response carries
+  // no foundation-vs-project signal.
   it('redirects a non-discoverable project to the same flat route and headers as an unknown slug', async () => {
     computeIsFoundationMock.mockReturnValue(true);
 
@@ -469,8 +482,8 @@ describe('ProjectController.getProjectCalendar', () => {
     expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(1);
   });
 
-  // issue-437: a hidden project, and a lookup the helper fails closed on, both serve the calendar a
-  // non-existent UID gets — no name and no events — with identical headers.
+  // lfx-self-serve-ops#437: a hidden project serves the calendar a non-existent UID gets — no name and no events —
+  // with identical headers.
   it('serves a non-discoverable project the same empty, unnamed calendar as an unknown UID', async () => {
     meetingSvc.getMeetings.mockResolvedValue({ data: [], page_token: undefined });
     projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
@@ -490,6 +503,30 @@ describe('ProjectController.getProjectCalendar', () => {
     expect(ics).toContain('BEGIN:VCALENDAR');
     expect(ics.replace(/^DTSTAMP:.*$/gm, '')).toEqual((unknown.res.send.mock.calls[0][0] as string).replace(/^DTSTAMP:.*$/gm, ''));
     expect(hidden.res.setHeader.mock.calls).toEqual(unknown.res.setHeader.mock.calls);
+  });
+
+  it('gates before fetching meetings, so a hidden project does the same upstream work as an unknown UID', async () => {
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
+    const { req, res, next } = buildCalendarReqRes();
+
+    await controller.getProjectCalendar(req, res, next);
+
+    expect(meetingSvc.getMeetings).not.toHaveBeenCalled();
+    expect(res.send).toHaveBeenCalledTimes(1);
+  });
+
+  // A transient lookup failure must not become a cacheable empty feed — calendar clients would sync it over
+  // subscribers' copies until their next poll. It goes to the error handler instead.
+  it('passes a transient project lookup failure to next() without serving a calendar', async () => {
+    const boom = new Error('upstream 503');
+    projectSvc.getPubliclyDiscoverableProject.mockRejectedValue(boom);
+    const { req, res, next } = buildCalendarReqRes();
+
+    await controller.getProjectCalendar(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(boom);
+    expect(res.send).not.toHaveBeenCalled();
+    expect(res.setHeader).not.toHaveBeenCalled();
   });
 });
 
@@ -716,17 +753,48 @@ describe('ProjectController.getProjectMeetings', () => {
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
   });
 
-  // issue-437: the helper fails closed, so a project-service outage now serves the unknown-UID envelope
-  // instead of the meetings with a blank name.
-  it('serves the empty, unnamed envelope when the project cannot be confirmed as discoverable (fail closed)', async () => {
-    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
-    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
-      Promise.resolve({ data: resourceType === 'v1_meeting' ? [buildMeeting()] : [], page_token: undefined })
-    );
+  // lfx-self-serve-ops#437: a transient project-service failure says nothing about the project, so it reaches the
+  // error handler rather than the cacheable unknown-UID envelope.
+  it('passes a transient project lookup failure to next() without serving the envelope', async () => {
+    const boom = new Error('upstream 503');
+    projectSvc.getPubliclyDiscoverableProject.mockRejectedValue(boom);
     const { req, res, next } = buildMeetingsReqRes();
 
     await controller.getProjectMeetings(req, res, next);
 
+    expect(next).toHaveBeenCalledWith(boom);
+    expect(res.json).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetings).not.toHaveBeenCalled();
+  });
+
+  it('answers a slug metadata outage exactly like an unknown slug, without caching the refusal', async () => {
+    projectSvc.getProjectIdBySlug.mockResolvedValueOnce({ uid: '', slug: SLUG, exists: false });
+    const unknown = buildMeetingsReqRes(SLUG);
+    await controller.getProjectMeetings(unknown.req, unknown.res, unknown.next);
+
+    projectSvc.getProjectIdBySlug.mockResolvedValueOnce({ uid: PROJECT_UID, slug: SLUG, exists: true });
+    projectSvc.getPubliclyDiscoverableProject.mockRejectedValueOnce(new Error('upstream 503'));
+    const unavailable = buildMeetingsReqRes(SLUG);
+    await controller.getProjectMeetings(unavailable.req, unavailable.res, unavailable.next);
+
+    const [unknownError] = unknown.next.mock.calls[0];
+    const [unavailableError] = unavailable.next.mock.calls[0];
+    expect(unavailableError).toBeInstanceOf(ResourceNotFoundError);
+    expect(unavailableError.statusCode).toBe(404);
+    expect(unavailableError.toResponse()).toEqual(unknownError.toResponse());
+    expect(unavailable.res.json).not.toHaveBeenCalled();
+    expect(unavailable.res.setHeader.mock.calls).toEqual(unknown.res.setHeader.mock.calls);
+    expect(unavailable.res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+
+  it('gates before the meeting/committee fan-out, so a hidden project does no upstream work an unknown one skips', async () => {
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(meetingSvc.getMeetings).not.toHaveBeenCalled();
+    expect(committeeSvc.getCommittees).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ meetings: [], total: 0, project: { uid: PROJECT_UID, name: '' } });
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
@@ -771,7 +839,8 @@ describe('ProjectController.getProjectMeetings', () => {
     await controller.getProjectMeetings(hidden.req, hidden.res, hidden.next);
 
     expect(hidden.res.json).not.toHaveBeenCalled();
-    expect(hidden.res.setHeader).not.toHaveBeenCalled();
+    expect(hidden.res.setHeader.mock.calls).toEqual(unknown.res.setHeader.mock.calls);
+    expect(hidden.res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     const [unknownError] = unknown.next.mock.calls[0];
     const [hiddenError] = hidden.next.mock.calls[0];
     expect(hiddenError).toBeInstanceOf(ResourceNotFoundError);

@@ -77,7 +77,7 @@ describe('isPubliclyDiscoverableProject', () => {
     expect(isPubliclyDiscoverableProject({ public: true, stage: ProjectStage.Active })).toBe(true);
   });
 
-  // issue-437: only Confidential is hidden among Formation sub-stages; Archived stays discoverable when public.
+  // lfx-self-serve-ops#437: only Confidential is hidden among Formation sub-stages; Archived stays discoverable when public.
   it.each([
     ProjectStage.FormationExploratory,
     ProjectStage.FormationEngaged,
