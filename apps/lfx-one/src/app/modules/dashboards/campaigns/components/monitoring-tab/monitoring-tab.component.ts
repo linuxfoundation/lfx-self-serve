@@ -16,6 +16,7 @@ import type {
   KeywordMetrics,
   KeywordMetricsResponse,
   LinkedInAccount,
+  LinkedInCampaignMetrics,
   LinkedInMonitorResponse,
   LinkedInPacingLabel,
   MetaAccountOption,
@@ -73,6 +74,7 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly linkedInError = signal<string | null>(null);
   protected readonly linkedInCampaigns = computed(() => this.linkedInData()?.campaigns ?? []);
   protected readonly linkedInTotals = computed(() => this.linkedInData()?.accountTotals ?? null);
+  protected readonly linkedInTotalsNote = computed(() => this.totalsCoverageNote(this.linkedInCampaigns()));
   protected readonly linkedInPulledAt = computed(() => {
     const pulledAt = this.linkedInData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString() : null;
@@ -460,7 +462,7 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   /**
-   * What the Reddit/Meta totals strip leaves out, or null when it covers every campaign.
+   * What the LinkedIn/Reddit/Meta totals strip leaves out, or null when it covers every campaign.
    *
    * Only the campaign-service monitor path sets `fetchFailed` / `conversionsMeasured`; on the
    * legacy path both are undefined, so this returns null and the strip renders exactly as before.
@@ -468,7 +470,7 @@ export class MonitoringTabComponent implements OnInit {
    * conversions were not measured contributes a 0 to the conversions total, so the strip says so
    * rather than presenting a partial sum as the account's.
    */
-  private totalsCoverageNote(rows: readonly (RedditCampaignMetrics | MetaCampaignMetrics)[]): string | null {
+  private totalsCoverageNote(rows: readonly (LinkedInCampaignMetrics | RedditCampaignMetrics | MetaCampaignMetrics)[]): string | null {
     const total = rows.length;
     const read = rows.filter((r) => !r.fetchFailed);
     const measured = read.filter((r) => r.conversionsMeasured !== false).length;

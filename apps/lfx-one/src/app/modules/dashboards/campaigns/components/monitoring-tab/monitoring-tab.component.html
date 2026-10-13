@@ -525,9 +525,16 @@
           </div>
           <div class="rounded-lg border border-gray-200 bg-white p-4">
             <p class="text-xs font-medium text-gray-500">Conversions</p>
-            <p class="text-lg font-semibold text-gray-900">{{ formatNumber(linkedInTotals()!.conversions) }}</p>
+            @if (linkedInTotals()!.conversionsMeasured === false) {
+              <p class="text-lg font-semibold text-gray-400" data-testid="linkedin-kpi-conversions">Not measured</p>
+            } @else {
+              <p class="text-lg font-semibold text-gray-900" data-testid="linkedin-kpi-conversions">{{ formatNumber(linkedInTotals()!.conversions) }}</p>
+            }
           </div>
         </div>
+        @if (linkedInTotalsNote(); as note) {
+          <p class="text-xs text-gray-500" data-testid="linkedin-totals-note">{{ note }}</p>
+        }
 
         <!-- Campaign Table -->
         <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="linkedin-campaign-table">
@@ -552,7 +559,17 @@
                 @for (camp of linkedInCampaigns(); track camp.campaignId) {
                   <tr class="hover:bg-gray-50" [attr.data-testid]="'linkedin-campaign-row-' + $index">
                     <td class="px-4 py-3">
-                      <p class="max-w-xs truncate font-medium text-gray-900" [title]="camp.campaignName">{{ camp.eventName }}</p>
+                      <div class="flex items-center gap-2">
+                        <p class="max-w-xs truncate font-medium text-gray-900" [title]="camp.campaignName">{{ camp.eventName }}</p>
+                        @if (camp.fetchFailed) {
+                          <span
+                            class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"
+                            title="This campaign's metrics could not be read"
+                            data-testid="linkedin-campaign-fetch-failed">
+                            Couldn't read
+                          </span>
+                        }
+                      </div>
                       <p class="max-w-xs truncate text-xs text-gray-400" [title]="camp.campaignName">{{ camp.campaignName }}</p>
                     </td>
                     <td class="px-4 py-3">
@@ -575,16 +592,34 @@
                     <td class="px-4 py-3 text-right text-xs text-gray-700">
                       {{ formatLinkedInCurrency(camp.totalBudget || camp.dailyBudget) }}
                     </td>
-                    <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatLinkedInCurrency(camp.spend) }}</td>
-                    <td class="px-4 py-3 text-right">
-                      <span [class]="'text-xs font-medium ' + linkedInPacingClass(camp.pacingLabel)">
-                        {{ camp.pacingPct.toFixed(0) }}% {{ camp.pacingLabel }}
-                      </span>
-                    </td>
-                    <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(camp.impressions) }}</td>
-                    <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(camp.clicks) }}</td>
-                    <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatLinkedInPct(camp.ctr) }}</td>
-                    <td class="px-4 py-3 text-right text-xs text-gray-700">{{ camp.conversions }}</td>
+                    @if (camp.fetchFailed) {
+                      <!-- Metrics that could not be read are not zeros: every metric cell is a dash. -->
+                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-400" data-testid="linkedin-campaign-pacing">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-400" data-testid="linkedin-campaign-conversions">—</td>
+                    } @else {
+                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatLinkedInCurrency(camp.spend) }}</td>
+                      <td class="px-4 py-3 text-right" data-testid="linkedin-campaign-pacing">
+                        @if (camp.pacingUnknown || !camp.pacingLabel) {
+                          <span class="text-xs text-gray-500">Unknown</span>
+                        } @else {
+                          <span [class]="'text-xs font-medium ' + linkedInPacingClass(camp.pacingLabel)">
+                            {{ camp.pacingPct.toFixed(0) }}% {{ camp.pacingLabel }}
+                          </span>
+                        }
+                      </td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(camp.impressions) }}</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(camp.clicks) }}</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatLinkedInPct(camp.ctr) }}</td>
+                      @if (camp.conversionsMeasured === false) {
+                        <td class="px-4 py-3 text-right text-xs text-gray-400" data-testid="linkedin-campaign-conversions">Not measured</td>
+                      } @else {
+                        <td class="px-4 py-3 text-right text-xs text-gray-700" data-testid="linkedin-campaign-conversions">{{ camp.conversions }}</td>
+                      }
+                    }
                     <td class="px-4 py-3 text-right text-xs text-gray-700">{{ camp.creatives.length }}</td>
                   </tr>
                 }

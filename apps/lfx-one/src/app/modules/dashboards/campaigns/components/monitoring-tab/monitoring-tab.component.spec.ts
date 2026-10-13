@@ -292,7 +292,7 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
 });
 
 /**
- * The Reddit and Meta campaign tables, and whether a value campaign-service could not measure is
+ * The LinkedIn, Reddit and Meta campaign tables, and whether a value campaign-service could not measure is
  * shown as such.
  *
  * With `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR` on, a row can carry `conversionsMeasured: false`,
@@ -300,7 +300,7 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
  * placeholders as "0" or "0% normal" states a measurement nobody took. The flag-off (legacy) rows
  * carry none of the flags and must render exactly as before — asserted first, below.
  */
-describe.each(['reddit', 'meta'] as const)('MonitoringTabComponent — %s unmeasured values', (platform) => {
+describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent — %s unmeasured values', (platform) => {
   let fixture: ComponentFixture<MonitoringTabComponent>;
 
   beforeEach(async () => {
@@ -331,6 +331,8 @@ describe.each(['reddit', 'meta'] as const)('MonitoringTabComponent — %s unmeas
     return {
       campaignId: '1',
       campaignName: 'KubeCon NA 2026',
+      eventName: 'KubeCon NA 2026',
+      creatives: [],
       status: 'ACTIVE',
       totalBudget: 1000,
       dailyBudget: 0,
@@ -351,6 +353,7 @@ describe.each(['reddit', 'meta'] as const)('MonitoringTabComponent — %s unmeas
     fixture.detectChanges();
     const instance = fixture.componentInstance as unknown as {
       selectedPlatform: { set(v: string): void };
+      linkedInData: { set(v: unknown): void };
       redditData: { set(v: unknown): void };
       metaData: { set(v: unknown): void };
     };
@@ -363,7 +366,8 @@ describe.each(['reddit', 'meta'] as const)('MonitoringTabComponent — %s unmeas
       accountTotals: { spend: 412.5, impressions: 52000, clicks: 610, conversions: 14, campaignCount: campaigns.length, ...totalsOver },
       actionItems: [],
     };
-    (platform === 'reddit' ? instance.redditData : instance.metaData).set(data);
+    const target = { linkedin: instance.linkedInData, reddit: instance.redditData, meta: instance.metaData }[platform];
+    target.set(data);
     fixture.detectChanges();
   }
 

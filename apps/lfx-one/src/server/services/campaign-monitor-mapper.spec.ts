@@ -133,6 +133,7 @@ describe('toLinkedInMonitorResponse', () => {
 
     expect(result.accountLabel).toBe('LF LinkedIn');
     expect(result.campaigns.map((c) => c.pacingPct)).toEqual([90.4, 12.6, 0]);
+    expect(result.campaigns[2].pacingLabel).toBeUndefined();
     expect(result.campaigns.map((c) => c.eventName)).toEqual(['KubeCon NA 2026', 'Brand awareness', 'OSS EU']);
     expect(result.campaigns.every((c) => c.creatives.length === 0)).toBe(true);
     expect(result.campaigns[0].pacingLabel).toBe('constrained');

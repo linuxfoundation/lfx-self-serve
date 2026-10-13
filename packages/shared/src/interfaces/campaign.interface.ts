@@ -2572,7 +2572,8 @@ export interface LinkedInCampaignMetrics {
   ctr: number;
   conversions: number;
   pacingPct: number;
-  pacingLabel: LinkedInPacingLabel;
+  /** ABSENT only on the campaign-service path, when `pacingUnknown` or `fetchFailed` is set — see `RedditCampaignMetrics`. */
+  pacingLabel?: LinkedInPacingLabel;
   creatives: LinkedInCreativeMetrics[];
   startDate: string;
   endDate: string;
