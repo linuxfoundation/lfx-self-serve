@@ -101,7 +101,7 @@ import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { toAudienceDemographics, toKeywordMetricsResponse, toMicrosoftKeywordMetricsResponse, windowForDays } from '../services/campaign-insights-mapper';
 import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
-import { toAccountMonitorClientError, toMetaMonitorResponse, toRedditMonitorResponse } from '../services/campaign-monitor-mapper';
+import { toAccountMonitorClientError, toLinkedInMonitorResponse, toMetaMonitorResponse, toRedditMonitorResponse } from '../services/campaign-monitor-mapper';
 import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-mapper';
 import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
@@ -1778,6 +1778,21 @@ export class CampaignController {
       return;
     }
     const accountId = account.accountId;
+
+    // The configured account is resolved above on BOTH paths, exactly as before; campaign-service
+    // then also refuses one the project's own LinkedIn connection is not bound to.
+    if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      await this.serveLegacyShapedMonitor(req, res, next, {
+        operation: 'linkedin_monitor',
+        platformLabel: 'LinkedIn Ads',
+        days,
+        accountId,
+        read: (projectSlug) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days),
+        toResponse: (payload) => toLinkedInMonitorResponse(payload, account.label, new Date().toISOString()),
+      });
+      return;
+    }
+
     const startTime = logger.startOperation(req, 'linkedin_monitor', { days, accountKey: rawKey });
 
     try {
@@ -2787,7 +2802,7 @@ export class CampaignController {
   }
 
   /**
-   * The campaign-service arm of the Meta and Reddit monitor routes: read the account monitor and
+   * The campaign-service arm of the LinkedIn, Meta and Reddit monitor routes: read the account monitor and
    * answer in the legacy shape the Monitor and Optimize panels already render.
    */
   private async serveLegacyShapedMonitor<T>(

@@ -5,7 +5,7 @@ import type { CampaignServiceAccountMonitor, CampaignServiceAccountMonitorCampai
 import { describe, expect, it } from 'vitest';
 
 import { MicroserviceError } from '../errors/microservice.error';
-import { toAccountMonitorClientError, toMetaMonitorResponse, toRedditMonitorResponse } from './campaign-monitor-mapper';
+import { toAccountMonitorClientError, toLinkedInMonitorResponse, toMetaMonitorResponse, toRedditMonitorResponse } from './campaign-monitor-mapper';
 
 const PULLED_AT = '2026-10-13T00:00:00.000Z';
 
@@ -111,6 +111,45 @@ describe('toMetaMonitorResponse / toRedditMonitorResponse', () => {
 
     expect(result.campaigns).toEqual([]);
     expect(result.actionItems).toEqual([{ priority: 'HIGH', campaignName: '', issue: 'Account issue', action: 'Check billing' }]);
+  });
+});
+
+describe('toLinkedInMonitorResponse', () => {
+  it('keeps pacing unrounded, derives eventName as the legacy engine did, and reports no creatives', () => {
+    const result = toLinkedInMonitorResponse(
+      payload({
+        campaigns: [
+          row({ name: 'Events | KubeCon NA 2026 | LinkedIn | Conversions', pacing_pct: 90.4, pacing_label: 'constrained' }),
+          row({ name: 'Brand awareness', pacing_pct: 12.6 }),
+          row({ name: 'Events | OSS EU | LinkedIn', pacing_unknown: true, pacing_pct: 55.5 }),
+        ],
+      }),
+      'LF LinkedIn',
+      PULLED_AT
+    );
+
+    expect(result.accountLabel).toBe('LF LinkedIn');
+    expect(result.campaigns.map((c) => c.pacingPct)).toEqual([90.4, 12.6, 0]);
+    expect(result.campaigns.map((c) => c.eventName)).toEqual(['KubeCon NA 2026', 'Brand awareness', 'OSS EU']);
+    expect(result.campaigns.every((c) => c.creatives.length === 0)).toBe(true);
+    expect(result.campaigns[0].pacingLabel).toBe('constrained');
+    expect(result.accountTotals.campaignCount).toBe(1);
+  });
+
+  it("keeps upstream's action-item order, which ranks MED between HIGH and LOW (#3018)", () => {
+    const result = toLinkedInMonitorResponse(
+      payload({
+        action_items: [
+          { campaign_name: 'A', priority: 'HIGH', issue: 'i1', action: 'a1' },
+          { campaign_name: 'B', priority: 'MED', issue: 'i2', action: 'a2' },
+          { campaign_name: 'C', priority: 'LOW', issue: 'i3', action: 'a3' },
+        ],
+      }),
+      'LF LinkedIn',
+      PULLED_AT
+    );
+
+    expect(result.actionItems.map((a) => a.priority)).toEqual(['HIGH', 'MED', 'LOW']);
   });
 });
 

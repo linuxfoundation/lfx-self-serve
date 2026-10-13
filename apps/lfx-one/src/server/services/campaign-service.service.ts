@@ -2182,6 +2182,14 @@ export class CampaignServiceClient {
     return this.getAccountMonitor(req, 'meta-ads', projectSlug, accountId, days);
   }
 
+  /**
+   * The LinkedIn Ads account monitor (`monitor-linkedin-ads-account`). Same scoping as
+   * `getMetaAdsAccountMonitor`. Its `pacing_pct` is deliberately unrounded upstream.
+   */
+  public async getLinkedInAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+    return this.getAccountMonitor(req, 'linkedin-ads', projectSlug, accountId, days);
+  }
+
   /** The Reddit Ads account monitor (`monitor-reddit-ads-account`). Same scoping as `getMetaAdsAccountMonitor`. */
   public async getRedditAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
     return this.getAccountMonitor(req, 'reddit-ads', projectSlug, accountId, days);

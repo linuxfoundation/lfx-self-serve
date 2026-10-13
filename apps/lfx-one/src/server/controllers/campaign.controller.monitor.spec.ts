@@ -12,23 +12,27 @@ import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 // The account-monitor routes (#2519): Meta and Reddit switch backend on LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR,
 // and Microsoft, X and HubSpot exist only behind it. Kept out of campaign.controller.spec.ts, which is
 // already 5000 lines, the way analytics.controller is split by area.
-const { svcMeta, svcReddit, svcMicrosoft, svcTwitter, svcHubSpot, legacyMeta, legacyReddit, isServerFeatureEnabled, logger } = vi.hoisted(() => ({
-  svcMeta: vi.fn(),
-  svcReddit: vi.fn(),
-  svcMicrosoft: vi.fn(),
-  svcTwitter: vi.fn(),
-  svcHubSpot: vi.fn(),
-  legacyMeta: vi.fn(),
-  legacyReddit: vi.fn(),
-  isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => false),
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
-}));
+const { svcLinkedIn, legacyLinkedIn, svcMeta, svcReddit, svcMicrosoft, svcTwitter, svcHubSpot, legacyMeta, legacyReddit, isServerFeatureEnabled, logger } =
+  vi.hoisted(() => ({
+    svcLinkedIn: vi.fn(),
+    legacyLinkedIn: vi.fn(),
+    svcMeta: vi.fn(),
+    svcReddit: vi.fn(),
+    svcMicrosoft: vi.fn(),
+    svcTwitter: vi.fn(),
+    svcHubSpot: vi.fn(),
+    legacyMeta: vi.fn(),
+    legacyReddit: vi.fn(),
+    isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => false),
+    logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
+  }));
 
 vi.mock('../services/campaign-service.service', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/campaign-service.service')>();
   return {
     ...actual,
     CampaignServiceClient: class {
+      public getLinkedInAdsAccountMonitor = svcLinkedIn;
       public getMetaAdsAccountMonitor = svcMeta;
       public getRedditAdsAccountMonitor = svcReddit;
       public getMicrosoftAdsAccountMonitor = svcMicrosoft;
@@ -44,13 +48,18 @@ vi.mock('../helpers/server-feature-flag.helper', async (importOriginal) => {
 vi.mock('../services/campaign-proxy.service', () => ({ CampaignProxyService: class {} }));
 vi.mock('../services/campaign-metrics.service', () => ({
   CampaignMetricsService: class {},
-  LinkedInMetricsService: class {},
+  LinkedInMetricsService: class {
+    public getLinkedInMonitorData = legacyLinkedIn;
+  },
   RedditMetricsService: class {
     public getRedditMonitorData = legacyReddit;
   },
   MetaMetricsService: class {
     public getMonitorData = legacyMeta;
   },
+}));
+vi.mock('../services/linkedin-ads.service', () => ({
+  getLinkedInConfig: () => ({ accounts: [{ accountId: '512345678', label: 'LF LinkedIn', orgId: '1' }], targetingProfiles: [] }),
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn(), isShuttingDown: () => false }));
@@ -112,6 +121,7 @@ beforeEach(() => {
 });
 
 describe.each([
+  { name: 'getLinkedInMonitor', svc: svcLinkedIn, legacy: legacyLinkedIn, account: '512345678', label: 'LF LinkedIn' },
   { name: 'getMetaMonitor', svc: svcMeta, legacy: legacyMeta, account: META_ACCOUNT, label: 'LF Core' },
   { name: 'getRedditMonitor', svc: svcReddit, legacy: legacyReddit, account: REDDIT_ACCOUNT, label: 'The Linux Foundation' },
 ] as const)('CampaignController.$name', ({ name, svc, legacy, account, label }) => {
@@ -143,6 +153,9 @@ describe.each([
   });
 
   it('still refuses an account outside the allowlist before calling campaign-service', async () => {
+    // LinkedIn's legacy route falls back to the first configured account instead of refusing, and
+    // the cutover keeps that; its test is below.
+    if (name === 'getLinkedInMonitor') return;
     flag(true);
     const next = vi.fn();
 
@@ -210,6 +223,21 @@ describe.each([
 
     expect((nextError(next) as ServiceValidationError).validationErrors[0].field).toBe('accountKey');
     expect(svc).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignController.getLinkedInMonitor account resolution', () => {
+  it('keeps the legacy fallback to the first configured account when the key is unknown', async () => {
+    flag(true);
+    svcLinkedIn.mockResolvedValueOnce(monitorPayload({ account_id: '512345678' }));
+    const res = buildRes();
+
+    await new CampaignController().getLinkedInMonitor(buildReq({ accountKey: 'nope', project: 'tlf', days: '7' }), res, vi.fn());
+
+    expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '512345678', 7);
+    const body = vi.mocked(res.json).mock.calls[0][0] as { campaigns: { creatives: unknown[]; eventName: string }[] };
+    expect(body.campaigns[0].creatives).toEqual([]);
+    expect(body.campaigns[0].eventName).toBe('Camp');
   });
 });
 
@@ -295,6 +323,7 @@ describe('CampaignController.getHubSpotMonitor', () => {
 // body into a 500: the mapper already tolerates an absent array, so the log has to as well.
 describe('CampaignController monitor success logs tolerate null upstream arrays', () => {
   it.each([
+    ['getLinkedInMonitor', svcLinkedIn, { accountKey: '512345678', project: 'tlf' }],
     ['getMetaMonitor', svcMeta, { accountKey: META_ACCOUNT, project: 'tlf' }],
     ['getRedditMonitor', svcReddit, { accountKey: REDDIT_ACCOUNT, project: 'tlf' }],
     ['getMicrosoftMonitor', svcMicrosoft, { accountKey: '187654321', project: 'tlf' }],
