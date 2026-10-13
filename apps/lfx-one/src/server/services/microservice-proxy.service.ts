@@ -162,6 +162,12 @@ export class MicroserviceProxyService {
    * dot-segments and a literal `?`/`#` in the string starts a new query/fragment, re-routing the
    * call to an arbitrary upstream path (linuxfoundation/lfx-self-serve-ops#434). Reject here so
    * that gap can't reopen even if an individual controller's own validation is incomplete.
+   *
+   * Only literal `.`/`..` segments are rejected — not compared via WHATWG `URL` normalization —
+   * because several callers interpolate raw, unencoded values (e.g. `committee.service.ts`'s
+   * `inviteId`) that legitimately contain characters (spaces, non-ASCII, `^`, backtick, `{`/`}`)
+   * the URL parser re-encodes without that being an attack; comparing the full normalized pathname
+   * would reject those as a local 400 instead of letting them reach upstream as before.
    */
   private buildEndpoint(baseUrl: string, path: string): string {
     if (path.includes('?') || path.includes('#')) {
@@ -171,9 +177,8 @@ export class MicroserviceProxyService {
       });
     }
 
-    const normalizedPathname = new URL(path, baseUrl).pathname;
-    if (normalizedPathname !== path) {
-      throw ServiceValidationError.forField('path', 'Upstream path resolves outside the requested resource', {
+    if (path.split('/').some((segment) => segment === '.' || segment === '..')) {
+      throw ServiceValidationError.forField('path', 'Upstream path must not contain traversal segments', {
         operation: 'proxy_build_endpoint',
         service: 'microservice_proxy_service',
       });

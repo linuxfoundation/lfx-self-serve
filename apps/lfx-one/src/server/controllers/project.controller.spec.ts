@@ -26,6 +26,7 @@ const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, p
     getProjectById: vi.fn(),
     getProjectBySlug: vi.fn(),
     getProjectSlugs: vi.fn(),
+    getProjectSettings: vi.fn(),
     updateProjectStaff: vi.fn(),
     updateProjectPermissions: vi.fn(),
   },
@@ -960,6 +961,48 @@ describe('ProjectController.updateProjectStaff', () => {
 
     expect(projectSvc.updateProjectStaff).toHaveBeenCalledWith(req, PROJECT_UID, 'program_manager', assignee);
     expect(res.json).toHaveBeenCalledTimes(1);
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+// linuxfoundation/lfx-self-serve-ops#434 — uid is interpolated directly into the upstream
+// request path, so a non-UUID value must be rejected before projectService is ever called.
+describe('ProjectController.getProjectPermissions uid validation', () => {
+  let controller: ProjectController;
+
+  function buildPermissionsReqRes(uid: string) {
+    const req = { params: { uid }, path: `/projects/${uid}/permissions` } as any;
+    const res = { json: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+    isUuidMock.mockImplementation((value: string) => value === PROJECT_UID);
+  });
+
+  it('rejects a non-UUID uid without calling the project service', async () => {
+    const { req, res, next } = buildPermissionsReqRes('../committees/some-committee');
+
+    await controller.getProjectPermissions(req, res, next);
+
+    expect(projectSvc.getProjectSettings).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('passes a valid UUID through to the project service', async () => {
+    const settings = { uid: PROJECT_UID };
+    projectSvc.getProjectSettings.mockResolvedValue(settings);
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID);
+
+    await controller.getProjectPermissions(req, res, next);
+
+    expect(projectSvc.getProjectSettings).toHaveBeenCalledWith(req, PROJECT_UID);
+    expect(res.json).toHaveBeenCalledWith(settings);
     expect(next).not.toHaveBeenCalled();
   });
 });
