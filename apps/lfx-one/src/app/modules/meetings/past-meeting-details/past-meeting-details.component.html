@@ -447,17 +447,17 @@
                       @if (p.identity_tier && p.identity_label) {
                         <lfx-tag
                           [value]="p.identity_label"
-                          [severity]="identityTierSeverityOf(p.identity_tier)"
+                          [severity]="identityTierSeverity[p.identity_tier]"
                           styleClass="text-xs"
                           data-testid="participant-identity-tier"
                           [attr.data-identity-tier]="p.identity_tier"></lfx-tag>
                       }
                     </div>
                     @if (p.identity_names.matchedTo) {
-                      <span class="text-xs text-gray-500 truncate" data-testid="participant-matched-to">Matched to {{ p.identity_names.matchedTo }}</span>
+                      <span class="text-xs text-gray-500 break-words" data-testid="participant-matched-to">Matched to {{ p.identity_names.matchedTo }}</span>
                     }
                     @if (p.identity_names.joinedAs) {
-                      <span class="text-xs text-gray-500 truncate" data-testid="participant-joined-as">Joined Zoom as {{ p.identity_names.joinedAs }}</span>
+                      <span class="text-xs text-gray-500 break-words" data-testid="participant-joined-as">Joined Zoom as {{ p.identity_names.joinedAs }}</span>
                     }
                   </div>
                 </div>

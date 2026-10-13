@@ -148,13 +148,17 @@ export class PastMeetingDetailsComponent {
   public attendanceFigures: Signal<PastMeetingAttendanceFigures | null> = computed(() => getPastMeetingAttendanceFigures(this.meeting()));
   /** The rate bar's colour per band (`PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS`). */
   protected readonly attendanceBarClass: Record<PastMeetingAttendanceTone, string> = { low: 'bg-amber-500', medium: 'bg-blue-500', high: 'bg-emerald-500' };
-  /** Each identity tier's badge colour (N-02): verified green, the two automatic matches blue and violet, unverified amber. */
-  protected readonly identityTierSeverity: Record<PastMeetingIdentityTier, TagSeverity> = {
+  /**
+   * Each identity tier's badge colour (N-02): verified green, the auto-match blue, the AI match violet,
+   * unverified amber. Keyed by string because the table hands its row template an untyped row;
+   * `satisfies` still checks every tier has one.
+   */
+  protected readonly identityTierSeverity: Record<string, TagSeverity> = {
     verified: 'success',
     'auto-matched': 'info',
     'ai-reconciled': 'accent',
     unverified: 'warn',
-  };
+  } satisfies Record<PastMeetingIdentityTier, TagSeverity>;
   public hasRecording = this.initHasRecording();
   public hasTranscript = this.initHasTranscript();
   public recordingShareUrl = this.initRecordingShareUrl();
@@ -245,12 +249,6 @@ export class PastMeetingDetailsComponent {
     if (url && typeof window !== 'undefined') {
       window.open(url, '_blank', 'noopener,noreferrer');
     }
-  }
-
-  // Protected methods
-  /** The tier badge's colour (`identityTierSeverity`); the table hands its row template an untyped row. */
-  protected identityTierSeverityOf(tier: PastMeetingIdentityTier): TagSeverity {
-    return this.identityTierSeverity[tier];
   }
 
   // Private init functions

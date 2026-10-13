@@ -249,8 +249,9 @@ export function toPublicPastMeetingTranscript(transcript: PastMeetingTranscript)
 /**
  * An attendee's identity tier (N-02, FR-033), or null for someone who did not attend. The flags are not
  * exclusive: reconciliation sets `is_verified` on every match it makes, automatic or AI, so they are
- * read in order. Left unknown, or never verified: `unverified`. Then how the match was made: AI
- * reconciliation, then the automatic name match. A match with neither flag is `verified`.
+ * read in order. Left unknown, or never verified: `unverified`. Then how the match was made: an AI
+ * suggestion an organizer confirmed, then the automatic exact email or username match. A match with
+ * neither flag is `verified`.
  */
 export function getPastMeetingIdentityTier(
   participant: Pick<PastMeetingParticipant, 'is_attended' | 'is_verified' | 'is_unknown' | 'is_ai_reconciled' | 'is_auto_matched'>
@@ -311,11 +312,11 @@ export function isPastMeetingNotetakerBot(participant: Partial<Pick<PastMeetingP
 /**
  * Whether a past participant may be named on the public roster (N-02 / `meeting-surface-boundary.md`
  * § Public roster fields): an invitee who did not attend (a registrant, so a known identity), or an
- * attendee in the `verified` tier. Every other attendee (unverified, auto-matched or AI-reconciled)
- * is only counted.
+ * identified attendee, in any tier but `unverified` (an auto-match is an exact email or username
+ * match, an AI match one an organizer confirmed). Unverified attendees are only counted.
  */
 function isPublicRosterIdentity(participant: PastMeetingParticipant): boolean {
-  return participant.is_attended ? getPastMeetingIdentityTier(participant) === 'verified' : participant.is_invited;
+  return participant.is_attended ? getPastMeetingIdentityTier(participant) !== 'unverified' : participant.is_invited;
 }
 
 /**

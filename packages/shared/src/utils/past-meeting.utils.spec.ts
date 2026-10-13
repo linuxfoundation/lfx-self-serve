@@ -442,8 +442,8 @@ describe('toPublicPastMeetingRoster', () => {
     expect(JSON.stringify(roster)).not.toContain('Engineer');
   });
 
-  // N-02: the public roster names verified identities only; every other attendee tier is counted.
-  it('names invitees and verified attendees, and only counts the other attendee tiers', () => {
+  // N-02: the public roster names every identified attendee, without the tier, and counts the unverified.
+  it('names invitees and identified attendees, and only counts the unverified ones', () => {
     const roster = toPublicPastMeetingRoster([
       participant({ uid: 'verified', is_attended: true, is_verified: true }),
       participant({ uid: 'invitee', is_invited: true }),
@@ -454,8 +454,9 @@ describe('toPublicPastMeetingRoster', () => {
       participant({ uid: 'ai-reconciled', is_attended: true, is_verified: true, is_ai_reconciled: true }),
     ]);
 
-    expect(roster.participants.map((row) => row.uid)).toEqual(['verified', 'invitee']);
-    expect(roster.unidentified_attendees).toBe(4);
+    expect(roster.participants.map((row) => row.uid)).toEqual(['verified', 'invitee', 'auto-matched', 'ai-reconciled']);
+    expect(roster.unidentified_attendees).toBe(2);
+    expect(JSON.stringify(roster.participants)).not.toMatch(/is_auto_matched|is_ai_reconciled|is_verified/);
     // E4-05: the counts cover every participant, listed or not, so the figures match the admin page's.
     expect(roster.attendance).toEqual({ participant_count: 6, attended_count: 5, individual_registrants_count: 2, unverified_attended_count: 2 });
   });

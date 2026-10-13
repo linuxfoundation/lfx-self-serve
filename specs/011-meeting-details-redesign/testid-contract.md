@@ -295,7 +295,6 @@ the row's contents.
 | `people-past-status`                     | Past roster: the screen-reader status line ("Showing n of m people." / no match)                |
 | `people-past-filter-empty`               | Nobody matches the filters                                                                      |
 | `people-past-unidentified`               | Attendees counted but not listed (identity not verified, N-02)                                  |
-| `people-past-unverified`                 | "{n} unverified": attended, but in the `unverified` identity tier (N-02); only when n > 0       |
 
 Upcoming and past rows come from different data, so they carry different state attributes. An
 upcoming row is a `MeetingRegistrant`; a past row is a `PastMeetingParticipant`, which has no RSVP
@@ -333,8 +332,8 @@ data-invited:  true | false
 ```
 
 They mirror `PastMeetingParticipant.is_attended` and `.is_invited`, so a test can tell an invited
-no-show from an uninvited attendee. Both are on every past row. The public page lists only verified
-identities (an invitee who did not attend, or a verified attendee) and counts the rest
+no-show from an uninvited attendee. Both are on every past row. The public page lists only identified people
+(an invitee who did not attend, or an attendee in any identity tier but `unverified`) and counts the rest
 (`people-past-unidentified`), so a past row carries no identity-tier attribute (E4-05, N-02).
 
 The admin participant list (`/meetings/:id/details`, outside this page) carries the full tiering on

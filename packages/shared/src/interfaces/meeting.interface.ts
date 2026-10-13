@@ -382,6 +382,8 @@ export interface Meeting {
   participant_count?: number;
   /** Attended count for past meetings (response only) */
   attended_count?: number;
+  /** Attendees nobody has identified yet (`PastMeetingAttendanceCounts.unverified_attended_count`, N-02). */
+  unverified_attended_count?: number;
   /** Meeting occurrences */
   occurrences: MeetingOccurrence[];
   /** RFC3339 start time of the next upcoming occurrence (server-computed by the meeting service).
@@ -1145,8 +1147,8 @@ export type PastMeetingAttendanceTone = 'low' | 'medium' | 'high';
 /**
  * How an attendee's identity was established (N-02, FR-033), from the reconciliation flags
  * (`getPastMeetingIdentityTier`): `verified` (matched to a known person), `auto-matched` (matched
- * by name automatically), `ai-reconciled` (matched through AI reconciliation), or `unverified`
- * (left unknown, or still needing review). Only attendees have one.
+ * automatically on an exact email or username), `ai-reconciled` (an AI suggestion an organizer
+ * confirmed), or `unverified` (left unknown, or still needing review). Only attendees have one.
  */
 export type PastMeetingIdentityTier = 'verified' | 'auto-matched' | 'ai-reconciled' | 'unverified';
 
@@ -1192,9 +1194,9 @@ export interface PastMeetingAttendanceFigures {
 }
 
 /**
- * The public past-meeting roster: the verified identities (invitees, and attendees in the `verified`
- * identity tier), plus how many other attendees there are (`unverified`, `auto-matched` or
- * `ai-reconciled`: the identity-tier aggregate, N-02), who are counted but never listed.
+ * The public past-meeting roster: the identified people (invitees, and attendees in any identity tier
+ * but `unverified`), without their tier, plus how many attendees are `unverified` (the identity-tier
+ * aggregate, N-02), who are counted but never listed.
  */
 export interface PublicPastMeetingRoster {
   participants: PublicPastMeetingParticipant[];
