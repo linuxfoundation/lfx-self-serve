@@ -14,7 +14,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type { OrgLensRoiProjectBubblePoint, OrgLensRoiProjectRow } from '@lfx-one/shared/interfaces';
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
-import type { ChartData, ChartOptions } from 'chart.js';
+import type { ChartData, ChartOptions, Tick } from 'chart.js';
 
 /** Investment against return on logarithmic axes, so the efficient outliers stay visible. */
 @Component({
@@ -163,7 +163,7 @@ export class OrgRoiProjectsBubbleComponent {
           min: segment?.from,
           max: segment?.to,
           title: { display: true, text: 'Investment', font: { size: 11 } },
-          ticks: { callback: (value) => this.axisTickLabel(Number(value)) },
+          ticks: { callback: (value, _index, ticks) => this.axisTickLabel(Number(value), ticks) },
           grid: { color: lfxColors.gray[200] },
         },
         y: {
@@ -171,7 +171,7 @@ export class OrgRoiProjectsBubbleComponent {
           min: segment?.from,
           max: segment?.to,
           title: { display: true, text: 'Return', font: { size: 11 } },
-          ticks: { callback: (value) => this.axisTickLabel(Number(value)) },
+          ticks: { callback: (value, _index, ticks) => this.axisTickLabel(Number(value), ticks) },
           grid: { color: lfxColors.gray[200] },
         },
       },
@@ -212,10 +212,16 @@ export class OrgRoiProjectsBubbleComponent {
   /**
    * A log axis places a tick at every 1–9 multiple of each decade, and the pinned bounds add one at
    * the raw minimum, so labelling them all overlaps at the top of each decade. Only the 1, 2 and 5
-   * multiples are labelled — Chart.js's own log convention — and the grid keeps the rest.
+   * multiples are labelled — Chart.js's own log convention — and the grid keeps the rest. A range
+   * too narrow to hold two of them (one project at $300K/$450K, say) labels every tick instead, so
+   * the axis never goes blank; labelling the end ticks instead would bring the collisions back.
    */
-  private axisTickLabel(value: number): string {
-    const mantissa = value / 10 ** Math.floor(Math.log10(value));
-    return [1, 2, 5].some((step) => Math.abs(mantissa - step) < 1e-9) ? formatCurrency(value) : '';
+  private axisTickLabel(value: number, ticks: Tick[]): string {
+    const isRoundStep = (tick: number): boolean => {
+      const mantissa = tick / 10 ** Math.floor(Math.log10(tick));
+      return [1, 2, 5].some((step) => Math.abs(mantissa - step) < 1e-9);
+    };
+    if (ticks.filter((tick) => isRoundStep(tick.value)).length < 2) return formatCurrency(value);
+    return isRoundStep(value) ? formatCurrency(value) : '';
   }
 }

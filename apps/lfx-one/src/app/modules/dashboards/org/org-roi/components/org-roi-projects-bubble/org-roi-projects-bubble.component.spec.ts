@@ -13,8 +13,8 @@ import { OrgRoiProjectsBubbleComponent } from './org-roi-projects-bubble.compone
 
 interface BubbleChartOptionsStub {
   scales: {
-    x: { min?: number; max?: number; ticks: { callback: (value: number) => string } };
-    y: { min?: number; max?: number; ticks: { callback: (value: number) => string } };
+    x: { min?: number; max?: number; ticks: { callback: (value: number, index: number, ticks: { value: number }[]) => string } };
+    y: { min?: number; max?: number; ticks: { callback: (value: number, index: number, ticks: { value: number }[]) => string } };
   };
   plugins: {
     legend: { display: boolean; labels: { filter: (item: { datasetIndex: number }) => boolean } };
@@ -105,14 +105,27 @@ describe('OrgRoiProjectsBubbleComponent — break-even line', () => {
   it('labels only the 1, 2 and 5 ticks of each decade, so axis labels cannot crowd', () => {
     render(MIXED);
 
+    // The raw pinned minimum plus a decade and a half of log ticks, as the dev chart drew them.
+    const ticks = [47_100, 50_000, 60_000, 70_000, 80_000, 90_000, 100_000, 200_000, 300_000, 700_000, 1_000_000].map((value) => ({ value }));
     const { scales } = chart().options()!;
     for (const axis of [scales.x, scales.y]) {
-      expect(axis.ticks.callback(1_000_000)).toBe(formatCurrency(1_000_000));
-      expect(axis.ticks.callback(200_000)).toBe(formatCurrency(200_000));
-      expect(axis.ticks.callback(50_000)).toBe(formatCurrency(50_000));
+      const label = (value: number): string => axis.ticks.callback(value, 0, ticks);
+      expect(label(1_000_000)).toBe(formatCurrency(1_000_000));
+      expect(label(200_000)).toBe(formatCurrency(200_000));
+      expect(label(50_000)).toBe(formatCurrency(50_000));
       // The rest of the decade, and the raw pinned minimum that collided with $50K on dev.
-      expect(axis.ticks.callback(700_000)).toBe('');
-      expect(axis.ticks.callback(47_100)).toBe('');
+      expect(label(700_000)).toBe('');
+      expect(label(47_100)).toBe('');
+    }
+  });
+
+  it('labels every tick when the range is too narrow to hold two of them', () => {
+    render(MIXED);
+
+    const ticks = [300_000, 400_000, 450_000].map((value) => ({ value }));
+    const { scales } = chart().options()!;
+    for (const axis of [scales.x, scales.y]) {
+      expect(ticks.map(({ value }) => axis.ticks.callback(value, 0, ticks))).toEqual(ticks.map(({ value }) => formatCurrency(value)));
     }
   });
 
