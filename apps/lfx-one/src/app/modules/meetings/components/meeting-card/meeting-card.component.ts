@@ -235,6 +235,12 @@ export class MeetingCardComponent implements OnInit {
   public readonly isRegisteredAttendee: Signal<boolean> = computed(
     () => this.authenticated() && this.effectivelyInvited() && !this.meeting().organizer && !this.pastMeeting()
   );
+  public readonly userAttended: Signal<boolean> = computed(() => {
+    // Read the input, not the local `meeting` signal: that one is only seeded while it has no id, so a
+    // refreshed input for the same card would leave this stale. `user_attended` has no optimistic updates.
+    const meeting = this.meetingInput();
+    return this.pastMeeting() && 'user_attended' in meeting && meeting.user_attended === true;
+  });
   // A committee-sourced registration follows committee membership, so it cannot be removed from here.
   public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee() && !this.meeting().invited_via_committee);
   public readonly canRegisterForMeeting: Signal<boolean> = computed(

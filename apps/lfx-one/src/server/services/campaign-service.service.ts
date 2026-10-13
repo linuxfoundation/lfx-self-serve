@@ -2841,7 +2841,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
  * standard requires that iteration to yield lower-cased names. A `headers['ETag']` fallback
  * would be unreachable code that implies the casing is uncertain.
  */
-function readEtag(response: ApiResponse<unknown>): string | null {
+export function readEtag(response: ApiResponse<unknown>): string | null {
   const etag = response.headers['etag'];
   return typeof etag === 'string' && etag.length > 0 ? etag : null;
 }
@@ -2858,8 +2858,10 @@ function readEtag(response: ApiResponse<unknown>): string | null {
  * reached the ad platform. Its client message becomes the lever's own unconfirmed message
  * (`CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED`, `CAMPAIGN_BID_OUTCOME_UNCONFIRMED`) rather than a bare
  * "please try again". `message` stays as it was, so the log keeps the cause.
+ *
+ * Exported for `campaign-optimize.service.ts`, whose adopt and lever writes share the problem.
  */
-function asUnconfirmedWriteFailure(error: unknown, operation: string, clientMessage: string): unknown {
+export function asUnconfirmedWriteFailure(error: unknown, operation: string, clientMessage: string): unknown {
   if (!(error instanceof MicroserviceError) || upstreamAnswered(error)) {
     return error;
   }

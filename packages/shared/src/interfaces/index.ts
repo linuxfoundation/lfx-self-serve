@@ -39,6 +39,7 @@ export * from './api.interface';
 
 // Campaign interfaces
 export * from './campaign.interface';
+export * from './campaign-optimize.interface';
 
 // Permissions interfaces
 export * from './permissions.interface';

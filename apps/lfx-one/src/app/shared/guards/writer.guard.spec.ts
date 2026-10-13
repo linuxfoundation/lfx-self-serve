@@ -87,9 +87,9 @@ describe('writerGuard', () => {
       parent: null,
     }) as unknown as ActivatedRouteSnapshot;
 
-  const surveyRoute = (): ActivatedRouteSnapshot =>
+  const surveyRoute = (committeeUid: string | null = null): ActivatedRouteSnapshot =>
     ({
-      queryParamMap: convertToParamMap({}),
+      queryParamMap: convertToParamMap(committeeUid ? { committee_uid: committeeUid } : {}),
       paramMap: convertToParamMap({ id: SURVEY_UID }),
       data: { writeFeature: 'surveys', entityScopedSlug: true },
       parent: null,
@@ -700,6 +700,77 @@ describe('writerGuard', () => {
 
     expect(result).toBe(true);
     expect(getCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
+  });
+
+  describe('multi-committee survey access', () => {
+    beforeEach(() => {
+      getSurvey.mockReturnValue(
+        of({
+          uid: SURVEY_UID,
+          project_uid: 's-uid',
+          project_slug: SURVEY_SLUG,
+          committees: [{ committee_uid: 'primary' }, { committee_uid: 'secondary' }, { committee_uid: 'third' }],
+        } as unknown as Survey)
+      );
+      getProjectStrict.mockReturnValue(of({ uid: 's-uid', slug: SURVEY_SLUG, writer: false }));
+    });
+
+    it.each([null, 'primary'])('admits a non-primary writer with URL hint %s', async (committeeUid) => {
+      getCommittee.mockImplementation((uid: string) => of({ writer: uid === 'secondary' }));
+      const route = surveyRoute(committeeUid);
+
+      expect(await runGuard(route)).toBe(true);
+      expect(getCommittee.mock.calls).toEqual([['primary'], ['secondary']]);
+    });
+
+    it('denies after every associated committee reports no writer', async () => {
+      getCommittee.mockReturnValue(of({ writer: false }));
+
+      expect(await runGuard(surveyRoute())).toEqual({ denied: '/project/overview', opts: { queryParams: { project: SURVEY_SLUG, _notice: 'surveys' } } });
+      expect(getCommittee.mock.calls).toEqual([['primary'], ['secondary'], ['third']]);
+    });
+
+    it('never probes an unrelated URL committee even when its writer could grant access', async () => {
+      getSurvey.mockReturnValue(
+        of({ project_uid: 's-uid', project_slug: SURVEY_SLUG, committees: [{ committee_uid: 'primary' }, { committee_uid: 'secondary' }] } as unknown as Survey)
+      );
+      getCommittee.mockImplementation((uid: string) => of({ writer: uid === 'attacker-committee' }));
+      const route = surveyRoute('attacker-committee');
+
+      expect(await runGuard(route)).toEqual({ denied: '/project/overview', opts: { queryParams: { project: SURVEY_SLUG, _notice: 'surveys' } } });
+      expect(getCommittee.mock.calls).toEqual([['primary'], ['secondary']]);
+      expect(getCommittee).not.toHaveBeenCalledWith('attacker-committee');
+    });
+
+    it('denies an unrelated URL writer when associated committee uids are blank', async () => {
+      getSurvey.mockReturnValue(of({ project_uid: 's-uid', project_slug: SURVEY_SLUG, committees: [{ committee_uid: '' }] } as unknown as Survey));
+      getCommittee.mockReturnValue(of({ writer: true }));
+
+      expect(await runGuard(surveyRoute('attacker-committee'))).toEqual({
+        denied: '/project/overview',
+        opts: { queryParams: { project: SURVEY_SLUG, _notice: 'surveys' } },
+      });
+      expect(getCommittee).not.toHaveBeenCalled();
+    });
+
+    it('reports an error notice when a primary transient failure is followed only by denials', async () => {
+      vi.useFakeTimers();
+      let primarySubscriptions = 0;
+      getCommittee.mockImplementation((uid: string) => (uid === 'primary' ? flakyError(503, () => primarySubscriptions++) : of({ writer: false })));
+      const pending = runGuard(surveyRoute());
+      await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+
+      expect(await pending).toEqual({ denied: '/project/overview', opts: { queryParams: { project: SURVEY_SLUG, _notice: 'error' } } });
+      expect(primarySubscriptions).toBe(2);
+      expect(getCommittee.mock.calls).toEqual([['primary'], ['secondary'], ['third']]);
+    });
+
+    it('admits a primary writer without probing any other associated committee', async () => {
+      getCommittee.mockReturnValue(of({ writer: true }));
+
+      expect(await runGuard(surveyRoute())).toBe(true);
+      expect(getCommittee.mock.calls).toEqual([['primary']]);
+    });
   });
 
   it('fails closed when an entity-scoped route has no :id param', async () => {
