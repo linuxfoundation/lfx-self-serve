@@ -5,11 +5,13 @@ import { Router } from 'express';
 
 import { AudienceBuilderController } from '../controllers/audience-builder.controller';
 import { CampaignController } from '../controllers/campaign.controller';
+import { CampaignOptimizeController } from '../controllers/campaign-optimize.controller';
 import { requireCampaignManager } from '../middleware/require-marketing-access.middleware';
 
 const router = Router();
 const campaignController = new CampaignController();
 const audienceBuilderController = new AudienceBuilderController();
+const optimizeController = new CampaignOptimizeController();
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
@@ -61,6 +63,29 @@ router.patch('/:campaignId/budget', (req, res, next) => campaignController.updat
 router.patch('/:campaignId/bid', (req, res, next) => campaignController.updateCampaignBid(req, res, next));
 // campaign-service only. Positional response: results[i] answers negativeKeywords[i].
 router.post('/:campaignId/negative-keywords', (req, res, next) => campaignController.addNegativeKeywords(req, res, next));
+
+// --- Optimize: campaign-service reads ------------------------------
+//
+// campaign-service only, no legacy arm, so ungated like the budget and bid levers above, EXCEPT
+// the reads whose upstream endpoints are not on campaign-service main yet (Reddit and LinkedIn
+// audience, LinkedIn campaign-ref, Reddit keywords): those answer 404 unless
+// LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS is on. Authorization is
+// the `requireCampaignManager` above. Campaign and brief ids are campaign-service UUIDs.
+router.get('/meta/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'meta-ads'));
+router.get('/twitter/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'twitter-ads'));
+router.get('/microsoft/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'microsoft-ads'));
+router.get('/reddit/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'reddit-ads'));
+router.get('/linkedin/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'linkedin-ads'));
+// Platform campaign id -> campaign-service campaign + brief. LinkedIn is pending upstream (flag-gated).
+router.get('/meta/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'meta-ads'));
+router.get('/reddit/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'reddit-ads'));
+router.get('/twitter/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'twitter-ads'));
+router.get('/linkedin/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'linkedin-ads'));
+// Pending upstream (flag-gated). Takes `?window=` like the Microsoft keyword read.
+router.get('/reddit/keywords', (req, res, next) => optimizeController.getRedditKeywords(req, res, next));
+router.get('/:campaignId/settings', (req, res, next) => optimizeController.getCampaignSettings(req, res, next));
+router.get('/:campaignId/meta-ad-sets', (req, res, next) => optimizeController.listMetaAdSets(req, res, next));
+router.get('/:campaignId/keyword-targeting', (req, res, next) => optimizeController.getKeywordTargeting(req, res, next));
 
 // --- Audience Builder ------------------------------------------------------
 //
