@@ -391,8 +391,34 @@ describe('MeetingRecordingComponent', () => {
       expect(query('tools-transcript-unavailable')?.getAttribute('data-reason')).toBe('sign-in');
       expect(query('tools-transcript-sign-in-link')?.getAttribute('href')).toBe('/login?returnTo=x');
       expect(query('tools-transcript-sign-in-link')?.getAttribute('data-dd-privacy')).toBe('mask');
+      // The whole phrase is the link, so each sign-in link has its own accessible name.
+      expect(query('tools-transcript-sign-in-link')?.textContent?.trim()).toBe('Sign in to read the transcript');
+      expect(query('tools-summary-sign-in-link')?.textContent?.trim()).toBe('Sign in to read the AI summary');
       expect(query('tools-summary-unavailable')?.getAttribute('data-reason')).toBe('sign-in');
       expect(query('tools-summary-sign-in-link')).not.toBeNull();
+      expect(query('tools-error')).toBeNull();
+    });
+
+    it('shows a refused artifact as sign-in and a failed one as an error, with Try again on the public route', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      meetingService.getPublicPastMeetingRecording.mockImplementation(refused);
+      meetingService.getPublicPastMeetingTranscript.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      meetingService.getPublicPastMeetingSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      await setup(
+        () => of(recording([])),
+        () => of(transcript(false))
+      );
+
+      expect(query('tools-recording-unavailable')?.getAttribute('data-reason')).toBe('sign-in');
+      expect(query('tools-error')?.textContent).toContain("We couldn't load the transcript.");
+
+      meetingService.getPublicPastMeetingTranscript.mockReturnValue(of(transcript(true)));
+      query('tools-retry')?.querySelector('button')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(meetingService.getPublicPastMeetingTranscript).toHaveBeenCalledTimes(2);
+      expect(query('tools-transcript-btn')).not.toBeNull();
       expect(query('tools-error')).toBeNull();
     });
 

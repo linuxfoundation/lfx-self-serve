@@ -42,8 +42,8 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * meeting's own uid: each artifact the route refuses (401, not public) offers sign-in on its own, and
  * when it refuses all three the section asks the viewer to sign in, as it does for one without access.
  * An ended meeting opened by its series id, which has no occurrence record yet, says its recording
- * appears once it is ready. The recording's
- * length (E4-02) shows on the still when the BFF could measure it.
+ * appears once it is ready. The recording's length (E4-02) shows on the still when the BFF could
+ * measure it.
  *
  * The AI summary (E4-03) sits under the actions, rendered from its markdown (no new parser) and
  * collapsed past the agenda's height, with Read full summary opening V1's summary modal. An

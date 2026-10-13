@@ -298,8 +298,9 @@ export interface MeetingArtifactState {
 
 /**
  * The V2 Recording & Transcript section's load (E4-01). `sign-in`: an anonymous viewer the public
- * artifact routes (E4-04) give nothing to (no artifact access, or no artifact of this meeting is public). `pending`: an ended meeting opened by its series id, which has no
- * occurrence record to read artifacts from yet.
+ * artifact routes (E4-04) give nothing to (no artifact access, or no artifact of this meeting is
+ * public). `pending`: an ended meeting opened by its series id, which has no occurrence record to
+ * read artifacts from yet.
  */
 export interface MeetingRecordingSectionState {
   status: 'loading' | 'ready' | 'sign-in' | 'pending';
