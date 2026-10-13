@@ -22,8 +22,10 @@ describe('orgClaOnlyPageGuard', () => {
   const providerReady = signal(true);
   const claOnly = new Set([CLA_ONLY_UID]);
   let createUrlTree: ReturnType<typeof vi.fn>;
+  let navigateByUrl: ReturnType<typeof vi.fn>;
   let waitForReady: ReturnType<typeof vi.fn>;
   let platform: string;
+  let routerUrl: string;
 
   /** `/org/{segment}/{page}[/{child}]` as the router hands it to a CanActivateChild on `:orgSegment`. */
   const routeFor = (segment: string, page: string, child?: string): ActivatedRouteSnapshot => {
@@ -43,12 +45,25 @@ describe('orgClaOnlyPageGuard', () => {
     selectedUid.set(CLA_ONLY_UID);
     providerReady.set(true);
     platform = 'browser';
+    routerUrl = '/';
+    claOnly.clear();
+    claOnly.add(CLA_ONLY_UID);
     createUrlTree = vi.fn((commands: string[]) => ({ redirected: commands.join('/') }));
+    navigateByUrl = vi.fn(async () => true);
     waitForReady = vi.fn(async () => true);
     TestBed.configureTestingModule({
       providers: [
         { provide: PLATFORM_ID, useFactory: () => platform },
-        { provide: Router, useValue: { createUrlTree } },
+        {
+          provide: Router,
+          useValue: {
+            createUrlTree,
+            navigateByUrl,
+            get url() {
+              return routerUrl;
+            },
+          },
+        },
         { provide: FeatureFlagService, useValue: { providerReady, waitForReady } },
         { provide: OrgClaOnlyAccessService, useValue: { enabled, isClaOnly: (uid: string | null) => !!uid && enabled() && claOnly.has(uid) } },
         { provide: AccountContextService, useValue: { selectedAccount: () => ({ accountId: '', accountName: '', membershipTier: '', uid: selectedUid() }) } },
@@ -114,17 +129,67 @@ describe('orgClaOnlyPageGuard', () => {
     expect(await pending).toEqual({ redirected: `/org/${CLA_ONLY_UID}/easycla` });
   });
 
-  it('admits the page when role grants do not answer within the wait, since the server still refuses the data', async () => {
+  /** Runs the guard with role grants unanswered past the wait. */
+  const runPastWait = async (route: ActivatedRouteSnapshot): Promise<boolean | UrlTree> => {
     vi.useFakeTimers();
     try {
       loaded.set(false);
-      const pending = run(routeFor(CLA_ONLY_UID, 'overview'));
+      const pending = run(route);
       TestBed.tick();
       await vi.advanceTimersByTimeAsync(ORG_CLA_ONLY_GRANTS_WAIT_MS);
-
-      expect(await pending).toBe(true);
+      return await pending;
     } finally {
       vi.useRealTimers();
     }
+  };
+
+  it('admits the page when role grants do not answer within the wait, since the server still refuses the data', async () => {
+    selectedUid.set('0014100000OtherOrg');
+
+    expect(await runPastWait(routeFor('other-org', 'overview'))).toBe(true);
+  });
+
+  it('redirects past the wait when the resolver already recorded the organization as CLA-only', async () => {
+    expect(await runPastWait(routeFor(CLA_ONLY_UID, 'overview'))).toEqual({ redirected: `/org/${CLA_ONLY_UID}/easycla` });
+  });
+
+  describe('when role grants answer after the wait', () => {
+    const LATE_UID = '0014100000LateClaOn';
+
+    beforeEach(() => {
+      selectedUid.set(LATE_UID);
+    });
+
+    it('redirects a caller still on the admitted page once the late answer confirms CLA-only', async () => {
+      routerUrl = `/org/${LATE_UID}/people`;
+      expect(await runPastWait(routeFor(LATE_UID, 'people'))).toBe(true);
+
+      claOnly.add(LATE_UID);
+      loaded.set(true);
+      TestBed.tick();
+
+      expect(navigateByUrl).toHaveBeenCalledWith({ redirected: `/org/${LATE_UID}/easycla` }, { replaceUrl: true });
+    });
+
+    it('leaves a caller who has already navigated on', async () => {
+      routerUrl = `/org/${LATE_UID}/easycla`;
+      expect(await runPastWait(routeFor(LATE_UID, 'people'))).toBe(true);
+
+      claOnly.add(LATE_UID);
+      loaded.set(true);
+      TestBed.tick();
+
+      expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it('leaves the page when the late answer is not CLA-only', async () => {
+      routerUrl = `/org/${LATE_UID}/people`;
+      expect(await runPastWait(routeFor(LATE_UID, 'people'))).toBe(true);
+
+      loaded.set(true);
+      TestBed.tick();
+
+      expect(navigateByUrl).not.toHaveBeenCalled();
+    });
   });
 });

@@ -6,7 +6,7 @@ import { inject, Injector, PLATFORM_ID } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRouteSnapshot, CanActivateChildFn, Router, UrlTree } from '@angular/router';
 import { ORG_CLA_ONLY_GRANTS_WAIT_MS, ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
-import { filter, firstValueFrom, of, timeout } from 'rxjs';
+import { filter, firstValueFrom, of, take, timeout } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
 import { FeatureFlagService } from '../services/feature-flag.service';
@@ -52,20 +52,44 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
     return true;
   }
 
+  const segment = page.parent?.paramMap.get(ORG_SEGMENT_PARAM) ?? null;
+  const claPage = (): UrlTree | null =>
+    segment && claOnlyAccess.isClaOnly(accountContext.selectedAccount().uid) ? router.createUrlTree(['/org', segment, CLA_PAGE]) : null;
+
   // A role-grants request that never answers must not hold the navigation: past the wait the page is
-  // admitted, and its data is still refused server-side.
+  // admitted unless the resolver already recorded a CLA-only answer, and a late answer still redirects.
+  // The page's data is refused server-side either way.
   if (!roleGrants.loaded()) {
     const loaded = await firstValueFrom(
       toObservable(roleGrants.loaded, { injector }).pipe(filter(Boolean), timeout({ first: ORG_CLA_ONLY_GRANTS_WAIT_MS, with: () => of(false) }))
     );
     if (!loaded) {
+      const recorded = claPage();
+      if (recorded) {
+        return recorded;
+      }
+      toObservable(roleGrants.loaded, { injector })
+        .pipe(filter(Boolean), take(1))
+        .subscribe(() => {
+          const target = claPage();
+          if (target && segment && isNonClaPageOf(router.url, segment)) {
+            void router.navigateByUrl(target, { replaceUrl: true });
+          }
+        });
       return true;
     }
   }
 
-  const segment = page.parent?.paramMap.get(ORG_SEGMENT_PARAM) ?? null;
-  return segment && claOnlyAccess.isClaOnly(accountContext.selectedAccount().uid) ? router.createUrlTree(['/org', segment, CLA_PAGE]) : true;
+  return claPage() ?? true;
 };
+
+/** `url` is still a page of `/org/{segment}` other than EasyCLA — the caller has not navigated on. */
+function isNonClaPageOf(url: string, segment: string): boolean {
+  const prefix = `/org/${segment}/`;
+  if (!url.startsWith(prefix)) return false;
+  const page = url.slice(prefix.length).split(/[/?#]/, 1)[0];
+  return page !== CLA_PAGE;
+}
 
 /** The page route directly under `:orgSegment` that `childRoute` is, or sits beneath. */
 function pageRouteOf(childRoute: ActivatedRouteSnapshot): ActivatedRouteSnapshot | null {
