@@ -99,6 +99,12 @@ describe('OrgClaOnlyOrgsService.listOrgs', () => {
     expect(await service(scopesOf(COMPANY_A)).listOrgs(req())).toEqual({ orgs: [], failed: false });
   });
 
+  it('reports an outage, not an unknown company, when EasyCLA answers without the company’s external id', async () => {
+    gatewayFetch.mockResolvedValue({ companyID: 'internal-x', companyName: 'Acme Corp' });
+
+    expect(await service(scopesOf(COMPANY_A)).listOrgs(req())).toEqual({ orgs: [], failed: true });
+  });
+
   it('keeps the rows that resolved and reports the lookup that failed', async () => {
     gatewayFetch.mockImplementation(async (_req: Request, url: string) => {
       if (url.endsWith(COMPANY_B)) throw new MicroserviceError('down', 503, 'UPSTREAM_ERROR', { operation: 'x', service: 'y' });
@@ -162,6 +168,7 @@ describe('OrgClaOnlyOrgsService.getRoleGrantClaManagerOrgs', () => {
     ['a cascading auditor grant', { cascadingAuditors: cascading }],
     ['staff', { isStaff: true }],
     ['a roster that never loaded', { lookupOutcome: 'failed' as const }],
+    ['a partial roster, which is only a lower bound', { lookupOutcome: 'partial' as const }],
     ['a failed staff check', { staffCheck: 'failed' as const }],
   ])('never asks user-service for a caller with %s', async (_label, overrides) => {
     const scopes = scopesOf(COMPANY_A);

@@ -69,7 +69,8 @@ export class OrgClaOnlyOrgsService {
    */
   public async getRoleGrantClaManagerOrgs(req: Request, grants: RoleGrantsResponse): Promise<Pick<RoleGrantsResponse, 'claManagerOrgs' | 'claManagerLookup'>> {
     const grantedOrgCount = grants.writers.length + grants.auditors.length + grants.cascadingWriters.length + grants.cascadingAuditors.length;
-    const rosterAnswered = grants.lookupOutcome !== 'failed' && grants.staffCheck !== 'failed';
+    // A `partial` roster is a lower bound: zero grants there does not prove the caller holds none.
+    const rosterAnswered = (grants.lookupOutcome ?? 'ok') === 'ok' && grants.staffCheck !== 'failed';
     if (!claOnlyEntryApplies(grants.isStaff, grantedOrgCount, rosterAnswered)) return { claManagerOrgs: [], claManagerLookup: 'ok' };
     try {
       return { claManagerOrgs: await this.getOrgUids(req), claManagerLookup: 'ok' };
@@ -159,6 +160,17 @@ export class OrgClaOnlyOrgsService {
       throw error;
     }
 
+    if (company && !company.companyExternalID?.trim()) {
+      throw new MicroserviceError(
+        'Failed to resolve the organization in EasyCLA: upstream company is missing its external id',
+        502,
+        'UPSTREAM_INVALID_RESPONSE',
+        {
+          operation: OPERATION,
+          service: SERVICE,
+        }
+      );
+    }
     if (company?.companyExternalID?.trim() !== uid) {
       logger.warning(req, OPERATION, 'EasyCLA returned a different company; omitting it', { org_uid: uid, reason: 'company_mismatch' });
       return null;

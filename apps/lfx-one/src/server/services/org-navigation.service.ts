@@ -55,7 +55,7 @@ export class OrgNavigationService {
 
     const access = await this.orgRoleGrants.getAccessAwareOrgs(req, username);
 
-    if (claOnlyEntryApplies(access.isStaff, access.resolved.size, !access.upstreamFailed && access.staffCheck !== 'failed')) {
+    if (claOnlyEntryApplies(access.isStaff, access.resolved.size, !access.upstreamFailed && !access.degraded && access.staffCheck !== 'failed')) {
       return this.getClaOnlyItems(req, access.upstreamFailed, params, selectedUid);
     }
 

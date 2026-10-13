@@ -181,6 +181,14 @@ describe('OrgNavigationService — CLA-only organizations', () => {
     expect(response.items).toEqual([expect.not.objectContaining({ claOnly: true })]);
   });
 
+  it('never asks for CLA-only organizations while the roll-up is degraded, since inherited organizations may be missing', async () => {
+    noGrants({ degraded: true });
+
+    await new OrgNavigationService().getOrgItems(req, {});
+
+    expect(listClaOnlyOrgs).not.toHaveBeenCalled();
+  });
+
   it('never asks for CLA-only organizations for staff', async () => {
     proxyRequest.mockResolvedValue(cataloguePage([], null));
 
