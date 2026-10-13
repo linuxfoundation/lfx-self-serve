@@ -307,6 +307,16 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
       expect(fixture.componentInstance.emailsWithMetadata().some((e) => e.isMeetingInvite)).toBe(false);
     });
 
+    it('lets the primary row restore the default after a failed lookup instead of silently no-oping', async () => {
+      const userServiceMock = makeUserServiceMock({ invite: 'error' });
+      const fixture = await setup(userServiceMock);
+
+      expect(menuLabelsFor(fixture, PRIMARY_EMAIL.email)).toContain('Use for Meeting Invitations');
+      fixture.componentInstance.setMeetingInvite(PRIMARY_EMAIL);
+
+      expect(userServiceMock['setMeetingInviteEmail']).toHaveBeenCalledWith(MEETING_INVITE_PRIMARY_SENTINEL);
+    });
+
     it('surfaces an override that matches none of the listed addresses', async () => {
       const fixture = await setup(makeUserServiceMock({ invite: { email_id: 'id-1', email: 'unlisted@example.com' } }));
 

@@ -183,6 +183,17 @@ describe('MeetingPreferenceService', () => {
       expect(decodeRequestPayload()).toEqual({ token: V1_TOKEN, email: ALTERNATE_EMAIL });
     });
 
+    // The blank-address guard is read-side only — a SET reply echoes a write upstream already
+    // committed, so a blank echo must not be reported as a failed write (#3559).
+    it('still confirms the write when the reply echoes a blank address', async () => {
+      natsRequest.mockResolvedValue(reply({ email_id: 'email-1', email: '' }));
+
+      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
+        success: true,
+        data: { email_id: 'email-1', email: '' },
+      });
+    });
+
     it('forwards the reset sentinel verbatim so upstream clears the override', async () => {
       natsRequest.mockResolvedValue(reply({ email_id: null, email: null }));
 

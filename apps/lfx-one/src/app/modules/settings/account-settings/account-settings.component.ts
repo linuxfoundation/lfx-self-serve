@@ -402,7 +402,8 @@ export class AccountSettingsComponent {
     const inviteEmail = this.meetingInviteEmail();
     const isReset = emailsEqual(email.email, this.emailData()?.primary_email);
     // No-op when the row already receives invitations — the primary also does when it is pinned.
-    const isNoop = emailsEqual(email.email, inviteEmail) || (isReset && inviteEmail === null);
+    // After a failed lookup that is unknown, so the write goes through and restores a known state.
+    const isNoop = !this.meetingInviteLoadFailed() && (emailsEqual(email.email, inviteEmail) || (isReset && inviteEmail === null));
 
     if (!email.verified || isNoop || this.savingMeetingInvite() || emailsEqual(email.email, this.deletingEmailAddress())) {
       return;
