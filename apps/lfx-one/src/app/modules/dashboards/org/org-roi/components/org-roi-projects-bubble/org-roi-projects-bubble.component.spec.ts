@@ -119,13 +119,16 @@ describe('OrgRoiProjectsBubbleComponent — break-even line', () => {
     }
   });
 
-  it('labels every tick when the range is too narrow to hold two of them', () => {
+  it('labels an even stride of at most six ticks when the range is too narrow for two 1/2/5 steps', () => {
     render(MIXED);
 
-    const ticks = [300_000, 400_000, 450_000].map((value) => ({ value }));
+    // The 15 ticks Chart.js 4.5 emits for a pinned $101K–$499K axis: 200K is its only 1/2/5 step.
+    const values = [101_000, 110_000, 120_000, 130_000, 140_000, 150_000, 160_000, 170_000, 180_000, 190_000, 200_000, 250_000, 300_000, 400_000, 499_000];
+    const ticks = values.map((value) => ({ value }));
     const { scales } = chart().options()!;
     for (const axis of [scales.x, scales.y]) {
-      expect(ticks.map(({ value }) => axis.ticks.callback(value, 0, ticks))).toEqual(ticks.map(({ value }) => formatCurrency(value)));
+      const labelled = values.filter((value, index) => axis.ticks.callback(value, index, ticks) !== '');
+      expect(labelled).toEqual([101_000, 130_000, 160_000, 190_000, 300_000]);
     }
   });
 
