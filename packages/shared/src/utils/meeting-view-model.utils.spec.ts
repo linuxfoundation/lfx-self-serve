@@ -664,7 +664,7 @@ describe('resolveMeetingStatus', () => {
 
 /**
  * #3261: every legal (time, viewer, past access) cell of `resolveVisibleSections`, written from the
- * state matrix's § Section visibility table rather than read back from the resolver. RSVP flags are the
+ * state matrix's § Section visibility table (its V2 column) rather than read back from the resolver. RSVP flags are the
  * F = on values; F = off and recurring are swept over every row below. Past access (D) is a real axis
  * only on an ended meeting; before and live carry one row each, and the sentinel block proves D is ignored there.
  */
@@ -703,15 +703,19 @@ describe('resolveVisibleSections: the section-visibility table', () => {
     ['ended', 'outsider', 'none', none],
     ['ended', 'registrant', 'full', endedSignedIn],
     ['ended', 'registrant', 'none', none],
-    // An organizer is never locked out of their own meeting's artifacts.
+    // An organizer always has `full` (FGA); organizer + `none` is an illegal input, asserted in the sentinel block.
     ['ended', 'organizer', 'full', endedSignedIn],
-    ['ended', 'organizer', 'none', endedSignedIn],
   ];
 
-  it('has one row per legal cell', () => {
+  it('has exactly one row per legal cell', () => {
     const keys = TABLE.map(([time, role, access]) => `${time}/${role}/${access}`);
-    expect(new Set(keys).size).toBe(keys.length);
-    expect(keys).toHaveLength(TIME_STATES.length * VIEWER_ROLES.length + VIEWER_ROLES.length);
+    const legal = [
+      ...(['before', 'live'] as const).flatMap((time) => VIEWER_ROLES.map((role) => `${time}/${role}/none`)),
+      ...VIEWER_ROLES.filter((role) => role !== 'organizer').flatMap((role) => [`ended/${role}/full`, `ended/${role}/none`]),
+      'ended/organizer/full',
+    ];
+    expect(keys).toHaveLength(new Set(keys).size);
+    expect(new Set(keys)).toEqual(new Set(legal));
   });
 
   it.each(TABLE)('%s · %s · %s access', (timeState, viewerRole, access, cell) => {
@@ -742,6 +746,19 @@ describe('illegal combinations resolve to their legal neighbour', () => {
             expect(slot(true)).toBe(slot(false));
           }
         }
+      }
+    }
+  });
+
+  // The BFF always gives an organizer `full` (state-matrix.md, organizer rows); `none` resolves like `full`.
+  it("ignores past access for an ended meeting's organizer", () => {
+    for (const inviteResponsesEnabled of [true, false]) {
+      const sections = (fullAccess: boolean) =>
+        resolveVisibleSections({ fullAccess, inviteResponsesEnabled, recurring: false, timeState: 'ended', viewerRole: 'organizer' });
+      expect(sections(false)).toEqual(sections(true));
+      for (const privacy of ALL_PRIVACY) {
+        const slot = (fullAccess: boolean) => resolveActionSlot({ fullAccess, inviteResponsesEnabled, privacy, timeState: 'ended', viewerRole: 'organizer' });
+        expect(slot(false)).toBe(slot(true));
       }
     }
   });
@@ -786,7 +803,9 @@ describe('resolvers: remaining edges (#3261)', () => {
   ] as const)(
     'resolves %s (started=%s, invited=%s, RSVP tracking=%s) to %s whatever the answer',
     (timeState, hasStarted, invited, inviteResponsesEnabled, status) => {
-      expect(resolveMeetingStatus({ timeState, hasStarted, invited, inviteResponsesEnabled, myRsvp: 'accepted' })).toBe(status);
+      for (const myRsvp of ['accepted', 'maybe', 'declined', null, undefined] as const) {
+        expect(resolveMeetingStatus({ timeState, hasStarted, invited, inviteResponsesEnabled, myRsvp })).toBe(status);
+      }
     }
   );
 });
