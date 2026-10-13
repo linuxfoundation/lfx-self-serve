@@ -273,7 +273,13 @@ describe('NonMembersPeopleComponent', () => {
   it('drops the "of" total from the search line when the total is unset', async () => {
     await render(response({ totalRecords: 3, scopeTotal: null }), { nonPeopleSearch: 'jane' });
 
-    expect(text('non-members-people-count')).toBe('3 match · clear');
+    expect(text('non-members-people-count')).toBe('3 matches · clear');
+  });
+
+  it('keeps a single search match singular when the total is unset', async () => {
+    await render(response({ totalRecords: 1, scopeTotal: null }), { nonPeopleSearch: 'jane' });
+
+    expect(text('non-members-people-count')).toBe('1 match · clear');
   });
 
   it('keeps the controls and names the search when it matches nothing', async () => {
