@@ -4,7 +4,7 @@ description: Schedule, manage, and join project meetings with calendar integrati
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, calendar, join, zoom, virtual]
-last_updated: 2026-10-12
+last_updated: 2026-10-13
 intercom_collection: Meetings
 ---
 
@@ -61,7 +61,9 @@ All response filters and **Organized by me** show their upcoming-meeting count i
 
 At the top of My Meetings, **Meetings in the Next 7 Days** counts each upcoming date, including dates you declined. **Needs response** opens the response queue and clears other filters so they cannot hide meetings needing your answer. A successful response removes the meeting from that queue but keeps it findable under All meetings. Confirmed responses stay visible while the query index catches up.
 
-Removing yourself from a meeting ends your registration and discards its saved response. If you register again, the new registration starts unanswered; an old response cannot return from cached data. A failed removal keeps your registration and response unchanged.
+Completely removing yourself from a meeting ends your registration and discards its saved response. If you register again, the new registration starts unanswered; an old response cannot return from cached data. A failed removal keeps your registration and response unchanged.
+
+If only some of your registrations can be removed, you'll see **Removal incomplete**. You stay invited, the response on the registration that remains is kept, and you can try removing yourself again.
 
 Foundation and Project dashboards keep their Upcoming/Past choices and existing calendar, paging, and Subscribe controls. Personal response and organizer selections never narrow a scoped list. Switching away from My Meetings clears personal rows while the scoped list loads; inactive personal updates do not replace scoped results.
 
