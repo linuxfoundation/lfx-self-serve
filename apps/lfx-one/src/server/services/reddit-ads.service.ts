@@ -691,6 +691,14 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
   // the first upstream call — see `resolveRedditAuthoredPost`.
   const authoredPost = resolveRedditAuthoredPost(config, validatedPostId);
 
+  const objective = config.objective ?? 'conversions';
+  // Own-key check: the map is a plain object, so `constructor`, `toString`, `__proto__` etc. would otherwise resolve
+  const objParams = Object.hasOwn(REDDIT_OBJECTIVE_PARAMS, objective) ? REDDIT_OBJECTIVE_PARAMS[objective] : undefined;
+  // Belt-and-suspenders: TypeScript guarantees coverage but this guards against runtime widening
+  if (!objParams) {
+    throw new Error(`Unsupported Reddit objective: ${objective}`);
+  }
+
   const account = REDDIT_ACCOUNTS[0];
   const accountId = account.accountId;
 
@@ -712,13 +720,6 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
   const campaignName = buildRedditCampaignName(config);
   const campaignStartTime = toIsoTimestamp(config.startDate);
   const campaignEndTime = toIsoTimestamp(config.endDate);
-
-  const objective = config.objective ?? 'conversions';
-  const objParams = REDDIT_OBJECTIVE_PARAMS[objective];
-  // Belt-and-suspenders: TypeScript guarantees coverage but this guards against runtime widening
-  if (!objParams) {
-    throw new Error(`Unsupported Reddit objective: ${objective}`);
-  }
 
   const campaignBody: Record<string, unknown> = {
     data: {

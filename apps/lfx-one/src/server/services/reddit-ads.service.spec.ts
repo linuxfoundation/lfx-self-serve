@@ -324,6 +324,16 @@ describe('executeRedditCampaignCreation — the authored post', () => {
     stubFetch();
   });
 
+  it('refuses an objective that only exists on Object.prototype', async () => {
+    for (const objective of ['constructor', 'toString', 'hasOwnProperty', '__proto__']) {
+      await expect(executeRedditCampaignCreation(undefined, config({ objective }))).rejects.toThrow(
+        `Unsupported Reddit objective: ${objective}`
+      );
+    }
+    // The refusal happens before the first upstream call, so no token or account request is made either.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('authors the post immediately before the ad that consumes it', async () => {
     const result = await executeRedditCampaignCreation(undefined, config());
 
