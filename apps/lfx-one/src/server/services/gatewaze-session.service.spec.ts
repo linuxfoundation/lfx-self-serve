@@ -20,7 +20,15 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
 }));
 
-import { deriveGatewazeMasterKey, deriveGatewazeSid, GatewazeSessionService, isGatewazeHostSessionEnabled } from './gatewaze-session.service';
+import { deriveKeys } from '@gatewaze/host-session';
+
+import {
+  deriveGatewazeMasterKey,
+  deriveGatewazeSid,
+  deriveGatewazeSidKey,
+  GatewazeSessionService,
+  isGatewazeHostSessionEnabled,
+} from './gatewaze-session.service';
 
 // Every identity here is synthetic. Tokens are opaque strings except the Auth0 ID token, which is
 // an unsigned JWT-shaped value so the package can read its `sub` the way it does after GoTrue
@@ -172,8 +180,19 @@ describe('deriveGatewazeMasterKey', () => {
   });
 });
 
+describe('deriveGatewazeSidKey', () => {
+  it('is HKDF-SHA256 with its own info label, deterministic, and differs from the master and store keys', () => {
+    const expected = Buffer.from(hkdfSync('sha256', Buffer.from(SECRET), Buffer.alloc(0), 'lfx-one gatewaze host-session v1 sid', 32));
+    const sidKey = deriveGatewazeSidKey(SECRET);
+    expect(sidKey.equals(expected)).toBe(true);
+    expect(sidKey.equals(deriveGatewazeSidKey(SECRET))).toBe(true);
+    expect(sidKey.equals(deriveGatewazeMasterKey(SECRET))).toBe(false);
+    expect(sidKey.equals(deriveKeys([deriveGatewazeMasterKey(SECRET)], 'store')[0])).toBe(false);
+  });
+});
+
 describe('deriveGatewazeSid', () => {
-  const master = deriveGatewazeMasterKey(SECRET);
+  const master = deriveGatewazeSidKey(SECRET);
 
   it('is base64url(HMAC-SHA256(master, "sid:" + lfxSid)), stable per LFX session id', () => {
     const expected = createHmac('sha256', master).update(`sid:${LFX_SID}`).digest('base64url');
@@ -238,7 +257,7 @@ describe('GatewazeSessionService.getGatewazeSession', () => {
   it('stores only encrypted records under the lfx-ui gatewaze:v1 prefix', async () => {
     await service.getGatewazeSession(buildReq());
 
-    const gwSid = deriveGatewazeSid(deriveGatewazeMasterKey(SECRET), LFX_SID);
+    const gwSid = deriveGatewazeSid(deriveGatewazeSidKey(SECRET), LFX_SID);
     const record = kv.data.get(`lfx-ui:gatewaze:v1:session:${gwSid}`);
     expect(record).toMatch(/^v1:/);
     expect(record).not.toContain('gw-access-1');
@@ -341,6 +360,33 @@ describe('GatewazeSessionService.getGatewazeSession', () => {
     const logged = JSON.stringify([...loggerMock.warning.mock.calls, ...loggerMock.debug.mock.calls]);
     expect(logged).not.toMatch(/gw-access-|gw-refresh-|synthetic-lfx-refresh-token/);
     expect(logged).not.toContain(idTokenFor(SUB_A));
+  });
+
+  it('never logs the GoTrue user_id from the package, and keeps its err and status', async () => {
+    upstreams.state.grantExpiresIn = 30;
+    await service.getGatewazeSession(buildReq(SUB_A));
+    upstreams.state.refreshStatus = 400; // "refresh refused; ending the session" carries user_id
+    upstreams.state.auth0Sub = SUB_B;
+    await service.getGatewazeSession(buildReq(SUB_B)); // "stored session is for another IdP subject" too
+
+    const storeWarnings = loggerMock.warning.mock.calls.filter((call) => call[1] === 'gatewaze_session_store');
+    expect(storeWarnings.length).toBeGreaterThan(0);
+    for (const call of storeWarnings) expect(Object.keys(call[3] as object).every((k) => k === 'err' || k === 'status')).toBe(true);
+    expect(storeWarnings.some((call) => 'err' in (call[3] as object))).toBe(true);
+    expect(JSON.stringify(loggerMock.warning.mock.calls)).not.toMatch(/user_id|gw-user-/);
+  });
+
+  it('turns host-session mode off in production when GW_SUPABASE_URL is not https', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('GW_SUPABASE_URL', 'http://supabase.example.test');
+    expect(isGatewazeHostSessionEnabled()).toBe(false);
+    await expect(service.getGatewazeSession(buildReq())).resolves.toEqual({ outcome: 'host_session_unavailable' });
+
+    vi.stubEnv('GW_SUPABASE_URL', SUPABASE_URL);
+    expect(isGatewazeHostSessionEnabled()).toBe(true);
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('GW_SUPABASE_URL', 'http://supabase.example.test');
+    expect(isGatewazeHostSessionEnabled()).toBe(true);
   });
 
   it.each([

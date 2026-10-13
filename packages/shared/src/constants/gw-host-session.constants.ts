@@ -14,10 +14,16 @@
  */
 export const GW_HOST_SESSION_ID_TOKEN_SCOPE = 'openid email profile';
 
-/** HKDF-SHA256 `info` that derives the host-session master key from `PCC_AUTH0_SECRET`. Changing it invalidates every stored record. */
+/** HKDF-SHA256 `info` that derives the host-session master key (the input to the store's encryption keys) from `PCC_AUTH0_SECRET`. Changing it invalidates every stored record. */
 export const GW_HOST_SESSION_HKDF_INFO = 'lfx-one gatewaze host-session v1';
 
-/** Label HMAC'd with the LFX session id to form the Gatewaze session id, so the master key is never used on raw input of another purpose. */
+/** HKDF-SHA256 `info` for the Gatewaze session id's HMAC key, so the id and the store's encryption never share a key. Changing it orphans every stored record. */
+export const GW_HOST_SESSION_SID_HKDF_INFO = 'lfx-one gatewaze host-session v1 sid';
+
+/** Fields of `@gatewaze/host-session`'s warn metadata that may be logged. Everything else, notably the GoTrue `user_id`, is dropped. */
+export const GW_HOST_SESSION_STORE_LOG_FIELDS = ['err', 'status'] as const;
+
+/** Label HMAC'd with the LFX session id to form the Gatewaze session id, domain-separating the input. */
 export const GW_HOST_SESSION_SID_LABEL = 'sid:';
 
 /** Sliding lifetime of a stored Gatewaze session, renewed on each refresh. Matches GoTrue's 24 h inactivity window. */

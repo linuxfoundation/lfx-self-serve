@@ -4,13 +4,14 @@
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { loggerWarningMock, loggerDebugMock } = vi.hoisted(() => ({
+const { loggerWarningMock, loggerDebugMock, loggerErrorMock } = vi.hoisted(() => ({
   loggerWarningMock: vi.fn(),
   loggerDebugMock: vi.fn(),
+  loggerErrorMock: vi.fn(),
 }));
 
 vi.mock('../services/logger.service', () => ({
-  logger: { warning: loggerWarningMock, debug: loggerDebugMock },
+  logger: { warning: loggerWarningMock, debug: loggerDebugMock, error: loggerErrorMock },
 }));
 
 import { exchangeRefreshTokenForIdToken, populateApiGatewayToken } from './refresh-token-exchange.util';
@@ -132,7 +133,7 @@ describe('exchangeRefreshTokenForIdToken', () => {
   }
 
   function loggedText(): string {
-    return JSON.stringify([...loggerWarningMock.mock.calls, ...loggerDebugMock.mock.calls].map((call) => call.slice(1)));
+    return JSON.stringify([...loggerWarningMock.mock.calls, ...loggerDebugMock.mock.calls, ...loggerErrorMock.mock.calls].map((call) => call.slice(1)));
   }
 
   beforeEach(() => {
@@ -190,15 +191,32 @@ describe('exchangeRefreshTokenForIdToken', () => {
 
   it.each([
     ['invalid_grant on 403', 403, { error: 'invalid_grant', error_description: 'Unknown or invalid refresh token.' }],
+    ['invalid_grant on 400', 400, { error: 'invalid_grant' }],
     ['invalid_grant on an unexpected status', 500, { error: 'invalid_grant' }],
-    ['a 400 with another error', 400, { error: 'invalid_request' }],
-    ['a 401 with no body', 401, null],
-    ['a 403 with no error code', 403, {}],
   ])('reports the LFX session ended for %s', async (_label, status, body) => {
     respond(status, body);
 
     await expect(exchangeRefreshTokenForIdToken(buildReq())).resolves.toEqual({ outcome: 'ended' });
     expect(loggedText()).not.toContain('Unknown or invalid refresh token');
+    expect(loggerErrorMock).not.toHaveBeenCalled();
+  });
+
+  // Only invalid_grant means the LFX session is over. Any other 4xx is a client or tenant fault that
+  // signing out cannot fix, so it is unavailable and logged at ERROR with the OAuth code only.
+  it.each([
+    ['401 invalid_client', 401, { error: 'invalid_client', error_description: 'Synthetic client description.' }, 'invalid_client'],
+    ['403 unauthorized_client', 403, { error: 'unauthorized_client', error_description: 'Synthetic client description.' }, 'unauthorized_client'],
+    ['400 invalid_request', 400, { error: 'invalid_request', error_description: 'Synthetic client description.' }, 'invalid_request'],
+    ['400 invalid_scope', 400, { error: 'invalid_scope' }, 'invalid_scope'],
+    ['a bare 401', 401, null, undefined],
+    ['a bare 403', 403, {}, undefined],
+  ])('reports unavailable and logs an ERROR for %s', async (_label, status, body, code) => {
+    respond(status, body);
+
+    await expect(exchangeRefreshTokenForIdToken(buildReq())).resolves.toEqual({ outcome: 'unavailable' });
+    expect(loggerErrorMock).toHaveBeenCalledTimes(1);
+    expect(loggerErrorMock.mock.calls[0][4]).toEqual({ status, error: code });
+    expect(loggedText()).not.toContain('Synthetic client description');
   });
 
   it.each([

@@ -228,8 +228,9 @@ export interface IdTokenExchangeOk {
 
 /**
  * The refresh grant did not return an ID token.
- * - `ended`: the IdP refused the refresh token (`invalid_grant`, or a 400/401/403), so the LFX session is over.
- * - `unavailable`: the answer is unknown (network error, timeout, 5xx, missing configuration, or a 200 with no `id_token`).
+ * - `ended`: the IdP refused the refresh token with `invalid_grant`, so the LFX session is over.
+ * - `unavailable`: anything else. The answer is unknown (network error, timeout, 5xx, a 200 with no `id_token`) or the
+ *   fault is configuration (missing `PCC_AUTH0_*`, or any other 4xx such as `invalid_client`), which signing out would not fix.
  */
 export interface IdTokenExchangeFailure {
   outcome: 'ended' | 'unavailable';

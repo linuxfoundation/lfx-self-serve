@@ -18,7 +18,9 @@ import {
 } from '@gatewaze/host-session';
 import {
   GW_HOST_SESSION_HKDF_INFO,
+  GW_HOST_SESSION_SID_HKDF_INFO,
   GW_HOST_SESSION_SID_LABEL,
+  GW_HOST_SESSION_STORE_LOG_FIELDS,
   GW_HOST_SESSION_TTL_SECONDS,
   GW_HOST_SESSION_VALKEY_COMMAND_TIMEOUT_MS,
   VALKEY_CACHE,
@@ -37,16 +39,21 @@ import { buildGatewazeHostSessionKeyPrefix } from './valkey.service';
 
 /**
  * Derives the host-session master key from `PCC_AUTH0_SECRET` with HKDF-SHA256 (decision D3: no new
- * secret to provision, and rotating `PCC_AUTH0_SECRET` already signs everyone out). The store's
- * encryption subkey is then derived from it by the package's `deriveKeys`, and the Gatewaze session
- * id is an HMAC under it, so neither use sees `PCC_AUTH0_SECRET` itself.
+ * secret to provision). The store's encryption subkey is derived from it by the package's
+ * `deriveKeys`. Rotating `PCC_AUTH0_SECRET` invalidates every stored Gatewaze record, and each one
+ * is re-minted on its next use. It does not end LFX sessions, which live in the session store.
  */
 export function deriveGatewazeMasterKey(secret: string): Buffer {
   return Buffer.from(hkdfSync('sha256', Buffer.from(secret, 'utf8'), Buffer.alloc(0), GW_HOST_SESSION_HKDF_INFO, 32));
 }
 
+/** Derives the Gatewaze session id's HMAC key from `PCC_AUTH0_SECRET` with its own HKDF info, separate from the store's keys. */
+export function deriveGatewazeSidKey(secret: string): Buffer {
+  return Buffer.from(hkdfSync('sha256', Buffer.from(secret, 'utf8'), Buffer.alloc(0), GW_HOST_SESSION_SID_HKDF_INFO, 32));
+}
+
 /**
- * The Gatewaze session id for an LFX session id: `base64url(HMAC-SHA256(master, 'sid:' + lfxSid))`.
+ * The Gatewaze session id for an LFX session id: `base64url(HMAC-SHA256(sidKey, 'sid:' + lfxSid))`.
  *
  * This meets `@gatewaze/host-session`'s session id rules. `lfxSid` is the `appSession` cookie under
  * the session store, which is 32 random bytes from `genid`, created at each IdP sign-in (the library
@@ -56,8 +63,8 @@ export function deriveGatewazeMasterKey(secret: string): Buffer {
  * express-openid-connect blind-overwrites on every response, and the Realtime upgrade path and
  * `/logout` can derive the same id from the cookie alone.
  */
-export function deriveGatewazeSid(masterKey: Buffer, lfxSid: string): string {
-  return createHmac('sha256', masterKey)
+export function deriveGatewazeSid(sidKey: Buffer, lfxSid: string): string {
+  return createHmac('sha256', sidKey)
     .update(GW_HOST_SESSION_SID_LABEL + lfxSid)
     .digest('base64url');
 }
@@ -83,7 +90,24 @@ export function resolveGatewazeHostSessionConfig(): GatewazeHostSessionSettings 
   if (!supabaseUrl || !isPublishableSupabaseKey(anonKey) || !authSecret) {
     return null;
   }
+  // The proxy will send the user's GoTrue tokens to this origin, so production requires TLS.
+  if (process.env['NODE_ENV'] === 'production' && !supabaseUrl.startsWith('https://')) {
+    return null;
+  }
   return { supabaseUrl, anonKey, valkeyUrl, authSecret };
+}
+
+/**
+ * Keeps only the store's diagnostic fields from its warn metadata. The package also logs the GoTrue
+ * `user_id`, a linked pseudonym for the user, which must not reach LFX logs. An allowlist, so a
+ * field a later package version adds stays out until it is reviewed.
+ */
+function storeLogMeta(meta: Record<string, unknown>): Record<string, unknown> {
+  const kept: Record<string, unknown> = {};
+  for (const field of GW_HOST_SESSION_STORE_LOG_FIELDS) {
+    if (meta[field] !== undefined) kept[field] = meta[field];
+  }
+  return kept;
 }
 
 function toHostConfig(config: GatewazeHostSessionSettings): HostSessionConfig {
@@ -143,14 +167,10 @@ export class GatewazeSessionService {
       return { outcome: 'ended' };
     }
 
-    const masterKey = deriveGatewazeMasterKey(config.authSecret);
-    const gwSid = deriveGatewazeSid(masterKey, lfxSid);
+    const gwSid = deriveGatewazeSid(deriveGatewazeSidKey(config.authSecret), lfxSid);
     try {
-      const store = await this.getStore(config, masterKey);
-      const existing = await store.fresh(gwSid, { expectedSub });
-      if (existing) {
-        return { outcome: 'ok', session: existing };
-      }
+      const store = await this.getStore(config, deriveGatewazeMasterKey(config.authSecret));
+      // acquire() returns the stored session (refreshed if needed) before it considers minting.
       const session = await store.acquire(gwSid, () => this.mint(req, toHostConfig(config)), { expectedSub });
       return { outcome: 'ok', session };
     } catch (error) {
@@ -215,7 +235,7 @@ export class GatewazeSessionService {
       keyPrefix: buildGatewazeHostSessionKeyPrefix(),
       ttlSeconds: GW_HOST_SESSION_TTL_SECONDS,
       // The package's messages never carry tokens.
-      log: { warn: (meta, message) => logger.warning(undefined, 'gatewaze_session_store', message, meta) },
+      log: { warn: (meta, message) => logger.warning(undefined, 'gatewaze_session_store', message, storeLogMeta(meta)) },
     });
     try {
       await store.start();

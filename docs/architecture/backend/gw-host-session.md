@@ -31,11 +31,11 @@ The session logic itself (GoTrue sign-in and refresh, the encrypted store, its l
 | -------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------- |
 | `ok`                       | A stored, refreshed or newly minted session                                              | 200, or 403/503 from the admin check     |
 | `host_session_unavailable` | Flag off, store off, Supabase config missing or unsafe, no store-backed `appSession` id  | Uniform 404                              |
-| `ended`                    | Auth0 refused the refresh token (`invalid_grant`, 400, 401, 403), or a sign-out marker   | 401 with `x-gw-session: expired`         |
+| `ended`                    | Auth0 refused the refresh token with `invalid_grant`, or a sign-out marker               | 401 with `x-gw-session: expired`         |
 | `refused`                  | GoTrue refused the ID token (a 4xx): provider audience or issuer wrong, or a banned user | 503 with an ERROR log, never 401         |
-| `unavailable`              | Valkey, Auth0 or GoTrue could not answer                                                 | 503                                      |
+| `unavailable`              | Valkey, Auth0 or GoTrue could not answer, or Auth0 sent any other 4xx                    | 503                                      |
 
-`refused` is kept apart from `ended` because it is a configuration fault. Answering 401 would send the embed round a reload that cannot fix it.
+`refused` is kept apart from `ended` because it is a configuration fault. Answering 401 would send the embed round a reload that cannot fix it. For the same reason, only Auth0's `invalid_grant` means the LFX session is over. Any other Auth0 4xx (`invalid_client`, `unauthorized_client`, `invalid_request`, `invalid_scope`, a bare 401 or 403) is a client or tenant fault, so it is `unavailable` and logged at ERROR with the OAuth error code only.
 
 ### Why the ID token comes from a refresh grant
 
@@ -47,17 +47,20 @@ The GoTrue session is a separate Valkey record, not a field on `req.appSession`.
 
 Keys sit under `lfx-ui[:<VALKEY_KEY_NAMESPACE>]:gatewaze:v1:` (`buildGatewazeHostSessionKeyPrefix`). The package adds `session:`, `refresh-lock:`, `create-lock:` and `signed-out:` keys under it and publishes sign-outs on `<prefix>logout`. The store has its own ioredis connection to `VALKEY_URL`, plus a duplicate for the sign-out subscription, because a subscribed connection cannot run commands. Records have a 24 hour sliding TTL, renewed on each refresh, matching GoTrue's inactivity window.
 
+The package's warn metadata is filtered to `err` and `status` before it reaches the LFX logger, because it also carries the GoTrue `user_id`.
+
 The store's Lua script touches three keys at once, which works on the non-cluster Valkey every environment uses today. If that Valkey ever moves to cluster mode, the prefix needs a hash tag such as `{gatewaze}`.
 
 ## Keys
 
-| Key          | Derivation                                                                                         | Use                                                  |
-| ------------ | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Master key   | `HKDF-SHA256(PCC_AUTH0_SECRET, salt = empty, info = 'lfx-one gatewaze host-session v1', 32 bytes)` | Input to the two below                               |
-| Store key    | `deriveKeys([master], 'store')` from the package                                                   | AES-256-GCM on every record, bound to the session id |
-| Gatewaze sid | `base64url(HMAC-SHA256(master, 'sid:' + lfxSid))`                                                  | The record's id                                      |
+| Key          | Derivation                                                                                             | Use                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| Master key   | `HKDF-SHA256(PCC_AUTH0_SECRET, salt = empty, info = 'lfx-one gatewaze host-session v1', 32 bytes)`     | Input to the store key                               |
+| Store key    | `deriveKeys([master], 'store')` from the package                                                       | AES-256-GCM on every record, bound to the session id |
+| Sid key      | `HKDF-SHA256(PCC_AUTH0_SECRET, salt = empty, info = 'lfx-one gatewaze host-session v1 sid', 32 bytes)` | HMAC key for the session id, never used to encrypt   |
+| Gatewaze sid | `base64url(HMAC-SHA256(sid key, 'sid:' + lfxSid))`                                                     | The record's id                                      |
 
-Deriving from `PCC_AUTH0_SECRET` means there is no new secret to provision, and rotating it already signs everyone out of LFX. The store refuses to read a plaintext record, so a value planted in Valkey is deleted rather than used.
+Deriving from `PCC_AUTH0_SECRET` means there is no new secret to provision. Rotating it invalidates every stored Gatewaze record, and each one is re-minted on its next use. It does not end LFX sessions, which live in the session store. The store refuses to read a plaintext record, so a value planted in Valkey is deleted rather than used.
 
 ## Session id
 
@@ -77,7 +80,8 @@ Deriving the id rather than storing it means nothing is written to `appSession`,
 
 - `LFX_GATEWAZE_HOST_SESSION` and `LFX_GATEWAZE_EMBED_ENABLED` are on.
 - `SESSION_STORE_ENABLED` is `true` and `VALKEY_URL` is set. Without the store, `appSession` has no stable id to key on.
-- `GW_SUPABASE_URL` is set and `GW_SUPABASE_ANON_KEY` passes `isPublishableSupabaseKey`, so a service-role key turns the mode off.
+- `GW_SUPABASE_URL` is set, and is `https://` when `NODE_ENV` is `production`, because the user's GoTrue tokens go to it.
+- `GW_SUPABASE_ANON_KEY` passes `isPublishableSupabaseKey`, so a service-role key turns the mode off.
 - `PCC_AUTH0_SECRET` is set.
 
 A rolling update that flips the flag is harmless. A page from a flag-on pod whose calls land on a flag-off pod gets the uniform 404, which the embed reads as `unavailable` and retries, and nothing is half-written.

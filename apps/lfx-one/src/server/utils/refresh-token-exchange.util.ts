@@ -146,7 +146,7 @@ export async function exchangeRefreshTokenForAudience(req: Request, options: Ref
  * One Auth0 client uses non-rotating refresh tokens.
  *
  * Unlike `exchangeRefreshTokenForAudience`, a failure is classified rather than collapsed to null,
- * so the caller can tell a dead LFX session (`ended`: `invalid_grant`, or a 400/401/403) from an
+ * so the caller can tell a dead LFX session (`ended`: `invalid_grant` only) from an
  * IdP it could not reach (`unavailable`: everything else, including missing configuration).
  */
 export async function exchangeRefreshTokenForIdToken(req: Request): Promise<IdTokenExchangeResult> {
@@ -168,6 +168,7 @@ export async function exchangeRefreshTokenForIdToken(req: Request): Promise<IdTo
 
   try {
     const config = createTokenRequest({ issuerBaseUrl, clientId, clientSecret, refreshToken, scope: GW_HOST_SESSION_ID_TOKEN_SCOPE });
+    const startTime = Date.now();
     const response = await fetch(config.endpoint, {
       method: config.method,
       headers: config.createHeaders(),
@@ -179,9 +180,21 @@ export async function exchangeRefreshTokenForIdToken(req: Request): Promise<IdTo
       // Only the OAuth error code is read and logged. The description is free text from the IdP.
       const errorBody = (await response.json().catch(() => null)) as Record<string, unknown> | null;
       const error = typeof errorBody?.['error'] === 'string' ? errorBody['error'] : undefined;
-      const ended = error === 'invalid_grant' || response.status === 400 || response.status === 401 || response.status === 403;
-      logger.warning(req, 'exchange_refresh_token_for_id_token', 'ID token refresh grant was not accepted', { status: response.status, error, ended });
-      return { outcome: ended ? 'ended' : 'unavailable' };
+      if (error === 'invalid_grant') {
+        logger.warning(req, 'exchange_refresh_token_for_id_token', 'IdP refused the refresh token', { status: response.status, error });
+        return { outcome: 'ended' };
+      }
+      // Any other 4xx (invalid_client, unauthorized_client, invalid_request, invalid_scope, a bare
+      // 401/403) is a client or tenant configuration fault. Signing the user out would not fix it.
+      if (response.status >= 400 && response.status < 500) {
+        logger.error(req, 'exchange_refresh_token_for_id_token', startTime, new Error(`ID token refresh grant rejected (${response.status})`), {
+          status: response.status,
+          error,
+        });
+      } else {
+        logger.warning(req, 'exchange_refresh_token_for_id_token', 'ID token refresh grant failed upstream', { status: response.status, error });
+      }
+      return { outcome: 'unavailable' };
     }
 
     const data = (await response.json()) as { id_token?: unknown };
