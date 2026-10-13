@@ -3,7 +3,7 @@
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, output, PLATFORM_ID, signal, Signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
@@ -21,10 +21,12 @@ import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { ScheduledSendAriaLabelPipe, ScheduledSendTooltipPipe } from '@pipes/scheduled-send-tooltip.pipe';
 import { SurveyStatusLabelPipe } from '@pipes/survey-status-label.pipe';
 import { SurveyStatusSeverityPipe } from '@pipes/survey-status-severity.pipe';
+import { CommitteeService } from '@services/committee.service';
+import { probeCommitteeWriters, resolveSurveyCommitteeCandidates } from '@shared/utils/write-access.util';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
+import { debounceTime, distinctUntilChanged, forkJoin, map, of, startWith, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-surveys-table',
@@ -55,6 +57,7 @@ export class SurveysTableComponent {
   // === Injections ===
   private readonly confirmationService = inject(ConfirmationService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly committeeService = inject(CommitteeService);
 
   // === Constants ===
   protected readonly surveyLabel = SURVEY_LABEL;
@@ -104,6 +107,7 @@ export class SurveysTableComponent {
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
   private readonly groupFilter: Signal<string | null> = this.initGroupFilter();
   private readonly typeFilter: Signal<string | null> = this.initTypeFilter();
+  protected readonly committeeEditAccess: Signal<ReadonlySet<string>> = this.initCommitteeEditAccess();
   protected readonly groupOptions: Signal<{ label: string; value: string | null }[]> = this.initGroupOptions();
   protected readonly typeOptions: Signal<{ label: string; value: string | null }[]> = this.initTypeOptions();
   protected readonly filteredSurveys: Signal<SurveyTableRow[]> = this.initFilteredSurveys();
@@ -170,6 +174,48 @@ export class SurveysTableComponent {
   }
 
   // === Private Initializers ===
+  private initCommitteeEditAccess(): Signal<ReadonlySet<string>> {
+    const emptyGrants: ReadonlySet<string> = new Set<string>();
+    const snapshot = computed(() => ({
+      surveys: this.surveys(),
+      hasPMOAccess: this.hasPMOAccess(),
+      isMeLens: this.isMeLens(),
+      committeeUid: this.committeeUid(),
+    }));
+    const access = toSignal(
+      toObservable(snapshot).pipe(
+        switchMap((context) => {
+          const denied = { context, grants: emptyGrants };
+          if (context.hasPMOAccess || context.isMeLens) {
+            return of(denied);
+          }
+          const drafts = context.surveys.filter((survey) => getSurveyDisplayStatus(survey) === SurveyStatus.DRAFT);
+          if (!drafts.length) {
+            return of(denied);
+          }
+          return forkJoin(
+            drafts.map((survey) =>
+              probeCommitteeWriters(
+                resolveSurveyCommitteeCandidates(survey.committees, context.committeeUid).filter((uid) => uid.trim().length > 0),
+                // fetchCommittee shares the detail cache without changing the viewed committee.
+                (uid) => this.committeeService.fetchCommittee(uid)
+              ).pipe(map((result) => (result.writer ? survey.uid : null)))
+            )
+          ).pipe(
+            map((uids) => ({ context, grants: new Set(uids.filter((uid): uid is string => uid !== null)) })),
+            startWith(denied)
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+    // Inputs invalidate grants synchronously, before toObservable cancels the previous probe.
+    return computed(() => {
+      const result = access();
+      return result?.context === snapshot() ? result.grants : emptyGrants;
+    });
+  }
+
   private initSearchTerm(): Signal<string> {
     const control = this.searchForm.controls.search;
     return toSignal(
@@ -299,7 +345,7 @@ export class SurveysTableComponent {
   private buildEditQueryParams(survey: Survey): Record<string, string> {
     const params: Record<string, string> = {};
     if (survey.project_slug) params['project'] = survey.project_slug;
-    const committeeUid = this.committeeUid() || survey.committees?.[0]?.committee_uid;
+    const committeeUid = resolveSurveyCommitteeCandidates(survey.committees, this.committeeUid()).find((uid) => uid.trim().length > 0);
     if (committeeUid) params['committee_uid'] = committeeUid;
     return params;
   }

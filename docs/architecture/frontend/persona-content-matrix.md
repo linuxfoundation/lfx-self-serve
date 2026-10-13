@@ -205,14 +205,20 @@ Guards are defined in `apps/lfx-one/src/app/shared/guards/`.
 
 The `writerGuard` protects create and edit routes. Within read-only pages, UI elements (add/edit/delete buttons) are additionally gated by `canWrite()` (project `writer` on the active context) or feature-specific signals — meetings use `canWriteMeetings` on the dashboard and `committee.writer` on the committee Meetings tab.
 
-| Domain                 | Create/edit route guard | In-page UI gating                                                                          |
-| ---------------------- | ----------------------- | ------------------------------------------------------------------------------------------ |
-| Meetings               | `writerGuard`           | Dashboard CTA: `project.writer` or `meetingCoordinator`; committee tab: `committee.writer` |
-| Committees             | `writerGuard`           | `canWrite()`                                                                               |
-| Mailing Lists          | `writerGuard`           | `canWrite()`                                                                               |
-| Surveys                | `writerGuard`           | `canWrite()`                                                                               |
-| Votes                  | `writerGuard`           | `canWrite()`                                                                               |
-| Settings / Permissions | —                       | `canWrite()` — view-only banner shown to non-writers                                       |
+| Domain                 | Create/edit route guard | In-page UI gating                                                                                                              |
+| ---------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Meetings               | `writerGuard`           | Dashboard CTA: `project.writer` or `meetingCoordinator`; committee tab: `committee.writer`                                     |
+| Committees             | `writerGuard`           | `canWrite()`                                                                                                                   |
+| Mailing Lists          | `writerGuard`           | `canWrite()`                                                                                                                   |
+| Surveys                | `writerGuard`           | Draft Edit: `canWrite()` or associated `committee.writer`; Create/Delete: `canWrite()`; no committee-based draft actions in Me |
+| Votes                  | `writerGuard`           | `canWrite()`                                                                                                                   |
+| Settings / Permissions | —                       | `canWrite()` — view-only banner shown to non-writers                                                                           |
+
+### Survey write paths
+
+Survey edit routes and the editor probe every associated committee sequentially, stopping at the first writer. A matching `?committee_uid=` is checked first but cannot add an unrelated committee to a nonempty associated-committee list. If all associated UIDs are empty, the candidate list remains empty and cannot fall back to the URL; project-level grants are unaffected. Surveys with an empty or absent committee list retain their existing URL fallback.
+
+Outside the Me lens, draft rows also expose Edit to associated committee writers. Pending or denied checks show no committee-based Edit action; changed list inputs invalidate previous grants. Project grants skip list-side committee probes, and Create/Delete retain their existing project-level gate. Me-lens respondent actions are unchanged.
 
 ### Meetings write paths
 

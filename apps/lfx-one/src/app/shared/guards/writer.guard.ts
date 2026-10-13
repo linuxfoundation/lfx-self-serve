@@ -161,7 +161,10 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
       // Entity-owned candidates take precedence over the URL so an unrelated committee
       // cannot admit its writer. Votes keep one candidate; surveys can carry several.
       const urlCommitteeUids = committeeUid ? [committeeUid] : [];
-      const effectiveCommitteeUids = entityCommitteeUids.length ? entityCommitteeUids : urlCommitteeUids;
+      // Survey edit candidates already contain any deliberate committee-less URL fallback.
+      // An empty result for malformed associated committees must remain authoritative.
+      const useEntityCommitteeUids = (writeFeature === 'surveys' && route.data?.['entityScopedSlug'] === true) || entityCommitteeUids.length > 0;
+      const effectiveCommitteeUids = useEntityCommitteeUids ? entityCommitteeUids : urlCommitteeUids;
       // getCommittee's tap() stays safe during iteration: deny blocks navigation; allow
       // leaves the granting committee in the shared signal, overwriting earlier non-writers.
       const checkCommittee = (): Observable<true | ReturnType<typeof deny>> =>

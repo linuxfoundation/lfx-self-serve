@@ -21,6 +21,10 @@ export function resolveEntityWriteSlug(entity: Pick<EntityWithProject, 'project_
   return entity?.project_slug || entity?.project_uid || fallback;
 }
 
+/**
+ * Returns unique, nonempty survey committee UIDs in payload order, with a matching URL UID first.
+ * A URL UID never adds a candidate to a nonempty committee list; only committee-less surveys use it as a fallback.
+ */
 export function resolveSurveyCommitteeCandidates(
   committees: Pick<SurveyCommittee, 'committee_uid'>[] | null | undefined,
   urlCommitteeUid: string | null
@@ -42,6 +46,10 @@ export function resolveSurveyCommitteeCandidates(
   return Array.from(candidates);
 }
 
+/**
+ * Probes committees sequentially, stopping at the first writer and continuing after denied or failed lookups.
+ * `transientFailure` is true only when no writer grants access and at least one lookup fails transiently.
+ */
 export function probeCommitteeWriters(
   uids: readonly string[],
   fetch: (uid: string) => Observable<Pick<Committee, 'writer'> | null>

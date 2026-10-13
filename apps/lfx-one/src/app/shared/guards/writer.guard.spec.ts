@@ -742,6 +742,17 @@ describe('writerGuard', () => {
       expect(getCommittee).not.toHaveBeenCalledWith('attacker-committee');
     });
 
+    it('denies an unrelated URL writer when associated committee uids are blank', async () => {
+      getSurvey.mockReturnValue(of({ project_uid: 's-uid', project_slug: SURVEY_SLUG, committees: [{ committee_uid: '' }] } as unknown as Survey));
+      getCommittee.mockReturnValue(of({ writer: true }));
+
+      expect(await runGuard(surveyRoute('attacker-committee'))).toEqual({
+        denied: '/project/overview',
+        opts: { queryParams: { project: SURVEY_SLUG, _notice: 'surveys' } },
+      });
+      expect(getCommittee).not.toHaveBeenCalled();
+    });
+
     it('reports an error notice when a primary transient failure is followed only by denials', async () => {
       vi.useFakeTimers();
       let primarySubscriptions = 0;
