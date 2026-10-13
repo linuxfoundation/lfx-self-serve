@@ -119,16 +119,34 @@ describe('MeetingPastPeopleComponent', () => {
     expect(query('people-past-filter-empty')).not.toBeNull();
   });
 
-  it('shows the first rows, then all of them on request', async () => {
+  it('shows the first rows, then all of them on request, with one toggle that keeps focus', async () => {
     const many = Array.from({ length: 7 }, (_, i) => person(`p${i}`, true, true));
     await setup(() => of(roster({ participants: many, attendance: { participant_count: 7, attended_count: 7, individual_registrants_count: 7 } })));
 
     expect(rowUids()).toHaveLength(5);
     expect(query('people-section-view-all')?.textContent).toContain('Show all 7');
+    expect(query('people-section-view-all')?.getAttribute('aria-expanded')).toBe('false');
+    expect(query('people-past-status')?.textContent).toContain('Showing 5 of 7 people.');
 
     click('people-section-view-all');
     expect(rowUids()).toHaveLength(7);
-    expect(query('people-section-view-all')).toBeNull();
+    // The toggle stays in place (focus is not lost) and now collapses the list.
+    expect(query('people-section-view-all')?.textContent).toContain('Show fewer');
+    expect(query('people-section-view-all')?.getAttribute('aria-expanded')).toBe('true');
+    expect(query('people-past-status')?.textContent).toContain('Showing 7 of 7 people.');
+
+    click('people-section-view-all');
+    expect(rowUids()).toHaveLength(5);
+  });
+
+  it('announces an empty filter result in the status line', async () => {
+    await setup(() => of(roster()));
+
+    click('people-past-filter-invitation-not-invited');
+    click('people-past-filter-attendance-absent');
+
+    expect(query('people-past-status')?.textContent).toContain('Nobody matches these filters.');
+    expect(query('people-section-list')?.getAttribute('aria-live')).toBeFalsy();
   });
 
   // N-02: attendees whose identity is not verified are counted, never named.

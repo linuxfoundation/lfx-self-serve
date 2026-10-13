@@ -2339,3 +2339,9 @@ export type PastRosterInvitationFilter = 'all' | 'invited' | 'not-invited';
 
 /** The past roster's attendance filter on the V2 page (E4-05). */
 export type PastRosterAttendanceFilter = 'all' | 'attended' | 'absent';
+
+/** One choice of a past-roster filter on the V2 page (E4-05): its value and its label. */
+export interface PastRosterFilterOption<T extends string> {
+  value: T;
+  label: string;
+}

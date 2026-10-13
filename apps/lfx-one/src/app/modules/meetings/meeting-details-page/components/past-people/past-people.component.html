@@ -119,10 +119,18 @@
               </div>
             </div>
 
+            <!-- One persistent status line, so a filter change or Show all is announced once, not row by row. -->
+            <p class="sr-only" role="status" data-testid="people-past-status">
+              @if (filteredRows().length === 0) {
+                Nobody matches these filters.
+              } @else {
+                Showing {{ visibleRows().length }} of {{ filteredRows().length }} people.
+              }
+            </p>
             @if (filteredRows().length === 0) {
               <p class="m-0 text-[14px] text-[var(--md-text-muted)]" data-testid="people-past-filter-empty">Nobody matches these filters.</p>
             } @else {
-              <ul class="m-0 flex list-none flex-col gap-[2px] p-0" aria-live="polite" data-testid="people-section-list">
+              <ul class="m-0 flex list-none flex-col gap-[2px] p-0" data-testid="people-section-list">
                 @for (row of visibleRows(); track row.uid) {
                   <li
                     class="flex min-w-0 items-center gap-[13px] py-[9px]"
@@ -164,13 +172,18 @@
                   </li>
                 }
               </ul>
-              @if (hiddenCount() > 0) {
+              @if (expandable()) {
                 <button
                   type="button"
                   class="inline-flex h-[30px] cursor-pointer items-center self-start rounded-full border border-[var(--md-border-strong)] bg-[var(--md-surface-card)] px-[12px] text-[12.5px] font-semibold text-[var(--md-text-heading)] hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-                  (click)="showAll()"
+                  [attr.aria-expanded]="expanded()"
+                  (click)="toggleExpanded()"
                   data-testid="people-section-view-all">
-                  Show all {{ filteredRows().length }}
+                  @if (expanded()) {
+                    Show fewer
+                  } @else {
+                    Show all {{ filteredRows().length }}
+                  }
                 </button>
               }
             }

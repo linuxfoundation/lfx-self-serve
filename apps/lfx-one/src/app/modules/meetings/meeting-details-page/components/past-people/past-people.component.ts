@@ -6,7 +6,7 @@ import { NgClass } from '@angular/common';
 import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
-import { MEETING_ATTENDEE_PREVIEW_LIMIT } from '@lfx-one/shared/constants';
+import { MEETING_ATTENDEE_PREVIEW_LIMIT, PAST_ROSTER_ATTENDANCE_FILTER_OPTIONS, PAST_ROSTER_INVITATION_FILTER_OPTIONS } from '@lfx-one/shared/constants';
 import {
   MeetingPastRosterState,
   PastMeetingAttendanceFigures,
@@ -52,16 +52,8 @@ export class MeetingPastPeopleComponent {
     medium: 'bg-[var(--md-accent)]',
     high: 'bg-[var(--md-status-good)]',
   };
-  protected readonly invitationFilters: { value: PastRosterInvitationFilter; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'invited', label: 'Invited' },
-    { value: 'not-invited', label: 'Not invited' },
-  ];
-  protected readonly attendanceFilters: { value: PastRosterAttendanceFilter; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'attended', label: 'Attended' },
-    { value: 'absent', label: 'Absent' },
-  ];
+  protected readonly invitationFilters = PAST_ROSTER_INVITATION_FILTER_OPTIONS;
+  protected readonly attendanceFilters = PAST_ROSTER_ATTENDANCE_FILTER_OPTIONS;
   protected readonly signInHref = this.state.signInHref;
 
   protected readonly invitation = signal<PastRosterInvitationFilter>('all');
@@ -77,8 +69,8 @@ export class MeetingPastPeopleComponent {
     filterPublicPastMeetingRoster(this.roster().roster?.participants ?? [], this.invitation(), this.attendance())
   );
   protected readonly visibleRows = computed(() => (this.expanded() ? this.filteredRows() : this.filteredRows().slice(0, MEETING_ATTENDEE_PREVIEW_LIMIT)));
-  protected readonly hiddenCount = computed(() => this.filteredRows().length - this.visibleRows().length);
-  protected readonly filtered = computed(() => this.invitation() !== 'all' || this.attendance() !== 'all');
+  /** Whether the matching rows run past the preview, so the Show all / Show fewer toggle is offered. */
+  protected readonly expandable = computed(() => this.filteredRows().length > MEETING_ATTENDEE_PREVIEW_LIMIT);
 
   public setInvitation(value: PastRosterInvitationFilter): void {
     this.invitation.set(value);
@@ -90,8 +82,9 @@ export class MeetingPastPeopleComponent {
     this.expanded.set(false);
   }
 
-  public showAll(): void {
-    this.expanded.set(true);
+  /** Show all / Show fewer: one toggle that stays in place, so keyboard focus stays on it. */
+  public toggleExpanded(): void {
+    this.expanded.update((expanded) => !expanded);
   }
 
   public retry(): void {
