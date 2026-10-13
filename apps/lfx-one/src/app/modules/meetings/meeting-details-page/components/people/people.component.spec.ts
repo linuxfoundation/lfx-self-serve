@@ -306,4 +306,112 @@ describe('MeetingPeopleComponent', () => {
     expect(query('people-section-error')).not.toBeNull();
     expect(query('people-section-add')).toBeNull();
   });
+
+  /**
+   * #3261: V1's optimistic-pad roster contract (meeting-join.component.spec.ts), re-asserted on V2.
+   * The query service indexes added guests after the add returns, so the count is padded until the
+   * roster catches up, and a roster for one view never leaks into another.
+   */
+  describe('V1 parity: optimistic pad and roster scoping', () => {
+    /** Answers each roster fetch in turn from `queue`. */
+    const queued = (queue: Observable<MeetingRegistrant[]>[]) => () => queue.shift() ?? of([]);
+    /** Flushes the zoneless scheduler (unit-testing.md § Zoneless change detection). */
+    const refresh = async (): Promise<void> => {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    it('reads nothing, and lists nobody, without a roster request', async () => {
+      rosterRequest.set(null);
+      await setup(() => of([registrant('a')]));
+
+      expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
+      expect(query('participant-row-a')).toBeNull();
+    });
+
+    it('counts a guest added before the roster ever loaded from the first roster it gets', async () => {
+      const first = new Subject<MeetingRegistrant[]>();
+      await setup(queued([first.asObservable(), of([registrant('a')]), of([registrant('a'), registrant('b')])]));
+
+      fixture.componentInstance.onRosterChanged(1); // no confirmed roster yet: no baseline
+      await refresh();
+      expect(text('people-section-count')).toBe('2 invited'); // the refetch's 1 row + the 1 pending
+
+      fixture.componentInstance.retry(); // the index catches up
+      await refresh();
+      expect(text('people-section-count')).toBe('2 invited');
+      expect(query('people-section-indexing')).toBeNull();
+    });
+
+    it('absorbs added guests as the index catches up, in parts', async () => {
+      await setup(
+        queued([
+          of([registrant('a'), registrant('b')]),
+          of([registrant('a'), registrant('b'), registrant('c')]),
+          of(['a', 'b', 'c', 'd', 'e'].map((uid) => registrant(uid))),
+        ])
+      );
+
+      fixture.componentInstance.onRosterChanged(3);
+      await refresh();
+      expect(text('people-section-count')).toBe('5 invited'); // 3 rows + 2 still pending
+
+      fixture.componentInstance.retry();
+      await refresh();
+      expect(text('people-section-count')).toBe('5 invited');
+      expect(query('participant-row-e')).not.toBeNull();
+    });
+
+    it('keeps the rows and the pad through a failed refetch of the same view, then converges', async () => {
+      await setup(queued([of([registrant('a')]), throwError(() => new Error('boom')), of([registrant('a'), registrant('b')])]));
+
+      fixture.componentInstance.onRosterChanged(1);
+      await refresh();
+      expect(query('people-section-error')).toBeNull();
+      expect(query('participant-row-a')).not.toBeNull();
+      expect(text('people-section-count')).toBe('2 invited');
+
+      fixture.componentInstance.retry();
+      await refresh();
+      expect(text('people-section-count')).toBe('2 invited');
+      expect(query('participant-row-b')).not.toBeNull();
+    });
+
+    it.each([
+      ['another meeting', { meetingId: 'meeting-2', occurrenceId: 'occ-1' }],
+      ['another occurrence', { meetingId: 'meeting-1', occurrenceId: 'occ-2' }],
+    ])('shows an error, never the previous rows or pad, when the roster for %s fails', async (_label, next) => {
+      // The add's own refetch, then the other view's failing one.
+      await setup(queued([of([registrant('a')]), of([registrant('a')]), throwError(() => new Error('boom'))]));
+      fixture.componentInstance.onRosterChanged(1);
+      await refresh();
+
+      rosterRequest.set(next);
+      await refresh();
+
+      expect(query('people-section-error')).not.toBeNull();
+      expect(query('participant-row-a')).toBeNull();
+      expect(query('people-section-count')).toBeNull();
+    });
+
+    // The pad belongs to the view: another view's roster counts only its own rows.
+    it.each([
+      ['another meeting', { meetingId: 'meeting-2', occurrenceId: 'occ-1' }],
+      ['another occurrence', { meetingId: 'meeting-1', occurrenceId: 'occ-2' }],
+    ])('does not carry the pad to %s, or back', async (_label, next) => {
+      await setup(queued([of([registrant('a')]), of([registrant('a')]), of([registrant('x')]), of([registrant('a')])]));
+      fixture.componentInstance.onRosterChanged(1);
+      await refresh();
+      expect(text('people-section-count')).toBe('2 invited');
+
+      rosterRequest.set(next);
+      await refresh();
+      expect(text('people-section-count')).toBe('1 invited');
+
+      rosterRequest.set({ meetingId: 'meeting-1', occurrenceId: 'occ-1' });
+      await refresh();
+      expect(text('people-section-count')).toBe('1 invited');
+    });
+  });
 });
