@@ -208,8 +208,8 @@ export interface RefreshTokenExchangeOptions {
   issuerBaseUrl: string;
   clientId: string;
   clientSecret: string;
-  /** Omitted from the request body when absent. */
-  audience?: string;
+  /** Required: an audience exchange must never fall back to the issuer's default audience. */
+  audience: string;
   /** Requested scope(s) to include in the token exchange body. */
   scope?: string;
   /**

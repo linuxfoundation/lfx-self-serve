@@ -152,6 +152,7 @@ export class GatewazeSessionService {
    * mint. Only one mint runs per session across every pod. Never throws: every failure is an outcome.
    */
   public async getGatewazeSession(req: Request): Promise<GatewazeSessionResult<GwSession>> {
+    const startTime = Date.now();
     const config = resolveGatewazeHostSessionConfig();
     if (!config) {
       return { outcome: 'host_session_unavailable' };
@@ -174,7 +175,7 @@ export class GatewazeSessionService {
       const session = await store.acquire(gwSid, () => this.mint(req, toHostConfig(config)), { expectedSub });
       return { outcome: 'ok', session };
     } catch (error) {
-      return this.toFailure(req, error);
+      return this.toFailure(req, startTime, error);
     }
   }
 
@@ -197,10 +198,11 @@ export class GatewazeSessionService {
     return signInWithIdToken(hostConfig, result.idToken);
   }
 
-  private toFailure(req: Request, error: unknown): GatewazeSessionResult<GwSession> {
+  private toFailure(req: Request, startTime: number, error: unknown): GatewazeSessionResult<GwSession> {
     if (error instanceof IdTokenGrantRefusedError) {
       // A configuration fault (provider audience, issuer) or a banned user, never a dead LFX session.
-      logger.warning(req, 'get_gatewaze_session', 'GoTrue refused the ID token grant', { status: error.status });
+      // ERROR, not WARN: every user hits the same fault until the provider config is fixed.
+      logger.error(req, 'get_gatewaze_session', startTime, error, { status: error.status });
       return { outcome: 'refused' };
     }
     if (error instanceof SessionEndedError) {

@@ -8,7 +8,7 @@ import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { loggerMock } = vi.hoisted(() => ({
-  loggerMock: { warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
+  loggerMock: { warning: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('./logger.service', () => ({ logger: loggerMock }));
@@ -322,6 +322,10 @@ describe('GatewazeSessionService.getGatewazeSession', () => {
     upstreams.state.grantStatus = 400;
 
     await expect(service.getGatewazeSession(buildReq())).resolves.toEqual({ outcome: 'refused' });
+    // A provider config fault: logged at ERROR so it reaches alerting, with the status and no token.
+    expect(loggerMock.error).toHaveBeenCalledWith(expect.anything(), 'get_gatewaze_session', expect.any(Number), expect.anything(), { status: 400 });
+    // Everything but the request (which the real logger redacts) must be token-free.
+    expect(JSON.stringify(loggerMock.error.mock.calls.map((call) => call.slice(1)))).not.toMatch(/synthetic|id-token|refresh/i);
   });
 
   it('reports unavailable when GoTrue cannot answer the grant', async () => {
