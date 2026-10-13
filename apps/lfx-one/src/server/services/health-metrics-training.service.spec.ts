@@ -78,14 +78,11 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
   }
 
   const summaryRows = [
-    row('All', {
-      ENROLLMENTS: 3850,
-      CERTIFICATIONS: 620,
-      REVENUE_USD: 100000.5,
-      BASELINE_ENROLLMENTS: 3500,
-      BASELINE_CERTIFICATIONS: null,
-      BASELINE_REVENUE_USD: 90000,
-    }),
+    row(
+      'All',
+      { ENROLLMENTS: 3850, CERTIFICATIONS: 620, REVENUE_USD: 100000.5 },
+      { ENROLLMENT_COUNT_CHANGE_PCT: 0.1, CERTIFICATIONS_CHANGE_PCT: null, REVENUE_CHANGE_PCT: -0.25 }
+    ),
     row('Certification Exam', { ENROLLMENTS: 950, CERTIFICATIONS: 620, REVENUE_USD: null, SORT_RANK: 2 }, { SORT_RANK_COMPLETED_YEAR: 1 }),
     row(
       'E-Learning',
@@ -106,24 +103,25 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
     vi.clearAllMocks();
   });
 
-  it('selects every period from its own columns against its own baseline, in one read', async () => {
+  it("selects every period from its own columns, plus the model's YTD change, in one read", async () => {
     mockReads(summaryRows, []);
 
     await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' });
 
     const sql = summarySql();
-    for (const [range, suffix, baseline] of [
-      ['YTD', 'ytd', 'prev_ytd'],
-      ['COMPLETED_YEAR', 'last_completed_year', 'prev_completed_year'],
-      ['COMPLETED_YEAR_2', 'prev_completed_year', '3rd_last_completed_year'],
+    for (const [range, suffix] of [
+      ['YTD', 'ytd'],
+      ['COMPLETED_YEAR', 'last_completed_year'],
+      ['COMPLETED_YEAR_2', 'prev_completed_year'],
+      ['COMPLETED_YEAR_3', '3rd_last_completed_year'],
     ]) {
       expect(sql).toContain(`enrollment_count_${suffix} AS enrollments_${range}`);
+      expect(sql).toContain(`certifications_earned_count_${suffix} AS certifications_${range}`);
       expect(sql).toContain(`revenue_usd_${suffix} AS revenue_usd_${range}`);
       expect(sql).toContain(`sort_rank_${suffix} AS sort_rank_${range}`);
-      expect(sql).toContain(`certifications_earned_count_${baseline} AS baseline_certifications_${range}`);
     }
-    expect(sql).toContain('enrollment_count_3rd_last_completed_year AS enrollments_COMPLETED_YEAR_3');
-    expect(sql).toContain('NULL AS baseline_enrollments_COMPLETED_YEAR_3');
+    for (const column of ['enrollment_count_change_pct', 'certifications_change_pct', 'revenue_change_pct']) expect(sql).toContain(column);
+    expect(sql).not.toMatch(/prev_ytd|baseline/);
   });
 
   it('binds only the foundation, once per read', async () => {
@@ -149,7 +147,7 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
     expect(enrollment.measured).toBe(true);
     expect(enrollment.periods.YTD).toEqual({
       totals: { enrollments: 3850, certifications: 620, revenueUsd: 100000.5 },
-      baseline: { enrollments: 3500, certifications: null, revenueUsd: 90000 },
+      change: { enrollments: 0.1, certifications: null, revenueUsd: -0.25 },
       byType: [
         { deliveryType: 'E-Learning', enrollments: 2900, revenueUsd: 0 },
         { deliveryType: 'Certification Exam', enrollments: 950, revenueUsd: null },
@@ -170,7 +168,8 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
       ['Certification Exam', 950],
       ['E-Learning', 4100],
     ]);
-    expect(periods.COMPLETED_YEAR_3.baseline).toBeNull();
+    expect(periods.COMPLETED_YEAR.change).toBeNull();
+    expect(periods.COMPLETED_YEAR_3.change).toBeNull();
   });
 
   it('ranks a type without a rank last, by name', async () => {
