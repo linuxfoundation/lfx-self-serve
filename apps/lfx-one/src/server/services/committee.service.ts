@@ -1475,7 +1475,9 @@ export class CommitteeService {
         if (!committee) {
           throw new Error(`Empty committee or settings response for Board group ${uid}`);
         }
-        return isBoardCategory(committee.category) && (await this.readSocialListeningFlag(req, uid, m2mToken));
+        // The membership index's project_uid tag can lag a committee moving between projects, so bind the
+        // live committee to the requested foundation too.
+        return committee.project_uid === foundationUid && isBoardCategory(committee.category) && (await this.readSocialListeningFlag(req, uid, m2mToken));
       })
     );
 

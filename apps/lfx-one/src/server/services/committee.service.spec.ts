@@ -1679,6 +1679,8 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
         string,
         {
           category?: string;
+          /** Live project of the committee; defaults to the requested foundation. */
+          projectUid?: string;
           enabled?: boolean;
           /** Successive settings answers, for changes between the two settings reads; the last one repeats. */
           enabledSequence?: boolean[];
@@ -1702,7 +1704,7 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
           return Promise.resolve(committee.emptySettings ? null : { members_can_view_social_listening: enabled });
         }
         if (committee.baseError) return Promise.reject(committee.baseError);
-        return Promise.resolve(committee.emptyBase ? null : { uid, category: committee.category });
+        return Promise.resolve(committee.emptyBase ? null : { uid, category: committee.category, project_uid: committee.projectUid ?? FOUNDATION_UID });
       });
     }
 
@@ -1729,6 +1731,12 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
       expect(proxyRequest.mock.calls.some((call) => call[2] === '/committees/board-1')).toBe(false);
+    });
+
+    it('denies a Board group that has moved to another project while the membership index still tags the foundation', async () => {
+      upstream(['board-1'], { 'board-1': { category: 'Board', enabled: true, projectUid: 'other-foundation-uid' } });
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
     });
 
     it('denies when the flag is switched off between the two settings reads (e.g. a Board entry clearing a stale grant)', async () => {
