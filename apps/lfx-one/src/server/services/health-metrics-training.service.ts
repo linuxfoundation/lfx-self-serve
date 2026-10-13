@@ -7,6 +7,7 @@ import {
   HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
   HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
   HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES,
+  HEALTH_METRICS_TRAINING_ENROLLMENT_COMPARED_RANGES,
   HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
 } from '@lfx-one/shared/constants';
@@ -36,9 +37,6 @@ const TRAINING_COURSES_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.TRAINING_COURSES';
 
 /** The summary row that holds the foundation's totals; every other row is one delivery type. */
 const ALL_DELIVERY_TYPES = 'All';
-
-/** The only period the model compares: its change columns hold YTD against the same point last year. */
-const COMPARED_RANGE: HealthMetricsL2Range = 'YTD';
 
 /** True when the Training views carry columns for the range; for a controller to check before binding. */
 export function isSupportedTrainingRange(range: string): range is HealthMetricsL2Range {
@@ -247,14 +245,13 @@ function toPeriod(all: SummaryRow, types: SummaryRow[], range: HealthMetricsL2Ra
 
   return {
     totals: toTotals(all[`ENROLLMENTS_${range}`], all[`CERTIFICATIONS_${range}`], all[`REVENUE_USD_${range}`]),
-    change:
-      range === COMPARED_RANGE
-        ? {
-            enrollments: toNullableNumber(all['ENROLLMENT_COUNT_CHANGE_PCT']),
-            certifications: toNullableNumber(all['CERTIFICATIONS_CHANGE_PCT']),
-            revenueUsd: toNullableNumber(all['REVENUE_CHANGE_PCT']),
-          }
-        : null,
+    change: HEALTH_METRICS_TRAINING_ENROLLMENT_COMPARED_RANGES.includes(range)
+      ? {
+          enrollments: toNullableNumber(all['ENROLLMENT_COUNT_CHANGE_PCT']),
+          certifications: toNullableNumber(all['CERTIFICATIONS_CHANGE_PCT']),
+          revenueUsd: toNullableNumber(all['REVENUE_CHANGE_PCT']),
+        }
+      : null,
     byType,
   };
 }
