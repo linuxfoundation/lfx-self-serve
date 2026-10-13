@@ -39,15 +39,18 @@ export function isLensAddressableCompanyId(companyId: string): boolean {
   return ORG_ACCOUNT_ID_PATTERN.test(companyId);
 }
 
-/** The company half of a `project|organization` scope id: `[projectSfid, companySfid]`, or the `project|company` single-string form the permission checks use. */
-function companyIdOf(scope: UserServiceScopePermission): string | null {
+/**
+ * The company halves of a `project|organization` scope's ids, `null` for an id that is not a
+ * pair. user-service returns one scope per role whose `ID` lists every grant as a
+ * `projectSfid|companySfid` string; a bare two-element `[projectSfid, companySfid]` is read as one pair.
+ */
+function companyIdsOf(scope: UserServiceScopePermission): (string | null)[] {
   const ids = Array.isArray(scope.ID) ? scope.ID.filter((id): id is string => typeof id === 'string') : [];
-  if (ids.length === 2) return ids[1].trim();
-  if (ids.length === 1 && ids[0].includes('|')) {
-    const parts = ids[0].split('|');
-    return parts.length === 2 ? parts[1].trim() : null;
-  }
-  return null;
+  if (!ids.some((id) => id.includes('|'))) return [ids.length === 2 ? ids[1].trim() : null];
+  return ids.map((id) => {
+    const parts = id.split('|');
+    return parts.length === 2 && parts[1].trim() ? parts[1].trim() : null;
+  });
 }
 
 /**
@@ -64,13 +67,15 @@ export function claManagerCompanies(payload: UserServiceMePermissions | null | u
   for (const permission of payload?.Permissions ?? []) {
     for (const scope of permission?.Scopes ?? []) {
       if (scope?.Role !== ORG_CLA_MANAGER_ROLE || scope.Type !== ORG_CLA_MANAGER_SCOPE_TYPE) continue;
-      const companyId = companyIdOf(scope);
-      if (!companyId) {
-        rejected.malformed_scope += 1;
-      } else if (!isLensAddressableCompanyId(companyId)) {
-        rejected.not_account_id += 1;
-      } else {
-        companySfids.add(companyId);
+      const companyIds = companyIdsOf(scope);
+      for (const companyId of companyIds) {
+        if (!companyId) {
+          rejected.malformed_scope += 1;
+        } else if (!isLensAddressableCompanyId(companyId)) {
+          rejected.not_account_id += 1;
+        } else {
+          companySfids.add(companyId);
+        }
       }
     }
   }

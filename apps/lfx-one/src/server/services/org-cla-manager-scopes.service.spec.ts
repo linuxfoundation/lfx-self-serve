@@ -75,6 +75,15 @@ describe('claManagerCompanies', () => {
     expect([...companySfids]).toEqual([COMPANY_A]);
   });
 
+  it('reads every grant of the one scope user-service returns per role', () => {
+    const { companySfids, rejected } = claManagerCompanies(
+      payload(scope('cla-manager', [`${PROJECT_1}|${COMPANY_A}`, `${PROJECT_2}|${COMPANY_B}`, `${PROJECT_1}|lf0000000000000001`]))
+    );
+
+    expect([...companySfids].sort()).toEqual([COMPANY_A, COMPANY_B].sort());
+    expect(rejected).toEqual({ malformed_scope: 0, not_account_id: 1 });
+  });
+
   it.each(['cla-signatory', 'cla-manager-designee', 'company-admin', undefined])(
     'ignores a %s scope even if the role filter is not applied upstream',
     (role) => {
