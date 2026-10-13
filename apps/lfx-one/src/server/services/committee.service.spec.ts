@@ -1672,10 +1672,26 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
   });
 
   describe('canBoardMemberViewSocialListening', () => {
-    it("queries only the user's Board memberships on the foundation itself, then reads each Board group's settings with M2M", async () => {
-      proxyRequest
-        .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'board-1' } }, { data: { committee_uid: 'board-1' } }] })
-        .mockResolvedValueOnce({ members_can_view_social_listening: true });
+    /** Routes upstream reads by path: membership query, base committee, settings. */
+    function upstream(
+      memberships: string[],
+      committees: Record<string, { category?: string; enabled?: boolean; baseError?: Error; settingsError?: Error }>
+    ): void {
+      proxyRequest.mockImplementation((_req: unknown, _svc: string, path: string) => {
+        if (path === '/query/resources') {
+          return Promise.resolve({ resources: memberships.map((uid) => ({ data: { committee_uid: uid } })) });
+        }
+        const [, , uid, sub] = path.split('/');
+        const committee = committees[uid];
+        if (sub === 'settings') {
+          return committee.settingsError ? Promise.reject(committee.settingsError) : Promise.resolve({ members_can_view_social_listening: committee.enabled });
+        }
+        return committee.baseError ? Promise.reject(committee.baseError) : Promise.resolve({ uid, category: committee.category });
+      });
+    }
+
+    it("queries only the user's Board memberships on the foundation itself, then reads each group's settings with M2M", async () => {
+      upstream(['board-1', 'board-1'], { 'board-1': { category: 'Board', enabled: true } });
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
 
@@ -1683,49 +1699,49 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
         type: 'committee_member',
         tags_all: ['username:synthetic-user', 'committee_category:Board', `project_uid:${FOUNDATION_UID}`],
       });
-      expect(proxyRequest).toHaveBeenCalledTimes(2);
-      expect(proxyRequest.mock.calls[1][2]).toBe('/committees/board-1/settings');
-      expect(proxyRequest.mock.calls[1][7]).toEqual({ bearerToken: 'm2m-token' });
+      const settingsCalls = proxyRequest.mock.calls.filter((call) => call[2] === '/committees/board-1/settings');
+      expect(settingsCalls).toHaveLength(1);
+      expect(settingsCalls[0][7]).toEqual({ bearerToken: 'm2m-token' });
+      // The base read stays on the user's own token.
+      expect(proxyRequest.mock.calls.find((call) => call[2] === '/committees/board-1')?.[7]).toBeUndefined();
     });
 
     it('denies when the Board group has not opted in', async () => {
-      proxyRequest
-        .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'board-1' } }] })
-        .mockResolvedValueOnce({ members_can_view_social_listening: false });
+      upstream(['board-1'], { 'board-1': { category: 'Board', enabled: false } });
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+    });
+
+    it('denies when the group was recategorised out of Board but the membership index and stored flag still say otherwise', async () => {
+      upstream(['board-1'], { 'board-1': { category: 'Technical Steering Committee', enabled: true } });
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
     });
 
     it('allows when any one of several Board groups has opted in', async () => {
-      proxyRequest
-        .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'board-1' } }, { data: { committee_uid: 'board-2' } }] })
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({ members_can_view_social_listening: true });
+      upstream(['board-1', 'board-2'], { 'board-1': { category: 'Board' }, 'board-2': { category: 'Board', enabled: true } });
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
     });
 
-    it("still allows when another Board group's settings read fails", async () => {
-      proxyRequest
-        .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'board-1' } }, { data: { committee_uid: 'board-2' } }] })
-        .mockRejectedValueOnce(new Error('settings read failed'))
-        .mockResolvedValueOnce({ members_can_view_social_listening: true });
+    it("still allows when another Board group's read fails", async () => {
+      upstream(['board-1', 'board-2'], {
+        'board-1': { category: 'Board', settingsError: new Error('settings read failed') },
+        'board-2': { category: 'Board', enabled: true },
+      });
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
     });
 
-    it('surfaces a settings read failure when no Board group grants access, so the caller fails closed without caching', async () => {
-      const error = new Error('settings read failed');
-      proxyRequest
-        .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'board-1' } }, { data: { committee_uid: 'board-2' } }] })
-        .mockRejectedValueOnce(error)
-        .mockResolvedValueOnce({ members_can_view_social_listening: false });
+    it('surfaces a read failure when no Board group grants access, so the caller fails closed without caching', async () => {
+      const error = new Error('base read failed');
+      upstream(['board-1', 'board-2'], { 'board-1': { baseError: error }, 'board-2': { category: 'Board', enabled: false } });
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).rejects.toBe(error);
     });
 
     it('denies without reading settings when the user sits on no Board group of the foundation', async () => {
-      proxyRequest.mockResolvedValueOnce({ resources: [] });
+      upstream([], {});
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
       expect(proxyRequest).toHaveBeenCalledTimes(1);

@@ -1462,23 +1462,29 @@ export class CommitteeService {
     // allSettled: one Board group's failed read must not hide another group that opted in. If none
     // succeeds with the flag on, the caller is denied — and when a read failed, the error surfaces.
     const results = await Promise.allSettled(
-      boardUids.map((uid) =>
-        this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
-          req,
-          'LFX_V2_SERVICE',
-          `/committees/${uid}/settings`,
-          'GET',
-          undefined,
-          undefined,
-          undefined,
-          {
-            bearerToken: m2mToken,
-          }
-        )
-      )
+      boardUids.map(async (uid) => {
+        const [committee, settings] = await Promise.all([
+          this.getCommitteeBase(req, uid),
+          this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
+            req,
+            'LFX_V2_SERVICE',
+            `/committees/${uid}/settings`,
+            'GET',
+            undefined,
+            undefined,
+            undefined,
+            {
+              bearerToken: m2mToken,
+            }
+          ),
+        ]);
+        // The membership index's committee_category tag lags a recategorisation, and upstream keeps a
+        // stored flag until the group's next settings write — so the live category must be Board too.
+        return isBoardCategory(committee?.category) && settings?.members_can_view_social_listening === true;
+      })
     );
 
-    if (results.some((result) => result.status === 'fulfilled' && result.value?.members_can_view_social_listening === true)) {
+    if (results.some((result) => result.status === 'fulfilled' && result.value)) {
       return true;
     }
 
