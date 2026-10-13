@@ -72,6 +72,8 @@ export class MeetingPeopleComponent {
   private readonly addedPadBaseline = signal<number | null>(null);
   /** The last roster fetched, and what for. */
   private lastFetched: { key: MeetingRosterRequest; registrants: MeetingRegistrant[] } | null = null;
+  /** The view the roster was last requested for, which the optimistic pad belongs to. */
+  private lastRequested: MeetingRosterRequest | null = null;
 
   protected readonly organizer = computed(() => this.state.viewerRole() === 'organizer');
   protected readonly roster: Signal<MeetingRosterState> = this.initRoster();
@@ -148,9 +150,14 @@ export class MeetingPeopleComponent {
           const kept = key && this.isLastFetched(key) && this.lastFetched ? this.lastFetched.registrants : null;
           if (!kept) {
             this.lastFetched = null;
+          }
+          // The pad belongs to a view, not to a fetched roster: a guest added before the roster ever
+          // loaded stays counted through the refetch (V1 parity, #3261); another view starts over.
+          if (!this.isSameRequest(key, this.lastRequested)) {
             this.addedPad.set(0);
             this.addedPadBaseline.set(null);
           }
+          this.lastRequested = key;
           if (!key) {
             return of({ status: 'ready', registrants: [] });
           }
@@ -192,6 +199,10 @@ export class MeetingPeopleComponent {
     if (trigger?.isConnected) {
       trigger.focus();
     }
+  }
+
+  private isSameRequest(a: MeetingRosterRequest | null, b: MeetingRosterRequest | null): boolean {
+    return !!a && !!b && a.meetingId === b.meetingId && a.occurrenceId === b.occurrenceId;
   }
 
   private isLastFetched(key: MeetingRosterRequest): boolean {
