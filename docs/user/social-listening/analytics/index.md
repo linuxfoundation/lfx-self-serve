@@ -2,14 +2,14 @@
 title: Analytics
 description: How to read and export the Social Listening analytics — trends, platform and tag breakdowns, and sentiment distribution — in LFX Self Serve.
 display_order: 2
-audience: [executive-director]
+audience: [board-member, executive-director]
 product_area: Social Listening
 tags: [social listening, analytics, charts, sentiment, trends, export]
-last_updated: 2026-08-31
+last_updated: 2026-10-13
 intercom_collection: Social Listening
 ---
 
-This article applies to users with the **executive-director** persona and to **LF Staff**. The **Analytics** tab of the Social Listening page turns your mentions into charts and summary statistics.
+This article applies to users with the **executive-director** persona and to **LF Staff**. Members of a foundation's **Board** group can use it too when that group's **Members Can View Social Listening** setting is on. The **Analytics** tab of the Social Listening page turns your mentions into charts and summary statistics.
 
 ## Open the Analytics tab
 

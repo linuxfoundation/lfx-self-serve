@@ -1,7 +1,7 @@
 ---
 title: Social Listening
 description: Track brand mentions and sentiment across social media, forums, and podcasts for your foundation in LFX Self Serve.
-audience: [executive-director]
+audience: [board-member, executive-director]
 product_area: Social Listening
 tags: [social listening, mentions, sentiment, analytics, octolens]
 last_updated: 2026-10-13

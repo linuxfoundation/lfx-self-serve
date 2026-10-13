@@ -2,7 +2,7 @@
 title: Social Listening FAQ
 description: Frequently asked questions about Social Listening access, data sources, freshness, and limits in LFX Self Serve.
 display_order: 4
-audience: [executive-director]
+audience: [board-member, executive-director]
 product_area: Social Listening
 tags: [social listening, faq, octolens, access, limits]
 last_updated: 2026-10-13

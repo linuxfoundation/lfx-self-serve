@@ -951,7 +951,15 @@ export class SidebarNavService {
 
     return toSignal(
       toObservable(boardFoundationSlug).pipe(
-        switchMap((slug) => (slug ? this.socialListeningService.getAccess(slug).pipe(map((access) => access.canView)) : of(false)))
+        switchMap((slug) =>
+          slug
+            ? this.socialListeningService.getAccess(slug).pipe(
+                map((access) => access.canView),
+                // Start each foundation's probe at false so the previous foundation's answer can't linger while it loads.
+                startWith(false)
+              )
+            : of(false)
+        )
       ),
       { initialValue: false }
     );
