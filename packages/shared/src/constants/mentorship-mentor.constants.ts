@@ -159,10 +159,10 @@ export const MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS: Record<MentorshipMentorSta
 
 /**
  * Request statuses that keep a program out of the mentor picker: one already waiting on the
- * administrator, one accepted, or one declined, which upstream will not take a new request for.
+ * administrator, one approved, or one declined, which upstream will not take a new request for.
  * Only a withdrawn request leaves the program pickable, and asking again reopens it.
  */
-export const MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES: readonly MentorshipMentorStatus[] = ['pending', 'accepted', 'declined'];
+export const MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES: readonly MentorshipMentorStatus[] = ['pending', 'approved', 'declined'];
 
 /** Programs per page in the mentor program picker. Upstream caps a page at 100. */
 export const MENTORSHIP_MENTOR_OPEN_PROGRAMS_PAGE_SIZE = 20;

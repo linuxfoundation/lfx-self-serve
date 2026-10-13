@@ -13,6 +13,7 @@ const publicGroupsController = new PublicGroupsController();
 // Public access — no authentication required; M2M token used for upstream calls.
 // A group whose owning project is not publicly discoverable (`public` false or Formation - Confidential) is answered exactly like an unknown group, and a hidden parent foundation is omitted (lfx-self-serve-ops#437).
 // Owning-project metadata failures use the same non-cacheable 404 as unknown groups, by UID or slug.
+// Owner discoverability is checked before group privacy; only private groups under discoverable owners return GROUP_PRIVATE 403.
 router.get('/:id', (req, res, next) => publicGroupsController.getPublicGroupById(req, res, next));
 
 export default router;

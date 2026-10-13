@@ -168,7 +168,7 @@ export const ORG_LENS_ROI_PROJECTS_TABLE_PAGE_SIZE = 25;
 
 export const ORG_LENS_ROI_PROJECTS_TABLE_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
-export const ORG_LENS_ROI_PROJECT_SORT_FIELDS = ['name', 'investment', 'return', 'profit', 'roi', 'bcr', 'breakevenMarkup'] as const;
+export const ORG_LENS_ROI_PROJECT_SORT_FIELDS = ['name', 'investment', 'return', 'profit', 'roi', 'bcr'] as const;
 
 /** Annotated so adding a sort field without a heading fails here rather than at the template. */
 export const ORG_LENS_ROI_PROJECT_SORT_LABELS: Record<(typeof ORG_LENS_ROI_PROJECT_SORT_FIELDS)[number], string> = {
@@ -178,7 +178,6 @@ export const ORG_LENS_ROI_PROJECT_SORT_LABELS: Record<(typeof ORG_LENS_ROI_PROJE
   profit: 'Net return',
   roi: 'ROI',
   bcr: 'BCR',
-  breakevenMarkup: 'Breakeven markup',
 };
 
 /** The table opens on the payload's own ordering, so the first page needs no client re-sort. */

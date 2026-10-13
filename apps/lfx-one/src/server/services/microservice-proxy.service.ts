@@ -5,7 +5,7 @@ import { DEFAULT_QUERY_PARAMS } from '@lfx-one/shared/constants';
 import { ApiRequestOptions, ApiResponse, MicroserviceUrls } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { MicroserviceError } from '../errors';
+import { MicroserviceError, ServiceValidationError } from '../errors';
 import { ApiClientService } from './api-client.service';
 
 export class MicroserviceProxyService {
@@ -25,7 +25,7 @@ export class MicroserviceProxyService {
 
     try {
       const baseUrl = this.resolveBaseUrl(service);
-      const endpoint = `${baseUrl}${path}`;
+      const endpoint = this.buildEndpoint(baseUrl, path);
       // options.bearerToken lets callers fan out parallel requests with different identities
       // (e.g. user token for FGA checks alongside M2M for public data) without mutating the
       // shared req.bearerToken field — which would race across the parallel calls.
@@ -62,7 +62,7 @@ export class MicroserviceProxyService {
 
     try {
       const baseUrl = this.resolveBaseUrl(service);
-      const endpoint = `${baseUrl}${path}`;
+      const endpoint = this.buildEndpoint(baseUrl, path);
       // See proxyRequest above — options.bearerToken opts out of req.bearerToken for parallel-safe calls.
       const token = options?.bearerToken ?? req.bearerToken;
 
@@ -105,7 +105,7 @@ export class MicroserviceProxyService {
 
     try {
       const baseUrl = this.resolveBaseUrl(service);
-      const endpoint = `${baseUrl}${path}`;
+      const endpoint = this.buildEndpoint(baseUrl, path);
       const token = req.bearerToken;
 
       // Merge query parameters with defaults taking precedence
@@ -145,7 +145,7 @@ export class MicroserviceProxyService {
     options?: Pick<ApiRequestOptions, 'timeoutMs'>
   ): Promise<Response> {
     const baseUrl = this.resolveBaseUrl(service);
-    const endpoint = `${baseUrl}${path}`;
+    const endpoint = this.buildEndpoint(baseUrl, path);
     const token = req.bearerToken;
 
     const mergedQuery = { ...query, ...DEFAULT_QUERY_PARAMS };
@@ -153,6 +153,84 @@ export class MicroserviceProxyService {
     // ApiClientService.streamRequest already throws MicroserviceError with full context,
     // so no try/catch wrapping is needed here.
     return this.apiClient.streamRequest(method, endpoint, token, mergedQuery, customHeaders, options);
+  }
+
+  /**
+   * Defense-in-depth against path traversal: every caller here builds `path` by interpolating
+   * route params that should already be validated (e.g. as UUIDs), but a single missed call site
+   * would otherwise let a crafted param retarget the upstream request — `fetch()` collapses `..`
+   * dot-segments and a literal `?`/`#` in the string starts a new query/fragment, re-routing the
+   * call to an arbitrary upstream path (linuxfoundation/lfx-self-serve-ops#434). Reject here so
+   * that gap can't reopen even if an individual controller's own validation is incomplete.
+   *
+   * Dot segments are rejected only (not the full WHATWG `URL`-normalized pathname) because
+   * several callers interpolate raw, unencoded values (e.g. `committee.service.ts`'s `inviteId`)
+   * that legitimately contain characters (spaces, non-ASCII, `^`, backtick, `{`/`}`) the URL
+   * parser re-encodes without that being an attack; comparing the full normalized pathname would
+   * reject those as a local 400 instead of letting them reach upstream as before. But the segment
+   * check itself must match what `fetch()`'s WHATWG URL parser actually treats as a dot segment:
+   * per https://url.spec.whatwg.org/#double-dot-path-segment, `%2e` (any case) is equivalent to a
+   * literal `.` — so `%2e%2e`, `.%2e`, `%2e.` all resolve the same as `..`. The parser also strips
+   * every literal ASCII tab/newline character from the input and trims leading/trailing literal C0
+   * control/space characters from the whole URL *before* it ever splits into segments
+   * (https://url.spec.whatwg.org/#concept-basic-url-parser, steps 1-2) — it does not decode
+   * `%09`/`%20` first, so e.g. a literal tab between the dots (`.<TAB>.`) or a trailing dot-segment
+   * padded with a literal space become real dot segments even though neither is literally `.`/`..`.
+   * Detection here mirrors that preprocessing so it can't be bypassed the same way. `isDotSegment`
+   * additionally strips `%09`/`%0a`/`%0d` text that survives Express's single route-param decode
+   * (e.g. a double-encoded `%2509`) — that's deliberate extra strictness, not something the URL
+   * parser itself does. `\` is rejected outright (alongside `?`/`#`) rather than treated only as a
+   * dot-segment delimiter: the WHATWG parser treats `\` as `/` for special schemes (http/https), so
+   * a non-dot backslash segment (e.g. `id\responses`) would otherwise smuggle in an extra path
+   * separator the caller never intended, even without forming a literal `.`/`..`. A literal-only,
+   * `/`-only check was flagged by multiple independent reviewers (dealako, Copilot, Cursor Bugbot,
+   * Greptile) on PR #3511 as still bypassable via these vectors.
+   */
+  private buildEndpoint(baseUrl: string, path: string): string {
+    // Per @copilot-pull-request-reviewer on PR #3511: treating `\` only as a dot-segment delimiter
+    // (via split) still let a non-dot backslash segment (e.g. `id\responses`) through unrejected,
+    // and `fetch()`'s WHATWG parser treats `\` as `/` for http(s) URLs — so it still smuggled in an
+    // extra path separator the caller didn't intend. No legitimate interpolated value needs a raw
+    // backslash (it's always a separator, never meaningful content), so reject it outright.
+    if (path.includes('?') || path.includes('#') || path.includes('\\')) {
+      throw ServiceValidationError.forField('path', 'Upstream path must not contain a query string, fragment, or backslash', {
+        operation: 'proxy_build_endpoint',
+        service: 'microservice_proxy_service',
+      });
+    }
+
+    const isDotSegment = (segment: string): boolean => {
+      const decoded = segment.replace(/%09|%0a|%0d/gi, '').replace(/%2e/gi, '.');
+      return decoded === '.' || decoded === '..';
+    };
+
+    // Mirror the WHATWG URL parser's own preprocessing before splitting into segments: strip every
+    // ASCII tab/newline anywhere, then trim leading/trailing C0 controls/space from the whole string.
+    // Written with manual character scans rather than regexes -- CodeQL's polynomial-ReDoS query
+    // (js/polynomial-redos) flags even a plain anchored `+` quantifier over a character class
+    // (e.g. `/^[\x00-\x20]+/`) once it runs against attacker-controlled `path` input, so there is
+    // no regex shape here left for it to flag.
+    let stripped = '';
+    for (let i = 0; i < path.length; i++) {
+      const code = path.charCodeAt(i);
+      if (code !== 0x09 && code !== 0x0a && code !== 0x0d) {
+        stripped += path[i];
+      }
+    }
+    let start = 0;
+    let end = stripped.length;
+    while (start < end && stripped.charCodeAt(start) <= 0x20) start++;
+    while (end > start && stripped.charCodeAt(end - 1) <= 0x20) end--;
+    const normalized = stripped.slice(start, end);
+
+    if (normalized.split('/').some(isDotSegment)) {
+      throw ServiceValidationError.forField('path', 'Upstream path must not contain traversal segments', {
+        operation: 'proxy_build_endpoint',
+        service: 'microservice_proxy_service',
+      });
+    }
+
+    return `${baseUrl}${path}`;
   }
 
   // Single source of truth for per-service base URLs. LFX_V2_MEMBER_SERVICE,

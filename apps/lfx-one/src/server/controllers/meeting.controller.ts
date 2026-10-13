@@ -503,8 +503,9 @@ export class MeetingController {
    */
   public async getMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp, occurrence_id, fail_on_partial, committee_uid, include_committee } = req.query;
+    const { include_rsvp, occurrence_id, fail_on_partial, committee_uid, include_committee, rsvp_scope } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const allDatesOnly = rsvp_scope === 'all';
     const includeCommittee = include_committee === 'true';
     const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
     const failOnPartial = fail_on_partial === 'true';
@@ -544,9 +545,9 @@ export class MeetingController {
       if (failOnPartial && committeeUid) {
         registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
       } else if (failOnPartial) {
-        registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId);
+        registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId, allDatesOnly);
       } else if (await this.canViewRosterOrHide(req, uid, 'get_meeting_registrants')) {
-        registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
+        registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial, undefined, undefined, allDatesOnly);
       } else {
         logger.success(req, 'get_meeting_registrants', startTime, { meeting_id: uid, roster_hidden: true, registrant_count: 0 });
         res.json([]);
@@ -607,8 +608,9 @@ export class MeetingController {
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp, occurrence_id, preview } = req.query;
+    const { include_rsvp, occurrence_id, preview, rsvp_scope } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const allDatesOnly = rsvp_scope === 'all';
     const isPreview = preview === 'true';
     const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
 
@@ -723,9 +725,16 @@ export class MeetingController {
       // The join page treats this roster's length as an authoritative denominator (GH-1731) —
       // a partial query-service page failure must surface as an error, not a silently truncated list.
       // A preview only draws a few faces and a "+N", so a short roster beats an empty one there.
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, !isPreview, undefined, {
-        bearerToken: m2mToken,
-      });
+      const registrants = await this.meetingService.getMeetingRegistrants(
+        req,
+        uid,
+        includeRsvp,
+        occurrenceId,
+        !isPreview,
+        undefined,
+        { bearerToken: m2mToken },
+        allDatesOnly
+      );
 
       if (isPreview) {
         logger.success(req, 'get_my_meeting_registrants', startTime, {
@@ -1073,11 +1082,15 @@ export class MeetingController {
       }
 
       const m2mToken = await generateM2MToken(req);
-      const removedCount = await this.meetingService.removeMeetingRegistrantSelf(req, uid, userEmail, username, m2mToken);
+      const result = await this.meetingService.removeMeetingRegistrantSelf(req, uid, userEmail, username, m2mToken);
 
-      logger.success(req, 'remove_my_meeting_registration', startTime, { meeting_id: uid, removed_count: removedCount });
+      logger.success(req, 'remove_my_meeting_registration', startTime, {
+        meeting_id: uid,
+        removed_count: result.removed_registrant_ids.length,
+        remaining_count: result.remaining_registrant_ids.length,
+      });
 
-      res.status(204).send();
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }
@@ -1293,7 +1306,7 @@ export class MeetingController {
    */
   public async getMeetingRsvpForCurrentUser(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { occurrenceId } = req.query;
+    const { occurrenceId, rsvp_scope } = req.query;
 
     const startTime = logger.startOperation(req, 'get_meeting_rsvp_for_current_user', {
       meeting_id: uid,
@@ -1311,7 +1324,7 @@ export class MeetingController {
       }
 
       // Get the user's RSVP using direct meeting service call
-      const rsvp = await this.meetingService.getMeetingRsvpForCurrentUser(req, uid, occurrenceId as string | undefined);
+      const rsvp = await this.meetingService.getMeetingRsvpForCurrentUser(req, uid, occurrenceId as string | undefined, rsvp_scope === 'all');
 
       // Log success
       logger.success(req, 'get_meeting_rsvp_for_current_user', startTime, {

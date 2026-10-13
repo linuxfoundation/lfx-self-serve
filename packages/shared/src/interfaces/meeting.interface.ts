@@ -402,9 +402,13 @@ export interface Meeting {
    * see `getActiveOccurrences` (LFXV2-2057).
    */
   cancelled_occurrences?: string[];
-  /** Current user's RSVP for this meeting (null when the user hasn't responded).
-   * Populated by /api/user/meetings only. Absent on other Meeting-returning endpoints. */
+  /** Effective viewer's RSVP, enriched by /api/user/meetings only.
+   * Null confirms no response; undefined means enrichment was unavailable (or another endpoint).
+   * A date-scoped response may not apply to the meeting's current/next occurrence. */
   my_rsvp?: MeetingRsvp | null;
+  /** Effective viewer's active registration UIDs, enriched by /api/user/meetings only.
+   * An empty array confirms no active registration; undefined means enrichment was unavailable. */
+  my_registrant_ids?: string[];
   /** Project name — populated on query-service list payloads; on the authenticated detail
    * response (`GET /api/meetings/:uid`) it is populated via BFF enrichment and is
    * absent when that enrichment fails (and from the raw ITX detail payload). */
@@ -663,6 +667,16 @@ export interface MeetingRegistrant {
   attended: boolean | null;
   /** Registrant's RSVP (only included when include_rsvp=true) */
   rsvp?: MeetingRsvp | null;
+}
+
+/** Server-resolved outcomes of removing the authenticated user's meeting registrations. */
+export interface MeetingRegistrationRemovalResult {
+  /** Registrant IDs whose upstream deletes succeeded. */
+  removed_registrant_ids: string[];
+  /** Registrant IDs whose upstream deletes failed and remain invited. */
+  remaining_registrant_ids: string[];
+  /** Raw RSVP history for server-confirmed remaining IDs after partial removal. Omitted when unavailable; [] means no history. */
+  remaining_rsvps?: MeetingRsvp[];
 }
 
 /**
@@ -1936,6 +1950,12 @@ export interface MeetingTypeBadge {
  */
 export type PastMeetingSort = (typeof PAST_MEETING_SORT)[keyof typeof PAST_MEETING_SORT];
 
+/** Time period shown by the meeting dashboard. */
+export type MeetingDashboardView = 'upcoming' | 'past';
+
+/** Personal response filter, independent of time and organizer selection. */
+export type MeetingResponseFilter = 'all' | 'pending' | 'accepted' | 'maybe' | 'declined';
+
 /**
  * Client-side filter criteria applied to the Me lens meeting lists (My Meetings), which are
  * fetched once and filtered in the browser rather than re-queried per filter change.
@@ -1949,16 +1969,14 @@ export interface MeLensMeetingFilters {
   foundation: string | null;
   /** Project UID; takes precedence over `foundation` when both are set. */
   project: string | null;
-  /** Keep only meetings with no RSVP recorded (upcoming only). */
-  pendingRsvpOnly: boolean;
-  /** Keep only meetings the viewer accepted (upcoming only). */
-  acceptedOnly: boolean;
-  /** Keep only meetings the viewer organized (created), matching the "Organized by you" chip. */
-  organizerOnly: boolean;
-  /** Viewer username/LFID used by the `organizerOnly` predicate; null disables matching. */
+  /** Time period; response filters apply only to upcoming meetings. */
+  view: MeetingDashboardView;
+  responseFilter: MeetingResponseFilter;
+  organizedByMe: boolean;
+  /** Canonical viewer username/LFID for owner-first organizer matching; null never matches. */
   viewerUsername: string | null;
-  /** Keep meetings the viewer declined for every occurrence; when false they are hidden. */
-  showDeclined: boolean;
+  /** Explicitly hide all-date declines, except meetings organized by the viewer. */
+  hideDeclined: boolean;
 }
 
 /**

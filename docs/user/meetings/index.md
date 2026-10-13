@@ -4,7 +4,7 @@ description: Schedule, manage, and join project meetings with calendar integrati
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, calendar, join, zoom, virtual]
-last_updated: 2026-10-09
+last_updated: 2026-10-12
 intercom_collection: Meetings
 ---
 
@@ -41,27 +41,45 @@ The left navigation label for this section depends on which lens you're in:
 - **Foundation or Project lens**: the sidebar item is **Meetings**, scoped to that foundation or project. This is where the **Create Meeting** button appears, if you have write access.
 - **Org lens**: the sidebar item is also labeled **Meetings**, but it opens a meeting analytics view for the org rather than the shared meetings dashboard — there's no Create Meeting button here.
 
-Me, Foundation, and Project lenses share the same dashboard, just scoped differently. Choose **Upcoming** or **Past** with the time control at the left of the filter bar. In the Me lens, these on/off filters sit beside it, each showing how many meetings it matches:
+Me, Foundation, and Project lenses share the same dashboard, scoped differently. **Upcoming** and **Past** answer when the meeting happens. Upcoming is selected by default; Past shows your meeting history, including meetings organized by other people.
 
-- **Pending RSVP** (Upcoming only) — meetings that collect RSVPs and that you haven't answered yet.
-- **Accepted** (Upcoming only) — meetings you said yes to (for a series, your response for the next date). Meetings you answered "Maybe" or declined, and ones you haven't answered, are left out, so you get a clean view of what you plan to attend.
-- **Organized by me** (Upcoming and Past) — meetings you created.
-- **Show declined** (Upcoming only) — My Meetings hides a meeting you declined for every date, because declining doesn't remove you from the guest list and only an organizer can do that. Turn this on to see those meetings again. Declining a single date keeps the meeting in your list, and a meeting you organized always stays in your list even if you declined every date. The filter appears only when you have declined meetings.
+In My Meetings, response filters sit below the Upcoming/Past tabs:
 
-At the top of My Meetings, the Upcoming stats show **Meetings in the Next 7 Days**, which counts each date (a weekly series adds one per week), and **Need Your RSVP**. Select **Need Your RSVP** to turn on the Pending RSVP filter. Both stats leave out meetings you declined for every date, except meetings you organized.
+- **All meetings** — every upcoming meeting in your list, including declined meetings and meetings without RSVP tracking.
+- **Needs response** — meetings that collect RSVPs and have no response for the current or next date. A response for a different recurring date does not answer this date. A meeting where you have no active registration is left out, because a response can't be submitted until you're registered.
+- **Going**, **Maybe**, and **Not going** — meetings with your corresponding response for the current or next date.
+
+If response data is temporarily unavailable, the meeting remains in **All meetings** but is excluded from response filters and their counts until its response is known. An unavailable response is not treated as an unanswered invitation.
+
+If a recurring meeting's current or next date is unavailable, only an **All dates** response counts as an answer. A date-specific response stays out of Going, Maybe, and Not going and leaves the meeting in Needs response. Organizer response counts and attendee previews also ignore date-specific responses until the date is resolved, preserving an older All dates answer even if a guest later answered for one date; invited guests remain in the roster.
+
+The **Organized by me** checkbox combines with any response filter. It matches meetings you own; when no owner is recorded, the original creator is used. Inherited management access alone does not count as organizing.
+
+Declining does not remove a meeting from **All meetings**. To hide meetings you declined for every date, enable **Hide meetings declined for all dates**. A single-date decline does not hide the series. Meetings you organize remain visible. **Not going** always shows declined responses, regardless of the hide option.
+
+All response filters and **Organized by me** show their upcoming-meeting count in parentheses only when it is greater than zero. Counts are hidden while loading and describe upcoming meetings before search, foundation, project, meeting-type, response, organizer, or hide-declined filters. **Hide meetings declined for all dates** is a separate checkbox without a count. Search and meeting type stay selected when changing the time tab. Foundation/project and personal response/organizer/hide selections reset when switching between Upcoming and Past. **Reset filters** clears every secondary selection without changing the time tab.
+
+At the top of My Meetings, **Meetings in the Next 7 Days** counts each upcoming date, including dates you declined. **Needs response** opens the response queue and clears other filters so they cannot hide meetings needing your answer. A successful response removes the meeting from that queue but keeps it findable under All meetings. Confirmed responses stay visible while the query index catches up.
+
+Removing yourself from a meeting ends your registration and discards its saved response. If you register again, the new registration starts unanswered; an old response cannot return from cached data. A failed removal keeps your registration and response unchanged.
+
+Foundation and Project dashboards keep their Upcoming/Past choices and existing calendar, paging, and Subscribe controls. Personal response and organizer selections never narrow a scoped list. Switching away from My Meetings clears personal rows while the scoped list loads; inactive personal updates do not replace scoped results.
+
+Responses saved in a Foundation or Project view invalidate your personal meeting list without loading it in the background. Returning to My Meetings or your personal dashboard fetches that list again. Login and impersonation identity changes discard personal meeting caches using the canonical account identifier, even when the display alias is unchanged or absent.
 
 Empty states differ by lens:
 
 - Me lens, no upcoming meetings: "No upcoming meetings — Meetings from your committees and projects will appear here."
-- Me lens, every upcoming meeting declined for all dates: "No upcoming meetings you're attending", with a **Show declined** button.
 - Foundation/Project/Org lens, no upcoming meetings: "No meetings yet — Schedule a meeting to get started."
 
 ### On each meeting card
 
 - **Materials** lists the files and links for the meeting. On a recurring meeting, the "all dates" note means the same materials apply to every occurrence. Organizers see **Edit materials**.
-- **People Invited** (organizers) shows the RSVP summary and up to five faces, attending people first, plus a "+N" for everyone else. **View all** opens the full guest list, which you can search and filter. **Invite people** opens the same list with the Add Guest form already open. Adding a guest still invites them to every occurrence.
+- **People Invited** (organizers) shows the RSVP summary and up to five faces, attending people first, plus a "+N" for everyone else. An invited organizer's saved response immediately updates this summary and face ordering, even while response data is being indexed. **View all** opens the full guest list, which you can search and filter. **Invite people** opens the same list with the Add Guest form already open. Adding a guest still invites them to every occurrence.
 - Invitees see the same faces and **View all** on the meeting card, but only when the organizer turned on **Show attendees to guests** for the meeting. This doesn't depend on RSVPs: the faces appear even when the meeting doesn't collect them. The same setting controls **Show Members** on the meeting's page: without it, invitees see how many people are invited, but not who. Board and restricted meetings never share their guest list. In the new meeting editor (preview), an organizer can turn **Show attendees to guests** on for a Restricted meeting; that lists the attendees in guests' calendar invites, while LFX pages still keep a Restricted meeting's guest list hidden.
 - For a past meeting, the participant list goes to organizers and to the people who were invited or attended, whatever that setting says. Anyone else signed in who can open the meeting sees the attendance numbers, but not who.
+- When a meeting collects RSVPs, invited people—including invited organizers—see **Yes**, **Maybe**, and **No** controls with their current **Going**, **Maybe**, or **Not going** response. Select a different answer directly to change your response, or use **Change response** to move keyboard focus to your selected answer without saving anything. A successful save confirms your submitted answer and its date scope, even while response data is being indexed; a failed save leaves the previous response unchanged.
+- For a recurring meeting, **This date or all dates?** asks you to choose **This date only**, **All dates**, or **This date and all following dates**. The current response names its date or scope so a single-date decline is not mistaken for declining the entire series. **All dates** can still be saved if the displayed date refreshes while the dialog is open; date-specific choices remain tied to the date you originally selected.
 
 ## Key concepts
 

@@ -27,8 +27,12 @@ const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, p
     getPubliclyDiscoverableProject: vi.fn(),
     getProjectBySlug: vi.fn(),
     getProjectSlugs: vi.fn(),
+    getProjectSettings: vi.fn(),
     updateProjectStaff: vi.fn(),
     updateProjectPermissions: vi.fn(),
+    getProjectDocumentMetadata: vi.fn(),
+    getProjectDocumentStream: vi.fn(),
+    deleteProjectDocument: vi.fn(),
   },
 }));
 
@@ -117,6 +121,7 @@ vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(), getEffectiv
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 
 import { readFileSync } from 'node:fs';
+import { Writable } from 'node:stream';
 
 import { LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
 import { ProjectController } from './project.controller';
@@ -1128,6 +1133,172 @@ describe('ProjectController.updateProjectStaff', () => {
 
     expect(projectSvc.updateProjectStaff).toHaveBeenCalledWith(req, PROJECT_UID, 'program_manager', assignee);
     expect(res.json).toHaveBeenCalledTimes(1);
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+// linuxfoundation/lfx-self-serve-ops#434 — uid is interpolated directly into the upstream
+// request path, so a non-UUID value must be rejected before projectService is ever called.
+describe('ProjectController.getProjectPermissions uid validation', () => {
+  let controller: ProjectController;
+
+  function buildPermissionsReqRes(uid: string) {
+    const req = { params: { uid }, path: `/projects/${uid}/permissions` } as any;
+    const res = { json: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+    isUuidMock.mockImplementation((value: string) => value === PROJECT_UID);
+  });
+
+  it('rejects a non-UUID uid without calling the project service', async () => {
+    const { req, res, next } = buildPermissionsReqRes('../committees/some-committee');
+
+    await controller.getProjectPermissions(req, res, next);
+
+    expect(projectSvc.getProjectSettings).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('passes a valid UUID through to the project service', async () => {
+    const settings = { uid: PROJECT_UID };
+    projectSvc.getProjectSettings.mockResolvedValue(settings);
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID);
+
+    await controller.getProjectPermissions(req, res, next);
+
+    expect(projectSvc.getProjectSettings).toHaveBeenCalledWith(req, PROJECT_UID);
+    expect(res.json).toHaveBeenCalledWith(settings);
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+// linuxfoundation/lfx-self-serve-ops#434 — uid and documentId are both interpolated directly
+// into the upstream request path, so a non-UUID value for either must be rejected before
+// projectService is ever called (flagged by @dealako on PR #3511 as missing coverage).
+describe('ProjectController.downloadProjectDocument uid/documentId validation', () => {
+  let controller: ProjectController;
+
+  function buildDocumentReqRes(uid: string, documentId: string) {
+    const req = { params: { uid, documentId }, path: `/projects/${uid}/documents/${documentId}` } as any;
+    const res = { setHeader: vi.fn(), headersSent: false, writableEnded: false, end: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+    isUuidMock.mockImplementation((value: string) => value === PROJECT_UID);
+  });
+
+  it('rejects a non-UUID uid without calling the project service', async () => {
+    const { req, res, next } = buildDocumentReqRes('../committees/some-committee', PROJECT_UID);
+
+    await controller.downloadProjectDocument(req, res, next);
+
+    expect(projectSvc.getProjectDocumentMetadata).not.toHaveBeenCalled();
+    expect(projectSvc.getProjectDocumentStream).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('rejects a non-UUID documentId without calling the project service', async () => {
+    const { req, res, next } = buildDocumentReqRes(PROJECT_UID, '../../secrets');
+
+    await controller.downloadProjectDocument(req, res, next);
+
+    expect(projectSvc.getProjectDocumentMetadata).not.toHaveBeenCalled();
+    expect(projectSvc.getProjectDocumentStream).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  // Per @dealako on PR #3511: the rejection-only suites above wouldn't catch an
+  // over-strict validator that also rejected valid UUIDs.
+  it('passes a valid uid/documentId through to the project service', async () => {
+    const { req } = buildDocumentReqRes(PROJECT_UID, PROJECT_UID);
+    const next = vi.fn();
+    projectSvc.getProjectDocumentMetadata.mockResolvedValue({ contentType: 'application/pdf', fileName: 'report.pdf' });
+    projectSvc.getProjectDocumentStream.mockResolvedValue(new Response('file-bytes', { headers: { 'Content-Length': '10' } }));
+
+    // A writable stand-in for the Express response, so the controller's pipeline really streams into it
+    // (mirrors mentorship-task.controller.spec.ts's `streamRes` helper).
+    const chunks: Buffer[] = [];
+    const res = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(Buffer.from(chunk));
+        callback();
+      },
+    }) as Writable & { headersSent: boolean; setHeader: (name: string, value: string) => void };
+    res.headersSent = false;
+    res.setHeader = vi.fn();
+
+    await controller.downloadProjectDocument(req, res as any, next);
+
+    expect(projectSvc.getProjectDocumentMetadata).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID);
+    expect(projectSvc.getProjectDocumentStream).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID);
+    expect(next).not.toHaveBeenCalled();
+    expect(Buffer.concat(chunks).toString()).toBe('file-bytes');
+  });
+});
+
+describe('ProjectController.deleteProjectDocument uid/documentId validation', () => {
+  let controller: ProjectController;
+
+  function buildDeleteDocumentReqRes(uid: string, documentId: string) {
+    const req = {
+      params: { uid, documentId },
+      query: { type: 'folder' },
+      path: `/projects/${uid}/documents/${documentId}`,
+    } as any;
+    const res = { json: vi.fn(), status: vi.fn(() => res), send: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+    isUuidMock.mockImplementation((value: string) => value === PROJECT_UID);
+  });
+
+  it('rejects a non-UUID uid without calling the project service', async () => {
+    const { req, res, next } = buildDeleteDocumentReqRes('../committees/some-committee', PROJECT_UID);
+
+    await controller.deleteProjectDocument(req, res, next);
+
+    expect(projectSvc.deleteProjectDocument).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('rejects a non-UUID documentId without calling the project service', async () => {
+    const { req, res, next } = buildDeleteDocumentReqRes(PROJECT_UID, '../../secrets');
+
+    await controller.deleteProjectDocument(req, res, next);
+
+    expect(projectSvc.deleteProjectDocument).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  // Per @dealako on PR #3511: the rejection-only suites above wouldn't catch an
+  // over-strict validator that also rejected valid UUIDs.
+  it('passes a valid uid/documentId through to the project service', async () => {
+    const { req, res, next } = buildDeleteDocumentReqRes(PROJECT_UID, PROJECT_UID);
+    projectSvc.deleteProjectDocument.mockResolvedValue(undefined);
+
+    await controller.deleteProjectDocument(req, res, next);
+
+    expect(projectSvc.deleteProjectDocument).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID, 'folder');
+    expect(res.status).toHaveBeenCalledWith(204);
     expect(next).not.toHaveBeenCalled();
   });
 });

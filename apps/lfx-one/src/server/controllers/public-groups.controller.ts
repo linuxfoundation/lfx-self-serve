@@ -74,17 +74,8 @@ export class PublicGroupsController {
         throw error;
       });
 
-      if (!committee.public) {
-        throw new AuthorizationError('This group is private', {
-          operation: 'get_public_group_by_id',
-          service: 'public_groups_controller',
-          path: `/committees/${committeeUid}`,
-          code: 'GROUP_PRIVATE',
-        });
-      }
-
-      // Gate before fan-out. Hidden or temporarily unresolvable owning projects get the same refusal
-      // as an unknown group, without publishing project metadata (lfx-self-serve-ops#437).
+      // Gate before revealing group privacy or fetching related data. Hidden or temporarily unresolvable
+      // owning projects get the same refusal as an unknown group (lfx-self-serve-ops#437).
       const project = await this.projectService.getPubliclyDiscoverableProject(req, committee.project_uid).catch((error: unknown) => {
         logger.warning(req, 'get_public_group_by_id', 'Owning project lookup failed; answering group as not found', {
           project_uid: committee.project_uid,
@@ -94,6 +85,15 @@ export class PublicGroupsController {
       });
       if (!project) {
         throw this.groupNotFoundError(id);
+      }
+
+      if (!committee.public) {
+        throw new AuthorizationError('This group is private', {
+          operation: 'get_public_group_by_id',
+          service: 'public_groups_controller',
+          path: `/committees/${committeeUid}`,
+          code: 'GROUP_PRIVATE',
+        });
       }
 
       const [members, meetingsResponse, mailingListsResponse] = await Promise.all([

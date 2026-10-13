@@ -28,6 +28,7 @@ import {
   MeetingAttachment,
   MeetingJoinURL,
   MeetingRegistrant,
+  MeetingRegistrationRemovalResult,
   MeetingRegistrantWithState,
   MeetingRsvp,
   PaginatedResponse,
@@ -449,6 +450,7 @@ export class MeetingService {
    *   `committee_uid` from the upstream v1 SFID to the v2 UID. It costs the BFF a per-committee
    *   fan-out to the committee service, so it stays opt-in for the callers that actually need group
    *   attribution: the composer's Guests list, and the registrants display's group filter.
+   * @param allDatesOnly - Without a resolved occurrence, attach only series-wide (`all`) RSVPs
    */
   public getMeetingRegistrants(
     meetingUid: string,
@@ -456,7 +458,8 @@ export class MeetingService {
     occurrenceId?: string,
     failOnPartial: boolean = false,
     committeeUid?: string,
-    includeCommittee: boolean = false
+    includeCommittee: boolean = false,
+    allDatesOnly: boolean = false
   ): Observable<MeetingRegistrant[]> {
     let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
     if (occurrenceId) {
@@ -471,6 +474,9 @@ export class MeetingService {
     if (includeCommittee) {
       params = params.set('include_committee', 'true');
     }
+    if (allDatesOnly) {
+      params = params.set('rsvp_scope', 'all');
+    }
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`, { params });
   }
 
@@ -480,7 +486,8 @@ export class MeetingService {
     meetingUid: string,
     includeRsvp: boolean = false,
     occurrenceId?: string,
-    preview: boolean = false
+    preview: boolean = false,
+    allDatesOnly: boolean = false
   ): Observable<MeetingRegistrant[]> {
     let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
     if (occurrenceId) {
@@ -488,6 +495,9 @@ export class MeetingService {
     }
     if (preview) {
       params = params.set('preview', 'true');
+    }
+    if (allDatesOnly) {
+      params = params.set('rsvp_scope', 'all');
     }
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/my-meeting-registrants`, { params });
   }
@@ -664,8 +674,8 @@ export class MeetingService {
     });
   }
 
-  public removeMyMeetingRegistration(meetingUid: string): Observable<void> {
-    return this.http.delete<void>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self`).pipe(
+  public removeMyMeetingRegistration(meetingUid: string): Observable<MeetingRegistrationRemovalResult> {
+    return this.http.delete<MeetingRegistrationRemovalResult>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self`).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to remove current user from meeting ${meetingUid}:`, error);
@@ -767,8 +777,13 @@ export class MeetingService {
     return this.http.get<MeetingRsvp[]>(`/api/meetings/${meetingUid}/rsvp`);
   }
 
-  public getMeetingRsvpForCurrentUser(meetingUid: string, occurrenceId?: string): Observable<MeetingRsvp | null> {
-    const options = occurrenceId ? { params: { occurrenceId } } : {};
+  public getMeetingRsvpForCurrentUser(meetingUid: string, occurrenceId?: string, allDatesOnly = false): Observable<MeetingRsvp | null> {
+    const options: { params?: Record<string, string> } = {};
+    if (occurrenceId) {
+      options.params = { occurrenceId };
+    } else if (allDatesOnly) {
+      options.params = { rsvp_scope: 'all' };
+    }
     return this.http.get<MeetingRsvp | null>(`/api/meetings/${meetingUid}/rsvp/me`, options).pipe(
       catchError((error) => {
         console.error(`Failed to get RSVP for meeting ${meetingUid}:`, error);

@@ -1775,6 +1775,15 @@ describe('isMeetingAccepted', () => {
       // The BFF falls back to the newest series RSVP when none applies to the next date.
       expect(isMeetingAccepted(recurring({ ...rsvp('accepted', 'single'), occurrence_id: '1785247200' }))).toBe(false);
     });
+
+    it.each(['single', 'this_and_following'] as const)('does not count a %s acceptance without a resolved recurring date', (scope) => {
+      const meeting = { ...recurring({ ...rsvp('accepted', scope), occurrence_id: NEXT_OCCURRENCE_ID }), occurrences: [] };
+      expect(isMeetingAccepted(meeting)).toBe(false);
+    });
+
+    it('counts an all-dates acceptance without a resolved recurring date', () => {
+      expect(isMeetingAccepted({ ...recurring(rsvp('accepted', 'all')), occurrences: [] })).toBe(true);
+    });
   });
 
   it('is false for maybe, declined, or no RSVP', () => {

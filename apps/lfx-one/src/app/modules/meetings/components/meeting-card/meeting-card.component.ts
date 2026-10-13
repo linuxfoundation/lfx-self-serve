@@ -57,6 +57,7 @@ import {
   MeetingCancelOccurrenceResult,
   MeetingDeleteTypeResult,
   MeetingOccurrence,
+  MeetingRsvp,
   MeetingRecurrence,
   MeetingRescheduleOccurrenceResult,
   RecurringMeetingEditScopeResult,
@@ -71,7 +72,7 @@ import {
   resolveOccurrenceRecurrence,
   TagSeverity,
 } from '@lfx-one/shared';
-import { isMeetingAttendeeListShared, isMeetingInviteResponsesEnabled, isSameOccurrenceId } from '@lfx-one/shared/utils';
+import { isMeetingAttendeeListShared, isMeetingInviteResponsesEnabled, isSameOccurrenceId, retainConfirmedRsvp } from '@lfx-one/shared/utils';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
 import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
@@ -149,16 +150,13 @@ export class MeetingCardComponent implements OnInit {
   public showRegistrants: WritableSignal<boolean> = signal(false);
   /** Set when the drawer is opened from "Invite people", so it opens on the Add Guest form. */
   public openRegistrantsOnAddForm: WritableSignal<boolean> = signal(false);
-  public showMyRsvp: WritableSignal<boolean> = signal(false);
-  // Set by <lfx-meeting-rsvp-details> after it resolves its registrants/rsvps data.
-  // Drives the "Set My RSVP" / "Update My RSVP" label on the toggle button.
-  public userHasRsvp: WritableSignal<boolean> = signal(false);
   public meeting: WritableSignal<Meeting | PastMeeting> = signal({} as Meeting | PastMeeting);
   public occurrence: WritableSignal<MeetingOccurrence | null> = signal(null);
   public recording: WritableSignal<PastMeetingRecording | null> = signal(null);
   public summary: WritableSignal<PastMeetingSummary | null> = signal(null);
   public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
+  public readonly confirmedRsvps = signal<MeetingRsvp[]>([]);
   /**
    * What the registrants drawer counted, or `null` while it has not counted yet.
    * @description `null` and `0` are different answers here, which is why this is not a plain `signal(0)`.
@@ -200,8 +198,9 @@ export class MeetingCardComponent implements OnInit {
     text: string;
   } | null> = this.initMeetingTypeBadge();
   public readonly containerClass: Signal<string> = this.initContainerClass();
-  public readonly rsvpToggleLabel: Signal<string> = this.initRsvpToggleLabel();
   public readonly currentOccurrence: Signal<MeetingOccurrence | null> = this.initCurrentOccurrence();
+  public readonly rsvpMeeting: Signal<Meeting> = this.initRsvpMeeting();
+  public readonly overviewConfirmedRsvps: Signal<MeetingRsvp[]> = this.initOverviewConfirmedRsvps();
   // Recurrence rule that drives the cadence badge: the displayed occurrence's own override
   // when present (cadence changed at/after it — LFXV2-2112), otherwise the series rule.
   public readonly displayRecurrence: Signal<MeetingRecurrence | null> = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
@@ -241,10 +240,9 @@ export class MeetingCardComponent implements OnInit {
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
-  // Computed signal to check if user can toggle between RSVP Details and RSVP Button Group
-  // True when user is both an organizer AND invited, and this meeting collects LFX RSVPs.
-  public readonly canToggleRsvpView: Signal<boolean> = computed(
-    () => !!this.meeting().organizer && this.isInvited() && !this.pastMeeting() && this.inviteResponsesEnabled()
+  // Invited organizers see their response controls alongside the guest overview.
+  public readonly canRespondAsOrganizer: Signal<boolean> = computed(
+    () => !!this.meeting().organizer && this.effectivelyInvited() && !this.pastMeeting() && this.inviteResponsesEnabled()
   );
   public readonly guestCount: Signal<number> = this.initGuestCount();
 
@@ -346,17 +344,24 @@ export class MeetingCardComponent implements OnInit {
       )
       .subscribe(() => this.refreshAttachments$.next());
 
-    // Reset post-registration flag if this card instance is reused for a different meeting.
-    toObservable(this.meetingInput)
+    // Local confirmations and post-registration state belong to this meeting and viewer identity.
+    combineLatest([meeting$, toObservable(this.userService.meetingFeedIdentity)])
       .pipe(
-        map((m) => m?.id),
-        distinctUntilChanged(),
+        distinctUntilChanged(
+          ([previousMeeting, previousIdentity], [meeting, identity]) => previousMeeting?.id === meeting?.id && previousIdentity === identity
+        ),
         skip(1),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(() => {
         this.optimisticInvited.set(false);
+        this.confirmedRsvps.set([]);
       });
+  }
+
+  public onRsvpChanged(rsvp: MeetingRsvp): void {
+    if (!this.userService.isMeetingRsvpCurrent(rsvp, this.meetingInput())) return;
+    this.confirmedRsvps.update((responses) => retainConfirmedRsvp(responses, rsvp));
   }
 
   /**
@@ -439,10 +444,6 @@ export class MeetingCardComponent implements OnInit {
   public onRegistrantsDrawerHide(): void {
     this.drawerGuestCount.set(null);
     this.openRegistrantsOnAddForm.set(false);
-  }
-
-  public onRsvpViewToggle(): void {
-    this.showMyRsvp.set(!this.showMyRsvp());
   }
 
   public openMaterialsDrawer(): void {
@@ -835,6 +836,7 @@ export class MeetingCardComponent implements OnInit {
 
   private leaveMeeting(): void {
     const meetingId = this.meeting().id;
+    const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
     this.leavingMeeting.set(true);
 
     this.meetingService
@@ -844,7 +846,23 @@ export class MeetingCardComponent implements OnInit {
         finalize(() => this.leavingMeeting.set(false))
       )
       .subscribe({
-        next: () => {
+        next: (result) => {
+          this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
+          const currentSubject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+          if (this.meeting().id !== meetingId || currentSubject !== subject) return;
+          if (result.remaining_registrant_ids.length > 0) {
+            this.confirmedRsvps.update((responses) => responses.filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id)));
+            this.optimisticInvited.set(true);
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Removal incomplete',
+              detail: 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.',
+            });
+            this.userService.refreshUserMeetings(false);
+            this.refreshMeeting();
+            return;
+          }
+          this.confirmedRsvps.set([]);
           this.optimisticInvited.set(false);
           this.meetingService.markRegistrationRemoved(meetingId);
           this.meeting.update((meeting) => ({ ...meeting, invited: false, my_rsvp: null }));
@@ -981,11 +999,27 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  private initRsvpToggleLabel(): Signal<string> {
+  private initRsvpMeeting(): Signal<Meeting> {
     return computed(() => {
-      if (this.showMyRsvp()) return 'Hide My RSVP';
-      if (this.userHasRsvp()) return 'Update My RSVP';
-      return 'Set My RSVP';
+      const meeting = this.meeting();
+      const input = this.meetingInput();
+      const supplied = input.my_rsvp;
+      const myRsvp = supplied && !this.userService.isMeetingRsvpCurrent(supplied, input) ? null : supplied;
+      return meeting.my_rsvp === myRsvp && meeting.my_registrant_ids === input.my_registrant_ids
+        ? meeting
+        : { ...meeting, my_rsvp: myRsvp, my_registrant_ids: input.my_registrant_ids };
+    });
+  }
+
+  private initOverviewConfirmedRsvps(): Signal<MeetingRsvp[]> {
+    return computed(() => {
+      const meeting = this.rsvpMeeting();
+      const supplied = meeting.my_rsvp;
+      // Retained answers outlive this card instance, so a recreated card keeps a successful write too.
+      const confirmed = [...this.confirmedRsvps(), ...this.userService.confirmedMeetingRsvps(meeting.id)].filter((rsvp) =>
+        this.userService.isMeetingRsvpCurrent(rsvp, meeting)
+      );
+      return supplied ? [...confirmed, supplied] : confirmed;
     });
   }
 

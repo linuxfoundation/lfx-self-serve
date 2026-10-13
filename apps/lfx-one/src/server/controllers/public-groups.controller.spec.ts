@@ -87,7 +87,7 @@ vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
-import { MicroserviceError, ResourceNotFoundError } from '../errors';
+import { AuthorizationError, MicroserviceError, ResourceNotFoundError } from '../errors';
 import { PublicGroupsController } from './public-groups.controller';
 
 const FOUNDATION_UID = '11111111-1111-4111-8111-111111111111';
@@ -499,7 +499,8 @@ describe('PublicGroupsController.getPublicGroupById — discoverability (lfx-sel
     proxyRequestMock.mockResolvedValue({ resources: [] });
   });
 
-  it('answers a public group under a hidden project exactly like an unknown group', async () => {
+  it.each([true, false, undefined])('answers a group with public=%s under a hidden project exactly like an unknown group', async (isPublic) => {
+    getCommitteeByIdMock.mockResolvedValue({ uid: GROUP_UID, name: 'TSC', public: isPublic, project_uid: PROJECT_UID });
     getPubliclyDiscoverableProjectMock.mockResolvedValue(null);
     const { req, res, next } = buildGroupReqRes();
 
@@ -516,6 +517,21 @@ describe('PublicGroupsController.getPublicGroupById — discoverability (lfx-sel
     expect(error).toBeInstanceOf(ResourceNotFoundError);
     expect(error.statusCode).toBe(404);
     expect(error.toResponse()).toEqual(unknown.toResponse());
+  });
+
+  it.each([false, undefined])('retains the private-group 403 for public=%s under a discoverable project', async (isPublic) => {
+    getCommitteeByIdMock.mockResolvedValue({ uid: GROUP_UID, name: 'TSC', public: isPublic, project_uid: PROJECT_UID });
+    getPubliclyDiscoverableProjectMock.mockResolvedValue(discoverable(PROJECT_UID));
+    const { req, res, next } = buildGroupReqRes();
+
+    await controller.getPublicGroupById(req, res, next);
+
+    const [error] = next.mock.calls[0];
+    expect(error).toBeInstanceOf(AuthorizationError);
+    expect(error.statusCode).toBe(403);
+    expect(error.code).toBe('GROUP_PRIVATE');
+    expect(res.json).not.toHaveBeenCalled();
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
   });
 
   it('treats a project whose parent foundation is hidden as top-level, leaking no parent name/slug/logo', async () => {
@@ -599,7 +615,13 @@ describe('PublicGroupsController.getPublicGroupById — discoverability (lfx-sel
     expect(proxyRequestMock).not.toHaveBeenCalled();
   });
 
-  it.each([GROUP_UID, 'secret-group'])('answers an owning-project outage exactly like an unknown group for %s', async (id) => {
+  it.each([
+    [GROUP_UID, true],
+    [GROUP_UID, false],
+    ['secret-group', true],
+    ['secret-group', false],
+  ] as const)('answers an owning-project outage exactly like an unknown group for %s with public=%s', async (id, isPublic) => {
+    getCommitteeByIdMock.mockResolvedValue({ uid: GROUP_UID, name: 'TSC', public: isPublic, project_uid: PROJECT_UID });
     if (id === GROUP_UID) {
       getCommitteeByIdMock.mockRejectedValueOnce(new MicroserviceError('committee not found', 404, 'NOT_FOUND'));
     } else {

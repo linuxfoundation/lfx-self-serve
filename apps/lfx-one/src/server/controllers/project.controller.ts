@@ -226,10 +226,10 @@ export class ProjectController {
     });
 
     try {
-      // Check if the project uid is provided
-      if (!uid) {
-        // Create a validation error
-        const validationError = ServiceValidationError.forField('uid', 'Project uid is required', {
+      // uid is interpolated directly into the upstream request path — reject anything that
+      // isn't a UUID before it reaches the proxy layer (linuxfoundation/lfx-self-serve-ops#434).
+      if (!uid || !isUuid(uid)) {
+        const validationError = ServiceValidationError.forField('uid', 'Project uid must be a valid UUID', {
           operation: 'get_project_permissions',
           service: 'project_controller',
           path: req.path,
@@ -885,9 +885,12 @@ export class ProjectController {
     });
 
     try {
-      if (!uid) {
+      // uid/documentId are interpolated directly into the upstream request path — reject
+      // anything that isn't a UUID before it reaches the proxy layer, or a crafted id can
+      // traverse/retarget the upstream call (linuxfoundation/lfx-self-serve-ops#434).
+      if (!uid || !isUuid(uid)) {
         next(
-          ServiceValidationError.forField('uid', 'Project ID is required', {
+          ServiceValidationError.forField('uid', 'Project ID must be a valid UUID', {
             operation: 'download_project_document',
             service: 'project_controller',
             path: req.path,
@@ -896,9 +899,9 @@ export class ProjectController {
         return;
       }
 
-      if (!documentId) {
+      if (!documentId || !isUuid(documentId)) {
         next(
-          ServiceValidationError.forField('documentId', 'Document ID is required', {
+          ServiceValidationError.forField('documentId', 'Document ID must be a valid UUID', {
             operation: 'download_project_document',
             service: 'project_controller',
             path: req.path,
@@ -961,9 +964,12 @@ export class ProjectController {
     });
 
     try {
-      if (!uid) {
+      // uid/documentId are interpolated directly into the upstream request path — reject
+      // anything that isn't a UUID before it reaches the proxy layer, or a crafted id can
+      // traverse/retarget the upstream call (linuxfoundation/lfx-self-serve-ops#434).
+      if (!uid || !isUuid(uid)) {
         next(
-          ServiceValidationError.forField('uid', 'Project ID is required', {
+          ServiceValidationError.forField('uid', 'Project ID must be a valid UUID', {
             operation: 'delete_project_document',
             service: 'project_controller',
             path: req.path,
@@ -972,9 +978,9 @@ export class ProjectController {
         return;
       }
 
-      if (!documentId) {
+      if (!documentId || !isUuid(documentId)) {
         next(
-          ServiceValidationError.forField('documentId', 'Document ID is required', {
+          ServiceValidationError.forField('documentId', 'Document ID must be a valid UUID', {
             operation: 'delete_project_document',
             service: 'project_controller',
             path: req.path,

@@ -512,9 +512,10 @@ export class MeetingRegistrantsDisplayComponent {
               // still holds the upstream v1 SFID and no option would ever match. The `/my` endpoint
               // enriches unconditionally, so it needs no flag.
               const includeRsvp = this.inviteResponsesEnabled();
+              const allDatesOnly = includeRsvp && !!meeting.recurrence && !occurrenceId;
               const registrantsObservable = useMyEndpoint
-                ? this.meetingService.getMyMeetingRegistrants(meeting.id, includeRsvp, occurrenceId)
-                : this.meetingService.getMeetingRegistrants(meeting.id, includeRsvp, occurrenceId, false, undefined, true);
+                ? this.meetingService.getMyMeetingRegistrants(meeting.id, includeRsvp, occurrenceId, false, allDatesOnly)
+                : this.meetingService.getMeetingRegistrants(meeting.id, includeRsvp, occurrenceId, false, undefined, true, allDatesOnly);
 
               return registrantsObservable.pipe(
                 catchError(() => of([])),

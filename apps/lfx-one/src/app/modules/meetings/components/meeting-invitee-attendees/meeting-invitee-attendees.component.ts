@@ -75,7 +75,9 @@ export class MeetingInviteeAttendeesComponent {
     onError: () => MeetingRegistrant[]
   ): Observable<MeetingRegistrant[]> {
     const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
-    return this.meetingService.getMyMeetingRegistrants(meeting.id, isMeetingInviteResponsesEnabled(meeting), occurrenceId, preview).pipe(
+    const includeRsvp = isMeetingInviteResponsesEnabled(meeting);
+    const allDatesOnly = includeRsvp && !!meeting.recurrence && !occurrenceId;
+    return this.meetingService.getMyMeetingRegistrants(meeting.id, includeRsvp, occurrenceId, preview, allDatesOnly).pipe(
       catchError((error) => {
         console.error('Failed to fetch my meeting registrants:', error);
         return of(onError());

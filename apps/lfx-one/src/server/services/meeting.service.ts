@@ -22,6 +22,7 @@ import {
   MeetingJoinURL,
   MeetingRecurrence,
   MeetingRegistrant,
+  MeetingRegistrationRemovalResult,
   MeetingRsvp,
   PaginatedResponse,
   PastMeeting,
@@ -746,6 +747,7 @@ export class MeetingService {
    *   registrants — bounds upstream calls for callers that only need to know "is this over N"
    *   (e.g. enforcing a size cap) rather than the true total. The returned array's length is a
    *   lower bound, not an exact count, once it exceeds `maxResults`.
+   * @param allDatesOnly - Without a resolved occurrence, select only series-wide (`all`) RSVPs before choosing the newest
    */
   public async getMeetingRegistrants(
     req: Request,
@@ -754,7 +756,8 @@ export class MeetingService {
     occurrenceId?: string,
     failOnPartial: boolean = false,
     maxResults?: number,
-    options?: ApiRequestOptions
+    options?: ApiRequestOptions,
+    allDatesOnly: boolean = false
   ): Promise<MeetingRegistrant[]> {
     // Registrant records carry `parent_refs: ['meeting:<uid>']` but no indexed tags — use `parent`
     // to query parent_refs, matching the working pattern in getMeetingRsvps.
@@ -819,7 +822,7 @@ export class MeetingService {
     }
 
     const activeRsvps = filterRsvpsToActiveRegistrants(rsvps, registrants);
-    return attachRsvpsToRegistrants(registrants, activeRsvps, occurrenceId);
+    return attachRsvpsToRegistrants(registrants, activeRsvps, occurrenceId, allDatesOnly);
   }
 
   /**
@@ -899,7 +902,8 @@ export class MeetingService {
     req: Request,
     meetingUid: string,
     includeRsvp: boolean = false,
-    occurrenceId?: string
+    occurrenceId?: string,
+    allDatesOnly: boolean = false
   ): Promise<MeetingRegistrant[]> {
     // `v1_meeting`, not `meeting`: the organizer tuples the platform writes hang off the v1 type,
     // which is what every other organizer probe in this codebase asks about (see
@@ -919,7 +923,7 @@ export class MeetingService {
       });
     }
 
-    return this.getMeetingRegistrants(req, meetingUid, includeRsvp, occurrenceId, true);
+    return this.getMeetingRegistrants(req, meetingUid, includeRsvp, occurrenceId, true, undefined, undefined, allDatesOnly);
   }
 
   /**
@@ -1216,8 +1220,8 @@ export class MeetingService {
    * rows would leave them invited while reporting success.
    * The lookup must be complete, since a partial page walk would delete only a prefix of the caller's rows.
    * Every matching row is attempted; the call fails only when none could be removed, and a partial result is
-   * logged rather than reported as a failure, since the rows already deleted stay deleted.
-   * @returns the number of registrant records removed
+   * returned to the client and logged rather than reported as a failure, since the rows already deleted stay deleted.
+   * @returns the exact registrant IDs removed and those whose deletes failed
    */
   public async removeMeetingRegistrantSelf(
     req: Request,
@@ -1225,7 +1229,7 @@ export class MeetingService {
     email: string | undefined,
     username: string | undefined,
     m2mToken: string
-  ): Promise<number> {
+  ): Promise<MeetingRegistrationRemovalResult> {
     const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken, true);
 
     if (registrants.length === 0) {
@@ -1256,22 +1260,37 @@ export class MeetingService {
     );
 
     const failures = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected');
-    const removedCount = outcomes.length - failures.length;
+    const result: MeetingRegistrationRemovalResult = { removed_registrant_ids: [], remaining_registrant_ids: [] };
+    outcomes.forEach((outcome, index) => {
+      const ids = outcome.status === 'fulfilled' ? result.removed_registrant_ids : result.remaining_registrant_ids;
+      ids.push(registrants[index].uid);
+    });
 
-    if (removedCount === 0) {
+    if (result.removed_registrant_ids.length === 0) {
       throw failures[0].reason;
     }
 
     if (failures.length > 0) {
       logger.warning(req, 'remove_meeting_registrant_self', 'Removed some but not all of the caller registrations', {
         meeting_id: meetingUid,
-        removed_count: removedCount,
+        removed_count: result.removed_registrant_ids.length,
         failed_count: failures.length,
         err: failures[0].reason,
       });
+      try {
+        const rsvps = await this.getRawMeetingRsvps(req, meetingUid, undefined, true);
+        const remainingIds = new Set(result.remaining_registrant_ids);
+        // Filter raw history before any response selection: deleted rows may still be indexed.
+        result.remaining_rsvps = rsvps.filter((rsvp) => rsvp.meeting_id === meetingUid && remainingIds.has(rsvp.registrant_id));
+      } catch (error) {
+        logger.warning(req, 'remove_meeting_registrant_self', 'Failed to fetch remaining registration RSVP history after partial removal', {
+          meeting_id: meetingUid,
+          err: error,
+        });
+      }
     }
 
-    return removedCount;
+    return result;
   }
 
   /**
@@ -1748,6 +1767,9 @@ export class MeetingService {
     );
 
     const rsvp = mapITXResponseToMeetingRsvp(result);
+    // A successful ITX acknowledgement can omit the answer. Preserve the accepted request
+    // value at this boundary so polling, response filters, and confirmation use the same RSVP.
+    rsvp.response_type ||= rsvpData.response;
 
     // Poll query service until the RSVP is propagated so the UI can fetch it immediately
     await pollEndpoint({
@@ -1770,9 +1792,10 @@ export class MeetingService {
    * @param req Express request object
    * @param meetingUid Meeting UID to get RSVP for
    * @param occurrenceId Optional occurrence ID to filter RSVP for specific occurrence
+   * @param allDatesOnly Without an occurrence, select only series-wide responses before resolving the newest answer
    * @returns Promise resolving to user's RSVP or null
    */
-  public async getMeetingRsvpForCurrentUser(req: Request, meetingUid: string, occurrenceId?: string): Promise<MeetingRsvp | null> {
+  public async getMeetingRsvpForCurrentUser(req: Request, meetingUid: string, occurrenceId?: string, allDatesOnly = false): Promise<MeetingRsvp | null> {
     logger.debug(req, 'get_meeting_rsvp_for_current_user', 'Fetching user RSVP', {
       meeting_id: meetingUid,
       occurrence_id: occurrenceId,
@@ -1804,7 +1827,8 @@ export class MeetingService {
       const registrantIds = new Set(registrants.map((r) => r.uid));
 
       const allRsvps = await this.getMeetingRsvps(req, meetingUid);
-      const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id));
+      const requireAllDates = allDatesOnly && !occurrenceId;
+      const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id) && (!requireAllDates || rsvp.scope === 'all'));
 
       // Delegate to the shared scope resolver so this endpoint and
       // `calculateRsvpCounts` stay in lockstep. It normalises seconds ↔ ms on

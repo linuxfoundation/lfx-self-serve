@@ -372,6 +372,71 @@ describe('executeRedditCampaignCreation — the authored post', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  /**
+   * Same load-bearing assertion as the image case above, for the same reason: `video_views` has no
+   * static optimization goal, and a request that names the objective without a usable `videoGoal`
+   * has to be refused before the campaign POST rather than after one exists in PAUSED (#3449).
+   * Nothing in the Implementation tab collects a goal yet, so this is every `video_views` request
+   * reaching this creator today, not an edge case.
+   */
+  it('refuses video_views with no usable goal before ANY upstream call', async () => {
+    await expect(executeRedditCampaignCreation(undefined, config({ objective: 'video_views' }))).rejects.toThrow(/must be one of VIDEO_VIEW_6S/);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The campaign and its ad group must agree: Reddit rejects an ad group whose goal differs from
+   * its campaign's, and the two bodies are built in separate places, so one value reaching only
+   * one of them is a live failure mode rather than a hypothetical one.
+   */
+  it('sends the requested video goal on both the campaign and its ad group', async () => {
+    await executeRedditCampaignCreation(undefined, config({ objective: 'video_views', videoGoal: 'VIDEO_VIEW_15S' }));
+
+    expect(bodyOf<{ data: { objective: string; optimization_goal: string } }>('/campaigns').data).toMatchObject({
+      objective: 'VIDEO_VIEWABLE_IMPRESSIONS',
+      optimization_goal: 'VIDEO_VIEW_15S',
+    });
+    expect(bodyOf<{ data: { optimization_goal: string } }>('/ad_groups').data.optimization_goal).toBe('VIDEO_VIEW_15S');
+  });
+
+  /**
+   * Upstream's first branch is `if objective == ""`, so an empty objective is ABSENT there, not
+   * invalid. Pinned because the obvious `??` spelling does not express it — it would pass `''`
+   * through to the unsupported-objective refusal and reject a create upstream accepts. Reachable:
+   * `POST /api/campaigns/create` forwards `redditConfig` without validating `objective`.
+   */
+  it.each([undefined, ''])('falls back to the default objective when the request carries %s', async (objective) => {
+    await executeRedditCampaignCreation(undefined, config({ objective }));
+
+    // DEFAULT_REDDIT_OBJECTIVE is `conversions`, whose table goal is PURCHASE.
+    expect(bodyOf<{ data: { objective: string; optimization_goal: string } }>('/campaigns').data).toMatchObject({
+      objective: 'CONVERSIONS',
+      optimization_goal: 'PURCHASE',
+    });
+  });
+
+  /**
+   * The other half of that branch, and the reason `||` is not the spelling either: upstream decodes
+   * `objective` into a Go string, so a non-string refuses at decode and never reaches
+   * `CreateCampaign`. `||` would read these as absent and quietly create a budgeted `conversions`
+   * campaign instead — an under-refusal, the mirror of the `??` over-refusal above. Reachable by
+   * the same unvalidated route.
+   */
+  it.each([false, 0])('refuses the non-string objective %s rather than defaulting', async (objective) => {
+    await expect(executeRedditCampaignCreation(undefined, config({ objective }))).rejects.toThrow(/Unsupported Reddit objective/);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  /** The other three objectives keep taking the goal the table carries. */
+  it('sends the table goal for an objective that has one', async () => {
+    await executeRedditCampaignCreation(undefined, config({ objective: 'traffic' }));
+
+    expect(bodyOf<{ data: { optimization_goal: string } }>('/campaigns').data.optimization_goal).toBe('CLICKS');
+    expect(bodyOf<{ data: { optimization_goal: string } }>('/ad_groups').data.optimization_goal).toBe('CLICKS');
+  });
+
   describe('when the post cannot be authored', () => {
     it('warns that a duplicate is possible after an ambiguous failure, and attaches no ad', async () => {
       stubFetch('/posts', 500);

@@ -88,7 +88,7 @@ export interface MentorshipProgramDetailTabSource {
   tabs: readonly MentorshipProgramDetailTab[];
 }
 
-/** Mentor lifecycle on the admin Mentors tab; upstream's `active` mentor shows as Accepted. */
+/** Mentor lifecycle on the admin Mentors tab; upstream's `approved` mentor shows as Approved. */
 export type MentorshipAdminMentorStatus = (typeof MENTORSHIP_ADMIN_MENTOR_STATUSES)[number];
 
 /** A status an admin may set on a mentor member. */

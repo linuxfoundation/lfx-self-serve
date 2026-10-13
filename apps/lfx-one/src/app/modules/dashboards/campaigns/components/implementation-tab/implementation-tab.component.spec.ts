@@ -2219,9 +2219,9 @@ describe('ImplementationTabComponent reddit objective', () => {
 
   /**
    * `video_views` cannot succeed on either arm today. Reddit has no bare `VIDEO_VIEWS`
-   * optimization goal: campaign-service requires a companion `videoGoal` and refuses the request
-   * without one, and the legacy creator does not refuse — it sends `optimizationGoal:
-   * 'VIDEO_VIEWS'`, which Reddit itself rejects. Offering it would guarantee a failed create.
+   * optimization goal, so both creators require a companion `videoGoal` and refuse the request
+   * without one — and no control in this tier can set one, so offering the objective would
+   * guarantee a refused create.
    */
   it('does not offer video_views', async () => {
     const f = await restoredWithObjective('conversions');

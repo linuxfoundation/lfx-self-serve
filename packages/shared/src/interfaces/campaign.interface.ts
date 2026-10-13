@@ -103,7 +103,15 @@ export interface RedditObjectiveParams {
   readonly bidType: 'CPM' | 'CPC';
   /** Reserved for future manual-bid support; unused while campaign strategy is BIDLESS. */
   readonly bidValue: number;
-  readonly optimizationGoal: string;
+  /**
+   * The goal this objective always optimizes toward, where it has one.
+   *
+   * Optional because `video_views` does not: Reddit has no bare `VIDEO_VIEWS` goal, so the concrete
+   * goal is resolved per campaign from the request's `videoGoal` rather than baked into the table.
+   * Read it through `resolveRedditOptimizationGoal`, never directly — the direct read is what sent
+   * an unacceptable goal to Reddit (#3449).
+   */
+  readonly optimizationGoal?: string;
   readonly viewThroughConversionType?: string;
 }
 
@@ -1072,9 +1080,10 @@ export interface RedditBriefCopy {
  * capability rather than a literal because nothing in a create request tells the client which arm
  * will serve.
  *
- * `conversionPixelId` and `videoGoal` are still campaign-service only; the legacy creator reads
- * neither and sending them to it is silently dropped. Both matter only AFTER the cutover — see
- * their own notes below.
+ * `videoGoal` joined that list in #3449 — both creators now read it, and both refuse a
+ * `video_views` create without it rather than sending Reddit an optimization goal it does not have.
+ * `conversionPixelId` is still campaign-service only: the legacy creator does not read it and
+ * sending it there is silently dropped, so it matters only AFTER the cutover (#3484).
  */
 export interface RedditCampaignCreateRequest {
   eventName: string;
@@ -1123,11 +1132,12 @@ export interface RedditCampaignCreateRequest {
    */
   conversionPixelId?: string;
   /**
-   * Required by upstream for, and only for, the `video_views` objective.
+   * Required by BOTH creators for, and only for, the `video_views` objective — Reddit has no bare
+   * `VIDEO_VIEWS` goal, so a video-view campaign has to name a concrete duration goal and neither
+   * arm can invent one. Read it through `resolveRedditOptimizationGoal` (#3449).
    *
-   * Declared for the wire contract only — nothing populates it either, which is precisely why
-   * `REDDIT_SELECTABLE_OBJECTIVES` withholds `video_views`: offering that objective without this
-   * field would offer a create upstream always refuses.
+   * No control populates it, which is why `REDDIT_SELECTABLE_OBJECTIVES` withholds `video_views`:
+   * offering that objective with no way to set this field would offer a create both arms refuse.
    */
   videoGoal?: RedditVideoGoal;
 }

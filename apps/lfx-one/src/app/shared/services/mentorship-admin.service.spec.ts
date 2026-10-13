@@ -189,10 +189,10 @@ describe('MentorshipAdminService', () => {
 
   it('reads one page of mentors with the set filters as query params, encoding the id', () => {
     let total = -1;
-    service.getProgramMentors('grid flow', { status: 'active', search: 'ada+lfx', offset: 10, limit: 10 }).subscribe((response) => (total = response.total));
+    service.getProgramMentors('grid flow', { status: 'approved', search: 'ada+lfx', offset: 10, limit: 10 }).subscribe((response) => (total = response.total));
 
     const req = http.expectOne((r) => r.url === '/api/mentorship/admin/programs/grid%20flow/mentors');
-    expect(req.request.params.get('status')).toBe('active');
+    expect(req.request.params.get('status')).toBe('approved');
     expect(req.request.params.get('search')).toBe('ada+lfx');
     expect(req.request.urlWithParams).toContain('search=ada%2Blfx');
     expect(req.request.params.get('offset')).toBe('10');
@@ -496,7 +496,7 @@ describe('MentorshipAdminService', () => {
   it('logs a failed mentor change by status only and lets it reach the caller', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     let status: number | undefined;
-    service.updateProgramMentor('prog_1', 'mem_1', { status: 'active' }).subscribe({ error: (err: { status: number }) => (status = err.status) });
+    service.updateProgramMentor('prog_1', 'mem_1', { status: 'approved' }).subscribe({ error: (err: { status: number }) => (status = err.status) });
 
     http.expectOne('/api/mentorship/admin/programs/prog_1/mentors/mem_1').flush({ message: 'changed' }, { status: 409, statusText: 'Conflict' });
 

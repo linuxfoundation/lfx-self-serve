@@ -71,17 +71,17 @@ export function renderNewsletterInviteEmail(context: NewsletterInviteEmailContex
 
     <p><strong>${inviter}</strong> has invited you to receive the <strong>${foundation}</strong> newsletter. Get everything you need to know about open source every week, and everything that is going on across the Linux Foundation.</p>
     <p>It&#39;s a benefit of <strong>${company}</strong>&#39;s Linux Foundation membership, so there&#39;s no cost to you.</p>
-    <p>All you need to do is create an LFX account and confirm your company email address to be added to the list:</p>
+    <p>All you need to do is create an LFID (Linux Foundation ID) and confirm your company email address to be added to the list:</p>
     <ol>
         <li>Click the button below to accept the invitation</li>
-        <li>Create your LFX account (or sign in if you have a Linux Foundation ID)</li>
+        <li>Create your LFID (or sign in if you already have one)</li>
         <li>Confirm your company email address, and you&#39;ll start receiving the newsletter</li>
     </ol>
 
     <a href="${acceptUrl}" class="btn" style="color:#ffffff!important;">Accept invitation</a>
     <p class="btn-note">If the button above doesn't work, paste this into your browser: <a href="${acceptUrl}">${acceptUrl}</a></p>
 
-    <p>You can also forward this invite to your coworkers, or invite them from My Newsletters in LFX once you&#39;ve joined.</p>
+    <p>You can also invite coworkers from My Newsletters in LFX once you&#39;ve joined.</p>
 
     <p class="signoff">Thanks,<br><strong>The LFX Team</strong></p>
 
@@ -99,14 +99,14 @@ export function renderNewsletterInviteEmail(context: NewsletterInviteEmailContex
     '',
     `It's a benefit of ${context.company_name}'s Linux Foundation membership, so there's no cost to you.`,
     '',
-    'All you need to do is create an LFX account and confirm your company email address to be added to the list:',
+    'All you need to do is create an LFID (Linux Foundation ID) and confirm your company email address to be added to the list:',
     '1. Open the link below to accept the invitation',
-    '2. Create your LFX account (or sign in if you have a Linux Foundation ID)',
+    '2. Create your LFID (or sign in if you already have one)',
     "3. Confirm your company email address, and you'll start receiving the newsletter",
     '',
     `Accept invitation: ${context.accept_url}`,
     '',
-    "You can also forward this invite to your coworkers, or invite them from My Newsletters in LFX once you've joined.",
+    "You can also invite coworkers from My Newsletters in LFX once you've joined.",
     '',
     'Thanks,',
     'The LFX Team',

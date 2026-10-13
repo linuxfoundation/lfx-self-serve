@@ -530,11 +530,10 @@ export class UserService {
 
     const normalizedMeetings = meetings.map((meeting) => normalizeIndexedMeetingInviteResponses(normalizeIndexedMeetingAiSummary(meeting)));
 
-    // Enrich each meeting with the current user's RSVP (null when no response). Reuses the same
-    // query-service pattern that powers `getUserPendingActions` → `transformMissingRsvpsToActions`.
-    // Wrapped in try/catch so an RSVP-lookup failure degrades gracefully: meetings still return,
-    // `my_rsvp` stays undefined per row, the dashboard doesn't 500, and the Pending RSVP filter
-    // chip just shows the unfiltered list.
+    // Enrich each meeting with the effective user's RSVP and active registration UIDs, reusing
+    // the pending-actions prerequisite queries. A successful empty lookup confirms null/[];
+    // a failed lookup leaves both fields undefined. Unknown rows stay visible under All meetings
+    // but do not enter response-specific filters unless the client retains a valid confirmed write.
     const committeeMeetingIds = new Set<string>();
     if (!options?.basic) {
       const rawUsername = await getUsernameFromAuth(req);
@@ -564,20 +563,20 @@ export class UserService {
           // used on the detail page. Non-recurring meetings resolve identically to before (no
           // occurrence_id → single `all`-scoped row wins).
           //
-          // Fall back to the newest RSVP for the series when the per-occurrence resolver returns
-          // null (e.g. the user's only RSVP is a `single`-scope row for a non-current/next
-          // occurrence). Keeps `!m.my_rsvp` a reliable "no RSVP recorded for the series at all"
-          // signal for the dashboard's Pending RSVP filter (meetings-dashboard.component.ts) and
-          // aligns it with `transformMissingRsvpsToActions`, which suppresses the Set RSVP action
-          // whenever *any* active-registrant RSVP exists.
+          // Keep the newest series response when none applies to the current/next date.
+          // The dashboard checks scope before assigning a response filter; the pending-actions
+          // aggregation separately suppresses Set RSVP when any active-registrant response exists.
           for (const meeting of normalizedMeetings) {
             if (!meeting.id) continue;
+            meeting.my_registrant_ids = activeRegistrants.uidsByMeeting.get(meeting.id) ?? [];
             const meetingRsvps = rsvpsByMeeting.get(meeting.id);
             if (!meetingRsvps || meetingRsvps.length === 0) {
               meeting.my_rsvp = null;
               continue;
             }
-            const applicable = selectApplicableRsvp(resolveRsvpOccurrenceId(meeting), meetingRsvps);
+            const occurrenceId = resolveRsvpOccurrenceId(meeting);
+            const candidates = meeting.recurrence && !occurrenceId ? meetingRsvps.filter((rsvp) => rsvp.scope === 'all') : meetingRsvps;
+            const applicable = selectApplicableRsvp(occurrenceId, candidates);
             meeting.my_rsvp = applicable ?? selectApplicableRsvp(undefined, meetingRsvps);
           }
         } catch (error) {
@@ -1582,7 +1581,10 @@ export class UserService {
     req: Request,
     email: string | null,
     username: string | null
-  ): Promise<{ userRsvps: MeetingRsvp[]; activeRegistrants: { uids: Set<string>; meetingIds: Set<string>; committeeMeetingIds: Set<string> } }> {
+  ): Promise<{
+    userRsvps: MeetingRsvp[];
+    activeRegistrants: { uids: Set<string>; meetingIds: Set<string>; committeeMeetingIds: Set<string>; uidsByMeeting: Map<string, string[]> };
+  }> {
     const [identityRsvps, activeRegistrants] = await Promise.all([
       this.fetchAllUserRsvps(req, email, username),
       this.fetchUserActiveRegistrantIdentities(req, email, username),
@@ -1661,7 +1663,7 @@ export class UserService {
   }
 
   /**
-   * Fetch the active registrant identities for the current user, returning two sets:
+   * Fetch the active registrant identities for the current user:
    *  - `uids`: registrant UIDs (used to invalidate RSVP rows that point at a removed registration —
    *    same guard as `MeetingService.getMeetingRsvps`, prevents an old declined RSVP from
    *    suppressing a Set RSVP action for a still-active re-registration).
@@ -1673,16 +1675,17 @@ export class UserService {
    *    surfacing rows the user can't action.
    *  - `committeeMeetingIds`: the subset of `meetingIds` where any of the user's registrations came from a
    *    committee. Those follow committee membership, so the user cannot remove themselves from them.
+   *  - `uidsByMeeting`: the same registration UIDs grouped by meeting for personal-feed enrichment.
    */
   private async fetchUserActiveRegistrantIdentities(
     req: Request,
     email: string | null,
     username: string | null
-  ): Promise<{ uids: Set<string>; meetingIds: Set<string>; committeeMeetingIds: Set<string> }> {
+  ): Promise<{ uids: Set<string>; meetingIds: Set<string>; committeeMeetingIds: Set<string>; uidsByMeeting: Map<string, string[]> }> {
     const orClauses: string[] = [];
     if (email) orClauses.push(`email:${email.toLowerCase()}`);
     if (username) orClauses.push(`username:${username}`);
-    if (orClauses.length === 0) return { uids: new Set(), meetingIds: new Set(), committeeMeetingIds: new Set() };
+    if (orClauses.length === 0) return { uids: new Set(), meetingIds: new Set(), committeeMeetingIds: new Set(), uidsByMeeting: new Map() };
 
     // failOnPartial: a missing registrant UID here means an RSVP-guard lookup would wrongly
     // reject a still-active registrant's RSVP, which then fires a duplicate Set RSVP nag.
@@ -1700,12 +1703,18 @@ export class UserService {
     const uids = new Set<string>();
     const meetingIds = new Set<string>();
     const committeeMeetingIds = new Set<string>();
+    const uidsByMeeting = new Map<string, string[]>();
     for (const r of registrants) {
       if (r.uid) uids.add(r.uid);
       if (r.meeting_id) meetingIds.add(r.meeting_id);
+      if (r.uid && r.meeting_id) {
+        const meetingUids = uidsByMeeting.get(r.meeting_id);
+        if (meetingUids) meetingUids.push(r.uid);
+        else uidsByMeeting.set(r.meeting_id, [r.uid]);
+      }
       if (r.meeting_id && r.type === 'committee') committeeMeetingIds.add(r.meeting_id);
     }
-    return { uids, meetingIds, committeeMeetingIds };
+    return { uids, meetingIds, committeeMeetingIds, uidsByMeeting };
   }
 
   /**

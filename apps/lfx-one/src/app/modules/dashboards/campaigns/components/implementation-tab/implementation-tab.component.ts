@@ -1990,9 +1990,9 @@ export class ImplementationTabComponent implements OnInit {
               // thing that makes the payload say what the screen shows.
               //
               // Sent even when `redditObjectiveIsUnavailable()`, and that is the deliberate half.
-              // The only withheld objective is `video_views`, which the campaign-service arm
-              // refuses outright unless a `videoGoal` accompanies it and nothing in this tier can
-              // set one. So such a create fails upstream rather than succeeding — where omitting
+              // The only withheld objective is `video_views`, which BOTH creators refuse outright
+              // unless a `videoGoal` accompanies it and nothing in this tier can set one. So such a
+              // create fails before anything is built rather than succeeding — where omitting
               // the field would fall back to `conversions` and quietly build a campaign the
               // operator never chose, against an objective the select is at that moment showing
               // them as "(no longer available)". A refusal they can see and act on beats a

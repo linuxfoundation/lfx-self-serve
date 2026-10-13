@@ -78,6 +78,7 @@ import {
   isMeetingInviteResponsesEnabled,
   isPastMeetingCompositeId,
   reconcileOptimisticPad,
+  selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
@@ -384,19 +385,16 @@ export class MeetingJoinComponent implements OnInit {
   protected attendeeListShared = computed(() => isMeetingAttendeeListShared(this.meeting()));
   protected canViewGuests = computed(() => !!this.meeting()?.organizer || (this.effectivelyInvited() && this.attendeeListShared()));
   public canRegisterForMeeting: Signal<boolean>;
-  public canToggleRsvpView: Signal<boolean>;
-  public showMyRsvp: WritableSignal<boolean> = signal<boolean>(false);
+  // Invited organizers respond directly alongside their guest overview.
+  public canRespondAsOrganizer: Signal<boolean>;
 
-  // Current user's RSVP for this meeting (null when not responded). Fetched at this level so
-  // the detail page can show the RSVP status even in the default guest-count view, without
-  // waiting for the user to click "Set My RSVP" to mount the button-group child.
+  // Current user's RSVP for this meeting (null when not responded). Fetched at this level so a
+  // confirmed organizer response reaches the guest overview and leaving can clear its registration.
   public currentUserRsvp: Signal<MeetingRsvp | null>;
-  public currentUserRsvpLabel: Signal<string | null>;
-  public currentUserRsvpIcon: Signal<string | null>;
-  public rsvpToggleLabel: Signal<string>;
+  public overviewConfirmedRsvps: Signal<MeetingRsvp[]>;
   // Emits the freshly-submitted RSVP from the button-group so the chip updates immediately,
   // bypassing any query-service indexing lag that would otherwise return stale data on refetch.
-  private readonly rsvpUpdateTrigger$ = new Subject<MeetingRsvp>();
+  private readonly rsvpUpdateTrigger$ = new Subject<MeetingRsvp | null>();
   // Monotonic counter bumped on every manual RSVP update. Captured at fetch dispatch time and
   // checked on response; if it has advanced, the server response is stale relative to a newer
   // optimistic update and is dropped so the chip doesn't revert.
@@ -512,11 +510,9 @@ export class MeetingJoinComponent implements OnInit {
     // A committee-sourced registration follows committee membership, so it cannot be removed from here.
     this.canLeaveMeeting = computed(() => this.effectivelyInvited() && !this.meeting()?.invited_via_committee);
     this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
-    this.canToggleRsvpView = this.initializeCanToggleRsvpView();
+    this.canRespondAsOrganizer = this.initializeCanRespondAsOrganizer();
     this.currentUserRsvp = this.initializeCurrentUserRsvp();
-    this.currentUserRsvpLabel = this.initializeCurrentUserRsvpLabel();
-    this.currentUserRsvpIcon = this.initializeCurrentUserRsvpIcon();
-    this.rsvpToggleLabel = this.initializeRsvpToggleLabel();
+    this.overviewConfirmedRsvps = this.initializeOverviewConfirmedRsvps();
 
     this.returnTo = this.initializeReturnTo();
     this.canJoinMeeting = this.initializeCanJoinMeeting();
@@ -671,14 +667,11 @@ export class MeetingJoinComponent implements OnInit {
     this.messageService.add({ severity: 'info', summary: 'Coming Soon', detail: 'Attendees list will be available soon.', life: 3000 });
   }
 
-  public onRsvpViewToggle(): void {
-    this.showMyRsvp.set(!this.showMyRsvp());
-  }
-
   public onRsvpChanged(rsvp: MeetingRsvp): void {
     // rsvp-button-group emits the confirmed RSVP after the POST succeeds. Push it directly into the
     // signal stream so the chip updates instantly, even when the backend polling window times out
     // before the query service has indexed the new RSVP (server would still return stale on refetch).
+    if (!this.userService.isMeetingRsvpCurrent(rsvp, this.meeting())) return;
     this.rsvpUpdateTrigger$.next(rsvp);
   }
 
@@ -1462,23 +1455,25 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
-  private initializeCanToggleRsvpView(): Signal<boolean> {
-    return computed(() => !!this.meeting()?.organizer && this.isInvited() && this.inviteResponsesEnabled());
+  private initializeCanRespondAsOrganizer(): Signal<boolean> {
+    return computed(() => !!this.meeting()?.organizer && this.effectivelyInvited() && this.inviteResponsesEnabled());
   }
 
   private initializeCurrentUserRsvp(): Signal<MeetingRsvp | null> {
     const meeting$ = toObservable(this.meeting);
     const occurrence$ = toObservable(this.currentOccurrence);
     const authenticated$ = toObservable(this.authenticated);
-    const canToggle$ = toObservable(this.canToggleRsvpView);
+    const canRespond$ = toObservable(this.canRespondAsOrganizer);
+    const identity$ = toObservable(this.userService.meetingFeedIdentity);
 
-    // Fetch trigger: meeting/occurrence/auth/canToggle changes. Deduped on a stable key so that
-    // derived signals settling in the same microtask don't cause redundant emissions.
-    const fetchTrigger$ = combineLatest([meeting$, occurrence$, authenticated$, canToggle$]).pipe(
-      distinctUntilChanged(([m1, o1, a1, c1], [m2, o2, a2, c2]) => {
+    // Fetch trigger: meeting/occurrence/auth/canRespond/viewer-identity changes. Deduped on a stable key
+    // so that derived signals settling in the same microtask don't cause redundant emissions. An in-place
+    // subject swap (impersonation) refetches and clears the previous viewer's answer while pending.
+    const fetchTrigger$ = combineLatest([meeting$, occurrence$, authenticated$, canRespond$, identity$]).pipe(
+      distinctUntilChanged(([m1, o1, a1, c1, i1], [m2, o2, a2, c2, i2]) => {
         const occ1 = m1?.recurrence ? o1?.occurrence_id : undefined;
         const occ2 = m2?.recurrence ? o2?.occurrence_id : undefined;
-        return m1?.id === m2?.id && occ1 === occ2 && a1 === a2 && c1 === c2;
+        return m1?.id === m2?.id && occ1 === occ2 && a1 === a2 && c1 === c2 && i1 === i2;
       })
     );
 
@@ -1501,21 +1496,23 @@ export class MeetingJoinComponent implements OnInit {
             this.rsvpUpdateCounter++;
             return of(evt.data);
           }
-          const [meeting, occurrence, authenticated, canToggle] = evt.data;
+          const [meeting, occurrence, authenticated, canRespond] = evt.data;
           // Only fetch when the user can actually RSVP (organizer + invited).
-          if (!authenticated || !canToggle || !meeting?.id) {
+          if (!authenticated || !canRespond || !meeting?.id) {
             return of(null);
           }
           const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
+          const allDatesOnly = !!meeting.recurrence && !occurrenceId;
           // Capture the current update revision at fetch dispatch time. If a manual update
           // bumps the counter before the server response arrives (typically because the
           // query-service hasn't indexed the new RSVP yet), the filter drops both the
           // `startWith(null)` reset and the stale server value so the optimistic local
           // update stays visible and the chip doesn't flash back.
           const counterAtDispatch = this.rsvpUpdateCounter;
-          return this.meetingService.getMeetingRsvpForCurrentUser(meeting.id, occurrenceId).pipe(
+          return this.meetingService.getMeetingRsvpForCurrentUser(meeting.id, occurrenceId, allDatesOnly).pipe(
             startWith(null),
-            filter(() => this.rsvpUpdateCounter === counterAtDispatch)
+            filter(() => this.rsvpUpdateCounter === counterAtDispatch),
+            map((rsvp) => (rsvp && this.userService.isMeetingRsvpCurrent(rsvp, meeting) ? rsvp : null))
           );
         })
       ),
@@ -1523,44 +1520,17 @@ export class MeetingJoinComponent implements OnInit {
     );
   }
 
-  private initializeCurrentUserRsvpLabel(): Signal<string | null> {
+  // Hands the confirmed organizer responses to the overview so its counts update before the roster re-indexes.
+  // Retained answers outlive an occurrence switch or remount (whose lookup restarts at `null`); the overview
+  // applies each one by date, matching the meeting card.
+  private initializeOverviewConfirmedRsvps(): Signal<MeetingRsvp[]> {
     return computed(() => {
+      const meeting = this.meeting();
       const rsvp = this.currentUserRsvp();
-      if (!rsvp) return null;
-      switch (rsvp.response_type) {
-        case 'accepted':
-          return 'Yes';
-        case 'declined':
-          return 'No';
-        case 'maybe':
-          return 'Maybe';
-        default:
-          return rsvp.response_type;
-      }
-    });
-  }
-
-  private initializeCurrentUserRsvpIcon(): Signal<string | null> {
-    return computed(() => {
-      const rsvp = this.currentUserRsvp();
-      if (!rsvp) return null;
-      switch (rsvp.response_type) {
-        case 'accepted':
-          return 'fa-solid fa-circle-check text-emerald-500';
-        case 'declined':
-          return 'fa-solid fa-circle-xmark text-red-500';
-        case 'maybe':
-          return 'fa-solid fa-clock text-amber-500';
-        default:
-          return null;
-      }
-    });
-  }
-
-  private initializeRsvpToggleLabel(): Signal<string> {
-    return computed(() => {
-      if (this.showMyRsvp()) return 'Show Guests';
-      return this.currentUserRsvp() ? 'Update My RSVP' : 'Set My RSVP';
+      const retained = meeting?.id
+        ? this.userService.confirmedMeetingRsvps(meeting.id).filter((saved) => this.userService.isMeetingRsvpCurrent(saved, meeting))
+        : [];
+      return rsvp ? [...retained, rsvp] : retained;
     });
   }
 
@@ -1754,7 +1724,8 @@ export class MeetingJoinComponent implements OnInit {
           }
           this.registrantsLoading.set(true);
           const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
-          return this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId).pipe(
+          const allDatesOnly = isMeetingInviteResponsesEnabled(meeting) && !!meeting.recurrence && !occurrenceId;
+          return this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId, false, allDatesOnly).pipe(
             tap((list) => {
               // Only the rows the refetch has actually absorbed come off the pad — a partial
               // catch-up must not zero out rows the query-service index hasn't reflected yet.
@@ -1796,6 +1767,7 @@ export class MeetingJoinComponent implements OnInit {
 
   private leaveMeeting(): void {
     const meetingId = this.meeting().id;
+    const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
     this.leavingMeeting.set(true);
 
     this.meetingService
@@ -1805,14 +1777,35 @@ export class MeetingJoinComponent implements OnInit {
         finalize(() => this.leavingMeeting.set(false))
       )
       .subscribe({
-        next: () => {
-          this.optimisticInvited.set(false);
-          this.meetingService.markRegistrationRemoved(meetingId);
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Removed',
-            detail: 'You have been removed from this meeting.',
-          });
+        next: (result) => {
+          this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
+          const currentSubject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+          if (this.meeting().id !== meetingId || currentSubject !== subject) return;
+          if (result.remaining_registrant_ids.length > 0) {
+            const meeting = this.meeting();
+            const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.currentOccurrence() });
+            const currentRsvp = this.currentUserRsvp();
+            const candidates = [...this.userService.confirmedMeetingRsvps(meetingId), ...(currentRsvp ? [currentRsvp] : [])].filter(
+              (rsvp) => this.userService.isMeetingRsvpCurrent(rsvp, meeting) && (!meeting.recurrence || !!occurrenceId || rsvp.scope === 'all')
+            );
+            this.rsvpUpdateTrigger$.next(selectApplicableRsvp(occurrenceId, candidates));
+            this.optimisticInvited.set(true);
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Removal incomplete',
+              detail: 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.',
+            });
+            this.userService.refreshUserMeetings(false);
+          } else {
+            this.rsvpUpdateTrigger$.next(null);
+            this.optimisticInvited.set(false);
+            this.meetingService.markRegistrationRemoved(meetingId);
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Removed',
+              detail: 'You have been removed from this meeting.',
+            });
+          }
           this.registrantsRefresh$.next();
           this.refreshTrigger$.next();
         },

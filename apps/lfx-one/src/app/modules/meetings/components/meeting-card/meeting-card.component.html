@@ -334,24 +334,21 @@
       <div class="flex flex-col gap-2">
         @if (meeting().organizer) {
           @defer (on viewport) {
-            <!-- Organizer view with optional toggle for invited organizers -->
-            @if (canToggleRsvpView() && showMyRsvp()) {
-              <!-- Show RSVP Button Group when organizer toggles to set their own RSVP -->
-              <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
-            } @else {
-              <!-- Show RSVP Details for organizers (default view) -->
-              <lfx-meeting-rsvp-details
-                [meeting]="meeting()"
-                [currentOccurrence]="currentOccurrence()"
-                [pastMeeting]="pastMeeting()"
-                [showAddButton]="!pastMeeting()"
-                [showAttendeePreview]="true"
-                [additionalRegistrantsCount]="additionalRegistrantsCount()"
-                (addClicked)="onInvitePeople()"
-                (viewAllClicked)="showRegistrants.set(true)"
-                (currentUserHasRsvpChanged)="userHasRsvp.set($event)">
-              </lfx-meeting-rsvp-details>
+            @if (canRespondAsOrganizer()) {
+              <lfx-rsvp-button-group [meeting]="rsvpMeeting()" [occurrenceId]="occurrence()?.occurrence_id" (rsvpChanged)="onRsvpChanged($event)">
+              </lfx-rsvp-button-group>
             }
+            <lfx-meeting-rsvp-details
+              [meeting]="meeting()"
+              [confirmedRsvps]="overviewConfirmedRsvps()"
+              [currentOccurrence]="occurrence()"
+              [pastMeeting]="pastMeeting()"
+              [showAddButton]="!pastMeeting()"
+              [showAttendeePreview]="true"
+              [additionalRegistrantsCount]="additionalRegistrantsCount()"
+              (addClicked)="onInvitePeople()"
+              (viewAllClicked)="showRegistrants.set(true)">
+            </lfx-meeting-rsvp-details>
           } @placeholder {
             <div class="rounded-md p-3 flex flex-col gap-2 flex-1 bg-gray-100/60 min-h-[80px]">
               <div class="flex items-center justify-between gap-2">
@@ -380,7 +377,8 @@
           @if (effectivelyInvited() && (inviteResponsesEnabled() || attendeeListShared())) {
             @defer (on viewport) {
               @if (inviteResponsesEnabled()) {
-                <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+                <lfx-rsvp-button-group [meeting]="rsvpMeeting()" [occurrenceId]="occurrence()?.occurrence_id" (rsvpChanged)="onRsvpChanged($event)">
+                </lfx-rsvp-button-group>
               }
               @if (attendeeListShared()) {
                 <lfx-meeting-invitee-attendees [meeting]="meeting()" [occurrence]="occurrence()" />
@@ -448,18 +446,6 @@
               (click)="onRegistrantsToggle()">
             </lfx-button>
             <lfx-host-key-popover class="w-full" [meeting]="meeting()" [occurrence]="occurrence()" [pastMeeting]="pastMeeting()" />
-            @if (canToggleRsvpView()) {
-              <lfx-button
-                class="w-full"
-                icon="fa-light fa-hand"
-                [label]="rsvpToggleLabel()"
-                size="small"
-                severity="secondary"
-                styleClass="w-full"
-                data-testid="toggle-rsvp-view-button"
-                (click)="onRsvpViewToggle()">
-              </lfx-button>
-            }
           }
           @if (pastMeeting()) {
             <lfx-button

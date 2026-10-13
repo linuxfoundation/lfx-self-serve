@@ -19,26 +19,30 @@ export class RsvpScopeModalComponent {
   private readonly config = inject(DynamicDialogConfig);
 
   public readonly response: string = this.config.data.response;
+  public readonly occurrenceLabel: string | null = this.config.data.occurrenceLabel ?? null;
+  public readonly canSelectOccurrence: boolean = !!this.config.data.canSelectOccurrence && !!this.occurrenceLabel;
   public readonly scopeForm = new FormGroup({
-    scope: new FormControl<RsvpScope>('all'),
+    scope: new FormControl<RsvpScope>(this.canSelectOccurrence ? 'single' : 'all', { nonNullable: true }),
   });
 
   public readonly scopeOptions = [
+    ...(this.canSelectOccurrence
+      ? [{ value: 'single' as RsvpScope, label: 'This date only', description: `${this.occurrenceLabel} only. Other dates keep their current response.` }]
+      : []),
     {
       value: 'all' as RsvpScope,
-      label: 'All occurrences',
-      description: 'RSVP applies to all occurrences of this recurring meeting',
+      label: 'All dates',
+      description: 'Apply this response to every date in this recurring meeting.',
     },
-    {
-      value: 'single' as RsvpScope,
-      label: 'This occurrence only',
-      description: 'RSVP applies only to this specific meeting occurrence',
-    },
-    {
-      value: 'this_and_following' as RsvpScope,
-      label: 'This and following occurrences',
-      description: 'RSVP applies to this occurrence and all future occurrences',
-    },
+    ...(this.canSelectOccurrence
+      ? [
+          {
+            value: 'this_and_following' as RsvpScope,
+            label: 'This date and all following dates',
+            description: `From ${this.occurrenceLabel} onward. Earlier dates keep their current response.`,
+          },
+        ]
+      : []),
   ];
 
   public onCancel(): void {
@@ -46,6 +50,10 @@ export class RsvpScopeModalComponent {
   }
 
   public onConfirm(): void {
-    this.dialogRef.close({ confirmed: true, scope: this.scopeForm.controls.scope.value });
+    const scope = this.scopeForm.controls.scope.value;
+    if (scope !== 'all' && !this.canSelectOccurrence) {
+      return;
+    }
+    this.dialogRef.close({ confirmed: true, scope });
   }
 }
