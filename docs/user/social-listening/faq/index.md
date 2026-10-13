@@ -5,13 +5,13 @@ display_order: 4
 audience: [executive-director]
 product_area: Social Listening
 tags: [social listening, faq, octolens, access, limits]
-last_updated: 2026-08-31
+last_updated: 2026-10-13
 intercom_collection: Social Listening
 ---
 
 ## Who can see Social Listening?
 
-Social Listening is available to users with the **executive-director** persona and to **LF Staff**. It appears in the **Foundation** lens only.
+Social Listening is available to users with the **executive-director** persona and to **LF Staff**. Members of a foundation's **Board** group can also see it for that foundation when the Board group's **Members Can View Social Listening** setting is on. The setting is off by default, and anyone who can manage the Board group can turn it on in the group's **Settings** tab. Board members see the whole foundation and can filter by project. It appears in the **Foundation** lens only.
 
 ## Why don't I see Social Listening in the navigation?
 
@@ -20,7 +20,7 @@ Check two things:
 1. You are viewing a **Foundation** lens — switch lenses using the lens switcher.
 2. Look under **Metrics** in the left navigation sidebar — Social Listening sits alongside Health Metrics.
 
-If you still don't see it, your account doesn't have the executive-director persona or LF Staff access for that foundation.
+If you still don't see it, your account doesn't have the executive-director persona or LF Staff access for that foundation, or you are a board member and your foundation's Board group hasn't turned on **Members Can View Social Listening**. Board members see Social Listening under **Metrics** on its own, without Health Metrics.
 
 ## Where does the data come from?
 

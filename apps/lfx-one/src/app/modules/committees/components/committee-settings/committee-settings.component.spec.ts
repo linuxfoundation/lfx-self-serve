@@ -21,6 +21,7 @@ function buildForm(): FormGroup {
     public: new FormControl(false),
     sso_group_enabled: new FormControl(false),
     show_meeting_attendees: new FormControl(false),
+    members_can_view_social_listening: new FormControl(false),
     chat_channel: new FormControl<string | null>(null),
     website: new FormControl<string | null>(null),
     chat_webhook_url: new FormControl<string | null>(null, [Validators.pattern(SLACK_INCOMING_WEBHOOK_URL_PATTERN)]),
@@ -291,5 +292,37 @@ describe('CommitteeSettingsComponent — chat-channel / website label associatio
     // Contained by the matching data-testid, not just any native input — catches the two ids
     // being swapped, which a bare `tagName === 'INPUT'` check would miss.
     expect(fixture.nativeElement.querySelector(`[data-testid="${inputTestId}"]`)?.contains(label.control)).toBe(true);
+  });
+});
+
+describe('CommitteeSettingsComponent — category-scoped features', () => {
+  let fixture: ComponentFixture<CommitteeSettingsComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsComponent],
+      providers: [provideRouter([]), provideNoopAnimations()],
+    }).compileComponents();
+    fixture = TestBed.createComponent(CommitteeSettingsComponent);
+    fixture.componentRef.setInput('form', buildForm());
+  });
+
+  function socialListeningToggle(): Element | null {
+    return fixture.nativeElement.querySelector('[data-testid="feature-members_can_view_social_listening"]');
+  }
+
+  it('shows the Social Listening toggle on a Board group', async () => {
+    fixture.componentRef.setInput('category', 'Board');
+    await fixture.whenStable();
+
+    expect(socialListeningToggle()).not.toBeNull();
+  });
+
+  it.each(['Technical Steering Committee', 'Government Advisory Council', null])('hides the Social Listening toggle for category %s', async (category) => {
+    fixture.componentRef.setInput('category', category);
+    await fixture.whenStable();
+
+    expect(socialListeningToggle()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="feature-business_email_required"]')).not.toBeNull();
   });
 });

@@ -20,6 +20,8 @@ export class CommitteeSettingsComponent {
   // Form group input from parent
   public readonly form = input.required<FormGroup>();
   public readonly showHeader = input<boolean>(true);
+  /** The group's category — feature toggles that declare `categories` show only for those categories. */
+  public readonly category = input<string | null | undefined>(null);
   /**
    * Whether to render the Slack Incoming Webhook card at all. Defaults to false — this
    * component is also used by the committee create/edit wizard (`committee-manage.component`),
@@ -75,7 +77,10 @@ export class CommitteeSettingsComponent {
   public readonly cancelEditingSlackWebhookUrl = output<void>();
 
   // Constants from shared package
-  public readonly features = COMMITTEE_SETTINGS_FEATURES;
+  public readonly features = computed(() => {
+    const category = (this.category() ?? '').trim().toLowerCase();
+    return COMMITTEE_SETTINGS_FEATURES.filter((feature) => !feature.categories || feature.categories.some((allowed) => allowed.toLowerCase() === category));
+  });
   public readonly committeeLabel = COMMITTEE_LABEL.singular;
   public readonly memberVisibilityOptions = MEMBER_VISIBILITY_OPTIONS;
   public readonly joinModeOptions = JOIN_MODE_OPTIONS;

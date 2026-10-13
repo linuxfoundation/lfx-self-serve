@@ -573,6 +573,7 @@ export class CommitteeManageComponent {
       join_mode: committee.join_mode || 'invite_only',
       member_visibility: committee.member_visibility || 'hidden',
       show_meeting_attendees: committee.show_meeting_attendees || false,
+      members_can_view_social_listening: committee.members_can_view_social_listening || false,
     });
   }
 
@@ -603,6 +604,7 @@ export class CommitteeManageComponent {
       join_mode: new FormControl('invite_only'),
       member_visibility: new FormControl('hidden'),
       show_meeting_attendees: new FormControl(false),
+      members_can_view_social_listening: new FormControl(false),
     });
   }
 

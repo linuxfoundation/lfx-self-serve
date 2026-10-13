@@ -34,6 +34,7 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SocialListeningService } from '@services/social-listening.service';
 import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';
 import { map, of, startWith, switchMap } from 'rxjs';
@@ -57,6 +58,7 @@ export class SidebarNavService {
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
+  private readonly socialListeningService = inject(SocialListeningService);
 
   /** The Me lens section My Formations (#2753) is appended to; matched by label because the tree is built inline. */
   private readonly meEngagementSectionLabel = 'My Engagement';
@@ -117,6 +119,13 @@ export class SidebarNavService {
   // when they have writer (or owner-equivalent) permission on the currently
   // active foundation/project. canWrite() is reactive to context changes.
   private readonly canSeeNewsletters: Signal<boolean> = this.initCanSeeNewsletters();
+
+  /**
+   * True when a Board member (not ED/LF Staff) can view Social Listening for the selected foundation
+   * because its Board group opted in (lfx-self-serve-ops#387). Only asked for foundations the user has
+   * a board-member persona on, so everyone else makes no extra request.
+   */
+  private readonly canBoardViewSocialListening: Signal<boolean> = this.initCanBoardViewSocialListening();
 
   // Lens-aware sidebar items
   public readonly sidebarItems = computed((): SidebarMenuItem[] => {
@@ -545,21 +554,23 @@ export class SidebarNavService {
         });
       }
 
-      if (this.personaService.canViewExecutiveDashboards()) {
-        const metricsItems: SidebarMenuItem[] = [
-          {
+      const canViewExecutiveDashboards = this.personaService.canViewExecutiveDashboards();
+      if (canViewExecutiveDashboards || this.canBoardViewSocialListening()) {
+        const metricsItems: SidebarMenuItem[] = [];
+        if (canViewExecutiveDashboards) {
+          metricsItems.push({
             label: 'Health Metrics',
             icon: 'fa-light fa-chart-line-up',
             routerLink: '/foundation/health-metrics',
             testId: 'sidebar-metrics-health-metrics',
-          },
-          {
-            label: 'Social Listening',
-            icon: 'fa-light fa-ear-listen',
-            routerLink: '/foundation/social-listening',
-            testId: 'sidebar-metrics-social-listening',
-          },
-        ];
+          });
+        }
+        metricsItems.push({
+          label: 'Social Listening',
+          icon: 'fa-light fa-ear-listen',
+          routerLink: '/foundation/social-listening',
+          testId: 'sidebar-metrics-social-listening',
+        });
 
         items.push({
           label: 'Metrics',
@@ -926,6 +937,24 @@ export class SidebarNavService {
         },
       ],
     };
+  }
+
+  private initCanBoardViewSocialListening(): Signal<boolean> {
+    const boardFoundationSlug = computed((): string | null => {
+      if (this.personaService.canViewExecutiveDashboards()) {
+        return null;
+      }
+      const slug = this.projectContextService.selectedFoundation()?.slug?.toLowerCase();
+      const boardSlugs = (this.personaService.personaProjects()['board-member'] ?? []).map((project) => project.projectSlug.toLowerCase());
+      return slug && boardSlugs.includes(slug) ? slug : null;
+    });
+
+    return toSignal(
+      toObservable(boardFoundationSlug).pipe(
+        switchMap((slug) => (slug ? this.socialListeningService.getAccess(slug).pipe(map((access) => access.canView)) : of(false)))
+      ),
+      { initialValue: false }
+    );
   }
 
   private initCanSeeNewsletters(): Signal<boolean> {

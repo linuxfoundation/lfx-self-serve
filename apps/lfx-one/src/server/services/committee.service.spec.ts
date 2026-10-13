@@ -61,7 +61,12 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const pending = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/pending-action.constants')>(
     '../../../../../packages/shared/src/constants/pending-action.constants'
   );
+  const board = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/org-people-committee-members.constants')>(
+    '../../../../../packages/shared/src/constants/org-people-committee-members.constants'
+  );
   return {
+    COMMITTEE_CATEGORY_BOARD: board.COMMITTEE_CATEGORY_BOARD,
+    isBoardCategory: board.isBoardCategory,
     SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
     CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
     ACCESS_CHECK_BATCH_SIZE: 100,
@@ -100,6 +105,7 @@ vi.mock('../helpers/query-service.helper', async () => {
   };
 });
 vi.mock('../utils/auth-helper', () => ({ resolveAuditUserDisplayName, getUsernameFromAuth: vi.fn(), isImpersonating, getEffectiveEmail }));
+vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn(() => Promise.resolve('m2m-token')) }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
@@ -1646,5 +1652,114 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     } finally {
       clock.mockRestore();
     }
+  });
+});
+
+describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops#387)', () => {
+  const FOUNDATION_UID = 'foundation-uid';
+  let service: CommitteeService;
+
+  beforeEach(async () => {
+    proxyRequest.mockReset();
+    fetchWithETag.mockReset();
+    updateWithETag.mockReset();
+    addAccessToResource.mockReset().mockImplementation((_req: Request, committee: Committee) => Promise.resolve(committee));
+    isImpersonating.mockReset().mockReturnValue(false);
+    vi.mocked(getUsernameFromAuth).mockReset().mockResolvedValue('synthetic-user');
+    const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+    vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
+    service = new CommitteeService();
+  });
+
+  describe('canBoardMemberViewSocialListening', () => {
+    it("queries only the user's Board memberships on the foundation itself, then reads each Board group's settings with M2M", async () => {
+      proxyRequest
+        .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'board-1' } }, { data: { committee_uid: 'board-1' } }] })
+        .mockResolvedValueOnce({ members_can_view_social_listening: true });
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
+
+      expect(proxyRequest.mock.calls[0][4]).toEqual({
+        type: 'committee_member',
+        tags_all: ['username:synthetic-user', 'committee_category:Board', `project_uid:${FOUNDATION_UID}`],
+      });
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest.mock.calls[1][2]).toBe('/committees/board-1/settings');
+      expect(proxyRequest.mock.calls[1][7]).toEqual({ bearerToken: 'm2m-token' });
+    });
+
+    it('denies when the Board group has not opted in', async () => {
+      proxyRequest
+        .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'board-1' } }] })
+        .mockResolvedValueOnce({ members_can_view_social_listening: false });
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+    });
+
+    it('allows when any one of several Board groups has opted in', async () => {
+      proxyRequest
+        .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'board-1' } }, { data: { committee_uid: 'board-2' } }] })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ members_can_view_social_listening: true });
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
+    });
+
+    it('denies without reading settings when the user sits on no Board group of the foundation', async () => {
+      proxyRequest.mockResolvedValueOnce({ resources: [] });
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('denies without any upstream call when there is no username', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValue(null);
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('members_can_view_social_listening writes', () => {
+    it('sends the setting on a Board group update', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: 'committee-1', name: 'Board', project_uid: 'project-1' });
+      fetchWithETag.mockResolvedValueOnce({ data: { members_can_view_social_listening: false }, etag: 'settings-etag' });
+      updateWithETag.mockResolvedValueOnce(undefined);
+
+      await service.updateCommittee(req, 'committee-1', { members_can_view_social_listening: true });
+
+      expect(updateWithETag.mock.calls[0][4]).toMatchObject({ members_can_view_social_listening: true });
+    });
+
+    it('switches the setting off when a group moves out of the Board category, so later settings saves are not rejected', async () => {
+      fetchWithETag
+        .mockResolvedValueOnce({ data: { uid: 'committee-1', name: 'Board', category: 'Board', project_uid: 'project-1' }, etag: 'core-etag' })
+        .mockResolvedValueOnce({ data: { members_can_view_social_listening: true }, etag: 'settings-etag' });
+      updateWithETag
+        .mockResolvedValueOnce({ uid: 'committee-1', name: 'Board', category: 'Technical Steering Committee', project_uid: 'project-1' })
+        .mockResolvedValueOnce(undefined);
+
+      await service.updateCommittee(req, 'committee-1', { category: 'Technical Steering Committee', members_can_view_social_listening: true });
+
+      const settingsPut = updateWithETag.mock.calls.find((call) => call[2] === '/committees/committee-1/settings');
+      expect(settingsPut?.[4]).toMatchObject({ members_can_view_social_listening: false });
+    });
+
+    it('drops the setting when creating a non-Board group, so the other settings still save', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: 'committee-1', name: 'TSC', category: 'Technical Steering Committee' });
+      fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag' });
+      updateWithETag.mockResolvedValueOnce(undefined);
+
+      const result = await service.createCommittee(req, {
+        name: 'TSC',
+        category: 'Technical Steering Committee',
+        business_email_required: true,
+        members_can_view_social_listening: true,
+      } as never);
+
+      expect(updateWithETag.mock.calls[0][4]).not.toHaveProperty('members_can_view_social_listening');
+      expect(updateWithETag.mock.calls[0][4]).toMatchObject({ business_email_required: true });
+      expect(result).not.toHaveProperty('members_can_view_social_listening');
+    });
   });
 });

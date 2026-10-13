@@ -2,9 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { BehavioralClassDisplayConfig, CommitteeCategoryInfo, CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
+import type {
+  BehavioralClassDisplayConfig,
+  CommitteeCategoryInfo,
+  CommitteeSettingsFeature,
+  CommitteeTab,
+  GroupBehavioralClass,
+  JoinMode,
+} from '../interfaces/committee.interface';
 import type { MeetingAllowedVotingStatus } from '../interfaces/meeting.interface';
 import { lfxColors } from './colors.constants';
+import { COMMITTEE_CATEGORY_BOARD } from './org-people-committee-members.constants';
 
 // Re-export helper functions from utils for backward compatibility
 export {
@@ -513,7 +521,7 @@ const ORG_REQUIRED_NOTE = 'Members joining this group will need to provide an or
  * Committee settings features for Step 2 form
  * @description Feature toggles for committee settings (follows MEETING_FEATURES pattern)
  */
-export const COMMITTEE_SETTINGS_FEATURES = [
+export const COMMITTEE_SETTINGS_FEATURES: CommitteeSettingsFeature[] = [
   {
     key: 'business_email_required',
     icon: 'fa-light fa-shield',
@@ -560,6 +568,15 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     description:
       "Let guests see who else is invited, and who has accepted, in LFX and in their calendar app's invite. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board and restricted meetings never list other guests in their invites.",
     color: lfxColors.blue[500],
+  },
+  {
+    key: 'members_can_view_social_listening',
+    icon: 'fa-light fa-ear-listen',
+    title: 'Members Can View Social Listening',
+    description:
+      "Let this board's members view Social Listening for the whole foundation and filter it by project. Executive Directors and LF staff always have access.",
+    color: lfxColors.violet[500],
+    categories: [COMMITTEE_CATEGORY_BOARD],
   },
 ];
 

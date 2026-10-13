@@ -4,6 +4,8 @@
 import {
   ACCESS_CHECK_BATCH_SIZE,
   CHAT_WEBHOOK_URL_MAX_LENGTH,
+  COMMITTEE_CATEGORY_BOARD,
+  isBoardCategory,
   PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   UUID_REGEX,
@@ -564,9 +566,14 @@ export class CommitteeService {
       is_audit_enabled,
       show_meeting_attendees,
       member_visibility,
+      members_can_view_social_listening: requestedSocialListening,
       ...committeeData
     } = data as CommitteeCreateData & { chat_webhook_url?: unknown };
     /* eslint-enable @typescript-eslint/no-unused-vars */
+
+    // Upstream rejects members_can_view_social_listening on non-Board groups, and a rejected settings
+    // write here would drop every other setting with it — so it only ever goes out on a Board group.
+    const membersCanViewSocialListening = isBoardCategory(committeeData.category) ? requestedSocialListening : undefined;
 
     // Step 1: Create committee
     // <Committee | null>, not <Committee> — matches the established convention at
@@ -591,9 +598,21 @@ export class CommitteeService {
     }
 
     // Step 2: Update settings if provided
-    if (business_email_required !== undefined || is_audit_enabled !== undefined || show_meeting_attendees !== undefined || member_visibility !== undefined) {
+    if (
+      business_email_required !== undefined ||
+      is_audit_enabled !== undefined ||
+      show_meeting_attendees !== undefined ||
+      member_visibility !== undefined ||
+      membersCanViewSocialListening !== undefined
+    ) {
       try {
-        await this.updateCommitteeSettings(req, newCommittee.uid, { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility });
+        await this.updateCommitteeSettings(req, newCommittee.uid, {
+          business_email_required,
+          is_audit_enabled,
+          show_meeting_attendees,
+          member_visibility,
+          members_can_view_social_listening: membersCanViewSocialListening,
+        });
       } catch {
         logger.warning(req, 'create_committee_settings', 'Failed to update committee settings, but committee was created successfully', {
           committee_uid: newCommittee.uid,
@@ -607,6 +626,7 @@ export class CommitteeService {
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
       ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
       ...(member_visibility !== undefined && { member_visibility }),
+      ...(membersCanViewSocialListening !== undefined && { members_can_view_social_listening: membersCanViewSocialListening }),
     };
   }
 
@@ -632,11 +652,17 @@ export class CommitteeService {
       is_audit_enabled,
       show_meeting_attendees,
       member_visibility,
+      members_can_view_social_listening: requestedSocialListening,
       writers,
       auditors,
       chat_webhook_url: rawChatWebhookUrlTyped,
       ...committeeData
     } = data;
+
+    // Upstream only accepts members_can_view_social_listening on Board groups, and the settings PUT
+    // carries the current value forward — so moving a group out of Board must also switch it off, or
+    // every later settings save on that group would be rejected.
+    const membersCanViewSocialListening = committeeData.category !== undefined && !isBoardCategory(committeeData.category) ? false : requestedSocialListening;
 
     // Read as `unknown`, not trusting the declared `string | null | undefined` type: this body
     // arrives as raw JSON (the controller casts req.body to this method's parameter type via a
@@ -718,6 +744,7 @@ export class CommitteeService {
       is_audit_enabled !== undefined ||
       show_meeting_attendees !== undefined ||
       member_visibility !== undefined ||
+      membersCanViewSocialListening !== undefined ||
       writers !== undefined ||
       auditors !== undefined ||
       chatWebhookUrlToSave !== undefined;
@@ -825,6 +852,7 @@ export class CommitteeService {
         is_audit_enabled,
         show_meeting_attendees,
         member_visibility,
+        members_can_view_social_listening: membersCanViewSocialListening,
         writers,
         auditors,
         chat_webhook_url: chatWebhookUrlToSave,
@@ -858,6 +886,7 @@ export class CommitteeService {
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
       ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
       ...(member_visibility !== undefined && { member_visibility }),
+      ...(membersCanViewSocialListening !== undefined && { members_can_view_social_listening: membersCanViewSocialListening }),
       ...(writers !== undefined && { writers }),
       ...(auditors !== undefined && { auditors }),
       // Workaround: upstream committee-service PUT does not include mailing_list in the response body
@@ -1394,6 +1423,56 @@ export class CommitteeService {
     });
 
     return userMemberships;
+  }
+
+  /**
+   * Whether the current user sits on a Board group of `foundationUid` that has
+   * `members_can_view_social_listening` switched on (lfx-self-serve-ops#387).
+   *
+   * Membership is read with the user's own token and filtered to the foundation's own Board groups —
+   * Boards of the foundation's child projects carry a different `project_uid` and never match. The
+   * settings read uses M2M because upstream gates `/committees/{uid}/settings` on committee#writer,
+   * which Board members usually are not; only the one boolean is read and nothing is forwarded.
+   * Fails closed: any upstream error denies access.
+   */
+  public async canBoardMemberViewSocialListening(req: Request, foundationUid: string): Promise<boolean> {
+    const username = await getUsernameFromAuth(req);
+    if (!username) {
+      return false;
+    }
+
+    const memberships = await fetchAllQueryResources<CommitteeMember>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'committee_member',
+        tags_all: [`username:${username}`, `committee_category:${COMMITTEE_CATEGORY_BOARD}`, `project_uid:${foundationUid}`],
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+
+    const boardUids = [...new Set(memberships.map((m) => m.committee_uid).filter((uid): uid is string => Boolean(uid)))];
+    if (boardUids.length === 0) {
+      return false;
+    }
+
+    const m2mToken = await generateM2MToken(req);
+    const settings = await Promise.all(
+      boardUids.map((uid) =>
+        this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
+          req,
+          'LFX_V2_SERVICE',
+          `/committees/${uid}/settings`,
+          'GET',
+          undefined,
+          undefined,
+          undefined,
+          {
+            bearerToken: m2mToken,
+          }
+        )
+      )
+    );
+
+    return settings.some((s) => s?.members_can_view_social_listening === true);
   }
 
   // ── My Committees ─────────────────────────────────────────────────────────
@@ -2609,6 +2688,7 @@ export class CommitteeService {
       ...(settings.is_audit_enabled !== undefined && { is_audit_enabled: settings.is_audit_enabled }),
       ...(settings.show_meeting_attendees !== undefined && { show_meeting_attendees: settings.show_meeting_attendees }),
       ...(settings.member_visibility !== undefined && { member_visibility: settings.member_visibility }),
+      ...(settings.members_can_view_social_listening !== undefined && { members_can_view_social_listening: settings.members_can_view_social_listening }),
       ...(settings.chat_webhook_url !== undefined && { chat_webhook_url: settings.chat_webhook_url }),
       ...(settings.writers !== undefined && { writers: settings.writers }),
       ...(settings.auditors !== undefined && { auditors: settings.auditors }),

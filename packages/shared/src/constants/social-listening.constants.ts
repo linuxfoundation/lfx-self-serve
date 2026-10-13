@@ -289,3 +289,9 @@ export const SOCIAL_LISTENING_PREFERENCE_VALUE_MAX_LENGTH = 64_000;
 
 /** Empty read-state doc — mark-all-as-unread writes it (no DELETE) and corrupt docs parse to it. */
 export const EMPTY_READ_STATE: ReadStateData = { readBeforeTs: null, readIds: [], unreadIds: [] };
+
+/** How long the BFF remembers a Board member's Social Listening access per foundation — the page fans out ~15 parallel calls, and a Board removal or setting change takes effect within this window. */
+export const SOCIAL_LISTENING_BOARD_ACCESS_CACHE_TTL_MS = 60_000;
+
+/** Expired entries in that cache are swept once it holds this many user/foundation keys. */
+export const SOCIAL_LISTENING_BOARD_ACCESS_CACHE_SWEEP_THRESHOLD = 1_000;

@@ -18,6 +18,7 @@
   <!-- Reuse existing settings form (hide its own header) -->
   <lfx-committee-settings
     [form]="form"
+    [category]="committee().category"
     [showHeader]="false"
     [showSlackWebhook]="slackWebhookEnabled()"
     [slackWebhookInputVisible]="slackWebhookInputVisible()"
