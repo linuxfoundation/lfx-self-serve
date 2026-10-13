@@ -27,6 +27,8 @@ import { AccessCheckService } from '../services/access-check.service';
 import { AttendanceReconciliationService } from '../services/attendance-reconciliation.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
+import { UserService } from '../services/user.service';
+import { getEffectiveEmail } from '../utils/auth-helper';
 
 /**
  * Controller for handling past meeting HTTP requests
@@ -35,6 +37,7 @@ export class PastMeetingController {
   private meetingService: MeetingService = new MeetingService();
   private accessCheckService: AccessCheckService = new AccessCheckService();
   private attendanceReconciliationService: AttendanceReconciliationService = new AttendanceReconciliationService();
+  private userService: UserService = new UserService();
 
   /**
    * GET /past-meetings
@@ -61,6 +64,12 @@ export class PastMeetingController {
 
       // Past meetings never surface the host key.
       enriched.forEach((meeting) => stripHostKey(meeting));
+
+      // Let the card show an "Attended" label for the viewer. Skipped when there is no signed-in user.
+      const userEmail = getEffectiveEmail(req);
+      if (userEmail) {
+        await this.userService.enrichPastMeetingsWithUserAttendance(req, userEmail, enriched);
+      }
 
       logger.success(req, 'get_past_meetings', startTime, {
         meeting_count: enriched.length,
