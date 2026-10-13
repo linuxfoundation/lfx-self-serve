@@ -146,4 +146,13 @@ describe('EditAttributionDialogComponent', () => {
     expect(root.querySelector('[data-testid="initiative-edit-attribution-options-error"]')).not.toBeNull();
     expect(root.querySelector('[data-testid="initiative-edit-attribution-empty"]')).toBeNull();
   });
+
+  it('explains when the caller has no organizations to choose from', () => {
+    const { fixture, dialog } = create(undefined, of({ organizations: [], projects: OPTIONS.projects }));
+    choose(dialog, 'organization');
+    fixture.detectChanges();
+
+    const empty = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="initiative-edit-attribution-empty"]');
+    expect(empty?.textContent).toContain('any organization');
+  });
 });

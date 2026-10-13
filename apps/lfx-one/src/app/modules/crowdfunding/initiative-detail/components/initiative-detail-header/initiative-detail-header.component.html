@@ -41,7 +41,14 @@
       </div>
       <!-- Source label: the org or project the initiative is run on behalf of, as on the CF public page. Personal shows nothing. -->
       @if (attributionIcon() && initiative().attribution?.name; as attributionName) {
-        <div class="flex items-center gap-2 w-fit" tabindex="0" [pTooltip]="attributionTooltip()" tooltipPosition="bottom" data-testid="initiative-attribution">
+        <div
+          class="flex items-center gap-2 w-fit"
+          tabindex="0"
+          role="note"
+          [attr.aria-label]="'On behalf of ' + attributionName + '. ' + attributionTooltip()"
+          [pTooltip]="attributionTooltip()"
+          tooltipPosition="bottom"
+          data-testid="initiative-attribution">
           <span class="text-sm text-gray-500">On behalf of</span>
           <lfx-avatar [image]="initiative().attribution?.logoUrl ?? ''" [icon]="attributionIcon()" styleClass="!w-5 !h-5 !text-xs" />
           <span class="text-sm text-gray-600">{{ attributionName }}</span>

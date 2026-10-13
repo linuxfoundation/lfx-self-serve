@@ -38,6 +38,7 @@ export class InitiativeCardComponent {
     const name = this.initiative().attribution?.name;
     return this.attributionIcon() && name ? `On behalf of ${name}` : '';
   });
+  protected readonly cardLabel = computed(() => [this.initiative().name, this.attributionTooltip()].filter(Boolean).join(', '));
 
   protected readonly progressPercent = this.initProgressPercent();
 

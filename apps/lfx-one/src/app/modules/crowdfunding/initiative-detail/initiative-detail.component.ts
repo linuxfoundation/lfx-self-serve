@@ -68,7 +68,7 @@ export class InitiativeDetailComponent {
   protected readonly canEditAttribution: Signal<boolean> = this.initCanEditAttribution();
 
   protected onInitiativeSaved(updated: InitiativeDetail): void {
-    this.initiativeOverride.set(updated);
+    this.applyUpdate(updated);
   }
 
   protected async onStatusChange(status: CrowdfundingInitiativeStatus): Promise<void> {
@@ -76,7 +76,7 @@ export class InitiativeDetailComponent {
     if (!current) return;
     try {
       const updated = await firstValueFrom(this.crowdfundingService.updateInitiative(current.id, { status }), { defaultValue: null });
-      if (updated) this.initiativeOverride.set(updated);
+      if (updated) this.applyUpdate(updated);
     } catch {
       // HTTP error surfaced by the global error handler
     }
@@ -95,10 +95,17 @@ export class InitiativeDetailComponent {
     });
 
     ref?.onClose.pipe(take(1)).subscribe((updated?: InitiativeDetail) => {
-      if (!updated) return;
-      this.initiativeOverride.set(updated);
+      const current = this.initiative();
+      if (!updated || !current) return;
+      // The PUT response isn't the enriched manage read, so take only the attribution from it.
+      this.initiativeOverride.set({ ...current, attribution: updated.attribution });
       this.messageService.add({ severity: 'success', summary: 'Saved', detail: 'Attribution updated.' });
     });
+  }
+
+  // CF sets is_owner only on the manage read; write responses would otherwise hide the creator's Edit attribution.
+  private applyUpdate(updated: InitiativeDetail): void {
+    this.initiativeOverride.set({ ...updated, isOwner: this.initiative()?.isOwner ?? false });
   }
 
   // ─── Private Initializers ──────────────────────────────────────────────────

@@ -120,6 +120,10 @@ export const CROWDFUNDING_INITIATIVE_STATUSES = ['submitted', 'pending', 'publis
 // Matches the upstream crowdfunding service's attribution.type enum (lfx-crowdfunding#342).
 export const CROWDFUNDING_ATTRIBUTION_TYPES = ['personal', 'organization', 'project'] as const;
 
+// Upstream bounds on the attribution display values (lfx-crowdfunding Attribution.Validate).
+export const CROWDFUNDING_ATTRIBUTION_NAME_MAX_CHARS = 255;
+export const CROWDFUNDING_ATTRIBUTION_LOGO_URL_MAX_CHARS = 2048;
+
 // Choices in the Edit attribution dialog, in display order.
 export const CROWDFUNDING_ATTRIBUTION_TYPE_OPTIONS: { label: string; value: CrowdfundingAttributionType }[] = [
   { label: 'Personal', value: 'personal' },

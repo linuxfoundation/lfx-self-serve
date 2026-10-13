@@ -11,7 +11,7 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { InitiativeDetailComponent } from './initiative-detail.component';
@@ -34,7 +34,16 @@ function detail(overrides: { isOwner?: boolean; status?: CrowdfundingInitiativeS
 describe('InitiativeDetailComponent Edit attribution visibility (lfx-crowdfunding#342)', () => {
   afterEach(() => TestBed.resetTestingModule());
 
-  const canEdit = (opts: { lens?: string; flag?: boolean; initiative?: InitiativeDetail } = {}): boolean => {
+  interface Page {
+    canEditAttribution: Signal<boolean>;
+    initiative: Signal<InitiativeDetail | null>;
+    onInitiativeSaved(updated: InitiativeDetail): void;
+    openEditAttribution(initiative: InitiativeDetail): void;
+  }
+
+  const dialogClose = new Subject<InitiativeDetail | undefined>();
+
+  const setup = (opts: { lens?: string; flag?: boolean; initiative?: InitiativeDetail } = {}): Page => {
     TestBed.configureTestingModule({
       imports: [InitiativeDetailComponent],
       providers: [
@@ -48,16 +57,17 @@ describe('InitiativeDetailComponent Edit attribution visibility (lfx-crowdfundin
         { provide: CrowdfundingService, useValue: { getInitiativeBySlug: () => of(opts.initiative ?? detail()) } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(opts.flag ?? true) } },
         { provide: OrgLensNavigationService, useValue: { orgLensLink: () => ['/org', 'initiatives'] } },
-        { provide: DialogService, useValue: {} },
-        { provide: MessageService, useValue: {} },
+        { provide: DialogService, useValue: { open: () => ({ onClose: dialogClose }) } },
+        { provide: MessageService, useValue: { add: () => undefined } },
       ],
     });
     // Only the visibility rule is under test; skip rendering the page's children.
     TestBed.overrideComponent(InitiativeDetailComponent, { set: { imports: [], template: '' } });
     const fixture = TestBed.createComponent(InitiativeDetailComponent);
     fixture.detectChanges();
-    return (fixture.componentInstance as unknown as { canEditAttribution: Signal<boolean> }).canEditAttribution();
+    return fixture.componentInstance as unknown as Page;
   };
+  const canEdit = (opts: Parameters<typeof setup>[0] = {}): boolean => setup(opts).canEditAttribution();
 
   it('shows for the creator of a submitted initiative in the Me lens', () => {
     expect(canEdit()).toBe(true);
@@ -77,5 +87,20 @@ describe('InitiativeDetailComponent Edit attribution visibility (lfx-crowdfundin
 
   it('hides while the attribution flag is off', () => {
     expect(canEdit({ flag: false })).toBe(false);
+  });
+
+  it('stays visible after a settings save, whose response carries no is_owner', () => {
+    const page = setup();
+    page.onInitiativeSaved({ ...detail(), isOwner: false, name: 'Renamed' });
+    expect(page.initiative()?.name).toBe('Renamed');
+    expect(page.canEditAttribution()).toBe(true);
+  });
+
+  it('takes only the attribution from an attribution save', () => {
+    const page = setup();
+    page.openEditAttribution(detail());
+    dialogClose.next({ ...detail(), isOwner: false, name: 'Unenriched', attribution: { type: 'organization', entityUid: 'x', name: 'Acme Motors' } });
+    expect(page.initiative()).toMatchObject({ name: 'Synthetic Initiative', attribution: { name: 'Acme Motors' } });
+    expect(page.canEditAttribution()).toBe(true);
   });
 });

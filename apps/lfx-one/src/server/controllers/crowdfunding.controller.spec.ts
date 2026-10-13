@@ -29,6 +29,7 @@ vi.mock('../services/logger.service', () => ({
 
 import { ServiceValidationError } from '../errors';
 import { CrowdfundingService } from '../services/crowdfunding.service';
+import { getUsernameFromAuth } from '../utils/auth-helper';
 import { CrowdfundingController } from './crowdfunding.controller';
 
 const PROJECT_UID = '00000000-0000-4000-8000-000000000001';
@@ -315,13 +316,40 @@ describe('CrowdfundingController initiative attribution (lfx-crowdfunding#342)',
     expect(getAccessAwareOrgs).not.toHaveBeenCalled();
   });
 
-  it('still sends a target missing from the options, without display values', async () => {
-    respondWith(200, { id: INITIATIVE_ID, status: 'submitted' });
+  it('rejects a target missing from the options with a 403, so CF never stores a nameless attribution', async () => {
     const next = vi.fn();
     await new CrowdfundingController().updateInitiativeAttribution(putReq({ type: 'organization', entityUid: OTHER_ORG_UID }), buildRes(), next);
 
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('fails with a 502 when the options lookup fails, without calling CF', async () => {
+    getAccessAwareOrgs.mockResolvedValue({ upstreamFailed: true, resolved: new Map(), orgDocByUid: new Map() });
+    const next = vi.fn();
+    await new CrowdfundingController().updateInitiativeAttribution(putReq({ type: 'organization', entityUid: ORG_UID }), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 502 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('truncates a long display name to the upstream limit', async () => {
+    getDirectGrantProjectRows.mockResolvedValue([{ uid: PROJECT_UID, name: 'P'.repeat(300) }]);
+    respondWith(200, { id: INITIATIVE_ID, status: 'submitted' });
+    const next = vi.fn();
+    await new CrowdfundingController().updateInitiativeAttribution(putReq({ type: 'project', entityUid: PROJECT_UID }), buildRes(), next);
+
     expect(next).not.toHaveBeenCalled();
-    expect(sentBody()).toEqual({ type: 'organization', entity_uid: OTHER_ORG_UID });
+    expect(sentBody()['name']).toBe('P'.repeat(255));
+  });
+
+  it('rejects an unauthenticated caller with a 401', async () => {
+    vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null);
+    const next = vi.fn();
+    await new CrowdfundingController().updateInitiativeAttribution(putReq({ type: 'personal' }), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 401 });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it.each([403, 400])('propagates a %s from CF', async (status) => {

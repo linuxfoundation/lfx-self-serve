@@ -22,7 +22,11 @@ import {
   UpdateInitiativeAttributionInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
-import { DEFAULT_CROWDFUNDING_PAGE_SIZE } from '@lfx-one/shared/constants';
+import {
+  CROWDFUNDING_ATTRIBUTION_LOGO_URL_MAX_CHARS,
+  CROWDFUNDING_ATTRIBUTION_NAME_MAX_CHARS,
+  DEFAULT_CROWDFUNDING_PAGE_SIZE,
+} from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
 import {
@@ -58,10 +62,6 @@ import { ProjectService } from './project.service';
 const cfBaseUrl = (): string => (process.env['CROWDFUNDING_API_BASE_URL'] || '').replace(/\/+$/, '');
 
 const CF_TIMEOUT_MS = 30_000;
-
-// Upstream bounds on the attribution display values (lfx-crowdfunding Attribution.Validate).
-const ATTRIBUTION_NAME_MAX_CHARS = 255;
-const ATTRIBUTION_LOGO_URL_MAX_CHARS = 2048;
 
 function throwCfNetworkError(operation: string, error: unknown): never {
   if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
@@ -404,13 +404,20 @@ export class CrowdfundingService {
 
     const body: BackendAttribution = { type: input.type };
     if (input.type !== 'personal' && input.entityUid) {
+      // Fail closed: CF stores whatever display values it is sent, so a target outside the caller's options
+      // (an inherited grant, or a crafted request) would be saved without a name. A failed lookup throws.
+      const options = await this.getAttributionOptions(req, username);
+      const entity = (input.type === 'organization' ? options.organizations : options.projects).find((e) => e.id === input.entityUid);
+      if (!entity) {
+        throw new MicroserviceError(`That ${input.type} isn't one you can attribute this initiative to`, 403, 'FORBIDDEN', {
+          operation: 'cf_update_initiative_attribution',
+          service: 'crowdfunding',
+        });
+      }
       body.entity_uid = input.entityUid;
-      const entity = await this.findAttributionEntity(req, username, input);
-      if (entity) {
-        body.name = Array.from(entity.name).slice(0, ATTRIBUTION_NAME_MAX_CHARS).join('');
-        if (entity.logoUrl?.startsWith('https://') && entity.logoUrl.length <= ATTRIBUTION_LOGO_URL_MAX_CHARS) {
-          body.logo_url = entity.logoUrl;
-        }
+      body.name = Array.from(entity.name).slice(0, CROWDFUNDING_ATTRIBUTION_NAME_MAX_CHARS).join('');
+      if (entity.logoUrl?.startsWith('https://') && entity.logoUrl.length <= CROWDFUNDING_ATTRIBUTION_LOGO_URL_MAX_CHARS) {
+        body.logo_url = entity.logoUrl;
       }
     }
 
@@ -562,18 +569,5 @@ export class CrowdfundingService {
       from: raw.from,
       size: raw.size,
     };
-  }
-
-  // Display values are best effort: a target missing from the options (e.g. an inherited grant) is still sent,
-  // without a name or logo, and CF's own affiliation check decides.
-  private async findAttributionEntity(req: Request, username: string, input: UpdateInitiativeAttributionInput): Promise<AttributionEntity | undefined> {
-    try {
-      const options = await this.getAttributionOptions(req, username);
-      const list = input.type === 'organization' ? options.organizations : options.projects;
-      return list.find((e) => e.id === input.entityUid);
-    } catch (error) {
-      logger.warning(req, 'cf_update_initiative_attribution', 'Attribution display lookup failed; sending without name or logo', { err: error });
-      return undefined;
-    }
   }
 }
