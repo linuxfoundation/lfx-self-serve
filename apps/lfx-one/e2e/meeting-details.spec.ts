@@ -70,8 +70,11 @@ test.describe('Meeting details V2 — signed-in presets', () => {
     await expect(transcript).toHaveCount(0);
 
     await page.getByTestId('tools-summary-btn').click();
-    const summary = page.getByRole('dialog').filter({ has: page.getByTestId('summary-content') });
-    await expect(summary.getByTestId('summary-content')).toContainText('Agreed the roadmap', { timeout: ELEMENT_TIMEOUT });
+    // The stubbed summary has a `## Notes` heading, so the modal renders its structured sections.
+    const summary = page.getByRole('dialog').filter({ has: page.getByTestId('summary-structured') });
+    const section = summary.getByTestId('summary-section-0');
+    await expect(section).toContainText('Notes', { timeout: ELEMENT_TIMEOUT });
+    await expect(section).toContainText('Agreed the roadmap');
     await page.keyboard.press('Escape');
     await expect(summary).toHaveCount(0);
   });
