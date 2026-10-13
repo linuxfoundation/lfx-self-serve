@@ -157,6 +157,7 @@ export const MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES: readonly MentorshipUpstream
  */
 export const MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS: Readonly<Record<string, MentorshipProgramStatus>> = {
   pending: 'pending-review',
+  submitted: 'pending-review',
   rejected: 'rejected',
   hidden: 'hidden',
 };

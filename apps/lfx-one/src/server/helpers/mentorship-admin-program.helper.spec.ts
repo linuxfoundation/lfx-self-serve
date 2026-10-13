@@ -60,13 +60,14 @@ describe('mapMentorshipAdminProgram', () => {
   });
 
   it.each([
+    ['submitted', undefined, true],
     ['pending', undefined, true],
     ['published', undefined, true],
     ['published', '', true],
+    ['submitted', 'https://logo.example/p.png', false],
     ['pending', 'https://logo.example/p.png', false],
     ['published', 'https://logo.example/p.png', false],
     ['rejected', undefined, false],
-    ['submitted', undefined, false],
     ['hidden', undefined, false],
   ])('reads status %s with logo %s as logoMissing %s', (status, logoUrl, expected) => {
     expect(mapMentorshipAdminProgram(upstream({ status, logo_url: logoUrl })).program.logoMissing).toBe(expected);
@@ -109,6 +110,7 @@ describe('mapMentorshipAdminHeaderProgram', () => {
   });
 
   it.each([
+    ['submitted', 'pending-review'],
     ['pending', 'pending-review'],
     ['rejected', 'rejected'],
     ['hidden', 'hidden'],
@@ -119,7 +121,7 @@ describe('mapMentorshipAdminHeaderProgram', () => {
     });
   });
 
-  it.each(['mystery', 'constructor', 'submitted', 'archived'])('reads the unknown status "%s" as pending-review and flags it', (status) => {
+  it.each(['mystery', 'constructor', 'archived'])('reads the unknown status "%s" as pending-review and flags it', (status) => {
     expect(mapMentorshipAdminHeaderProgram(header(status))).toMatchObject({ program: { status: 'pending-review' }, unknownStatus: true });
   });
 
@@ -136,8 +138,8 @@ describe('mapMentorshipAdminHeaderProgram', () => {
     });
   });
 
-  it('leaves logoMissing to the list row, even for a pending program without a logo', () => {
-    expect(mapMentorshipAdminHeaderProgram(header('pending')).program).not.toHaveProperty('logoMissing');
+  it('leaves logoMissing to the list row, even for a submitted program without a logo', () => {
+    expect(mapMentorshipAdminHeaderProgram(header('submitted')).program).not.toHaveProperty('logoMissing');
   });
 });
 

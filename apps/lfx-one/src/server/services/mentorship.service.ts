@@ -200,8 +200,8 @@ export class MentorshipService {
   }
 
   /**
-   * Publishes or rejects a pending program. Upstream allows this only for members of the
-   * mentorship approver team (403 otherwise) and only from `pending` (409 otherwise); both
+   * Publishes or rejects a submitted program. Upstream allows this only for members of the
+   * mentorship approver team (403 otherwise) and only from `submitted` (409 otherwise); both
    * statuses pass through to the page unchanged.
    */
   public async submitProgramDecision(req: Request, programId: string, decision: MentorshipProgramReviewDecision): Promise<MentorshipProgramReview> {

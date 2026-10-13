@@ -41,7 +41,7 @@ test.setTimeout(60_000);
 test.describe('Program review — confirm flow', () => {
   test.beforeEach(async ({ page }) => {
     await enableMentorshipFlag(page);
-    await stubProgramReview(page, 200, { status: 'pending' });
+    await stubProgramReview(page, 200, { status: 'submitted' });
   });
 
   test('asks for confirmation and records nothing until Confirm is clicked', async ({ page }) => {

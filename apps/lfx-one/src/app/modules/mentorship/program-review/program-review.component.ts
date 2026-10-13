@@ -153,8 +153,8 @@ export class ProgramReviewComponent {
       if (!program) {
         return 'It is no longer awaiting a decision.';
       }
-      // A 409 on Confirm keeps the program as loaded (still `pending`), so its status says nothing new.
-      if (program.status === 'pending') {
+      // A 409 on Confirm keeps the program as loaded (still `submitted`), so its status says nothing new.
+      if (program.status === 'submitted') {
         return 'Another reviewer decided this program before you confirmed.';
       }
       // Upstream owns the status set, so a status added there before this map shows its raw value.
@@ -169,7 +169,7 @@ export class ProgramReviewComponent {
       return of<MentorshipProgramReviewView>({ state: 'invalid-link', program: null });
     }
     return this.mentorshipService.getProgramReview(programId).pipe(
-      map((program): MentorshipProgramReviewView => ({ state: program.status === 'pending' ? 'confirm' : 'already-decided', program })),
+      map((program): MentorshipProgramReviewView => ({ state: program.status === 'submitted' ? 'confirm' : 'already-decided', program })),
       catchError((error: unknown) => of<MentorshipProgramReviewView>({ state: this.stateForError(error), program: null }))
     );
   }

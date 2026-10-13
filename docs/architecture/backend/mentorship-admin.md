@@ -165,26 +165,31 @@ Create task on an accepted Current Mentees row, and Edit and the status select o
 
 ### Status mapping
 
-A program's status is one of `pending`, `published`, `rejected` or `hidden`. Create leaves it `pending`; from there it moves to `published`, `rejected` or `hidden`, and a `published` program can later be `hidden`. There is no submit step.
+A program's status is one of `submitted`, `published`, `rejected` or `hidden`. Create sets it to `submitted`, which means awaiting review. A reviewer then moves it to `published` or `rejected`, and a `published` program can later be `hidden`. There is no draft or separate submit step.
+
+Programs created before this change can still be `pending`. Upstream reads `pending` as awaiting review too, but its decision route accepts only `submitted`.
 
 Upstream works out `admin_status` from the program status and its terms. The BFF renames it (`_` to `-`):
 
 | Upstream `admin_status` | Shown as       | Upstream program status                         |
 | ----------------------- | -------------- | ----------------------------------------------- |
-| `pending_review`        | Pending Review | `pending`                                       |
+| `pending_review`        | Pending Review | `submitted` or `pending`                        |
 | `open`                  | Open           | `published` with an open term, or with no terms |
 | `completed`             | Completed      | `published` with only closed terms              |
 | `rejected`              | Rejected       | `rejected`                                      |
 | `hidden`                | Hidden         | `hidden`                                        |
 
-An unrecognised `admin_status` is shown as Pending Review and logged (program id and value only). The program header reads the program status itself (`MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS`: `pending`, `rejected`, `hidden`); any other unpublished value is shown as Pending Review and logged the same way.
+An unrecognised `admin_status` is shown as Pending Review and logged (program id and value only). The program header reads the program status itself (`MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS`: `submitted`, `pending`, `rejected`, `hidden`); any other unpublished value is shown as Pending Review and logged the same way.
 
 ## Program create and logo upload
 
 Two writes behind the Enroll wizard, each behind `blockDuringImpersonation` and with the caller's bearer token through `proxyMentorshipRequest`, so a first-time caller is provisioned and retried.
 
 - `POST /api/mentorship/admin/programs` takes `MentorshipEnrollCreateRequest` (camelCase) and answers 201 with `{ id, slug, status }`. `parseMentorshipEnrollCreateRequest` in `mentorship-enroll.helper.ts` rebuilds the body from known keys only and answers 400 on the failing field: a UUID `projectId`, non-empty `projectSlug`, `projectName`, `name`, `description` and `repositoryUrl`, a non-empty `skills` list, 1–`MENTORSHIP_MAX_OPEN_TERMS` terms with five date and name fields, a `prerequisites` list whose `required`, `requireFile` and `custom` are booleans when sent (left out means `false`) and whose `description` and `dueDate` are text when sent (left out or `null` means empty), and `termsAccepted: true`. A prerequisite's `required` means the admin picked it; upstream saves only picked ones. Its `custom` is `false` for a standard prerequisite and `true` for one the admin wrote and is kept in the program's task templates. The dates are date-only `YYYY-MM-DD` and go upstream as sent: the wizard sends a term's `endDate` as the last day of its end month and folds a coding challenge's URL into the prerequisite description, since upstream has no field for it. A field inside a list is named by its index (`terms[1].startDate`, `prerequisites[0].name`). Every text field but a prerequisite description is trimmed, and the optional ones are kept only when not blank. The optional `industry` holds the wizard's Technologies as one string joined with a comma and a space; upstream keeps it apart from `skills`. `logo_url`, `logoUrl`, `status`, a term `id` and `logoFileName` are never forwarded.
-- Upstream `POST /mentorship/v1/programs` leaves the program `pending`, which is "in review". There is no submit route and no publish call, so creating the program is what sends it to review; a reviewer then publishes, rejects or hides it. `slug` falls back to the id when upstream returns none.
+- Upstream `POST /mentorship/v1/programs` creates the program as `submitted`, which means "in review".
+  - The BFF makes no submit or publish call, so creating the program is what sends it to review.
+  - A reviewer then publishes or rejects it.
+  - Because create now submits the program, upstream also requires `description` and `repositoryUrl` on create. `slug` falls back to the id when upstream returns none.
 - `POST /api/mentorship/admin/programs/:programId/logo` takes the raw file as the body with `Content-Type: image/png` or `image/jpeg` (`MENTORSHIP_ENROLL_LOGO_MIME_TYPES`) and answers 201 with `{ logoUrl }`, upstream's `public_url`. The BFF forwards the buffer and its content type to `POST /mentorship/v1/programs/{id}/logo-upload`. The wizard calls it after create, with the new program id, and then keeps the returned URL.
 - `express.raw` runs on this route only, limited to `MENTORSHIP_ENROLL_LOGO_MAX_BYTES`. A larger body is a 413 (`PAYLOAD_TOO_LARGE`), converted from the parser's `entity.too.large` before the error handler flattens it to a 500. `express.raw` skips a type that is not on the list, so the controller answers 415 (`UNSUPPORTED_MEDIA_TYPE`) for it first and 400 on the `logo` field for an empty body.
 - Logs carry the program id, status, term count, size in bytes and content type only, never a name, description, URL or file name.
@@ -206,7 +211,7 @@ In the wizard, picking a program reads its template (a newer pick drops the read
 
 ## Wizard create flow
 
-`EnrollProgramComponent` sends the two writes above in order: create, then the logo. There is no submit step, so a created program is already `pending` (in review). The wizard's `submitPhase` tracks those two requests only; it is not a program status.
+`EnrollProgramComponent` sends the two writes above in order: create, then the logo. There is no submit step, so a created program is already `submitted` (in review). The wizard's `submitPhase` tracks those two requests only; it is not a program status.
 
 - **Request mapping.** `toMentorshipEnrollCreateRequest` (`@lfx-one/shared/utils`) builds the body from the form and the picked `MentorshipLfProject`. It trims text, leaves out empty optional fields, de-duplicates Technologies and Skills, sets a term's `endDate` to the last day of its end month, and appends a coding challenge's URL to its prerequisite description as `Challenge: <url>`.
 
@@ -227,7 +232,7 @@ In the wizard, picking a program reads its template (a newer pick drops the read
 
 A program whose logo upload failed after create is already in review without a logo. The program list lets the admin add the logo from its card, with no new status and no new route.
 
-- `mapMentorshipAdminProgram` sets `logoMissing` on a list row when the raw upstream `status` (not `admin_status`) is `pending` or `published` (`MENTORSHIP_PROGRAM_LOGO_HINT_STATUSES`) and the row has no `logo_url`. A reviewer can publish such a program before the logo is added, so a published program keeps the hint; a `rejected`, `hidden` or any other program gets none. The program header mapper does not set it.
+- `mapMentorshipAdminProgram` sets `logoMissing` on a list row when the raw upstream `status` (not `admin_status`) is `submitted`, `pending` or `published` (`MENTORSHIP_PROGRAM_LOGO_HINT_STATUSES`) and the row has no `logo_url`. A reviewer can publish such a program before the logo is added, so a published program keeps the hint; a `rejected`, `hidden` or any other program gets none. The program header mapper does not set it.
 - The card shows "Logo missing" and an "Add logo" button that opens a hidden PNG/JPEG file input. `getMentorshipEnrollLogoError` checks the file first; a refused file is a toast and nothing is sent. The hint row sits below the card's clickable row, not inside it, so the button is never nested in the card's own button and never opens the program.
 - The upload reuses `POST /api/mentorship/admin/programs/:programId/logo` and nothing else (no submit or other write). The card calls `uploadProgramLogo(id, file, false)`: the one automatic retry for a temporary failure applies, but not the 403 back-off, since the program was created earlier and a 403 is a real refusal.
 - The button shows on every card with the hint, because the list carries no per-program permission; upstream decides. A 403 toasts "You don't have permission to change this program's logo." (the impersonation read-only 403 shows the server's text instead). 413, 415/400 and 503 toast the wizard's logo messages (`MENTORSHIP_ENROLL_LOGO_FAILURE_FIELD_ERRORS`); anything else toasts `MENTORSHIP_ENROLL_LOGO_NOT_UPLOADED`. A failure leaves the card as it was.

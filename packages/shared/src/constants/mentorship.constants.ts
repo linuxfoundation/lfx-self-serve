@@ -623,14 +623,16 @@ export const MENTORSHIP_TERM_REOPEN_CONFIRM = 'Are you sure you want to re-open 
 
 /**
  * Program statuses as the mentorship service stores them (`status` on `/mentorship/v1/programs`).
- * A program is created `pending`; approving moves it to `published` and rejecting to `rejected`.
- * A published program can later be `hidden`.
+ * A program is created `submitted`, which is awaiting review; approving moves it to `published` and rejecting
+ * to `rejected`. A published program can later be `hidden`. `pending` is the status programs were created with
+ * before; upstream cannot decide a program left in it.
  */
-export const MENTORSHIP_UPSTREAM_PROGRAM_STATUSES = ['pending', 'published', 'rejected', 'hidden'] as const;
+export const MENTORSHIP_UPSTREAM_PROGRAM_STATUSES = ['pending', 'submitted', 'published', 'rejected', 'hidden'] as const;
 
 /** Program-review page copy for a program's current upstream status. */
 export const MENTORSHIP_UPSTREAM_PROGRAM_STATUS_LABELS: Record<MentorshipUpstreamProgramStatus, string> = {
   pending: 'Awaiting review',
+  submitted: 'Awaiting review',
   published: 'Approved',
   rejected: 'Rejected',
   hidden: 'Hidden',
@@ -642,7 +644,7 @@ export const MENTORSHIP_UPSTREAM_PROGRAM_STATUS_LABELS: Record<MentorshipUpstrea
  */
 export const MENTORSHIP_PROGRAM_REVIEW_DECISIONS = ['approve', 'reject'] as const;
 
-/** The upstream status each review decision moves a `pending` program to. */
+/** The upstream status each review decision moves a `submitted` program to. */
 export const MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS: Record<MentorshipProgramReviewDecision, MentorshipProgramDecisionStatus> = {
   approve: 'published',
   reject: 'rejected',

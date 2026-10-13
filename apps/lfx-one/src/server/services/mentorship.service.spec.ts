@@ -38,7 +38,7 @@ describe('MentorshipService program review', () => {
     id: programId,
     name: 'Test Program',
     slug: 'test-program',
-    status: 'pending',
+    status: 'submitted',
     is_paid: false,
     created_on: '2026-09-01T00:00:00Z',
     updated_on: '2026-09-01T00:00:00Z',
@@ -61,7 +61,7 @@ describe('MentorshipService program review', () => {
     const review = await service.getProgramReview(buildReq(), programId);
 
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/programs/${programId}`, 'GET');
-    expect(review).toEqual({ id: programId, name: 'Test Program', status: 'pending' });
+    expect(review).toEqual({ id: programId, name: 'Test Program', status: 'submitted' });
   });
 
   it.each([

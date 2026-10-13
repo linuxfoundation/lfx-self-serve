@@ -542,7 +542,7 @@ export class MentorshipAdminService {
   }
 
   /**
-   * Creates a program from the enroll wizard. Upstream leaves it `pending`, which is awaiting review, so there is no submit
+   * Creates a program from the enroll wizard. Upstream creates it `submitted`, which is awaiting review, so there is no submit
    * call. The body is already rebuilt from known fields. Upstream's 400 and 409 (a taken name or slug) pass through. Nothing in
    * the body is logged.
    */

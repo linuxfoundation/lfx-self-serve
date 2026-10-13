@@ -1006,7 +1006,7 @@ describe('MentorshipAdminController', () => {
       }) as unknown as Request;
 
     it('creates a program and answers 201 with its id, slug and status', async () => {
-      const ref = { id: PROGRAM_ID, slug: 'private-program-name', status: 'pending' };
+      const ref = { id: PROGRAM_ID, slug: 'private-program-name', status: 'submitted' };
       const write = vi.spyOn(MentorshipAdminService.prototype, 'createProgram').mockResolvedValue(ref);
       const out = writeRes();
 
@@ -1017,12 +1017,12 @@ describe('MentorshipAdminController', () => {
       expect(out.json).toHaveBeenCalledWith(ref);
       expect(vi.mocked(logger.success)).toHaveBeenCalledWith(expect.anything(), 'create_mentorship_admin_program', 0, {
         programId: PROGRAM_ID,
-        status: 'pending',
+        status: 'submitted',
       });
     });
 
     it('never logs the program name or description', async () => {
-      vi.spyOn(MentorshipAdminService.prototype, 'createProgram').mockResolvedValue({ id: PROGRAM_ID, slug: PROGRAM_ID, status: 'pending' });
+      vi.spyOn(MentorshipAdminService.prototype, 'createProgram').mockResolvedValue({ id: PROGRAM_ID, slug: PROGRAM_ID, status: 'submitted' });
 
       await controller.createProgram(createReq(createBody), writeRes(), next);
 

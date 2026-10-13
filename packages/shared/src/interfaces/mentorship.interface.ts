@@ -356,7 +356,7 @@ export interface MentorshipProgramApplicant extends MentorshipProgramMentee {
  */
 export type MentorshipUpstreamProgramStatus = (typeof MENTORSHIP_UPSTREAM_PROGRAM_STATUSES)[number];
 
-/** The two statuses a program review can move a `pending` program to. */
+/** The two statuses a program review can move a `submitted` program to. */
 export type MentorshipProgramDecisionStatus = Extract<MentorshipUpstreamProgramStatus, 'published' | 'rejected'>;
 
 /** The `?decision=` value on an approve/reject email link. */

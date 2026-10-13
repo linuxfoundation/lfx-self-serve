@@ -1137,9 +1137,9 @@ describe('MentorshipAdminService program create and logo upload', () => {
   it('posts the create body as is and returns the id, slug and status', async () => {
     const spy = vi
       .spyOn(MicroserviceProxyService.prototype, 'proxyRequest')
-      .mockResolvedValue({ id: PROGRAM_ID, slug: 'private-program-name', status: 'pending', name: 'private-program-name' } as never);
+      .mockResolvedValue({ id: PROGRAM_ID, slug: 'private-program-name', status: 'submitted', name: 'private-program-name' } as never);
 
-    await expect(service.createProgram(buildReq(), createBody)).resolves.toEqual({ id: PROGRAM_ID, slug: 'private-program-name', status: 'pending' });
+    await expect(service.createProgram(buildReq(), createBody)).resolves.toEqual({ id: PROGRAM_ID, slug: 'private-program-name', status: 'submitted' });
 
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0].slice(2, 6)).toEqual([PROGRAMS_PATH, 'POST', undefined, createBody]);
@@ -1192,9 +1192,9 @@ describe('MentorshipAdminService program create and logo upload', () => {
   });
 
   it('falls back to the id when the created program has no slug', async () => {
-    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ id: PROGRAM_ID, status: 'pending' } as never);
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ id: PROGRAM_ID, status: 'submitted' } as never);
 
-    await expect(service.createProgram(buildReq(), createBody)).resolves.toEqual({ id: PROGRAM_ID, slug: PROGRAM_ID, status: 'pending' });
+    await expect(service.createProgram(buildReq(), createBody)).resolves.toEqual({ id: PROGRAM_ID, slug: PROGRAM_ID, status: 'submitted' });
   });
 
   it.each([400, 409])('passes an upstream %i on create through', async (status) => {
@@ -1216,7 +1216,7 @@ describe('MentorshipAdminService program create and logo upload', () => {
       .spyOn(MicroserviceProxyService.prototype, 'proxyRequest')
       .mockRejectedValueOnce(notProvisioned)
       .mockResolvedValueOnce({} as never)
-      .mockResolvedValueOnce({ id: PROGRAM_ID, slug: 's', status: 'pending' } as never);
+      .mockResolvedValueOnce({ id: PROGRAM_ID, slug: 's', status: 'submitted' } as never);
 
     await expect(service.createProgram(buildReq(), createBody)).resolves.toMatchObject({ id: PROGRAM_ID });
     expect(spy.mock.calls.map((call) => [call[2], call[3]])).toEqual([
@@ -1227,7 +1227,7 @@ describe('MentorshipAdminService program create and logo upload', () => {
   });
 
   it('never logs the program name or description on create', async () => {
-    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ id: PROGRAM_ID, status: 'pending' } as never);
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ id: PROGRAM_ID, status: 'submitted' } as never);
 
     await service.createProgram(buildReq(), createBody);
 

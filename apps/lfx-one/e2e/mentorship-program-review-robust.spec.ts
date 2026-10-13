@@ -38,7 +38,7 @@ test.describe('Program review — Robust Tests', () => {
 
   test.describe('Data-testid presence', () => {
     test('nests the confirm card and its actions inside the page root', async ({ page }) => {
-      await stubProgramReview(page, 200, { status: 'pending' });
+      await stubProgramReview(page, 200, { status: 'submitted' });
       await openProgramReview(page);
 
       const root = page.getByTestId('mentorship-program-review');
@@ -70,7 +70,7 @@ test.describe('Program review — Robust Tests', () => {
     }
 
     test('swaps the confirm card for the success container after Confirm', async ({ page }) => {
-      await stubProgramReview(page, 200, { status: 'pending' });
+      await stubProgramReview(page, 200, { status: 'submitted' });
       await stubProgramDecision(page, 200);
       await openProgramReview(page);
 
@@ -89,7 +89,7 @@ test.describe('Program review — Robust Tests', () => {
 
   test.describe('Loading state', () => {
     test('shows the loading testid until the program arrives', async ({ page }) => {
-      await stubProgramReview(page, 200, { status: 'pending' }, 3_000);
+      await stubProgramReview(page, 200, { status: 'submitted' }, 3_000);
       await gotoProgramReview(page);
 
       const loading = page.getByTestId('mentorship-program-review-loading');

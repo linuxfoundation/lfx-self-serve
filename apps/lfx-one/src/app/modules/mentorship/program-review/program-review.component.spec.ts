@@ -14,7 +14,7 @@ import { ProgramReviewComponent } from './program-review.component';
 
 describe('ProgramReviewComponent', () => {
   const programId = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
-  const review = (status: MentorshipUpstreamProgramStatus = 'pending'): MentorshipProgramReview => ({ id: programId, name: 'Test Program', status });
+  const review = (status: MentorshipUpstreamProgramStatus = 'submitted'): MentorshipProgramReview => ({ id: programId, name: 'Test Program', status });
 
   let fixture: ComponentFixture<ProgramReviewComponent>;
   let getProgramReview: ReturnType<typeof vi.fn>;
@@ -128,6 +128,13 @@ describe('ProgramReviewComponent', () => {
 
     expect(byTestId('mentorship-program-review-confirm')).toBeNull();
     expect(byTestId('mentorship-program-review-already-decided')?.textContent).toContain('current status: Approved');
+  });
+
+  it('offers no Confirm for a program left in the old pending status, which upstream cannot decide', () => {
+    build({ load: of(review('pending')) });
+
+    expect(byTestId('mentorship-program-review-confirm')).toBeNull();
+    expect(byTestId('mentorship-program-review-already-decided')?.textContent).toContain('current status: Awaiting review');
   });
 
   it('shows the raw status when upstream sends one the label map does not know', () => {
