@@ -363,7 +363,7 @@ export type MentorshipProgramDecisionStatus = Extract<MentorshipUpstreamProgramS
 export type MentorshipProgramReviewDecision = (typeof MENTORSHIP_PROGRAM_REVIEW_DECISIONS)[number];
 
 /**
- * The upstream program fields the BFF reads: program review reads the id, name and status, and the
+ * The upstream program fields the BFF reads: program review reads the id, name, status and logo, and the
  * mentee apply page reads the name and project name.
  */
 export interface MentorshipUpstreamProgram {
@@ -372,6 +372,8 @@ export interface MentorshipUpstreamProgram {
   status: MentorshipUpstreamProgramStatus;
   /** Name of the program's LF project; absent when the program has none. */
   project_name?: string;
+  /** The program's logo; absent until one is uploaded. */
+  logo_url?: string;
 }
 
 /** Upstream body for `POST /mentorship/v1/programs/{id}/decision`. */
@@ -385,7 +387,10 @@ export interface MentorshipUpstreamProgramDecisionRequest {
  * `MentorshipUpstreamProgram` the page receives. Status values and their lifecycle are documented
  * on `MENTORSHIP_UPSTREAM_PROGRAM_STATUSES`.
  */
-export type MentorshipProgramReview = Pick<MentorshipUpstreamProgram, 'id' | 'name' | 'status'>;
+export interface MentorshipProgramReview extends Pick<MentorshipUpstreamProgram, 'id' | 'name' | 'status'> {
+  /** Whether the program has a logo. Upstream refuses to approve a program without one (409). */
+  hasLogo: boolean;
+}
 
 /** Request body for `POST /api/mentorship/program-review/:programId/decision`. */
 export interface MentorshipProgramDecisionRequest {
@@ -393,8 +398,9 @@ export interface MentorshipProgramDecisionRequest {
 }
 
 /**
- * What the program-review page shows. `already-decided` covers a program that is no
- * longer `pending`, whether the page found it that way or the POST got a 409.
+ * What the program-review page shows. `already-decided` covers a program that is not
+ * `submitted`, whether the page found it that way or the POST got a 409. `logo-required` covers
+ * an approve link for a submitted program with no logo, which upstream refuses to publish.
  */
 export type MentorshipProgramReviewState =
   | 'loading'
@@ -402,6 +408,7 @@ export type MentorshipProgramReviewState =
   | 'submitting'
   | 'success'
   | 'already-decided'
+  | 'logo-required'
   | 'forbidden'
   | 'not-found'
   | 'invalid-link'
@@ -477,7 +484,7 @@ export interface MentorshipEnrollCreatePrerequisite {
 
 /**
  * Request body for `POST /api/mentorship/admin/programs`, sent on to upstream `POST /mentorship/v1/programs` as is. It has no
- * `status`, `logoUrl` or term `id`: upstream sets the status to `pending`, and the logo goes up in a second call.
+ * `status`, `logoUrl` or term `id`: upstream sets the status to `submitted`, and the logo goes up in a second call.
  */
 export interface MentorshipEnrollCreateRequest {
   projectId: string;
@@ -586,7 +593,7 @@ export interface MentorshipProgramLogoUploadResult {
 }
 
 /**
- * The calls one Submit makes, in order. There is no review step: create already leaves the program `pending`. An edit's Update
+ * The calls one Submit makes, in order. There is no review step: create already leaves the program `submitted`. An edit's Update
  * makes `update` (the program fields and its open terms in one call), then `logo`.
  */
 export type MentorshipEnrollSubmitStep = 'create' | 'update' | 'logo';

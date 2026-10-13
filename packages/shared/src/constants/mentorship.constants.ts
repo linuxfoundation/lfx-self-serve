@@ -631,7 +631,7 @@ export const MENTORSHIP_UPSTREAM_PROGRAM_STATUSES = ['pending', 'submitted', 'pu
 
 /** Program-review page copy for a program's current upstream status. */
 export const MENTORSHIP_UPSTREAM_PROGRAM_STATUS_LABELS: Record<MentorshipUpstreamProgramStatus, string> = {
-  pending: 'Awaiting review',
+  pending: 'Not submitted',
   submitted: 'Awaiting review',
   published: 'Approved',
   rejected: 'Rejected',

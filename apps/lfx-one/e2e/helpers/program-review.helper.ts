@@ -31,7 +31,7 @@ export async function stubProgramReview(page: Page, status: number, program?: { 
     await route.fulfill({
       status,
       contentType: 'application/json',
-      body: JSON.stringify(program ? { id: PROGRAM_ID, name: 'Test Program', status: program.status } : { error: 'stubbed' }),
+      body: JSON.stringify(program ? { id: PROGRAM_ID, name: 'Test Program', status: program.status, hasLogo: true } : { error: 'stubbed' }),
     });
   });
 }

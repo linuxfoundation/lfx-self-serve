@@ -32,7 +32,7 @@ const { logger } = await import('../services/logger.service');
 
 describe('MentorshipController program review', () => {
   const programId = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
-  const review = { id: programId, name: 'Test Program', status: 'published' as const };
+  const review = { id: programId, name: 'Test Program', status: 'published' as const, hasLogo: true };
   let controller: InstanceType<typeof MentorshipController>;
   let res: Response;
   let next: NextFunction;

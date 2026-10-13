@@ -32,7 +32,7 @@ export interface MentorshipProgramStats {
 /**
  * Program status as the admin list shows it (upstream `admin_status`, `_` written as `-`):
  * - `open` — published, with an open term or no terms yet
- * - `pending-review` — pending, awaiting review
+ * - `pending-review` — submitted (or the older pending), awaiting review
  * - `completed` — published, with only closed terms
  * - `rejected` — rejected
  * - `hidden` — hidden
@@ -65,7 +65,7 @@ export interface MentorshipProgram {
   stats: MentorshipProgramStats;
   /** Optional program logo. When absent, the card renders an initials avatar. */
   logoUrl?: string;
-  /** True when upstream status is `pending` or `published` and the program has no logo (R12). List rows only. */
+  /** True when upstream status is `submitted`, `pending` or `published` and the program has no logo (R12). List rows only. */
   logoMissing?: boolean;
   createdOn: string;
   updatedOn: string;

@@ -89,7 +89,7 @@ describe('MentorshipService — program review', () => {
     let name = '';
     service.getProgramReview(programId).subscribe((review) => (name = review.name));
 
-    http.expectOne(`/api/mentorship/program-review/${programId}`).flush({ id: programId, name: 'Test Program', status: 'submitted' });
+    http.expectOne(`/api/mentorship/program-review/${programId}`).flush({ id: programId, name: 'Test Program', status: 'submitted', hasLogo: true });
 
     expect(name).toBe('Test Program');
   });

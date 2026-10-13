@@ -46,8 +46,16 @@
           @case ('already-decided') {
             <lfx-empty-state
               icon="fa-light fa-circle-info"
-              title="This program has already been reviewed"
+              [title]="alreadyDecidedTitle()"
               [subtitle]="alreadyDecidedMessage()"
+              ctaLabel="Back to Mentorship"
+              [ctaRoute]="backRoute" />
+          }
+          @case ('logo-required') {
+            <lfx-empty-state
+              icon="fa-light fa-image"
+              title="This program needs a logo before it can be approved"
+              [subtitle]="(program()?.name ?? 'The program') + ' has no logo yet. Ask the program admin to add one, then open this link again.'"
               ctaLabel="Back to Mentorship"
               [ctaRoute]="backRoute" />
           }

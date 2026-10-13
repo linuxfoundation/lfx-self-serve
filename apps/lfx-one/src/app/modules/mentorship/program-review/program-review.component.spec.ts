@@ -14,7 +14,12 @@ import { ProgramReviewComponent } from './program-review.component';
 
 describe('ProgramReviewComponent', () => {
   const programId = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
-  const review = (status: MentorshipUpstreamProgramStatus = 'submitted'): MentorshipProgramReview => ({ id: programId, name: 'Test Program', status });
+  const review = (status: MentorshipUpstreamProgramStatus = 'submitted', hasLogo = true): MentorshipProgramReview => ({
+    id: programId,
+    name: 'Test Program',
+    status,
+    hasLogo,
+  });
 
   let fixture: ComponentFixture<ProgramReviewComponent>;
   let getProgramReview: ReturnType<typeof vi.fn>;
@@ -133,8 +138,25 @@ describe('ProgramReviewComponent', () => {
   it('offers no Confirm for a program left in the old pending status, which upstream cannot decide', () => {
     build({ load: of(review('pending')) });
 
+    const shown = byTestId('mentorship-program-review-already-decided')?.textContent;
     expect(byTestId('mentorship-program-review-confirm')).toBeNull();
-    expect(byTestId('mentorship-program-review-already-decided')?.textContent).toContain('current status: Awaiting review');
+    expect(shown).toContain('This program is not awaiting review');
+    expect(shown).toContain('Test Program has not been submitted for review');
+    expect(shown).not.toContain('already been reviewed');
+  });
+
+  it('asks for a logo instead of offering Confirm on an approve link for a program without one', () => {
+    build({ load: of(review('submitted', false)) });
+
+    expect(byTestId('mentorship-program-review-confirm')).toBeNull();
+    expect(byTestId('mentorship-program-review-logo-required')?.textContent).toContain('This program needs a logo before it can be approved');
+    expect(submitProgramDecision).not.toHaveBeenCalled();
+  });
+
+  it('still offers Confirm on a reject link for a program without a logo', () => {
+    build({ decision: 'reject', load: of(review('submitted', false)) });
+
+    expect(byTestId('mentorship-program-review-title')?.textContent).toContain('Reject this program?');
   });
 
   it('shows the raw status when upstream sends one the label map does not know', () => {

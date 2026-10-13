@@ -39,6 +39,7 @@ describe('MentorshipService program review', () => {
     name: 'Test Program',
     slug: 'test-program',
     status: 'submitted',
+    logo_url: 'https://logo.example/p.png',
     is_paid: false,
     created_on: '2026-09-01T00:00:00Z',
     updated_on: '2026-09-01T00:00:00Z',
@@ -61,7 +62,16 @@ describe('MentorshipService program review', () => {
     const review = await service.getProgramReview(buildReq(), programId);
 
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/programs/${programId}`, 'GET');
-    expect(review).toEqual({ id: programId, name: 'Test Program', status: 'submitted' });
+    expect(review).toEqual({ id: programId, name: 'Test Program', status: 'submitted', hasLogo: true });
+  });
+
+  it.each([
+    ['no logo', undefined],
+    ['a blank logo', '  '],
+  ])('reads a program with %s as having no logo', async (_label, logoUrl) => {
+    proxyRequest.mockResolvedValue({ ...upstreamProgram, logo_url: logoUrl });
+
+    await expect(service.getProgramReview(buildReq(), programId)).resolves.toMatchObject({ hasLogo: false });
   });
 
   it.each([
@@ -75,7 +85,7 @@ describe('MentorshipService program review', () => {
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/programs/${programId}/decision`, 'POST', undefined, {
       status,
     });
-    expect(review).toEqual({ id: programId, name: 'Test Program', status });
+    expect(review).toEqual({ id: programId, name: 'Test Program', status, hasLogo: true });
   });
 
   it('lets an upstream error through so its status reaches the page', async () => {

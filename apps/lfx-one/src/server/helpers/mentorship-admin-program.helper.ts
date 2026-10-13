@@ -22,7 +22,7 @@ import { toIsoDate } from './date-format.helper';
  * Builds one admin list row from an upstream administered program. Upstream decides the status shown (`admin_status`);
  * a value this does not know reads as `pending-review` with `unknownStatus` set, so the caller can log it.
  * The slug falls back to the id so `/mentorship/admin/:programId` always resolves.
- * `logoMissing` reads the raw `status`: a program awaiting review (`pending`) or published without a logo gets the card's hint.
+ * `logoMissing` reads the raw `status`: a program awaiting review (`submitted`, or the older `pending`) or published without a logo gets the card's hint.
  */
 export const mapMentorshipAdminProgram = (item: MentorshipUpstreamAdministeredProgram): { program: MentorshipProgram; unknownStatus: boolean } => {
   const status = Object.hasOwn(MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM, item.admin_status)

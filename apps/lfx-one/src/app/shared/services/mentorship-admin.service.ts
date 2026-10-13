@@ -198,7 +198,7 @@ export class MentorshipAdminService {
   }
 
   /**
-   * Creates a program with its terms and prerequisites. Upstream leaves it `pending`, so this alone sends it to review.
+   * Creates a program with its terms and prerequisites. Upstream creates it `submitted`, so this alone sends it to review.
    * Validation (400) and the rest reach the caller as the error; there is no retry here.
    */
   public createProgram(body: MentorshipEnrollCreateRequest): Observable<MentorshipEnrollProgramRef> {

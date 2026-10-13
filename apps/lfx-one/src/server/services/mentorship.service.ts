@@ -201,8 +201,8 @@ export class MentorshipService {
 
   /**
    * Publishes or rejects a submitted program. Upstream allows this only for members of the
-   * mentorship approver team (403 otherwise) and only from `submitted` (409 otherwise); both
-   * statuses pass through to the page unchanged.
+   * mentorship approver team (403 otherwise), only from `submitted`, and publishes only a program
+   * with a logo (409 otherwise); both statuses pass through to the page unchanged.
    */
   public async submitProgramDecision(req: Request, programId: string, decision: MentorshipProgramReviewDecision): Promise<MentorshipProgramReview> {
     const body: MentorshipUpstreamProgramDecisionRequest = { status: MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS[decision] };
@@ -268,5 +268,5 @@ export function isMentorshipProgramReviewDecision(value: unknown): value is Ment
 
 /** Only what the review page shows; the full upstream program is not forwarded. */
 function toProgramReview(program: MentorshipUpstreamProgram): MentorshipProgramReview {
-  return { id: program.id, name: program.name, status: program.status };
+  return { id: program.id, name: program.name, status: program.status, hasLogo: !!program.logo_url?.trim() };
 }

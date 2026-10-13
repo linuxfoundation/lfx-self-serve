@@ -86,6 +86,9 @@ export class ProgramReviewComponent {
     const decision = this.decision();
     return decision ? MENTORSHIP_PROGRAM_REVIEW_DECISION_DONE_LABELS[decision] : 'reviewed';
   });
+  protected readonly alreadyDecidedTitle = computed(() =>
+    this.program()?.status === 'pending' ? 'This program is not awaiting review' : 'This program has already been reviewed'
+  );
   protected readonly alreadyDecidedMessage: Signal<string> = this.initAlreadyDecidedMessage();
 
   protected onConfirm(): void {
@@ -157,6 +160,10 @@ export class ProgramReviewComponent {
       if (program.status === 'submitted') {
         return 'Another reviewer decided this program before you confirmed.';
       }
+      // A program created before create started submitting stays `pending`, which upstream cannot decide.
+      if (program.status === 'pending') {
+        return `${program.name} has not been submitted for review, so it cannot be approved or rejected.`;
+      }
       // Upstream owns the status set, so a status added there before this map shows its raw value.
       const statusLabel = MENTORSHIP_UPSTREAM_PROGRAM_STATUS_LABELS[program.status] ?? program.status;
       return `${program.name} — current status: ${statusLabel}.`;
@@ -169,7 +176,7 @@ export class ProgramReviewComponent {
       return of<MentorshipProgramReviewView>({ state: 'invalid-link', program: null });
     }
     return this.mentorshipService.getProgramReview(programId).pipe(
-      map((program): MentorshipProgramReviewView => ({ state: program.status === 'submitted' ? 'confirm' : 'already-decided', program })),
+      map((program): MentorshipProgramReviewView => ({ state: this.loadedState(program, decision), program })),
       catchError((error: unknown) => of<MentorshipProgramReviewView>({ state: this.stateForError(error), program: null }))
     );
   }
@@ -192,6 +199,17 @@ export class ProgramReviewComponent {
     if (this.link() === link) {
       this.submission.set(view);
     }
+  }
+
+  /**
+   * Only a `submitted` program can be decided. Upstream also refuses to approve one without a logo (409), so an approve
+   * link for such a program says so up front rather than offering a Confirm that would fail. Rejecting needs no logo.
+   */
+  private loadedState(program: MentorshipProgramReview, decision: MentorshipProgramReviewDecision): MentorshipProgramReviewState {
+    if (program.status !== 'submitted') {
+      return 'already-decided';
+    }
+    return decision === 'approve' && !program.hasLogo ? 'logo-required' : 'confirm';
   }
 
   private stateForError(error: unknown): MentorshipProgramReviewState {
