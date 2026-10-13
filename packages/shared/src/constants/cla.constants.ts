@@ -529,10 +529,10 @@ export const ORG_CLA_DETAIL_TABS = [
 ] as const;
 
 /** Pill shown against an agreement in the Organization Lens CLA list and on its detail page. */
-export const ORG_CLA_STATUS_DISPLAY: Record<OrgClaGroup['status'], OrgClaStatusDisplay> = {
+export const ORG_CLA_STATUS_DISPLAY: Record<OrgClaGroup['status'], OrgClaStatusDisplay | null> = {
   signed: { label: 'Signed', severity: 'success' },
   'not-started': { label: 'Not started', severity: 'secondary' },
-  sanctioned: { label: 'Sanctioned', severity: 'danger' },
+  sanctioned: null,
 };
 
 /**
