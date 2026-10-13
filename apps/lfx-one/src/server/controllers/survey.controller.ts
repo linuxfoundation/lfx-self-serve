@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { CreateSurveyRequest } from '@lfx-one/shared/interfaces';
+import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { ResourceNotFoundError } from '../errors';
+import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { SurveyService } from '../services/survey.service';
@@ -142,6 +143,19 @@ export class SurveyController {
         return;
       }
 
+      // surveyUid is interpolated directly into the upstream request path — reject anything
+      // that isn't a UUID before it reaches the proxy layer (linuxfoundation/lfx-self-serve-ops#436).
+      if (!isUuid(surveyUid)) {
+        next(
+          ServiceValidationError.forField('uid', 'Survey uid must be a valid UUID', {
+            operation: 'get_survey_responses',
+            service: 'survey_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
       const page = await this.surveyService.getSurveyResponses(req, surveyUid, req.query as Record<string, any>);
 
       logger.success(req, 'get_survey_responses', startTime, {
@@ -171,6 +185,19 @@ export class SurveyController {
           service: 'survey_controller',
         })
       ) {
+        return;
+      }
+
+      // uid is interpolated directly into the upstream request path — reject anything that
+      // isn't a UUID before it reaches the proxy layer (linuxfoundation/lfx-self-serve-ops#436).
+      if (!isUuid(uid)) {
+        next(
+          ServiceValidationError.forField('uid', 'Survey uid must be a valid UUID', {
+            operation: 'get_survey_by_id',
+            service: 'survey_controller',
+            path: req.path,
+          })
+        );
         return;
       }
 
@@ -206,6 +233,19 @@ export class SurveyController {
           service: 'survey_controller',
         })
       ) {
+        return;
+      }
+
+      // uid is interpolated directly into the upstream request path — reject anything that
+      // isn't a UUID before it reaches the proxy layer (linuxfoundation/lfx-self-serve-ops#436).
+      if (!isUuid(uid)) {
+        next(
+          ServiceValidationError.forField('uid', 'Survey uid must be a valid UUID', {
+            operation: 'delete_survey',
+            service: 'survey_controller',
+            path: req.path,
+          })
+        );
         return;
       }
 
