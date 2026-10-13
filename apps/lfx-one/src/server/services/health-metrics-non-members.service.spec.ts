@@ -270,7 +270,7 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
     const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('matched AS'));
     expect(scoped).toContain('AND p.person_key IS NOT NULL');
     expect(scoped).toContain("AND p.person_key <> ''");
-    expect(sql).toContain('(SELECT ANY_VALUE(scope_individuals_count) FROM scoped) AS scope_total');
+    expect(sql).toContain('(SELECT COALESCE(ANY_VALUE(scope_individuals_count), COUNT(*)) FROM scoped) AS scope_total');
     expect(sql).toContain('(SELECT COUNT(*) FROM matched) AS total_records');
     expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, person_key ASC\n        LIMIT 10 OFFSET 0');
     expect(sql).toContain('LEFT JOIN page ON TRUE');
@@ -342,6 +342,14 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
     const response = await new HealthMetricsNonMembersService().getPeople(req, { ...query, offset: 500 });
 
     expect(response).toEqual({ rows: [], totalRecords: 30, scopeTotal: 214 });
+  });
+
+  it('reports a zero total when the foundation has no attendee rows', async () => {
+    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: null, TOTAL_RECORDS: 0, IS_PAGE_ROW: null, PERSON_KEY: null }] });
+
+    const response = await new HealthMetricsNonMembersService().getPeople(req, query);
+
+    expect(response).toEqual({ rows: [], totalRecords: 0, scopeTotal: 0 });
   });
 });
 

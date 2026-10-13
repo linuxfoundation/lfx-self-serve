@@ -219,8 +219,8 @@ export class HealthMetricsNonMembersService {
       ),
       totals AS (
         SELECT
-          -- The model's foundation-wide figure, repeated on every row.
-          (SELECT ANY_VALUE(scope_individuals_count) FROM scoped) AS scope_total,
+          -- The model's foundation-wide figure; an unset one falls back to the same attendee rows.
+          (SELECT COALESCE(ANY_VALUE(scope_individuals_count), COUNT(*)) FROM scoped) AS scope_total,
           (SELECT COUNT(*) FROM matched) AS total_records
       ),
       page AS (
