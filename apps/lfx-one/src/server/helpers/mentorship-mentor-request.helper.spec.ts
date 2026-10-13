@@ -74,7 +74,7 @@ describe('mapMentorshipMentorProgramRequests', () => {
   it.each<[MentorshipUpstreamProgramMemberStatus, string]>([
     ['requested', 'pending'],
     ['pending', 'pending'],
-    ['approved', 'accepted'],
+    ['approved', 'approved'],
     ['declined', 'declined'],
     ['withdrawn', 'withdrawn'],
   ])('reads an upstream %s membership as %s', (status, expected) => {

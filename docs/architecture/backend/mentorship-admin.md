@@ -108,7 +108,7 @@ The Mentors tab invites anyone with an LF account as a mentor, whether or not th
 `PATCH …/programs/:programId/mentors/:memberId` moves one mentor to a new status, behind `blockDuringImpersonation`, with the caller's bearer token so upstream decides who may change it.
 
 - The body is `{ status }` and `status` must be `approved`, `declined` or `withdrawn`; anything else, or a bad id, is a 400 before any upstream call. The BFF sends `PATCH /programs/{programId}/members/{memberId}` with `{ status }` and answers 204.
-- The Mentors tab offers by status (`MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS`): `requested` and `pending` get Accept (`approved`) and Decline (`declined`), `invited` gets Revoke invite (`declined`), `approved` gets Remove (`withdrawn`), and `declined` and `withdrawn` get none. Every action confirms first.
+- The Mentors tab offers by status (`MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS`): `requested` and `pending` get Approve (`approved`) and Decline (`declined`), `invited` gets Revoke invite (`declined`), `approved` gets Remove (`withdrawn`), and `declined` and `withdrawn` get none. Every action confirms first.
 - Upstream answers 409 for a transition the mentor's status does not allow. It passes through, and the tab reloads and shows `This mentor changed. The list has been refreshed.` Other failures show the generic message, and the impersonation 403 shows the server's text.
 - A success toasts, reloads the page and has the program page read its tab counts again, through the same callback as the mentee decisions, so a write that lands after a tab switch still refreshes the counts.
 - Logs carry the program and member ids and the status only, never names or emails.

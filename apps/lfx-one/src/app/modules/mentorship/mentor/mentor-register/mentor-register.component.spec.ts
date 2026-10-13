@@ -62,7 +62,7 @@ describe('MentorRegisterComponent', () => {
 
   /** Stands in for requests the mentor already raised. The component itself starts empty. */
   const existingRequests: MentorshipMentorProgramRequest[] = [
-    { id: 'req_gridflow', programId: 'mp_gridflow', programName: 'GridFlow Ingestion', status: 'accepted' },
+    { id: 'req_gridflow', programId: 'mp_gridflow', programName: 'GridFlow Ingestion', status: 'approved' },
   ];
 
   let fixture: ComponentFixture<MentorRegisterComponent>;

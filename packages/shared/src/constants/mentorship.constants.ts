@@ -418,14 +418,14 @@ export const MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS: Record<MentorshipAdminMe
 };
 
 export const MENTORSHIP_ADMIN_MENTOR_ACTION_CONFIRM_MESSAGES: Record<MentorshipAdminMentorAction['key'], string> = {
-  accept: 'Accept this mentor into the program?',
+  accept: 'Approve this mentor for the program?',
   decline: 'Decline this mentor for the program?',
   revoke: 'Revoke this invite? The mentor can no longer accept it.',
   remove: 'Remove this mentor from the program? They can request to join again later.',
 };
 
 export const MENTORSHIP_ADMIN_MENTOR_ACTION_SUCCESS_MESSAGES: Record<MentorshipAdminMentorAction['key'], string> = {
-  accept: 'Mentor accepted.',
+  accept: 'Mentor approved.',
   decline: 'Mentor declined.',
   revoke: 'Invite revoked.',
   remove: 'Mentor removed.',
