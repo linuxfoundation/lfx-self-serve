@@ -4,7 +4,7 @@ description: How to view and manage project committees in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance]
-last_updated: 2026-05-22
+last_updated: 2026-10-13
 intercom_collection: Committees
 ---
 

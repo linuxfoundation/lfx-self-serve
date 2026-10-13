@@ -81,14 +81,17 @@ export async function mockCommitteeApis(
   await page.route('**/api/user/pending-invitations', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   for (const projectId of [opts.committee['project_uid'], opts.committee['project_slug']]) {
     if (typeof projectId !== 'string') continue;
-    await page.route(`**/api/projects/${projectId}*`, (route) => {
-      if (new URL(route.request().url()).pathname !== `/api/projects/${projectId}`) return route.abort();
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ uid: opts.committee['project_uid'], slug: opts.committee['project_slug'], name: 'E2E Project', is_foundation: false }),
-      });
-    });
+    await page.route(
+      (url) => url.pathname === `/api/projects/${projectId}` || url.pathname.startsWith(`/api/projects/${projectId}/`),
+      (route) => {
+        if (new URL(route.request().url()).pathname !== `/api/projects/${projectId}`) return route.abort();
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ uid: opts.committee['project_uid'], slug: opts.committee['project_slug'], name: 'E2E Project', is_foundation: false }),
+        });
+      }
+    );
   }
   await page.route('**/api/mailing-lists*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   await page.route('**/api/meetings*', (route) => {
