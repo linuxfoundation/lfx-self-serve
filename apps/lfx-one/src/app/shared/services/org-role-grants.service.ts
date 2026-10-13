@@ -51,6 +51,7 @@ export class OrgRoleGrantsService {
   private readonly correlationIdInternal: WritableSignal<string | null> = signal<string | null>(null);
   // M3 — orgs reached only as a CLA Manager. The server fills it only when every grant set above is empty and the caller is not staff.
   private readonly claManagerOrgSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
+  private readonly claManagerLookupFailedInternal: WritableSignal<boolean> = signal<boolean>(false);
 
   public readonly writerSet: Signal<Set<string>> = this.writerSetInternal.asReadonly();
   public readonly auditorSet: Signal<Set<string>> = this.auditorSetInternal.asReadonly();
@@ -83,6 +84,8 @@ export class OrgRoleGrantsService {
   public readonly correlationId: Signal<string | null> = this.correlationIdInternal.asReadonly();
   /** M3 — raw, flag-blind. Read it through `OrgClaOnlyAccessService`, which applies `org-lens-cla-m3-enabled`. */
   public readonly claManagerOrgSet: Signal<Set<string>> = this.claManagerOrgSetInternal.asReadonly();
+  /** M3 — raw, flag-blind: the server could not read the caller's `cla-manager` scopes, so an empty `claManagerOrgSet` is unknown. */
+  public readonly claManagerLookupFailed: Signal<boolean> = this.claManagerLookupFailedInternal.asReadonly();
 
   public constructor() {
     afterNextRender(() => {
@@ -115,6 +118,7 @@ export class OrgRoleGrantsService {
         this.staffCheckInternal.set(response.staffCheck ?? 'ok');
         this.correlationIdInternal.set(response.staffCheck === 'failed' && response.correlationId ? response.correlationId : null);
         this.claManagerOrgSetInternal.set(new Set(response.claManagerOrgs ?? []));
+        this.claManagerLookupFailedInternal.set(response.claManagerLookup === 'failed');
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         this.loadedAtMsInternal.set(Date.now());
@@ -137,6 +141,8 @@ export class OrgRoleGrantsService {
         this.staffCheckInternal.set('ok');
         this.correlationIdInternal.set(null);
         this.claManagerOrgSetInternal.set(new Set());
+        // `lookupOutcome: 'failed'` already reports this outage.
+        this.claManagerLookupFailedInternal.set(false);
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         return of(undefined);

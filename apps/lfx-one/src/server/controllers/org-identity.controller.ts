@@ -60,12 +60,13 @@ export class OrgIdentityController {
       // Spec 053: the viewer's explicit Retry asks for a recompute — skip the cache read, still write.
       const bypassCache = req.query[ORG_ROLE_GRANTS_REFRESH_PARAM] === '1';
       const grants: RoleGrantsResponse = await this.orgRoleGrantsService.getRoleGrants(req, username, bypassCache);
-      const result: RoleGrantsResponse = { ...grants, claManagerOrgs: await this.claOnlyOrgs.getRoleGrantOrgUids(req, grants) };
+      const result: RoleGrantsResponse = { ...grants, ...(await this.claOnlyOrgs.getRoleGrantClaManagerOrgs(req, grants)) };
 
       logger.success(req, 'get_org_role_grants', startTime, {
         writer_count: result.writers.length,
         auditor_count: result.auditors.length,
         cla_manager_org_count: result.claManagerOrgs?.length ?? 0,
+        cla_manager_lookup: result.claManagerLookup,
         lookup_outcome: result.lookupOutcome,
         staff_check: result.staffCheck,
       });

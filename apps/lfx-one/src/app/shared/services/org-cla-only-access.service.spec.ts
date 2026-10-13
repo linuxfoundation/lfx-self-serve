@@ -14,16 +14,18 @@ describe('OrgClaOnlyAccessService', () => {
   const UID = '0014100000ClaOnlyA';
   const flag = signal(false);
   const claManagerOrgSet = signal(new Set<string>());
+  const claManagerLookupFailed = signal(false);
   const getBooleanFlag = vi.fn(() => flag);
   let service: OrgClaOnlyAccessService;
 
   beforeEach(() => {
     flag.set(false);
     claManagerOrgSet.set(new Set([UID]));
+    claManagerLookupFailed.set(false);
     TestBed.configureTestingModule({
       providers: [
         { provide: FeatureFlagService, useValue: { getBooleanFlag } },
-        { provide: OrgRoleGrantsService, useValue: { claManagerOrgSet } },
+        { provide: OrgRoleGrantsService, useValue: { claManagerOrgSet, claManagerLookupFailed } },
       ],
     });
     service = TestBed.inject(OrgClaOnlyAccessService);
@@ -45,6 +47,14 @@ describe('OrgClaOnlyAccessService', () => {
     expect(service.isClaOnly(UID)).toBe(true);
     expect(service.isClaOnly('0014100000OtherOrg')).toBe(false);
     expect(service.isClaOnly(null)).toBe(false);
+  });
+
+  it('reports a failed CLA-manager lookup only while the flag is on', () => {
+    claManagerLookupFailed.set(true);
+    expect(service.lookupFailed()).toBe(false);
+
+    flag.set(true);
+    expect(service.lookupFailed()).toBe(true);
   });
 
   describe('an organization an address resolved as CLA-only', () => {

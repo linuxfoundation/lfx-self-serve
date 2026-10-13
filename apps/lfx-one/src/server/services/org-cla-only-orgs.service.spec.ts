@@ -135,7 +135,7 @@ describe('OrgClaOnlyOrgsService.listOrgs', () => {
   });
 });
 
-describe('OrgClaOnlyOrgsService.getRoleGrantOrgUids', () => {
+describe('OrgClaOnlyOrgsService.getRoleGrantClaManagerOrgs', () => {
   const grants = {
     writers: [],
     auditors: [],
@@ -149,7 +149,10 @@ describe('OrgClaOnlyOrgsService.getRoleGrantOrgUids', () => {
   const cascading = [{ uid: COMPANY_C, parentUid: COMPANY_C, parentName: 'Parent' }];
 
   it('answers the caller’s CLA-manager companies, sorted, when Org Lens granted nothing', async () => {
-    expect(await service(scopesOf(COMPANY_A, COMPANY_B)).getRoleGrantOrgUids(req(), grants)).toEqual([COMPANY_B, COMPANY_A]);
+    expect(await service(scopesOf(COMPANY_A, COMPANY_B)).getRoleGrantClaManagerOrgs(req(), grants)).toEqual({
+      claManagerOrgs: [COMPANY_B, COMPANY_A],
+      claManagerLookup: 'ok',
+    });
   });
 
   it.each([
@@ -163,14 +166,14 @@ describe('OrgClaOnlyOrgsService.getRoleGrantOrgUids', () => {
   ])('never asks user-service for a caller with %s', async (_label, overrides) => {
     const scopes = scopesOf(COMPANY_A);
 
-    expect(await service(scopes).getRoleGrantOrgUids(req(), { ...grants, ...overrides })).toEqual([]);
+    expect(await service(scopes).getRoleGrantClaManagerOrgs(req(), { ...grants, ...overrides })).toEqual({ claManagerOrgs: [], claManagerLookup: 'ok' });
     expect(scopes.getCompanySfids).not.toHaveBeenCalled();
   });
 
-  it('answers none when the scopes cannot be read', async () => {
+  it('answers none, marked failed, when the scopes cannot be read', async () => {
     const scopes = { getCompanySfids: vi.fn().mockRejectedValue(new Error('user-service down')) };
 
-    expect(await service(scopes).getRoleGrantOrgUids(req(), grants)).toEqual([]);
+    expect(await service(scopes).getRoleGrantClaManagerOrgs(req(), grants)).toEqual({ claManagerOrgs: [], claManagerLookup: 'failed' });
   });
 });
 

@@ -117,6 +117,18 @@ describe('OrgRoleGrantsService.claManagerOrgSet', () => {
     expect(service.claManagerOrgSet().size).toBe(0);
   });
 
+  it('carries a failed CLA-manager lookup, and clears it on the next answer', async () => {
+    const failed = firstValueFrom(service.refresh());
+    http.expectOne('/api/orgs/me/role-grants').flush({ ...grants, claManagerOrgs: [], claManagerLookup: 'failed' });
+    await failed;
+    expect(service.claManagerLookupFailed()).toBe(true);
+
+    const ok = firstValueFrom(service.refresh());
+    http.expectOne('/api/orgs/me/role-grants').flush({ ...grants, claManagerOrgs: [UID], claManagerLookup: 'ok' });
+    await ok;
+    expect(service.claManagerLookupFailed()).toBe(false);
+  });
+
   it('is cleared on a transport failure', async () => {
     const first = firstValueFrom(service.refresh());
     http.expectOne('/api/orgs/me/role-grants').flush({ ...grants, claManagerOrgs: [UID] });

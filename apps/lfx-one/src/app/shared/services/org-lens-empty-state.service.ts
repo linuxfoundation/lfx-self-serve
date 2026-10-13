@@ -21,7 +21,8 @@ import { PersonaService } from './persona.service';
  *   1. caller holds the selected organization (or is in a company-wide team, or reaches it only as its
  *      CLA Manager — M3)                                       → render the page (`null`)
  *   2. lookup failed outright (roster never loaded)             → `could-not-load`
- *   3. lookup partial AND caller holds nothing loaded           → `could-not-load`
+ *   3. lookup partial (or the M3 CLA-manager lookup failed)
+ *      AND caller holds nothing loaded                          → `could-not-load`
  *   4. staff check failed                                       → `staff-check-failed`
  *   5. LF contractor refused what is in front of them           → `contractor-no-grant` (#2961)
  *   6. caller holds nothing                                     → `no-organization`
@@ -192,7 +193,9 @@ export class OrgLensEmptyStateService {
    */
   public classifyLookup(holdsAnything: boolean): OrgLensLookupBlocker | null {
     const outcome = this.roleGrants.lookupOutcome();
-    if (outcome === 'failed' || (outcome === 'partial' && !holdsAnything)) {
+    // M3 — a failed `cla-manager` scopes read leaves a caller with no grant unclassified, like a partial roster.
+    const lowerBound = outcome === 'partial' || this.claOnlyAccess.lookupFailed();
+    if (outcome === 'failed' || (lowerBound && !holdsAnything)) {
       return 'could-not-load';
     }
     if (this.roleGrants.staffCheck() === 'failed') {

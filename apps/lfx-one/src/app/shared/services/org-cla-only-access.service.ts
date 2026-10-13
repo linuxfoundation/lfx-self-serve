@@ -33,6 +33,9 @@ export class OrgClaOnlyAccessService {
   /** Selector entries. Empty while the flag is off, whatever the server sent. */
   public readonly claOnlyOrgUids: Signal<ReadonlySet<string>> = computed(() => (this.enabled() ? this.orgRoleGrants.claManagerOrgSet() : NO_ORGS));
 
+  /** The caller's CLA-manager companies could not be read, so `claOnlyOrgUids` being empty is unknown. False while the flag is off. */
+  public readonly lookupFailed: Signal<boolean> = computed(() => this.enabled() && this.orgRoleGrants.claManagerLookupFailed());
+
   public isClaOnly(uid: string | null | undefined): boolean {
     return !!uid && (this.claOnlyOrgUids().has(uid) || (this.enabled() && this.addressedClaOnlyUids().has(uid)));
   }

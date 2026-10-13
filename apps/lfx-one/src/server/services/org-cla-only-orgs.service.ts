@@ -64,19 +64,20 @@ export class OrgClaOnlyOrgsService {
   /**
    * The caller's CLA-only organizations, added outside the cached grant computation so the grant
    * cache never holds an ACS answer. Asked only when Org Lens granted nothing; an unreadable scope
-   * list is logged and answered as none, leaving the grant arrays — the authoritative part — intact.
+   * list is logged and answered as none with `claManagerLookup: 'failed'`, leaving the grant arrays —
+   * the authoritative part — intact, so the client shows an outage rather than "no organizations".
    */
-  public async getRoleGrantOrgUids(req: Request, grants: RoleGrantsResponse): Promise<string[]> {
+  public async getRoleGrantClaManagerOrgs(req: Request, grants: RoleGrantsResponse): Promise<Pick<RoleGrantsResponse, 'claManagerOrgs' | 'claManagerLookup'>> {
     const grantedOrgCount = grants.writers.length + grants.auditors.length + grants.cascadingWriters.length + grants.cascadingAuditors.length;
     const rosterAnswered = grants.lookupOutcome !== 'failed' && grants.staffCheck !== 'failed';
-    if (!claOnlyEntryApplies(grants.isStaff, grantedOrgCount, rosterAnswered)) return [];
+    if (!claOnlyEntryApplies(grants.isStaff, grantedOrgCount, rosterAnswered)) return { claManagerOrgs: [], claManagerLookup: 'ok' };
     try {
-      return await this.getOrgUids(req);
+      return { claManagerOrgs: await this.getOrgUids(req), claManagerLookup: 'ok' };
     } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'CLA manager scopes lookup failed; reporting no CLA-only organizations', {
+      logger.warning(req, 'get_org_role_grants', 'CLA manager scopes lookup failed; reporting the CLA-only lookup as failed', {
         err: error instanceof Error ? error.message : String(error),
       });
-      return [];
+      return { claManagerOrgs: [], claManagerLookup: 'failed' };
     }
   }
 

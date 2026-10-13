@@ -147,6 +147,12 @@ export interface RoleGrantsResponse {
    * Optional for rolling deploys: absent ⇒ empty.
    */
   claManagerOrgs?: string[];
+  /**
+   * M3 — `failed` when the caller's `cla-manager` scopes were asked for and could not be read, so an
+   * empty `claManagerOrgs` is unknown rather than "manages nothing" and the client renders the outage
+   * state with Retry. Absent ⇒ `ok`.
+   */
+  claManagerLookup?: 'ok' | 'failed';
 }
 
 /** Spec 053 — completeness of the caller's organization-list lookup. */
