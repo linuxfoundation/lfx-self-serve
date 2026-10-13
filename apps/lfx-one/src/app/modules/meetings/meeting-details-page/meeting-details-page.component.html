@@ -96,14 +96,16 @@
       <p-skeleton height="280px" aria-hidden="true" data-testid="meeting-section-placeholder-discover" />
     </div>
     <!-- A labelled region, not <aside>: it sits inside <main>, where a complementary landmark must not
-         (#3260). Its sr-only h2 keeps the rail's h3s from reading as part of the section above it. -->
+         (#3260). Its sr-only h2, once loaded, keeps the rail's h3s from reading as part of the section above it. -->
     <section
       class="flex w-full flex-col gap-[20px] min-[921px]:sticky min-[921px]:w-[344px] min-[921px]:flex-none"
       [ngClass]="railTopClass()"
-      aria-labelledby="meeting-rail-heading"
+      aria-label="Meeting actions"
       data-testid="meeting-rail">
-      <h2 id="meeting-rail-heading" class="sr-only">Meeting actions</h2>
       @if (state.status() === 'ready') {
+        <!-- Only with the rail's content: the loading skeleton projects this template into its live
+             region, which must not read a heading out with the loading status. -->
+        <h2 class="sr-only">Meeting actions</h2>
         <!-- The rail card: the time banner (E1-06) and the action slot (E2-01) on top, then "Organized
              by" under a divider, as in the prototype. -->
         <div
