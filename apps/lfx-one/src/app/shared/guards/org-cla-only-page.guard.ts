@@ -47,8 +47,9 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
   const claPage = (): UrlTree | null => (segment && claOnlyAccess.isClaOnly(uid) ? router.createUrlTree(['/org', segment, CLA_PAGE]) : null);
 
   // A dependency that never answers must not hold the navigation: past its wait the page is admitted,
-  // and the redirect still happens if LaunchDarkly and the role grants answer before the caller moves
-  // on. The page's data is refused server-side either way.
+  // and the redirect still happens if LaunchDarkly and the role grants answer before the next navigation
+  // starts. The router URL is not consulted: it may still name the previous page while this navigation
+  // is in flight. The page's data is refused server-side either way.
   const admitAndRedirectLate = (): true => {
     toObservable(
       computed(() => featureFlagService.providerReady() && roleGrants.loaded()),
@@ -57,7 +58,7 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
       .pipe(filter(Boolean), take(1), takeUntil(router.events.pipe(filter((event) => event instanceof NavigationStart))))
       .subscribe(() => {
         const target = claPage();
-        if (target && segment && isNonClaPageOf(router.url, segment)) {
+        if (target) {
           void router.navigateByUrl(target, { replaceUrl: true });
         }
       });
@@ -88,14 +89,6 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
 
   return claPage() ?? true;
 };
-
-/** `url` is still a page of `/org/{segment}` other than EasyCLA — the caller has not navigated on. */
-function isNonClaPageOf(url: string, segment: string): boolean {
-  const prefix = `/org/${segment}/`;
-  if (!url.startsWith(prefix)) return false;
-  const page = url.slice(prefix.length).split(/[/?#]/, 1)[0];
-  return page !== CLA_PAGE;
-}
 
 /** The page route directly under `:orgSegment` that `childRoute` is, or sits beneath. */
 function pageRouteOf(childRoute: ActivatedRouteSnapshot): ActivatedRouteSnapshot | null {

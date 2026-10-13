@@ -187,15 +187,15 @@ describe('orgClaOnlyPageGuard', () => {
       expect(navigateByUrl).toHaveBeenCalledWith({ redirected: `/org/${LATE_UID}/easycla` }, { replaceUrl: true });
     });
 
-    it('leaves a caller who has already navigated on', async () => {
-      routerUrl = `/org/${LATE_UID}/easycla`;
+    it('redirects even before this navigation has updated the router URL', async () => {
+      routerUrl = '/org/previous-org/overview';
       expect(await runPastWait(routeFor(LATE_UID, 'people'))).toBe(true);
 
       claOnly.add(LATE_UID);
       loaded.set(true);
       TestBed.tick();
 
-      expect(navigateByUrl).not.toHaveBeenCalled();
+      expect(navigateByUrl).toHaveBeenCalledWith({ redirected: `/org/${LATE_UID}/easycla` }, { replaceUrl: true });
     });
 
     it('judges the organization this navigation addressed, not one the caller has since switched to', async () => {
