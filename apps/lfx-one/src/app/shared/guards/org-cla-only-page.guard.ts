@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { inject, Injector, PLATFORM_ID } from '@angular/core';
+import { computed, inject, Injector, PLATFORM_ID } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
-import { ActivatedRouteSnapshot, CanActivateChildFn, Router, UrlTree } from '@angular/router';
+import { ActivatedRouteSnapshot, CanActivateChildFn, NavigationStart, Router, UrlTree } from '@angular/router';
 import { ORG_CLA_ONLY_GRANTS_WAIT_MS, ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
-import { filter, firstValueFrom, of, take, timeout } from 'rxjs';
+import { filter, firstValueFrom, of, take, takeUntil, timeout } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
 import { FeatureFlagService } from '../services/feature-flag.service';
@@ -40,43 +40,49 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
   const roleGrants = inject(OrgRoleGrantsService);
   const injector = inject(Injector);
 
+  // `orgPathParamGuard` has already adopted the addressed organization; pin it so a later switch to
+  // another company is never judged by this navigation's answer.
+  const uid = accountContext.selectedAccount().uid;
+  const segment = page.parent?.paramMap.get(ORG_SEGMENT_PARAM) ?? null;
+  const claPage = (): UrlTree | null => (segment && claOnlyAccess.isClaOnly(uid) ? router.createUrlTree(['/org', segment, CLA_PAGE]) : null);
+
+  // A dependency that never answers must not hold the navigation: past its wait the page is admitted,
+  // and the redirect still happens if LaunchDarkly and the role grants answer before the caller moves
+  // on. The page's data is refused server-side either way.
+  const admitAndRedirectLate = (): true => {
+    toObservable(
+      computed(() => featureFlagService.providerReady() && roleGrants.loaded()),
+      { injector }
+    )
+      .pipe(filter(Boolean), take(1), takeUntil(router.events.pipe(filter((event) => event instanceof NavigationStart))))
+      .subscribe(() => {
+        const target = claPage();
+        if (target && segment && isNonClaPageOf(router.url, segment)) {
+          void router.navigateByUrl(target, { replaceUrl: true });
+        }
+      });
+    return true;
+  };
+
   // On a cold deep link the flag still reads its `false` default until LaunchDarkly is ready, which
-  // would admit the page. A timeout admits it too: no CLA-only org exists while the flag is off.
+  // would admit the page.
   if (!featureFlagService.providerReady()) {
     const ready = await featureFlagService.waitForReady({ guard: 'orgClaOnlyPageGuard', flag: ORG_LENS_CLA_M3_ENABLED_FLAG });
     if (!ready) {
-      return true;
+      return admitAndRedirectLate();
     }
   }
   if (!claOnlyAccess.enabled()) {
     return true;
   }
 
-  const segment = page.parent?.paramMap.get(ORG_SEGMENT_PARAM) ?? null;
-  const claPage = (): UrlTree | null =>
-    segment && claOnlyAccess.isClaOnly(accountContext.selectedAccount().uid) ? router.createUrlTree(['/org', segment, CLA_PAGE]) : null;
-
-  // A role-grants request that never answers must not hold the navigation: past the wait the page is
-  // admitted unless the resolver already recorded a CLA-only answer, and a late answer still redirects.
-  // The page's data is refused server-side either way.
   if (!roleGrants.loaded()) {
     const loaded = await firstValueFrom(
       toObservable(roleGrants.loaded, { injector }).pipe(filter(Boolean), timeout({ first: ORG_CLA_ONLY_GRANTS_WAIT_MS, with: () => of(false) }))
     );
+    // The resolver's recorded CLA-only answer does not need the grants.
     if (!loaded) {
-      const recorded = claPage();
-      if (recorded) {
-        return recorded;
-      }
-      toObservable(roleGrants.loaded, { injector })
-        .pipe(filter(Boolean), take(1))
-        .subscribe(() => {
-          const target = claPage();
-          if (target && segment && isNonClaPageOf(router.url, segment)) {
-            void router.navigateByUrl(target, { replaceUrl: true });
-          }
-        });
-      return true;
+      return claPage() ?? admitAndRedirectLate();
     }
   }
 

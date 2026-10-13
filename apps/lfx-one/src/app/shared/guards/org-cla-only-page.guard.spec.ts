@@ -3,13 +3,13 @@
 
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRouteSnapshot, convertToParamMap, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
+import { ActivatedRouteSnapshot, convertToParamMap, NavigationStart, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
 import { ORG_CLA_ONLY_GRANTS_WAIT_MS } from '@lfx-one/shared/constants';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { OrgClaOnlyAccessService } from '@shared/services/org-cla-only-access.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
-import { firstValueFrom, isObservable, Observable } from 'rxjs';
+import { firstValueFrom, isObservable, Observable, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { orgClaOnlyPageGuard } from './org-cla-only-page.guard';
@@ -26,6 +26,7 @@ describe('orgClaOnlyPageGuard', () => {
   let waitForReady: ReturnType<typeof vi.fn>;
   let platform: string;
   let routerUrl: string;
+  let routerEvents: Subject<unknown>;
 
   /** `/org/{segment}/{page}[/{child}]` as the router hands it to a CanActivateChild on `:orgSegment`. */
   const routeFor = (segment: string, page: string, child?: string): ActivatedRouteSnapshot => {
@@ -46,6 +47,7 @@ describe('orgClaOnlyPageGuard', () => {
     providerReady.set(true);
     platform = 'browser';
     routerUrl = '/';
+    routerEvents = new Subject();
     claOnly.clear();
     claOnly.add(CLA_ONLY_UID);
     createUrlTree = vi.fn((commands: string[]) => ({ redirected: commands.join('/') }));
@@ -59,6 +61,9 @@ describe('orgClaOnlyPageGuard', () => {
           useValue: {
             createUrlTree,
             navigateByUrl,
+            get events() {
+              return routerEvents;
+            },
             get url() {
               return routerUrl;
             },
@@ -180,6 +185,46 @@ describe('orgClaOnlyPageGuard', () => {
       TestBed.tick();
 
       expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it('judges the organization this navigation addressed, not one the caller has since switched to', async () => {
+      const OTHER_UID = '0014100000OtherClaO';
+      routerUrl = `/org/${LATE_UID}/people`;
+      expect(await runPastWait(routeFor(LATE_UID, 'people'))).toBe(true);
+
+      selectedUid.set(OTHER_UID);
+      claOnly.add(OTHER_UID);
+      loaded.set(true);
+      TestBed.tick();
+
+      expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it('stops waiting once another navigation starts', async () => {
+      routerUrl = `/org/${LATE_UID}/people`;
+      expect(await runPastWait(routeFor(LATE_UID, 'people'))).toBe(true);
+
+      routerEvents.next(new NavigationStart(2, `/org/${LATE_UID}/projects`));
+      claOnly.add(LATE_UID);
+      loaded.set(true);
+      TestBed.tick();
+
+      expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it('redirects once LaunchDarkly turns the flag on after its wait ran out', async () => {
+      providerReady.set(false);
+      enabled.set(false);
+      waitForReady.mockResolvedValue(false);
+      routerUrl = `/org/${LATE_UID}/people`;
+      claOnly.add(LATE_UID);
+      expect(await run(routeFor(LATE_UID, 'people'))).toBe(true);
+
+      enabled.set(true);
+      providerReady.set(true);
+      TestBed.tick();
+
+      expect(navigateByUrl).toHaveBeenCalledWith({ redirected: `/org/${LATE_UID}/easycla` }, { replaceUrl: true });
     });
 
     it('leaves the page when the late answer is not CLA-only', async () => {
