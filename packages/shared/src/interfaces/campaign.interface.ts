@@ -1850,6 +1850,11 @@ export interface CampaignPlatformResult {
   campaignId?: string;
   /** HubSpot app link to the created draft. Absent when campaign-service could not build one (unknown portal id). */
   hubspotUrl?: string;
+  /**
+   * Operator-readable notes about best-effort steps of a SUCCESSFUL create that did not apply. For the email
+   * channel this reports a hero image that could not be re-hosted: the draft exists but has no hero banner.
+   */
+  warnings?: string[];
   error?: string;
 }
 

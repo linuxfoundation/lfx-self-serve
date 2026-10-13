@@ -112,6 +112,8 @@ interface CampaignServiceJobPollResponse {
     campaign_id?: string;
     /** HubSpot app URL of the created draft; campaign-service builds it from the connection's portal id. */
     hubspot_url?: string;
+    /** Best-effort steps of a successful create that did not apply (email channel: a hero that could not be added). */
+    warnings?: string[];
     error?: string;
   }[];
   error?: string;
@@ -3436,6 +3438,23 @@ export function isCampaignServiceNotFound(errorBody: unknown): boolean {
  * flag carries the per-platform truth, so reporting the JOB as failed would hide the
  * campaigns that were really created.
  */
+/**
+ * The warnings campaign-service attached to one platform result, reduced to non-blank strings and bounded.
+ *
+ * They are rendered as text in the UI, so only the shape is policed here: a non-array, a non-string element or a
+ * blank one is dropped, and the count and each entry's length are capped so a malformed upstream response cannot
+ * flood the banner.
+ */
+function cleanWarnings(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
+    .slice(0, 10)
+    .map((entry) => entry.trim().slice(0, 500));
+}
+
 export function adaptJobPollResponse(response: CampaignServiceJobPollResponse): CampaignJobStatus {
   // Stays `undefined` when campaign-service sent no `result` — it is NOT defaulted to `[]`.
   // An empty array would assert "the job reported on zero platforms", which is a different
@@ -3447,6 +3466,7 @@ export function adaptJobPollResponse(response: CampaignServiceJobPollResponse): 
     ok: r.ok,
     campaignId: r.campaign_id,
     hubspotUrl: r.hubspot_url,
+    ...(cleanWarnings(r.warnings).length > 0 ? { warnings: cleanWarnings(r.warnings) } : {}),
     error: r.error,
   }));
 
