@@ -21,6 +21,33 @@ export const MEETING_ORGANIZER_SKIP_IDENTIFIERS = ['zoom.webhooks', 'zoom.events
 export const IMPORT_REGISTRANTS_MAX = 50;
 
 /**
+ * Upper bound on registrants a single batch add/update/delete request may carry
+ * (`POST`/`PUT`/`DELETE /api/meetings/:uid/registrants`). Each item becomes one upstream write, so an
+ * uncapped array let one authenticated request start an unbounded number of upstream calls
+ * (CWE-770, lfx-self-serve-ops#439). The BFF rejects a longer array with a 400 before any upstream
+ * call; the frontend `MeetingService` splits larger saves into sequential requests at or under this.
+ */
+export const MEETING_REGISTRANT_BATCH_MAX = 100;
+
+/**
+ * Registrants per request when the frontend `MeetingService` splits a larger batch save.
+ * @description Deliberately below MEETING_REGISTRANT_BATCH_MAX: the BFF runs the first item alone and
+ * the rest MEETING_REGISTRANT_BATCH_CONCURRENCY at a time, so one request costs
+ * 1 + ceil((n - 1) / 5) serial upstream rounds — 21 at the cap, 6 at this size. Against the ingress
+ * read timeout (ingress-nginx defaults to 60s), six rounds fit while a round averages under 10s; 21 needed
+ * under about 2.9s.
+ */
+export const MEETING_REGISTRANT_CLIENT_CHUNK_SIZE = 25;
+
+/**
+ * Max concurrent upstream registrant writes the BFF runs for one batch request.
+ * @description Bounds the per-request fan-out in `MeetingController.processRegistrantOperations`, which
+ * previously fired every item at once. Matches `COMMITTEE_INVITE_CONCURRENCY`, which caps the
+ * comparable committee-invite fan-out against the same v2 services.
+ */
+export const MEETING_REGISTRANT_BATCH_CONCURRENCY = 5;
+
+/**
  * Host-key visibility window — minutes before meeting start when the key becomes visible.
  * Mirrors PCC's showHostKey() logic. The Zoom host key is account-level and can change
  * leading up to a meeting, so exposing it too early risks showing a stale value.

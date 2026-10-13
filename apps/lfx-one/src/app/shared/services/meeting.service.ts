@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import {
   LINKEDIN_PROFILE_PATTERN,
   MEETING_DETAIL_CACHE_TTL_MS,
   MEETING_PASSWORD_HEADER,
+  MEETING_REGISTRANT_CLIENT_CHUNK_SIZE,
   PAST_MEETING_RECORDING_CACHE_TTL_MS,
   PAST_MEETING_SORT,
 } from '@lfx-one/shared/constants';
@@ -55,7 +56,10 @@ import {
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
+import { isBatchRegistrantOperationResponse, mergeBatchRegistrantResponses } from '@lfx-one/shared/utils';
+import { catchError, concatMap, from, map, Observable, of, shareReplay, take, tap, throwError, toArray } from 'rxjs';
+
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 
 @Injectable({
   providedIn: 'root',
@@ -630,7 +634,9 @@ export class MeetingService {
     meetingUid: string,
     registrantData: CreateMeetingRegistrantRequest[]
   ): Observable<BatchRegistrantOperationResponse<MeetingRegistrant>> {
-    return this.http.post<BatchRegistrantOperationResponse<MeetingRegistrant>>(`/api/meetings/${meetingUid}/registrants`, registrantData).pipe(
+    return this.sendRegistrantBatchInChunks(registrantData, (chunk) =>
+      this.http.post<BatchRegistrantOperationResponse<MeetingRegistrant>>(`/api/meetings/${meetingUid}/registrants`, chunk)
+    ).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to add registrants to meeting ${meetingUid}:`, error);
@@ -643,7 +649,9 @@ export class MeetingService {
     meetingUid: string,
     updateData: { uid: string; changes: UpdateMeetingRegistrantRequest }[]
   ): Observable<BatchRegistrantOperationResponse<MeetingRegistrant>> {
-    return this.http.put<BatchRegistrantOperationResponse<MeetingRegistrant>>(`/api/meetings/${meetingUid}/registrants`, updateData).pipe(
+    return this.sendRegistrantBatchInChunks(updateData, (chunk) =>
+      this.http.put<BatchRegistrantOperationResponse<MeetingRegistrant>>(`/api/meetings/${meetingUid}/registrants`, chunk)
+    ).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to update registrants in meeting ${meetingUid}:`, error);
@@ -653,7 +661,9 @@ export class MeetingService {
   }
 
   public deleteMeetingRegistrants(meetingUid: string, registrantUids: string[]): Observable<BatchRegistrantOperationResponse<string>> {
-    return this.http.delete<BatchRegistrantOperationResponse<string>>(`/api/meetings/${meetingUid}/registrants`, { body: registrantUids }).pipe(
+    return this.sendRegistrantBatchInChunks(registrantUids, (chunk) =>
+      this.http.delete<BatchRegistrantOperationResponse<string>>(`/api/meetings/${meetingUid}/registrants`, { body: chunk })
+    ).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to delete registrants from meeting ${meetingUid}:`, error);
@@ -836,6 +846,57 @@ export class MeetingService {
         return of({ count: 0 });
       }),
       map((response) => response.count)
+    );
+  }
+
+  /**
+   * Sends a registrant batch in requests of at most MEETING_REGISTRANT_CLIENT_CHUNK_SIZE items, one after
+   * another, and merges the responses. A batch that fits in one request is sent as-is, so its errors reach
+   * the caller exactly as before.
+   * @description Sequential so the client never multiplies the BFF's per-request concurrency bound.
+   * Smaller chunks reduce serial upstream rounds and timeout risk; they do not enforce an ingress
+   * deadline. When every item of a chunk fails the BFF answers 400 with the per-item results in the
+   * body, so that body is merged like any other response and the remaining chunks are still sent — as a
+   * single request would have attempted them. Any other error on the first request (a 403, a validation
+   * 400) rethrows, which callers already handle; on a later request it reports that chunk's items as
+   * failures and keeps the chunks that already landed, so a partial save is counted as one.
+   */
+  private sendRegistrantBatchInChunks<I, T>(
+    items: I[],
+    send: (chunk: I[]) => Observable<BatchRegistrantOperationResponse<T>>
+  ): Observable<BatchRegistrantOperationResponse<T>> {
+    if (items.length <= MEETING_REGISTRANT_CLIENT_CHUNK_SIZE) {
+      return send(items);
+    }
+
+    const chunks: I[][] = [];
+    for (let i = 0; i < items.length; i += MEETING_REGISTRANT_CLIENT_CHUNK_SIZE) {
+      chunks.push(items.slice(i, i + MEETING_REGISTRANT_CLIENT_CHUNK_SIZE));
+    }
+
+    return from(chunks).pipe(
+      concatMap((chunk, index) =>
+        send(chunk).pipe(
+          catchError((error: unknown) => {
+            if (error instanceof HttpErrorResponse && isBatchRegistrantOperationResponse<T>(error.error)) {
+              return of(error.error);
+            }
+
+            if (index === 0) {
+              return throwError(() => error);
+            }
+
+            const failed: BatchRegistrantOperationResponse<T> = {
+              successes: [],
+              failures: chunk.map((input) => ({ input, error: { message: extractErrorMessage(error, 'Request failed') } })),
+              summary: { total: chunk.length, successful: 0, failed: chunk.length },
+            };
+            return of(failed);
+          })
+        )
+      ),
+      toArray(),
+      map((responses) => mergeBatchRegistrantResponses(responses))
     );
   }
 }

@@ -20,6 +20,7 @@ import {
   VOTE_COLOR,
 } from '../constants';
 import type {
+  BatchRegistrantOperationResponse,
   CustomRecurrencePattern,
   Meeting,
   MeetingCommittee,
@@ -63,7 +64,9 @@ import {
   isOccurrencePast,
   isPastMeetingCompositeId,
   isUnresolvableParticipantName,
+  isBatchRegistrantOperationResponse,
   isVoteCalendarEventPast,
+  mergeBatchRegistrantResponses,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
   normalizeMeetingApiVotingStatuses,
@@ -1897,5 +1900,59 @@ describe('buildMeetingOccurrenceOptions', () => {
     const series = buildMeetingFixture({ id: 'meeting-2', timezone: 'UTC', duration: 60, occurrences: [running] });
 
     expect(buildMeetingOccurrenceOptions(series, null, NOW).map((option) => option.value)).toEqual([running.occurrence_id]);
+  });
+});
+
+describe('mergeBatchRegistrantResponses', () => {
+  const failure = (input: string, message: string): BatchRegistrantOperationResponse<string>['failures'][number] => ({ input, error: { message } });
+
+  it('returns empty arrays and zero counts for no responses', () => {
+    expect(mergeBatchRegistrantResponses<string>([])).toEqual({ successes: [], failures: [], summary: { total: 0, successful: 0, failed: 0 } });
+  });
+
+  it('returns a single response unchanged', () => {
+    const response: BatchRegistrantOperationResponse<string> = {
+      successes: ['reg-1', 'reg-2'],
+      failures: [failure('reg-3', 'Not found')],
+      summary: { total: 3, successful: 2, failed: 1 },
+    };
+
+    expect(mergeBatchRegistrantResponses([response])).toEqual(response);
+  });
+
+  it('concatenates successes and failures in request order and sums the counts', () => {
+    const merged = mergeBatchRegistrantResponses<string>([
+      { successes: ['reg-1', 'reg-2'], failures: [], summary: { total: 2, successful: 2, failed: 0 } },
+      { successes: ['reg-3'], failures: [failure('reg-4', 'Forbidden')], summary: { total: 2, successful: 1, failed: 1 } },
+      { successes: [], failures: [failure('reg-5', 'Request failed'), failure('reg-6', 'Request failed')], summary: { total: 2, successful: 0, failed: 2 } },
+    ]);
+
+    expect(merged.successes).toEqual(['reg-1', 'reg-2', 'reg-3']);
+    expect(merged.failures.map((item) => item.input)).toEqual(['reg-4', 'reg-5', 'reg-6']);
+    expect(merged.failures[0].error.message).toBe('Forbidden');
+    expect(merged.summary).toEqual({ total: 6, successful: 3, failed: 3 });
+  });
+});
+
+describe('isBatchRegistrantOperationResponse', () => {
+  it('accepts a batch response, including an all-failed one', () => {
+    expect(
+      isBatchRegistrantOperationResponse({
+        successes: [],
+        failures: [{ input: 'reg-1', error: { message: 'Not found' } }],
+        summary: { total: 1, successful: 0, failed: 1 },
+      })
+    ).toBe(true);
+  });
+
+  it.each([
+    ['null', null],
+    ['a string', 'Bad Request'],
+    ['a validation error body', { error: 'Validation failed', validationErrors: [{ field: 'registrants', message: 'No registrants provided' }] }],
+    ['a body missing failures', { successes: [], summary: { total: 0, successful: 0, failed: 0 } }],
+    ['a body with a null summary', { successes: [], failures: [], summary: null }],
+    ['a body with a non-numeric count', { successes: [], failures: [], summary: { total: '1', successful: 0, failed: 1 } }],
+  ])('rejects %s', (_label, value) => {
+    expect(isBatchRegistrantOperationResponse(value)).toBe(false);
   });
 });

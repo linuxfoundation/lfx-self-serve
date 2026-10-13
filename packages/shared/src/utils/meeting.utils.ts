@@ -24,6 +24,7 @@ import { CommitteeMemberVotingStatus, MeetingType, RecurrenceType } from '../enu
 import { PollStatus } from '../enums/poll.enum';
 import { isSameOccurrenceId, selectApplicableRsvp } from './rsvp-calculator.util';
 import type {
+  BatchRegistrantOperationResponse,
   BuildMeetingOccurrenceRouteOptions,
   CalendarColor,
   CardSelectorOption,
@@ -1707,4 +1708,44 @@ export function getSelectableMeetingTypeOptions(persona: PersonaType, hydratedMe
   }
 
   return MEETING_TYPE_OPTIONS.filter((option) => MAINTAINER_MEETING_TYPES.includes(option.value) || option.value === hydratedMeetingType);
+}
+
+/**
+ * Merges the responses of a batch registrant operation that was split into several requests.
+ * @description Successes and failures are concatenated in request order and the summary counts are
+ * summed, so callers see one response regardless of how many chunks the batch was sent in. An empty
+ * input yields empty arrays and zero counts.
+ */
+export function mergeBatchRegistrantResponses<T>(responses: BatchRegistrantOperationResponse<T>[]): BatchRegistrantOperationResponse<T> {
+  return responses.reduce<BatchRegistrantOperationResponse<T>>(
+    (merged, response) => ({
+      successes: [...merged.successes, ...response.successes],
+      failures: [...merged.failures, ...response.failures],
+      summary: {
+        total: merged.summary.total + response.summary.total,
+        successful: merged.summary.successful + response.summary.successful,
+        failed: merged.summary.failed + response.summary.failed,
+      },
+    }),
+    { successes: [], failures: [], summary: { total: 0, successful: 0, failed: 0 } }
+  );
+}
+
+/**
+ * Whether `value` has the shape of a batch registrant operation response.
+ * @description The BFF answers a batch whose every item failed with a 400 that still carries this body,
+ * so an HTTP error alone does not mean the request produced no per-item results.
+ */
+export function isBatchRegistrantOperationResponse<T>(value: unknown): value is BatchRegistrantOperationResponse<T> {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const { successes, failures, summary } = value as Partial<Record<keyof BatchRegistrantOperationResponse<T>, unknown>>;
+  if (!Array.isArray(successes) || !Array.isArray(failures) || typeof summary !== 'object' || summary === null) {
+    return false;
+  }
+
+  const { total, successful, failed } = summary as Partial<Record<keyof BatchRegistrantOperationResponse<T>['summary'], unknown>>;
+  return typeof total === 'number' && typeof successful === 'number' && typeof failed === 'number';
 }
