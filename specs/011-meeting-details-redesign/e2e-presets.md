@@ -23,7 +23,7 @@ Two more cases cover the requirements the presets alone do not:
 
 - **Reachability (SC-002).** Every illegal row of the matrix (an outsider or visitor on a
   `public-restricted`, `private-open` or `private-restricted` meeting, before or live, with no invite-link
-  password lands on `/meetings/not-found` (robust spec). The stub router enforces the password as the
+  password) lands on `/meetings/not-found` (robust spec). The stub router enforces the password as the
   BFF does: with `MeetingStubs.password` set, the lookup and the join URL answer 400 unless the
   request carries it in `x-meeting-password`. Preset 5 opens with it, the only way it is reachable.
 - **Dialogs.** Preset 6 also opens the transcript and the full AI summary and checks their content
