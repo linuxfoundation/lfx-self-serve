@@ -380,6 +380,31 @@ export enum ServerFeatureFlag {
   CampaignServiceHubSpotUtm = 'LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM',
 
   /**
+   * Serves the account monitors from campaign-service's `account-monitor` endpoints (#2519):
+   * `/api/campaigns/meta/monitor` and `/reddit/monitor` switch backend, and the campaign-service-only
+   * `/microsoft/monitor`, `/twitter/monitor` and `/hubspot/monitor` answer at all (a 404 while OFF —
+   * they have no legacy path to fall back to). Google (`/monitor`) and LinkedIn (`/linkedin/monitor`)
+   * are NOT gated by this flag.
+   *
+   * IT CHANGES WHOSE CREDENTIAL READS THE ACCOUNT. The legacy Meta/Reddit paths read the LF ad
+   * account with this app's own environment credentials. Campaign-service resolves the PROJECT'S
+   * OWN connection only — never the LF system fallback — and refuses an account that connection
+   * is not bound to. So a project with no Meta/Reddit connection of its own reads a 404, and one
+   * whose connection is bound to a different account than the picker offers reads a 400. Verify
+   * the foundations that use these tabs have connections before turning this on.
+   *
+   * IT ALSO CHANGES THE NUMBERS, deliberately: campaign-service fixed the rule-engine bugs the
+   * legacy Reddit path still has (#3018, #3019, #3020, #3021, #3022). Reddit totals become the sum
+   * of the rows, Reddit conversions become "not measured" instead of a fabricated 0 (still rendered
+   * as 0 — see `conversionsMeasured`), and the always-firing "not converting" item disappears.
+   *
+   * Reads only, no persisted state and no id space of their own, so flipping it back strands
+   * nothing, and an overlapping rollout only means two pods may answer the same tab from
+   * different backends. Same accepted values as the flags above.
+   */
+  CampaignServiceMonitor = 'LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR',
+
+  /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and
    * `weekly-brief.service.ts`'s `shareToSlack` (the Slack send) server-side. `WG_WEEKLY_BRIEF_SLACK_FLAG`
    * (`wg-weekly-brief-slack`, an OpenFeature/GrowthBook flag) only gates the Angular UI — the
