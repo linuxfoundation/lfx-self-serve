@@ -130,8 +130,9 @@ async function assertPreset(page: Page, preset: Preset): Promise<void> {
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
   await expect(page.getByTestId('meeting-content-column')).toBeVisible();
   await expect(page.getByTestId('meeting-rail')).toBeVisible();
+  // Each is one section or control: exactly one, so a duplicate fails the contract too.
   for (const testId of preset.present) {
-    await expect(page.getByTestId(testId).first(), `${testId} should render`).toBeAttached({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId(testId), `${testId} should render once`).toHaveCount(1, { timeout: ELEMENT_TIMEOUT });
   }
   for (const testId of preset.absent) {
     await expect(page.getByTestId(testId), `${testId} should not render`).toHaveCount(0);
