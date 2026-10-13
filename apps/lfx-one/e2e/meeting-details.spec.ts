@@ -50,8 +50,13 @@ test.describe('Meeting details V2 — signed-in presets', () => {
 
     const join = page.getByTestId('meeting-action-join-button');
     await expect(join).toHaveAttribute('data-state', 'ready', { timeout: ELEMENT_TIMEOUT });
-    // The join link carries the viewer's name for Zoom (buildJoinUrlWithParams), after the meeting's own URL.
-    await expect(join.locator('a')).toHaveAttribute('href', /^https:\/\/zoom\.example\/j\/123(\?|$)/);
+    // The join link is the meeting's own URL plus the viewer's name for Zoom (buildJoinUrlWithParams):
+    // `uname` is the display name and `un` its UTF-8 base64. A signed-in viewer always has one (name or email).
+    const href = new URL((await join.locator('a').getAttribute('href')) ?? '');
+    expect(`${href.origin}${href.pathname}`).toBe('https://zoom.example/j/123');
+    const uname = href.searchParams.get('uname') ?? '';
+    expect(uname).not.toBe('');
+    expect(href.searchParams.get('un')).toBe(Buffer.from(uname, 'utf8').toString('base64'));
   });
 
   test('5 · a signed-in outsider on a restricted meeting is told an invitation is required', async ({ page }) => {

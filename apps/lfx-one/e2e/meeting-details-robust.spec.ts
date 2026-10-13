@@ -136,6 +136,10 @@ async function assertPreset(page: Page, preset: Preset): Promise<void> {
   for (const testId of preset.absent) {
     await expect(page.getByTestId(testId), `${testId} should not render`).toHaveCount(0);
   }
+  // The Join button is attached while its URL loads too; wait for the ready link so axe scans it.
+  if (preset.kind === 'join') {
+    await expect(page.getByTestId('meeting-action-join-button')).toHaveAttribute('data-state', 'ready', { timeout: ELEMENT_TIMEOUT });
+  }
 }
 
 test.describe('Meeting details V2 — structure and accessibility', () => {
