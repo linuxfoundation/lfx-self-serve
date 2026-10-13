@@ -42,7 +42,11 @@
     @case ('sign-in') {
       <!-- data-dd-privacy="mask": returnTo can carry the meeting password; keep it out of Session Replay. -->
       <p class="m-0 text-[14px] text-[var(--md-text-body)]" data-testid="materials-section-sign-in">
-        <a class="font-semibold text-[var(--md-accent-ink)] underline" [href]="signInHref()" data-dd-privacy="mask" data-testid="materials-section-sign-in-link"
+        <a
+          class="rounded-[4px] font-semibold text-[var(--md-accent-ink)] underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+          [href]="signInHref()"
+          data-dd-privacy="mask"
+          data-testid="materials-section-sign-in-link"
           >Sign in</a
         >
         to view the materials for this meeting.
@@ -63,7 +67,7 @@
             <div class="flex flex-col gap-[8px]" data-testid="materials-section-files">
               <div>
                 <h3 class="m-0 text-[11.5px] font-bold uppercase tracking-[.05em] text-[var(--md-text-muted)]">Primary materials</h3>
-                <p class="m-0 mt-[2px] text-[12.5px] text-[var(--md-glyph-faint)]">Files attached to this meeting.</p>
+                <p class="m-0 mt-[2px] text-[12.5px] text-[var(--md-text-muted)]">Files attached to this meeting.</p>
               </div>
               <ul class="m-0 list-none overflow-hidden rounded-[14px] border border-[var(--md-border)] bg-[var(--md-surface-card)] p-0">
                 @for (file of visibleFiles(); track file.uid; let first = $first) {
@@ -121,7 +125,7 @@
             <div class="flex flex-col gap-[8px]" data-testid="materials-section-links">
               <div>
                 <h3 class="m-0 text-[11.5px] font-bold uppercase tracking-[.05em] text-[var(--md-text-muted)]">Supporting materials</h3>
-                <p class="m-0 mt-[2px] text-[12.5px] text-[var(--md-glyph-faint)]">Links to related pages and documents.</p>
+                <p class="m-0 mt-[2px] text-[12.5px] text-[var(--md-text-muted)]">Links to related pages and documents.</p>
               </div>
               <ul class="m-0 list-none overflow-hidden rounded-[14px] border border-[var(--md-border)] bg-[var(--md-surface-card)] p-0">
                 @for (row of visibleLinks(); track row.attachment.uid; let first = $first) {

@@ -68,7 +68,7 @@ describe('MeetingActionSlotComponent', () => {
     pastAccessKnown = signal(true);
     markRegistered = vi.fn();
     dialogClose = new Subject();
-    openDialog = vi.fn().mockReturnValue({ onClose: dialogClose.asObservable() });
+    openDialog = vi.fn().mockReturnValue({ onClose: dialogClose.asObservable(), onDestroy: dialogClose.asObservable() });
     add = vi.fn();
     selectedOccurrence = signal<MeetingOccurrence | null>(null);
 
@@ -276,6 +276,20 @@ describe('MeetingActionSlotComponent', () => {
       dialogClose.next({ registered: true });
 
       expect(markRegistered).toHaveBeenCalledWith('meeting-1');
+    });
+
+    // #3260: PrimeNG's dialog does not restore focus; the slot hands it back to Register on close.
+    it('returns focus to Register once its dialog is gone', () => {
+      const destroyed = new Subject<void>();
+      openDialog.mockReturnValue({ onClose: dialogClose.asObservable(), onDestroy: destroyed.asObservable() });
+      const register = query('meeting-action-register-button')?.querySelector('button') as HTMLButtonElement;
+      register.focus();
+      register.click();
+      register.blur();
+
+      destroyed.next();
+
+      expect(document.activeElement).toBe(register);
     });
 
     it('keeps the open dialog when PrimeNG refuses a duplicate', () => {

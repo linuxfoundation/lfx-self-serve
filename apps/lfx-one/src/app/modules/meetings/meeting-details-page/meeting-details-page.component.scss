@@ -9,3 +9,14 @@
   --p-skeleton-background: var(--md-surface-hover);
   --p-skeleton-border-radius: var(--md-radius-lg);
 }
+
+// #3260 (WCAG 2.4.11): the identity bar is sticky, so a focused control scrolled into view must clear it
+// rather than land underneath. Reaches into child components (their own templates), hence ::ng-deep,
+// scoped to this page's wrapper. 100px clears the 83px bar; the impersonation banner adds 42px.
+.meeting-details-v2 ::ng-deep :is(a[href], button, input, select, textarea, [tabindex]) {
+  scroll-margin-top: 100px;
+}
+
+.pt-12 .meeting-details-v2 ::ng-deep :is(a[href], button, input, select, textarea, [tabindex]) {
+  scroll-margin-top: 142px;
+}

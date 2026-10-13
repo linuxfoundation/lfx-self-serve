@@ -28,7 +28,7 @@
              assistive tech until then: it repeats the page's own heading. -->
         @if (meeting(); as meeting) {
           <div
-            class="flex min-w-0 items-center gap-[14px] transition-opacity duration-200"
+            class="flex min-w-0 items-center gap-[14px] transition-opacity duration-200 motion-reduce:transition-none"
             [class.opacity-0]="!condensed()"
             [class.pointer-events-none]="!condensed()"
             [attr.aria-hidden]="!condensed()"
@@ -62,14 +62,15 @@
 
       <div class="flex flex-none items-center gap-[12px]">
         @if (userService.authenticated()) {
-          <button
-            type="button"
-            (click)="navigateToMyMeetings()"
-            class="inline-flex h-[34px] flex-none items-center gap-[7px] rounded-full px-[15px] text-[13px] font-semibold text-[var(--md-text-body)] hover:bg-[var(--md-surface-hover)] hover:text-[var(--md-text-heading)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+          <!-- A link, not a button: it navigates (#3260). The click sets the Me lens first, as before. -->
+          <a
+            routerLink="/meetings"
+            (click)="selectMyMeetingsLens()"
+            class="inline-flex h-[34px] flex-none items-center gap-[7px] rounded-full px-[15px] text-[13px] font-semibold text-[var(--md-text-body)] no-underline hover:bg-[var(--md-surface-hover)] hover:text-[var(--md-text-heading)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
             data-testid="meeting-identity-bar-my-meetings">
             <i class="fa-light fa-calendar" aria-hidden="true"></i>
             <span class="sr-only min-[641px]:not-sr-only">My Meetings</span>
-          </button>
+          </a>
           <button
             type="button"
             (click)="userMenu.toggle($event)"
@@ -97,7 +98,7 @@
             (onHide)="accountMenuOpen.set(false)" />
         } @else {
           <span
-            class="mr-[4px] hidden whitespace-nowrap text-[12px] text-[var(--md-text-muted)] transition-opacity duration-200 min-[641px]:inline"
+            class="mr-[4px] hidden whitespace-nowrap text-[12px] text-[var(--md-text-muted)] transition-opacity duration-200 motion-reduce:transition-none min-[641px]:inline"
             [class.opacity-0]="condensed()"
             [attr.aria-hidden]="condensed()"
             data-testid="meeting-identity-bar-visitor-prompt">

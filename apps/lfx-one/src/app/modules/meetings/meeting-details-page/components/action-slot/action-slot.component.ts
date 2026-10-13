@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, inject, Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
@@ -11,6 +11,7 @@ import { ActionSlotKind, MeetingViewerRole } from '@lfx-one/shared/interfaces';
 import { buildMeetingOrganizerMailto, formatMeetingMailtoDate, resolveMeetingOrganizer } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
+import { restoreFocusOnDialogClose } from '@shared/utils/restore-dialog-focus.util';
 import { DialogService } from 'primeng/dynamicdialog';
 import { take } from 'rxjs';
 
@@ -44,6 +45,7 @@ import { MeetingRsvpCardComponent } from '../rsvp-card/rsvp-card.component';
 export class MeetingActionSlotComponent {
   protected readonly state = inject(MeetingDetailsStateService);
   private readonly userService = inject(UserService);
+  private readonly document = inject(DOCUMENT);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -88,7 +90,8 @@ export class MeetingActionSlotComponent {
       return;
     }
     // `open` returns null when this dialog is already open (PrimeNG blocks the duplicate), so a quick
-    // second click leaves the open dialog alone.
+    // second click leaves the open dialog alone. Focus goes back to Register on close (#3260).
+    const trigger = this.document.activeElement;
     const dialogRef = this.dialogService.open(PublicRegistrationModalComponent, {
       header: 'Register for Meeting',
       width: '500px',
@@ -97,6 +100,8 @@ export class MeetingActionSlotComponent {
       dismissableMask: true,
       data: { meetingId: meeting.id, meetingTitle: meeting.title, user: this.userService.user() },
     });
+
+    restoreFocusOnDialogClose(dialogRef, trigger);
 
     // Torn down with the slot, and keyed to this meeting: a registration that completes after the
     // page has moved on to another meeting must not mark that one as invited.

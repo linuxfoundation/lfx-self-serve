@@ -150,7 +150,18 @@ describe('MeetingDetailsPageComponent', () => {
     expect(query('meeting-skeleton')).toBeNull();
     expect(query('meeting-header-section')?.querySelector('lfx-meeting-header')).not.toBeNull();
     expect(query('meeting-content-column')).not.toBeNull();
-    expect(query('meeting-rail')?.getAttribute('aria-label')).toBe('Meeting actions');
+    // #3260: a labelled region (not an <aside> inside <main>), named by its own sr-only h2.
+    const rail = query('meeting-rail');
+    expect(rail?.tagName).toBe('SECTION');
+    expect(document.getElementById(rail?.getAttribute('aria-labelledby') ?? '')?.textContent?.trim()).toBe('Meeting actions');
+  });
+
+  it('gives every state the one h1', () => {
+    show('error');
+    expect(fixture.nativeElement.querySelectorAll('h1')).toHaveLength(1);
+
+    show('loading');
+    expect(fixture.nativeElement.querySelectorAll('h1')).toHaveLength(1);
   });
 
   // E3-01: the agenda follows the page's section visibility (hidden for an ended meeting without access).

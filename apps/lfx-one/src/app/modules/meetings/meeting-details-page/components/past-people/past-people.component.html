@@ -43,7 +43,11 @@
       @case ('session-expired') {
         <p class="m-0 text-[14px] text-[var(--md-text-body)]" data-testid="people-section-sign-in">
           <!-- data-dd-privacy="mask": returnTo can carry the meeting password; keep it out of Session Replay. -->
-          <a class="font-semibold text-[var(--md-accent-ink)] underline" [href]="signInHref()" data-dd-privacy="mask" data-testid="people-section-sign-in-link"
+          <a
+            class="rounded-[4px] font-semibold text-[var(--md-accent-ink)] underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+            [href]="signInHref()"
+            data-dd-privacy="mask"
+            data-testid="people-section-sign-in-link"
             >Sign in again to see who attended</a
           >
         </p>

@@ -186,13 +186,15 @@ export class MeetingRsvpCardComponent {
         next: (rsvp: MeetingRsvp) => {
           // Guards itself against a meeting or occurrence the page has left.
           this.state.setMyRsvp(meeting.id, occurrenceId, rsvp);
-          this.messageService.add({
-            severity: 'success',
-            summary: 'RSVP Updated',
-            detail: `You have responded "${this.responseWord(response)}" for this meeting.`,
-            life: 3000,
-          });
+          // Announced once (#3260): inline (the confirmation and its status line) while the card still shows
+          // this meeting; a toast only when the page has moved on and nothing else would say it landed.
           if (!current()) {
+            this.messageService.add({
+              severity: 'success',
+              summary: 'RSVP Updated',
+              detail: `You have responded "${this.responseWord(response)}" for this meeting.`,
+              life: 3000,
+            });
             return;
           }
           this.savedResponse.set(rsvp.response_type);
@@ -204,9 +206,11 @@ export class MeetingRsvpCardComponent {
         },
         error: (error: HttpErrorResponse) => {
           const message = this.errorMessage(error);
-          this.messageService.add({ severity: 'error', summary: 'RSVP Failed', detail: message, life: 5000 });
+          // Once, as for success: the inline alert while the card shows this meeting, else a toast.
           if (current()) {
             this.error.set(message);
+          } else {
+            this.messageService.add({ severity: 'error', summary: 'RSVP Failed', detail: message, life: 5000 });
           }
         },
       });

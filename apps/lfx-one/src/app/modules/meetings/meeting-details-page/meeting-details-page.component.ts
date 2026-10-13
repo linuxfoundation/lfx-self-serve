@@ -6,6 +6,7 @@ import { afterRenderEffect, Component, computed, ElementRef, inject, PLATFORM_ID
 import { ButtonComponent } from '@components/button/button.component';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 import { UserService } from '@services/user.service';
+import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { SkeletonModule } from 'primeng/skeleton';
 
 import { MeetingHeaderComponent } from './components/header/header.component';
@@ -68,6 +69,8 @@ export class MeetingDetailsPageComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   public constructor() {
+    // The browser tab and history name the meeting, not just "Meeting" (#3260, WCAG 2.4.2).
+    bindLfxDocumentTitle(computed(() => this.state.meeting()?.title));
     // An IntersectionObserver rather than a scroll listener, re-attached whenever the header element
     // changes (it exists only in the `ready` branch). `afterRenderEffect` never runs on the server.
     afterRenderEffect((onCleanup) => {

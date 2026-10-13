@@ -111,14 +111,19 @@ describe('MeetingIdentityBarComponent', () => {
       expect(account?.getAttribute('aria-expanded')).toBe('true');
     });
 
-    it('sends My Meetings to the meetings list under the Me lens', async () => {
+    // #3260: a link (it navigates), which sets the Me lens on its way.
+    it('links My Meetings to the meetings list, under the Me lens', async () => {
       await create();
-      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const navigateByUrl = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+      const link = query('meeting-identity-bar-my-meetings');
 
-      query('meeting-identity-bar-my-meetings')?.click();
+      expect(link?.tagName).toBe('A');
+      expect(link?.getAttribute('href')).toBe('/meetings');
+
+      link?.click();
 
       expect(setLens).toHaveBeenCalledWith('me');
-      expect(navigate).toHaveBeenCalledWith(['/meetings']);
+      expect(navigateByUrl).toHaveBeenCalled();
     });
   });
 
@@ -165,6 +170,13 @@ describe('MeetingIdentityBarComponent', () => {
 
       expect(identity?.classList).not.toContain('opacity-0');
       expect(identity?.getAttribute('aria-hidden')).toBe('false');
+    });
+
+    // #3260: the cross-fade is skipped for viewers who ask for reduced motion.
+    it('cross-fades only when motion is not reduced', async () => {
+      await create();
+
+      expect(query('meeting-identity-bar-meeting')?.classList).toContain('motion-reduce:transition-none');
     });
 
     it('shows the title and a "{group} · {status}" subtitle, each with its full text as a tooltip', async () => {

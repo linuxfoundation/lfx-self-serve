@@ -116,7 +116,9 @@ describe('MeetingRsvpCardComponent', () => {
 
     expect(createMeetingRsvp).toHaveBeenCalledWith('meeting-1', { response: 'maybe', scope: 'all', email: 'ada@acme-motors.example' });
     expect(setMyRsvp).toHaveBeenCalledWith('meeting-1', undefined, saved('maybe'));
-    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'RSVP Updated', detail: 'You have responded "Maybe" for this meeting.' }));
+    // #3260: announced once, inline; no toast on top while the card shows this meeting.
+    expect(add).not.toHaveBeenCalled();
+    expect(text('meeting-rsvp-card-announcement')).toContain('RSVP saved.');
     expect(query('meeting-rsvp-card-scope')).toBeNull();
   });
 
@@ -310,7 +312,8 @@ describe('MeetingRsvpCardComponent', () => {
 
     expect(query('meeting-rsvp-card-error')?.getAttribute('role')).toBe('alert');
     expect(text('meeting-rsvp-card-error')).toBe('Only invited users are allowed to RSVP to this meeting.');
-    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'RSVP Failed' }));
+    // #3260: the inline alert only, not a toast as well.
+    expect(add).not.toHaveBeenCalled();
     expect(setMyRsvp).not.toHaveBeenCalled();
   });
 

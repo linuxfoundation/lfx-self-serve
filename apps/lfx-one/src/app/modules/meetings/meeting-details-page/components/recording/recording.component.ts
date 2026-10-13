@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -21,6 +22,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
+import { restoreFocusOnDialogClose } from '@shared/utils/restore-dialog-focus.util';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, map, Observable, of, startWith, switchMap } from 'rxjs';
@@ -61,6 +63,7 @@ export class MeetingRecordingComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
   private readonly dialogService = inject(DialogService);
+  private readonly document = inject(DOCUMENT);
 
   /** `lfx-button` as the prototype's 38px pills (Watch recording filled, Transcript outlined). */
   protected readonly primaryButtonClass =
@@ -94,7 +97,9 @@ export class MeetingRecordingComponent {
     if (!summary) {
       return;
     }
-    this.dialogService.open(MeetingSummaryModalComponent, {
+    // Focus goes back to Read full summary on close (#3260).
+    const trigger = this.document.activeElement;
+    const ref = this.dialogService.open(MeetingSummaryModalComponent, {
       header: summary.summary_data?.title || 'AI Summary',
       width: '700px',
       modal: true,
@@ -102,6 +107,7 @@ export class MeetingRecordingComponent {
       dismissableMask: true,
       data: { summary },
     });
+    restoreFocusOnDialogClose(ref, trigger);
   }
 
   public openTranscript(): void {
@@ -109,7 +115,8 @@ export class MeetingRecordingComponent {
     if (!meeting) {
       return;
     }
-    this.dialogService.open(TranscriptModalComponent, {
+    const trigger = this.document.activeElement;
+    const ref = this.dialogService.open(TranscriptModalComponent, {
       header: 'Transcript',
       width: '700px',
       modal: true,
@@ -119,6 +126,7 @@ export class MeetingRecordingComponent {
         ? { pastMeetingUid: getPastMeetingResourceId(meeting), meetingTitle: meeting.title }
         : { publicPastMeetingId: meeting.id, meetingTitle: meeting.title },
     });
+    restoreFocusOnDialogClose(ref, trigger);
   }
 
   private initSection(): Signal<MeetingRecordingSectionState> {

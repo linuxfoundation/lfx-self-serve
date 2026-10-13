@@ -17,6 +17,8 @@
           <!-- A 5xx or network failure. 400 / 403 / 404 never get here: the state service sends them to
                /meetings/not-found. A later background refresh failing on a working page does not either. -->
           <div class="flex flex-col items-center gap-3 py-24 text-center" role="alert" data-testid="meeting-error-state">
+            <!-- Every state has the page's one h1 (#3260); the loaded header supplies its own. -->
+            <h1 class="sr-only">Meeting</h1>
             <i class="fa-light fa-triangle-exclamation text-4xl text-[var(--md-text-muted)]" aria-hidden="true"></i>
             <!-- The copy changes after a failed retry, so the alert is announced again rather than
                  staying silent when nothing new appears to happen. -->
@@ -47,6 +49,7 @@
         }
         @default {
           <div role="status" aria-live="polite" data-testid="meeting-skeleton">
+            <h1 class="sr-only">Meeting</h1>
             <span class="sr-only">Loading meeting details…</span>
             <div class="flex flex-col gap-3" aria-hidden="true">
               <p-skeleton height="16px" width="160px" />
@@ -91,11 +94,14 @@
       }
       <p-skeleton height="280px" aria-hidden="true" data-testid="meeting-section-placeholder-discover" />
     </div>
-    <aside
+    <!-- A labelled region, not <aside>: it sits inside <main>, where a complementary landmark must not
+         (#3260). Its sr-only h2 keeps the rail's h3s from reading as part of the section above it. -->
+    <section
       class="flex w-full flex-col gap-[20px] min-[921px]:sticky min-[921px]:w-[344px] min-[921px]:flex-none"
       [ngClass]="railTopClass()"
-      aria-label="Meeting actions"
+      aria-labelledby="meeting-rail-heading"
       data-testid="meeting-rail">
+      <h2 id="meeting-rail-heading" class="sr-only">Meeting actions</h2>
       @if (state.status() === 'ready') {
         <!-- The rail card: the time banner (E1-06) and the action slot (E2-01) on top, then "Organized
              by" under a divider, as in the prototype. -->
@@ -108,6 +114,6 @@
           <lfx-meeting-organizer class="block border-t border-[var(--md-divider)] px-[20px] py-[18px] empty:hidden" />
         </div>
       }
-    </aside>
+    </section>
   </div>
 </ng-template>
