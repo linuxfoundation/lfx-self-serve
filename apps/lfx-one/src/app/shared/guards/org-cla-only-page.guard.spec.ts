@@ -24,6 +24,7 @@ describe('orgClaOnlyPageGuard', () => {
   let createUrlTree: ReturnType<typeof vi.fn>;
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let waitForReady: ReturnType<typeof vi.fn>;
+  let flagOverride: boolean | undefined;
   let platform: string;
   let routerUrl: string;
   let routerEvents: Subject<unknown>;
@@ -53,6 +54,7 @@ describe('orgClaOnlyPageGuard', () => {
     createUrlTree = vi.fn((commands: string[]) => ({ redirected: commands.join('/') }));
     navigateByUrl = vi.fn(async () => true);
     waitForReady = vi.fn(async () => true);
+    flagOverride = undefined;
     TestBed.configureTestingModule({
       providers: [
         { provide: PLATFORM_ID, useFactory: () => platform },
@@ -69,7 +71,7 @@ describe('orgClaOnlyPageGuard', () => {
             },
           },
         },
-        { provide: FeatureFlagService, useValue: { providerReady, waitForReady } },
+        { provide: FeatureFlagService, useValue: { providerReady, waitForReady, getFlagOverride: () => flagOverride } },
         { provide: OrgClaOnlyAccessService, useValue: { enabled, isClaOnly: (uid: string | null) => !!uid && enabled() && claOnly.has(uid) } },
         { provide: AccountContextService, useValue: { selectedAccount: () => ({ accountId: '', accountName: '', membershipTier: '', uid: selectedUid() }) } },
         { provide: OrgRoleGrantsService, useValue: { loaded } },
@@ -117,6 +119,15 @@ describe('orgClaOnlyPageGuard', () => {
     waitForReady.mockResolvedValue(false);
 
     expect(await run(routeFor(CLA_ONLY_UID, 'overview'))).toBe(true);
+  });
+
+  it('honours a locally pinned flag without waiting for LaunchDarkly', async () => {
+    providerReady.set(false);
+    waitForReady.mockResolvedValue(false);
+    flagOverride = true;
+
+    expect(await run(routeFor(CLA_ONLY_UID, 'overview'))).toEqual({ redirected: `/org/${CLA_ONLY_UID}/easycla` });
+    expect(waitForReady).not.toHaveBeenCalled();
   });
 
   it('leaves the decision to the browser during SSR', async () => {

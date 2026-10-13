@@ -65,8 +65,8 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
   };
 
   // On a cold deep link the flag still reads its `false` default until LaunchDarkly is ready, which
-  // would admit the page.
-  if (!featureFlagService.providerReady()) {
+  // would admit the page. A locally pinned value (non-production only) needs no provider.
+  if (featureFlagService.getFlagOverride(ORG_LENS_CLA_M3_ENABLED_FLAG) === undefined && !featureFlagService.providerReady()) {
     const ready = await featureFlagService.waitForReady({ guard: 'orgClaOnlyPageGuard', flag: ORG_LENS_CLA_M3_ENABLED_FLAG });
     if (!ready) {
       return admitAndRedirectLate();
