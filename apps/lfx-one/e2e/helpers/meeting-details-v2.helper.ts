@@ -85,8 +85,10 @@ function json(route: Route, body: unknown, status = 200): Promise<void> {
 }
 
 /**
- * Answers every meeting-details call. Registered last, so it wins over anything broader; paths are
- * matched exactly, because a `**\/api/meetings/**` glob also matches `/public/api/meetings/...`.
+ * Answers every meeting-details call. Registered after the app has booted, so the shell's own
+ * requests reach the BFF as usual and only the page under test is stubbed; paths are matched
+ * exactly, because a `**\/api/meetings/**` glob also matches `/public/api/meetings/...`. An unexpected
+ * call answers 404 and is logged, so a gap in the stubs shows in the trace.
  */
 export async function stubMeetingDetails(page: Page, stubs: MeetingStubs): Promise<void> {
   await page.route(
@@ -134,6 +136,7 @@ export async function stubMeetingDetails(page: Page, stubs: MeetingStubs): Promi
           attendance: { participant_count: 2, attended_count: 1, individual_registrants_count: 2 },
         });
       }
+      console.warn(`[meeting-details-v2] unstubbed ${method} ${pathname}`);
       return json(route, { message: 'not stubbed' }, 404);
     }
   );
@@ -145,11 +148,11 @@ export async function stubMeetingDetails(page: Page, stubs: MeetingStubs): Promi
  */
 export async function openMeetingSignedIn(page: Page, meetingId: string, stubs: MeetingStubs): Promise<void> {
   await stubMeetingsV2Flag(page, true);
-  await stubMeetingDetails(page, stubs);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
   await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  await stubMeetingDetails(page, stubs);
 
   await page.evaluate((url) => {
     window.history.pushState({}, '', url);
@@ -184,10 +187,10 @@ export function skipWithoutCredentials(skip: (condition: boolean, reason: string
 /** Boots an anonymous browser on a public page (`/` would redirect to Auth0) and SPA-navigates to the meeting. */
 export async function openMeetingAnonymously(page: Page, meetingId: string, stubs: MeetingStubs): Promise<void> {
   await stubMeetingsV2Flag(page, true);
-  await stubMeetingDetails(page, stubs);
 
   await page.goto('/meetings/not-found', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('meeting-not-found-card')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  await stubMeetingDetails(page, stubs);
 
   await page.evaluate((url) => {
     window.history.pushState({}, '', url);

@@ -104,33 +104,37 @@ test.describe('Meeting details V2 — structure and accessibility', () => {
 
   test.beforeEach(() => skipWithoutCredentials(test.skip));
 
-  for (const preset of PRESETS) {
-    test(`${preset.name}: contract and axe`, async ({ page }) => {
-      await openMeetingSignedIn(page, preset.id, preset.stubs());
-      await waitForMeeting(page);
+  test.describe('preset contract and axe', () => {
+    for (const preset of PRESETS) {
+      test(`${preset.name}: contract and axe`, async ({ page }) => {
+        await openMeetingSignedIn(page, preset.id, preset.stubs());
+        await waitForMeeting(page);
 
-      await assertPreset(page, preset);
-      expect(await axeViolations(page)).toEqual([]);
-    });
-  }
-
-  test('6 · the past roster row carries its attendance and invitation state', async ({ page }) => {
-    await openMeetingSignedIn(page, PAST_ID, { past: { meeting: buildPastMeeting({ organizer: true }), fullAccess: true } });
-    await waitForMeeting(page);
-
-    const row = page.getByTestId('participant-row-p1');
-    await expect(row).toHaveAttribute('data-attended', 'true', { timeout: ELEMENT_TIMEOUT });
-    await expect(row).toHaveAttribute('data-invited', 'true');
-    await expect(page.getByTestId('tools-summary-btn')).toHaveAttribute('data-approval', 'approved');
+        await assertPreset(page, preset);
+        expect(await axeViolations(page)).toEqual([]);
+      });
+    }
   });
 
-  test('error · the error state is an alert with a retry, and passes axe', async ({ page }) => {
-    await openMeetingSignedIn(page, UPCOMING_ID, { lookupStatus: 500 });
+  test.describe('roster and error states', () => {
+    test('6 · the past roster row carries its attendance and invitation state', async ({ page }) => {
+      await openMeetingSignedIn(page, PAST_ID, { past: { meeting: buildPastMeeting({ organizer: true }), fullAccess: true } });
+      await waitForMeeting(page);
 
-    const error = page.getByTestId('meeting-error-state');
-    await expect(error).toHaveAttribute('role', 'alert', { timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page.getByTestId('meeting-error-retry-button')).toBeVisible();
-    await expect(page.getByTestId('meeting-skeleton')).toHaveCount(0);
-    expect(await axeViolations(page)).toEqual([]);
+      const row = page.getByTestId('participant-row-p1');
+      await expect(row).toHaveAttribute('data-attended', 'true', { timeout: ELEMENT_TIMEOUT });
+      await expect(row).toHaveAttribute('data-invited', 'true');
+      await expect(page.getByTestId('tools-summary-btn')).toHaveAttribute('data-approval', 'approved');
+    });
+
+    test('error · the error state is an alert with a retry, and passes axe', async ({ page }) => {
+      await openMeetingSignedIn(page, UPCOMING_ID, { lookupStatus: 500 });
+
+      const error = page.getByTestId('meeting-error-state');
+      await expect(error).toHaveAttribute('role', 'alert', { timeout: PAGE_LOAD_TIMEOUT });
+      await expect(page.getByTestId('meeting-error-retry-button')).toBeVisible();
+      await expect(page.getByTestId('meeting-skeleton')).toHaveCount(0);
+      expect(await axeViolations(page)).toEqual([]);
+    });
   });
 });

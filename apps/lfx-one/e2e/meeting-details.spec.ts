@@ -39,7 +39,8 @@ test.describe('Meeting details V2 — signed-in presets', () => {
 
     await page.getByTestId('meeting-rsvp-card-accepted').click();
 
-    await expect(page.getByTestId('meeting-rsvp-card-confirmation')).toContainText("Yes, I'll attend", { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('meeting-rsvp-card-confirmation')).toContainText("You're going", { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('meeting-rsvp-card')).toHaveAttribute('data-my-rsvp', 'accepted');
     await expect(page.getByTestId('meeting-rsvp-card-change')).toBeVisible();
   });
 
@@ -49,7 +50,8 @@ test.describe('Meeting details V2 — signed-in presets', () => {
 
     const join = page.getByTestId('meeting-action-join-button');
     await expect(join).toHaveAttribute('data-state', 'ready', { timeout: ELEMENT_TIMEOUT });
-    await expect(join.locator('a')).toHaveAttribute('href', 'https://zoom.example/j/123');
+    // The join link carries the viewer's name for Zoom (buildJoinUrlWithParams), after the meeting's own URL.
+    await expect(join.locator('a')).toHaveAttribute('href', /^https:\/\/zoom\.example\/j\/123(\?|$)/);
   });
 
   test('5 · a signed-in outsider on a restricted meeting is told an invitation is required', async ({ page }) => {
@@ -67,8 +69,8 @@ test.describe('Meeting details V2 — signed-in presets', () => {
     await expect(page.getByTestId('tools-summary-content')).toContainText('Agreed the roadmap');
     await expect(page.getByTestId('participant-row-p1')).toContainText('Ada Lovelace');
 
-    await page.getByTestId('meeting-header-admin-link').locator('a').click();
-    await expect(page).toHaveURL(new RegExp(`/meetings/${PAST_ID}/details\\?project=acme-project$`), { timeout: PAGE_LOAD_TIMEOUT });
+    // The link's target, not a click: the admin route's guards resolve the project against the real BFF.
+    await expect(page.getByTestId('meeting-header-admin-link').locator('a')).toHaveAttribute('href', `/meetings/${PAST_ID}/details?project=acme-project`);
   });
 
   test('8 · a signed-in viewer without access to an ended meeting is told its details are private', async ({ page }) => {
@@ -100,7 +102,9 @@ test.describe('Meeting details V2 — anonymous presets', () => {
     await openMeetingAnonymously(page, UPCOMING_ID, { meeting: buildMeeting('before') });
     await waitForMeeting(page);
 
-    await expect(page.getByTestId('meeting-action-message')).toContainText('Register to add yourself to the guest list.');
+    await expect(page.getByTestId('meeting-action-slot')).toHaveAttribute('data-kind', 'register');
+    // A visitor is asked to sign in first; "Register to add yourself…" is the signed-in copy.
+    await expect(page.getByTestId('meeting-action-message')).toContainText('Sign in with your LFX account to register.');
     await expect(page.getByTestId('meeting-action-sign-in')).toBeVisible();
   });
 
