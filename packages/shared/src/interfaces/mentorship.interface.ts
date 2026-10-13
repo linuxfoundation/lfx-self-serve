@@ -133,7 +133,7 @@ export type MentorshipCiiLookupStatus = 'idle' | 'loading' | 'valid' | 'invalid'
 /** Mentor lifecycle on the Mentors tab. No `graduated` (mentors don't graduate). */
 export type MentorshipMentorStatus = (typeof MENTORSHIP_MENTOR_STATUSES)[number];
 
-/** Mentee lifecycle on the Current Mentees / Past Mentees tabs. Adds `graduated`. */
+/** Mentee lifecycle on the Current Mentees / Past Mentees tabs. An accepted mentee is `accepted` (a mentor is `approved`), and only mentees reach `graduated`. */
 export type MentorshipMenteeStatus = (typeof MENTORSHIP_MENTEE_STATUSES)[number];
 
 /** Shared row fields consumed by the admin program-detail people tables. */

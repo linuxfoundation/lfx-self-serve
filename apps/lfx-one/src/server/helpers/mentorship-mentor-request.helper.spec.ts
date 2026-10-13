@@ -90,6 +90,12 @@ describe('mapMentorshipMentorProgramRequests', () => {
     ]);
     expect(rows.map((row) => row.id)).toEqual(['member-2', 'member-4']);
   });
+
+  it('drops a legacy active row, a status upstream no longer stores', () => {
+    const legacy = { ...membership, status: 'active' } as unknown as MentorshipUpstreamProgramMembership;
+
+    expect(mapMentorshipMentorProgramRequests([legacy])).toEqual([]);
+  });
 });
 
 describe('mapMentorshipMentorInvitedProgramIds', () => {

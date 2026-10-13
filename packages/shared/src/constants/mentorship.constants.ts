@@ -314,7 +314,8 @@ export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'approved', 'declined', 'w
 
 /**
  * Mentee lifecycle statuses an application holds on the wire.
- * Superset of mentor statuses; mentees additionally reach `graduated`.
+ * Not a superset of mentor statuses: an accepted mentee is `accepted` where an accepted mentor is
+ * `approved`, and only mentees reach `graduated`.
  * Declaration order is the Past Mentees status filter's option order; Current Mentees
  * filters on `MENTORSHIP_APPLICANT_DISPLAY_STATUSES` instead.
  */
