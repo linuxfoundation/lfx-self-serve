@@ -593,6 +593,28 @@ export const META_DEFAULT_PLACEMENTS: Readonly<MetaPlacement> = {
 } as const;
 
 /**
+ * The `META_OBJECTIVE_PARAMS` row for an objective, or a refusal.
+ *
+ * The Meta twin of `redditObjectiveParamsFor`, and the same defect: `META_OBJECTIVE_PARAMS` is a
+ * plain object literal, so an unvalidated objective of `constructor`, `toString`, `valueOf`,
+ * `hasOwnProperty` or `__proto__` resolves to a truthy inherited `Object.prototype` member and
+ * passes a `!objParams` test. `config.objective` is spread unvalidated out of `body.metaConfig` by
+ * `executeMetaDispatch`, so those values do arrive. Past the test, `objParams.campaignObjective`
+ * is `undefined`, `JSON.stringify` drops `objective` from the body, and
+ * `POST /{accountId}/campaigns` is sent by the very block whose job is to refuse before it (#3504).
+ *
+ * Exported so both Meta call sites read the table the same way — including `buildPromotedObject`,
+ * which indexed it with no check at all and was safe only by virtue of running second.
+ */
+export function metaObjectiveParamsFor(objective: MetaObjective): MetaObjectiveParams {
+  if (!Object.hasOwn(META_OBJECTIVE_PARAMS, objective)) {
+    throw new Error(`Unknown Meta objective: '${objective}'. Valid objectives: ${Object.keys(META_OBJECTIVE_PARAMS).join(', ')}`);
+  }
+
+  return META_OBJECTIVE_PARAMS[objective];
+}
+
+/**
  * Display labels for the Meta campaign objectives.
  *
  * TOTAL over `MetaObjective` — every objective that can reach a display path has a label here,
@@ -1541,6 +1563,30 @@ export const MAX_REDDIT_HEADLINE_LENGTH = 300;
 export const REDDIT_VIDEO_GOALS = ['VIDEO_VIEW_6S', 'VIDEO_VIEW_15S'] as const;
 
 /**
+ * The `REDDIT_OBJECTIVE_PARAMS` row for an objective, or a refusal.
+ *
+ * The single place any caller reads that table, because reading it safely is not a plain index.
+ * `REDDIT_OBJECTIVE_PARAMS` is a plain object literal and so inherits `Object.prototype`: an
+ * unvalidated objective of `constructor`, `toString`, `valueOf`, `hasOwnProperty` or `__proto__`
+ * resolves to a truthy inherited member and sails past a `!objParams` test. In the Reddit creator
+ * that meant `resolveRedditOptimizationGoal` returning `undefined` through its cast and the caller
+ * reading `redditObjective` and `bidType` as `undefined` too, so `JSON.stringify` dropped
+ * `objective`, `bid_type` and `optimization_goal` and the campaign POST went to Reddit carrying a
+ * real budget and dates — a request made by the very block whose job is to refuse before one is.
+ *
+ * `Object.hasOwn` is the same runtime-key pattern `withheldTooltipFor` uses in
+ * `org-leaderboard-detail.utils.ts`. Exported rather than inlined at each site so the refusal and
+ * its message exist once and cannot drift between the shared resolver and the service (#3504).
+ */
+export function redditObjectiveParamsFor(objective: RedditObjective): RedditObjectiveParams {
+  if (!Object.hasOwn(REDDIT_OBJECTIVE_PARAMS, objective)) {
+    throw new Error(`Unsupported Reddit objective: ${objective}`);
+  }
+
+  return REDDIT_OBJECTIVE_PARAMS[objective];
+}
+
+/**
  * The optimization goal to send for an objective — the table's own, or the campaign's video goal.
  *
  * Mirrors the resolution step in `Client.CreateCampaign` upstream
@@ -1559,14 +1605,16 @@ export const REDDIT_VIDEO_GOALS = ['VIDEO_VIEW_6S', 'VIDEO_VIEW_15S'] as const;
  * `RedditVideoGoal` is what a caller is supposed to send, not what one always does (#3449).
  */
 export function resolveRedditOptimizationGoal(objective: RedditObjective, videoGoal?: string): string {
-  const objParams = REDDIT_OBJECTIVE_PARAMS[objective];
-  if (!objParams) {
-    throw new Error(`Unsupported Reddit objective: ${objective}`);
-  }
+  const objParams = redditObjectiveParamsFor(objective);
 
   if (objective !== 'video_views') {
-    // Total over the other three objectives by construction; the cast documents that the optional
-    // field is only ever absent on the branch above.
+    // Total over the other three objectives by construction. What makes the cast sound at runtime
+    // is NOT the own-property check inside the accessor — that only proves `objective` is one of
+    // the table's four own keys, and `optimizationGoal` is optional on `RedditObjectiveParams`, so
+    // a fifth goal-less objective would reintroduce `undefined as string` with the check intact.
+    // The guarantor is the table itself: `video_views` is the only entry that omits the field, and
+    // `campaign.constants.spec.ts` pins the other three goals by value. Add a goal-less objective
+    // and that spec fails, which is the signal to revisit this cast.
     return objParams.optimizationGoal as string;
   }
 

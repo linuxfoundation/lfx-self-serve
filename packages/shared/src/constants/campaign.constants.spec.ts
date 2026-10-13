@@ -904,4 +904,16 @@ describe('resolveRedditOptimizationGoal', () => {
   it('refuses an objective outside the table', () => {
     expect(() => resolveRedditOptimizationGoal('reach' as RedditObjective)).toThrow(/Unsupported Reddit objective: reach/);
   });
+
+  /**
+   * The table is a plain object literal, so these five resolve to inherited `Object.prototype`
+   * members — every one truthy, which is exactly what the previous `!objParams` test asked for.
+   * Each then carried no `optimizationGoal`, so the resolver returned `undefined` through its cast
+   * and the caller sent a campaign POST missing `objective`, `bid_type` and `optimization_goal`
+   * rather than refusing before the call. Pinned by name because the guard that fixes it,
+   * `Object.hasOwn`, is easy to "simplify" back into a truthiness test (#3504).
+   */
+  it.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'])('refuses the inherited prototype key %s', (objective) => {
+    expect(() => resolveRedditOptimizationGoal(objective as RedditObjective)).toThrow(`Unsupported Reddit objective: ${objective}`);
+  });
 });
