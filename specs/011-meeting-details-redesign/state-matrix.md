@@ -87,6 +87,13 @@ So every ended combination is legal. Anonymous + `full` happens only for `public
 - **Axis F × any RSVP state when F = `off`.** F = `off` removes the RSVP dimension; it is not an
   RSVP state.
 
+**The sentinel for these two.** They are inputs, not page states, so they have no page of their own:
+the resolvers ignore the axis that does not exist and resolve to the legal neighbour. Axis D on a
+`before` or `live` meeting changes no output of `resolveActionSlot` or `resolveVisibleSections`
+(`full` and `none` resolve alike), and with F = `off` `resolveMeetingStatus` returns `upcoming` before
+the meeting whatever RSVP answer it is handed. `meeting-view-model.utils.spec.ts` asserts both
+(#3261), next to the section-visibility table that asserts every legal cell.
+
 ### Not an access dimension
 
 - **Manage-role viewers of a past meeting.** #2251 points the past-meeting card's call to action at
