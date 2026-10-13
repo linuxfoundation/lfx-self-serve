@@ -51,13 +51,20 @@ export interface HealthMetricsTrainingEnrollmentYear {
   enrollments: number | null;
 }
 
+/** The model's change against the same point last year, as fractions (`0.12` is +12%); `null` when it has none. */
+export interface HealthMetricsTrainingEnrollmentChange {
+  enrollments: number | null;
+  certifications: number | null;
+  revenueUsd: number | null;
+}
+
 /**
- * One period of the section. `totals` is the `All` row; `baseline` is the comparison period's
- * `All` row, `null` when the period has no earlier one. `byType` comes in the period's rank order.
+ * One period of the section. `totals` is the `All` row; `change` is the model's change for it, `null` for a
+ * period the model does not compare. `byType` comes in the period's rank order.
  */
 export interface HealthMetricsTrainingEnrollmentPeriod {
   totals: HealthMetricsTrainingEnrollmentTotals;
-  baseline: HealthMetricsTrainingEnrollmentTotals | null;
+  change: HealthMetricsTrainingEnrollmentChange | null;
   byType: HealthMetricsTrainingEnrollmentType[];
 }
 
@@ -76,7 +83,7 @@ export interface HealthMetricsTrainingEnrollmentMetricOption extends FilterPillO
   id: HealthMetricsTrainingEnrollmentMetric;
 }
 
-/** A KPI with its formatted value and its change against the baseline. */
+/** A KPI with its formatted value and its change against last year. */
 export interface HealthMetricsTrainingEnrollmentStatView {
   key: 'enrollments' | 'certifications' | 'revenue';
   label: string;

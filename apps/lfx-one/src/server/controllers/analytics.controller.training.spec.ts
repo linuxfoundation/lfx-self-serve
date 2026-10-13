@@ -88,7 +88,7 @@ describe('AnalyticsController.getTrainingPresence', () => {
 describe('AnalyticsController.getTrainingEnrollment', () => {
   const period = {
     totals: { enrollments: 10, certifications: 2, revenueUsd: 500 },
-    baseline: null,
+    change: null,
     byType: [{ deliveryType: 'E-Learning', enrollments: 10, revenueUsd: 500 }],
   };
   const enrollment = {
