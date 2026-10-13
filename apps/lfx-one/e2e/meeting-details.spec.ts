@@ -117,14 +117,21 @@ test.describe('Meeting details V2 — anonymous presets', () => {
     await openMeetingAnonymously(page, UPCOMING_ID, { meeting: buildMeeting('live') });
     await waitForMeeting(page);
 
-    await expect(page.getByTestId('meeting-guest-join-form')).toBeVisible();
+    const form = page.getByTestId('meeting-guest-join-form');
+    await expect(form.getByLabel('Full name')).toBeVisible();
+    await expect(form.getByLabel('Email')).toBeVisible();
+    await expect(form.getByLabel('Organization')).toBeVisible();
+    await expect(page.getByTestId('meeting-guest-join-button')).toContainText('Join as guest');
   });
 
   test.fixme('7 · a visitor to an ended public meeting reads its public summary (stage 5)', async ({ page }) => {
-    await openMeetingAnonymously(page, PAST_ID, { past: { meeting: buildPastMeeting(), fullAccess: true } });
+    await openMeetingAnonymously(page, PAST_ID, {
+      past: { meeting: buildPastMeeting({ recording_access: 'public', transcript_access: 'public', ai_summary_access: 'public' }), fullAccess: true },
+    });
     await waitForMeeting(page);
 
-    await expect(page.getByTestId('tools-section')).toBeVisible();
+    await expect(page.getByTestId('tools-recording-link').locator('a')).toHaveAttribute('href', 'https://zoom.example/rec/share/x');
+    await expect(page.getByTestId('tools-summary-content')).toContainText('Agreed the roadmap');
   });
 
   test('anonymous viewers get the pre-V2 page until rollout stage 5', async ({ page }) => {
