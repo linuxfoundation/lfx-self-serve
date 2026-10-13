@@ -1677,7 +1677,16 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
       memberships: string[],
       committees: Record<
         string,
-        { category?: string; enabled?: boolean; baseError?: Error; settingsError?: Error; emptyBase?: boolean; emptySettings?: boolean }
+        {
+          category?: string;
+          enabled?: boolean;
+          /** Successive settings answers, for changes between the two settings reads; the last one repeats. */
+          enabledSequence?: boolean[];
+          baseError?: Error;
+          settingsError?: Error;
+          emptyBase?: boolean;
+          emptySettings?: boolean;
+        }
       >
     ): void {
       proxyRequest.mockImplementation((_req: unknown, _svc: string, path: string) => {
@@ -1688,7 +1697,9 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
         const committee = committees[uid];
         if (sub === 'settings') {
           if (committee.settingsError) return Promise.reject(committee.settingsError);
-          return Promise.resolve(committee.emptySettings ? null : { members_can_view_social_listening: committee.enabled });
+          const enabled = committee.enabledSequence ? (committee.enabledSequence.shift() ?? committee.enabled) : committee.enabled;
+          if (committee.enabledSequence?.length === 0) committee.enabled = enabled;
+          return Promise.resolve(committee.emptySettings ? null : { members_can_view_social_listening: enabled });
         }
         if (committee.baseError) return Promise.reject(committee.baseError);
         return Promise.resolve(committee.emptyBase ? null : { uid, category: committee.category });
@@ -1704,15 +1715,24 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
         type: 'committee_member',
         tags_all: ['username:synthetic-user', 'committee_category:Board', `project_uid:${FOUNDATION_UID}`],
       });
+      // Settings, then the live category, then settings again — so the pair read can't mix states that never coexisted.
+      const reads = proxyRequest.mock.calls.slice(1).map((call) => call[2]);
+      expect(reads).toEqual(['/committees/board-1/settings', '/committees/board-1', '/committees/board-1/settings']);
       const settingsCalls = proxyRequest.mock.calls.filter((call) => call[2] === '/committees/board-1/settings');
-      expect(settingsCalls).toHaveLength(1);
-      expect(settingsCalls[0][7]).toEqual({ bearerToken: 'm2m-token' });
+      expect(settingsCalls.every((call) => call[7]?.bearerToken === 'm2m-token')).toBe(true);
       // The base read stays on the user's own token.
       expect(proxyRequest.mock.calls.find((call) => call[2] === '/committees/board-1')?.[7]).toBeUndefined();
     });
 
-    it('denies when the Board group has not opted in', async () => {
+    it('denies when the Board group has not opted in, without reading its category', async () => {
       upstream(['board-1'], { 'board-1': { category: 'Board', enabled: false } });
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+      expect(proxyRequest.mock.calls.some((call) => call[2] === '/committees/board-1')).toBe(false);
+    });
+
+    it('denies when the flag is switched off between the two settings reads (e.g. a Board entry clearing a stale grant)', async () => {
+      upstream(['board-1'], { 'board-1': { category: 'Board', enabledSequence: [true, false] } });
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
     });
@@ -1740,7 +1760,7 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
 
     it('surfaces a read failure when no Board group grants access, so the caller fails closed without caching', async () => {
       const error = new Error('base read failed');
-      upstream(['board-1', 'board-2'], { 'board-1': { baseError: error }, 'board-2': { category: 'Board', enabled: false } });
+      upstream(['board-1', 'board-2'], { 'board-1': { enabled: true, baseError: error }, 'board-2': { category: 'Board', enabled: false } });
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).rejects.toBe(error);
     });

@@ -1463,28 +1463,19 @@ export class CommitteeService {
     // succeeds with the flag on, the caller is denied — and when a read failed, the error surfaces.
     const results = await Promise.allSettled(
       boardUids.map(async (uid) => {
-        const [committee, settings] = await Promise.all([
-          this.getCommitteeBase(req, uid),
-          this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
-            req,
-            'LFX_V2_SERVICE',
-            `/committees/${uid}/settings`,
-            'GET',
-            undefined,
-            undefined,
-            undefined,
-            {
-              bearerToken: m2mToken,
-            }
-          ),
-        ]);
+        // Settings and category are separate upstream records, so read them in an order that can't pair
+        // states that never coexisted: settings, then the live category, then settings again. A grant
+        // needs the flag on in both reads and Board in between. The membership index's
+        // committee_category tag lags a recategorisation, so the live category is read rather than trusted.
+        if (!(await this.readSocialListeningFlag(req, uid, m2mToken))) {
+          return false;
+        }
+        const committee = await this.getCommitteeBase(req, uid);
         // An empty body is a failed lookup, not an opt-out: throwing keeps it from being cached as a denial.
-        if (!committee || !settings) {
+        if (!committee) {
           throw new Error(`Empty committee or settings response for Board group ${uid}`);
         }
-        // The membership index's committee_category tag lags a recategorisation, and upstream keeps a
-        // stored flag until the group's next settings write — so the live category must be Board too.
-        return isBoardCategory(committee.category) && settings.members_can_view_social_listening === true;
+        return isBoardCategory(committee.category) && (await this.readSocialListeningFlag(req, uid, m2mToken));
       })
     );
 
@@ -2512,6 +2503,24 @@ export class CommitteeService {
       // Tie-breaker: prefer lexicographically smallest uid for stable ordering across requests.
       return (current.uid ?? '') < (best.uid ?? '') ? current : best;
     });
+  }
+
+  /** Reads a Board group's members_can_view_social_listening with M2M; an empty body throws (failed lookup, not an opt-out). */
+  private async readSocialListeningFlag(req: Request, committeeUid: string, m2mToken: string): Promise<boolean> {
+    const settings = await this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeUid}/settings`,
+      'GET',
+      undefined,
+      undefined,
+      undefined,
+      { bearerToken: m2mToken }
+    );
+    if (!settings) {
+      throw new Error(`Empty committee or settings response for Board group ${committeeUid}`);
+    }
+    return settings.members_can_view_social_listening === true;
   }
 
   /**
