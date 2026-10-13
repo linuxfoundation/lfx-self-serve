@@ -13,7 +13,7 @@ const voteController = new VoteController();
 
 // Every write is blocked while impersonating: upstream records ballots and vote changes as the
 // target, with no actor identity in the payload. The guard runs before voteWriteRateLimiter so a
-// refused write doesn't spend the target's budget. Reads, including /:uid/my-response, stay open.
+// refused write doesn't spend the authenticated caller's vote-write budget. Reads, including /:uid/my-response, stay open.
 
 // GET /votes - get all votes
 router.get('/', (req, res, next) => voteController.getVotes(req, res, next));
