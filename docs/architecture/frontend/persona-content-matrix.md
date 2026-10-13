@@ -220,6 +220,8 @@ Survey edit routes and the editor probe every associated committee sequentially,
 
 Outside the Me lens, global-list draft rows expose Edit when the existing project gate grants access or the BFF supplies `committee_writer === true`. The BFF deduplicates associated committee UIDs and checks effective writer access in sequential batches of at most 100; the table makes no committee-detail requests and does not wait on unrelated row probes. Absent or false flags grant no additional Edit action, and replacement rows use their own flags rather than retaining an earlier grant for the same UID. Me-lens respondent actions are unchanged.
 
+The optional committee-access phase has one shared 5-second upstream budget across all batches. Expiry stops new batches and leaves unresolved grants false while preserving already verified grants, so an access-service outage does not add a fresh 30-second wait per batch before readable rows return. This budget starts after survey data is fetched and does not bound the existing data-fetch or project-enrichment phases.
+
 Global-list Create/Delete controls retain their existing active-project `canWrite()` gate. The committee Surveys tab retains a different existing gate: `CommitteeView.canEdit()` derives from `committee.writer` and is passed into the table's `hasPMOAccess`, so that tab's Create/Edit/Delete controls remain available to committee writers. These are UI gates; backend mutation enforcement is unchanged.
 
 ### Meetings write paths

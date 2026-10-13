@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ACCESS_CHECK_BATCH_SIZE, SURVEY_LINK_ALLOWLIST } from '@lfx-one/shared/constants';
+import { ACCESS_CHECK_BATCH_SIZE, SURVEY_COMMITTEE_ACCESS_TIMEOUT_MS, SURVEY_LINK_ALLOWLIST } from '@lfx-one/shared/constants';
 import { SurveyStatus } from '@lfx-one/shared/enums';
 import { CreateSurveyRequest, MySurveyResponse, QueryServiceResponse, Survey, SurveyResponseRecord, SurveyResponsesPage } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
@@ -69,6 +69,8 @@ export class SurveyService {
 
     // Effective committee writer checks retain inherited grants. Keep one bounded batch
     // in flight, and use the caller's request identity with the lenient fail-closed API.
+    const accessDeadlineAt = Date.now() + SURVEY_COMMITTEE_ACCESS_TIMEOUT_MS;
+    const accessRequestOptions = { deadlineAt: accessDeadlineAt };
     const committeeUids = [
       ...new Set(
         surveys
@@ -79,10 +81,12 @@ export class SurveyService {
     ];
     const writableCommitteeUids = new Set<string>();
     for (let start = 0; start < committeeUids.length; start += ACCESS_CHECK_BATCH_SIZE) {
+      if (Date.now() >= accessDeadlineAt) break;
       const batch = committeeUids.slice(start, start + ACCESS_CHECK_BATCH_SIZE);
       const access = await this.accessCheckService.checkAccess(
         req,
-        batch.map((id) => ({ resource: 'committee', id, access: 'writer' }))
+        batch.map((id) => ({ resource: 'committee', id, access: 'writer' })),
+        accessRequestOptions
       );
       for (const id of batch) {
         if (access.get(`${id}#writer`) === true) writableCommitteeUids.add(id);

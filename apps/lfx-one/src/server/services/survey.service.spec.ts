@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ACCESS_CHECK_BATCH_SIZE } from '@lfx-one/shared/constants';
-import type { Survey, SurveyCommittee } from '@lfx-one/shared/interfaces';
+import { ACCESS_CHECK_BATCH_SIZE, SURVEY_COMMITTEE_ACCESS_TIMEOUT_MS } from '@lfx-one/shared/constants';
+import type { ApiRequestOptions, Survey, SurveyCommittee } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getEffectiveUsernameMock, getEffectiveNameMock, resolveUserIdentityMock, proxyRequestMock, fetchAllQueryResourcesMock, enrichWithProjectDataMock } =
   vi.hoisted(() => ({
@@ -48,6 +48,7 @@ vi.mock('./logger.service', () => ({
   },
 }));
 
+import { ApiClientService } from './api-client.service';
 import { SurveyService } from './survey.service';
 
 describe('SurveyService.createSurvey — creator identity', () => {
@@ -102,6 +103,7 @@ function deferred<T>() {
 
 describe('SurveyService.getSurveys — caller-scoped committee writer grants', () => {
   let service: SurveyService;
+  let restoreAccessTimeout: (() => void) | undefined;
   const req = { path: '/api/surveys', bearerToken: 'caller-token' } as Request;
 
   beforeEach(() => {
@@ -113,6 +115,84 @@ describe('SurveyService.getSurveys — caller-scoped committee writer grants', (
     fetchAllQueryResourcesMock.mockReset().mockResolvedValue([]);
     enrichWithProjectDataMock.mockReset().mockImplementation(async (_req: Request, surveys: Survey[]) => surveys);
     service = new SurveyService();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.unstubAllGlobals();
+    restoreAccessTimeout?.();
+    restoreAccessTimeout = undefined;
+    vi.useRealTimers();
+  });
+
+  const useDeadlineAccessTransport = (): void => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException('Access deadline elapsed', 'TimeoutError')), ms);
+      return controller.signal;
+    });
+    restoreAccessTimeout = () => timeoutSpy.mockRestore();
+    const client = new ApiClientService();
+    proxyRequestMock.mockImplementation(
+      (request: Request, _service: string, _path: string, _method: string, _query: unknown, data: unknown, _headers: unknown, options?: ApiRequestOptions) =>
+        client
+          .request<{ results: string[] }>('POST', 'https://example.invalid/access-check', request.bearerToken, undefined, data, undefined, options)
+          .then((response) => response.data)
+    );
+  };
+
+  it('returns all readable rows at the shared deadline when the first access batch stalls', async () => {
+    useDeadlineAccessTransport();
+    const count = ACCESS_CHECK_BATCH_SIZE * 2 + 1;
+    fetchAllQueryResourcesMock.mockResolvedValue(
+      Array.from({ length: count }, (_, index) => surveyRow(`survey-${index}`, [`committee-${index}`], { committee_writer: true }))
+    );
+    const fetchMock = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true });
+        })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    let rows: Survey[] | undefined;
+    const pending = service.getSurveys(req).then((result) => (rows = result));
+
+    await vi.advanceTimersByTimeAsync(SURVEY_COMMITTEE_ACCESS_TIMEOUT_MS);
+
+    expect(rows).toHaveLength(count);
+    expect(rows?.every((row) => row.committee_writer === false)).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await pending;
+  });
+
+  it('keeps verified grants while a later batch consumes only the remaining shared budget', async () => {
+    useDeadlineAccessTransport();
+    const count = ACCESS_CHECK_BATCH_SIZE * 2 + 1;
+    fetchAllQueryResourcesMock.mockResolvedValue(Array.from({ length: count }, (_, index) => surveyRow(`survey-${index}`, [`committee-${index}`])));
+    let calls = 0;
+    const fetchMock = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((resolve, reject) => {
+          if (++calls === 1) {
+            setTimeout(() => resolve(new Response(JSON.stringify({ results: ['committee:committee-0#writer@user:caller\ttrue'] }), { status: 200 })), 2000);
+          } else {
+            init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true });
+          }
+        })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    let rows: Survey[] | undefined;
+    const pending = service.getSurveys(req).then((result) => (rows = result));
+
+    await vi.advanceTimersByTimeAsync(SURVEY_COMMITTEE_ACCESS_TIMEOUT_MS);
+
+    expect(rows).toHaveLength(count);
+    expect(rows?.[0].committee_writer).toBe(true);
+    expect(rows?.slice(1).every((row) => row.committee_writer === false)).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await pending;
   });
 
   it('grants a draft through its secondary committee without granting denied or unrelated rows', async () => {
