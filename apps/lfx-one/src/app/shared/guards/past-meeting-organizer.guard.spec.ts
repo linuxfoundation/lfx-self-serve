@@ -10,6 +10,8 @@ import { ProjectRecoveryService } from '@shared/services/project-recovery.servic
 import { defer, firstValueFrom, isObservable, Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MEETING_ROUTES } from '@modules/meetings/meetings.routes';
+import { authGuard } from './auth.guard';
 import { pastMeetingOrganizerGuard } from './past-meeting-organizer.guard';
 
 const PAST_ID = '98765432101-1760000000000';
@@ -95,7 +97,7 @@ describe('pastMeetingOrganizerGuard', () => {
     expect(unavailable).not.toHaveBeenCalled();
   });
 
-  it.each([401, 500, 503])('keeps the admin page closed behind the retry view on a %i', async (status) => {
+  it.each([500, 503])('keeps the admin page closed behind the retry view on a %i, after one retry', async (status) => {
     vi.useFakeTimers();
     getPastMeetingById.mockReturnValue(throwError(() => httpError(status)));
 
@@ -105,6 +107,13 @@ describe('pastMeetingOrganizerGuard', () => {
 
     expect(unavailable).toHaveBeenCalledWith(STATE_URL);
     expect(redirectTarget(result)).toBe(`unavailable:${STATE_URL}`);
+  });
+
+  it('keeps the admin page closed behind the retry view on a 401, without retrying', async () => {
+    getPastMeetingById.mockReturnValue(throwError(() => httpError(401)));
+
+    expect(redirectTarget(await runGuard())).toBe(`unavailable:${STATE_URL}`);
+    expect(getPastMeetingById).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the admin page closed on an error that is not an HTTP response', async () => {
@@ -129,5 +138,11 @@ describe('pastMeetingOrganizerGuard', () => {
     expect(await pending).toBe(true);
     expect(calls).toBe(2);
     expect(unavailable).not.toHaveBeenCalled();
+  });
+
+  it('is on the admin route, after authGuard', () => {
+    const details = MEETING_ROUTES.find((route) => route.path === ':id/details');
+
+    expect(details?.canActivate).toEqual([authGuard, pastMeetingOrganizerGuard]);
   });
 });

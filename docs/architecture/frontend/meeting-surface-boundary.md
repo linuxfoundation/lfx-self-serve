@@ -136,18 +136,22 @@ writer-guard state to decide.
    too, the viewer gets the app's `/unavailable` retry view in place, and the URL is kept, so Try
    again re-runs the guard. A non-organizer is redirected to the public page by the meeting's
    composite id (`getPastMeetingResourceId`), the id the public page loads a past meeting by.
+   Two known costs, both accepted: the BFF answers `organizer: false` when its own access check fails
+   (`isPastMeetingOrganizer` fails closed), so an organizer caught by that outage lands on the public
+   page rather than the retry view; and the admin page reads the meeting again after the guard, so a
+   visit makes the detail read twice.
 3. **Not a redirect from the public page.** A Manage-role viewer may open `/meetings/:id` directly
    and gets the public page. That is a legal state (`state-matrix.md` § Not an access dimension).
 
 ### Who sees what on `/details`
 
-| Viewer                                           | Outcome                                                                                                                                           |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Anonymous                                        | Unchanged: Express classifies the path as `auth: required` and redirects to `/login?returnTo=…`; after sign-in they are a signed-in viewer below. |
-| Signed in, `organizer` true (Manage)             | The admin page.                                                                                                                                   |
-| Signed in, `organizer` false (View role)         | **Redirect to `/meetings/:id`**, the public page, which applies its own `full_access` tiering. Not a 404 and not an empty page.                   |
-| Meeting not found (400 / 403 / 404)              | `/meetings/not-found`, matching the public page.                                                                                                  |
-| Lookup fails for any other reason (network, 5xx) | The `/unavailable` retry view in place, after one automatic retry. Never the admin page: the route stays closed until the lookup succeeds.        |
+| Viewer                                           | Outcome                                                                                                                                                                                     |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Anonymous                                        | Unchanged: Express classifies the path as `auth: required` and redirects to `/login?returnTo=…`; after sign-in they are a signed-in viewer below.                                           |
+| Signed in, `organizer` true (Manage)             | The admin page.                                                                                                                                                                             |
+| Signed in, `organizer` false (View role)         | **Redirect to `/meetings/:id`**, the public page, which applies its own `full_access` tiering. Not a 404 and not an empty page.                                                             |
+| Meeting not found (400 / 403 / 404)              | `/meetings/not-found`, matching the public page.                                                                                                                                            |
+| Lookup fails for any other reason (network, 5xx) | The `/unavailable` retry view in place, after one automatic retry for a temporary failure (network, 408, 429, 5xx). Never the admin page: the route stays closed until the lookup succeeds. |
 
 Today a View-role viewer who reaches `/details` sees the whole participants table (name, email,
 organization, job title, committee voting status, attendance, invitation) whenever the upstream read allows it, with none of the
