@@ -46,7 +46,9 @@ export class SocialListeningController {
     const startTime = logger.startOperation(req, operation);
 
     try {
-      const foundationSlug = parseFoundationSlug(req, operation);
+      parseFoundationSlug(req, operation);
+      // Validated above; passed as given (not lowercased) so the slug lookup matches mixed-case upstream slugs.
+      const foundationSlug = String(req.query['foundationSlug']);
       const response: SocialListeningAccessResponse = await socialListeningAccessService.getAccess(req, foundationSlug);
 
       logger.success(req, operation, startTime, { can_view: response.canView, reason: response.reason });

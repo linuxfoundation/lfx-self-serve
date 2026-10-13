@@ -85,9 +85,9 @@ describe('SocialListeningAccessService.getAccess', () => {
     expect(canBoardMemberViewSocialListening).toHaveBeenCalledWith(req, 'tlf-uid');
   });
 
-  it("admits a Board member when the foundation's Board group opted in", async () => {
+  it("admits a Board member when the foundation's Board group opted in, looking the slug up as given", async () => {
     await expect(service.getAccess(req, 'TLF')).resolves.toEqual({ canView: true, reason: 'board' });
-    expect(getProjectIdBySlug).toHaveBeenCalledWith(req, 'tlf');
+    expect(getProjectIdBySlug).toHaveBeenCalledWith(req, 'TLF');
   });
 
   it('denies a Board member when the Board group has not opted in (the default)', async () => {

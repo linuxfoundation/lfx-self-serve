@@ -17,7 +17,7 @@ import { ProjectService } from './project.service';
 
 /**
  * Who can view Social Listening for a foundation (lfx-self-serve-ops#387): the executive-dashboard
- * audience (EDs of that foundation, LF Staff, root writers), plus members of the foundation's own
+ * audience (EDs of that foundation, including root-writer EDs, and LF Staff), plus members of the foundation's own
  * Board group when that group has `members_can_view_social_listening` on.
  *
  * The Board answer is remembered per user and foundation for {@link SOCIAL_LISTENING_BOARD_ACCESS_CACHE_TTL_MS},
@@ -40,7 +40,7 @@ export class SocialListeningAccessService {
       return { canView: false, reason: 'none' };
     }
 
-    const canView = await this.canBoardMemberView(req, foundationSlug.toLowerCase());
+    const canView = await this.canBoardMemberView(req, foundationSlug);
     return canView ? { canView: true, reason: 'board' } : { canView: false, reason: 'none' };
   }
 
@@ -55,7 +55,8 @@ export class SocialListeningAccessService {
       return false;
     }
 
-    const cacheKey = `${username}:${foundationSlug}`;
+    // Slugs are stored verbatim upstream, so look up as given; only the cache key is case-folded.
+    const cacheKey = `${username}:${foundationSlug.toLowerCase()}`;
     const cached = this.boardAccessCache.get(cacheKey);
     if (cached && Date.now() < cached.expiresAt) {
       return cached.canView;
