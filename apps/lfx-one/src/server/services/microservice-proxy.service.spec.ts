@@ -109,6 +109,7 @@ describe('MicroserviceProxyService.buildEndpoint path-traversal guard (linuxfoun
     '/p/%2e./x',
     '/p/%2e/x',
     '/p/..\\secrets',
+    '/surveys/id\\responses',
     '/projects/.\t./x',
     '/projects/.%09./x',
     '/projects/.%0a./x',

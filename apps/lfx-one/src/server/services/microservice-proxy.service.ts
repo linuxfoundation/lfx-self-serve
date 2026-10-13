@@ -170,23 +170,30 @@ export class MicroserviceProxyService {
    * reject those as a local 400 instead of letting them reach upstream as before. But the segment
    * check itself must match what `fetch()`'s WHATWG URL parser actually treats as a dot segment:
    * per https://url.spec.whatwg.org/#double-dot-path-segment, `%2e` (any case) is equivalent to a
-   * literal `.` — so `%2e%2e`, `.%2e`, `%2e.` all resolve the same as `..` — and `\` is treated as
-   * `/` for special schemes (http/https), so a caller can smuggle a traversal segment past a
-   * `/`-only split. The parser also strips every literal ASCII tab/newline character from the
-   * input and trims leading/trailing literal C0 control/space characters from the whole URL
-   * *before* it ever splits into segments (https://url.spec.whatwg.org/#concept-basic-url-parser,
-   * steps 1-2) — it does not decode `%09`/`%20` first, so e.g. a literal tab between the dots
-   * (`.<TAB>.`) or a trailing dot-segment padded with a literal space become real dot segments
-   * even though neither is literally `.`/`..`. Detection here mirrors that preprocessing so it
-   * can't be bypassed the same way. `isDotSegment` additionally strips `%09`/`%0a`/`%0d` text that
-   * survives Express's single route-param decode (e.g. a double-encoded `%2509`) — that's
-   * deliberate extra strictness, not something the URL parser itself does. A literal-only,
+   * literal `.` — so `%2e%2e`, `.%2e`, `%2e.` all resolve the same as `..`. The parser also strips
+   * every literal ASCII tab/newline character from the input and trims leading/trailing literal C0
+   * control/space characters from the whole URL *before* it ever splits into segments
+   * (https://url.spec.whatwg.org/#concept-basic-url-parser, steps 1-2) — it does not decode
+   * `%09`/`%20` first, so e.g. a literal tab between the dots (`.<TAB>.`) or a trailing dot-segment
+   * padded with a literal space become real dot segments even though neither is literally `.`/`..`.
+   * Detection here mirrors that preprocessing so it can't be bypassed the same way. `isDotSegment`
+   * additionally strips `%09`/`%0a`/`%0d` text that survives Express's single route-param decode
+   * (e.g. a double-encoded `%2509`) — that's deliberate extra strictness, not something the URL
+   * parser itself does. `\` is rejected outright (alongside `?`/`#`) rather than treated only as a
+   * dot-segment delimiter: the WHATWG parser treats `\` as `/` for special schemes (http/https), so
+   * a non-dot backslash segment (e.g. `id\responses`) would otherwise smuggle in an extra path
+   * separator the caller never intended, even without forming a literal `.`/`..`. A literal-only,
    * `/`-only check was flagged by multiple independent reviewers (dealako, Copilot, Cursor Bugbot,
    * Greptile) on PR #3511 as still bypassable via these vectors.
    */
   private buildEndpoint(baseUrl: string, path: string): string {
-    if (path.includes('?') || path.includes('#')) {
-      throw ServiceValidationError.forField('path', 'Upstream path must not contain a query string or fragment', {
+    // Per @copilot-pull-request-reviewer on PR #3511: treating `\` only as a dot-segment delimiter
+    // (via split) still let a non-dot backslash segment (e.g. `id\responses`) through unrejected,
+    // and `fetch()`'s WHATWG parser treats `\` as `/` for http(s) URLs — so it still smuggled in an
+    // extra path separator the caller didn't intend. No legitimate interpolated value needs a raw
+    // backslash (it's always a separator, never meaningful content), so reject it outright.
+    if (path.includes('?') || path.includes('#') || path.includes('\\')) {
+      throw ServiceValidationError.forField('path', 'Upstream path must not contain a query string, fragment, or backslash', {
         operation: 'proxy_build_endpoint',
         service: 'microservice_proxy_service',
       });
@@ -216,7 +223,7 @@ export class MicroserviceProxyService {
     while (end > start && stripped.charCodeAt(end - 1) <= 0x20) end--;
     const normalized = stripped.slice(start, end);
 
-    if (normalized.split(/[/\\]/).some(isDotSegment)) {
+    if (normalized.split('/').some(isDotSegment)) {
       throw ServiceValidationError.forField('path', 'Upstream path must not contain traversal segments', {
         operation: 'proxy_build_endpoint',
         service: 'microservice_proxy_service',
