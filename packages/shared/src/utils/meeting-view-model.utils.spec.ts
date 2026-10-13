@@ -739,8 +739,10 @@ describe('illegal combinations resolve to their legal neighbour', () => {
     for (const timeState of ['before', 'live'] as const) {
       for (const viewerRole of VIEWER_ROLES) {
         for (const inviteResponsesEnabled of [true, false]) {
-          const sections = (fullAccess: boolean) => resolveVisibleSections({ fullAccess, inviteResponsesEnabled, recurring: true, timeState, viewerRole });
-          expect(sections(true)).toEqual(sections(false));
+          for (const recurring of [false, true]) {
+            const sections = (fullAccess: boolean) => resolveVisibleSections({ fullAccess, inviteResponsesEnabled, recurring, timeState, viewerRole });
+            expect(sections(true)).toEqual(sections(false));
+          }
           for (const privacy of ALL_PRIVACY) {
             const slot = (fullAccess: boolean) => resolveActionSlot({ fullAccess, inviteResponsesEnabled, privacy, timeState, viewerRole });
             expect(slot(true)).toBe(slot(false));
@@ -753,9 +755,11 @@ describe('illegal combinations resolve to their legal neighbour', () => {
   // The BFF always gives an organizer `full` (state-matrix.md, organizer rows); `none` resolves like `full`.
   it("ignores past access for an ended meeting's organizer", () => {
     for (const inviteResponsesEnabled of [true, false]) {
-      const sections = (fullAccess: boolean) =>
-        resolveVisibleSections({ fullAccess, inviteResponsesEnabled, recurring: false, timeState: 'ended', viewerRole: 'organizer' });
-      expect(sections(false)).toEqual(sections(true));
+      for (const recurring of [false, true]) {
+        const sections = (fullAccess: boolean) =>
+          resolveVisibleSections({ fullAccess, inviteResponsesEnabled, recurring, timeState: 'ended', viewerRole: 'organizer' });
+        expect(sections(false)).toEqual(sections(true));
+      }
       for (const privacy of ALL_PRIVACY) {
         const slot = (fullAccess: boolean) => resolveActionSlot({ fullAccess, inviteResponsesEnabled, privacy, timeState: 'ended', viewerRole: 'organizer' });
         expect(slot(false)).toBe(slot(true));
