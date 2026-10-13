@@ -89,7 +89,7 @@ export class ProgramDetailComponent {
    * the open tab while the program still shows it, so a status change on refresh only moves the admin off a tab that is
    * gone. Another program, reached by a route change that reuses this page, opens on its own first tab.
    */
-  protected readonly activeTab = linkedSignal({
+  protected readonly activeTab = linkedSignal<{ programId: string; tabs: MentorshipProgramDetailTab[] }, MentorshipProgramDetailTab>({
     source: this.tabSource,
     computation: ({ programId, tabs }, previous): MentorshipProgramDetailTab =>
       previous && previous.source.programId === programId && tabs.includes(previous.value) ? previous.value : tabs[0],

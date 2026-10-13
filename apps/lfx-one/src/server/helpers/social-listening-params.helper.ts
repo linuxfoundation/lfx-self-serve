@@ -11,16 +11,16 @@ import {
   MENTION_SERVER_WINDOW_SIZE,
 } from '@lfx-one/shared/constants';
 import { Request } from 'express';
+import { resolvePeriodRange } from '@lfx-one/shared/utils/marketing-impact.utils';
 
 import { ServiceValidationError } from '../errors';
-import { getStrictStringQueryParam } from './strict-query-param.helper';
 import { getStringQueryParam, getValidatedPeriod } from './validation.helper';
 
 import type {
   ResolvedPeriodRange,
+  SocialListeningFeedParams,
+  SocialListeningCountParams,
   SocialListeningFeedCursor,
-  SocialListeningFilterParams,
-  SocialListeningPaginationParams,
   SocialListeningReadBlindFilterParams,
   SocialListeningScopedOptionsParams,
 } from '@lfx-one/shared/interfaces';
@@ -112,19 +112,86 @@ export function parseSocialListeningScope(req: Request, operation: string): Soci
     platform: parseTextParam(req, 'platform', FILTER_VALUE_MAX_LENGTH, operation),
   };
 }
-
-/** Every feed filter. `all` and blank values normalize to `undefined` (no predicate). */
-export function parseSocialListeningFilters(req: Request, operation: string): SocialListeningFilterParams {
-  return {
-    ...parseSocialListeningAuthorFilters(req, operation),
-    authors: parseArrayParam(req, 'authors', MENTION_FILTER_MAX_VALUES, operation),
-    mentionIds: parseArrayParam(req, 'mentionIds', MENTION_IDS_MAX_VALUES, operation),
-    // Unread view: the client's persisted read state as a server-side exclusion predicate.
-    unreadOnly: getStringQueryParam(req, 'unreadOnly') === 'true' || undefined,
-    readIds: parseArrayParam(req, 'readIds', MENTION_READ_IDS_MAX_VALUES, operation),
-    unreadIds: parseArrayParam(req, 'unreadIds', MENTION_READ_IDS_MAX_VALUES, operation),
-    readBeforeTs: parseTimestampParam(req, 'readBeforeTs', operation),
+/** Complete JSON read payload; query readers share the same value normalization below. */
+export function parseSocialListeningCountBody(body: unknown, operation: string): SocialListeningCountParams {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw ServiceValidationError.forField('body', 'body must be a JSON object', { operation });
+  }
+  const fields = body as Record<string, unknown>;
+  const text = (name: string): string | undefined => {
+    const value = fields[name];
+    if (value !== undefined && typeof value !== 'string') {
+      throw ServiceValidationError.forField(name, `${name} must be a string`, { operation });
+    }
+    return value as string | undefined;
   };
+  const foundationSlug = text('foundationSlug');
+  if (!foundationSlug || foundationSlug.length > FOUNDATION_SLUG_MAX_LENGTH || !FOUNDATION_SLUG_PATTERN.test(foundationSlug)) {
+    throw ServiceValidationError.forField('foundationSlug', 'Invalid or missing foundationSlug', { operation });
+  }
+  const period = text('period');
+  const resolved = period ? resolvePeriodRange(period) : undefined;
+  if (period && !resolved) {
+    throw ServiceValidationError.forField('period', 'Invalid period value', { operation });
+  }
+  const range = !resolved || resolved.type === 'ytd' ? yearToDateThroughToday() : resolved;
+  const array = (name: string, cap: number): string[] | undefined => {
+    const value = fields[name];
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
+      throw ServiceValidationError.forField(name, `${name} must be a string array`, { operation });
+    }
+    return normalizeArray(value, name, cap, operation);
+  };
+  const enumValue = (name: string, allowed: string[]) => normalizeEnum(text(name), name, allowed, operation);
+  const readBeforeTs = normalizeTimestamp(normalizeText(text('readBeforeTs'), 'readBeforeTs', FILTER_VALUE_MAX_LENGTH, operation), 'readBeforeTs', operation);
+  return {
+    foundationSlug: foundationSlug.toLowerCase(),
+    startDate: range.startDate,
+    endDate: range.endDate,
+    sourceProjectId: normalizeText(text('sourceProjectId'), 'sourceProjectId', FILTER_VALUE_MAX_LENGTH, operation),
+    platform: normalizeText(text('platform'), 'platform', FILTER_VALUE_MAX_LENGTH, operation),
+    sentiment: enumValue('sentiment', VALID_SENTIMENTS),
+    relevance: enumValue('relevance', VALID_RELEVANCES),
+    hasTitle: enumValue('hasTitle', VALID_HAS_TITLE),
+    language: normalizeText(text('language'), 'language', FILTER_VALUE_MAX_LENGTH, operation),
+    search: normalizeText(text('search'), 'search', SEARCH_MAX_LENGTH, operation),
+    keywords: array('keywords', MENTION_FILTER_MAX_VALUES),
+    tags: array('tags', MENTION_FILTER_MAX_VALUES),
+    authors: array('authors', MENTION_FILTER_MAX_VALUES),
+    mentionIds: array('mentionIds', MENTION_IDS_MAX_VALUES),
+    readIds: array('readIds', MENTION_READ_IDS_MAX_VALUES),
+    unreadIds: array('unreadIds', MENTION_READ_IDS_MAX_VALUES),
+    unreadOnly: bodyBoolean(fields, 'unreadOnly', operation) || undefined,
+    readBeforeTs,
+  };
+}
+
+export function parseSocialListeningFeedBody(body: unknown, operation: string): SocialListeningFeedParams {
+  const params = parseSocialListeningCountBody(body, operation);
+  const fields = body as Record<string, unknown>;
+  const pageSize = fields['page_size'];
+  if (pageSize !== undefined && (typeof pageSize !== 'number' || !Number.isInteger(pageSize))) {
+    throw ServiceValidationError.forField('page_size', 'page_size must be an integer number', { operation });
+  }
+  const token = fields['page_token'];
+  if (token !== undefined && typeof token !== 'string') {
+    throw ServiceValidationError.forField('page_token', 'page_token must be a string', { operation });
+  }
+  return {
+    ...params,
+    allTime: bodyBoolean(fields, 'allTime', operation),
+    pageSize: pageSize === undefined ? MAX_FEED_LIMIT : Math.min(Math.max(pageSize as number, 1), MAX_FEED_LIMIT),
+    cursor: token === undefined ? undefined : decodeMentionFeedPageToken(token as string, operation),
+  };
+}
+
+function bodyBoolean(fields: Record<string, unknown>, name: string, operation: string): boolean {
+  const value = fields[name];
+  if (value !== undefined && typeof value !== 'boolean') {
+    throw ServiceValidationError.forField(name, `${name} must be a boolean`, { operation });
+  }
+  return value === true;
 }
 
 /** Analytics + tag filters — omits `mentionIds` and the unread read-state params: bookmarks are all-time and read state is per-user view state, so non-feed/count queries stay read-blind (the page strips them too). */
@@ -146,23 +213,6 @@ export function parseSocialListeningAuthorFilters(req: Request, operation: strin
     keywords: parseArrayParam(req, 'keywords', MENTION_FILTER_MAX_VALUES, operation),
     tags: parseArrayParam(req, 'tags', MENTION_FILTER_MAX_VALUES, operation),
   };
-}
-
-/** Feed paging: a clamped `page_size` plus the decoded keyset `page_token` (absent = first page). */
-export function parseSocialListeningPagination(req: Request, operation: string): SocialListeningPaginationParams {
-  const rawPageSize = getStrictStringQueryParam(req, 'page_size', operation);
-  let pageSize = MAX_FEED_LIMIT;
-  // `!== undefined`, not truthy: an empty `?page_size=` parses to 0 and clamps to the 1 minimum — deterministic, never a silent default.
-  if (rawPageSize !== undefined) {
-    const parsed = Number(rawPageSize);
-    if (!Number.isInteger(parsed)) {
-      throw ServiceValidationError.forField('page_size', 'page_size must be an integer', { operation });
-    }
-    pageSize = Math.min(Math.max(parsed, 1), MAX_FEED_LIMIT);
-  }
-
-  const rawPageToken = getStrictStringQueryParam(req, 'page_token', operation);
-  return { pageSize, cursor: rawPageToken !== undefined ? decodeMentionFeedPageToken(rawPageToken, operation) : undefined };
 }
 
 /** Encodes the keyset position of a page's last kept row as an opaque base64url `page_token` (house cursor pattern, `docs/architecture/backend/pagination.md`). */
@@ -215,8 +265,10 @@ function yearToDateThroughToday(): ResolvedPeriodRange {
 
 /** Whitelisted single-select value. `all` means "no predicate" and normalizes to `undefined`. */
 function parseEnumParam(req: Request, name: string, allowed: string[], operation: string): string | undefined {
-  const raw = getStringQueryParam(req, name);
+  return normalizeEnum(getStringQueryParam(req, name), name, allowed, operation);
+}
 
+function normalizeEnum(raw: string | undefined, name: string, allowed: string[], operation: string): string | undefined {
   if (!raw) {
     return undefined;
   }
@@ -230,8 +282,10 @@ function parseEnumParam(req: Request, name: string, allowed: string[], operation
 
 /** Length-bounded free-text value: values that become Snowflake binds can't be whitelisted, so they are bounded instead. */
 function parseTextParam(req: Request, name: string, maxLength: number, operation: string): string | undefined {
-  const raw = getStringQueryParam(req, name);
+  return normalizeText(getStringQueryParam(req, name), name, maxLength, operation);
+}
 
+function normalizeText(raw: string | undefined, name: string, maxLength: number, operation: string): string | undefined {
   if (raw === undefined) {
     return undefined;
   }
@@ -261,10 +315,16 @@ function parseArrayParam(req: Request, name: string, cap: number, operation: str
     return undefined;
   }
 
-  const values = (Array.isArray(raw) ? raw : [raw])
-    .filter((value): value is string => typeof value === 'string')
-    .map((value) => value.trim())
-    .filter(Boolean);
+  return normalizeArray(
+    (Array.isArray(raw) ? raw : [raw]).filter((value): value is string => typeof value === 'string'),
+    name,
+    cap,
+    operation
+  );
+}
+
+function normalizeArray(raw: string[], name: string, cap: number, operation: string): string[] | undefined {
+  const values = raw.map((value) => value.trim()).filter(Boolean);
 
   if (values.length > cap) {
     throw ServiceValidationError.forField(name, `Too many ${name} values. Maximum is ${cap}`, { operation });
@@ -278,10 +338,7 @@ function parseArrayParam(req: Request, name: string, cap: number, operation: str
   return values.length === 0 ? undefined : values;
 }
 
-/** Format-checked timestamp (`readBeforeTs`); the shared feed-timestamp validity rules live in `isValidFeedTimestamp`. */
-function parseTimestampParam(req: Request, name: string, operation: string): string | undefined {
-  const value = parseTextParam(req, name, FILTER_VALUE_MAX_LENGTH, operation);
-
+function normalizeTimestamp(value: string | undefined, name: string, operation: string): string | undefined {
   if (value === undefined) {
     return undefined;
   }
